@@ -7,6 +7,17 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.140.0] - 2026-04-20
+
+**Per-skill plugin skill reference format in compiled agents (D-217)**
+
+- Compiled agents now reference each skill using the format dictated by that skill's own `source` — `${id}:${id}` for plugin-sourced, bare `${id}` for eject/local. Mixed-mode agents (plugin + eject skills in one agent) now emit correct per-skill formats instead of the previous all-or-nothing whole-agent `installMode` behavior
+- `installMode` param dropped from `compileAgentForPlugin`; new `derivePluginRef` helper decides pluginRef per-skill. `SkillReference` / `Skill` carry optional `source?: string` threaded through `buildCompileAgents` → `resolver.ts` → compiler
+- New E2E `mixed-mode-skill-ref-format.e2e.test.ts` covers the contract end-to-end; fixes latent fixture template bug (`agent.preloadedSkills` typo) and trims unrealistic meta-skill preloads discovered during implementation
+- D-233 (spacebar on dual-scope skill) filed with full root-cause analysis for next cycle
+
+See [changelogs/0.140.0.md](./changelogs/0.140.0.md) for full details.
+
 ## [0.139.0] - 2026-04-20
 
 **Backlog grooming and demo assets — no product code changes**
