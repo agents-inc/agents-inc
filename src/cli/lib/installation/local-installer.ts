@@ -697,6 +697,12 @@ export async function propagateGlobalChangesToProjects(
         skills: [...globalConfig.skills, ...projectConfig.skills.filter(isProjectOwnedEntry)],
         agents: [...globalConfig.agents, ...projectConfig.agents.filter(isProjectOwnedEntry)],
         domains: [...new Set([...(globalConfig.domains ?? []), ...(projectConfig.domains ?? [])])],
+        selectedAgents: [
+          ...new Set([
+            ...(globalConfig.selectedAgents ?? []),
+            ...(projectConfig.selectedAgents ?? []),
+          ]),
+        ],
       };
 
       // Update config-types.ts
