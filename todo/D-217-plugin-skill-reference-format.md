@@ -1,6 +1,10 @@
 # D-217: Plugin skill reference format in compiled agents
 
-> **Status 2026-04-20: NOT STARTED. Plan substantially wrong — rewrite required.**
+> **Status 2026-04-20: DONE.** Per-skill `source`-based pluginRef landed — `compileAgentForPlugin` decides `${id}:${id}` (plugin) vs bare `${id}` (eject/local) per-skill via `derivePluginRef`. Mixed-mode agents now emit correct per-skill formats. `installMode` param dropped from `compileAgentForPlugin`; `SkillReference` / `Skill` carry optional `source?: string` threaded through `buildCompileAgents` → `resolver.ts` → compiler. Unit coverage: 5 new `stack-plugin-compiler.test.ts` cases + 2 `resolver.test.ts` cases + 2 rewritten `local-installer.test.ts` cases. E2E: `e2e/lifecycle/mixed-mode-skill-ref-format.e2e.test.ts` (new). Dead `installMode` plumbing retained on wrapper types (`RecompileAgentsOptions`, `CompileAndWriteParams`) as a documented follow-up in `.ai-docs/agent-findings/2026-04-20-d217-installmode-plumbing-dead-in-wrappers.md`.
+>
+> **Known latent dual-scope edge case (deferred, not shipping blocker)**: `sourceById` in `buildCompileAgents` is keyed by `id` alone. For a dual-scope config with distinct per-scope sources (e.g., project-eject + global-agents-inc), `Map` last-write-wins produces the wrong source tag. Doesn't bite in practice because canonical agents-inc configs use `"eject"` on both sides. Defensive fix (key by `${scope}:${id}`) tracked as D-217 follow-up.
+>
+> **Original investigation note (pre-implementation)**: Plan substantially wrong — rewrite required.
 >
 > **Key corrections from 10-agent investigation**:
 >

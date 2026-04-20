@@ -2,6 +2,7 @@
 
 | ID    | Task                                                                                                                                                               | Status                   |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
+| D-233 | Spacebar on dual-scope `[P][G]` skill should add/remove only project-scope part — not uninstall the global. Likely landed with D-227/D-230/D-232 as single architectural fix. [Plan](./D-233-dual-scope-spacebar-toggle.md) | Ready for Dev |
 | D-232 | Info panel `+` for globally-installed skill after G→P scope toggle — wizard mis-tags as newly-added on next edit.                                                  | Ready for Dev            |
 | D-231 | Remove dead `version` field from `config.ts` — unused, adds noise.                                                                                                 | Ready for Dev            |
 | D-230 | Info panel `-` on global row when G→P toggle adds project scope — global is not removed (dual-scope), `-` is wrong.                                                | Ready for Dev            |
@@ -11,7 +12,6 @@
 | D-226 | E2E sandbox collapses `HOME` into `projectDir` → `isEditingFromGlobalScope=true` for every project test. [Plan](./D-226-sandbox-home-cwd-collapse.md)              | Ready for Dev            |
 | D-219 | E2E wizard launcher default fixture — fold into D-226 sugar. [Plan](./D-219-wizard-launcher-default-fixture.md)                                                    | Ready for Dev (w/ D-226) |
 | D-218 | Plugin-install hardening follow-ups — `mode-migrator` data-loss + `ensure-marketplace` error wrapping. [Plan](./D-218-plugin-install-hardening-followups.md)       | Ready for Dev            |
-| D-217 | Plugin skill reference format — plan wrong, needs rewrite (real bug is `compileAgentForPlugin` mixed-mode gate). [Plan](./D-217-plugin-skill-reference-format.md)  | Needs Re-Plan            |
 | D-216 | Global → project config propagation + context-sensitive scope defaults. [Plan](./D-216-global-config-propagation.md)                                               | Ready for Dev            |
 | D-215 | Config shape simplification — singular-for-exclusive, drop redundant fields                                                                                        | Ready for Dev            |
 | D-214 | Matrix composition hardening — prereq to re-enabling `new marketplace`                                                                                             | Ready for Dev            |
@@ -57,6 +57,32 @@ See [docs/guides/agent-reminders.md](../docs/guides/agent-reminders.md) for the 
 ## Active Tasks
 
 ### Wizard UX
+
+#### D-233: Spacebar on dual-scope skill should toggle only the project-scope presence
+
+**Repro**:
+1. Install skill X globally (complete wizard).
+2. In a project, run `cc edit`. Toggle X's scope to project. Complete/save the wizard.
+3. Re-open `cc edit`. X correctly renders with both `[P]` and `[G]` badges (dual-scope — D-223 fix working).
+4. Press spacebar on X to deselect it. Save.
+5. Re-open `cc edit`. X is now showing `[G]` only — the project-scope presence is gone AND the global install is still there.
+6. Press spacebar again to re-select X. Now X shows only `[G]` with no `[P]`. The `[P]` never comes back.
+
+**Expected**:
+Spacebar on a dual-scope (`[P][G]`) skill should add/remove **only the project-scope part**. The global install is authoritative from another context (global edit / install); the project wizard must not be able to uninstall the global entry. So:
+- First spacebar press → drops the project-scope entry, leaves the global install intact. Badge drops from `[P][G]` → `[G]` (read-only, since it's a pure inherited-global at that point).
+- Second spacebar press → re-adds the project-scope entry. Badge goes back to `[P][G]`.
+- Spacebar on a `[G]`-only (pure global-inherited) skill should already be a no-op / toast (the "globally installed, read-only in this project" path).
+- Scope toggle (`s`) on a dual-scope skill continues to behave per D-223/D-224: flips the project presence between project-only, dual-scope, and absent; never touches the global install.
+
+**Likely fix area**:
+- `src/cli/stores/wizard-store.ts::toggleSkill` (or wherever spacebar is wired to selection state) needs to detect dual-scope (`installedSkillConfigs` contains a same-id `{scope: "global"}` entry) and branch: instead of removing the active project entry outright, it should drop the project entry and preserve/restore the global tombstone-or-inherited state.
+- `CategoryOption.selected` semantics for dual-scope rows may need adjusting so that `selected: false` means "project-scope absent, global-inherited remains" rather than "fully uninstalled."
+- Interacts with D-223 (dual-scope hydration must survive the no-project-entry state on reopen) and D-232 (baseline must still recognize the inherited global so it doesn't re-classify as new on re-add).
+
+Related cluster: D-223, D-224, D-230, D-232.
+
+---
 
 #### D-232: Info panel `+` for globally-installed skill toggled to project
 
