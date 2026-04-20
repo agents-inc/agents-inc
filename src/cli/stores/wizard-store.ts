@@ -985,19 +985,26 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         sc.id === skillId && !sc.excluded ? { ...sc, scope: newScope as "project" | "global" } : sc,
       );
 
-      if (wasInstalledGlobally) {
-        if (newScope === "project") {
-          // Moving global → project: add excluded global entry if not already there
-          if (!updatedConfigs.some((sc) => sc.id === skillId && sc.excluded)) {
-            updatedConfigs = [
-              ...updatedConfigs,
-              { id: skillId, scope: "global" as const, excluded: true, source: config.source },
-            ];
-          }
-        } else {
-          // Moving project → global: remove the excluded global entry
-          updatedConfigs = updatedConfigs.filter((sc) => !(sc.id === skillId && sc.excluded));
+      if (newScope === "project") {
+        // Moving global → project: add excluded global entry if not already there.
+        // Gated on wasInstalledGlobally so fresh init toggles don't create spurious tombstones.
+        if (
+          wasInstalledGlobally &&
+          !updatedConfigs.some((sc) => sc.id === skillId && sc.excluded)
+        ) {
+          updatedConfigs = [
+            ...updatedConfigs,
+            { id: skillId, scope: "global" as const, excluded: true, source: config.source },
+          ];
         }
+      } else {
+        // Moving project → global: always drop any excluded global tombstone for this id.
+        // An active entry at global scope supersedes any tombstone at the same scope — the
+        // invariant "no active + tombstone at the same (id, scope)" must hold. Unconditional
+        // removal (not gated on wasInstalledGlobally) heals the D-224 case where the prior
+        // G→P produced a tombstone that installedSkillConfigs-derived wasInstalledGlobally
+        // cannot see (because its `!sc.excluded` filter ignores the tombstone itself).
+        updatedConfigs = updatedConfigs.filter((sc) => !(sc.id === skillId && sc.excluded));
       }
 
       return { skillConfigs: updatedConfigs };
@@ -1135,19 +1142,22 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         ac.name === agentName && !ac.excluded ? { ...ac, scope: newScope } : ac,
       );
 
-      if (wasInstalledGlobally) {
-        if (newScope === "project") {
-          // Moving global → project: add excluded global entry if not already there
-          if (!updatedConfigs.some((ac) => ac.name === agentName && ac.excluded)) {
-            updatedConfigs = [
-              ...updatedConfigs,
-              { name: agentName, scope: "global" as const, excluded: true },
-            ];
-          }
-        } else {
-          // Moving project → global: remove the excluded global entry
-          updatedConfigs = updatedConfigs.filter((ac) => !(ac.name === agentName && ac.excluded));
+      if (newScope === "project") {
+        // Moving global → project: add excluded global entry if not already there.
+        // Gated on wasInstalledGlobally so fresh init toggles don't create spurious tombstones.
+        if (
+          wasInstalledGlobally &&
+          !updatedConfigs.some((ac) => ac.name === agentName && ac.excluded)
+        ) {
+          updatedConfigs = [
+            ...updatedConfigs,
+            { name: agentName, scope: "global" as const, excluded: true },
+          ];
         }
+      } else {
+        // Moving project → global: always drop any excluded global tombstone for this name.
+        // Symmetric with toggleSkillScope — see its comment for the invariant.
+        updatedConfigs = updatedConfigs.filter((ac) => !(ac.name === agentName && ac.excluded));
       }
 
       return { agentConfigs: updatedConfigs };
