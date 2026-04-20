@@ -41,6 +41,7 @@ export function resolveSkillReference(
     ...definition,
     usage: ref.usage,
     preloaded: ref.preloaded ?? false,
+    source: ref.source,
   };
 }
 

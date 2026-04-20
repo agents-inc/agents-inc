@@ -94,7 +94,7 @@ async function compileAndWriteAgents(
   params: CompileAndWriteParams,
   result: RecompileAgentsResult,
 ): Promise<void> {
-  const { resolvedAgents, agentsDir, sourcePath, engine, installMode, agentScopeMap } = params;
+  const { resolvedAgents, agentsDir, sourcePath, engine, agentScopeMap } = params;
 
   const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, "agents");
 
@@ -104,7 +104,11 @@ async function compileAndWriteAgents(
 
   for (const [agentName, agent] of typedEntries<AgentName, AgentConfig>(resolvedAgents)) {
     try {
-      const output = await compileAgentForPlugin(agentName, agent, sourcePath, engine, installMode);
+      // D-217: `installMode` is no longer passed — per-skill `source` on each
+      // SkillReference drives pluginRef attachment inside compileAgentForPlugin.
+      // `installMode` plumbing retained on RecompileAgentsOptions/CompileAndWriteParams
+      // to preserve caller contracts (consolidation is a separate follow-up).
+      const output = await compileAgentForPlugin(agentName, agent, sourcePath, engine);
 
       // Route agent output by scope: global agents go to ~/.claude/agents/, project agents to agentsDir
       const scope = agentScopeMap?.get(agentName) ?? "project";

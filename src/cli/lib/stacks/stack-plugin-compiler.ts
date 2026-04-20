@@ -28,14 +28,28 @@ import type {
   CompileConfig,
   CompiledAgentData,
   PluginManifest,
+  PluginSkillRef,
   ProjectConfig,
+  Skill,
   SkillId,
   Stack,
 } from "../../types";
-import type { InstallMode } from "../installation/installation";
 import { computeStringHash, determinePluginVersion, writeContentHash } from "../versioning";
 import { unique } from "remeda";
 import { typedEntries, typedKeys } from "../../utils/typed-object";
+
+const EJECT_SOURCE = "eject";
+
+/**
+ * D-217: per-skill pluginRef decision. A skill renders as `${id}:${id}` only
+ * when it has an explicit non-eject source on its SkillReference — i.e. it was
+ * installed from a marketplace. `undefined` source (user-authored local skills
+ * with no SkillConfig entry) and `"eject"` both fall through to bare id.
+ */
+function derivePluginRef(skill: Skill): PluginSkillRef | undefined {
+  if (skill.source === undefined || skill.source === EJECT_SOURCE) return undefined;
+  return `${skill.id}:${skill.id}` as const;
+}
 
 function hashStackConfig(stack: ProjectConfig): string {
   const stackSkillIds = stack.stack ? getStackSkillIds(stack.stack).sort() : [];
@@ -74,7 +88,6 @@ export async function compileAgentForPlugin(
   agent: AgentConfig,
   fallbackRoot: string,
   engine: Liquid,
-  installMode?: InstallMode,
 ): Promise<string> {
   verbose(`Compiling agent: ${name}`);
 
@@ -104,12 +117,13 @@ export async function compileAgentForPlugin(
     output = await readFileOptional(path.join(categoryDir, STANDARD_FILES.OUTPUT_MD), "");
   }
 
-  // In plugin mode, skills are installed as individual plugins — use pluginRef format.
-  // Create new skill objects to avoid mutating the caller's data.
-  const skills =
-    installMode === "plugin"
-      ? agent.skills.map((s) => ({ ...s, pluginRef: `${s.id}:${s.id}` as const }))
-      : agent.skills;
+  // D-217: per-skill pluginRef attachment. Each skill's own `source` decides
+  // whether it renders as `${id}:${id}` (plugin-installed) or bare id (ejected).
+  // This correctly handles mixed-mode agents where some skills are plugin and
+  // others are ejected. Missing `source` (user-authored local skills with no
+  // SkillConfig entry) falls through to bare id — the expected case, not a
+  // silent fallback.
+  const skills = agent.skills.map((s) => ({ ...s, pluginRef: derivePluginRef(s) }));
 
   const preloadedSkills = skills.filter((s) => s.preloaded);
   const dynamicSkills = skills.filter((s) => !s.preloaded);

@@ -433,6 +433,12 @@ export function buildCompileAgents(
     config.skills.filter((s) => s.scope === "global" && !s.excluded).map((s) => s.id),
   );
 
+  // D-217: attach per-skill `source` to each SkillReference so the compiler can
+  // decide between `${id}:${id}` (plugin) and bare id (eject) on a per-skill
+  // basis. Missing entries are intentional — user-authored local skills have no
+  // SkillConfig and legitimately carry no source.
+  const sourceById = new Map<SkillId, string>(config.skills.map((s) => [s.id, s.source]));
+
   const compileAgents: Record<string, CompileAgentConfig> = {};
   for (const agentConfig of activeAgents) {
     if (agents[agentConfig.name]) {
@@ -440,11 +446,13 @@ export function buildCompileAgents(
       if (agentStack) {
         const refs = buildSkillRefsFromConfig(agentStack);
         // Filter out excluded skills; global agents only see global skills (cross-scope safety net)
-        const filteredRefs = refs.filter(
-          (ref) =>
-            !excludedSkillIds.has(ref.id) &&
-            (agentConfig.scope !== "global" || globalSkillIds.has(ref.id)),
-        );
+        const filteredRefs = refs
+          .filter(
+            (ref) =>
+              !excludedSkillIds.has(ref.id) &&
+              (agentConfig.scope !== "global" || globalSkillIds.has(ref.id)),
+          )
+          .map((ref) => ({ ...ref, source: sourceById.get(ref.id) }));
         compileAgents[agentConfig.name] = { skills: filteredRefs };
       } else {
         compileAgents[agentConfig.name] = {};
@@ -892,13 +900,11 @@ async function compileAndWriteAgents(
 
   const compiledAgentNames: AgentName[] = [];
   for (const [name, agent] of typedEntries<AgentName, AgentConfig>(resolvedAgents)) {
-    const output = await compileAgentForPlugin(
-      name,
-      agent,
-      sourceResult.sourcePath,
-      engine,
-      installMode,
-    );
+    // D-217: `installMode` is no longer passed — per-skill `source` on each
+    // SkillReference drives pluginRef attachment inside compileAgentForPlugin.
+    // Parameter retained in this wrapper's signature to preserve caller contracts
+    // (consolidation is a separate follow-up).
+    const output = await compileAgentForPlugin(name, agent, sourceResult.sourcePath, engine);
 
     // Route agent output by scope: global agents go to ~/. project agents to projectDir
     const scope = agentScopeMap?.get(name) ?? "project";

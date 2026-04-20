@@ -58,6 +58,14 @@ export type SkillReference = {
   /** Context-specific description of when to use this skill */
   usage: string;
   preloaded?: boolean;
+  /**
+   * Install source for this skill, threaded from `SkillConfig.source` so the
+   * compiler can decide per-skill between `pluginRef` format and bare id.
+   * `"eject"` means ejected to `.claude/skills/`; any other value (e.g. a
+   * marketplace name) means plugin-installed. Absent when no `SkillConfig`
+   * entry exists (e.g. user-authored local skills).
+   */
+  source?: string;
 };
 
 /** Fully resolved skill used by the compiler (merged from registry.yaml + config.yaml) */
@@ -68,6 +76,12 @@ export type Skill = SkillDefinition & {
   preloaded: boolean;
   /** Fully-qualified plugin reference (e.g., "web-framework-react:web-framework-react") for plugin mode */
   pluginRef?: PluginSkillRef;
+  /**
+   * Install source for this skill, propagated from `SkillReference.source`.
+   * Drives per-skill `pluginRef` attachment in the compiler: `source !== "eject"`
+   * means render as `${id}:${id}`; otherwise render as bare id.
+   */
+  source?: string;
 };
 
 /**
