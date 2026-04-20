@@ -7,6 +7,17 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.138.0] - 2026-04-20
+
+**Scope-toggle UX correctness — dual-scope indicator, tombstone cleanup, symmetric info-panel diff**
+
+- D-223: `populateFromSkillIds` no longer drops excluded-global tombstones when a same-id active entry exists — dual-scope `[P][G]` badges now render after G→P toggle
+- D-224: `toggleSkillScope` / `toggleAgentScope` unconditionally strip same-scope tombstones on P→G. Full G→P→G cycle is now byte-idempotent
+- D-225: info panel diff is symmetric on scope toggle — `(id, scope)` / `(name, scope)` keys for `removedSkills`/`removedAgents` match `prevSkillKeySet`/`prevAgentKeySet`. Tombstone-aware baseline + suppression sets prevent double-render
+- 3 new E2E tests (dual-scope badge, tombstone cleanup cycle, info-panel diff) assert both config state and rendered wizard state
+
+See [changelogs/0.138.0.md](./changelogs/0.138.0.md) for full details.
+
 ## [0.137.0] - 2026-04-20
 
 **Config correctness overhaul — stack preservation, agent dedup, propagation type lockstep**
