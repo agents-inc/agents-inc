@@ -7,6 +7,17 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.137.0] - 2026-04-20
+
+**Config correctness overhaul — stack preservation, agent dedup, propagation type lockstep**
+
+- D-220: per-agent stack curation survives `cc edit`. `shouldIncludeTriple` predicate consults `existingStack` for membership (not just `preloaded`) and admits skills via `newlyAddedSkillIds` + `scopeEligibilityGained` deltas
+- D-221: `mergeConfigs` uses compound `name:scope[:excluded]` keys with authoritative-from-newConfig semantics and a final `uniqueBy` dedup — repairs on-disk agent-array duplicates idempotently
+- D-222: `propagateGlobalChangesToProjects` now merges `selectedAgents` into `combinedConfig` (mirroring the existing `domains` merge), keeping downstream projects' `config.ts::selectedAgents` and `config-types.ts::SelectedAgentName` in lockstep
+- 3 new E2E tests (stack curation, agent-array dedup, propagation type consistency) + shared page-object helpers for scope/diff assertions
+
+See [changelogs/0.137.0.md](./changelogs/0.137.0.md) for full details.
+
 ## [0.136.0] - 2026-04-17
 
 **E2E lifecycle coverage expansion + documentation**
