@@ -1,0 +1,455 @@
+import path from "path";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createE2ESource } from "../helpers/create-e2e-source.js";
+import "../matchers/setup.js";
+import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import {
+  cleanupTempDir,
+  ensureBinaryExists,
+  fileExists,
+  readTestFile,
+} from "../helpers/test-utils.js";
+import {
+  createDualScopeEnv,
+  createGlobalOnlyEnv,
+  type DualScopeEnv,
+} from "../fixtures/dual-scope-helpers.js";
+
+/**
+ * D-221 — Agent scope toggle (project → global) corrupts `agents` array
+ * with duplicate project-scope rows.
+ *
+ * Verifies that toggling an agent's scope via `cc edit` produces a clean
+ * `agents: AgentScopeConfig[]` array in the written `config.ts`:
+ *
+ *   - No `(name, scope)` pair appears more than once.
+ *   - P→G migration removes the project-scope row for the migrated agent.
+ *   - G→P migration produces exactly one project row plus one excluded
+ *     global tombstone — no spurious duplicates.
+ *   - Re-running `cc edit` (unrelated change) does not amplify any
+ *     pre-existing row counts.
+ *
+ * Root cause (per todo/D-221-investigations/05-merger.md):
+ * `config-merger.ts::mergeConfigs` uses a scope-less `agentKey` for
+ * non-excluded entries, so two active rows with the same name but different
+ * scopes collide. When `existingConfig.agents` (loaded with global entries
+ * inlined into the project file) contains a duplicate by name, the
+ * positional `.map()` over existing rewrites every collision slot, preserving
+ * the count while mutating the value.
+ *
+ * These tests are expected to FAIL on current `main` (red phase) and pass
+ * once `mergeConfigs` composes scope into the identity key.
+ */
+
+type AgentRow = {
+  name: string;
+  scope: "project" | "global";
+  excluded?: boolean;
+};
+
+const AGENT_ARRAY_REGEX = /const agents:\s*AgentScopeConfig\[\]\s*=\s*\[([\s\S]*?)\];/;
+const AGENT_ENTRY_REGEX =
+  /\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"scope"\s*:\s*"(project|global)"(?:\s*,\s*"excluded"\s*:\s*(true|false))?\s*\}/g;
+
+/**
+ * Parses the `const agents: AgentScopeConfig[] = [...]` block out of a
+ * CLI-written `config.ts` and returns the entries as typed rows.
+ *
+ * Throws via expect() when the block is missing (fails the test cleanly
+ * rather than silently returning []).
+ */
+function extractAgentsArray(configContent: string): AgentRow[] {
+  const blockMatch = configContent.match(AGENT_ARRAY_REGEX);
+  expect(
+    blockMatch,
+    "Expected config.ts to contain a `const agents: AgentScopeConfig[] = [...]` declaration",
+  ).not.toBeNull();
+
+  const rows: AgentRow[] = [];
+  const body = blockMatch![1];
+  for (const m of body.matchAll(AGENT_ENTRY_REGEX)) {
+    const [, name, scope, excludedRaw] = m;
+    rows.push({
+      name,
+      scope: scope as "project" | "global",
+      ...(excludedRaw === "true" ? { excluded: true } : {}),
+    });
+  }
+  return rows;
+}
+
+/**
+ * Counts occurrences of each `(name, scope)` pair across the agents array.
+ * Returned Map keys are `${name}:${scope}`; values are counts.
+ *
+ * Per D-221 acceptance criteria, every key MUST have a count of 1 — duplicate
+ * pairs (regardless of `excluded`) indicate corruption.
+ */
+function countByNameScope(rows: AgentRow[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const key = `${row.name}:${row.scope}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Returns the list of `(name, scope)` pairs that appear more than once.
+ * Used to build explicit failure messages so the assertion output points
+ * directly at the corrupted rows.
+ */
+function findDuplicateNameScopePairs(rows: AgentRow[]): string[] {
+  const counts = countByNameScope(rows);
+  const duplicates: string[] = [];
+  for (const [key, count] of counts) {
+    if (count > 1) duplicates.push(`${key} × ${count}`);
+  }
+  return duplicates;
+}
+
+describe("agent scope toggle keeps agents array duplicate-free", () => {
+  let sourceDir: string;
+  let sourceTempDir: string;
+
+  beforeAll(async () => {
+    await ensureBinaryExists();
+    const source = await createE2ESource();
+    sourceDir = source.sourceDir;
+    sourceTempDir = source.tempDir;
+  }, TIMEOUTS.SETUP * 2);
+
+  afterAll(async () => {
+    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
+  });
+
+  describe("Scenario A — P→G toggle produces no duplicates", () => {
+    let env: DualScopeEnv | undefined;
+    let wizard: EditWizard | undefined;
+
+    afterEach(async () => {
+      await wizard?.destroy();
+      wizard = undefined;
+      await env?.destroy();
+      env = undefined;
+    });
+
+    it(
+      "P→G on api-developer removes project row, keeps exactly one global row, no dup (name, scope) pairs",
+      { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+      async () => {
+        // ================================================================
+        // Phase 1: Build mixed-scope project via the CLI.
+        //   - global config: web-developer:global, api-developer:global
+        //   - project config (inlined): web-developer:global, api-developer:project
+        //     plus api-developer:global:excluded tombstone
+        // ================================================================
+        env = await createDualScopeEnv(sourceDir, sourceTempDir);
+        const { fakeHome, projectDir } = env;
+
+        const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+        const projectAgentFile = path.join(
+          projectDir,
+          DIRS.CLAUDE,
+          DIRS.AGENTS,
+          "api-developer.md",
+        );
+        const globalAgentFile = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
+
+        // Pre-condition: api-developer is at project scope and was compiled
+        // into the project agents dir by the dual-scope setup.
+        expect(
+          await fileExists(projectAgentFile),
+          "Pre-condition: api-developer.md must exist in project agents dir after dual-scope setup",
+        ).toBe(true);
+
+        // ================================================================
+        // Phase 2: Launch edit wizard and toggle api-developer P→G.
+        // ================================================================
+        wizard = await EditWizard.launch({
+          projectDir,
+          source: { sourceDir, tempDir: sourceTempDir },
+          env: { HOME: fakeHome },
+          rows: 60,
+          cols: 120,
+        });
+
+        const sources = await wizard.build.passThroughAllDomains();
+        await sources.waitForReady();
+        const agents = await sources.advance();
+
+        await agents.navigateCursorToAgent("API Developer");
+        await agents.toggleScopeOnFocusedAgent();
+        const confirm = await agents.advance("edit");
+
+        const result = await confirm.confirm();
+        expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+        await result.destroy();
+
+        // ================================================================
+        // Phase 3: Parse config.ts::agents and assert duplicate-free shape.
+        // ================================================================
+        const projectConfigAfter = await readTestFile(projectConfigPath);
+        const rows = extractAgentsArray(projectConfigAfter);
+
+        // No (name, scope) pair appears more than once, anywhere.
+        const duplicates = findDuplicateNameScopePairs(rows);
+        expect(
+          duplicates,
+          `D-221: agents array must not contain duplicate (name, scope) pairs, got: ${duplicates.join(
+            ", ",
+          )}\nFull agents array: ${JSON.stringify(rows, null, 2)}`,
+        ).toStrictEqual([]);
+
+        // The migrated agent appears EXACTLY once and only at global scope.
+        const apiDevRows = rows.filter((r) => r.name === "api-developer");
+        expect(
+          apiDevRows,
+          `api-developer must appear exactly once at global scope after P→G. Got: ${JSON.stringify(apiDevRows)}`,
+        ).toStrictEqual([{ name: "api-developer", scope: "global" }]);
+
+        // The project-scope row is removed — not preserved as stale data.
+        const apiDevProjectRows = rows.filter(
+          (r) => r.name === "api-developer" && r.scope === "project",
+        );
+        expect(
+          apiDevProjectRows,
+          "P→G migration must REMOVE the project-scope row for the migrated agent",
+        ).toStrictEqual([]);
+
+        // web-developer is untouched: exactly one row, scope global.
+        const webDevRows = rows.filter((r) => r.name === "web-developer");
+        expect(
+          webDevRows,
+          `web-developer must appear exactly once with its original (global) scope. Got: ${JSON.stringify(webDevRows)}`,
+        ).toStrictEqual([{ name: "web-developer", scope: "global" }]);
+
+        // ================================================================
+        // Phase 4: Filesystem assertions — compiled agent moved P→G.
+        // ================================================================
+        expect(
+          await fileExists(globalAgentFile),
+          "P→G: api-developer.md must exist in GLOBAL agents dir after migration",
+        ).toBe(true);
+        expect(
+          await fileExists(projectAgentFile),
+          "P→G: api-developer.md must NOT exist in project agents dir after migration",
+        ).toBe(false);
+      },
+    );
+  });
+
+  describe("Scenario B — repeated edits do not amplify duplicate rows", () => {
+    let env: DualScopeEnv | undefined;
+    let wizard1: EditWizard | undefined;
+    let wizard2: EditWizard | undefined;
+
+    afterEach(async () => {
+      await wizard1?.destroy();
+      wizard1 = undefined;
+      await wizard2?.destroy();
+      wizard2 = undefined;
+      await env?.destroy();
+      env = undefined;
+    });
+
+    it(
+      "P→G then second edit with a skill addition: agents array still has exactly one entry per (name, scope)",
+      { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+      async () => {
+        // ================================================================
+        // Phase 1: mixed-scope project (same as Scenario A baseline).
+        // ================================================================
+        env = await createDualScopeEnv(sourceDir, sourceTempDir);
+        const { fakeHome, projectDir } = env;
+        const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+
+        // ================================================================
+        // Phase 2: First edit — P→G on api-developer.
+        // ================================================================
+        wizard1 = await EditWizard.launch({
+          projectDir,
+          source: { sourceDir, tempDir: sourceTempDir },
+          env: { HOME: fakeHome },
+          rows: 60,
+          cols: 120,
+        });
+
+        const sources1 = await wizard1.build.passThroughAllDomains();
+        await sources1.waitForReady();
+        const agents1 = await sources1.advance();
+        await agents1.navigateCursorToAgent("API Developer");
+        await agents1.toggleScopeOnFocusedAgent();
+        const confirm1 = await agents1.advance("edit");
+        const result1 = await confirm1.confirm();
+        expect(await result1.exitCode).toBe(EXIT_CODES.SUCCESS);
+        await result1.destroy();
+
+        const rowsAfterFirstEdit = extractAgentsArray(await readTestFile(projectConfigPath));
+        const duplicatesAfterFirst = findDuplicateNameScopePairs(rowsAfterFirstEdit);
+        expect(
+          duplicatesAfterFirst,
+          `After first edit: no duplicate (name, scope) pairs allowed. Got: ${duplicatesAfterFirst.join(", ")}`,
+        ).toStrictEqual([]);
+
+        // ================================================================
+        // Phase 3: Second edit — add one skill (unrelated change) to force
+        // a write path execution. If merge-step-corruption is present it
+        // would amplify here. We pick `web-state-zustand` because it is
+        // present in the E2E source and not in the initial stack.
+        // ================================================================
+        wizard2 = await EditWizard.launch({
+          projectDir,
+          source: { sourceDir, tempDir: sourceTempDir },
+          env: { HOME: fakeHome },
+          rows: 60,
+          cols: 120,
+        });
+        await wizard2.build.selectSkill("web-state-zustand");
+        const sources2 = await wizard2.build.passThroughAllDomainsGeneric();
+        await sources2.waitForReady();
+        const agents2 = await sources2.advance();
+        const confirm2 = await agents2.acceptDefaults("edit");
+        const result2 = await confirm2.confirm();
+        expect(await result2.exitCode).toBe(EXIT_CODES.SUCCESS);
+        await result2.destroy();
+
+        // ================================================================
+        // Phase 4: After the second edit, the agents array must still
+        // contain exactly one entry per (name, scope) pair — corruption
+        // must NOT self-amplify across edit cycles.
+        // ================================================================
+        const rowsAfterSecondEdit = extractAgentsArray(await readTestFile(projectConfigPath));
+        const duplicatesAfterSecond = findDuplicateNameScopePairs(rowsAfterSecondEdit);
+        expect(
+          duplicatesAfterSecond,
+          `After second edit: corruption must not self-amplify. Duplicates: ${duplicatesAfterSecond.join(
+            ", ",
+          )}\nFull agents array: ${JSON.stringify(rowsAfterSecondEdit, null, 2)}`,
+        ).toStrictEqual([]);
+
+        // Specific invariant: api-developer still at global only, exactly once.
+        const apiDevRows = rowsAfterSecondEdit.filter((r) => r.name === "api-developer");
+        expect(apiDevRows).toStrictEqual([{ name: "api-developer", scope: "global" }]);
+
+        // web-developer still at global only, exactly once.
+        const webDevRows = rowsAfterSecondEdit.filter((r) => r.name === "web-developer");
+        expect(webDevRows).toStrictEqual([{ name: "web-developer", scope: "global" }]);
+      },
+    );
+  });
+
+  describe("Scenario C — G→P toggle produces no duplicates", () => {
+    let env: DualScopeEnv | undefined;
+    let wizard: EditWizard | undefined;
+
+    afterEach(async () => {
+      await wizard?.destroy();
+      wizard = undefined;
+      await env?.destroy();
+      env = undefined;
+    });
+
+    it(
+      "G→P on api-developer produces one project row + one global tombstone, other agents unchanged, no dup pairs",
+      { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+      async () => {
+        // ================================================================
+        // Phase 1: All agents at global scope in both global and project.
+        // ================================================================
+        env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+        const { fakeHome, projectDir } = env;
+
+        const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+        const projectAgentFile = path.join(
+          projectDir,
+          DIRS.CLAUDE,
+          DIRS.AGENTS,
+          "api-developer.md",
+        );
+        const globalAgentFile = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
+
+        expect(
+          await fileExists(globalAgentFile),
+          "Pre-condition: api-developer.md must exist in global agents dir after all-global setup",
+        ).toBe(true);
+
+        // ================================================================
+        // Phase 2: Launch edit and toggle api-developer G→P.
+        // ================================================================
+        wizard = await EditWizard.launch({
+          projectDir,
+          source: { sourceDir, tempDir: sourceTempDir },
+          env: { HOME: fakeHome },
+          rows: 60,
+          cols: 120,
+        });
+
+        const sources = await wizard.build.passThroughAllDomains();
+        await sources.waitForReady();
+        const agents = await sources.advance();
+        await agents.navigateCursorToAgent("API Developer");
+        await agents.toggleScopeOnFocusedAgent();
+        const confirm = await agents.advance("edit");
+        const result = await confirm.confirm();
+        expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+        await result.destroy();
+
+        // ================================================================
+        // Phase 3: Config assertions.
+        // ================================================================
+        const projectConfigAfter = await readTestFile(projectConfigPath);
+        const rows = extractAgentsArray(projectConfigAfter);
+
+        const duplicates = findDuplicateNameScopePairs(rows);
+        expect(
+          duplicates,
+          `D-221: agents array must not contain duplicate (name, scope) pairs after G→P. Got: ${duplicates.join(
+            ", ",
+          )}\nFull agents array: ${JSON.stringify(rows, null, 2)}`,
+        ).toStrictEqual([]);
+
+        // api-developer appears exactly twice — as active project row and
+        // global tombstone — with distinct (name, scope) keys.
+        const apiDevRows = rows.filter((r) => r.name === "api-developer");
+        const apiDevActiveProject = apiDevRows.filter(
+          (r) => r.scope === "project" && !r.excluded,
+        );
+        const apiDevGlobalTombstone = apiDevRows.filter(
+          (r) => r.scope === "global" && r.excluded === true,
+        );
+        expect(
+          apiDevActiveProject,
+          "G→P: api-developer must have exactly one active project row",
+        ).toStrictEqual([{ name: "api-developer", scope: "project" }]);
+        expect(
+          apiDevGlobalTombstone,
+          "G→P: api-developer must have exactly one global:excluded tombstone",
+        ).toStrictEqual([{ name: "api-developer", scope: "global", excluded: true }]);
+
+        // web-developer is untouched — exactly one entry at global.
+        const webDevRows = rows.filter((r) => r.name === "web-developer");
+        expect(
+          webDevRows,
+          `web-developer must appear exactly once at global scope. Got: ${JSON.stringify(webDevRows)}`,
+        ).toStrictEqual([{ name: "web-developer", scope: "global" }]);
+
+        // ================================================================
+        // Phase 4: Filesystem — G→P is additive.
+        //   - Compiled api-developer.md NOW in project agents dir.
+        //   - Global api-developer.md STILL present (tombstone masks it for
+        //     this project but the global file is not deleted).
+        // ================================================================
+        expect(
+          await fileExists(projectAgentFile),
+          "G→P: api-developer.md must exist in project agents dir after migration",
+        ).toBe(true);
+        expect(
+          await fileExists(globalAgentFile),
+          "G→P: api-developer.md must STILL exist in global agents dir (G→P is additive)",
+        ).toBe(true);
+      },
+    );
+  });
+});

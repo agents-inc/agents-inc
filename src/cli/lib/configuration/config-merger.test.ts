@@ -836,7 +836,12 @@ describe("config-merger", () => {
         });
       });
 
-      it("should merge correctly when existing config has excluded entries", () => {
+      it("should drop existing tombstone when new config is authoritative for the id (active only)", () => {
+        // newConfig carries only the active project entry — it does NOT carry
+        // the existing tombstone forward. Per D-221 semantics, newConfig is
+        // authoritative for every id it references: the stale tombstone is
+        // dropped on the next merge because the wizard did not emit it.
+        // Skills at unrelated ids remain untouched.
         const newConfig = buildProjectConfig({
           name: "project",
           skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
@@ -855,23 +860,70 @@ describe("config-merger", () => {
 
         const result = mergeConfigs(newConfig, existingConfig);
 
-        // Existing excluded entry preserved, new active entry preserved, existing active entry preserved
+        // Only the new active entry for react survives; the existing tombstone
+        // is dropped because newConfig did not re-emit it.
+        const reactEntries = result.skills.filter((s) => s.id === "web-framework-react");
+        expect(reactEntries).toStrictEqual([
+          {
+            id: "web-framework-react",
+            scope: "project",
+            source: "eject",
+          },
+        ]);
+        // Existing vitest entry preserved — id is not referenced by newConfig.
+        expect(result.skills.find((s) => s.id === "web-testing-vitest")).toStrictEqual({
+          id: "web-testing-vitest",
+          scope: "global",
+          source: "agents-inc",
+        });
+      });
+
+      it("should preserve dual-scope tombstone when new config explicitly carries it", () => {
+        // Production wizard flows (generateProjectConfigFromSkills) emit BOTH
+        // the active entry and the tombstone when a dual-scope install is
+        // legitimate. In that case the merger preserves both because new is
+        // authoritative for the id and new explicitly lists both shapes.
+        const newConfig = buildProjectConfig({
+          name: "project",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react"], {
+              scope: "project",
+              source: "eject",
+            }),
+            ...buildSkillConfigs(["web-framework-react"], {
+              scope: "global",
+              source: "agents-inc",
+              excluded: true,
+            }),
+          ],
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react"], {
+              scope: "global",
+              source: "agents-inc",
+              excluded: true,
+            }),
+            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+          ],
+        });
+
+        const result = mergeConfigs(newConfig, existingConfig);
+
         const reactEntries = result.skills.filter((s) => s.id === "web-framework-react");
         expect(reactEntries).toHaveLength(2);
-        const excludedEntry = reactEntries.find((s) => s.excluded);
-        expect(excludedEntry).toStrictEqual({
+        expect(reactEntries.find((s) => !s.excluded)).toStrictEqual({
+          id: "web-framework-react",
+          scope: "project",
+          source: "eject",
+        });
+        expect(reactEntries.find((s) => s.excluded)).toStrictEqual({
           id: "web-framework-react",
           scope: "global",
           source: "agents-inc",
           excluded: true,
         });
-        const activeEntry = reactEntries.find((s) => !s.excluded);
-        expect(activeEntry).toStrictEqual({
-          id: "web-framework-react",
-          scope: "project",
-          source: "eject",
-        });
-        // Existing vitest entry preserved
         expect(result.skills.find((s) => s.id === "web-testing-vitest")).toStrictEqual({
           id: "web-testing-vitest",
           scope: "global",
@@ -938,7 +990,13 @@ describe("config-merger", () => {
         });
       });
 
-      it("should merge correctly when existing config has excluded agent entries", () => {
+      it("should drop existing tombstone when new config is authoritative for the name (active only)", () => {
+        // newConfig carries only the active project entry — it does NOT carry
+        // the existing global:excluded tombstone forward. Per D-221 semantics,
+        // newConfig is authoritative for every name it references: the stale
+        // tombstone is dropped on the next merge because the wizard did not
+        // emit it (this is exactly how P→G scope migration cleans up).
+        // Agents at unrelated names remain untouched.
         const newConfig = buildProjectConfig({
           name: "project",
           agents: buildAgentConfigs(["api-developer"]),
@@ -955,21 +1013,57 @@ describe("config-merger", () => {
 
         const result = mergeConfigs(newConfig, existingConfig);
 
-        // Existing excluded entry preserved, new active entry preserved, existing active entry preserved
+        // Only the new active entry for api-developer survives; the existing
+        // tombstone is dropped because newConfig did not re-emit it.
+        const apiDevEntries = result.agents.filter((a) => a.name === "api-developer");
+        expect(apiDevEntries).toStrictEqual([
+          {
+            name: "api-developer",
+            scope: "project",
+          },
+        ]);
+        // Existing web-developer entry preserved — name is not referenced by newConfig.
+        expect(result.agents.find((a) => a.name === "web-developer")).toStrictEqual({
+          name: "web-developer",
+          scope: "global",
+        });
+      });
+
+      it("should preserve dual-scope tombstone when new config explicitly carries it", () => {
+        // Production wizard flows (toggleAgentScope G→P) emit BOTH the active
+        // project entry and the global:excluded tombstone. In that case the
+        // merger preserves both because new is authoritative for the name
+        // and explicitly lists both shapes — exactly the G→P E2E contract.
+        const newConfig = buildProjectConfig({
+          name: "project",
+          agents: [
+            ...buildAgentConfigs(["api-developer"]),
+            ...buildAgentConfigs(["api-developer"], { scope: "global", excluded: true }),
+          ],
+          skills: [],
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          agents: [
+            ...buildAgentConfigs(["api-developer"], { scope: "global", excluded: true }),
+            ...buildAgentConfigs(["web-developer"], { scope: "global" }),
+          ],
+          skills: [],
+        });
+
+        const result = mergeConfigs(newConfig, existingConfig);
+
         const apiDevEntries = result.agents.filter((a) => a.name === "api-developer");
         expect(apiDevEntries).toHaveLength(2);
-        const excludedEntry = apiDevEntries.find((a) => a.excluded);
-        expect(excludedEntry).toStrictEqual({
+        expect(apiDevEntries.find((a) => !a.excluded)).toStrictEqual({
+          name: "api-developer",
+          scope: "project",
+        });
+        expect(apiDevEntries.find((a) => a.excluded)).toStrictEqual({
           name: "api-developer",
           scope: "global",
           excluded: true,
         });
-        const activeEntry = apiDevEntries.find((a) => !a.excluded);
-        expect(activeEntry).toStrictEqual({
-          name: "api-developer",
-          scope: "project",
-        });
-        // Existing web-developer entry preserved
         expect(result.agents.find((a) => a.name === "web-developer")).toStrictEqual({
           name: "web-developer",
           scope: "global",
