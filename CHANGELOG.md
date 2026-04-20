@@ -7,6 +7,17 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.139.0] - 2026-04-20
+
+**Backlog grooming and demo assets — no product code changes**
+
+- 2 new plan files (D-218 plugin-install hardening, D-226 E2E sandbox HOME collapse)
+- 6 new backlog tickets filed (D-227 through D-232)
+- Status notes added to D-216, D-217, D-219, and the D-220–D-225 plans (now shipped)
+- `assets/demo.tape` + `assets/theme.json` for a VHS-recorded README demo
+
+See [changelogs/0.139.0.md](./changelogs/0.139.0.md) for full details.
+
 ## [0.138.0] - 2026-04-20
 
 **Scope-toggle UX correctness — dual-scope indicator, tombstone cleanup, symmetric info-panel diff**
