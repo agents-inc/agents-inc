@@ -92,6 +92,9 @@ vi.mock("../configuration/config-generator", async (importOriginal) => {
     buildStackProperty: vi.fn().mockReturnValue({}),
     // Use real splitConfigByScope for scope-aware config writing
     splitConfigByScope: original.splitConfigByScope,
+    // Use real scopeEligibilityKey — pure string helper used by buildEjectConfig's
+    // D-220 delta computation.
+    scopeEligibilityKey: original.scopeEligibilityKey,
   };
 });
 

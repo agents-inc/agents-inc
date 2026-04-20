@@ -37,7 +37,35 @@ type StackBuildInputs = {
   skillScope: Map<SkillId, "project" | "global">;
   agentScope: Map<AgentName, "project" | "global">;
   existingStack: Partial<Record<AgentName, StackAgentConfig>>;
+  /**
+   * Skills that are new to this session's top-level selection (not in the prior
+   * `existing.config.skills`). When `undefined`, the D-220 per-agent curation
+   * preservation rule is disabled and every scope-compatible skill lands on
+   * every existing agent (legacy behavior). When defined (possibly empty), the
+   * preservation rule applies: skills NOT in an agent's prior stack entry and
+   * NOT in this set are omitted from that agent's stack — respecting the
+   * user's curation.
+   */
+  newlyAddedSkillIds?: ReadonlySet<SkillId>;
+  /**
+   * Keys of `(agent, skillId)` pairs whose scope-compatibility was GAINED this
+   * session — either the skill's scope was flipped so it now reaches this
+   * agent, or the agent's scope was flipped so previously-filtered skills now
+   * reach it. Parallel to `newlyAddedSkillIds`: when the caller opts into
+   * D-220 preservation semantics, this set admits triples that the skill-id
+   * diff would miss. Keys are produced by `scopeEligibilityKey()`.
+   */
+  scopeEligibilityGained?: ReadonlySet<string>;
 };
+
+/**
+ * Encodes an `(agent, skillId)` pair as a single string for set-membership
+ * lookups. Both arguments are typed string unions so a `|` delimiter produces
+ * a unique, stable key.
+ */
+export function scopeEligibilityKey(agent: AgentName, skillId: SkillId): string {
+  return `${agent}|${skillId}`;
+}
 
 function wasPreviouslyPreloaded(
   existingStack: Partial<Record<AgentName, StackAgentConfig>>,
@@ -79,11 +107,58 @@ function isScopeCompatible(
   return true;
 }
 
+/**
+ * Decides whether a given `(agent, category, skillId)` triple lands in the
+ * agent's stack for this save. The scope filter has already run in the caller
+ * — this function only enforces D-220's per-agent curation rule.
+ *
+ * Branches:
+ *   - `agent ∉ existingStack`  → seed branch (new agent); every scope-compatible
+ *     skill lands with `preloaded: false` (or preserved if present for another
+ *     reason, which cannot happen here).
+ *   - `agent ∈ existingStack`  → preservation branch:
+ *       * skillId was in `existingStack[agent][category]` → KEEP (idempotent).
+ *       * skillId ∈ `newlyAddedSkillIds` OR `(agent, skillId)` ∈
+ *         `scopeEligibilityGained` → APPEND (user's session-level addition or
+ *         scope-compat flip).
+ *       * otherwise → OMIT (respect user's prior per-agent curation removal).
+ *
+ * Legacy path: when `newlyAddedSkillIds` is not provided, the D-220 check is
+ * disabled — every scope-compatible skill lands. This preserves the contract
+ * of callers that pre-date D-220.
+ */
+function shouldIncludeTriple(
+  agent: AgentName,
+  category: Category,
+  skillId: SkillId,
+  inputs: StackBuildInputs,
+): boolean {
+  // Legacy path: callers that don't opt in keep the pre-D-220 behavior.
+  if (inputs.newlyAddedSkillIds === undefined) return true;
+
+  const agentExistingStack = inputs.existingStack[agent];
+  if (agentExistingStack === undefined) {
+    // Seeding branch: agent is new this session → full ownership-derived stack.
+    return true;
+  }
+
+  const priorCategory = agentExistingStack[category];
+  if (priorCategory && priorCategory.some((a) => a.id === skillId)) return true;
+
+  if (inputs.newlyAddedSkillIds.has(skillId)) return true;
+  const scopeEligibility = inputs.scopeEligibilityGained;
+  if (scopeEligibility && scopeEligibility.has(scopeEligibilityKey(agent, skillId))) {
+    return true;
+  }
+  return false;
+}
+
 function buildAgentStack(agent: AgentName, inputs: StackBuildInputs): StackAgentConfig | undefined {
   const agentStack: StackAgentConfig = {};
   for (const [category, skillIds] of inputs.activeSkillsByCategory) {
     const assignments = skillIds
       .filter((id) => isScopeCompatible(id, agent, inputs.skillScope, inputs.agentScope))
+      .filter((id) => shouldIncludeTriple(agent, category, id, inputs))
       .map<SkillAssignment>((id) => ({
         id,
         preloaded: wasPreviouslyPreloaded(inputs.existingStack, agent, category, id),
@@ -144,6 +219,22 @@ export function generateProjectConfigFromSkills(
     skillConfigs?: SkillConfig[];
     agentConfigs?: AgentScopeConfig[];
     existingStack?: Partial<Record<AgentName, StackAgentConfig>>;
+    /**
+     * Skills new to this session (not present in the prior on-disk config).
+     * Passing this field (even as an empty array) opts into D-220's per-agent
+     * curation preservation: existing agents' stack entries are treated as
+     * authoritative, and skills absent from a given agent's prior stack are
+     * only appended when they appear in this set (or in `scopeEligibilityGained`).
+     * When undefined, behavior falls back to pre-D-220 semantics.
+     */
+    newlyAddedSkillIds?: readonly SkillId[];
+    /**
+     * `(agent, skillId)` keys whose scope-compat transitioned from incompatible
+     * to compatible this session. Admits scope-flip cases that `newlyAddedSkillIds`
+     * (keyed by skill id only) cannot express. Keys are built with
+     * {@link scopeEligibilityKey}.
+     */
+    scopeEligibilityGained?: ReadonlySet<string>;
   },
 ): ProjectConfig {
   const agentList = options?.selectedAgents ? [...options.selectedAgents].sort() : [];
@@ -241,12 +332,23 @@ export function generateProjectConfigFromSkills(
     agentConfigs.filter((a) => !a.excluded).map((a) => [a.name, a.scope]),
   );
 
+  // Opt-in D-220 preservation: only when the caller provides the delta set.
+  // `newlyAddedSkillIds === undefined` triggers legacy seed-everything behavior
+  // (preserves pre-D-220 callers and existing unit tests that set up
+  // `existingStack` without the new field).
+  const newlyAddedSkillIdsSet: ReadonlySet<SkillId> | undefined =
+    options?.newlyAddedSkillIds === undefined ? undefined : new Set(options.newlyAddedSkillIds);
+
   const stackProperty = buildStackForSelection({
     agentList,
     activeSkillsByCategory,
     skillScope,
     agentScope,
     existingStack: options?.existingStack ?? {},
+    ...(newlyAddedSkillIdsSet !== undefined && { newlyAddedSkillIds: newlyAddedSkillIdsSet }),
+    ...(options?.scopeEligibilityGained !== undefined && {
+      scopeEligibilityGained: options.scopeEligibilityGained,
+    }),
   });
 
   const skills: SkillConfig[] =

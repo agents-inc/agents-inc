@@ -34,7 +34,7 @@ import { loadStackById, compileAgentForPlugin, getStackSkillIds } from "../stack
 import { resolveAgents, buildSkillRefsFromConfig } from "../resolver";
 import { createLiquidEngine } from "../compiler";
 import { generateProjectConfigFromSkills, buildStackProperty } from "../configuration";
-import { splitConfigByScope } from "../configuration/config-generator";
+import { scopeEligibilityKey, splitConfigByScope } from "../configuration/config-generator";
 import { generateConfigSource, type ConfigSourceOptions } from "../configuration/config-writer";
 import { generateConfigTypesSource } from "../configuration/config-types-writer";
 import { ensureDir, fileExists, writeFile } from "../../utils/fs";
@@ -164,6 +164,93 @@ async function loadMergedAgents(sourcePath: string): Promise<Record<AgentName, A
   return { ...cliAgents, ...sourceAgents };
 }
 
+/**
+ * Returns the ids of skills active in the CURRENT wizard selection that were
+ * NOT active in the persisted PRIOR config. Filters `excluded: true` on both
+ * sides — excluded entries don't participate in stack membership, so flipping
+ * a skill from excluded back to active counts as "newly added".
+ *
+ * `priorSkills === undefined` (first init) collapses the prior active set to
+ * empty — every current skill is new this session. The generator's seeding
+ * branch is what actually produces useful output in that case, so treating
+ * every skill as "new" is safe.
+ */
+function computeNewlyAddedSkillIds(
+  currentSkills: readonly SkillConfig[],
+  priorSkills: readonly SkillConfig[] | undefined,
+): readonly SkillId[] {
+  const priorActiveIds = new Set(
+    (priorSkills ?? []).filter((s) => !s.excluded).map((s) => s.id),
+  );
+  const currentActiveIds = currentSkills.filter((s) => !s.excluded).map((s) => s.id);
+  return unique(currentActiveIds.filter((id) => !priorActiveIds.has(id)));
+}
+
+/**
+ * Returns `(agent, skillId)` keys whose scope-compatibility was GAINED this
+ * session — the pair is scope-compatible now but was NOT scope-compatible (or
+ * was absent entirely) in the persisted config. Admits pure scope-flip cases
+ * that `computeNewlyAddedSkillIds` (keyed by id only) cannot express.
+ *
+ * Scope rule (mirrors `isScopeCompatible`): a project-scoped skill is never
+ * compatible with a global-scoped agent; every other combination is compatible.
+ *
+ * Keys are produced by `scopeEligibilityKey` so lookup membership matches the
+ * generator's internal set-membership check.
+ */
+function computeScopeEligibilityGained(
+  currentSkills: readonly SkillConfig[],
+  currentAgents: readonly AgentScopeConfig[],
+  priorSkills: readonly SkillConfig[] | undefined,
+  priorAgents: readonly AgentScopeConfig[] | undefined,
+): ReadonlySet<string> {
+  const priorSkillScope = buildScopeLookup(priorSkills);
+  const priorAgentScope = buildAgentScopeLookup(priorAgents);
+
+  const gained = new Set<string>();
+  const activeCurrentSkills = currentSkills.filter((s) => !s.excluded);
+  const activeCurrentAgents = currentAgents.filter((a) => !a.excluded);
+
+  for (const agent of activeCurrentAgents) {
+    for (const skill of activeCurrentSkills) {
+      const nowCompatible = !(skill.scope === "project" && agent.scope === "global");
+      if (!nowCompatible) continue;
+
+      const priorSkillScopeValue = priorSkillScope.get(skill.id);
+      const priorAgentScopeValue = priorAgentScope.get(agent.name);
+      const wasCompatiblePreviously =
+        priorSkillScopeValue !== undefined &&
+        priorAgentScopeValue !== undefined &&
+        !(priorSkillScopeValue === "project" && priorAgentScopeValue === "global");
+
+      if (!wasCompatiblePreviously) {
+        gained.add(scopeEligibilityKey(agent.name, skill.id));
+      }
+    }
+  }
+  return gained;
+}
+
+function buildScopeLookup(
+  entries: readonly SkillConfig[] | undefined,
+): Map<SkillId, "project" | "global"> {
+  const map = new Map<SkillId, "project" | "global">();
+  for (const s of entries ?? []) {
+    if (!s.excluded) map.set(s.id, s.scope);
+  }
+  return map;
+}
+
+function buildAgentScopeLookup(
+  entries: readonly AgentScopeConfig[] | undefined,
+): Map<AgentName, "project" | "global"> {
+  const map = new Map<AgentName, "project" | "global">();
+  for (const a of entries ?? []) {
+    if (!a.excluded) map.set(a.name, a.scope);
+  }
+  return map;
+}
+
 async function buildEjectConfig(
   wizardResult: WizardResultV2,
   sourceResult: SourceLoadResult,
@@ -193,6 +280,28 @@ async function buildEjectConfig(
     Record<AgentName, StackAgentConfig>
   >;
 
+  // D-220 delta: skills that are new to this session's top-level selection
+  // relative to the persisted config. The diff is filtered to active (non-excluded)
+  // skills on BOTH sides — excluded entries are not "present" from the perspective
+  // of stack membership, so flipping an exclusion back to active should register
+  // as a newly-added skill. `existing === null` (first init) collapses to "every
+  // skill is new this session", which the generator's seeding branch tolerates.
+  const newlyAddedSkillIds = computeNewlyAddedSkillIds(
+    wizardResult.skills,
+    existing?.config.skills,
+  );
+
+  // D-220 scope-eligibility delta: `(agent, skillId)` pairs that are scope-compatible
+  // NOW but were not scope-compatible in the persisted config (either the skill's
+  // scope was flipped, the agent's scope was flipped, or one of them was absent
+  // before). Admits the scope-flip case that a skill-id-only diff would miss.
+  const scopeEligibilityGained = computeScopeEligibilityGained(
+    wizardResult.skills,
+    wizardResult.agentConfigs,
+    existing?.config.skills,
+    existing?.config.agents,
+  );
+
   let localConfig: ProjectConfig;
 
   // Pass user's agent selection and skill configs to config generator.
@@ -204,10 +313,14 @@ async function buildEjectConfig(
     skillConfigs: SkillConfig[];
     agentConfigs: AgentScopeConfig[];
     existingStack: Partial<Record<AgentName, StackAgentConfig>>;
+    newlyAddedSkillIds: readonly SkillId[];
+    scopeEligibilityGained: ReadonlySet<string>;
   } = {
     skillConfigs: wizardResult.skills,
     agentConfigs: wizardResult.agentConfigs,
     existingStack,
+    newlyAddedSkillIds,
+    scopeEligibilityGained,
     ...(wizardResult.selectedAgents.length > 0 && {
       selectedAgents: wizardResult.selectedAgents,
     }),
