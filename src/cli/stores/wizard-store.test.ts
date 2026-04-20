@@ -1087,27 +1087,33 @@ describe("WizardStore", () => {
       expect(excludedConfigs[0].excluded).toBe(true);
     });
 
-    it("should not create duplicate entries when excluded skill ID is also in skillIds", () => {
+    it("preserves excluded tombstone when active entry exists for same skill at different scope", () => {
       const store = useWizardStore.getState();
 
       initializeMatrix(REACT_HONO_FRAMEWORK_API_MATRIX);
 
+      // D-223: project-scope active + global-scope excluded tombstone — dual-scope state.
+      // populateFromSkillIds must preserve both so buildCategoriesForDomain can render dual badges.
       const savedConfigs: SkillConfig[] = [
+        ...buildSkillConfigs(["web-framework-react"]),
         ...buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
           excluded: true,
+          source: "agents-inc",
         }),
       ];
 
-      // Pass the same skill ID that is excluded in savedConfigs
       store.populateFromSkillIds(["web-framework-react", "api-framework-hono"], savedConfigs);
 
       const { skillConfigs } = useWizardStore.getState();
       const reactConfigs = skillConfigs.filter((sc) => sc.id === "web-framework-react");
-      // Should have exactly one entry for react (active, not excluded)
-      expect(reactConfigs).toHaveLength(1);
-      expect(reactConfigs[0].excluded).toBeUndefined();
+      expect(reactConfigs).toHaveLength(2);
+
+      const active = reactConfigs.find((sc) => !sc.excluded);
+      const tombstone = reactConfigs.find((sc) => sc.excluded);
+      expect(active?.scope).toBe("project");
+      expect(tombstone?.scope).toBe("global");
+      expect(tombstone?.excluded).toBe(true);
     });
 
     it("should prefer project-scoped entry when savedConfigs has duplicate skill with both scopes", () => {

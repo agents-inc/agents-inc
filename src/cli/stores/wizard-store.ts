@@ -777,10 +777,11 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         buildSkillConfigForId(id, savedConfigs),
       );
 
-      // Preserve excluded entries so they flow through to wizard result
-      const resolvedSet = new Set(resolvedSkillIds);
-      const excludedConfigs =
-        savedConfigs?.filter((sc) => sc.excluded && !resolvedSet.has(sc.id)) ?? [];
+      // Preserve excluded entries so they flow through to wizard result.
+      // D-223: allow an excluded tombstone to coexist with an active entry for the
+      // same skill id at a different scope (render layer computes secondaryScope
+      // from the pair).
+      const excludedConfigs = savedConfigs?.filter((sc) => sc.excluded) ?? [];
 
       return {
         domainSelections,
