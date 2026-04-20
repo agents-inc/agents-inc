@@ -259,9 +259,7 @@ export class BuildStep extends BaseStep {
         const nameIdx = segment.indexOf(skillLabel);
         if (nameIdx === -1) continue;
         const prefix = segment.slice(0, nameIdx);
-        return Array.from(prefix.matchAll(/\s([PG])\s/g)).map(
-          (match) => match[1] as "P" | "G",
-        );
+        return Array.from(prefix.matchAll(/\s([PG])\s/g)).map((match) => match[1] as "P" | "G");
       }
     }
     throw new Error(

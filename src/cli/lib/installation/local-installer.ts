@@ -179,9 +179,7 @@ function computeNewlyAddedSkillIds(
   currentSkills: readonly SkillConfig[],
   priorSkills: readonly SkillConfig[] | undefined,
 ): readonly SkillId[] {
-  const priorActiveIds = new Set(
-    (priorSkills ?? []).filter((s) => !s.excluded).map((s) => s.id),
-  );
+  const priorActiveIds = new Set((priorSkills ?? []).filter((s) => !s.excluded).map((s) => s.id));
   const currentActiveIds = currentSkills.filter((s) => !s.excluded).map((s) => s.id);
   return unique(currentActiveIds.filter((id) => !priorActiveIds.has(id)));
 }

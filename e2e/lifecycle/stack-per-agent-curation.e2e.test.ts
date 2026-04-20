@@ -376,9 +376,7 @@ describe("D-220 stack per-agent curation survives edit", () => {
           stackAfterEdit["api-developer"],
           "api-developer stack must be seeded when the agent is newly selected this session",
         ).toBeDefined();
-        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual([
-          "api-framework-hono",
-        ]);
+        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual(["api-framework-hono"]);
         expect(stackAfterEdit["api-developer"]?.["web-framework"]).toStrictEqual([
           "web-framework-react",
         ]);

@@ -25,8 +25,8 @@ is set by `registerProjectPath` and `deregisterProjectPath` only).
 Concrete effect (discovered while building the D-222 E2E test): running
 `cc edit` from HOME invokes the write pipeline
 
-  writeProjectConfig → buildAndMergeConfig → mergeWithExistingConfig →
-  mergeConfigs → writeScopedConfigs
+writeProjectConfig → buildAndMergeConfig → mergeWithExistingConfig →
+mergeConfigs → writeScopedConfigs
 
 where `writeScopedConfigs`'s HOME-context branch (line 838 in
 `local-installer.ts`) calls `writeConfigFile(finalConfig, ...)` with a

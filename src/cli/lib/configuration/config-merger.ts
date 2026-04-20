@@ -29,8 +29,7 @@ const agentKey = (a: AgentScopeConfig): string =>
  * `id:scope` for actives, `id:scope:excluded` for tombstones. Prevents the
  * D-221 class of bugs where two distinct-scope entries collide onto `id`.
  */
-const skillKey = (s: SkillConfig): string =>
-  `${s.id}:${s.scope}${s.excluded ? ":excluded" : ""}`;
+const skillKey = (s: SkillConfig): string => `${s.id}:${s.scope}${s.excluded ? ":excluded" : ""}`;
 
 /**
  * Pure merge logic: existing values take precedence for identity fields;

@@ -413,9 +413,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // api-developer appears exactly twice — as active project row and
         // global tombstone — with distinct (name, scope) keys.
         const apiDevRows = rows.filter((r) => r.name === "api-developer");
-        const apiDevActiveProject = apiDevRows.filter(
-          (r) => r.scope === "project" && !r.excluded,
-        );
+        const apiDevActiveProject = apiDevRows.filter((r) => r.scope === "project" && !r.excluded);
         const apiDevGlobalTombstone = apiDevRows.filter(
           (r) => r.scope === "global" && r.excluded === true,
         );

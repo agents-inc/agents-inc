@@ -103,9 +103,7 @@ function parseSelectedAgentsArray(configContent: string): string[] {
  * fallback — the test asserts the bounded-union emission explicitly).
  */
 function parseSelectedAgentNameUnion(configTypesContent: string): string[] {
-  const blockMatch = configTypesContent.match(
-    /export type SelectedAgentName\s*=\s*([^;]+);/,
-  );
+  const blockMatch = configTypesContent.match(/export type SelectedAgentName\s*=\s*([^;]+);/);
   expect(
     blockMatch,
     "Expected config-types.ts to declare `export type SelectedAgentName = ...;`",
@@ -331,9 +329,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       const globalTypeUnionPhase1 = parseSelectedAgentNameUnion(globalTypesPhase1);
       expect(globalSelectedPhase1).toContain(WEB_DEVELOPER_AGENT);
       expect(globalSelectedPhase1).not.toContain(API_DEVELOPER_AGENT);
-      expect([...globalTypeUnionPhase1].sort()).toStrictEqual(
-        [...globalSelectedPhase1].sort(),
-      );
+      expect([...globalTypeUnionPhase1].sort()).toStrictEqual([...globalSelectedPhase1].sort());
 
       // ================================================================
       // Phase 2: Register Project B. A pure passthrough edit would NOT
@@ -428,7 +424,6 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
         globalSelectedAfter,
         "Pre-condition: global selectedAgents must include api-developer after Phase 4",
       ).toContain(API_DEVELOPER_AGENT);
-
 
       // ================================================================
       // Phase 5: The assertion that defines D-222 — value AND type sides
