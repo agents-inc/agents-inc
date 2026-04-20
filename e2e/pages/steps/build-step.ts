@@ -209,9 +209,65 @@ export class BuildStep extends BaseStep {
     await this.waitForStableRender();
   }
 
+  /**
+   * Toggle the build-step info-panel overlay (press "i"). Gated by the
+   * `FEATURE_FLAGS.INFO_PANEL` runtime flag in the wizard; callers should
+   * only invoke this when the flag is on. When shown, the overlay replaces
+   * the build-step body and renders a full SkillAgentSummary — callers can
+   * then use `getSummaryDiffEntries()` to inspect the live diff.
+   */
+  async toggleInfoPanel(): Promise<void> {
+    await this.waitForStableRender();
+    await this.pressKey("i");
+    await this.waitForStableRender();
+  }
+
   /** Go back to domain step (Escape). */
   async goBack(): Promise<void> {
     await this.pressEscape();
+  }
+
+  /**
+   * Extract the rendered scope badges (in display order) for a specific skill
+   * in the current build-step grid.
+   *
+   * A single-scope install renders one badge (" P " or " G "), concatenated
+   * directly to a trailing space before the skill name. A dual-scope install
+   * (active + excluded tombstone at the other scope) renders BOTH badges
+   * back-to-back. Returns ["P"], ["G"], ["P", "G"], ["G", "P"], or [] for
+   * an unscoped skill.
+   *
+   * Scans each │-delimited cell for a "(space)(letter)(space)" token pattern
+   * in the prefix before the skill label. The P/G letters are the only single
+   * capital letters emitted by SkillTag; category headers and borders never
+   * produce them.
+   *
+   * Requires a stable render — callers should ensure the build step has
+   * finished any pending redraws before invoking.
+   */
+  async getScopeBadgesForSkill(skillLabel: string): Promise<Array<"P" | "G">> {
+    await this.waitForStableRender();
+    const output = this.getOutput();
+    const lines = output.split("\n");
+    // Walk newest-to-oldest so re-opened wizards pick up the most recent
+    // frame's badges instead of stale scrollback from a previous launch.
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (!line.includes(skillLabel) || !line.includes("│")) continue;
+      const segments = line.split("│");
+      for (const segment of segments) {
+        const nameIdx = segment.indexOf(skillLabel);
+        if (nameIdx === -1) continue;
+        const prefix = segment.slice(0, nameIdx);
+        return Array.from(prefix.matchAll(/\s([PG])\s/g)).map(
+          (match) => match[1] as "P" | "G",
+        );
+      }
+    }
+    throw new Error(
+      `getScopeBadgesForSkill: "${skillLabel}" not found in any │-delimited cell.\n` +
+        `Output:\n${output}`,
+    );
   }
 
   /**

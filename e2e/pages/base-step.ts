@@ -176,6 +176,80 @@ export abstract class BaseStep {
     return this.screen.getScreen();
   }
 
+  /**
+   * Extract change-summary diff entries for the given display name from the
+   * currently-rendered SkillAgentSummary panel. Works for both the confirm
+   * step and the build-step info-panel overlay — both render the same
+   * component, so the scraped output shape is identical.
+   *
+   * Each entry pairs the prefix token (`+` new, `-` removed, `~` source
+   * changed, `•` unchanged) with the scope subsection (`Project` or `Global`)
+   * the row appeared under. Callers assert on the (scope, prefix) pairs rather
+   * than raw substrings so a P→G toggle can be verified as BOTH
+   * `{scope:"Project", prefix:"-"}` AND `{scope:"Global", prefix:"+"}`.
+   *
+   * The Skills and Agents columns share vertical space, so each ScopeLabel
+   * line ("Project" or "Global") applies to both columns simultaneously and
+   * columns always render in Project-before-Global order. Tracking the most
+   * recent ScopeLabel is therefore correct for either column, provided the
+   * caller uses a display name unique to one column — skill display names
+   * never collide with agent names in the E2E source.
+   */
+  async getSummaryDiffEntries(
+    displayName: string,
+  ): Promise<Array<{ prefix: "+" | "-" | "~" | "\u2022"; scope: "Project" | "Global" }>> {
+    await this.waitForStableRender();
+    const output = this.getOutput();
+    const lines = output.split("\n");
+
+    const escapedName = displayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const diffRowPattern = new RegExp(`([+\\-~\\u2022])\\s+${escapedName}(?:\\s|$)`);
+
+    const entries: Array<{ prefix: "+" | "-" | "~" | "\u2022"; scope: "Project" | "Global" }> = [];
+    let currentScope: "Project" | "Global" | null = null;
+
+    // Each line may carry both a Skills-column segment and an Agents-column
+    // segment separated by a `│` divider (from SkillAgentSummary's
+    // borderRight) and wrapped by outer `│` borders from the enclosing
+    // <Box borderStyle="single" />. Split on `│` and treat each column
+    // (segment index) independently: a Project / Global sublabel in column
+    // N only applies to rows that appear in column N on subsequent lines.
+    // This matters because Skills and Agents transition to Global at
+    // different vertical positions — a shared tracker would mis-attribute
+    // the Skills-column scope after the Agents column's own transition.
+    const scopeLabelPattern = /^(Project|Global)$/;
+    const scopeByColumn = new Map<number, "Project" | "Global">();
+
+    for (const line of lines) {
+      const segments = line.split(/[│┃]/);
+      for (let colIdx = 0; colIdx < segments.length; colIdx++) {
+        const segment = segments[colIdx];
+        const trimmed = segment.trim();
+        if (!trimmed) continue;
+        const scopeMatch = trimmed.match(scopeLabelPattern);
+        if (scopeMatch) {
+          scopeByColumn.set(colIdx, scopeMatch[1] as "Project" | "Global");
+          continue;
+        }
+
+        const match = segment.match(diffRowPattern);
+        if (!match) continue;
+        const scope = scopeByColumn.get(colIdx);
+        if (!scope) continue;
+        entries.push({
+          prefix: match[1] as "+" | "-" | "~" | "\u2022",
+          scope,
+        });
+      }
+    }
+    // Remove the no-longer-used single-scope tracker to keep the declaration
+    // surface honest — retained as a void statement only for TypeScript's
+    // unused-let detection when the file is edited in isolation.
+    void currentScope;
+
+    return entries;
+  }
+
   /** Abort the wizard with Ctrl+C. */
   async abort(): Promise<void> {
     await this.pressCtrlC();

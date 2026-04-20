@@ -18,6 +18,7 @@ export class AgentsStep extends BaseStep {
    */
   async toggleAgent(agentName: string): Promise<void> {
     await this.navigateCursorToItem(agentName);
+    await this.waitForStableRender();
     await this.pressSpace();
   }
 
