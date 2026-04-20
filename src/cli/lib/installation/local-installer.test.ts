@@ -15,10 +15,17 @@ import {
   propagateGlobalChangesToProjects,
   writeConfigFile,
 } from "./local-installer";
-import type { AgentConfig, AgentDefinition, AgentName, ProjectConfig, SkillId } from "../../types";
+import type {
+  AgentConfig,
+  AgentDefinition,
+  AgentName,
+  ProjectConfig,
+  Skill,
+  SkillId,
+} from "../../types";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
-import { createMockSkill } from "../__tests__/factories/skill-factories";
+import { createMockSkill, createMockSkillEntry } from "../__tests__/factories/skill-factories";
 import { createMockAgent } from "../__tests__/factories/agent-factories";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories";
 import {
@@ -361,8 +368,13 @@ describe("local-installer", () => {
       expect(result.mergedConfigPath).toBeUndefined();
     });
 
-    it("should pass installMode to compileAgentForPlugin", async () => {
-      // resolveAgents returns one agent so compileAgentForPlugin gets called
+    it("should pass per-skill source on skills to compileAgentForPlugin in plugin mode", async () => {
+      // D-217: installMode is gone — per-skill `source` on each Skill drives
+      // pluginRef attachment. Seed resolveAgents with a skill carrying a
+      // marketplace source and assert the agent arg forwards it.
+      const pluginSkill: Skill = createMockSkillEntry(TEST_SKILL_ID, false, {
+        source: "agents-inc",
+      });
       const mockResolveAgents = vi.mocked((await import("../resolver")).resolveAgents);
       // Boundary cast: test provides partial agents record; mock only needs the test agent
       mockResolveAgents.mockResolvedValueOnce({
@@ -371,7 +383,7 @@ describe("local-installer", () => {
           title: "Web Dev",
           description: "A dev",
           tools: ["Read"],
-          skills: [],
+          skills: [pluginSkill],
         },
       } as unknown as Record<AgentName, AgentConfig>);
 
@@ -400,18 +412,27 @@ describe("local-installer", () => {
         projectDir: tempDir,
       });
 
-      // compileAgentForPlugin should have been called with installMode as the 5th arg
-      // deriveInstallMode returns "plugin" when all skills have non-local source
-      expect(mockCompileAgentForPlugin).toHaveBeenCalledWith(
-        "web-developer",
-        expect.any(Object),
-        expect.any(String),
-        expect.any(Object),
-        "plugin",
-      );
+      expect(mockCompileAgentForPlugin).toHaveBeenCalledTimes(1);
+      const [name, agent, ...rest] = mockCompileAgentForPlugin.mock.calls[0];
+      expect(name).toBe("web-developer");
+      // Only the first two positional args carry behavioural contract; the last
+      // two (sourcePath, engine) are infra and asserted only by arity.
+      expect(rest).toHaveLength(2);
+      expect(agent.skills).toStrictEqual([pluginSkill]);
+      // Explicit per-skill assertion: every skill carries a non-"eject" source
+      // (i.e., a marketplace name) so the compiler attaches pluginRef.
+      for (const skill of agent.skills) {
+        expect(skill.source).toBe("agents-inc");
+      }
     });
 
-    it("should pass local installMode to compileAgentForPlugin", async () => {
+    it("should pass per-skill source on skills to compileAgentForPlugin in eject mode", async () => {
+      // D-217: installMode is gone — per-skill `source: "eject"` tells the
+      // compiler to emit a bare id (no pluginRef). Seed resolveAgents with an
+      // ejected skill and assert the agent arg forwards it.
+      const ejectSkill: Skill = createMockSkillEntry(TEST_SKILL_ID, false, {
+        source: "eject",
+      });
       const mockResolveAgents = vi.mocked((await import("../resolver")).resolveAgents);
       // Boundary cast: test provides partial agents record; mock only needs the test agent
       mockResolveAgents.mockResolvedValueOnce({
@@ -420,7 +441,7 @@ describe("local-installer", () => {
           title: "Web Dev",
           description: "A dev",
           tools: ["Read"],
-          skills: [],
+          skills: [ejectSkill],
         },
       } as unknown as Record<AgentName, AgentConfig>);
 
@@ -438,13 +459,15 @@ describe("local-installer", () => {
         projectDir: tempDir,
       });
 
-      expect(mockCompileAgentForPlugin).toHaveBeenCalledWith(
-        "web-developer",
-        expect.any(Object),
-        expect.any(String),
-        expect.any(Object),
-        "eject",
-      );
+      expect(mockCompileAgentForPlugin).toHaveBeenCalledTimes(1);
+      const [name, agent, ...rest] = mockCompileAgentForPlugin.mock.calls[0];
+      expect(name).toBe("web-developer");
+      expect(rest).toHaveLength(2);
+      expect(agent.skills).toStrictEqual([ejectSkill]);
+      // Explicit per-skill assertion: every skill has source === "eject".
+      for (const skill of agent.skills) {
+        expect(skill.source).toBe("eject");
+      }
     });
 
     it("should write valid config with satisfies ProjectConfig", async () => {

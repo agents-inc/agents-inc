@@ -126,21 +126,26 @@ const E2E_SKILLS: E2ESkill[] = [
   },
 ];
 
+// Preload shape matches real CLI stacks in src/cli/lib/configuration/default-stacks.ts:
+// real `web-developer` preloads only `web-framework-react` (+ meta-framework when present);
+// real `api-developer` preloads only `api-framework-hono` (+ database when present).
+// Meta skills are never preloaded in real stacks — they appear as dynamic skills in the
+// body's Skill Activation Protocol table, never in agent frontmatter.
 const webDeveloperAgentConfig: StackAgentConfig = {
   "web-framework": [createMockSkillAssignment("web-framework-react", true)],
   "web-testing": [createMockSkillAssignment("web-testing-vitest")],
   "web-client-state": [createMockSkillAssignment("web-state-zustand")],
   "meta-reviewing": [
-    createMockSkillAssignment("meta-reviewing-reviewing", true),
-    createMockSkillAssignment("meta-reviewing-cli-reviewing", true),
+    createMockSkillAssignment("meta-reviewing-reviewing"),
+    createMockSkillAssignment("meta-reviewing-cli-reviewing"),
   ],
-  "meta-methodology": [createMockSkillAssignment("meta-methodology-research-methodology", true)],
+  "meta-methodology": [createMockSkillAssignment("meta-methodology-research-methodology")],
 };
 
 const apiDeveloperAgentConfig: StackAgentConfig = {
   "api-api": [createMockSkillAssignment("api-framework-hono", true)],
-  "meta-methodology": [createMockSkillAssignment("meta-methodology-research-methodology", true)],
-  "meta-reviewing": [createMockSkillAssignment("meta-reviewing-reviewing", true)],
+  "meta-methodology": [createMockSkillAssignment("meta-methodology-research-methodology")],
+  "meta-reviewing": [createMockSkillAssignment("meta-reviewing-reviewing")],
 };
 
 const E2E_STACK: Stack = {
@@ -153,14 +158,20 @@ const E2E_STACK: Stack = {
   },
 };
 
+// Minimal agent template for E2E tests. Diverges from src/agents/_templates/agent.liquid
+// (which ships partials + methodology sections); the frontmatter `skills:` block MUST
+// mirror production exactly — consumes top-level `preloadedSkillIds` (NOT `agent.preloadedSkills`,
+// which does not exist). Drift risk: follow-up could import the production template directly,
+// but that requires shipping all referenced partials into the fixture.
 const AGENT_TEMPLATE = `---
 name: {{ agent.name }}
 description: {{ agent.description }}
 tools: {{ agent.tools | join: ", " }}
 model: {{ agent.model }}
 permissionMode: {{ agent.permissionMode }}
-{% if agent.preloadedSkills %}skills: {{ agent.preloadedSkills | join: ", " }}{% endif %}
----
+{% if preloadedSkillIds.size > 0 %}skills:
+{% for skillId in preloadedSkillIds %}  - {{ skillId }}
+{% endfor %}{% endif %}---
 
 {% include "_partials/intro.liquid" %}
 

@@ -252,6 +252,10 @@ describe("resolveSkillReference", () => {
       description: "React component patterns",
       usage: "when building React components",
       preloaded: true,
+      // D-217: resolver propagates `source` from SkillReference onto the
+      // resolved Skill so the compiler can emit per-skill pluginRef formats.
+      // Absent on the input → undefined on the output (see dedicated test below).
+      source: undefined,
     });
   });
 
@@ -276,6 +280,37 @@ describe("resolveSkillReference", () => {
     const result = resolveSkillReference(ref, RESOLVE_SKILL_MAP);
     expect(result).toBeNull();
   });
+
+  it("should preserve `source` from the SkillReference onto the resolved Skill (D-217)", () => {
+    const ref: SkillReference = {
+      id: "web-framework-react",
+      usage: "when building React components",
+      preloaded: true,
+      source: "agents-inc",
+    };
+
+    const result = resolveSkillReference(ref, RESOLVE_SKILL_MAP);
+
+    expect(result).not.toBeNull();
+    // The resolver must thread `source` through so the compiler can key off it
+    // per-skill — this is the D-217 contract.
+    expect(result!.source).toBe("agents-inc");
+  });
+
+  it("should leave `source` undefined on the resolved Skill when the SkillReference has no source", () => {
+    const ref: SkillReference = {
+      id: "web-framework-react",
+      usage: "when building React components",
+    };
+
+    const result = resolveSkillReference(ref, RESOLVE_SKILL_MAP);
+
+    expect(result).not.toBeNull();
+    // Absent on the input → undefined on the output. The compiler treats
+    // missing-source as eject (no pluginRef), so leaking a stale value
+    // would silently misclassify user-authored local skills.
+    expect(result!.source).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -298,6 +333,8 @@ describe("resolveSkillReferences", () => {
         description: "React component patterns",
         usage: "for components",
         preloaded: false,
+        // D-217: see resolveSkillReference test above for shape rationale.
+        source: undefined,
       },
       {
         id: "web-state-zustand",
@@ -305,6 +342,7 @@ describe("resolveSkillReferences", () => {
         description: "Lightweight state management",
         usage: "for state",
         preloaded: true,
+        source: undefined,
       },
     ]);
   });

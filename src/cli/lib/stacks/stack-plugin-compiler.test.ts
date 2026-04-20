@@ -1,3 +1,7 @@
+/**
+ * Unit tests for stack-plugin-compiler. Includes coverage for D-217 (per-skill
+ * source-based skill reference formats in compiled agent output).
+ */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import { mkdir, readFile, stat } from "fs/promises";
@@ -21,6 +25,8 @@ import { renderAgentYaml, renderConfigTs, renderSkillMd } from "../__tests__/con
 import { expectValidAgentMarkdown } from "../__tests__/assertions";
 import { REACT_SKILL_PRELOADED, VITEST_SKILL } from "../__tests__/mock-data/mock-skills";
 import { AGENT_DEFS } from "../__tests__/mock-data/mock-agents";
+import { createMockSkillEntry } from "../__tests__/factories/skill-factories";
+import { SKILLS } from "../__tests__/test-fixtures";
 
 describe("stack-plugin-compiler", () => {
   const REACT_SKILL_ID = "web-framework-react";
@@ -794,19 +800,64 @@ describe("stack-plugin-compiler", () => {
     });
   });
 
-  describe("compileAgentForPlugin - plugin-aware skill references", () => {
+  describe("compileAgentForPlugin - per-skill source-based references", () => {
     // Use the real agent.liquid template (includes dynamic skills section)
     const realTemplateDir = path.resolve(__dirname, "../../../../src/agents/_templates");
 
-    const AGENT_WITH_BOTH_SKILLS = createMockAgentConfig(
+    // Per-skill source variants. The compiler attaches pluginRef per-skill from
+    // `s.source !== undefined && s.source !== "eject"`.
+    const REACT_PRELOADED_PLUGIN = createMockSkillEntry(SKILLS.react.id, true, {
+      source: "agents-inc",
+    });
+    const REACT_PRELOADED_EJECT = createMockSkillEntry(SKILLS.react.id, true, {
+      source: "eject",
+    });
+    const VITEST_DYNAMIC_PLUGIN = createMockSkillEntry(SKILLS.vitest.id, false, {
+      source: "agents-inc",
+    });
+    const VITEST_DYNAMIC_EJECT = createMockSkillEntry(SKILLS.vitest.id, false, {
+      source: "eject",
+    });
+
+    const AGENT_PURE_PLUGIN = createMockAgentConfig(
+      "web-developer",
+      [REACT_PRELOADED_PLUGIN, VITEST_DYNAMIC_PLUGIN],
+      { title: AGENT_DEFS.webDev.title, description: AGENT_DEFS.webDev.description },
+    );
+
+    const AGENT_PURE_EJECT = createMockAgentConfig(
+      "web-developer",
+      [REACT_PRELOADED_EJECT, VITEST_DYNAMIC_EJECT],
+      { title: AGENT_DEFS.webDev.title, description: AGENT_DEFS.webDev.description },
+    );
+
+    const AGENT_MIXED = createMockAgentConfig(
+      "web-developer",
+      [REACT_PRELOADED_PLUGIN, VITEST_DYNAMIC_EJECT],
+      { title: AGENT_DEFS.webDev.title, description: AGENT_DEFS.webDev.description },
+    );
+
+    // Skills WITHOUT a `source` field — represents a user-authored local skill
+    // loaded from .claude/skills/ that has no SkillConfig entry.
+    const AGENT_NO_SOURCE = createMockAgentConfig(
       "web-developer",
       [REACT_SKILL_PRELOADED, VITEST_SKILL],
       { title: AGENT_DEFS.webDev.title, description: AGENT_DEFS.webDev.description },
     );
 
-    const AGENT_WITH_PRELOADED_ONLY = createMockAgentConfig(
+    // Dual-scope: same skill id appears twice in the resolved skill list,
+    // once as project-eject and once as global-plugin. Each must emit
+    // independently. Both react entries are dynamic (preloaded: false) so
+    // they appear in body invocations and we can scrape both lines.
+    const REACT_DYNAMIC_PROJECT_EJECT = createMockSkillEntry(SKILLS.react.id, false, {
+      source: "eject",
+    });
+    const REACT_DYNAMIC_GLOBAL_PLUGIN = createMockSkillEntry(SKILLS.react.id, false, {
+      source: "agents-inc",
+    });
+    const AGENT_DUAL_SCOPE = createMockAgentConfig(
       "web-developer",
-      [REACT_SKILL_PRELOADED],
+      [REACT_DYNAMIC_PROJECT_EJECT, REACT_DYNAMIC_GLOBAL_PLUGIN],
       { title: AGENT_DEFS.webDev.title, description: AGENT_DEFS.webDev.description },
     );
 
@@ -831,49 +882,73 @@ describe("stack-plugin-compiler", () => {
       });
     });
 
-    it("should emit pluginRef format in frontmatter when installMode is plugin", async () => {
+    it("pure plugin mode: every skill emits pluginRef in frontmatter and body", async () => {
       const output = await compileAgentForPlugin(
         "web-developer",
-        AGENT_WITH_BOTH_SKILLS,
+        AGENT_PURE_PLUGIN,
         projectRoot,
         engine,
-        "plugin",
       );
 
-      // Frontmatter should contain pluginRef format
+      // Preloaded skill (react) → frontmatter `skills:` entry uses pluginRef form.
       expect(output).toContain("web-framework-react:web-framework-react");
-      // Dynamic skill invocation should use pluginRef format
+      // Dynamic skill (vitest) → body `skill:` invocation uses pluginRef form.
       expect(output).toContain('skill: "web-testing-vitest:web-testing-vitest"');
     });
 
-    it("should emit bare skill IDs when installMode is eject", async () => {
+    it("pure eject mode: every skill emits bare id in frontmatter and body", async () => {
       const output = await compileAgentForPlugin(
         "web-developer",
-        AGENT_WITH_BOTH_SKILLS,
+        AGENT_PURE_EJECT,
         projectRoot,
         engine,
-        "eject",
       );
 
-      // Frontmatter should contain bare skill IDs (no colon format)
+      // Bare ids in both positions; no `id:id` form anywhere.
       expect(output).toContain("web-framework-react");
       expect(output).not.toContain("web-framework-react:web-framework-react");
-      // Dynamic skill invocation should use bare ID
       expect(output).toContain('skill: "web-testing-vitest"');
       expect(output).not.toContain('skill: "web-testing-vitest:web-testing-vitest"');
     });
 
-    it("should emit bare skill IDs when installMode is undefined", async () => {
+    it("mixed mode: plugin skill emits pluginRef, eject skill emits bare id, in same agent", async () => {
+      const output = await compileAgentForPlugin("web-developer", AGENT_MIXED, projectRoot, engine);
+
+      // The plugin-source preloaded skill (react) renders `id:id` in frontmatter.
+      expect(output).toContain("web-framework-react:web-framework-react");
+      // The eject-source dynamic skill (vitest) renders bare id in body invocation.
+      expect(output).toContain('skill: "web-testing-vitest"');
+      // The eject skill must NOT be wrapped in plugin form.
+      expect(output).not.toContain('skill: "web-testing-vitest:web-testing-vitest"');
+    });
+
+    it("undefined source (user-authored local skill): emits bare id (treated as eject)", async () => {
       const output = await compileAgentForPlugin(
         "web-developer",
-        AGENT_WITH_PRELOADED_ONLY,
+        AGENT_NO_SOURCE,
         projectRoot,
         engine,
       );
 
-      // Should use bare IDs when no installMode specified
+      // Skills without `source` are user-authored local — must NOT get pluginRef.
       expect(output).toContain("web-framework-react");
       expect(output).not.toContain("web-framework-react:web-framework-react");
+      expect(output).toContain('skill: "web-testing-vitest"');
+      expect(output).not.toContain('skill: "web-testing-vitest:web-testing-vitest"');
+    });
+
+    it("dual-scope same id: each entry emits the form dictated by its own source", async () => {
+      const output = await compileAgentForPlugin(
+        "web-developer",
+        AGENT_DUAL_SCOPE,
+        projectRoot,
+        engine,
+      );
+
+      // Both react entries are dynamic — both should appear as `skill: "..."` lines.
+      // The eject entry → bare id; the plugin entry → `id:id`. They must coexist.
+      expect(output).toContain('skill: "web-framework-react"');
+      expect(output).toContain('skill: "web-framework-react:web-framework-react"');
     });
   });
 });
