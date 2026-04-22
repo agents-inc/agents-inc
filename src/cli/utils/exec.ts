@@ -276,3 +276,32 @@ export async function claudePluginUninstall(
     throw new Error(`Plugin uninstall failed: ${errorMessage.trim()}`);
   }
 }
+
+/**
+ * Best-effort plugin uninstall that tries both scopes.
+ *
+ * Use when the plugin's actual registered scope is ambiguous — e.g., a skill
+ * was re-scoped after install, or we're cleaning up on uninstall and the config
+ * scope may not match the registry entry. Tries the primary scope first, then
+ * the fallback, silently swallowing errors from each attempt.
+ *
+ * The plugin reference must be qualified (e.g., `skill-id@marketplace`), matching
+ * the form used at install time — bare skill IDs will not match the registry.
+ */
+export async function claudePluginUninstallBestEffort(
+  pluginRef: string,
+  primaryScope: "project" | "user",
+  projectDir: string,
+): Promise<void> {
+  const fallbackScope = primaryScope === "project" ? "user" : "project";
+  try {
+    await claudePluginUninstall(pluginRef, primaryScope, projectDir);
+  } catch {
+    // Best-effort: plugin may not be registered with primary scope
+  }
+  try {
+    await claudePluginUninstall(pluginRef, fallbackScope, projectDir);
+  } catch {
+    // Best-effort: plugin may not be registered with fallback scope either
+  }
+}

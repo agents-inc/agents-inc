@@ -11,6 +11,8 @@ reporting_agent: cli-reviewer
 category: dry
 domain: cli
 root_cause: enforcement-gap
+status: resolved
+resolved_by: getErrorMessage adopted in build/marketplace.ts and import/skill.ts
 ---
 
 ## What Was Wrong

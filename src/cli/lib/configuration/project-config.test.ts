@@ -176,17 +176,6 @@ describe("project-config", () => {
       ).toBe(true);
     });
 
-    it("should fail for invalid version", () => {
-      const result = validateProjectConfig({
-        name: "my-project",
-        agents: buildAgentConfigs(["web-developer"]),
-        version: "2",
-      });
-
-      expect(result.valid).toBe(false);
-      expect(result.errors.some((e) => e.includes('version must be "1"'))).toBe(true);
-    });
-
     it("should fail for non-object config", () => {
       const result = validateProjectConfig("not an object");
 

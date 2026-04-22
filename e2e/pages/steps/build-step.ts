@@ -3,6 +3,12 @@ import { INTERNAL_DELAYS, INTERNAL_RETRIES, STEP_TEXT, TIMEOUTS } from "../const
 import { SearchModal } from "./search-modal.js";
 import { SourcesStep } from "./sources-step.js";
 
+/** Slack after `waitForStableRender` to let `CategoryGrid`'s post-mount
+ *  `useEffect` flush `setFocusedSkillId` into the store before a focus-
+ *  dependent keypress (the `s` handler in `wizard.tsx`'s HOTKEY_SCOPE branch
+ *  reads `store.focusedSkillId` and silently no-ops when null). */
+const FOCUS_EFFECT_FLUSH_MS = 500;
+
 export class BuildStep extends BaseStep {
   /** Tracked grid position — row resets on domain change, col resets on Tab/DOWN */
   private gridRow = 0;
@@ -53,6 +59,7 @@ export class BuildStep extends BaseStep {
    * or `toggleFocusedSkill()` when you need to act on a specific skill.
    */
   async focusSkill(skillLabel: string): Promise<void> {
+    await this.waitForStableRender();
     const { row, col, totalRows } = this.findSkillGridPosition(skillLabel);
 
     // Navigate DOWN to target row (DOWN always resets col to 0)
@@ -82,12 +89,25 @@ export class BuildStep extends BaseStep {
 
   /** Toggle the currently focused skill selection (Space). */
   async toggleFocusedSkill(): Promise<void> {
+    await this.waitForStableRender();
     await this.pressSpace();
   }
 
-  /** Toggle scope on the currently focused skill (press "s"). */
+  /**
+   * Toggle scope on the currently focused skill (press "s").
+   *
+   * `CategoryGrid` seeds `focusedSkillId` in a post-mount `useEffect`; the
+   * `s` handler in `wizard.tsx`'s HOTKEY_SCOPE branch silently no-ops when
+   * that id is null. `waitForStableRender` returns when the frame has
+   * painted but the effect may not have flushed yet — the extra delay
+   * gives it time to run before the keypress.
+   *
+   * TODO: Fix A — seed `focusedSkillId` synchronously in `hydrateWizardStore`
+   * so this delay becomes unnecessary.
+   */
   async toggleScopeOnFocusedSkill(): Promise<void> {
     await this.waitForStableRender();
+    await this.delay(FOCUS_EFFECT_FLUSH_MS);
     await this.pressKey("s");
   }
 
@@ -186,6 +206,7 @@ export class BuildStep extends BaseStep {
 
   /** Navigate to the next category within the current domain (Tab). */
   async navigateToNextCategory(): Promise<void> {
+    await this.waitForStableRender();
     await this.pressKey("\t");
     this.gridRow++;
     this.gridCol = 0;
@@ -194,17 +215,20 @@ export class BuildStep extends BaseStep {
 
   /** Toggle compatibility labels on focused skill (press "d"). */
   async toggleLabels(): Promise<void> {
+    await this.waitForStableRender();
     await this.pressKey("d");
   }
 
   /** Open the search modal (press "/"). */
   async openSearch(): Promise<SearchModal> {
+    await this.waitForStableRender();
     await this.pressKey("/");
     return new SearchModal(this.session, this.projectDir);
   }
 
   /** Toggle filter incompatible skills (press "f"). */
   async toggleFilterIncompatible(): Promise<void> {
+    await this.waitForStableRender();
     await this.pressKey("f");
     await this.waitForStableRender();
   }
@@ -224,6 +248,7 @@ export class BuildStep extends BaseStep {
 
   /** Go back to domain step (Escape). */
   async goBack(): Promise<void> {
+    await this.waitForStableRender();
     await this.pressEscape();
   }
 

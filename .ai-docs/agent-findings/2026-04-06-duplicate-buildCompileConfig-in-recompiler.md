@@ -11,6 +11,8 @@ reporting_agent: orchestrator
 category: dry
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: buildCompileConfig deleted; recompiler reuses buildCompileAgents
 ---
 
 ## What Was Wrong

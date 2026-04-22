@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # Page Objects
 
 The Page Object Model (POM) framework -- how it works, how to use it, and how to extend it.
@@ -320,8 +324,10 @@ This is an architectural boundary -- it uses index-based navigation methods (`ar
 ### Adding a New Wizard Method
 
 1. Add the method to the step class (e.g., `BuildStep.toggleLabel()`)
-2. Use the `protected` methods from `BaseStep` (`pressKey`, `waitForStableRender`, etc.)
+2. Use the `protected` methods from `BaseStep` (`pressKey`, `waitForStableRender`, etc.). **Never call `pressKey` / `pressSpace` / `pressEnter` / `pressEscape` / `pressArrowX` / `session.*` without a preceding `await this.waitForStableRender()` in the same method** — every keypress needs the wait under parallel suite contention, not just the first one. Post-press waits don't substitute; the race sits upstream of the keystroke. See `.ai-docs/agent-findings/2026-04-21-e2e-build-step-keypress-missing-stable-render.md`.
 3. If the method transitions to a new step, return the new step object
+
+**Self-check before committing a new step method:** grep the method body for `this.session.` and `this.press*`. Every hit MUST be immediately preceded by `await this.waitForStableRender()` in the same method. A `waitForStableRender` elsewhere in the method (after the press, in a loop body) does not count — the wait must sit upstream of every PTY write. Helpers that loop over keypresses (arrow-down walks, per-character typing) need the wait inside the loop body before each press, or refactored to walk via a single `waitForItemVisible` + keypress call. Coverage audit: `.ai-docs/reference/testing/e2e-infrastructure.md` § "Page-Object Keypress Rule" tracks the per-method state of every step file.
 
 ### Adding a New Wizard Type
 

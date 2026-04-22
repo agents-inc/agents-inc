@@ -10,6 +10,8 @@ reporting_agent: web-developer
 category: architecture
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: source-switcher uses directoryExists checks; clean-code-standards rules 3.3/5.5 document the pattern
 ---
 
 ## What Was Wrong

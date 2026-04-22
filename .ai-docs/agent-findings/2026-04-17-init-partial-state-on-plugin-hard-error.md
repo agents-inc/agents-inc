@@ -10,6 +10,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
+status: resolved
+resolved_by: requireMarketplace pre-resolves before copyEjectSkillsStep; e2e coverage added
 ---
 
 ## What Was Wrong

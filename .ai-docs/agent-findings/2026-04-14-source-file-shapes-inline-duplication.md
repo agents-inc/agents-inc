@@ -13,6 +13,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: mock-source-files.ts created with 5 canonical fixtures; source-validator migrated
 ---
 
 ## What Was Wrong

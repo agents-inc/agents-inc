@@ -6,29 +6,30 @@ related:
   - reference/architecture-overview.md
   - reference/dependency-graph.md
   - reference/test-infrastructure.md
-last_validated: 2026-04-02
+last_validated: 2026-04-21
 ---
 
 # Utilities Reference
 
-**Last Updated:** 2026-04-02
+**Last Updated:** 2026-04-21
 
 ## Utility Files
 
 All utilities in `src/cli/utils/`.
 
-| File              | Path                            | Purpose                                   |
-| ----------------- | ------------------------------- | ----------------------------------------- |
-| `errors.ts`       | `src/cli/utils/errors.ts`       | Error message extraction                  |
-| `exec.ts`         | `src/cli/utils/exec.ts`         | Shell command execution                   |
-| `frontmatter.ts`  | `src/cli/utils/frontmatter.ts`  | YAML frontmatter extraction               |
-| `fs.ts`           | `src/cli/utils/fs.ts`           | File system wrappers                      |
-| `logger.ts`       | `src/cli/utils/logger.ts`       | Logging: log, warn, verbose               |
-| `messages.ts`     | `src/cli/utils/messages.ts`     | User-facing message constants             |
-| `string.ts`       | `src/cli/utils/string.ts`       | String manipulation utilities             |
-| `type-guards.ts`  | `src/cli/utils/type-guards.ts`  | Runtime type narrowing for union types    |
-| `typed-object.ts` | `src/cli/utils/typed-object.ts` | Type-safe Object.entries/keys             |
-| ~~`yaml.ts`~~     | ~~`src/cli/utils/yaml.ts`~~     | **DELETED** -- was dead code, now removed |
+| File              | Path                            | Purpose                                |
+| ----------------- | ------------------------------- | -------------------------------------- |
+| `errors.ts`       | `src/cli/utils/errors.ts`       | Error message extraction               |
+| `exec.ts`         | `src/cli/utils/exec.ts`         | Shell command execution                |
+| `frontmatter.ts`  | `src/cli/utils/frontmatter.ts`  | YAML frontmatter extraction            |
+| `fs.ts`           | `src/cli/utils/fs.ts`           | File system wrappers                   |
+| `logger.ts`       | `src/cli/utils/logger.ts`       | Logging: log, warn, verbose            |
+| `messages.ts`     | `src/cli/utils/messages.ts`     | User-facing message constants          |
+| `string.ts`       | `src/cli/utils/string.ts`       | String manipulation utilities          |
+| `type-guards.ts`  | `src/cli/utils/type-guards.ts`  | Runtime type narrowing for union types |
+| `typed-object.ts` | `src/cli/utils/typed-object.ts` | Type-safe Object.entries/keys          |
+
+Exit codes live outside `utils/`: `src/cli/lib/exit-codes.ts` (`EXIT_CODES` constant). Base-command and commands import from there, not from `utils/`.
 
 ## Error Handling
 
@@ -78,16 +79,16 @@ All validate inputs before execution (injection prevention via `validatePluginPa
 | `claudePluginMarketplaceUpdate()` | Update marketplace via `claude plugin marketplace update`     |
 | `isClaudeCLIAvailable()`          | Check if `claude` CLI is available                            |
 
-**Total: 8 functions** (6 documented in prior version, 2 were missing: `Remove` and `Update`)
+**Total: 8 functions.** Install/Uninstall take `scope: "project" | "user"` and `projectDir`. `resolvePluginCwd()` picks `os.homedir()` for `"user"` scope so Claude writes settings to `~/.claude/settings.json`.
 
 ### Internal Helpers (not exported)
 
-| Function                      | Purpose                                                         |
-| ----------------------------- | --------------------------------------------------------------- |
-| `validatePluginPath()`        | Validates plugin path string (length, chars, control)           |
-| `validateMarketplaceSource()` | Validates marketplace source string                             |
-| `validatePluginName()`        | Validates plugin name string                                    |
-| `resolvePluginCwd()`          | Returns home dir for `"user"` scope, projectDir for `"project"` |
+| Function                      | Purpose                                                               |
+| ----------------------------- | --------------------------------------------------------------------- |
+| `validatePluginPath()`        | Validates plugin path string (length, chars, control)                 |
+| `validateMarketplaceSource()` | Validates marketplace source string                                   |
+| `validatePluginName()`        | Validates plugin name string                                          |
+| `resolvePluginCwd()`          | Returns `os.homedir()` for `"user"` scope, projectDir for `"project"` |
 
 ## Frontmatter
 
@@ -179,8 +180,7 @@ Truncates text to `maxLength` characters, appending an ellipsis character (U+202
 
 **Used by:**
 
-- `src/cli/commands/search.tsx` -- truncate skill descriptions in search results
-- `src/cli/components/skill-search/skill-search.tsx` -- truncate source names and display names
+- `src/cli/commands/search.ts` -- truncate skill descriptions in search results
 
 ## Type Guards
 
@@ -206,11 +206,11 @@ function typedEntries<K extends string, V>(obj: Partial<Record<K, V>>): [K, V][]
 function typedKeys<K extends string>(obj: Partial<Record<K, unknown>>): K[];
 ```
 
-**Mandatory:** Use these instead of raw `Object.entries()` / `Object.keys()` to preserve union type information and avoid boundary casts.
+**Mandatory** (per CLAUDE.md -- Type Safety): use these instead of raw `Object.entries()` / `Object.keys()` on records keyed by union types (`SkillId`, `Category`, `Domain`, etc.) to preserve key-type information and avoid `as [K, V][]` boundary casts. Raw `Object.entries/keys` widens to `string`, forcing downstream casts.
 
 ## YAML Loading
 
-**DELETED:** `src/cli/utils/yaml.ts` was removed (previously flagged as dead code with zero production importers). All production YAML loading uses the `yaml` package's `parseYaml()` directly.
+Production code imports `parse as parseYaml` from the `yaml` package directly. There is no `src/cli/utils/yaml.ts` module. Frontmatter extraction goes through `extractFrontmatter()` (see above) or the Zod-validated `parseFrontmatter()` in `src/cli/lib/loading/loader.ts`.
 
 ## User-Facing Messages
 
@@ -218,12 +218,12 @@ function typedKeys<K extends string>(obj: Partial<Record<K, unknown>>): K[];
 
 All user-facing strings centralized in constant objects:
 
-| Object             | Count | Examples                                                              |
-| ------------------ | ----- | --------------------------------------------------------------------- |
-| `ERROR_MESSAGES`   | 10    | NO_INSTALLATION, NO_SKILLS_FOUND, VALIDATION_FAILED, SKILL_NOT_FOUND  |
-| `SUCCESS_MESSAGES` | 5     | INIT_SUCCESS, PLUGIN_COMPILE_COMPLETE, ALL_SKILLS_UP_TO_DATE          |
-| `STATUS_MESSAGES`  | 12    | LOADING_SKILLS, COMPILING_AGENTS, FETCHING_REPOSITORY, COPYING_SKILLS |
-| `INFO_MESSAGES`    | 6     | NO_CHANGES_MADE, RUN_COMPILE, NOT_INSTALLED, NO_PLUGIN_INSTALLATION   |
+| Object             | Count | Examples                                                                                                                                           |
+| ------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERROR_MESSAGES`   | 10    | UNKNOWN_ERROR, NO_INSTALLATION, NO_LOCAL_SKILLS, NO_SKILLS_FOUND, VALIDATION_FAILED, FAILED_RESOLVE_SOURCE, FAILED_COMPILE_AGENTS, SKILL_NOT_FOUND |
+| `SUCCESS_MESSAGES` | 4     | UNINSTALL_COMPLETE, INIT_SUCCESS, PLUGIN_COMPILE_COMPLETE, ALL_SKILLS_UP_TO_DATE                                                                   |
+| `STATUS_MESSAGES`  | 11    | LOADING_SKILLS, LOADING_MARKETPLACE_SOURCE, RECOMPILING_AGENTS, COMPILING_AGENTS, FETCHING_REPOSITORY, COPYING_SKILLS, UPDATING_PLUGIN_SKILLS      |
+| `INFO_MESSAGES`    | 6     | NO_CHANGES_MADE, RUN_COMPILE, NO_AGENTS_TO_RECOMPILE, NO_PLUGIN_INSTALLATION, NO_LOCAL_INSTALLATION, NOT_INSTALLED                                 |
 
 ## Constants Reference (`src/cli/consts.ts`)
 
@@ -330,11 +330,9 @@ All user-facing strings centralized in constant objects:
 
 ### UI Constants
 
-`UI_SYMBOLS`, `UI_LAYOUT`, `UI_MESSAGES`, `CLI_COLORS`, and `SCROLL_VIEWPORT` are all defined in `src/cli/consts.ts`.
+`UI_SYMBOLS`, `CLI_COLORS`, and `SCROLL_VIEWPORT` are defined in `src/cli/consts.ts`. (No `UI_LAYOUT` or `UI_MESSAGES` objects — those names are not defined.)
 
-`UI_SYMBOLS` includes: `CHECKBOX_CHECKED`, `CHECKBOX_UNCHECKED`, `CHEVRON`, `CHEVRON_SPACER`, `SELECTED`, `UNSELECTED`, `CURRENT`, `SKIPPED`, `DISCOURAGED`, `DISABLED`, `LOCK`, `EJECT`, `BULLET`, `SCROLL_UP`, `SCROLL_DOWN`.
-
-`UI_MESSAGES`: `GLOBALLY_INSTALLED`, `GLOBALLY_LOCKED_CATEGORY`.
+`UI_SYMBOLS` includes: `CHECKBOX_CHECKED`, `CHECKBOX_UNCHECKED`, `CHEVRON`, `CHEVRON_SPACER`, `SELECTED`, `UNSELECTED`, `CURRENT`, `SKIPPED`, `DISCOURAGED`, `DISABLED`, `LOCK`, `EJECT`, `BULLET`, `SCROLL_UP`, `SCROLL_DOWN`, `CHECK`, `CROSS`.
 
 These are documented in detail in `reference/component-patterns.md`.
 

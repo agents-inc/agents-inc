@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # Assertions
 
 How to verify outcomes after a test runs.
@@ -298,6 +302,33 @@ When adding `toStrictEqual` assertions for config objects, verify these common p
 4. **undefined vs missing:** `toStrictEqual` distinguishes `{ excluded: undefined }` from `{}`. Production code omits `excluded` entirely for non-excluded entries — never include `excluded: undefined` in expected values.
 
 5. **Preloaded vs dynamic skills:** In compiled agents, preloaded skills appear in YAML frontmatter `skills:` array. Dynamic skills appear in `<skill_activation_protocol>` body section. Check `createMockSkillAssignment(id, true)` to determine which is which.
+
+---
+
+## Diff-Shape Assertions
+
+For assertions over diff-shape collections (info-panel rows, config section diffs, scope-per-skill prefix maps), use `toStrictEqual` on a scope-anchored slice of the output — NEVER `expect.arrayContaining([<expected>])`. `arrayContaining` passes as long as the expected entries exist, so it silently tolerates extra wrong entries (e.g. a spurious `- React` row alongside the expected `• React` that a D-230-class bug produces).
+
+```typescript
+// Bad -- passes even if a bogus "- React" row is also rendered
+expect(rows).toEqual(expect.arrayContaining([{ prefix: "•", name: "React" }]));
+
+// Good -- pins both the positive AND the absence of every other prefix
+expect(rows).toStrictEqual([{ prefix: "•", name: "React" }]);
+```
+
+**When two rows share the same prefix, prove it by exhaustive negation.** Don't extract to a parsed struct — assert directly on `lastFrame()` / `getFullOutput()` with one `toContain("<prefix> <name>")` per expected row plus explicit `not.toContain("<bug-prefix> <name>")` for every diff prefix that must NOT appear:
+
+```typescript
+expect(frame).toContain("• React");
+expect(frame).not.toContain("+ React");
+expect(frame).not.toContain("- React");
+expect(frame).not.toContain("~ React");
+```
+
+This is strictly stronger than `toStrictEqual({ project: "•", global: "•" })` on a parsed struct, because it pins the entire rendered frame rather than only the two slots a parser happened to look at. Parsed-struct assertions implicitly negate only at the scopes the helper inspects — they let bugs at other scopes ship silently.
+
+**Never define parser/extractor helpers inside a test file** — loops, regex scans, and state-machine `currentScope` variables that pluck prefixes out of rendered output. An uninstrumented parser silently produces wrong answers when layout changes and obscures the rendered contract (the substring IS the contract). Assert directly on the frame with `toContain` + exhaustive negation. If genuinely reusable across tests, live it in `e2e/helpers/` WITH its own tests.
 
 ---
 

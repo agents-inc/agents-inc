@@ -73,9 +73,6 @@ export type SkillAssignment<S extends SkillId = SkillId> = S | { id: S; preloade
  * The ProjectConfig interface, emitted after StackAgentConfig.
  */
 export const PROJECT_CONFIG_INTERFACE_AFTER = `export interface ProjectConfig {
-  /** Config version @default "1" */
-  version?: "1";
-
   /** Project/plugin name (kebab-case) */
   name: string;
 

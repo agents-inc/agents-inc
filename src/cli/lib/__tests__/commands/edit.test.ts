@@ -771,7 +771,11 @@ describe("migratePluginSkillScopes", () => {
 
     await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
-    expect(uninstallSpy).not.toHaveBeenCalledWith("web-framework-react", "user", "/project");
+    expect(uninstallSpy).not.toHaveBeenCalledWith(
+      "web-framework-react@agents-inc",
+      "user",
+      "/project",
+    );
     expect(installSpy).toHaveBeenCalledWith(
       "web-framework-react@agents-inc",
       "project",
@@ -794,7 +798,11 @@ describe("migratePluginSkillScopes", () => {
 
     await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
-    expect(uninstallSpy).toHaveBeenCalledWith("web-framework-react", "project", "/project");
+    expect(uninstallSpy).toHaveBeenCalledWith(
+      "web-framework-react@agents-inc",
+      "project",
+      "/project",
+    );
     expect(installSpy).toHaveBeenCalledWith("web-framework-react@agents-inc", "user", "/project");
 
     installSpy.mockRestore();
@@ -813,16 +821,8 @@ describe("migratePluginSkillScopes", () => {
 
     await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
-    expect(uninstallSpy).not.toHaveBeenCalledWith(
-      "web-framework-react",
-      expect.any(String),
-      "/project",
-    );
-    expect(installSpy).not.toHaveBeenCalledWith(
-      "web-framework-react@eject",
-      expect.any(String),
-      "/project",
-    );
+    expect(uninstallSpy).not.toHaveBeenCalled();
+    expect(installSpy).not.toHaveBeenCalled();
 
     installSpy.mockRestore();
     uninstallSpy.mockRestore();
@@ -847,7 +847,11 @@ describe("migratePluginSkillScopes", () => {
     expect(result.migrated).toHaveLength(2);
 
     // React global→project: NO uninstall, install at project
-    expect(uninstallSpy).not.toHaveBeenCalledWith("web-framework-react", "user", "/project");
+    expect(uninstallSpy).not.toHaveBeenCalledWith(
+      "web-framework-react@agents-inc",
+      "user",
+      "/project",
+    );
     expect(installSpy).toHaveBeenCalledWith(
       "web-framework-react@agents-inc",
       "project",
@@ -855,7 +859,11 @@ describe("migratePluginSkillScopes", () => {
     );
 
     // Zustand project→global: uninstall project, install at user
-    expect(uninstallSpy).toHaveBeenCalledWith("web-state-zustand", "project", "/project");
+    expect(uninstallSpy).toHaveBeenCalledWith(
+      "web-state-zustand@agents-inc",
+      "project",
+      "/project",
+    );
     expect(installSpy).toHaveBeenCalledWith("web-state-zustand@agents-inc", "user", "/project");
 
     installSpy.mockRestore();
@@ -877,7 +885,11 @@ describe("migratePluginSkillScopes", () => {
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
     // Should NOT have uninstalled global
-    expect(uninstallSpy).not.toHaveBeenCalledWith("web-framework-react", "user", "/project");
+    expect(uninstallSpy).not.toHaveBeenCalledWith(
+      "web-framework-react@agents-inc",
+      "user",
+      "/project",
+    );
     // Should report failure
     expect(result.migrated).toHaveLength(0);
     expect(result.failed).toHaveLength(1);
@@ -902,7 +914,11 @@ describe("migratePluginSkillScopes", () => {
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
     // Should have tried to uninstall
-    expect(uninstallSpy).toHaveBeenCalledWith("web-framework-react", "project", "/project");
+    expect(uninstallSpy).toHaveBeenCalledWith(
+      "web-framework-react@agents-inc",
+      "project",
+      "/project",
+    );
     // Should NOT have installed at global (uninstall failed, catch fired)
     expect(installSpy).not.toHaveBeenCalledWith(
       "web-framework-react@agents-inc",
@@ -930,16 +946,8 @@ describe("migratePluginSkillScopes", () => {
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
-    expect(uninstallSpy).not.toHaveBeenCalledWith(
-      "web-framework-react",
-      expect.any(String),
-      "/project",
-    );
-    expect(installSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining("web-framework-react"),
-      expect.any(String),
-      "/project",
-    );
+    expect(uninstallSpy).not.toHaveBeenCalled();
+    expect(installSpy).not.toHaveBeenCalled();
     expect(result.migrated).toHaveLength(0);
     expect(result.failed).toHaveLength(0);
 

@@ -22,6 +22,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: enforcement-gap
+status: resolved
+resolved_by: D-168 E2E anti-pattern audit (0.125.0)
 ---
 
 ## What Was Wrong

@@ -5,13 +5,13 @@ keywords: [zod, schemas, validation, safeParse, bridge-pattern, loader-schemas, 
 related:
   - reference/types/core-types.md
   - reference/architecture/overview.md
-last_validated: 2026-04-13
+last_validated: 2026-04-21
 ---
 
 # Zod Schema Reference
 
-**Last Updated:** 2026-04-13
-**Last Validated:** 2026-04-13
+**Last Updated:** 2026-04-21
+**Last Validated:** 2026-04-21
 
 > **Split from:** `reference/type-system.md`. See also: [core-types.md](./core-types.md), [operations-types.md](./operations-types.md).
 
@@ -35,16 +35,16 @@ All schemas in `src/cli/lib/schemas.ts`. 39 exported schemas total.
 
 ### Loader Schemas (lenient, `.passthrough()`)
 
-| Schema                         | Validates                 | Pattern                        |
-| ------------------------------ | ------------------------- | ------------------------------ |
-| `skillFrontmatterLoaderSchema` | SKILL.md frontmatter      | Lenient object                 |
-| `skillMetadataLoaderSchema`    | metadata.yaml             | `.passthrough()` + superRefine |
-| `projectConfigLoaderSchema`    | .claude-src/config.ts     | `.passthrough()`               |
-| `projectSourceConfigSchema`    | Source config             | `.passthrough()`               |
-| `localRawMetadataSchema`       | Local skill metadata.yaml | `.passthrough()` + superRefine |
-| `localSkillMetadataSchema`     | Local skill forkedFrom    | `.passthrough()`               |
-| `settingsFileSchema`           | settings.yaml             | `.passthrough()`               |
-| `importedSkillMetadataSchema`  | Imported skill metadata   | `.passthrough()`               |
+| Schema                         | Validates                 | Pattern                                      |
+| ------------------------------ | ------------------------- | -------------------------------------------- |
+| `skillFrontmatterLoaderSchema` | SKILL.md frontmatter      | Lenient object                               |
+| `skillMetadataLoaderSchema`    | metadata.yaml             | `.passthrough()` + superRefine               |
+| `projectConfigLoaderSchema`    | .claude-src/config.ts     | `.passthrough()` (no `version` field; D-231) |
+| `projectSourceConfigSchema`    | Source config             | `.passthrough()`                             |
+| `localRawMetadataSchema`       | Local skill metadata.yaml | `.passthrough()` + superRefine               |
+| `localSkillMetadataSchema`     | Local skill forkedFrom    | `.passthrough()`                             |
+| `settingsFileSchema`           | settings.yaml             | `.passthrough()`                             |
+| `importedSkillMetadataSchema`  | Imported skill metadata   | `.passthrough()`                             |
 
 ### Structural Schemas (data shapes)
 
@@ -80,4 +80,8 @@ All schemas in `src/cli/lib/schemas.ts`. 39 exported schemas total.
 
 Schema bridge pattern: `z.enum(GENERATED_ARRAY) as z.ZodType<UnionType>` ensures Zod output matches TypeScript union types from generated source.
 
-Utility functions: `formatZodErrors()`, `validateNestingDepth()`, `warnUnknownFields()`.
+Utility functions: `formatZodIssues()`, `validateNestingDepth()`, `isCustomMetadata()`, `warnUnknownFields()`.
+
+### Recent changes
+
+- **D-231** (2026-04-21): Removed `version: z.literal("1").optional()` from `projectConfigLoaderSchema`. `.claude-src/config.ts` is a TypeScript module (not a versioned schema), so the field was dead. See also `reference/types/core-types.md` (`ProjectConfig` — no `version` field).

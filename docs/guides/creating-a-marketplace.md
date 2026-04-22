@@ -30,5 +30,4 @@ Marketplaces are Git repositories. Share them by giving your team access to the 
 
 ```bash
 agentsinc build plugins    # Package individual skills and agents
-agentsinc build stack      # Package a full stack as a single plugin
 ```

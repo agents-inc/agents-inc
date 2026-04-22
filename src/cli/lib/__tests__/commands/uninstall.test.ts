@@ -607,9 +607,8 @@ describe("uninstall command", () => {
     });
 
     it("should uninstall re-scoped plugins by trying both scopes", async () => {
-      // Import exec module and spy on claudePluginUninstall
       const execModule = await import("../../../utils/exec");
-      const spy = vi.spyOn(execModule, "claudePluginUninstall").mockResolvedValue();
+      const spy = vi.spyOn(execModule, "claudePluginUninstallBestEffort").mockResolvedValue();
       const cliSpy = vi.spyOn(execModule, "isClaudeCLIAvailable").mockResolvedValue(true);
 
       // Import the exported uninstallPlugins function
@@ -635,10 +634,8 @@ describe("uninstall command", () => {
 
       expect(result.totalUninstalled).toBe(1);
 
-      // Should call claudePluginUninstall with both "project" (primary) and "user" (fallback)
-      const scopeArgs = spy.mock.calls.map((call) => call[1]);
-      expect(scopeArgs).toContain("project");
-      expect(scopeArgs).toContain("user");
+      // Helper encapsulates the dual-scope attempt; assert primary scope passed for "project" config.
+      expect(spy).toHaveBeenCalledWith("test-plugin@marketplace", "project", projectDir);
 
       spy.mockRestore();
       cliSpy.mockRestore();
@@ -667,7 +664,7 @@ describe("uninstall command", () => {
       // Scenario: skill was originally project, re-scoped to global during edit
       // Config says scope: "global" but plugin registry may have "project" scope entry
       const execModule = await import("../../../utils/exec");
-      const spy = vi.spyOn(execModule, "claudePluginUninstall").mockResolvedValue();
+      const spy = vi.spyOn(execModule, "claudePluginUninstallBestEffort").mockResolvedValue();
       const cliSpy = vi.spyOn(execModule, "isClaudeCLIAvailable").mockResolvedValue(true);
 
       const { uninstallPlugins: uninstallPluginsFn } = await import("../../../commands/uninstall");
@@ -692,10 +689,8 @@ describe("uninstall command", () => {
 
       expect(result.totalUninstalled).toBe(1);
 
-      // Should call claudePluginUninstall with both "user" (primary for global) and "project" (fallback)
-      const scopeArgs = spy.mock.calls.map((call) => call[1]);
-      expect(scopeArgs).toContain("user");
-      expect(scopeArgs).toContain("project");
+      // Helper encapsulates the dual-scope attempt; assert primary scope passed for "global" config ("user" for plugins).
+      expect(spy).toHaveBeenCalledWith("test-plugin@marketplace", "user", projectDir);
 
       spy.mockRestore();
       cliSpy.mockRestore();

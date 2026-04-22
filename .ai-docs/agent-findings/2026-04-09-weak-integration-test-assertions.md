@@ -16,6 +16,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: 42 toBeDefined + 5 toBeTruthy replaced across 7 integration test files
 ---
 
 ## What Was Wrong

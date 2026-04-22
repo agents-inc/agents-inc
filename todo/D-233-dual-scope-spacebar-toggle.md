@@ -79,7 +79,9 @@ For the fix to work correctly in the clean case (global install from a different
 
 ## Consolidation with D-230 and D-232
 
-D-230 (info-panel `-` on global row during G→P) and D-232 (info-panel `+` for globally-installed skill on next edit) are symptoms of the same architectural mismatch: `SkillConfig[]` keys by `(id, scope)` but the store and renderer treat some operations as `id`-only. Once Layer 1 + Layer 2 are in place, the store emits the correct two-entry shape and the info-panel diff naturally produces the right `+`/`-`/`•` without additional renderer changes. **Strongly consider landing D-230, D-232, and D-233 in one PR** (and D-227 for agent parity).
+> **Status note 2026-04-21**: **D-230 and D-232 landed in 0.141.0** via a renderer-layer fix in `skill-agent-summary.tsx` (tombstones are now first-class slot occupants in the diff baseline, slot-occupancy matching for `removedSkills`/`removedAgents`). The renderer-layer fix was the right call — the store-layer mismatch this plan hypothesized doesn't produce the info-panel bugs once the diff baseline stops pre-filtering tombstones. D-233's store-layer work remains open (`applySkillRemoval` + `populateFromSkillIds` + `toggleTechnology` guard); the info-panel half is already correct. See `.ai-docs/agent-findings/2026-04-21-d230-d232-diff-baseline-pre-filter-drift.md`.
+
+D-230 (info-panel `-` on global row during G→P) and D-232 (info-panel `+` for globally-installed skill on next edit) were symptoms of the same architectural mismatch hypothesis: `SkillConfig[]` keys by `(id, scope)` but the store and renderer treat some operations as `id`-only. **[Shipped 0.141.0 at the renderer layer — Layers 1+2 are no longer prerequisites for the info-panel half.]**
 
 ## Scope (files)
 
@@ -98,7 +100,7 @@ D-230 (info-panel `-` on global row during G→P) and D-232 (info-panel `+` for 
 - No new `SkillConfig` schema fields. Tombstone shape unchanged.
 - No change to scope-toggle (`s`) path — D-223/D-224 own that.
 - No `SkillConfig.source` taxonomy split (no `"local"` literal) — user rejected.
-- Do NOT fix D-230 / D-232 at the renderer layer if Layers 1+2 make them fall out automatically. Only touch `skill-agent-summary.tsx` if after Layers 1+2 the info-panel diff is still wrong.
+- ~~Do NOT fix D-230 / D-232 at the renderer layer if Layers 1+2 make them fall out automatically.~~ **[Superseded 2026-04-21: D-230/D-232 shipped at the renderer layer in 0.141.0; slot-occupancy matching was the correct fix site.]**
 
 ## Test plan
 
@@ -133,7 +135,7 @@ Uses `getScopeBadgesForSkill` + `toggleFocusedSkill` (both already exist in `e2e
 - **D-224** (DONE) — P→G tombstone cleanup; sibling on the scope-toggle path. Fix A template; **Fix B** (live global read) is the deferred prerequisite this plan resurrects.
 - **D-225** (DONE) — info-panel asymmetric diff; renderer sibling.
 - **D-227** (Ready for Dev) — agent-path tombstone loss; same architectural family, fix together.
-- **D-230** (Ready for Dev) — info-panel `-` on global row during G→P; likely falls out automatically once Layers 1+2 ship.
-- **D-232** (Ready for Dev) — info-panel `+` mis-tag; same root cause; likely falls out automatically.
+- ~~**D-230** (Ready for Dev) — info-panel `-` on global row during G→P; likely falls out automatically once Layers 1+2 ship.~~ **SHIPPED 0.141.0** at the renderer layer (slot-occupancy matching in `skill-agent-summary.tsx`); no longer blocks or depends on D-233. See `.ai-docs/agent-findings/2026-04-21-d230-d232-diff-baseline-pre-filter-drift.md`.
+- ~~**D-232** (Ready for Dev) — info-panel `+` mis-tag; same root cause; likely falls out automatically.~~ **SHIPPED 0.141.0** alongside D-230 (same renderer-layer fix).
 - **D-226** (Ready for Dev) — E2E sandbox HOME collapse; test-infra prerequisite for the new E2E to exercise `HOME !== projectDir`.
 - Finding `.ai-docs/agent-findings/2026-04-06-excluded-tombstones-block-scope-toggle.md` — same family of store-layer tombstone-semantics gaps.

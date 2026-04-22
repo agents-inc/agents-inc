@@ -16,6 +16,8 @@ reporting_agent: cli-tester
 category: dry
 domain: e2e
 root_cause: rule-not-visible
+status: resolved
+resolved_by: duplicated helpers removed; D-168 audit
 ---
 
 ## What Was Wrong

@@ -11,6 +11,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: compile.test.ts + init.test.ts output verification added
 ---
 
 ## What Was Wrong

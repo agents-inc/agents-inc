@@ -1,6 +1,8 @@
-# E2E Test Coverage Gaps
+---
+last_validated: 2026-04-21
+---
 
-Last updated: 2026-04-16
+# E2E Test Coverage Gaps
 
 ## Status Legend
 
@@ -31,6 +33,7 @@ Last updated: 2026-04-16
 | Init → Edit → Compile full chain  | [FILLED] | lifecycle/init-edit-compile-roundtrip       |
 | Dashboard menu Edit execution     | [TODO]   | —                                           |
 | Invalid --source URL error        | [FILLED] | lifecycle/init-edit-error-guards            |
+| Plugin install failure hard-error | [FILLED] | lifecycle/plugin-install-failure-hard-error |
 | All domains deselected validation | [TODO]   | —                                           |
 
 ## 2. Edit Command
@@ -260,6 +263,8 @@ Last updated: 2026-04-16
 **Coverage: 96% (146/152 flows covered, 5 skipped, 2 TODOs left)**
 
 ### Remaining TODOs (low priority)
+
+These are **tracked here, not in `todo/TODO.md`**. They are coverage-tracker entries for minor edge cases, not actionable tickets. Promote to TODO.md only if one becomes blocking or a real bug surfaces.
 
 - Init: All domains deselected validation — requires wizard interaction to deselect all domains (edge case)
 - Edit: All skills deselected validation — requires wizard interaction to deselect all skills (edge case)

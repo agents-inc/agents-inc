@@ -9,10 +9,21 @@ affected_files:
 standards_docs:
   - .ai-docs/standards/clean-code-standards.md
 date: 2026-03-25
-reporting_agent: cli-reviewer
+proposer: cli-reviewer
 category: complexity
 domain: shared
 root_cause: convention-undocumented
+status: absorbed-informally
+resolution_date: 2026-04-21
+resolution_note: |
+  Core idea (thin orchestrators + pure helpers, extract when name communicates more than expression)
+  is present in clean-code-standards.md §1.3 ("Split components at 300 LOC... parent becomes a thin
+  orchestrator") and the "GOOD: thin orchestrator calling focused helpers" example pattern, plus
+  scattered orchestrator references (§415+). NOT present as a titled "Declarative Programming — No
+  Context Required" section with the full two-tier pattern, the "Can you read it without simulating?"
+  test, or the named-test-data rule (REACT_CONFLICTS_VUE / BUILD_STEP_WEB_MATRIX). CLAUDE.md has
+  no declarative/SLAP rule. Residual: if future drift recurs on inline transforms or inline
+  createMock* calls, promote to a named section rather than leaving it informally absorbed.
 ---
 
 ## Core Principle: Code Should Not Require Context to Understand

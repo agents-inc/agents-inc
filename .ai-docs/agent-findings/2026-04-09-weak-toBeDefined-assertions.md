@@ -13,6 +13,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: 81 toBeDefined replaced with strict assertions in loading tests
 ---
 
 ## What Was Wrong

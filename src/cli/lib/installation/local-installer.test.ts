@@ -2,6 +2,16 @@ import { mkdir, writeFile, readFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Override GLOBAL_INSTALL_ROOT to a non-existent path so getGlobalConfigTypesPath()
+// returns null in the default case — the dev machine's real ~/.claude-src/ must
+// never affect tests. Individual tests that need the global-types-import form
+// override this via Object.defineProperty inside a scoped describe block.
+vi.mock("../../consts", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../consts")>();
+  return { ...mod, GLOBAL_INSTALL_ROOT: "/tmp/nonexistent-global-root" };
+});
+
 import {
   installEject,
   writeScopedConfigs,
@@ -623,8 +633,10 @@ describe("local-installer", () => {
   });
 
   describe("writeScopedConfigs", () => {
-    // Boundary cast: empty agents record for tests that don't need agent definitions
-    const emptyAgents = {} as Record<AgentName, AgentDefinition>;
+    // Partial<Record<>> per CLAUDE.md — tests pass this through to callees that
+    // require Record<AgentName, AgentDefinition>; the cast happens at each call
+    // site where the empty map is acceptable because the callees don't read it.
+    const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
     let savedHome: string | undefined;
     let globalHome: string;
 
@@ -663,7 +675,7 @@ describe("local-installer", () => {
       await writeScopedConfigs(
         config,
         EMPTY_MATRIX,
-        emptyAgents,
+        emptyAgents as Record<AgentName, AgentDefinition>,
         projectDir,
         projectConfigPath,
         false, // no existing project installation
@@ -697,7 +709,7 @@ describe("local-installer", () => {
       await writeScopedConfigs(
         config,
         EMPTY_MATRIX,
-        emptyAgents,
+        emptyAgents as Record<AgentName, AgentDefinition>,
         projectDir,
         projectConfigPath,
         false, // no existing project installation, but project-scoped items exist
@@ -1581,8 +1593,9 @@ describe("local-installer", () => {
   describe("writeScopedConfigs with HOME isolation", () => {
     // Moved from e2e/lifecycle/unified-config-view.e2e.test.ts — these are unit tests
     // that call writeScopedConfigs directly, not E2E tests.
-    // Boundary cast: empty agents record for tests that don't need agent definitions
-    const emptyAgents = {} as Record<AgentName, AgentDefinition>;
+    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
+    // callees require Record<AgentName, AgentDefinition>.
+    const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
     let savedHome: string | undefined;
     let globalHome: string;
 
@@ -1620,7 +1633,7 @@ describe("local-installer", () => {
       await writeScopedConfigs(
         config,
         EMPTY_MATRIX,
-        emptyAgents,
+        emptyAgents as Record<AgentName, AgentDefinition>,
         projectDir,
         projectConfigPath,
         false,
@@ -1661,7 +1674,7 @@ describe("local-installer", () => {
       await writeScopedConfigs(
         config,
         EMPTY_MATRIX,
-        emptyAgents,
+        emptyAgents as Record<AgentName, AgentDefinition>,
         projectDir,
         projectConfigPath,
         false,
@@ -1687,6 +1700,204 @@ describe("local-installer", () => {
       // Verify global config contains the global-scoped skill
       const globalParsed = await readTestTsConfig<ProjectConfig>(globalConfigPath);
       expect(globalParsed.skills.some((s) => s.id === "web-framework-react")).toBe(true);
+    });
+  });
+
+  // D-216 / D-228: writeScopedConfigs must emit project config-types.ts that
+  // imports from the global install's config-types.ts (not an inlined standalone
+  // union). Requires overriding GLOBAL_INSTALL_ROOT so getGlobalConfigTypesPath()
+  // points at a test-controlled global dir.
+  describe("writeScopedConfigs — project config-types imports from global", () => {
+    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
+    // callees require Record<AgentName, AgentDefinition>.
+    const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
+    let savedHome: string | undefined;
+    let fakeHome: string;
+    let consts: typeof import("../../consts");
+
+    beforeEach(async () => {
+      savedHome = process.env.HOME;
+      fakeHome = path.join(tempDir, "fake-home");
+      await mkdir(fakeHome, { recursive: true });
+      process.env.HOME = fakeHome;
+
+      // Point GLOBAL_INSTALL_ROOT at the fake home so getGlobalConfigTypesPath()
+      // detects the seeded global config-types.ts file inside the test's tempDir.
+      consts = await import("../../consts");
+      Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
+        value: fakeHome,
+        writable: true,
+      });
+    });
+
+    afterEach(() => {
+      // Restore the default mocked GLOBAL_INSTALL_ROOT so other tests don't pick
+      // up the fake home after this block finishes.
+      Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
+        value: "/tmp/nonexistent-global-root",
+        writable: true,
+      });
+      if (savedHome !== undefined) {
+        process.env.HOME = savedHome;
+      } else {
+        delete process.env.HOME;
+      }
+    });
+
+    it("emits project config-types.ts with import from global and extended SkillId union", async () => {
+      // Seed a global config-types.ts so getGlobalConfigTypesPath() returns non-null
+      const globalClaudeSrc = path.join(fakeHome, CLAUDE_SRC_DIR);
+      await mkdir(globalClaudeSrc, { recursive: true });
+      await writeFile(
+        path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
+        "// global config-types placeholder",
+      );
+
+      const projectDir = path.join(tempDir, "project");
+      const projectConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      await mkdir(path.dirname(projectConfigPath), { recursive: true });
+
+      const config = buildProjectConfig({
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+          ...buildSkillConfigs(["web-testing-vitest"], { scope: "project" }),
+        ],
+        agents: [
+          ...buildAgentConfigs(["web-developer"], { scope: "global" }),
+          ...buildAgentConfigs(["web-reviewer"], { scope: "project" }),
+        ],
+      });
+
+      await writeScopedConfigs(
+        config,
+        SINGLE_REACT_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+        projectDir,
+        projectConfigPath,
+        false,
+      );
+
+      const projectTypesPath = path.join(
+        projectDir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TYPES_TS,
+      );
+      const { fileExists } = await import("../../utils/fs");
+      expect(await fileExists(projectTypesPath)).toBe(true);
+
+      const typesContent = await readFile(projectTypesPath, "utf-8");
+
+      // Must be the import-and-extend form — not the standalone/inlined form
+      expect(typesContent).toContain("import type {");
+      expect(typesContent).toContain("SkillId as GlobalSkillId");
+      expect(typesContent).toContain("AgentName as GlobalAgentName");
+      expect(typesContent).toContain("Domain as GlobalDomain");
+      expect(typesContent).toContain("Category as GlobalCategory");
+
+      // Project-scoped additions extend the global union
+      expect(typesContent).toContain('export type SkillId = GlobalSkillId | "web-testing-vitest"');
+      expect(typesContent).toContain('export type AgentName = GlobalAgentName | "web-reviewer"');
+
+      // Global-scoped items are NOT inlined in the project types file — they're
+      // reached via the GlobalSkillId / GlobalAgentName re-exports
+      expect(typesContent).not.toContain('"web-framework-react"');
+      expect(typesContent).not.toContain('"web-developer"');
+    });
+
+    it("emits only the global alias when there are no project-scoped items (pure propagation case)", async () => {
+      // Seed a global config-types.ts so getGlobalConfigTypesPath() returns non-null
+      const globalClaudeSrc = path.join(fakeHome, CLAUDE_SRC_DIR);
+      await mkdir(globalClaudeSrc, { recursive: true });
+      await writeFile(
+        path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
+        "// global config-types placeholder",
+      );
+
+      const projectDir = path.join(tempDir, "project");
+      const projectConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      await mkdir(path.dirname(projectConfigPath), { recursive: true });
+
+      // All items are global-scoped; the only reason writeScopedConfigs writes the
+      // project config here is projectInstallationExists=true (pre-existing project
+      // install, e.g., the user ran `cc edit` in a project after a global install).
+      const config = buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+      });
+
+      await writeScopedConfigs(
+        config,
+        SINGLE_REACT_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+        projectDir,
+        projectConfigPath,
+        true, // projectInstallationExists — forces project config write
+      );
+
+      const projectTypesPath = path.join(
+        projectDir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TYPES_TS,
+      );
+      const { fileExists } = await import("../../utils/fs");
+      expect(await fileExists(projectTypesPath)).toBe(true);
+
+      const typesContent = await readFile(projectTypesPath, "utf-8");
+
+      // Import form is still used; with no project-only items the aliases reduce
+      // to the global unions directly
+      expect(typesContent).toContain("SkillId as GlobalSkillId");
+      expect(typesContent).toContain("export type SkillId = GlobalSkillId;");
+      expect(typesContent).toContain("export type AgentName = GlobalAgentName;");
+
+      // No inlined skill IDs or agent names — everything flows through global
+      expect(typesContent).not.toContain('"web-framework-react"');
+      expect(typesContent).not.toContain('"web-developer"');
+    });
+
+    it("falls back to standalone config-types when no global install exists", async () => {
+      // Intentionally do NOT create fakeHome/.claude-src/config-types.ts. With the
+      // default GLOBAL_INSTALL_ROOT override in place, getGlobalConfigTypesPath()
+      // returns null and regenerateConfigTypes falls back to the standalone path.
+      Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
+        value: "/tmp/nonexistent-global-root",
+        writable: true,
+      });
+
+      const projectDir = path.join(tempDir, "project-standalone");
+      const projectConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      await mkdir(path.dirname(projectConfigPath), { recursive: true });
+
+      const config = buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      });
+
+      await writeScopedConfigs(
+        config,
+        SINGLE_REACT_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+        projectDir,
+        projectConfigPath,
+        false,
+      );
+
+      const projectTypesPath = path.join(
+        projectDir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TYPES_TS,
+      );
+      const typesContent = await readFile(projectTypesPath, "utf-8");
+
+      // Standalone form: inlined unions, no "as GlobalSkillId" import
+      expect(typesContent).not.toContain("as GlobalSkillId");
+      expect(typesContent).toContain('"web-framework-react"');
     });
   });
 
@@ -1780,8 +1991,9 @@ describe("local-installer", () => {
   });
 
   describe("propagateGlobalChangesToProjects", () => {
-    // Boundary cast: empty agents record for tests that don't need agent definitions
-    const emptyAgents = {} as Record<AgentName, AgentDefinition>;
+    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
+    // callees require Record<AgentName, AgentDefinition>.
+    const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
 
     it("should return empty arrays when no projects registered", async () => {
       const globalConfig = buildProjectConfig({
@@ -1793,7 +2005,7 @@ describe("local-installer", () => {
       const result = await propagateGlobalChangesToProjects(
         globalConfig,
         EMPTY_MATRIX,
-        emptyAgents,
+        emptyAgents as Record<AgentName, AgentDefinition>,
       );
 
       expect(result).toStrictEqual({ updated: [], skipped: [] });
@@ -1812,7 +2024,7 @@ describe("local-installer", () => {
       const result = await propagateGlobalChangesToProjects(
         globalConfig,
         EMPTY_MATRIX,
-        emptyAgents,
+        emptyAgents as Record<AgentName, AgentDefinition>,
       );
 
       expect(result).toStrictEqual({ updated: [], skipped: [stalePath] });
@@ -1848,7 +2060,7 @@ describe("local-installer", () => {
       const result = await propagateGlobalChangesToProjects(
         globalConfig,
         EMPTY_MATRIX,
-        emptyAgents,
+        emptyAgents as Record<AgentName, AgentDefinition>,
         projectA,
       );
 
@@ -1878,7 +2090,11 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(globalConfig, SINGLE_REACT_MATRIX, emptyAgents);
+      await propagateGlobalChangesToProjects(
+        globalConfig,
+        SINGLE_REACT_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+      );
 
       const typesPath = path.join(configDir, STANDARD_FILES.CONFIG_TYPES_TS);
       const { fileExists } = await import("../../utils/fs");
@@ -1910,7 +2126,11 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(globalConfig, SINGLE_REACT_MATRIX, emptyAgents);
+      await propagateGlobalChangesToProjects(
+        globalConfig,
+        SINGLE_REACT_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+      );
 
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       // Verify the config file was updated with global data
@@ -1936,10 +2156,94 @@ describe("local-installer", () => {
       const result = await propagateGlobalChangesToProjects(
         globalConfig,
         EMPTY_MATRIX,
-        emptyAgents,
+        emptyAgents as Record<AgentName, AgentDefinition>,
       );
 
       expect(result).toStrictEqual({ updated: [], skipped: [] });
+    });
+  });
+
+  // D-216 / D-228: propagateGlobalChangesToProjects writes PROJECT config-types.ts
+  // for every registered project when a global-scope change happens. Those project
+  // types files must use the same global-aware import-and-extend form that
+  // writeScopedConfigs uses during project init/edit — otherwise a global edit
+  // would flip every project's types file from import-form back to standalone.
+  describe("propagateGlobalChangesToProjects — project config-types imports from global", () => {
+    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
+    // callees require Record<AgentName, AgentDefinition>.
+    const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
+    let fakeHome: string;
+    let consts: typeof import("../../consts");
+
+    beforeEach(async () => {
+      fakeHome = path.join(tempDir, "fake-home");
+      await mkdir(fakeHome, { recursive: true });
+
+      consts = await import("../../consts");
+      Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
+        value: fakeHome,
+        writable: true,
+      });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
+        value: "/tmp/nonexistent-global-root",
+        writable: true,
+      });
+    });
+
+    it("emits import-and-extend project config-types when global install exists", async () => {
+      // Seed a global config-types.ts so the global-aware branch kicks in
+      const globalClaudeSrc = path.join(fakeHome, CLAUDE_SRC_DIR);
+      await mkdir(globalClaudeSrc, { recursive: true });
+      await writeFile(
+        path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
+        "// global config-types placeholder",
+      );
+
+      const projectDir = path.join(tempDir, "target-project");
+      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+      await mkdir(configDir, { recursive: true });
+
+      // Project owns a project-scoped skill/agent before propagation runs
+      const projectConfig = buildProjectConfig({
+        name: "target",
+        skills: buildSkillConfigs(["web-testing-vitest"], { scope: "project" }),
+        agents: buildAgentConfigs(["web-reviewer"], { scope: "project" }),
+      });
+      await writeConfigFile(projectConfig, path.join(configDir, STANDARD_FILES.CONFIG_TS));
+
+      const globalConfig = buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        projects: [projectDir],
+      });
+
+      await propagateGlobalChangesToProjects(
+        globalConfig,
+        SINGLE_REACT_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+      );
+
+      const projectTypesPath = path.join(configDir, STANDARD_FILES.CONFIG_TYPES_TS);
+      const typesContent = await readFile(projectTypesPath, "utf-8");
+
+      // Must be the import-and-extend form
+      expect(typesContent).toContain("SkillId as GlobalSkillId");
+      expect(typesContent).toContain("AgentName as GlobalAgentName");
+
+      // Project-scoped items extend the global unions
+      expect(typesContent).toContain('export type SkillId = GlobalSkillId | "web-testing-vitest"');
+      expect(typesContent).toContain('export type AgentName = GlobalAgentName | "web-reviewer"');
+
+      // Global items are NOT inlined — they flow through GlobalSkillId / GlobalAgentName
+      expect(typesContent).not.toContain('"web-framework-react"');
+      expect(typesContent).not.toContain('"web-developer"');
     });
   });
 });

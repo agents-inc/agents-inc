@@ -15,14 +15,13 @@ Run `agentsinc compile` after editing any ejected files to rebuild your subagent
 
 ## Partials
 
-Each subagent has six partials that can be customized:
+Each subagent has five partials that can be customized:
 
-- `intro.md` — Role description and identity
-- `workflow.md` — Step-by-step process the agent follows
-- `examples.md` — Example interactions
+- `identity.md` — Role description and identity
+- `playbook.md` — Step-by-step process the agent follows
 - `critical-requirements.md` — Hard rules the agent must follow
 - `critical-reminders.md` — Repeated emphasis on key behaviors
-- `output-format.md` — How the agent structures its responses
+- `output.md` — How the agent structures its responses
 
 **Partials** apply to specific roles. Use these to customize how a particular subagent behaves.
 

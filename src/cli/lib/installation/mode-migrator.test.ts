@@ -16,13 +16,18 @@ vi.mock("../../utils/exec", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../utils/exec")>()),
   claudePluginInstall: vi.fn().mockResolvedValue(undefined),
   claudePluginUninstall: vi.fn().mockResolvedValue(undefined),
+  claudePluginUninstallBestEffort: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../../utils/logger");
 
 import { detectMigrations, executeMigration } from "./mode-migrator";
 import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
-import { claudePluginInstall, claudePluginUninstall } from "../../utils/exec";
+import {
+  claudePluginInstall,
+  claudePluginUninstall,
+  claudePluginUninstallBestEffort,
+} from "../../utils/exec";
 
 describe("mode-migrator", () => {
   describe("detectMigrations", () => {
@@ -186,7 +191,11 @@ describe("mode-migrator", () => {
         sourceResult.matrix,
         sourceResult,
       );
-      expect(claudePluginUninstall).toHaveBeenCalledWith("web-framework-react", "project", tempDir);
+      expect(claudePluginUninstallBestEffort).toHaveBeenCalledWith(
+        "web-framework-react@https://marketplace.example.com",
+        "project",
+        tempDir,
+      );
       expect(result.ejectedSkills).toStrictEqual(["web-framework-react"]);
       expect(result.warnings).toStrictEqual([]);
     });
@@ -231,6 +240,7 @@ describe("mode-migrator", () => {
       expect(deleteLocalSkill).not.toHaveBeenCalled();
       expect(claudePluginInstall).not.toHaveBeenCalled();
       expect(claudePluginUninstall).not.toHaveBeenCalled();
+      expect(claudePluginUninstallBestEffort).not.toHaveBeenCalled();
       expect(result.ejectedSkills).toStrictEqual([]);
       expect(result.pluginizedSkills).toStrictEqual([]);
       expect(result.warnings).toStrictEqual([]);
@@ -315,6 +325,7 @@ describe("mode-migrator", () => {
 
         expect(copySkillsToLocalFlattened).toHaveBeenCalled();
         expect(claudePluginUninstall).not.toHaveBeenCalled();
+        expect(claudePluginUninstallBestEffort).not.toHaveBeenCalled();
         expect(result.ejectedSkills).toStrictEqual(["web-framework-react"]);
         expect(result.warnings).toStrictEqual([]);
       });
@@ -376,8 +387,8 @@ describe("mode-migrator", () => {
 
         const result = await executeMigration(plan, tempDir, sourceResult);
 
-        expect(claudePluginUninstall).toHaveBeenCalledWith(
-          "web-framework-react",
+        expect(claudePluginUninstallBestEffort).toHaveBeenCalledWith(
+          "web-framework-react@https://marketplace.example.com",
           "project",
           tempDir,
         );
@@ -410,7 +421,11 @@ describe("mode-migrator", () => {
 
         const result = await executeMigration(plan, tempDir, sourceResult);
 
-        expect(claudePluginUninstall).toHaveBeenCalledWith("web-framework-react", "user", tempDir);
+        expect(claudePluginUninstallBestEffort).toHaveBeenCalledWith(
+          "web-framework-react@https://marketplace.example.com",
+          "user",
+          tempDir,
+        );
         expect(result.ejectedSkills).toStrictEqual(["web-framework-react"]);
       });
 

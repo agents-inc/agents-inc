@@ -1,8 +1,27 @@
+---
+type: anti-pattern
+severity: high
+affected_files:
+  - src/cli/stores/wizard-store.ts
+  - src/cli/lib/configuration/config-generator.ts
+standards_docs:
+  - .ai-docs/DOCUMENTATION_MAP.md
+date: 2026-04-20
+reporting_agent: cli-developer
+category: architecture
+domain: cli
+root_cause: convention-undocumented
+superseded_by: 2026-04-20-newly-toggled-agent-defaults-global-breaks-project-scope-stack.md
+status: superseded
+---
+
 # New-agent toggle defaults to global scope, silently strips project skills
 
 **Date**: 2026-04-20
 **Area**: `src/cli/stores/wizard-store.ts` (applyAgentToggle) ↔ `src/cli/lib/configuration/config-generator.ts` (isScopeCompatible)
 **Severity**: High — breaks D-220 Scenario C: "new agent added this session seeds from ownership defaults"
+
+> **Note:** This finding is an earlier, less-formatted draft of the same root cause documented more rigorously in [`2026-04-20-newly-toggled-agent-defaults-global-breaks-project-scope-stack.md`](./2026-04-20-newly-toggled-agent-defaults-global-breaks-project-scope-stack.md). Kept for historical context; the sibling file is authoritative.
 
 ## Anti-pattern
 

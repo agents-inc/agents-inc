@@ -1,6 +1,8 @@
 # D-216: Global → project config propagation & scope defaults
 
-> **Status note 2026-04-20**: partial 10-agent sweep, 8/10 rate-limited, 1 substantive return. Plan's **Regression #1** (project `config-types.ts` missing global import because `writeScopedConfigs` calls `writeStandaloneConfigTypes` instead of `regenerateConfigTypes`) matches the user-filed symptom at top of TODO.md ("Installing a skill in the global scope, [...] the project scopes, their config types.ts and config.ts files don't reflect the newly installed global skill"). Still unaddressed.
+> **Status note 2026-04-21**: **Regression #1 landed as D-228 in 0.141.0.** `writeScopedConfigs` + `propagateGlobalChangesToProjects` project-branch writes now route through `regenerateConfigTypes`; project `config-types.ts` imports `GlobalSkillId` / `GlobalAgentName` / `GlobalDomain` / `GlobalCategory`. See `.ai-docs/agent-findings/2026-04-20-d228-writeStandaloneConfigTypes-project-branch.md`. Regression #2 below is still open (but likely obsolete per 2026-04-20 user clarification — see next note).
+>
+> **Status note 2026-04-20**: partial 10-agent sweep, 8/10 rate-limited, 1 substantive return. Plan's **Regression #1** (project `config-types.ts` missing global import because `writeScopedConfigs` calls `writeStandaloneConfigTypes` instead of `regenerateConfigTypes`) matches the user-filed symptom at top of TODO.md ("Installing a skill in the global scope, [...] the project scopes, their config types.ts and config.ts files don't reflect the newly installed global skill"). **[Landed 2026-04-21 as D-228.]**
 >
 > **Plan's Regression #2** (scope hardcoded to `"global"` at creation sites) — per user clarification 2026-04-20, defaulting to global is CORRECT intended behavior; scope is explicitly toggled via `s`. Therefore Regression #2 is likely obsolete and should be removed from this plan.
 >

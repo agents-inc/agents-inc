@@ -35,7 +35,7 @@ npx @agents-inc/cli init
   <img src="screenshots/stack-selection.png" alt="Stack selection" width="500">
 </p>
 
-Choose from 16 pre-built stacks or start from scratch. Stacks pre-select skills and agents for common tech combinations.
+Choose from 17 pre-built stacks or start from scratch. Stacks pre-select skills and agents for common tech combinations.
 
 | Stack                        | Technologies                                                 |
 | ---------------------------- | ------------------------------------------------------------ |
@@ -55,6 +55,7 @@ Choose from 16 pre-built stacks or start from scratch. Stacks pre-select skills 
 | `nuxt-fullstack`             | Nuxt + Hono + Drizzle + Better Auth                          |
 | `angular-modern-fullstack`   | Angular + NgRx + Hono + Drizzle + Better Auth                |
 | `expo-mobile-fullstack`      | Expo + React Native + Zustand + React Query + Hono + Drizzle |
+| `cli-ink-oclif`              | oclif + Ink + Zustand + Vitest                               |
 
 <p align="center">
   <img src="screenshots/skill-selection.png" alt="Skill selection" width="500">
@@ -127,10 +128,13 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 
 ### Customization
 
-| Command        | Description                                                               |
-| -------------- | ------------------------------------------------------------------------- |
-| `eject <type>` | Export for customization (`agent-partials`, `templates`, `skills`, `all`) |
-| `import skill` | Import a skill from an external GitHub repository                         |
+| Command           | Description                                                                         |
+| ----------------- | ----------------------------------------------------------------------------------- |
+| `eject <type>`    | Export for customization (`agent-partials`, `templates`, `skills`, `all`)           |
+| `import skill`    | Import a skill from an external GitHub repository                                   |
+| `new skill`       | (FEATURE-GATED: `NEW_SKILL_COMMAND=false`) Scaffold a new local skill               |
+| `new agent`       | (FEATURE-GATED: `NEW_AGENT_COMMAND=false`) Scaffold a new custom subagent           |
+| `new marketplace` | (FEATURE-GATED: `NEW_MARKETPLACE_COMMAND=false`) Scaffold a new marketplace project |
 
 ### Build
 

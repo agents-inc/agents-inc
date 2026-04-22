@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # Test Structure
 
 How E2E tests are organized within a file.

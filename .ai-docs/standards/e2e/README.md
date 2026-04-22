@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # E2E Testing Standards
 
 Standards and conventions for the E2E test suite. These docs govern how tests are written, structured, and maintained. For API details, read the source files directly.
@@ -115,7 +119,7 @@ e2e/
 - Smoke tests: `{feature}.smoke.test.ts`
 - Split at 300 LOC or when a file covers 2+ unrelated concerns
 - Use descriptive names: `edit-wizard-plugin-migration.e2e.test.ts`, not `edit-2.e2e.test.ts`
-- No task IDs in `describe()` blocks (task IDs may appear in file-level JSDoc comments only)
+- No task IDs (`D-NNN`) in `describe()` / `it()` names, assertion messages (2nd arg to `expect`), or inline test-body comments. File-level JSDoc at the top of the file is the only permitted location. Test names describe BEHAVIOR ("renders spurious minus on G→P toggle"), not tickets — names rot, and IDs look authoritative but become meaningless once the task is closed.
 
 ---
 
@@ -160,11 +164,19 @@ These are paths within a skills source directory (not a project directory). Use 
 
 ## Critical Rules
 
+**Rebuild before running E2E tests.** E2E tests execute the compiled binary at `dist/` via `bin/run.js` — source edits in `src/` are invisible until `npm run build` runs. `ensureBinaryExists()` only checks that the binary exists; it does NOT stamp-check that it was built after the latest source edit. After any `src/` change, run `npm run build` before running E2E tests. If E2Es fail with pre-fix symptoms despite source edits, rebuild first. Unit tests cover the same source directly and will pass against stale `dist/` — disagreement between unit-test green and E2E red with identical failure signature is the canonical stale-build signal.
+
 **State-change verification.** Any test that completes a wizard flow or runs a command that creates, modifies, or removes files or config entries MUST assert the resulting state of both config AND filesystem. If the operation should NOT change something, snapshot before and assert identical after. Never check only one side.
 
-**Page object key-press rule.** Every step page-object method that sends a key press MUST call `await this.waitForStableRender()` before the press if it's the first interaction after a wizard launch or step transition. React effects fire after render commit — without the wait, the key may arrive before effects run, causing silent no-ops.
+**Page object key-press rule.** Every step page-object method that sends a key press MUST call `await this.waitForStableRender()` _before_ the press. No qualifier — every keypress needs the wait under parallel suite contention, not just the first one. Post-press waits don't substitute — the race is between render commit and `useEffect`, so the guard must sit upstream of the keystroke. Callers cannot be trusted to have left the screen stable, because the previous method may itself have been a keypress-before-settle. In isolation the race is invisible; under contention the PTY write lands between commit and `useEffect` and the `useInput` handler registered by the new frame isn't listening yet — the keystroke is silently swallowed and the test passes by not exercising the behavior it claims to test.
 
 **Never broaden assertions.** When a strict assertion fails, investigate why — don't weaken it. If the failure is a fixture limitation, keep the strict assertion as a commented-out `// KNOWN GAP:` with an explanation. If it's a product bug, use `it.fails`.
+
+**Prove the code path fired — don't just assert the contract.** When a test depends on a specific conditional code path running (e.g. `propagateGlobalChangesToProjects` fires only when `finalConfig.projects?.length` is truthy; a merger step fires only when a field is present), add a proof-of-execution assertion (file-content diff, mtime change, side-effect invariant) alongside the contract assertions. Otherwise a regression that short-circuits the path before the contract code runs produces a vacuous pass — the contract assertions hold trivially because the post-state equals the pre-state. If the pre-condition cannot be met on current `main` (blocked by a known bug), comment the proof-of-execution assertion as `// KNOWN GAP:` with a finding reference so it can be uncommented once unblocked. Cross-link to branch selectors (e.g. `writeScopedConfigs` HOME-context vs project-context) when the trigger path is ambiguous.
+
+**Diff-shape assertions prove BOTH positive and negative shape.** For diff collections (info-panel rows, config section diffs, scope-per-skill prefix maps) use `toStrictEqual` on a scope-anchored slice, NOT `expect.arrayContaining` — `arrayContaining` passes as long as expected entries exist and silently tolerates extra wrong entries (e.g. a spurious `- React` row alongside the expected `• React`). When two rows share the same prefix, prove it by exhaustively negating all other prefixes (`toContain("• React") + not.toContain("+ React") + not.toContain("- React") + not.toContain("~ React")`) rather than extracting to a parsed struct.
+
+**No parser/extractor helpers in test files.** Never define loops, regex scans, or state machines inside a test file to pick data out of rendered output (`lastFrame()`, `getFullOutput()`) or config text. If a helper has non-trivial logic it would need its OWN tests to be trusted; an uninstrumented parser silently produces wrong answers when layout changes. Assert directly on the raw output with `toContain`, `toMatchInlineSnapshot`, or a structural load (e.g. `loadProjectConfig` for config.ts). If genuinely reusable across tests, live it in `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests.
 
 ---
 

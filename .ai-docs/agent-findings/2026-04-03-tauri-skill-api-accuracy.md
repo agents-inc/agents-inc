@@ -14,6 +14,8 @@ reporting_agent: skill-summoner
 category: architecture
 domain: shared
 root_cause: convention-undocumented
+status: resolved
+resolved_by: skill content fixes applied in skills repo
 ---
 
 ## What Was Wrong

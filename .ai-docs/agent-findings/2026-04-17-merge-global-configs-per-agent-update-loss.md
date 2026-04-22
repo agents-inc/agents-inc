@@ -12,6 +12,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: enforcement-gap
+status: resolved
+resolved_by: D-220 (0.137.0) replaced existing-wins policy with deep-additive stack merge
 ---
 
 ## What Was Wrong

@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # TypeScript Types Bible
 
 > Principles and patterns extracted from a real-world type-narrowing effort across 37+ files.
@@ -42,6 +46,8 @@ type PermissionMode =
   | "plan"
   | "delegate";
 ```
+
+**Generated unions are the source of truth.** `SkillId`, `SkillSlug`, `Category`, `Domain`, and `AgentName` are auto-generated in `src/cli/types/generated/source-types.ts` from the skills source and agent metadata (run `bun run generate:types`). Never redeclare them, never hand-maintain a parallel list, and never cast a literal string member to them — the literal string IS the type. Casts like `"web-framework-react" as SkillId` or `"web" as Domain` are anti-patterns; only cast at data-entry boundaries (YAML, JSON, CLI args) or in error-path tests that deliberately use an invalid value (in which case prefer `string` over `as SkillId`).
 
 **Keep `string` when the set is open-ended:**
 
@@ -92,6 +98,21 @@ This applies universally:
 
 **TypeScript forces you to handle `undefined` access, which is correct.**
 
+**Initializing an empty record: annotate, don't cast.**
+
+```typescript
+// BAD — cast implies the empty literal is already the target shape
+const byCategory = {} as Record<Category, Skill[]>;
+const byCategory = {} as Partial<Record<Category, Skill[]>>;
+
+// GOOD — type annotation on the binding, literal stays literal
+const byCategory: Partial<Record<Category, Skill[]>> = {};
+```
+
+The annotation form is preferred because the literal `{}` never masquerades as a complete record — the compiler tracks population as assignments land.
+
+**Asserting lookups instead of non-null assertions.** When a skill must exist in the matrix, never write `matrix.skills[id]!` — use `getSkillById(id)` / `getSkillBySlug(slug)` from `src/cli/lib/matrix/matrix-provider.ts`, which throw with a diagnostic message. Reserve `matrix.skills[id]` (no `!`) for genuinely optional lookups, where the `undefined` branch is handled.
+
 ---
 
 ## 5. Pre-Resolution vs Post-Resolution Types
@@ -120,16 +141,16 @@ This encodes pipeline semantics in the type system — the compiler catches reso
 
 Not all casts are bad. Classify them:
 
-| Cast Type                        | Legitimate? | Example                                                                                                     |
-| -------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
-| **Object.keys/entries boundary** | Yes         | `Object.keys(record) as Category[]` — TS always returns `string[]`                                          |
-| **CLI arg boundary**             | Yes         | `flags.category as CategoryPath` — user input enters as `string`                                            |
-| **YAML/JSON parse boundary**     | Yes         | `parseYaml(content) as Record<string, unknown>`                                                             |
-| **Test data construction**       | Yes         | `{ id: "test" } as SkillId` — intentionally invalid test values                                             |
-| **Store initialization**         | Yes         | `{} as Partial<Record<...>>` — empty initial state                                                          |
-| **vi.mock factory literals**     | Yes         | `"agents-inc"` inside `vi.mock()` — Vitest hoists factories above imports, so constants are unavailable     |
-| **Branded record construction**  | Yes         | `{...} as unknown as Record<BrandedA, BrandedB>` — object literal keys can't satisfy branded types directly |
-| **Mid-pipeline workaround**      | **No**      | Fix the source type instead                                                                                 |
+| Cast Type                        | Legitimate?       | Example                                                                                                                                                            |
+| -------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Object.keys/entries boundary** | Yes               | `Object.keys(record) as Category[]` — TS always returns `string[]`                                                                                                 |
+| **CLI arg boundary**             | Yes               | `flags.category as CategoryPath` — user input enters as `string`                                                                                                   |
+| **YAML/JSON parse boundary**     | Yes               | `parseYaml(content) as Record<string, unknown>`                                                                                                                    |
+| **Test data construction**       | Yes               | `{ id: "test" } as SkillId` — intentionally invalid test values                                                                                                    |
+| **Store initialization**         | Prefer annotation | `const x: Partial<Record<...>> = {}` beats `{} as Partial<Record<...>>`. Cast only when assignment context makes annotation awkward (e.g. inline callback return). |
+| **vi.mock factory literals**     | Yes               | `"agents-inc"` inside `vi.mock()` — Vitest hoists factories above imports, so constants are unavailable                                                            |
+| **Branded record construction**  | Yes               | `{...} as unknown as Record<BrandedA, BrandedB>` — object literal keys can't satisfy branded types directly                                                        |
+| **Mid-pipeline workaround**      | **No**            | Fix the source type instead                                                                                                                                        |
 
 **Every legitimate boundary cast should have a comment explaining why.**
 
@@ -148,17 +169,30 @@ const displayNameToId = {
 } as unknown as Record<SkillDisplayName, SkillId>;
 ```
 
-Prefer typed helper functions over raw casts for recurring patterns:
+Prefer typed helper functions over raw casts for recurring patterns. These live in `src/cli/utils/typed-object.ts` — import from there, do not re-implement:
 
 ```typescript
-// Replace repeated Object.entries casts with a typed helper
-function typedEntries<K extends string, V>(obj: Partial<Record<K, V>>): [K, V][] {
+// src/cli/utils/typed-object.ts
+export function typedEntries<K extends string, V>(obj: Partial<Record<K, V>>): [K, V][] {
   return Object.entries(obj) as [K, V][];
 }
 
-function typedKeys<K extends string>(obj: Partial<Record<K, unknown>>): K[] {
+export function typedKeys<K extends string>(obj: Partial<Record<K, unknown>>): K[] {
   return Object.keys(obj) as K[];
 }
+```
+
+**Runtime narrowing uses type guards, not casts.** For string-to-union narrowing at runtime, use the guards in `src/cli/utils/type-guards.ts` — `isCategory()`, `isDomain()`, `isAgentName()`, `isCategoryPath()`. They check membership against the generated `CATEGORIES` / `DOMAINS` / `AGENT_NAMES` arrays from `src/cli/types/generated/source-types.ts`, so adding a new value to the source automatically widens the guard.
+
+```typescript
+// BAD — cast asserts membership without checking
+const domain = flags.domain as Domain;
+
+// GOOD — guard narrows, fall-through handles invalid input
+if (!isDomain(flags.domain)) {
+  throw new Error(`Invalid domain: ${flags.domain}`);
+}
+// flags.domain is now Domain
 ```
 
 ---

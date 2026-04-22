@@ -9,7 +9,7 @@ import { BaseCommand } from "../base-command";
 import { Confirm } from "../components/common/confirm";
 import { getErrorMessage } from "../utils/errors";
 import { directoryExists, glob, listDirectories, remove } from "../utils/fs";
-import { claudePluginUninstall, isClaudeCLIAvailable } from "../utils/exec";
+import { claudePluginUninstallBestEffort, isClaudeCLIAvailable } from "../utils/exec";
 import { listPluginNames, getProjectPluginsDir } from "../lib/plugins/index";
 import { readForkedFromMetadata } from "../lib/skills/index";
 import { deregisterProjectPath } from "../lib/installation/index";
@@ -558,25 +558,13 @@ export async function uninstallPlugins(
 
   for (const pluginName of target.cliPluginNames) {
     if (cliAvailable) {
-      // Derive primary scope from per-skill config
+      // Derive primary scope from per-skill config; shared helper tries both scopes
+      // to handle re-scoped plugins where the registry entry may be under the
+      // original scope rather than the currently-configured one.
       const skillId = pluginName.split("@")[0];
       const skillConfig = target.config?.skills?.find((s) => s.id === skillId);
       const primaryScope = skillConfig?.scope === "global" ? "user" : "project";
-      const fallbackScope = primaryScope === "project" ? "user" : "project";
-
-      try {
-        await claudePluginUninstall(pluginName, primaryScope, projectDir);
-      } catch {
-        // Best-effort: plugin may not be registered with this scope
-      }
-
-      // Also try the other scope to handle re-scoped plugins
-      // where the registry entry may be under the original scope
-      try {
-        await claudePluginUninstall(pluginName, fallbackScope, projectDir);
-      } catch {
-        // Best-effort: plugin may not be registered with fallback scope either
-      }
+      await claudePluginUninstallBestEffort(pluginName, primaryScope, projectDir);
     }
 
     const pluginPath = path.join(target.pluginsDir, pluginName);

@@ -12,6 +12,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: enforcement-gap
+status: resolved
+resolved_by: getScopeOrThrow replaces null-coalescing in config-generator.ts
 ---
 
 ## What Was Wrong

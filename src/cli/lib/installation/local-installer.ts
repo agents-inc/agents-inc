@@ -36,7 +36,11 @@ import { createLiquidEngine } from "../compiler";
 import { generateProjectConfigFromSkills, buildStackProperty } from "../configuration";
 import { scopeEligibilityKey, splitConfigByScope } from "../configuration/config-generator";
 import { generateConfigSource, type ConfigSourceOptions } from "../configuration/config-writer";
-import { generateConfigTypesSource } from "../configuration/config-types-writer";
+import {
+  type ConfigTypesBackgroundData,
+  generateConfigTypesSource,
+  regenerateConfigTypes,
+} from "../configuration/config-types-writer";
 import { ensureDir, fileExists, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { typedEntries, typedKeys } from "../../utils/typed-object";
@@ -697,23 +701,6 @@ export async function propagateGlobalChangesToProjects(
 
       const projectConfig = existingProject.config;
 
-      // Build combined config for config-types (project + global IDs)
-      const combinedConfig: ProjectConfig = {
-        ...projectConfig,
-        skills: [...globalConfig.skills, ...projectConfig.skills.filter(isProjectOwnedEntry)],
-        agents: [...globalConfig.agents, ...projectConfig.agents.filter(isProjectOwnedEntry)],
-        domains: [...new Set([...(globalConfig.domains ?? []), ...(projectConfig.domains ?? [])])],
-        selectedAgents: [
-          ...new Set([
-            ...(globalConfig.selectedAgents ?? []),
-            ...(projectConfig.selectedAgents ?? []),
-          ]),
-        ],
-      };
-
-      // Update config-types.ts
-      await writeStandaloneConfigTypes(projectConfigPath, matrix, agents, combinedConfig);
-
       // Derive project split (project-scoped + excluded globals only)
       const projectSplit: ProjectConfig = {
         ...projectConfig,
@@ -726,6 +713,17 @@ export async function propagateGlobalChangesToProjects(
         isProjectConfig: true,
         globalConfig,
       });
+
+      // Update config-types.ts using the same global-aware path writeScopedConfigs
+      // uses for project types — emits `import type { SkillId as GlobalSkillId, ... }`
+      // and extends with any project-scoped items the project owns. Without this,
+      // a global-scope install would overwrite the project's import-form types with
+      // the standalone/inlined form (D-216 Regression #1 / D-228).
+      await regenerateConfigTypes(
+        projectPath,
+        Promise.resolve(buildConfigTypesBackgroundData(matrix, agents)),
+        buildProjectTypesExtras(projectSplit, matrix),
+      );
 
       updated.push(projectPath);
       verbose(`Propagated global changes to ${projectPath}`);
@@ -863,15 +861,73 @@ export async function writeScopedConfigs(
     });
     verbose(`Updated project config at ${projectConfigPath}`);
 
-    // Write project config-types.ts as standalone (self-contained) since the config.ts
-    // is also self-contained when globalConfig is inlined. All skill IDs, agent names,
-    // categories, and domains — both global and project — must be present locally.
-    await writeStandaloneConfigTypes(projectConfigPath, matrix, agents, finalConfig);
+    // Write project config-types.ts via regenerateConfigTypes so the global-aware
+    // branch kicks in: when ~/.claude-src/config-types.ts exists, emit a project
+    // types file that imports GlobalSkillId/GlobalAgentName/etc. and extends them
+    // with project-only additions. Falls back to standalone when no global install
+    // is present (e.g., first-ever project-only install).
+    await regenerateConfigTypes(
+      projectDir,
+      Promise.resolve(buildConfigTypesBackgroundData(matrix, agents)),
+      buildProjectTypesExtras(finalConfig, matrix),
+    );
   } else {
     verbose(
       "Skipped project config — no existing project installation and no project-scoped items",
     );
   }
+}
+
+function buildConfigTypesBackgroundData(
+  matrix: MergedSkillsMatrix,
+  agents: Record<AgentName, AgentDefinition>,
+): ConfigTypesBackgroundData {
+  const agentNames = typedKeys(agents);
+  const customAgentNames = agentNames.filter((name) => agents[name]?.custom === true);
+  return { matrix, agentNames, customAgentNames };
+}
+
+/**
+ * Derives project-only extras for regenerateConfigTypes so project config-types.ts
+ * extends the global unions with items that exist only in the project scope.
+ *
+ * - extraSkillIds / extraAgentNames: active (non-excluded) project-scoped entries
+ * - extraCategories / extraDomains: derived from project-scoped skills via matrix
+ *   lookup so any category/domain introduced by a project skill is included even
+ *   when the global scope doesn't reference it
+ */
+function buildProjectTypesExtras(
+  finalConfig: ProjectConfig,
+  matrix: MergedSkillsMatrix,
+): {
+  extraSkillIds: string[];
+  extraAgentNames: string[];
+  extraDomains: string[];
+  extraCategories: string[];
+} {
+  const projectSkills = finalConfig.skills.filter((s) => s.scope === "project" && !s.excluded);
+  const projectAgents = finalConfig.agents.filter((a) => a.scope === "project" && !a.excluded);
+
+  const extraSkillIds = unique(projectSkills.map((s) => s.id));
+  const extraAgentNames = unique(projectAgents.map((a) => a.name));
+
+  const projectCategories = unique(
+    projectSkills
+      .map((s) => matrix.skills[s.id]?.category)
+      .filter((c): c is Category => c !== undefined && c !== "local"),
+  );
+  const projectDomains = unique(
+    projectCategories
+      .map((c) => matrix.categories[c]?.domain)
+      .filter((d): d is NonNullable<typeof d> => d !== undefined),
+  );
+
+  return {
+    extraSkillIds,
+    extraAgentNames,
+    extraDomains: projectDomains,
+    extraCategories: projectCategories,
+  };
 }
 
 async function compileAndWriteAgents(

@@ -1,6 +1,6 @@
 # Unit Test Gap — Implementation Tracker
 
-> Tracks progress on the 29 untested functions from [TODO-unit-test-gaps.md](./TODO-unit-test-gaps.md).
+> Tracks progress on the 29 untested functions originally catalogued in the unit-test gaps audit.
 > Agents: update Status to `in-progress` when starting, `done` when tests pass.
 
 ## Batch A: output-validator.ts (P1)

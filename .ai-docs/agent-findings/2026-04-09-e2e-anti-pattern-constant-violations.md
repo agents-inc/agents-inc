@@ -14,6 +14,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: enforcement-gap
+status: resolved
+resolved_by: constants swapped across 5 files; D-168 audit
 ---
 
 ## What Was Wrong

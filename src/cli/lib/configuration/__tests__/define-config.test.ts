@@ -20,7 +20,6 @@ describe("defineConfig", () => {
     const config: ProjectConfig = buildProjectConfig({
       name: "full-project",
       description: "A complete project",
-      version: "1",
       agents: buildAgentConfigs(["web-developer", "api-developer"]),
       skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"]),
       author: "@vince",

@@ -11,6 +11,9 @@ keywords:
     ResolvedSkill,
     MergedSkillsMatrix,
     ProjectConfig,
+    SkillConfig,
+    SkillReference,
+    Skill,
     type-guards,
     typedEntries,
   ]
@@ -18,13 +21,13 @@ related:
   - reference/types/operations-types.md
   - reference/types/zod-schemas.md
   - reference/architecture/overview.md
-last_validated: 2026-04-13
+last_validated: 2026-04-21
 ---
 
 # Core Types
 
-**Last Updated:** 2026-04-13
-**Last Validated:** 2026-04-13
+**Last Updated:** 2026-04-21
+**Last Validated:** 2026-04-21
 
 > **Split from:** `reference/type-system.md`. See also: [operations-types.md](./operations-types.md), [zod-schemas.md](./zod-schemas.md).
 
@@ -214,20 +217,63 @@ The primary read model for the wizard and CLI commands:
 
 ### ProjectConfig (`src/cli/types/config.ts`)
 
-Unified project configuration stored at `.claude-src/config.ts`:
+Unified project configuration stored at `.claude-src/config.ts`. No `version` field (removed under D-231; `config.ts` is a TypeScript module, not a versioned schema).
 
-- `version?: "1"`
-- `name`, `description`, `author`
-- `agents: AgentScopeConfig[]` - Per-agent scope config (`{ name, scope }`)
-- `skills: SkillConfig[]` - Per-skill scope+source config (`{ id, scope, source }`)
+- `name`, `description?`, `author?`
+- `agents: AgentScopeConfig[]` - Per-agent scope config (`{ name, scope, excluded? }`)
+- `skills: SkillConfig[]` - Per-skill scope+source config (`{ id, scope, source, excluded? }`)
 - `stack?: Record<string, StackAgentConfig>`
-- `source`, `marketplace`, `agentsSource`
+- `source?`, `marketplace?`, `agentsSource?`
 - `domains?: Domain[]`, `selectedAgents?: AgentName[]`
 - `sources?: SourceEntry[]` - Additional skill sources
 - `boundSkills?: BoundSkill[]` - Skills bound via search
 - `branding?: BrandingConfig` - White-label overrides
-- Directory overrides: `skillsDir`, `agentsDir`, `stacksFile`, `categoriesFile`, `rulesFile`
+- Directory overrides: `skillsDir?`, `agentsDir?`, `stacksFile?`, `categoriesFile?`, `rulesFile?`
 - `projects?: string[]` - Tracked project installation paths (global config only)
+
+### SkillConfig (`src/cli/types/config.ts`)
+
+Per-skill configuration entry used inside `ProjectConfig.skills`:
+
+- `id: SkillId`
+- `scope: "project" | "global"`
+- `source: string` — `"eject"` or marketplace name (e.g., `"agents-inc"`). Drives per-skill `pluginRef` attachment in the compiler.
+- `excluded?: boolean` — when true, skill is tracked in config but not installed/compiled
+
+### AgentScopeConfig (`src/cli/types/config.ts`)
+
+Per-agent configuration entry used inside `ProjectConfig.agents` (mirrors `SkillConfig` pattern):
+
+- `name: AgentName`
+- `scope: "project" | "global"`
+- `excluded?: boolean`
+
+### SkillReference (`src/cli/types/skills.ts`)
+
+Skill reference used in agent config (stack → agent → skills mapping):
+
+- `id: SkillId`
+- `usage: string` — context-specific description of when to use this skill (required)
+- `preloaded?: boolean`
+- `source?: string` — install source propagated from `SkillConfig.source` (D-217). Absent when no `SkillConfig` entry exists (e.g., user-authored local skills). `"eject"` means ejected to `.claude/skills/`; any other value (e.g., marketplace name) means plugin-installed.
+
+### Skill (`src/cli/types/skills.ts`)
+
+Fully resolved skill consumed by the compiler (merged from `SkillDefinition` + `SkillReference`):
+
+- All `SkillDefinition` fields: `id`, `path`, `description`
+- `usage: string` — context-specific guidance for this agent
+- `preloaded: boolean` — whether in frontmatter (auto-loaded) vs. dynamic
+- `pluginRef?: PluginSkillRef` — fully-qualified plugin reference (`${id}:${id}`) for plugin mode
+- `source?: string` — propagated from `SkillReference.source` (D-217). `source !== "eject"` → renders as `${id}:${id}`; otherwise bare id.
+
+### SkillDefinition (`src/cli/types/skills.ts`)
+
+Static skill metadata (decoupled from per-agent usage):
+
+- `id: SkillId`
+- `path: string`
+- `description: string`
 
 ### CompileConfig (`src/cli/types/config.ts`)
 

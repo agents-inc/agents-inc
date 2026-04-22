@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # Commit Protocol for AI Agents
 
 Quick reference for AI agents making commits to this repository.
@@ -43,7 +47,10 @@ Every release MUST complete all steps. No exceptions.
 - [ ] Bump version in `package.json` (semver: major = breaking, minor = feature, patch = fix)
 - [ ] Create `changelogs/{version}.md` with full release notes
 - [ ] Prepend brief summary to `CHANGELOG.md` with link to detailed file
-- [ ] Commit with message: `chore(release): {version} — brief summary`
+- [ ] Release commit title uses em-dash (`—`, not `-`) separator: `chore(release): {version} — {summary}`
+- [ ] Summary references every task ID shipped in the release (e.g. `(D-228, D-229, D-230, D-231, D-232)`)
+- [ ] Every ticket with a `### D-xxx` subheading in the detailed `changelogs/{version}.md` MUST have at least one corresponding bullet in the `CHANGELOG.md` summary block for that release. Zero tolerance for "cleanup tickets" that get folded into prose without their own bullet — if a ticket earned a detailed subheading, it earned a summary bullet. Mechanically checkable: grep `### D-` in the detailed file, grep `D-xxx` in the corresponding `CHANGELOG.md` block, diff the sets.
+- [ ] Every `.ai-docs/agent-findings/*.md` path cited in the changelog must exist on disk
 - [ ] Never edit old entries in `CHANGELOG.md` or old `changelogs/` files
 
 ### CHANGELOG.md Format (Summary)
@@ -63,6 +70,8 @@ See [changelogs/{version}.md](./changelogs/{version}.md) for full details.
 ```markdown
 # Release {version} ({date})
 
+{One-line headline referencing all shipped task IDs in parentheses}
+
 ## Added
 
 - Feature descriptions with context
@@ -73,9 +82,17 @@ See [changelogs/{version}.md](./changelogs/{version}.md) for full details.
 
 ## Fixed
 
-- Bug fix descriptions
+- Bug fix descriptions (group under `### D-xxx — {title}` subheadings when a release bundles multiple tickets)
 
 ## Removed
 
 - Removed feature descriptions
 ```
+
+**Optional sections** (use when applicable; keep in this order after the core four):
+
+- `## Backlog` — newly filed or deferred tickets spawned by this work, with plan-file paths
+- `## Findings` — bullet list of `.ai-docs/agent-findings/*.md` paths written during this release cycle
+- `## Proposed standards` — documentation/standards changes this release recommends but does not itself land
+
+Every `### D-xxx —` subheading must correspond to a task ID listed in the release commit summary, and vice versa — no silent bundling.

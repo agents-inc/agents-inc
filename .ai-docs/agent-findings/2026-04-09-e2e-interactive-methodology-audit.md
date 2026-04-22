@@ -12,6 +12,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: rule-not-visible
+status: resolved
+resolved_by: fixes applied in two interactive test files
 ---
 
 ## What Was Wrong

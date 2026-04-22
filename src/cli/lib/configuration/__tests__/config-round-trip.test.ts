@@ -109,7 +109,6 @@ describe("config round-trip", () => {
     const config = buildProjectConfig({
       name: "full-project",
       description: "A complete project configuration",
-      version: "1",
       agents: buildAgentConfigs(["web-developer", "api-developer"]),
       skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_AND_API]),
       author: "@vince",

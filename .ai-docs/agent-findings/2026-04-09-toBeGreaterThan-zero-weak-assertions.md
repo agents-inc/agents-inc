@@ -14,6 +14,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: rule-not-specific-enough
+status: resolved
+resolved_by: 12 toBeGreaterThan(0) replaced with exact assertions
 ---
 
 ## What Was Wrong

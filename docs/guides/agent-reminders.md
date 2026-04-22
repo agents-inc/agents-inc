@@ -1,8 +1,7 @@
 # Reminders for Agents
 
-> **Agent Compliance Tests**: See [docs/standards/content/agent-compliance-bible.md](../docs/standards/agent-compliance-bible.md)
-> Run these 30 tests periodically to verify agent alignment.
-> For architecture details, see [docs/reference/architecture.md](../docs/reference/architecture.md).
+> **Agent Compliance Tests**: Run these 30 tests periodically to verify agent alignment.
+> For architecture details, see [architecture.md](../reference/architecture.md).
 
 Quick-reference rules for AI agents working on this repository.
 

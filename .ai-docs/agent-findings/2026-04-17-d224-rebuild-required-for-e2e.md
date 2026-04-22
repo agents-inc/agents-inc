@@ -10,6 +10,8 @@ reporting_agent: cli-developer
 category: testing
 domain: e2e
 root_cause: rule-not-visible
+status: resolved
+resolved_by: Added "Rebuild before running E2E tests" rule to .ai-docs/standards/e2e/README.md Critical Rules section (2026-04-21). Documents that `ensureBinaryExists()` only checks existence (not staleness), that `npm run build` is required after any src/ edit, and that unit-green + E2E-red with identical signatures is the canonical stale-build signal. Optional mtime stamp-check in `ensureBinaryExists` deferred as a potential follow-up.
 ---
 
 ## What Was Wrong
@@ -27,6 +29,14 @@ but does not stamp-check that it was built after the latest source edit.
 
 After running `npm run build`, the D-224 E2Es flipped to green on the exact
 same store-layer fix. Lost ~10 minutes chasing a phantom downstream bug.
+
+## Status Update — 2026-04-21
+
+Still open. Audited `ensureBinaryExists` in `e2e/helpers/test-utils.ts` — it
+continues to only check `fileExists(BIN_RUN)` with no mtime stamp-check
+against `src/`. Grep of `.ai-docs/standards/e2e/` confirms the README has no
+"rebuild before E2E" note. Neither of the proposed remediations (standards
+note + mtime stale-warning) has landed.
 
 ## Fix Applied
 

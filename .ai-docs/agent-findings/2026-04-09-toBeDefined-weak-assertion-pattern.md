@@ -23,6 +23,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: rule-not-specific-enough
+status: resolved
+resolved_by: 38+ toBeDefined replaced across 14 config/command test files
 ---
 
 ## What Was Wrong

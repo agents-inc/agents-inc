@@ -1,8 +1,12 @@
+---
+last_validated: 2026-04-21
+---
+
 # The Definitive Guide to Optimal Prompt Structure for Claude
 
-**Version:** 2.0
-**Date:** November 2025
-**Target Model:** Claude Sonnet 4.6 / Opus 4.6
+**Version:** 2.1
+**Date:** April 2026
+**Target Model:** Claude Sonnet 4.6 / Opus 4.7 (1M)
 
 **Purpose:** This document provides universal prompt engineering techniques that work for any Claude agent system. These techniques are validated by Anthropic research, production systems achieving 72.7%+ on SWE-bench, academic research, and community consensus.
 
@@ -39,6 +43,7 @@
 5. [Production Validation Checklist](#5-production-validation-checklist)
 6. [Examples: Before vs After](#6-examples-before-vs-after)
 7. [Troubleshooting Common Issues](#7-troubleshooting-common-issues)
+8. [Multi-Agent Delegation (Project-Specific)](#8-multi-agent-delegation-project-specific)
 
 ---
 
@@ -894,6 +899,36 @@ This ordering is based on:
 - Use flat structures when possible
 - Semantic hierarchy over deep nesting
 
+> **Skill files use a different tag set** — see [Skill-Content Tags (vs Agent-Prompt Tags)](#skill-content-tags-vs-agent-prompt-tags) below. The Required/Recommended tag lists in this section target agent and task prompts, not skill content files under `src/skills/**/SKILL.md`.
+
+### Skill-Content Tags (vs Agent-Prompt Tags)
+
+Skill files (`src/skills/**/SKILL.md`) are reference content loaded into a calling agent's context, not standalone agents. They use a stable, narrower tag vocabulary focused on teaching a single tool/domain. The 222 skills in this project's marketplace converge on the following set — new skills MUST match, audits MUST flag drift.
+
+**Required tags (present in all skills):**
+
+- `<critical_requirements>` — bookend at TOP, rules in `**(You MUST ...)**` format (same semantics as agent prompts)
+- `<philosophy>` — why this tool / when to use it / mental model framing
+- `<patterns>` — the core pattern library, numbered (Pattern 1, Pattern 2, ...)
+- `<red_flags>` — anti-patterns, gotchas, common mistakes with consequences
+- `<critical_reminders>` — bookend at BOTTOM, repeats the TOP rules, closes with `**Failure to follow these rules will ...**`
+
+**Common optional tags (include when the domain warrants):**
+
+- `<decision_framework>` — comparative "pick X vs Y" guidance (e.g. Zustand vs Context, SWR vs React Query)
+- `<integration>` — cross-skill integration notes (how this composes with sibling skills)
+- `<performance>` — perf tuning section separate from the main patterns
+- `<migration_notice>` — version-migration callout when a major version shift matters (e.g. Remix v2 → v3)
+
+**Deliberately excluded from skills** (agent-prompt patterns that do NOT apply):
+
+- `<core_principles>` and the **self-reminder loop** (Technique #1) — skills are context, not agents; the calling agent owns its own principle display
+- The **dual final reminder** block (principles display + write verification) — same reason
+- `<role>`, `<task>`, `<constraints>`, `<output_format>` — skills describe a tool, not a job to execute
+- `<investigation_requirement>`, `<self_correction_triggers>`, `<post_action_reflection>`, `<progress_tracking>` — agent-execution concerns
+
+Reviewers auditing a skill against this bible should use the list above. A skill MUST have all five required tags; missing any is drift. A skill using tags outside the required + optional set (e.g. inventing `<guidelines>` or `<overview>`) is drift — either the tag should be added to this list (if genuinely reusable across ≥3 skills) or the skill should be refactored into the canonical vocabulary.
+
 ---
 
 ## 4. Sonnet 4.5 Specific Optimizations
@@ -1725,6 +1760,130 @@ Go beyond the basics to create a fully-featured implementation.**
 
 ---
 
+## 8. Multi-Agent Delegation (Project-Specific)
+
+This section covers patterns specific to this repo's sub-agent roster and Ralph-style iterative workflows. For the agents listed below, every delegation prompt MUST include the boilerplate in [Section 8.2](#82-required-boilerplate-for-every-delegation) — no exceptions.
+
+### 8.1 Agent Selection
+
+| Agent             | Use for                                                                                                                                     | Do NOT use for                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `cli-developer`   | Implementation code in `src/cli/**` — new features, bug fixes, refactors, type tightening                                                   | Test code (use `cli-tester`), standards docs (use `codex-keeper`)               |
+| `cli-tester`      | Test code — `**/*.test.ts(x)`, `e2e/**`, factories, fixtures, `__tests__/helpers/`                                                          | Production code in `src/cli/**` (use `cli-developer`)                           |
+| `codex-keeper`    | Standards/docs curation under `.ai-docs/standards/**` only. Bible audits, standards drift, convention docs, agent-findings triage           | Production or test code. Scope is strictly `.ai-docs/standards/` unless widened |
+| `general-purpose` | Read-only investigations spanning many files, cross-repo greps, "where does X live" research, tasks that do NOT need specialist conventions | Writing code or tests (delegate to specialist instead)                          |
+
+**Tie-breakers:**
+
+- Mixed code + tests → two sequential delegations (developer first, tester second), not one merged prompt.
+- "Check and fix if drift" on standards → `codex-keeper`, not `general-purpose`.
+- Pure read-and-report → `general-purpose` is cheapest.
+
+### 8.2 Required Boilerplate for Every Delegation
+
+Every sub-agent prompt MUST open with these lines verbatim (or equivalent):
+
+```markdown
+Read `/home/vince/dev/cli/CLAUDE.md` before starting.
+Do NOT run ANY git commands (no add/reset/stash/checkout/restore/clean/commit).
+Scope: <explicit path fence — e.g. ".ai-docs/standards/** only" or "src/cli/lib/configuration/**">.
+If you fix an anti-pattern, discover a missing standard, or notice convention drift,
+write a finding to `.ai-docs/agent-findings/` using `.ai-docs/agent-findings/TEMPLATE.md`.
+Self-review your output against CLAUDE.md before reporting.
+Report format: <terse sections the parent expects — e.g. "(a) coverage (b) additions (c) findings (d) next-iter suggestion, under N words">.
+```
+
+**Why each line exists:**
+
+- `Read CLAUDE.md` — sub-agents default to generic Claude behavior without it; project conventions are invisible.
+- `Do NOT run git commands` — the user curates staging intentionally; sub-agents otherwise run `git add .` reflexively.
+- `Scope` — prevents the iter-54 class of bug where `cli-tester` reinterpreted "tighten these tests" as "tighten any adjacent tests it noticed" and the iter-55 class where `codex-keeper` wandered outside `.ai-docs/standards/`.
+- `Finding instruction` — without this, drift discoveries die in the sub-agent turn and don't accrete.
+- `Self-review` — sub-agents will confidently violate CLAUDE.md rules they read 10k tokens ago; re-checking before reporting catches it.
+- `Report format` — free-form reports waste parent context; structured reports let Ralph iterations compose.
+
+### 8.3 Ralph-Loop / Batched Iteration Patterns
+
+Ralph-style audits (fixed N iterations, one focus area per iter) have distinct ergonomics:
+
+**DO:**
+
+- Give each iter a **single focus file or standard** (one path, not a theme).
+- Require a **numbered report** with fixed sections (e.g. `(a) coverage (b) additions (c) findings (d) next-iter suggestion`) so the parent can chain iters without re-prompting.
+- Cap report length explicitly (`250-300 words`) — otherwise iteration N+1's context is half-consumed by iter-N's prose. See [`loop-prompts-bible.md` §8.4](./loop-prompts-bible.md#84-report-length-caps) for the authoritative table of report-length caps and iteration cadence.
+- Cross-reference recent iter outcomes when relevant (`"the cli-tester scope-boundary misinterpretation from iter 54"`) — this catches recurrence.
+- End each iter with a concrete next-iter suggestion, so the loop has momentum even when the parent is autonomous.
+
+**DO NOT:**
+
+- Chain multiple standards into one iter ("audit prompt-bible AND e2e-standards AND commit-protocol") — reports bloat, findings get muddled.
+- Let iters skip the finding-write step when drift is detected — the whole point of the loop is accretion.
+- Run the same focus twice without noting it in the second iter's report — silent re-audit == wasted turn.
+
+### 8.4 Anti-Patterns (Observed in This Repo)
+
+**Terse one-liner delegation → shallow work.**
+
+- ❌ `"Fix the test in foo.test.ts"` — sub-agent picks the narrowest interpretation, doesn't read CLAUDE.md, produces a surface patch that violates factory-usage rules.
+- ✅ Full boilerplate + explicit task + expected deliverables + report format.
+
+**Vague scope → collateral edits.**
+
+- ❌ `"Tighten assertions in the wizard tests"` — `cli-tester` will "tighten" 12 adjacent files (iter 54).
+- ✅ `"Scope: src/cli/components/wizard/step-confirm.test.tsx ONLY. Do not touch any other file."`
+
+**Missing context → hallucinated patterns.**
+
+- ❌ Sending `cli-developer` to touch `local-installer.ts` without pointing at `resolveInstallPaths` and the scope-awareness rules in CLAUDE.md.
+- ✅ Quote the relevant CLAUDE.md rule verbatim in the prompt or link it.
+
+**Delegating standards curation to `general-purpose`.**
+
+- ❌ `general-purpose` will read the file and report what's there — it will not enforce project conventions, agent-findings protocol, or write findings. Use `codex-keeper`.
+
+**Re-audit without memory.**
+
+- ❌ Running the same Ralph iter (same focus file) twice in a row without diffing against the previous iter's report → second iter produces near-identical findings and wastes a turn.
+- ✅ Parent passes "previous iter's findings" into the new prompt, or the skill tracks focus rotation.
+
+### 8.5 Delegation Prompt Template
+
+```markdown
+<role>
+Delegating to <agent-name> for <one-line task>.
+</role>
+
+<preamble>
+Read `/home/vince/dev/cli/CLAUDE.md` before starting.
+Do NOT run ANY git commands.
+Scope: <path fence>.
+If you fix an anti-pattern or discover drift, write a finding to `.ai-docs/agent-findings/` via TEMPLATE.md.
+Self-review against CLAUDE.md before reporting.
+</preamble>
+
+<task>
+<concrete task with expected deliverables>
+
+**Include all relevant edge cases; go beyond the minimum.**
+</task>
+
+<context>
+<relevant CLAUDE.md rules quoted verbatim>
+<pointers to existing patterns / factories>
+</context>
+
+<constraints>
+- <file-level constraints>
+- <what NOT to modify>
+</constraints>
+
+<report_format>
+<structured sections the parent expects, with length cap>
+</report_format>
+```
+
+---
+
 ## Conclusion
 
 This structure represents the convergence of:
@@ -1765,6 +1924,7 @@ This structure represents the convergence of:
 
 **Version History:**
 
+- v2.1 (April 2026): Added Section 8 (Multi-Agent Delegation) covering project-specific agent selection (`cli-developer`, `cli-tester`, `codex-keeper`, `general-purpose`), required boilerplate (CLAUDE.md read, no git commands, scope fence, findings instruction, self-review, report format), Ralph-loop patterns, and observed anti-patterns (terse prompts, vague scope, standards delegated to `general-purpose`).
 - v2.0 (November 2025): Made document portable and universal. Updated emphatic repetition to use `<critical_requirements>` and `<critical_reminders>` pattern. Added dual final reminder (principles + write verification).
 - v1.2 (November 2025): Added Technique #13 (Write Verification Protocol), updated to 13 essential techniques
 - v1.1 (November 2025): Added 6 new techniques (self-correction triggers, post-action reflection, progress tracking, positive framing, "think" alternatives, just-in-time loading), Opus 4.5-specific guidance, updated to 12 essential techniques

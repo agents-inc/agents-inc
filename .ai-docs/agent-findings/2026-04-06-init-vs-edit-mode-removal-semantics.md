@@ -12,6 +12,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: isInitMode added to wizard store; SkillAgentSummary skips removal diff in init mode
 ---
 
 ## What Was Wrong

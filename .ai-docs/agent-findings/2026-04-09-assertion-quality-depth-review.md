@@ -11,6 +11,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: rule-not-specific-enough
+status: resolved
+resolved_by: strict assertions applied in config-generator + source-loader tests
 ---
 
 ## What Was Wrong

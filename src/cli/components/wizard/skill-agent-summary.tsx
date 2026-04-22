@@ -49,75 +49,73 @@ export const SkillAgentSummary: React.FC<SkillAgentSummaryProps> = ({
   const excludedGlobalSkills = currentSkills.filter((s) => s.scope === "global" && !!s.excluded);
   const excludedGlobalAgents = currentAgents.filter((a) => a.scope === "global" && !!a.excluded);
 
-  // Tombstones (`excluded: true`) represent a suppression of a pre-existing
-  // install, not a user-level "installed" state. Excluding them from the diff
-  // baseline keeps both sides of the diff symmetric on (id, scope) and avoids
-  // spurious `-` / bullet rendering when a tombstone is added or removed by a
-  // scope toggle. See D-225.
-  const skillDiffBaseline = installedSkillConfigs
-    ? installedSkillConfigs.filter((s) => !s.excluded)
-    : null;
-  const agentDiffBaseline = installedAgentConfigs
-    ? installedAgentConfigs.filter((a) => !a.excluded)
-    : null;
+  // Diff baseline keeps tombstones as first-class entries. A tombstone occupies
+  // the (id, scope) slot: it means "the global install still exists but is
+  // silenced at project scope" (D-223 dual-scope indicator). Treating the slot
+  // as occupied — for both `prevSkillKeySet` (isNew detection) and
+  // `removedSkills` (slot-occupancy match) — prevents a dual-scope G→P toggle
+  // from rendering a spurious `-` at Global (D-230) or a spurious `+` at Global
+  // on the next edit when the stored tombstone is re-read (D-232). See D-225
+  // investigation 09 for the full derivation; source-change (`~`) tracking
+  // filters to active baseline entries because tombstones don't represent a
+  // live install source.
+  const skillDiffBaseline = installedSkillConfigs ?? null;
+  const agentDiffBaseline = installedAgentConfigs ?? null;
 
   const prevSkillKeySet = skillDiffBaseline
     ? new Set(skillDiffBaseline.map((s) => `${s.id}:${s.scope}`))
     : null;
   const prevSourceMap = skillDiffBaseline
-    ? new Map(skillDiffBaseline.map((s) => [`${s.id}:${s.scope}`, s.source]))
+    ? new Map(
+        skillDiffBaseline.filter((s) => !s.excluded).map((s) => [`${s.id}:${s.scope}`, s.source]),
+      )
     : null;
   const prevAgentKeySet = agentDiffBaseline
     ? new Set(agentDiffBaseline.map((a) => `${a.name}:${a.scope}`))
     : null;
 
-  // Skills/agents that are still globally installed but overridden at project scope.
-  // A tombstone at global in `currentSkills` means the global install is being
-  // removed by this session (e.g. G→P toggle) — it is NOT an inherited-global
-  // case and must fall through to the `removedSkills` path so the user sees a
-  // `-` row at Global. See D-225.
-  const inheritedGlobalSkills = skillDiffBaseline
-    ? skillDiffBaseline.filter(
-        (s) =>
-          s.scope === "global" &&
-          !globalSkills.some((g) => g.id === s.id) &&
-          !excludedGlobalSkills.some((e) => e.id === s.id) &&
-          projectSkills.some((p) => p.id === s.id),
-      )
-    : [];
-  const inheritedGlobalAgents = agentDiffBaseline
-    ? agentDiffBaseline.filter(
-        (a) =>
-          a.scope === "global" &&
-          !globalAgents.some((g) => g.name === a.name) &&
-          !excludedGlobalAgents.some((e) => e.name === a.name) &&
-          projectAgents.some((p) => p.name === a.name),
-      )
-    : [];
+  // Active baseline globals that are overridden at project scope without a
+  // tombstone in current state — a historical no-tombstone dual-scope shape.
+  // Current tombstones are handled directly via `uniqueExcludedGlobalSkills`.
+  const activeSkillBaseline = skillDiffBaseline ? skillDiffBaseline.filter((s) => !s.excluded) : [];
+  const activeAgentBaseline = agentDiffBaseline ? agentDiffBaseline.filter((a) => !a.excluded) : [];
+  const inheritedGlobalSkills = activeSkillBaseline.filter(
+    (s) =>
+      s.scope === "global" &&
+      !globalSkills.some((g) => g.id === s.id) &&
+      !excludedGlobalSkills.some((e) => e.id === s.id) &&
+      projectSkills.some((p) => p.id === s.id),
+  );
+  const inheritedGlobalAgents = activeAgentBaseline.filter(
+    (a) =>
+      a.scope === "global" &&
+      !globalAgents.some((g) => g.name === a.name) &&
+      !excludedGlobalAgents.some((e) => e.name === a.name) &&
+      projectAgents.some((p) => p.name === a.name),
+  );
+  // Slot-occupancy match: a baseline entry at (id, scope) is considered
+  // removed only if nothing — active OR tombstone — occupies that slot in
+  // current. A current tombstone at the same key keeps the slot occupied
+  // (dual-scope indicator, not a removal). See D-230 / D-232.
   const removedSkills = skillDiffBaseline
     ? skillDiffBaseline.filter(
-        (s) => !currentSkills.some((c) => c.id === s.id && c.scope === s.scope && !c.excluded),
+        (s) => !currentSkills.some((c) => c.id === s.id && c.scope === s.scope),
       )
     : [];
   const removedAgents = agentDiffBaseline
     ? agentDiffBaseline.filter(
-        (a) => !currentAgents.some((c) => c.name === a.name && c.scope === a.scope && !c.excluded),
+        (a) => !currentAgents.some((c) => c.name === a.name && c.scope === a.scope),
       )
     : [];
 
-  // A tombstone at global is already represented by a `-` row when the
-  // baseline had an active install at that scope (e.g. G→P toggle in-session).
-  // Render the `-` from `removedSkills` and suppress the duplicate bullet row
-  // that would otherwise come out of the tombstone itself. See D-225.
-  const removedGlobalSkillIds = new Set(
-    removedSkills.filter((s) => s.scope === "global").map((s) => s.id),
-  );
-  const removedGlobalAgentNames = new Set(
-    removedAgents.filter((a) => a.scope === "global").map((a) => a.name),
-  );
+  // `uniqueExcludedGlobalSkills` dedups the current tombstone row against any
+  // inherited-global entry for the same id so the Global section never shows
+  // two rows for the same skill. Under the slot-occupancy removal match above,
+  // a current tombstone at (id, global) keeps the slot occupied and therefore
+  // cannot collide with `removedGlobalSkills` — no further dedup needed there.
   const inheritedSkillIdSet = new Set(inheritedGlobalSkills.map((s) => s.id));
   const uniqueExcludedGlobalSkills = excludedGlobalSkills.filter(
-    (s) => !inheritedSkillIdSet.has(s.id) && !removedGlobalSkillIds.has(s.id),
+    (s) => !inheritedSkillIdSet.has(s.id),
   );
   const allGlobalSkills = [
     ...globalSkills,
@@ -126,7 +124,7 @@ export const SkillAgentSummary: React.FC<SkillAgentSummaryProps> = ({
   ];
   const inheritedAgentNameSet = new Set(inheritedGlobalAgents.map((a) => a.name));
   const uniqueExcludedGlobalAgents = excludedGlobalAgents.filter(
-    (a) => !inheritedAgentNameSet.has(a.name) && !removedGlobalAgentNames.has(a.name),
+    (a) => !inheritedAgentNameSet.has(a.name),
   );
   const allGlobalAgents = [
     ...globalAgents,

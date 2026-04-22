@@ -7,13 +7,13 @@ related:
   - reference/testing/factories.md
   - reference/testing/mock-data.md
   - reference/testing/e2e-infrastructure.md
-last_validated: 2026-04-13
+last_validated: 2026-04-21
 ---
 
 # Test Infrastructure
 
-**Last Updated:** 2026-04-13
-**Last Validated:** 2026-04-13
+**Last Updated:** 2026-04-21
+**Last Validated:** 2026-04-21
 
 > **Split from:** `reference/test-infrastructure.md`. See also: [factories.md](./factories.md), [mock-data.md](./mock-data.md), [e2e-infrastructure.md](./e2e-infrastructure.md).
 
@@ -39,13 +39,27 @@ Vitest is configured with 3 test projects:
 {
   globals: true,
   environment: "node",
-  disableConsoleIntercept: true,    // Required for oclif + ink
+  disableConsoleIntercept: true,    // Required for @oclif/test + ink-testing-library
   clearMocks: true,
   setupFiles: ["./vitest.setup.ts"],
   testTimeout: 10000,
   hookTimeout: 10000,
+  coverage: {
+    provider: "v8",
+    reporter: ["text", "html"],
+    include: ["src/cli/**/*.ts", "src/cli/**/*.tsx"],
+    exclude: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/cli/index.ts"],
+  },
 }
 ```
+
+### Setup File (`vitest.setup.ts`)
+
+Runs for every test across all projects:
+
+- **`beforeAll`:** Mocks `os.homedir()` to a per-run temp dir (`vitest-home-*`). This prevents `loadProjectConfig()`'s global fallback from hitting the developer's real `~/.claude-src/config.yaml`. Tests that explicitly override `process.env.HOME` (via `setupIsolatedHome()`) keep their override.
+- **`beforeEach`:** Calls `initializeMatrix(BUILT_IN_MATRIX)` and resets the Zustand wizard store (`useWizardStore.getState().reset()`). Guarantees matrix + store isolation between tests.
+- **`afterAll`:** Restores all mocks and removes the temp home dir.
 
 ## Test Directory Structure
 
@@ -67,11 +81,12 @@ src/cli/lib/__tests__/
     skill-factories.ts               # createMockSkill, createMockExtractedSkill, createMockSkillEntry, etc.
     stack-factories.ts               # createMockResolvedStack, createMockStack, createMockRawStacksConfig, etc.
   helpers/                           # Test utility functions (split from former helpers.ts)
-    index.ts                         # Barrel re-export of all helpers
+    index.ts                         # Barrel re-export + parseTestFrontmatter
     cli-runner.ts                    # CLI_ROOT, runCliCommand
-    config-io.ts                     # readTestYaml, readTestTsConfig, writeTestTsConfig
+    config-io.ts                     # readTestYaml, readTestTsConfig, writeTestTsConfig, writeTestPackageJson
     disk-writers.ts                  # writeTestSkill, writeSourceSkill, writeTestAgent
-    test-dir-setup.ts                # createTestDirs, cleanupTestDirs
+    isolated-home.ts                 # setupIsolatedHome (chdirs to tempDir/project, points HOME at tempDir/fakehome)
+    test-dir-setup.ts                # createTestDirs, cleanupTestDirs, PluginTestDirs type
     wizard-simulation.ts             # buildSkillConfigs, simulateSkillSelections, buildWizardResultFromStore, extractSkillIdsFromAssignment
   assertions/                        # Test assertion helpers (split from former helpers.ts)
     index.ts                         # Barrel re-export of all assertions
@@ -83,13 +98,13 @@ src/cli/lib/__tests__/
     mock-categories.ts               # Category definitions with domain overrides
     mock-matrices.ts                 # Pre-built matrix constants (EMPTY_MATRIX, SINGLE_REACT_MATRIX, etc.)
     mock-skills.ts                   # Skill entries, TestSkill arrays, ExtractedSkillMetadata constants
+    mock-source-files.ts             # Published-source on-disk shapes (stack/metadata/categories/rules/stacks) for source-validator tests
     mock-sources.ts                  # SkillSource objects (PUBLIC_SOURCE, ACME_SOURCE, INTERNAL_SOURCE)
     mock-stacks.ts                   # Stack templates, Stack objects, TestStack arrays
-  commands/                          # Command-level tests
+  commands/                          # Command-level tests (project: "commands", retry: 1)
     build/
       marketplace.test.ts
       plugins.test.ts
-      stack.test.ts
     compile.test.ts
     doctor.test.ts
     edit.test.ts
@@ -194,7 +209,6 @@ src/cli/lib/plugins/plugin-manifest-finder.test.ts
 src/cli/lib/plugins/plugin-settings.test.ts
 src/cli/lib/plugins/plugin-validator.test.ts
 src/cli/lib/resolver.test.ts
-src/cli/lib/schema-validator.test.ts
 src/cli/lib/schemas.test.ts
 src/cli/lib/skills/local-skill-loader.test.ts
 src/cli/lib/skills/skill-copier.test.ts
@@ -269,6 +283,25 @@ const result = await runCliCommand(["compile", "--verbose"]);
 
 Intercepts both `process.stdout.write` (Node.js) and `console.log` (Bun) for cross-runtime compatibility.
 
+### Isolated Home + Project Directory
+
+Required for any command test that reads `os.homedir()` or `~/.claude*` paths. Without it, tests silently depend on the developer's real home directory.
+
+```typescript
+import { setupIsolatedHome, type IsolatedHome } from "../__tests__/helpers/index.js";
+
+let env: IsolatedHome;
+beforeEach(async () => {
+  env = await setupIsolatedHome("my-test-");
+  // env.projectDir is now cwd; process.env.HOME = env.fakeHome
+});
+afterEach(async () => {
+  await env.cleanup(); // Restores cwd + HOME, removes tempDir
+});
+```
+
+`setupIsolatedHome(prefix)` returns `{ tempDir, projectDir, fakeHome, cleanup }`. It creates a temp dir, `chdir`s to `<tempDir>/project`, and sets `process.env.HOME` to `<tempDir>/fakehome`. The global `os.homedir()` mock in `vitest.setup.ts` respects this override.
+
 ## Test Constants (`src/cli/lib/__tests__/test-constants.ts`)
 
 ### Keyboard Escape Sequences
@@ -314,7 +347,7 @@ All `try/catch/finally` blocks have been removed from unit and integration test 
 - **Fire-and-forget with expected errors:** `await Command.run(args).catch(() => {})`
 - **No `try/finally` for cleanup in test bodies** -- `afterEach` is sufficient
 
-This applies to all 127+ test files in `src/cli/`. Zero `try {` blocks remain in test code.
+This applies to all test files in `src/cli/` and `scripts/` (~125 files). Zero `try {` blocks remain in test code.
 
 ### Config-Writer Test Helpers
 

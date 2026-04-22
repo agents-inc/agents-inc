@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # Patterns
 
 Reusable recipes for each test type. Each pattern shows a complete minimal example.

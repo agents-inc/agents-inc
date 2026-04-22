@@ -1,8 +1,68 @@
 ---
+type: audit
+severity: medium
+affected_files:
+  - e2e/pages/constants.ts
+  - e2e/commands/uninstall.e2e.test.ts
+  - e2e/init-wizard-scratch.e2e.test.ts
+  - e2e/init-wizard-stack.e2e.test.ts
+  - e2e/init-wizard-flags.e2e.test.ts
+  - e2e/edit-wizard-detection.e2e.test.ts
+  - e2e/edit-wizard-launch.e2e.test.ts
+  - e2e/update.e2e.test.ts
+  - e2e/search-static.e2e.test.ts
+  - e2e/real-marketplace.e2e.test.ts
+  - e2e/interactive/uninstall.e2e.test.ts
+  - e2e/build.e2e.test.ts
+  - e2e/build-agent-plugins.e2e.test.ts
+  - e2e/plugin-install.smoke.test.ts
+  - e2e/dual-scope-edit-mixed-sources.e2e.test.ts
+  - e2e/plugin-scope-lifecycle.e2e.test.ts
+  - e2e/init-wizard-navigation.e2e.test.ts
+  - e2e/edit-wizard-local.e2e.test.ts
+  - e2e/validate.e2e.test.ts
+  - e2e/plugin-chain-poc.smoke.test.ts
+  - e2e/eject.e2e.test.ts
+  - e2e/plugin-lifecycle.e2e.test.ts
+  - e2e/eject-compile.e2e.test.ts
+  - e2e/eject-integration.e2e.test.ts
+  - e2e/edit-wizard-excluded-skills.e2e.test.ts
+  - e2e/init-wizard-scope-split.e2e.test.ts
+  - e2e/exclusion-lifecycle.e2e.test.ts
+  - e2e/global-skill-toggle-guard.e2e.test.ts
+  - e2e/unified-config-view.e2e.test.ts
+  - e2e/plugin-uninstall-edge-cases.e2e.test.ts
+  - e2e/edit-agent-scope-routing.e2e.test.ts
+  - e2e/edit-skill-accumulation.e2e.test.ts
+  - e2e/list.e2e.test.ts
+  - e2e/uninstall.e2e.test.ts
+  - e2e/uninstall-preservation.e2e.test.ts
+  - e2e/doctor.e2e.test.ts
+  - e2e/doctor-diagnostics.e2e.test.ts
+  - e2e/global-scope-lifecycle.e2e.test.ts
+  - e2e/init-global-preselection-confirm.e2e.test.ts
+  - e2e/init-wizard-interactions.e2e.test.ts
+  - e2e/project-tracking-propagation.e2e.test.ts
+  - e2e/scope-aware-local-copy.e2e.test.ts
+  - e2e/init-wizard-existing.e2e.test.ts
+  - e2e/edit-wizard-plugin-operations.e2e.test.ts
+  - e2e/init-wizard-plugin.e2e.test.ts
+  - e2e/init-then-edit-merge.e2e.test.ts
+  - e2e/re-edit-cycles.e2e.test.ts
+standards_docs:
+  - .ai-docs/standards/e2e/anti-patterns.md
+  - .ai-docs/standards/e2e/assertions.md
+  - .ai-docs/standards/e2e/page-objects.md
+  - .ai-docs/standards/e2e/README.md
 date: 2026-04-13
+reporting_agent: cli-tester
+category: testing
+domain: e2e
+root_cause: enforcement-gap
 task: D-168
 auditor: cli-tester (20 agents)
-status: complete
+status: resolved
+resolved_by: D-168 E2E audit shipped in 0.125.0
 ---
 
 # E2E Anti-Pattern Audit (D-168)

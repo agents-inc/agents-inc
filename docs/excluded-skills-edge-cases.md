@@ -1,3 +1,5 @@
+> **HISTORICAL DESIGN NOTE** — This was a pre-implementation plan. The feature has shipped. Current authoritative documentation: `.ai-docs/reference/concepts/tombstone-pattern.md`.
+
 # Excluded Skills — Scope Toggle Edge Cases
 
 ## The Core Problem
