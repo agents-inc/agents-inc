@@ -7,6 +7,15 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.141.4] - 2026-07-09
+
+**Regenerated skill matrix and metadata schema from the skills source repo**
+
+- `metadata.schema.json` category/slug enums caught up to the skills repo (~30 new category slugs added; stale `nextjs-app-router`/`nextjs-server-actions` slugs replaced by `nextjs` following a prior skills-repo merge)
+- `source-types.ts` and `matrix.ts` regenerated to match (222 skills, 89 categories, 17 stacks)
+
+See [changelogs/0.141.4.md](./changelogs/0.141.4.md) for full details.
+
 ## [0.141.3] - 2026-07-09
 
 **README demo switched from video to GIF**
