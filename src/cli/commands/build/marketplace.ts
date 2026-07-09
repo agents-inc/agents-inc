@@ -15,6 +15,7 @@ import {
 } from "../../lib/marketplace-generator";
 import { PLUGIN_MANIFEST_DIR } from "../../consts";
 import type { Marketplace } from "../../types/plugins";
+import { validateMarketplaceName } from "../new/marketplace";
 
 const DEFAULT_PLUGINS_DIR = "dist/plugins";
 const DEFAULT_OUTPUT_FILE = `${PLUGIN_MANIFEST_DIR}/marketplace.json`;
@@ -46,7 +47,7 @@ export default class BuildMarketplace extends BaseCommand {
   static summary = "Generate marketplace.json from built plugins (requires skills repo)";
 
   static description =
-    "Generate marketplace.json from built plugins. This command scans the plugins directory and generates a marketplace manifest file. Reads marketplace identity (name, version, description, author) from package.json in the current working directory.";
+    "Generate marketplace.json from built plugins. This command scans the plugins directory and generates a marketplace manifest file. Reads marketplace identity (name, version, description, author) from package.json in the current working directory. Use --name to override the marketplace name when package.json uses an npm scoped name (e.g. @scope/pkg), which is not a valid marketplace name.";
 
   static examples = [
     {
@@ -61,12 +62,21 @@ export default class BuildMarketplace extends BaseCommand {
       description: "Write marketplace.json to a custom output path",
       command: "<%= config.bin %> <%= command.id %> --output .claude-plugin/market.json",
     },
+    {
+      description:
+        "Override the marketplace name (use when package.json has an npm scoped name like @scope/pkg)",
+      command: "<%= config.bin %> <%= command.id %> --name my-marketplace",
+    },
   ];
 
   // Override parent baseFlags to drop --source (marketplace reads identity from package.json)
   static baseFlags = {} as (typeof BaseCommand)["baseFlags"];
 
   static flags = {
+    name: Flags.string({
+      description:
+        "Override the marketplace name (defaults to package.json 'name'). Must be kebab-case.",
+    }),
     "plugins-dir": Flags.string({
       char: "p",
       description: "Plugins directory",
@@ -91,7 +101,7 @@ export default class BuildMarketplace extends BaseCommand {
     const projectRoot = process.cwd();
     const pluginsDir = path.resolve(projectRoot, flags["plugins-dir"]);
     const outputPath = path.resolve(projectRoot, flags.output);
-    const identity = await this.loadMarketplaceIdentity(projectRoot);
+    const identity = await this.loadMarketplaceIdentity(projectRoot, flags.name);
 
     this.printHeader(pluginsDir, outputPath);
 
@@ -116,7 +126,10 @@ export default class BuildMarketplace extends BaseCommand {
     }
   }
 
-  private async loadMarketplaceIdentity(projectRoot: string): Promise<MarketplaceIdentity> {
+  private async loadMarketplaceIdentity(
+    projectRoot: string,
+    nameOverride?: string,
+  ): Promise<MarketplaceIdentity> {
     const packageJsonPath = path.join(projectRoot, "package.json");
 
     let rawContent: string;
@@ -150,8 +163,19 @@ export default class BuildMarketplace extends BaseCommand {
     const { name, version, description, author } = parseResult.data;
     const owner = parseAuthor(author);
 
+    let resolvedName = name;
+    if (nameOverride !== undefined) {
+      const validationError = validateMarketplaceName(nameOverride);
+      if (validationError) {
+        this.error(`Invalid --name '${nameOverride}': ${validationError}`, {
+          exit: EXIT_CODES.INVALID_ARGS,
+        });
+      }
+      resolvedName = nameOverride;
+    }
+
     return {
-      name,
+      name: resolvedName,
       version,
       description,
       ownerName: owner.name,

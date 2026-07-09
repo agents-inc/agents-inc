@@ -833,4 +833,75 @@ describe("build:marketplace command", () => {
       expect(stdout).toContain("api");
     });
   });
+
+  describe("name override flag", () => {
+    let pluginsDir: string;
+    let outputPath: string;
+
+    beforeEach(async () => {
+      pluginsDir = path.join(projectDir, "dist", "plugins");
+      outputPath = path.join(projectDir, "marketplace.json");
+      await mkdir(pluginsDir, { recursive: true });
+      await createPluginDir(pluginsDir, "web-test-a", {
+        name: "web-test-a",
+        description: "Test",
+        version: "1.0.0",
+      });
+    });
+
+    it("should override package.json name when --name is provided", async () => {
+      // package.json has an npm scoped name, which is not a valid marketplace name
+      await writeTestPackageJson(projectDir, { name: "@agents-inc/skills" });
+
+      const { error } = await runCliCommand([
+        "build:marketplace",
+        "--plugins-dir",
+        pluginsDir,
+        "--output",
+        outputPath,
+        "--name",
+        "agents-inc-skills",
+      ]);
+
+      expect(error).toBeUndefined();
+      expect(await fileExists(outputPath)).toBe(true);
+      const marketplace = await readMarketplaceJson(outputPath);
+      expect(marketplace.name).toBe("agents-inc-skills");
+    });
+
+    it("should use package.json name when --name is omitted", async () => {
+      await writeTestPackageJson(projectDir, { name: "my-marketplace" });
+
+      const { error } = await runCliCommand([
+        "build:marketplace",
+        "--plugins-dir",
+        pluginsDir,
+        "--output",
+        outputPath,
+      ]);
+
+      expect(error).toBeUndefined();
+      expect(await fileExists(outputPath)).toBe(true);
+      const marketplace = await readMarketplaceJson(outputPath);
+      expect(marketplace.name).toBe("my-marketplace");
+    });
+
+    it("should error and write no file when --name contains a path separator", async () => {
+      await writeTestPackageJson(projectDir, { name: "my-marketplace" });
+
+      const { error } = await runCliCommand([
+        "build:marketplace",
+        "--plugins-dir",
+        pluginsDir,
+        "--output",
+        outputPath,
+        "--name",
+        "@agents-inc/skills",
+      ]);
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error!.message).toContain("Invalid --name");
+      expect(await fileExists(outputPath)).toBe(false);
+    });
+  });
 });

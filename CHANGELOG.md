@@ -7,6 +7,15 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.141.5] - 2026-07-09
+
+**`build marketplace` gains a `--name` override**
+
+- Added opt-in `--name` flag so consumers with npm scoped `package.json` names (e.g. `@agents-inc/skills`) can produce a valid marketplace name instead of an invalid one containing `/`
+- Fail-fast kebab-case validation on the override, reusing `new marketplace`'s existing `validateMarketplaceName`
+
+See [changelogs/0.141.5.md](./changelogs/0.141.5.md) for full details.
+
 ## [0.141.4] - 2026-07-09
 
 **Regenerated skill matrix and metadata schema from the skills source repo**
