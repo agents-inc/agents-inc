@@ -795,9 +795,7 @@ describe("SkillAgentSummary component", () => {
       ];
       useWizardStore.setState({ installedSkillConfigs: savedDualScope });
 
-      const { lastFrame, unmount } = render(
-        <SkillAgentSummary skillConfigs={savedDualScope} />,
-      );
+      const { lastFrame, unmount } = render(<SkillAgentSummary skillConfigs={savedDualScope} />);
       cleanup = unmount;
 
       const output = lastFrame()!;
@@ -840,9 +838,7 @@ describe("SkillAgentSummary component", () => {
       ];
       useWizardStore.setState({ installedAgentConfigs: savedDualScope });
 
-      const { lastFrame, unmount } = render(
-        <SkillAgentSummary agentConfigs={savedDualScope} />,
-      );
+      const { lastFrame, unmount } = render(<SkillAgentSummary agentConfigs={savedDualScope} />);
       cleanup = unmount;
 
       const output = lastFrame()!;

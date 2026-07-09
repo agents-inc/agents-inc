@@ -7,6 +7,14 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.141.1] - 2026-07-09
+
+**Wizard tab-bar spacing fix (hoisted domain-nav case)**
+
+- Fixed hoisted domain-nav rendering 4 blank lines above the skills grid instead of 1, caused by a reserved-space margin duplicated onto an in-flow element
+
+See [changelogs/0.141.1.md](./changelogs/0.141.1.md) for full details.
+
 ## [0.141.0] - 2026-04-21
 
 **Config propagation + install-integrity + info-panel correctness (D-228, D-229, D-230, D-231, D-232)**

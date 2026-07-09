@@ -217,7 +217,7 @@ export const WizardTabs: React.FC<WizardTabsProps> = ({
         </Box>
       </Box>
       {domainNav && shouldHoistDomainNav && (
-        <Box marginBottom={3}>
+        <Box>
           <DomainNav {...domainNav} inline />
         </Box>
       )}
