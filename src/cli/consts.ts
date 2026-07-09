@@ -24,7 +24,12 @@ export const GLOBAL_INSTALL_ROOT = os.homedir();
 
 export const CACHE_DIR = path.join(os.homedir(), ".cache", DEFAULT_PLUGIN_NAME);
 
-export const CLI_BIN_NAME = "agentsinc";
+/**
+ * Promoted invocation prefix shown in user-facing messages (e.g. "Run '<CLI_INVOKE_COMMAND> init'").
+ * This is the documented `npx` entry point from the README, not the registered global bin name
+ * (see `bin`/`oclif.bin` in package.json, which is still `agentsinc` for global installs).
+ */
+export const CLI_INVOKE_COMMAND = "npx @agents-inc/cli";
 
 export const SKILL_CATEGORIES_PATH = "config/skill-categories.ts";
 export const SKILL_RULES_PATH = "config/skill-rules.ts";

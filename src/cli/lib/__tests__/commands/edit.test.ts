@@ -148,7 +148,7 @@ describe("edit command", () => {
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
     });
 
-    it("when no installation exists, should suggest running agentsinc init", async () => {
+    it("when no installation exists, should suggest running init", async () => {
       const { error } = await runCliCommand(["edit"]);
 
       expect(error?.message).toContain("No installation found");

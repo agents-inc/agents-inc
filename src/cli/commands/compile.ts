@@ -12,7 +12,7 @@ import {
   type DiscoveredSkills,
 } from "../lib/operations";
 import { resolveSource } from "../lib/configuration";
-import { CLI_BIN_NAME } from "../consts";
+import { CLI_INVOKE_COMMAND } from "../consts";
 import { EXIT_CODES } from "../lib/exit-codes";
 import { ERROR_MESSAGES, STATUS_MESSAGES, INFO_MESSAGES } from "../utils/messages";
 import { type Installation } from "../lib/installation";
@@ -103,7 +103,7 @@ export default class Compile extends BaseCommand {
 
     if (totalPassesWithSkills === 0) {
       this.error(
-        `No skills found. Add skills with '${CLI_BIN_NAME} add <skill>' or create in .claude/skills/.`,
+        `No skills found. Add skills with '${CLI_INVOKE_COMMAND} add <skill>' or create in .claude/skills/.`,
         { exit: EXIT_CODES.ERROR },
       );
     }

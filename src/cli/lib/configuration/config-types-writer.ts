@@ -5,7 +5,7 @@ import type { AgentName, MergedSkillsMatrix, ProjectConfig, SkillId, Category } 
 import { loadProjectConfigFromDir } from "./project-config";
 import {
   CLAUDE_SRC_DIR,
-  CLI_BIN_NAME,
+  CLI_INVOKE_COMMAND,
   GLOBAL_INSTALL_ROOT,
   PROJECT_ROOT,
   STANDARD_FILES,
@@ -185,7 +185,7 @@ export function loadConfigTypesDataInBackground(
   const promise = (async (): Promise<ConfigTypesBackgroundData> => {
     const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
     if (!(await directoryExists(claudeSrcDir))) {
-      throw new Error(`${CLAUDE_SRC_DIR}/ not found — run '${CLI_BIN_NAME} init' first`);
+      throw new Error(`${CLAUDE_SRC_DIR}/ not found — run '${CLI_INVOKE_COMMAND} init' first`);
     }
 
     const { loadSkillsMatrixFromSource } = await import("../loading/source-loader");

@@ -31,16 +31,16 @@ last_validated: 2026-04-21
 
 ## Project Identity
 
-| Field       | Value                                                                    |
-| ----------- | ------------------------------------------------------------------------ |
-| Package     | `@agents-inc/cli`                                                        |
-| Version     | 0.141.0                                                                  |
-| Binary      | `agentsinc` (also `CLI_BIN_NAME` in `src/cli/consts.ts`)                 |
-| Type        | ESM (`"type": "module"` in package.json)                                 |
-| Entry Point | `src/cli/index.ts` (runs oclif with `run()`)                             |
-| Build       | tsup -> `dist/`                                                          |
-| Test Runner | Vitest (`vitest.config.ts`) with 3 projects: unit, integration, commands |
-| Runtime     | Node.js (also Bun-compatible based on test helpers)                      |
+| Field       | Value                                                                                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Package     | `@agents-inc/cli`                                                                                                                                                         |
+| Version     | 0.141.0                                                                                                                                                                   |
+| Binary      | `agentsinc` (registered global bin, `package.json` `bin`/`oclif.bin`); user-facing messages promote `npx @agents-inc/cli` via `CLI_INVOKE_COMMAND` in `src/cli/consts.ts` |
+| Type        | ESM (`"type": "module"` in package.json)                                                                                                                                  |
+| Entry Point | `src/cli/index.ts` (runs oclif with `run()`)                                                                                                                              |
+| Build       | tsup -> `dist/`                                                                                                                                                           |
+| Test Runner | Vitest (`vitest.config.ts`) with 3 projects: unit, integration, commands                                                                                                  |
+| Runtime     | Node.js (also Bun-compatible based on test helpers)                                                                                                                       |
 
 ## Technology Stack
 

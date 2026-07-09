@@ -13,7 +13,7 @@ import { Wizard, type WizardResultV2 } from "../components/wizard/wizard.js";
 import { hydrateWizardStore } from "../stores/wizard-store.js";
 import {
   CLAUDE_DIR,
-  CLI_BIN_NAME,
+  CLI_INVOKE_COMMAND,
   CLI_COLORS,
   GLOBAL_INSTALL_ROOT,
   SOURCE_DISPLAY_NAMES,
@@ -638,7 +638,7 @@ export default class Edit extends BaseCommand {
       }
     } catch (error) {
       this.warn(`Agent recompilation failed: ${getErrorMessage(error)}`);
-      this.log(`You can manually recompile with '${CLI_BIN_NAME} compile'.`);
+      this.log(`You can manually recompile with '${CLI_INVOKE_COMMAND} compile'.`);
     }
   }
 

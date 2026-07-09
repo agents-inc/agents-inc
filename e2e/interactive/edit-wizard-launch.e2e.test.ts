@@ -11,6 +11,7 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { CLI } from "../fixtures/cli.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { CLI_INVOKE_COMMAND } from "../../src/cli/consts.js";
 import "../matchers/setup.js";
 import path from "path";
 
@@ -45,7 +46,7 @@ describe("edit wizard — launch and display", () => {
 
       expect(result.exitCode).not.toBe(EXIT_CODES.SUCCESS);
       expect(result.output).toContain(STEP_TEXT.NO_INSTALLATION);
-      expect(result.output).toContain("agentsinc init");
+      expect(result.output).toContain(`${CLI_INVOKE_COMMAND} init`);
     });
   });
 

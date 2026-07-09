@@ -3,7 +3,7 @@ import React, { useEffect } from "react";
 import { render, Box, Text, useApp } from "ink";
 
 import { BaseCommand } from "../base-command.js";
-import { CLI_BIN_NAME, CLI_COLORS, DEFAULT_BRANDING } from "../consts.js";
+import { CLI_INVOKE_COMMAND, CLI_COLORS, DEFAULT_BRANDING } from "../consts.js";
 import { getInstallationInfo, formatInstallationDisplay } from "../lib/plugins/index.js";
 import { detectInstallation } from "../lib/installation/installation.js";
 import { loadProjectConfig } from "../lib/configuration/project-config.js";
@@ -73,7 +73,7 @@ export default class List extends BaseCommand {
 
     if (!installation) {
       this.log("No installation found.");
-      this.log(`Run '${CLI_BIN_NAME} init' to create one.`);
+      this.log(`Run '${CLI_INVOKE_COMMAND} init' to create one.`);
       return;
     }
 

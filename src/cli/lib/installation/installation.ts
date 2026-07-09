@@ -5,7 +5,7 @@ import { loadProjectConfigFromDir } from "../configuration/project-config";
 import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
-  CLI_BIN_NAME,
+  CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
   PLUGINS_SUBDIR,
   STANDARD_FILES,
@@ -99,7 +99,7 @@ export async function getInstallationOrThrow(
 
   if (!installation) {
     throw new Error(
-      `No ${DEFAULT_BRANDING.NAME} installation found.\nRun '${CLI_BIN_NAME} init' to create one.`,
+      `No ${DEFAULT_BRANDING.NAME} installation found.\nRun '${CLI_INVOKE_COMMAND} init' to create one.`,
     );
   }
 

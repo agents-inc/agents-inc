@@ -33,7 +33,7 @@ import {
   SCSS_HONO_REACT_MATRIX,
   HONO_REACT_MATRIX,
 } from "../../__tests__/mock-data/mock-matrices";
-import { CLAUDE_SRC_DIR, CLI_BIN_NAME, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_SRC_DIR, CLI_INVOKE_COMMAND, STANDARD_FILES } from "../../../consts";
 
 import type {
   AgentName,
@@ -557,7 +557,7 @@ describe("regenerateConfigTypes", () => {
     const data = loadConfigTypesDataInBackground(undefined, tempDir);
 
     await expect(regenerateConfigTypes(tempDir, data)).rejects.toThrow(
-      `${CLAUDE_SRC_DIR}/ not found — run '${CLI_BIN_NAME} init' first`,
+      `${CLAUDE_SRC_DIR}/ not found — run '${CLI_INVOKE_COMMAND} init' first`,
     );
   });
 

@@ -5,7 +5,7 @@ import { writeFile, directoryExists, ensureDir } from "../../utils/fs.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import {
   CLAUDE_SRC_DIR,
-  CLI_BIN_NAME,
+  CLI_INVOKE_COMMAND,
   KEBAB_CASE_PATTERN,
   PLUGIN_MANIFEST_DIR,
   SKILL_CATEGORIES_PATH,
@@ -75,7 +75,7 @@ ${SKILLS_DIR_PATH}/                # Custom skill definitions
 ## Creating Skills
 
 \`\`\`bash
-${CLI_BIN_NAME} new skill <name> --category <category-name>
+${CLI_INVOKE_COMMAND} new skill <name> --category <category-name>
 \`\`\`
 
 Each skill lives in \`${SKILLS_DIR_PATH}/<skill-name>/\` with:
@@ -88,10 +88,10 @@ Point the CLI at this marketplace as a source:
 
 \`\`\`bash
 # Local development
-${CLI_BIN_NAME} init --source /path/to/${name}
+${CLI_INVOKE_COMMAND} init --source /path/to/${name}
 
 # From a git repository
-${CLI_BIN_NAME} init --source github:your-org/${name}
+${CLI_INVOKE_COMMAND} init --source github:your-org/${name}
 \`\`\`
 
 ## How It Works
@@ -285,11 +285,11 @@ export default class NewMarketplace extends BaseCommand {
       this.log(`  1. cd ${marketplaceName}`);
     }
     this.log(
-      `  ${useCurrentDir ? "1" : "2"}. ${CLI_BIN_NAME} new skill <name> --category <category-name>`,
+      `  ${useCurrentDir ? "1" : "2"}. ${CLI_INVOKE_COMMAND} new skill <name> --category <category-name>`,
     );
     this.log(`  ${useCurrentDir ? "2" : "3"}. Push to a git repository`);
     this.log(
-      `  ${useCurrentDir ? "3" : "4"}. ${CLI_BIN_NAME} init --source github:your-org/${marketplaceName}`,
+      `  ${useCurrentDir ? "3" : "4"}. ${CLI_INVOKE_COMMAND} init --source github:your-org/${marketplaceName}`,
     );
     this.log("");
   }

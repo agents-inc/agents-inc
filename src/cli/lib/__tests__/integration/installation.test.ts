@@ -5,6 +5,7 @@ import { mkdir, writeFile } from "fs/promises";
 import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
+  CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
   DEFAULT_PLUGIN_NAME,
   STANDARD_FILES,
@@ -170,7 +171,7 @@ describe("installation", () => {
     });
 
     it("should include init suggestion in error message", async () => {
-      await expect(getInstallationOrThrow(tempDir)).rejects.toThrow(/agentsinc init/);
+      await expect(getInstallationOrThrow(tempDir)).rejects.toThrow(`${CLI_INVOKE_COMMAND} init`);
     });
 
     it("should return installation when found (local)", async () => {

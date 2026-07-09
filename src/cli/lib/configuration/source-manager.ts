@@ -6,7 +6,7 @@ import { fetchMarketplace } from "../loading/source-fetcher";
 import { discoverLocalSkills } from "../skills/local-skill-loader";
 import { discoverAllPluginSkills } from "../plugins/plugin-discovery";
 import { writeFile, ensureDir } from "../../utils/fs";
-import { CLAUDE_SRC_DIR } from "../../consts";
+import { CLAUDE_SRC_DIR, CLI_INVOKE_COMMAND } from "../../consts";
 import type { ProjectConfig } from "../../types";
 import { verbose } from "../../utils/logger";
 
@@ -115,7 +115,9 @@ async function writeConfigFromPartial(
   partial: Partial<ProjectConfig>,
 ): Promise<void> {
   if (!partial.name) {
-    throw new Error("Cannot write config: no project config found. Run `agentsinc init` first.");
+    throw new Error(
+      `Cannot write config: no project config found. Run \`${CLI_INVOKE_COMMAND} init\` first.`,
+    );
   }
 
   const config: ProjectConfig = {

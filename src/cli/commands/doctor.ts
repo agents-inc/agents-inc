@@ -14,7 +14,7 @@ import { fileExists, glob, directoryExists } from "../utils/fs";
 import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
-  CLI_BIN_NAME,
+  CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
   LOCAL_SKILLS_PATH,
   STANDARD_FILES,
@@ -44,7 +44,7 @@ function checkConfigValid(config: ProjectConfig | null): ConfigCheckOutput {
         kind: "config",
         status: "fail",
         message: `${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS} not found`,
-        details: [`Run '${CLI_BIN_NAME} init' to create a configuration`],
+        details: [`Run '${CLI_INVOKE_COMMAND} init' to create a configuration`],
       },
       config: null,
     };
@@ -369,16 +369,16 @@ function formatTips(results: CheckResult[]): string[] {
   const tips: string[] = [];
 
   if (hasAgentWarning) {
-    tips.push(`  Tip: Run '${CLI_BIN_NAME} compile' to generate missing agent files`);
+    tips.push(`  Tip: Run '${CLI_INVOKE_COMMAND} compile' to generate missing agent files`);
   }
   if (hasConfigError) {
-    tips.push(`  Tip: Run '${CLI_BIN_NAME} init' to create or fix configuration`);
+    tips.push(`  Tip: Run '${CLI_INVOKE_COMMAND} init' to create or fix configuration`);
   }
   if (hasSkillError) {
     tips.push("  Tip: Check skill IDs in config match available skills");
   }
   if (hasMissingSkills) {
-    tips.push(`  Tip: Run '${CLI_BIN_NAME} compile' to reinstall missing skill files`);
+    tips.push(`  Tip: Run '${CLI_INVOKE_COMMAND} compile' to reinstall missing skill files`);
   }
 
   return tips;

@@ -292,15 +292,15 @@ All user-facing strings centralized in constant objects:
 
 ### Branding and Naming
 
-| Constant                     | Value                           | Purpose                             |
-| ---------------------------- | ------------------------------- | ----------------------------------- |
-| `CLI_BIN_NAME`               | `agentsinc`                     | CLI binary name                     |
-| `DEFAULT_BRANDING.NAME`      | `Agents Inc.`                   | Default product name                |
-| `DEFAULT_BRANDING.TAGLINE`   | `AI-powered development tools`  | Default tagline                     |
-| `DEFAULT_PUBLIC_SOURCE_NAME` | `agents-inc`                    | Fallback marketplace name           |
-| `SOURCE_DISPLAY_NAMES`       | `{ public, eject, agents-inc }` | Human-readable source type labels   |
-| `DEFAULT_VERSION`            | `1.0.0`                         | Default skill version               |
-| `DEFAULT_DISPLAY_VERSION`    | `0.0.0`                         | Indicates no version explicitly set |
+| Constant                     | Value                           | Purpose                                                                                                                                           |
+| ---------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLI_INVOKE_COMMAND`         | `npx @agents-inc/cli`           | Promoted invocation prefix shown in user-facing messages (registered global bin name is still `agentsinc` — see `package.json` `bin`/`oclif.bin`) |
+| `DEFAULT_BRANDING.NAME`      | `Agents Inc.`                   | Default product name                                                                                                                              |
+| `DEFAULT_BRANDING.TAGLINE`   | `AI-powered development tools`  | Default tagline                                                                                                                                   |
+| `DEFAULT_PUBLIC_SOURCE_NAME` | `agents-inc`                    | Fallback marketplace name                                                                                                                         |
+| `SOURCE_DISPLAY_NAMES`       | `{ public, eject, agents-inc }` | Human-readable source type labels                                                                                                                 |
+| `DEFAULT_VERSION`            | `1.0.0`                         | Default skill version                                                                                                                             |
+| `DEFAULT_DISPLAY_VERSION`    | `0.0.0`                         | Indicates no version explicitly set                                                                                                               |
 
 ### Versioning and Hashing
 

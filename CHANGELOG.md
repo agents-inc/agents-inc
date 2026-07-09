@@ -7,6 +7,15 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.141.2] - 2026-07-09
+
+**Runtime CLI invocation strings now match the promoted `npx @agents-inc/cli` UX**
+
+- Renamed `CLI_BIN_NAME` → `CLI_INVOKE_COMMAND` (`"agentsinc"` → `"npx @agents-inc/cli"`), fixing ~21 stale runtime warnings/errors/snippets across commands, config writers, and installation/skill-fetcher libs
+- Fixed a second, undetected hardcoded `agentsinc init` literal in `source-manager.ts` that bypassed the constant entirely
+
+See [changelogs/0.141.2.md](./changelogs/0.141.2.md) for full details.
+
 ## [0.141.1] - 2026-07-09
 
 **Wizard tab-bar spacing fix (hoisted domain-nav case)**

@@ -18,7 +18,7 @@ import {
   findSkillMatch,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
-import { CLI_BIN_NAME, LOCAL_SKILLS_PATH } from "../consts.js";
+import { CLI_INVOKE_COMMAND, LOCAL_SKILLS_PATH } from "../consts.js";
 import {
   ERROR_MESSAGES,
   SUCCESS_MESSAGES,
@@ -178,7 +178,7 @@ export default class Update extends BaseCommand {
           this.log("");
         }
 
-        this.log(`Run \`${CLI_BIN_NAME} search ${skillArg}\` to search available skills.`);
+        this.log(`Run \`${CLI_INVOKE_COMMAND} search ${skillArg}\` to search available skills.`);
         this.log("");
         this.error(ERROR_MESSAGES.SKILL_NOT_FOUND, { exit: EXIT_CODES.ERROR });
       }

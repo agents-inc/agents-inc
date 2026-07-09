@@ -1,10 +1,10 @@
-import { CLI_BIN_NAME, DEFAULT_BRANDING } from "../consts.js";
+import { CLI_INVOKE_COMMAND, DEFAULT_BRANDING } from "../consts.js";
 
 export const ERROR_MESSAGES = {
   UNKNOWN_ERROR: "Unknown error occurred",
   UNKNOWN_ERROR_SHORT: "Unknown error",
-  NO_INSTALLATION: `No installation found. Run '${CLI_BIN_NAME} init' first to set up ${DEFAULT_BRANDING.NAME}`,
-  NO_LOCAL_SKILLS: `No local skills found. Run \`${CLI_BIN_NAME} init\` or \`${CLI_BIN_NAME} edit\` first.`,
+  NO_INSTALLATION: `No installation found. Run '${CLI_INVOKE_COMMAND} init' first to set up ${DEFAULT_BRANDING.NAME}`,
+  NO_LOCAL_SKILLS: `No local skills found. Run \`${CLI_INVOKE_COMMAND} init\` or \`${CLI_INVOKE_COMMAND} edit\` first.`,
   NO_SKILLS_FOUND: "No skills found",
   VALIDATION_FAILED: "Validation failed",
   FAILED_RESOLVE_SOURCE: "Failed to resolve source",
@@ -36,7 +36,7 @@ export const STATUS_MESSAGES = {
 
 export const INFO_MESSAGES = {
   NO_CHANGES_MADE: "No changes made.",
-  RUN_COMPILE: `Run '${CLI_BIN_NAME} compile' to include imported skills in your agents.`,
+  RUN_COMPILE: `Run '${CLI_INVOKE_COMMAND} compile' to include imported skills in your agents.`,
   NO_AGENTS_TO_RECOMPILE: "No agents to recompile",
   NO_PLUGIN_INSTALLATION: "No plugin installation found.",
   NO_LOCAL_INSTALLATION: "No local installation found.",

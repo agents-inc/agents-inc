@@ -37,7 +37,7 @@ import { checkPermissions } from "../lib/permission-checker.js";
 import {
   ASCII_LOGO,
   CLAUDE_SRC_DIR,
-  CLI_BIN_NAME,
+  CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
   GLOBAL_INSTALL_ROOT,
 } from "../consts.js";
@@ -555,7 +555,7 @@ export default class Init extends BaseCommand {
     this.log("");
     this.log("To customize agent-skill assignments:");
     this.log(`  1. Edit .claude-src/config.ts`);
-    this.log(`  2. Run '${CLI_BIN_NAME} compile' to regenerate agents`);
+    this.log(`  2. Run '${CLI_INVOKE_COMMAND} compile' to regenerate agents`);
     this.log("");
   }
 }

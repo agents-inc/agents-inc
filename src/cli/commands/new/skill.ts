@@ -13,7 +13,7 @@ import { getErrorMessage } from "../../utils/errors.js";
 import { verbose } from "../../utils/logger.js";
 import { computeSkillFolderHash } from "../../lib/versioning.js";
 import {
-  CLI_BIN_NAME,
+  CLI_INVOKE_COMMAND,
   KEBAB_CASE_PATTERN,
   LOCAL_SKILLS_PATH,
   PLUGIN_MANIFEST_DIR,
@@ -126,7 +126,7 @@ export default class NewSkill extends BaseCommand {
   private async ensureInstallation(projectDir: string): Promise<void> {
     const installation = await detectInstallation(projectDir);
     if (!installation) {
-      this.error(`No installation found. Run '${CLI_BIN_NAME} init' first.`, {
+      this.error(`No installation found. Run '${CLI_INVOKE_COMMAND} init' first.`, {
         exit: EXIT_CODES.ERROR,
       });
     }
@@ -230,7 +230,7 @@ export default class NewSkill extends BaseCommand {
 
       this.log("");
       this.log(
-        `Skill created successfully! Run '${CLI_BIN_NAME} compile' to include it in your agents.`,
+        `Skill created successfully! Run '${CLI_INVOKE_COMMAND} compile' to include it in your agents.`,
       );
       this.log("");
     } catch (error) {

@@ -5,7 +5,13 @@ import { mkdir, writeFile } from "fs/promises";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { buildProjectConfig } from "../__tests__/factories/config-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, PLUGINS_SUBDIR, STANDARD_FILES } from "../../consts";
+import {
+  CLAUDE_DIR,
+  CLAUDE_SRC_DIR,
+  CLI_INVOKE_COMMAND,
+  PLUGINS_SUBDIR,
+  STANDARD_FILES,
+} from "../../consts";
 
 // Mock logger (suppress verbose/warn output during tests)
 vi.mock("../../utils/logger");
@@ -211,14 +217,14 @@ describe("installation", () => {
       }
     });
 
-    it("error message suggests running agentsinc init", async () => {
+    it("error message suggests running init", async () => {
       const homeDir = os.homedir();
       const homeConfigPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
       const { fileExists } = await import("../../utils/fs");
       const homeHasConfig = await fileExists(homeConfigPath);
 
       if (!homeHasConfig) {
-        await expect(getInstallationOrThrow(tempDir)).rejects.toThrow("agentsinc init");
+        await expect(getInstallationOrThrow(tempDir)).rejects.toThrow(`${CLI_INVOKE_COMMAND} init`);
       }
     });
 
