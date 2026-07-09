@@ -21,9 +21,7 @@ See the [Guides](#guides) section below for more.
 <br />
 
 <p align="center">
-  <video src="./assets/demo.mp4" width="700" controls muted loop playsinline>
-    Your browser doesn't support embedded video — <a href="./assets/demo.mp4">watch demo.mp4</a>.
-  </video>
+  <img src="./assets/demo.gif" alt="Agents Inc init wizard" width="700">
 </p>
 
 ## Getting Started

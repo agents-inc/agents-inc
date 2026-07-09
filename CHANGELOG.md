@@ -7,6 +7,15 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.141.3] - 2026-07-09
+
+**README demo switched from video to GIF**
+
+- Replaced `assets/demo.mp4` (`<video>` embed, didn't render on GitHub) with `assets/demo.gif` (`<img>` embed, renders everywhere)
+- `assets/demo.tape` updated to output a tuned GIF capture instead of mp4
+
+See [changelogs/0.141.3.md](./changelogs/0.141.3.md) for full details.
+
 ## [0.141.2] - 2026-07-09
 
 **Runtime CLI invocation strings now match the promoted `npx @agents-inc/cli` UX**

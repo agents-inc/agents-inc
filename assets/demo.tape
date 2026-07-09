@@ -1,16 +1,16 @@
-Output demo.mp4
+Output demo.gif
 
 Set Shell "zsh"
-Set FontSize 32
+Set FontSize 26
 Set FontFamily "Ubuntu Mono"
 Set LineHeight 1.3
-Set Width 2000
-Set Height 2000
-Set Padding 80
-Set Margin 40
-Set BorderRadius 16
+Set Width 1400
+Set Height 1200
+Set Padding 40
+Set Margin 20
+Set BorderRadius 8
 Set WindowBar Colorful
-Set WindowBarSize 80
+Set WindowBarSize 40
 Set TypingSpeed 80ms
 Set CursorBlink true
 Set Framerate 60
