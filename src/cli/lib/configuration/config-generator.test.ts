@@ -66,7 +66,6 @@ describe("config-generator", () => {
         },
       });
       // Should NOT have these fields by default
-      expect(config.version).toBeUndefined();
       expect(config.author).toBeUndefined();
       expect(config.description).toBeUndefined();
     });

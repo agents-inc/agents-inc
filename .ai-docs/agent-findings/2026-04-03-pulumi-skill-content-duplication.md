@@ -12,6 +12,8 @@ reporting_agent: skill-summoner
 category: dry
 domain: infra
 root_cause: convention-undocumented
+status: resolved
+resolved_by: skill content trims applied in skills repo
 ---
 
 ## What Was Wrong

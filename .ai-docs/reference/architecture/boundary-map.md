@@ -6,7 +6,7 @@ related:
   - reference/architecture/overview.md
   - reference/types/core-types.md
   - reference/config/configuration.md
-last_validated: 2026-04-13
+last_validated: 2026-04-21
 ---
 
 # Boundary Map

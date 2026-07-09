@@ -4,25 +4,26 @@
 
 # Agents Inc
 
-An agent composition framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Compose specialized subagents from atomic skills:
-
-1. Select a stack or start from scratch
-2. Select your skills
-3. Select your subagents
-4. Customize per skill and subagent:
-   - **Mode** plugin (managed) or eject (full control)
-   - **Scope** global (all projects) or project (local) — keep meta agents global, send domain agents project-side when you work across frameworks
-   - **Loading** preloaded (SKILL.md always loaded) or dynamic (loaded via agent content)
-5. Map skills to subagents in the strictly-typed `config.ts`
-6. Compile
-
-<br />
-
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
+An agent composition framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Compose specialized subagents from atomic skills:
+
+1. Select a pre-built stack to customise or start from scratch
+2. Select your skills from an interactive grid, organized by domain with compatibility filtering and global/local customising
+3. Choose to eject these skills or install them as plugins ([install modes guide](docs/guides/install-modes.md))
+4. Select your subagents to compile with these skills
+5. Further customise skills and subagents in the generated `config.ts` ([editing config guide](docs/guides/editing-config.md))
+6. Compile subagents with `npx @agents-inc/cli compile` after changes
+
+See the [Guides](#guides) section below for more.
+
+<br />
+
 <p align="center">
-  <img src="./screenshots/wizard-flow.gif" alt="Agents Inc init wizard" width="700">
+  <video src="./assets/demo.mp4" width="700" controls muted loop playsinline>
+    Your browser doesn't support embedded video — <a href="./assets/demo.mp4">watch demo.mp4</a>.
+  </video>
 </p>
 
 ## Getting Started
@@ -30,12 +31,6 @@ An agent composition framework for [Claude Code](https://docs.anthropic.com/en/d
 ```bash
 npx @agents-inc/cli init
 ```
-
-<p align="center">
-  <img src="screenshots/stack-selection.png" alt="Stack selection" width="500">
-</p>
-
-Choose from 16 pre-built stacks or start from scratch. Stacks pre-select skills and agents for common tech combinations.
 
 | Stack                        | Technologies                                                 |
 | ---------------------------- | ------------------------------------------------------------ |
@@ -55,20 +50,7 @@ Choose from 16 pre-built stacks or start from scratch. Stacks pre-select skills 
 | `nuxt-fullstack`             | Nuxt + Hono + Drizzle + Better Auth                          |
 | `angular-modern-fullstack`   | Angular + NgRx + Hono + Drizzle + Better Auth                |
 | `expo-mobile-fullstack`      | Expo + React Native + Zustand + React Query + Hono + Drizzle |
-
-<p align="center">
-  <img src="screenshots/skill-selection.png" alt="Skill selection" width="500">
-</p>
-
-Add or remove skills from the interactive grid. Skills are organized by domain with framework-aware filtering.
-
-<p align="center">
-  <img src="screenshots/agent-selection.png" alt="Agent selection" width="500">
-</p>
-
-Choose which subagents to compile. Each agent is composed from the skills you selected.
-
-After init, use `agentsinc edit` to change selections and `agentsinc compile` to rebuild agents.
+| `cli-ink-oclif`              | oclif + Ink + Zustand + Vitest                               |
 
 ## Guides
 
@@ -127,10 +109,13 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 
 ### Customization
 
-| Command        | Description                                                               |
-| -------------- | ------------------------------------------------------------------------- |
-| `eject <type>` | Export for customization (`agent-partials`, `templates`, `skills`, `all`) |
-| `import skill` | Import a skill from an external GitHub repository                         |
+| Command           | Description                                                                         |
+| ----------------- | ----------------------------------------------------------------------------------- |
+| `eject <type>`    | Export for customization (`agent-partials`, `templates`, `skills`, `all`)           |
+| `import skill`    | Import a skill from an external GitHub repository                                   |
+| `new skill`       | (FEATURE-GATED: `NEW_SKILL_COMMAND=false`) Scaffold a new local skill               |
+| `new agent`       | (FEATURE-GATED: `NEW_AGENT_COMMAND=false`) Scaffold a new custom subagent           |
+| `new marketplace` | (FEATURE-GATED: `NEW_MARKETPLACE_COMMAND=false`) Scaffold a new marketplace project |
 
 ### Build
 
@@ -148,7 +133,7 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 | `validate`  | Validate config and skill structure |
 | `uninstall` | Remove Agents Inc from your project |
 
-Run `agentsinc --help` for full usage, or see the [full commands reference](./docs/reference/commands.md).
+Run `@agents-inc/cli --help` for full usage, or see the [full commands reference](./docs/reference/commands.md).
 
 ## Links
 

@@ -8,10 +8,11 @@ A generated config looks like this:
 
 ```typescript
 import type {
-  AgentName,
   AgentScopeConfig,
   Domain,
+  ProjectAgentName,
   ProjectConfig,
+  SelectedAgentName,
   SkillConfig,
   StackAgentConfig,
 } from "./config-types";
@@ -27,7 +28,7 @@ const agents: AgentScopeConfig[] = [
   { name: "api-developer", scope: "project" },
 ];
 
-const stack: Partial<Record<AgentName, StackAgentConfig>> = {
+const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
   "web-developer": {
     "web-framework": "web-framework-react",
     "web-client-state": "web-state-zustand",
@@ -39,15 +40,16 @@ const stack: Partial<Record<AgentName, StackAgentConfig>> = {
 
 const domains: Domain[] = ["web", "api"];
 
+const selectedAgents: SelectedAgentName[] = ["web-developer", "api-developer"];
+
 export default {
   name: "my-project",
-  version: "1",
   source: "github:agents-inc/skills",
   skills,
   agents,
   stack,
   domains,
-  selectedAgents: ["web-developer", "api-developer"],
+  selectedAgents,
 } satisfies ProjectConfig;
 ```
 

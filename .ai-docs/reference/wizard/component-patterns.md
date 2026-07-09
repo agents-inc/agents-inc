@@ -19,7 +19,7 @@ related:
   - reference/wizard/state-transitions.md
   - reference/wizard/flow.md
   - reference/concepts/scope-system.md
-last_validated: 2026-04-13
+last_validated: 2026-04-21
 ---
 
 # Component Patterns

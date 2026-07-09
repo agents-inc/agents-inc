@@ -412,6 +412,16 @@ export default class Init extends BaseCommand {
       this.warn(`Failed to install plugin ${item.id}: ${item.error}`);
     }
 
+    // Plugin install intent is inviolable — if any skill failed to install, hard-error
+    // BEFORE `writeConfigAndCompile` writes config.ts with orphan entries claiming
+    // the skill is installed. Matches the no-plugin-to-eject-fallback rule.
+    if (pluginResult.failed.length > 0) {
+      this.error(
+        `Failed to install ${pluginResult.failed.length} plugin skill(s). Plugin install intent could not be honored. Verify the skill id matches the marketplace, re-run with --refresh to update the marketplace, or switch affected skills to eject mode.`,
+        { exit: EXIT_CODES.ERROR },
+      );
+    }
+
     this.log(`Installed ${pluginResult.installed.length} skill plugins\n`);
   }
 

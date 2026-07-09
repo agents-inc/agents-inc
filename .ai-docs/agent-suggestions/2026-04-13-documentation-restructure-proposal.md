@@ -1,7 +1,19 @@
 ---
 date: 2026-04-13
 proposer: codex-keeper
-status: proposal
+status: absorbed
+resolution_date: 2026-04-21
+resolution_note: |
+  Phase 1 (frontmatter) — done: all reference/ docs carry scope/area/keywords/related/last_validated.
+  Phase 2 (subdirectory reorganization) — done: architecture/, commands/, concepts/,
+  wizard/, types/, testing/, config/, features/ subdirs exist and hold split content
+  (e.g. concepts/scope-system.md, concepts/tombstone-pattern.md, concepts/guard-pattern.md;
+  wizard/{flow,state-transitions,store-map,component-patterns}.md; types/{core-types,operations-types,zod-schemas}.md;
+  testing/{infrastructure,factories,mock-data,e2e-infrastructure}.md).
+  Phase 3 (pointer stubs at root) — done: type-system.md, test-infrastructure.md,
+  state-transitions.md (now 25 lines, canonical at wizard/state-transitions.md), and
+  commands.md (now 23 lines, canonical at commands/index.md) are all thin pointer stubs.
+  No dual-home drift risk remains. Proposal fully absorbed.
 ---
 
 # Documentation Restructure Proposal

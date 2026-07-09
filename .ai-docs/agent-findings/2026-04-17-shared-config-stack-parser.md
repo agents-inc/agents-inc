@@ -14,6 +14,8 @@ reporting_agent: cli-tester
 category: dry
 domain: e2e
 root_cause: convention-undocumented
+status: partial
+partial_note: D-234 is filed and Ready for Dev, currently scoped to migrate `parseSkillEntries` in `tombstone-cleanup-PtoG-restoration.e2e.test.ts` (1 of 5 affected files). Broadening to cover `extractStack`, `parseConfigArrays`, `extractAgentKeys`, and `findAssignment` across the other 4 lifecycle tests is tracked in D-234's narrative.
 ---
 
 ## What Was Wrong
@@ -70,3 +72,17 @@ Add to `.ai-docs/standards/e2e/test-data.md`:
 > `src/cli/lib/configuration/config-loader.ts`. Regex / brace-matching
 > extractors drift across tests and break silently when `config-writer.ts`
 > tweaks its output shape.
+
+## Status Update (2026-04-21)
+
+Still open. Re-audited `e2e/**/*.test.ts`:
+
+- `preloaded-preservation.e2e.test.ts:39` — `extractStack` (brace-match + JSON.parse)
+- `stack-per-agent-curation.e2e.test.ts:48,80` — `extractStack` + `findAssignment` (replicated)
+- `re-edit-cycles.e2e.test.ts:31` — `parseConfigArrays` (two-strategy regex fallback)
+- `dual-scope-edit-integrity.e2e.test.ts:346` — `extractAgentKeys` (inline regex)
+- `tombstone-cleanup-PtoG-restoration.e2e.test.ts:61` — `parseSkillEntries` (JSON-shape regex, fragile to writer shape changes)
+
+No `loadProjectConfig` consumers exist in `e2e/` yet — the proposed resolution path is not yet implemented.
+
+**Cross-ref:** [`todo/TODO.md` D-234](../../todo/TODO.md) ("E2E config inspection via `loadProjectConfig` instead of regex-on-config.ts", Ready for Dev) is the ticketed fix. D-234 is currently scoped to migrate `parseSkillEntries` in `tombstone-cleanup-PtoG-restoration.e2e.test.ts` and add a `readProjectSkills` helper. To fully close this finding, D-234's sweep should be broadened to also replace `extractStack`, `parseConfigArrays`, `extractAgentKeys`, and `findAssignment` in the four lifecycle tests above — i.e., treat the `tombstone-cleanup` test as the first migration and land companion helpers (`readProjectStack`, `readProjectAgents`, `readProjectDomains`, or a single `readProjectConfig`) in the same helper module.

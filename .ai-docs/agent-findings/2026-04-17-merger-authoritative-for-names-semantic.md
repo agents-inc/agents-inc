@@ -11,6 +11,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
+status: resolved
+resolved_by: D-221 compound-key authoritative merge shipped (0.137.0)
 ---
 
 ## What Was Wrong

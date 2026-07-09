@@ -19,6 +19,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: convention-undocumented
+status: resolved
+resolved_by: constants + matcher migration applied; D-168 audit
 ---
 
 ## What Was Wrong

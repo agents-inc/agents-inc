@@ -16,14 +16,16 @@ keywords:
   ]
 related:
   - reference/store-map.md
-  - reference/state-transitions.md
+  - reference/wizard/state-transitions.md
   - reference/features/wizard-flow.md
-last_validated: 2026-04-13
+  - reference/concepts/tombstone-pattern.md
+  - reference/concepts/guard-pattern.md
+last_validated: 2026-04-21
 ---
 
 # Component Patterns
 
-**Last Updated:** 2026-04-13
+**Last Updated:** 2026-04-21
 
 ## Rendering Library
 
@@ -43,10 +45,9 @@ src/cli/components/
     message.tsx              # Styled message display
     select-list.tsx          # Generic keyboard-navigable list
     spinner.tsx              # Loading spinner
-  hooks/                     # React hooks (16 hooks, 3 test files)
+  hooks/                     # React hooks (14 hooks, 3 test files)
     use-build-step-props.ts
     use-category-grid-input.ts
-    use-filtered-results.ts
     use-focused-list-item.ts
     use-framework-filtering.ts
     use-keyboard-navigation.ts
@@ -59,10 +60,6 @@ src/cli/components/
     use-terminal-dimensions.ts
     use-text-input.ts
     use-virtual-scroll.ts
-    use-wizard-initialization.ts
-  skill-search/              # Skill search component
-    index.ts
-    skill-search.tsx
   themes/
     default.ts               # CLI theme configuration
   wizard/                    # Wizard step components (24 source files, 15 test files)
@@ -241,6 +238,8 @@ Internal component within `category-grid.tsx` that renders a single skill option
 
 **Compatibility labels:** Shown on focus (with labels mode) or always for requiredBy/unmetRequirements. Labels include: `(required by X)`, `(incompatible)`, `(recommended)`, `(discouraged)`, or unmet requirements reason.
 
+**Mount-effect focus seeding:** `CategoryGrid` uses a `mountedRef` + `useEffect(() => {...}, [])` that fires `onFocusedSkillChange` with the initial focused cell's `SkillId` once on mount — seeds `focusedSkillId` in the wizard store so the info panel / help text has a focus target before any key press. Parent-side consumers must not read `focusedSkillId` synchronously after wizard step transition (Scenario B race — see `reference/wizard/state-transitions.md`).
+
 ### StepAgents Dual Scope Badges (in `src/cli/components/wizard/step-agents.tsx`)
 
 **Store access:** Reads `selectedAgents`, `agentConfigs`, and `installedAgentConfigs` from wizard store.
@@ -276,7 +275,6 @@ Centralized hotkey definitions. Each hotkey has a `key` (for matching) and `labe
 | `HOTKEY_SET_ALL_LOCAL`       | L   | Sources step (customize view)    |
 | `HOTKEY_SET_ALL_PLUGIN`      | P   | Sources step (customize view)    |
 | `HOTKEY_ADD_SOURCE`          | A   | Settings step                    |
-| `HOTKEY_COPY_LINK`           | C   | Skill search                     |
 
 **Structural key labels** (display-only, for footer hints): `KEY_LABEL_ENTER`, `KEY_LABEL_ESC`, `KEY_LABEL_SPACE`, `KEY_LABEL_TAB`, `KEY_LABEL_DEL`, `KEY_LABEL_ARROWS`, `KEY_LABEL_ARROWS_VERT`, `KEY_LABEL_VIM`, `KEY_LABEL_VIM_VERT`.
 
@@ -310,7 +308,15 @@ Two-column (skills | agents) summary component with scope labels (Project/Global
 
 **Store access:** Reads `installedSkillConfigs`, `installedAgentConfigs`, and `isInitMode` from wizard store to compute diffs (new/removed items) and source change detection.
 
-**Source change detection:** Builds a `prevSourceMap` from `installedSkillConfigs` (keyed by `"${id}:${scope}"`). When a skill's source differs from the previous source, renders a `~` prefix with `CLI_COLORS.WARNING` color and a transition label (e.g., "Public -> Eject") using `SOURCE_DISPLAY_NAMES` from `consts.ts`.
+**Diff baseline (D-230 / D-232):** Baseline is NOT pre-filtered. Tombstones remain first-class entries in `prevSkillKeySet` and the `removedSkills` match. A tombstone occupies the `(id, scope)` slot and signals "global install silenced at project scope" (D-223 dual-scope). Only `prevSourceMap` filters to active (`!excluded`) baseline entries — tombstones don't represent a live install source.
+
+**Slot-occupancy removal match:** A baseline entry is considered removed ONLY if nothing (active OR tombstone) occupies that slot in current state. A current tombstone at the same `(id, scope)` keeps the slot occupied — prevents a spurious `-` at Global on G→P toggle (D-230) and a spurious `+` at Global on re-edit of the stored tombstone (D-232).
+
+**Tombstone dedup (`uniqueExcludedGlobalSkills`):** Deduplicates current tombstone rows against inherited-global entries by `id` only — the Global section never shows two rows for the same skill. Under slot-occupancy, no dedup against `removedGlobalSkills` needed.
+
+**Source change detection:** Builds a `prevSourceMap` from active (non-excluded) `installedSkillConfigs` entries (keyed by `"${id}:${scope}"`). When a skill's source differs from the previous source, renders a `~` prefix with `CLI_COLORS.WARNING` and a transition label (e.g., "Public -> Eject") using `SOURCE_DISPLAY_NAMES` from `consts.ts`.
+
+**Init mode gating:** When `isInitMode` is true, `removedGlobalSkills` / `removedGlobalAgents` are suppressed (empty arrays) — no pre-existing global baseline to diff against on first install.
 
 **Diff markers:**
 

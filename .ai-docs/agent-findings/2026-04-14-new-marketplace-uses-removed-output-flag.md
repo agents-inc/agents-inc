@@ -11,6 +11,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: enforcement-gap
+status: resolved
+resolved_by: --output references removed from new/marketplace.ts
 ---
 
 ## What Was Wrong

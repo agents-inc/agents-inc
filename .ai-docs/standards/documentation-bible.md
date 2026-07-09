@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # Documentation Bible -- Agents Inc. CLI
 
 > Standards for creating and maintaining AI-optimized documentation in `.ai-docs/`.
@@ -144,6 +148,22 @@ BAD: `./lib/compiler.ts`
 
 **Consistent terminology** - Use one term for each concept throughout all docs.
 
+### File-Path Conventions in Docs
+
+Three accepted forms for referring to a source file. Pick ONE for a given doc's prose and stay with it -- do not mix within a single doc.
+
+| Form                  | When to use                                                          | Example                                   |
+| --------------------- | -------------------------------------------------------------------- | ----------------------------------------- |
+| Full canonical        | Prose rules in standards/bible docs, reference-doc prose             | `src/cli/lib/matrix/matrix-provider.ts`   |
+| Bare (root-relative)  | Inside tree diagrams / file tables under a stated root (`src/cli/`)  | `matrix/matrix-provider.ts`, `consts.ts`  |
+| Frontmatter-full-path | **Required** in agent-findings `affected_files:` / `standards_docs:` | `- src/cli/lib/matrix/matrix-provider.ts` |
+
+**One-doc-one-form:** a single doc's prose must not mix `src/cli/utils/x.ts` and `utils/x.ts` for the same file. Tree diagrams and tables within that doc may use the bare form because their root is stated in the preceding heading or table column.
+
+**Reference tables** may legitimately pair bare + canonical in two columns (see `utilities.md`, `skills-and-matrix.md`, `dependency-graph.md`) -- that is a presentation pattern, not prose.
+
+**Agent findings** set canonical paths once in `affected_files:`; prose inside the finding may then use bare names because the header supplies the context.
+
 ### Line Numbers and Staleness
 
 Line numbers in documentation go stale as code changes. The validation process handles this:
@@ -175,6 +195,97 @@ The project uses adversarial audits to keep documentation accurate. See the Vali
 | Count (e.g., "10 entries") | Grep/count the actual entries                         |
 | Type definition            | Read the type file -- do fields match?                |
 | Data flow description      | Trace through the actual code path                    |
+
+### Re-Validation Triggers (Beyond Calendar Cadence)
+
+A doc must be re-validated in the current session (ignoring the 7/14/30-day cadence) when ANY of the following hold:
+
+- An `agent-findings/*.md` entry lists the doc in `affected_files:` / `standards_docs:` / `related:`, or names a function the doc documents.
+- A shipped task ID (e.g., D-217, D-228, D-230) touches a file the doc references.
+- A concept doc covers a class of behavior (tombstones, guards, state transitions) and a finding in the same session touches that class.
+
+Rule of thumb: reference docs age faster than code. Any concept/reference doc referenced by a recent finding must be revalidated in the same sweep -- do not wait for cadence.
+
+### Doc-Touching Changes (Feature / Rename / Deletion Hooks)
+
+When shipping a feature, rename, or deletion that touches these high-impact files, grep the listed docs and update in the same session:
+
+| Change                                                                    | Doc(s) to grep + update                                 |
+| ------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Command added / deleted / renamed (`src/cli/commands/**`)                 | `commands.md`, `dependency-graph.md`, `boundary-map.md` |
+| Component added / deleted / renamed (`src/cli/components/**`)             | `component-patterns.md`, `dependency-graph.md`          |
+| New trust-boundary op (read/write/exec) or change to existing             | `boundary-map.md`                                       |
+| D-feature touching `config-types-writer.ts` or `stack-plugin-compiler.ts` | `boundary-map.md`, `dependency-graph.md`                |
+| Store refactor (prop-driven <-> hydration-before-render)                  | `store-map.md`, `features/wizard-flow.md`               |
+| Mock-data constants added / removed                                       | `testing/mock-data.md`                                  |
+
+If an update cannot be made in the same session, add a `NEEDS-VALIDATION` note to the doc's `DOCUMENTATION_MAP.md` row.
+
+### Command Reference Docs (`commands.md`)
+
+When documenting or validating a command:
+
+1. **Verify `static flags` and `static baseFlags` before documenting flags.** If either is `{}`, the command has no flags of that kind. Do not document inherited `--source` when `baseFlags = {}`.
+2. **Glob `src/cli/commands/**/\*.{ts,tsx}` and diff against the index table.\*\* Flag any row whose file does not exist and any command file not in the table.
+3. **Any command whose `run()` begins with `if (!FEATURE_FLAGS.X)` MUST carry a `Feature flag:` line** in its section, cross-referencing the current value in `src/cli/lib/feature-flags.ts`.
+
+### Known Limitations Rule
+
+When a documented system has active hardening tasks in `todo/TODO.md` (e.g., D-214), the reference doc MUST include a **Known Limitations** section cross-referenced to the task ID with file/function anchors. Describing code as if its TODOs were closed is drift.
+
+### Hydration-vs-Props / Hook Table / Hotkey Registry
+
+Component / wizard reference docs MUST:
+
+- **Hydration-vs-props:** If state flows through a `hydrateXStore(options)` call before render (not props), name that function, show the `HydrateOptions` type, and keep the actual `XxxProps` shape minimal.
+- **Hook table:** Every entry MUST be verified to exist via `Glob` before re-validation. Deleted hooks produce immediate drift.
+- **Hotkey registry:** Hotkey lists MUST enumerate only constants that exist in `hotkeys.ts` (or the project's equivalent registry) and include an explicit **"No other `HOTKEY_*` constants exist"** sentinel.
+
+### Store Map Completeness
+
+When documenting a Zustand store:
+
+- Every non-exported helper at module scope MUST appear in Internal Helpers.
+- Store state fields that are (a) set once and never modified, or (b) act as decision probes consumed by multiple actions, MUST enumerate their consumers in the field description -- not just their authoring action.
+- The hydration entry point (imperative `setState` batch called before first render) gets its own section, separate from the action table.
+
+### Guard / Silent-Guard Rules
+
+Reference docs inventorying guards, actions, or side effects MUST:
+
+1. **Enumerate every user-visible outcome** the inventoried code produces. When a guard is split between a dispatcher layer (`wizard.tsx` hotkey handler) and a store action layer, document BOTH layers and call out which path wins for which caller class (hotkey vs direct action vs test).
+2. Include a **Silent Guards table** annotated with race-risk. For each silent guard, state whether silence is (a) intentional contract-violation defense, (b) intentional shaping, or (c) a potential race surface requiring mitigation (E2E wait, synchronous seeding). Cross-reference the archetype Scenario-B findings.
+
+### Exhaustive Enumeration over Glob Shorthand
+
+When listing constants / exports in reference docs (mock-data, skills registry, hotkey registry, Zod schemas):
+
+- Prefer **exhaustive name lists** over `*_MATRIX - Pre-built constants` or `etc.` shorthand.
+- Glob descriptions enable silent drift (phantom `PIPELINE_MATRIX` survived 8 days because the doc said only "etc.").
+
+### Splits & Pointers
+
+When a doc is split into children, the original MUST become a pointer **within the same session** as the split. Never leave the pre-split body alongside children -- parallel maintenance guarantees drift.
+
+A pointer file contains:
+
+1. A "where content lives now" table mapping topics -> child paths.
+2. A list of inbound-link reasons (why the path is kept).
+3. NO duplicated content beyond a semantic-shift index that cross-links to the children.
+
+**Drift detection:** During sweeps, any file whose frontmatter `related:` overlaps with a sibling's AND whose headings duplicate the sibling's is a drift candidate -- audit the body, not just the date. If an original and a split-child sibling exist and `|original.last_validated - child.last_validated| > 7 days`, treat as drifted-original candidate.
+
+### Map Self-Consistency Audit
+
+Every 10th iteration (or when visible drift appears), audit `DOCUMENTATION_MAP.md` against itself:
+
+1. **Count invariants:** `Total Areas` header == count of Reference-table rows. `Documented` == `Total Areas`.
+2. **Row uniqueness:** No file appears in more than one staleness-dashboard row.
+3. **Cross-surface sync:** For each tracked doc, `Days Stale` in the dashboard must match `Last Validated` in the Reference table (same date basis, +/-0).
+4. **Disk vs map:** `Glob reference/**/*.md` count equals tracked-row count + pointer-row count.
+5. **Header dates:** `Last Updated`, `Last Validated`, `Date basis` must not lag the newest row annotation by more than 1 day.
+
+Record the iter number and fixes in the Validation History in the same format as content-validation iters.
 
 ---
 
@@ -341,3 +452,50 @@ If you notice yourself doing any of these, stop and correct:
 **(You MUST NOT duplicate HOW patterns from .claude/skills/ -- cross-reference instead)**
 
 **(You MUST load DOCUMENTATION_MAP.md first, not this file, unless you are updating documentation)**
+
+---
+
+## Findings Impact Report Regeneration
+
+`reference/findings-impact-report.md` is append-only between full regenerations.
+
+**Append flow:**
+
+1. Each batch of new findings gets a dated H3 under "Incremental Updates" with: (a) finding -> impacts table, (b) actions list, (c) any new systemic patterns.
+2. The original primary tables (root cause, severity, per-doc impact, per-source-file churn, systemic patterns, open vs closed) are NOT mutated by appends.
+
+**Full regeneration trigger:**
+
+A full regeneration is required when ANY of the following hold:
+
+- **More than 10 new findings accumulate in the Incremental Updates section.**
+- The oldest un-aggregated finding is more than 30 days old.
+- A major release bundle ships (promote the bundle's findings into primary tables).
+
+**Regeneration procedure:**
+
+1. Enumerate every finding under `.ai-docs/agent-findings/*.md` that falls in the target window.
+2. For each finding, extract: date, root cause, severity, category, domain, affected files, proposed standard.
+3. Rebuild primary tables from scratch: root-cause/severity/category/domain summaries, per-reference-doc impact, per-source-file churn, per-test-area churn.
+4. Consolidate systemic patterns (merge duplicate classes; rename A, B, C... rather than re-using 1, 2, 3 across regenerations).
+5. Deduplicate proposed standards into a single numbered list.
+6. Add a timeline rollup by date.
+7. Mark each finding CLOSED (shipped fix or codified rule) or OPEN (discovery / deferred followup).
+8. **Reset the Incremental Updates section to empty.**
+9. Bump `last_validated` and update `DOCUMENTATION_MAP.md` with a regeneration note.
+
+**Cadence:** At minimum one full regeneration per major release cluster; additionally whenever the >10-entry threshold is hit.
+
+---
+
+## Agent Findings Frontmatter
+
+Every file in `.ai-docs/agent-findings/*.md` (other than `README.md` and `TEMPLATE.md`) MUST:
+
+1. **Open with a YAML frontmatter block matching `TEMPLATE.md`.** Files without frontmatter will not be processed by convention-keeper or codex-keeper sweeps.
+2. **Use a `root_cause` value from the allowed enum** (current: `missing-rule | rule-not-visible | rule-not-specific-enough | convention-undocumented | enforcement-gap | scope-discipline-deferred`). When an authentic root cause does not fit, widen the enum in `TEMPLATE.md` rather than inventing an ad-hoc value.
+3. **Cross-link related findings** via first-class keys `supersedes:` and `superseded_by:` when a discovery finding is later replaced by a fix finding covering the same files and root cause.
+
+Cross-cutting audit sweeps (D-168-style, multi-file meta-reports) live in `.ai-docs/agent-findings/audits/`, not the main findings directory -- they use a different schema.
+
+A pre-processing pass by convention-keeper / codex-keeper scans for (a) files without frontmatter, (b) `root_cause` values outside the enum, (c) duplicate `affected_files + root_cause + date` tuples.

@@ -72,6 +72,11 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
       expect(await fileExists(globalConfigPath), "Global config must exist after init").toBe(true);
 
+      const globalConfigAfterInit = await readTestFile(globalConfigPath);
+      expect(globalConfigAfterInit, "version field is not emitted on global init").not.toContain(
+        "version:",
+      );
+
       const globalSkillsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS);
       expect(await directoryExists(globalSkillsDir), "Global skills dir must exist").toBe(true);
 
@@ -88,6 +93,11 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
       expect(await fileExists(projectConfigPath), "Project config must exist after init").toBe(
         true,
+      );
+
+      const projectConfigAfterInit = await readTestFile(projectConfigPath);
+      expect(projectConfigAfterInit, "version field is not emitted on project init").not.toContain(
+        "version:",
       );
 
       const projectHonoSkillDir = path.join(
@@ -144,6 +154,9 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       const projectConfigAfterEdit = await readTestFile(projectConfigPath);
       expect(projectConfigAfterEdit).toContain("web-framework-react");
       expect(projectConfigAfterEdit).toMatch(/web-framework-react[^}]*"scope"\s*:\s*"project"/);
+      expect(projectConfigAfterEdit, "version field is not emitted on edit").not.toContain(
+        "version:",
+      );
 
       const projectReactSkillDir = path.join(
         projectDir,

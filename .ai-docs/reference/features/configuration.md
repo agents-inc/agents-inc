@@ -15,14 +15,15 @@ keywords:
 related:
   - reference/architecture-overview.md
   - reference/type-system.md
-  - reference/state-transitions.md
+  - ../wizard/state-transitions.md
   - reference/boundary-map.md
-last_validated: 2026-04-13
+  - reference/config/scope-split.md
+last_validated: 2026-04-21
 ---
 
 # Configuration System
 
-**Last Updated:** 2026-04-13
+**Last Updated:** 2026-04-21
 
 ## Overview
 
@@ -68,7 +69,6 @@ Unified configuration type. Stores both source-resolution fields and installed s
 
 ```typescript
 type ProjectConfig = {
-  version?: "1";
   name: string;
   description?: string;
   agents: AgentScopeConfig[];
@@ -91,6 +91,8 @@ type ProjectConfig = {
   projects?: string[];
 };
 ```
+
+`ProjectConfig` has no `version` field — no reader consumes it, so it is not emitted or parsed.
 
 ### SkillConfig (`src/cli/types/config.ts`)
 
@@ -146,12 +148,6 @@ Validates:
 
 **Source classification:** `isLocalSource()` in `src/cli/lib/configuration/config.ts` - Returns `true` for paths starting with `/` or `.`, `false` for remote protocols. Rejects `..` and `~` in non-remote sources.
 
-## Agent Source Resolution
-
-**Function:** `resolveAgentsSource()` in `src/cli/lib/configuration/config.ts`
-
-**Precedence:** `--agent-source` flag > project config `agentsSource` > global config `agentsSource` > default (local CLI)
-
 ## Config Generation
 
 **Function:** `generateProjectConfigFromSkills()` in `src/cli/lib/configuration/config-generator.ts`
@@ -162,9 +158,31 @@ Generates `ProjectConfig` from wizard result:
 - Builds stack property from agent-skill mappings
 - Resolves agent names from selected domains
 
+Required when `selectedAgents` is non-empty: callers must pass `skillConfigs` (one `SkillConfig` per selected skill) and `agentConfigs` (one `AgentScopeConfig` per selected agent). `getScopeOrThrow` hard-errors on any missing entry — no silent scope defaulting.
+
+**D-220 per-agent curation options** (opt-in via `newlyAddedSkillIds`):
+
+| Option                   | Type                                           | Effect                                                                                                                                                                                                        |
+| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `newlyAddedSkillIds`     | `readonly SkillId[]`                           | Skills new to this session (vs prior `existing.config.skills`). Opting in (even as `[]`) activates D-220 preservation: skills absent from an existing agent's prior stack are only appended when in this set. |
+| `scopeEligibilityGained` | `ReadonlySet<string>`                          | `(agent, skillId)` pairs whose scope-compatibility flipped to compatible this session. Admits scope-flip cases that a skill-id-only diff misses. Keys built via `scopeEligibilityKey(agent, skillId)`.        |
+| `existingStack`          | `Partial<Record<AgentName, StackAgentConfig>>` | Prior stack entries. Used to preserve per-agent curation and inherit `preloaded` flags.                                                                                                                       |
+
+When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` unconditionally (legacy pre-D-220 seed-everything behavior).
+
+**Function:** `scopeEligibilityKey()` in `src/cli/lib/configuration/config-generator.ts` - Encodes `(agent, skillId)` as `` `${agent}|${skillId}` `` for set-membership lookups.
+
 **Function:** `buildStackProperty()` in `src/cli/lib/configuration/config-generator.ts` - Builds the `stack` record in config from a loaded Stack definition.
 
-**Function:** `splitConfigByScope()` in `src/cli/lib/configuration/config-generator.ts` - Splits a `ProjectConfig` into global and project partitions by skill/agent scope. Returns `SplitConfigResult` (`{ global: ProjectConfig; project: ProjectConfig }`).
+**Function:** `splitConfigByScope()` in `src/cli/lib/configuration/config-generator.ts` - Splits a `ProjectConfig` into global and project partitions by skill/agent scope. Returns `SplitConfigResult` (`{ global: ProjectConfig; project: ProjectConfig }`). Partitions:
+
+- **skills** by `scope` + `excluded` (excluded globals route to project split as tombstones)
+- **agents** by `scope` + `excluded` (excluded globals route to project as overrides) — D-222
+- **stack** by agent partition first, then global agents' entries are further split per-skill so a global agent never carries project skill ids
+- **selectedAgents** by scope: names matching global agents go to the global config's `selectedAgents`; the rest to the project config's `selectedAgents` — D-222
+- **domains** copied to global only (project inherits at runtime)
+
+> **Full partition rules, delta pipeline, and decision tables:** see [../config/scope-split.md](../config/scope-split.md).
 
 ### Skill Config Construction in Wizard Store
 
@@ -213,7 +231,6 @@ When `edit` command modifies skills:
 | `getProjectConfigPath()`      | Build absolute path to project config   | `config.ts`         |
 | `resolveAllSources()`         | Resolve primary + extra sources         | `config.ts`         |
 | `resolveAuthor()`             | Resolve author from effective config    | `config.ts`         |
-| `formatOrigin()`              | Human-readable label for source origin  | `config.ts`         |
 
 ## Config Writer
 
@@ -249,6 +266,18 @@ Generates `config-types.ts` files with typed union types narrowed to installed i
 | `getGlobalConfigTypesPath()`         | Check if global config-types.ts exists            |
 
 When a global installation exists, project `config-types.ts` imports from global and extends with project-only types. Types are narrowed to only installed items (not the full matrix).
+
+### Writer selection rule
+
+When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts` where `projectDir` is not the global install root), call `regenerateConfigTypes`. When writing a GLOBAL `config-types.ts` (`~/.claude-src/config-types.ts`), call `writeStandaloneConfigTypes` / `generateConfigTypesSource` directly. Never call `writeStandaloneConfigTypes` for a project path — it bypasses the import-from-global branch in `regenerateConfigTypes` and produces duplicated standalone unions.
+
+In `local-installer.ts`:
+
+- `writeScopedConfigs` project branch → `regenerateConfigTypes(projectDir, ...)`.
+- `writeScopedConfigs` global-root / global-config branches → `writeStandaloneConfigTypes(globalConfigPath, ...)`.
+- `propagateGlobalChangesToProjects` per-project loop → `regenerateConfigTypes(projectPath, ...)`.
+
+Helpers `buildConfigTypesBackgroundData(matrix, agents)` and `buildProjectTypesExtras(finalConfig, matrix)` (both in `local-installer.ts`) feed already-loaded matrix/agent data into `regenerateConfigTypes` without re-loading. See finding `.ai-docs/agent-findings/2026-04-20-d228-writeStandaloneConfigTypes-project-branch.md`.
 
 ## Scope-Aware Config Splitting
 
@@ -326,3 +355,9 @@ The operations layer provides `writeProjectConfig()` as a high-level orchestrato
 | `writeProjectConfig()` | Orchestrator function | Builds, merges, and writes project config (init/edit)                             |
 
 Used by `init.tsx` and `edit.tsx` commands. Replaces inlined config writing logic with a single operation call.
+
+## Plugin Install Failure Semantics
+
+Plugin install intent is inviolable: when `installPluginSkills` returns a non-empty `failed` array, both `init.tsx::installPluginsStep` and `edit.tsx::applyPluginChanges` emit per-skill warnings and then hard-error via `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. This prevents `config.ts` from being written with orphan entries that claim skills are installed when `claude plugin install` rejected them.
+
+Uninstall failures are diagnostic-only — they do not produce orphan state and do not trigger a hard-error. See finding `.ai-docs/agent-findings/2026-04-20-d229-plugin-install-failure-orphan-config.md`.

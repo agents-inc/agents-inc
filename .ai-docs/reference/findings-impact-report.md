@@ -5,14 +5,86 @@ keywords: [findings, agent-findings, impact, cross-reference]
 related:
   - reference/architecture-overview.md
   - reference/test-infrastructure.md
-last_validated: 2026-04-02
+last_validated: 2026-04-21
 ---
 
 # Agent Findings Impact Report
 
-**Generated:** 2026-03-28
-**Total Findings Analyzed:** 75
-**Date Range:** 2026-03-21 to 2026-03-28
+**Generated:** 2026-03-28 (original); last full regeneration 2026-04-21 (Ralph iter 92); status rollup refresh 2026-04-21 post residual-cleanup sweep (8 findings lacking explicit `status:` classified)
+**Total Findings Catalogued:** 109 (excluding `README.md` and `TEMPLATE.md`)
+**Date Range:** 2026-04-03 to 2026-04-21 (the original 2026-03-21..2026-03-28 snapshot findings have since been moved or superseded; counts below reflect current directory contents)
+
+> **Regeneration Policy:** Per `documentation-bible.md` rule (iter 40, incorporated iter 49), the report is fully regenerated when "Incremental Updates" exceeds ~10 entries OR when a Ralph sweep iter explicitly regenerates it. Iter 92 (this regeneration) folds iter-40/43/61 and earlier batches into the rollup tables and resets "Incremental Updates" to empty. The original 2026-03-28 snapshot tables are preserved verbatim under "Original Snapshot" for historical reference.
+
+---
+
+## Rollups (iter 92 regeneration, 109 findings on disk; post residual-cleanup sweep 2026-04-21)
+
+### By Status
+
+| Status       | Count | Share |
+| ------------ | ----- | ----- |
+| `resolved`   | 90    | 82.6% |
+| `partial`    | 7     | 6.4%  |
+| `open`       | 10    | 9.2%  |
+| `superseded` | 2     | 1.8%  |
+| **Total**    | 109   | 100%  |
+
+"Open" means frontmatter has `status: open` or was absent (per README default). `partial` is a new enum value introduced in the 2026-04-21 3-batch status classification sweep for findings where the remedy landed for some call sites but coverage is incomplete. `superseded` is set via the `superseded_by:` frontmatter link.
+
+Residual-cleanup sweep 2026-04-21 classified 8 findings that had no explicit `status:` (7 from 2026-04-20 + 1 from 2026-04-18). Outcomes: 4 `resolved` (D-228, D-229 — both shipped in 0.141.0; e2e-fixture-preload-drift — 0.140.0 realism trim; d217-test-prereq-already-satisfied — closed 2026-04-21 by `standards/e2e/test-data.md § Before Extending Fixtures`), 1 `superseded` (new-agent-toggle-defaults-global-scope → newly-toggled-agent sibling), 3 `open` (mergeConfigs-drops-projects-field — still unfixed in `config-merger.ts`; d217-installmode-plumbing-dead-in-wrappers — dead plumbing still on wrappers per 0.140.0 note; newly-toggled-agent — `wizard-store.ts` still hard-codes `scope: "global"`).
+
+### By Date (filing day)
+
+| Date       | Count | Notes                                                                                                                                                |
+| ---------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-04-03 | 4     | Skill content accuracy sweep                                                                                                                         |
+| 2026-04-05 | 1     | ENOENT catch-all                                                                                                                                     |
+| 2026-04-06 | 5     | Init/edit semantics, agent cross-contamination                                                                                                       |
+| 2026-04-07 | 2     | E2E retry isolation, re-scoped skill duplicate rows                                                                                                  |
+| 2026-04-08 | 1     | Toggle technology scope guard                                                                                                                        |
+| 2026-04-09 | 13    | Assertion-quality sweep (D-160s)                                                                                                                     |
+| 2026-04-13 | 6     | E2E anti-pattern audit D-168                                                                                                                         |
+| 2026-04-14 | 5     | HOME isolation, inline error extraction, marketplace flag drift                                                                                      |
+| 2026-04-15 | 2     | Stack ownership model, silent scope fallbacks                                                                                                        |
+| 2026-04-16 | 1     | Silent plugin install skip on missing marketplace                                                                                                    |
+| 2026-04-17 | 7     | D-224 tombstone / init partial state cluster                                                                                                         |
+| 2026-04-18 | 1     | `mergeConfigs` drops `projects` field                                                                                                                |
+| 2026-04-20 | 7     | D-217 / D-228 / D-229 wave                                                                                                                           |
+| 2026-04-21 | 54    | Ralph docs-sweep iters 11..91 + post-sweep filings + 0.42.1 orphan release + eject-success-log-stale-partial-names + pre-impl-design-docs-historical |
+| **Total**  | 109   |                                                                                                                                                      |
+
+### By Root Cause
+
+| Root Cause                  | Count | Canonical remedy                                   |
+| --------------------------- | ----- | -------------------------------------------------- |
+| `convention-undocumented`   | 55    | Add rule to standards doc; cite in CLAUDE.md       |
+| `rule-not-specific-enough`  | 18    | Tighten rule wording with enumerated cases         |
+| `enforcement-gap`           | 18    | Add lint/check or coverage-as-policy requirement   |
+| `rule-not-visible`          | 11    | Cross-link rule from other docs; move to prominent |
+| `missing-rule`              | 3     | New rule needs to be authored from scratch         |
+| `scope-discipline-deferred` | 1     | Knowingly left; track as TODO                      |
+
+### By Severity
+
+| Severity | Count |
+| -------- | ----- |
+| high     | 22    |
+| medium   | 59    |
+| low      | 25    |
+
+### By Category
+
+| Category     | Count |
+| ------------ | ----- |
+| architecture | 61    |
+| testing      | 33    |
+| dry          | 11    |
+| typescript   | 1     |
+
+---
+
+## Original Snapshot (2026-03-21..2026-03-28, 75 findings)
 
 ## Summary Table
 
@@ -85,6 +157,8 @@ last_validated: 2026-04-02
 ---
 
 ### 3. commands.md -- 2 findings (MED)
+
+> **Post-migration note (2026-04-21):** `reference/commands.md` is now a pointer stub. Canonical content lives in [`commands/index.md`](./commands/index.md). Action items below apply to the canonical doc.
 
 | Finding                                                 | Summary                                                                                | Impact Type                                              |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------- |
@@ -316,24 +390,80 @@ Four findings uncovered bugs in the configuration generation pipeline, all invol
 
 ---
 
+### Pattern 6: Observability gaps around `projects` + propagation in `local-installer.ts` (3 findings, 2026-04-21)
+
+Three findings in two days (`d233-projects-normalization-asymmetry`, `propagation-skipped-observability-gap`, `registerProjectPath-sweep-observability-gap`) all point at the same module. Root cause: the module grew new return channels (`skipped`, sweep results) without a contract in `config-writer.md` requiring callers to inspect them.
+
+### Pattern 7: E2E page-object keypress rule under-enforced (2 findings, 2026-04-21)
+
+Two findings same day (`e2e-build-step-keypress-missing-stable-render`, `e2e-keypress-rule-coverage-gap-sibling-steps`). Rule exists in `standards/e2e/page-objects.md`, but coverage-as-policy is missing — nothing requires ALL step page-objects to comply.
+
+### Pattern 8: Reference-doc drift sweep (iter 25–33 of Ralph loop) (9+ findings, 2026-04-21)
+
+`dependency-graph`, `boundary-map`, `wizard/state-transitions` (canonical; `reference/state-transitions.md` is now a pointer stub post dual-home cleanup), `component-patterns` (guard + tombstone + skill-agent-summary), `store-map`, `commands/index` (×2; canonical; `reference/commands.md` is now a pointer stub post subdirectory migration), `features/wizard-flow`, `features/skills-and-matrix`, `testing/mock-data`. Root cause: no revalidation schedule during the D-2xx feature sprint. Remedy: single full-reference sweep after each D-2xx release, not per-finding patching.
+
+---
+
 ## Priority Actions
 
-### HIGH Priority (do first)
+### HIGH Priority
 
-1. **Create `agent-system.md`** -- 14 findings have no reference doc. Document agent directory structure, template injection rules, compilation, and conventions.
-2. **Update `test-infrastructure.md`** -- 9 findings. Add mocking guidelines, new E2E constants/helpers, `toStrictEqual` rule.
-3. **Update `configuration.md`** -- 5 findings. Document `mergeConfigs()` (in `config-merger.ts`), remove dead code references, add merge semantics.
-4. **Decide on skills-content.md location** -- 38 findings affect skills repo. Determine if this doc belongs here or in the skills repo.
+1. **`agent-system.md`** — DONE (created, last_validated 2026-04-21 per DOCUMENTATION_MAP).
+2. **Pattern 9 closure** — run a convention-keeper iter doing a bidirectional diff between CLAUDE.md and `clean-code-standards.md`; promote missed rules.
+3. **Pattern 6 closure** — surface `skipped` + sweep results in `config-writer.md` contract; document `registerProjectPath` / `deregisterProjectPath` normalization symmetry.
+4. **Pattern 7 closure** — add enumerated coverage-as-policy list to `page-objects.md` for step page-objects that must call `waitForStableRender()` before every keypress.
+5. **Skills-content.md decision** — 38 skill-content findings: decide whether to create in CLI repo or migrate to `/home/vince/dev/skills/`.
 
 ### MEDIUM Priority
 
-5. **Update `commands.md`** -- 2 findings. Document init marketplace fallback and multi-scope compilation gap.
+6. **Pattern 8 doc-drift sweep** — `commands/index.md` (canonical; `commands.md` is a pointer stub), `component-patterns.md`, `store-map.md`, `wizard/state-transitions.md` (canonical; `state-transitions.md` is a pointer stub), `features/wizard-flow.md`, `features/skills-and-matrix.md`, `features/configuration.md`, `testing/mock-data.md` — all flagged 2026-04-21. Several have been stamp-bumped without content-check (`commands-doc-stamp-without-content-check.md`).
+7. **Pattern 10 closure** — complete delegation / ralph-loop / skill-content-tags sections in respective bibles (partially done per iter 68/70/74 fixes).
+8. **`test-infrastructure.md`** — 9 original findings + `iter42-test-infrastructure-drifted-original.md` + `complex-helpers-in-component-tests-anti-pattern.md`. Mocking guidelines, `toStrictEqual` rule, helper catalog.
 
 ### LOW Priority
 
-6. **Update `component-patterns.md`** -- 1 finding. Add scroll indicator rendering pattern.
-7. **Update `skills-and-matrix.md`** -- 1 finding. Add performance characteristics.
-8. **Update `architecture-overview.md`** -- 1 finding. Note init/compile scope asymmetry.
-9. **Update `operations-layer.md`** -- 1 finding. Verify `scopeFilter` documented.
-10. **Verify `store-map.md`** -- 1 finding. Check `createDefaultSkillConfig()` source behavior.
-11. **Verify `plugin-system.md`** -- 1 finding. Check marketplace fallback documentation.
+9. ~~**Backfill frontmatter** on `2026-04-13-e2e-anti-pattern-audit-d168.md` (unset `root_cause`/`severity`/`category`).~~ — DONE 2026-04-21 (`type: audit`, `severity: medium`, `category: testing`, `domain: e2e`, `root_cause: enforcement-gap`).
+10. **Pattern 11 maintenance** — every ~10 iters, run a findings-directory self-audit iter.
+11. **`D-NNN` task-ID sweep** — `task-ids-in-test-names-sweep-needed.md` identified ~151 instances across ~30 E2E files.
+
+---
+
+### Patterns 9-11 (new post-iter-40 — iter 92 regeneration)
+
+**Pattern 9: Standards docs ↔ CLAUDE.md bidirectional drift** (4 findings, iter 67/71/90/91)
+
+- `r73-atomicity-bible-drift.md` — bible quality-gate contradicts newer primer; stale `examples.md` references.
+- ~~`iter71-bible-cross-ref-disambiguator.md`~~ — RESOLVED 2026-04-21: DOCUMENTATION_MAP.md carries `Scope disambiguator` column for both bibles; prompt-bible §8.3 now canonicalizes to `250-300 words` and cross-refs loop-prompts-bible §8.4 as SOT.
+- `iter90-clean-code-standards-test-rules-drift.md` — test rules (`toStrictEqual`, no TODO IDs in names) enforced in CLAUDE.md but absent from reviewer-checkable `clean-code-standards.md`.
+- `claude-md-standards-drift-iter-91.md` — bidirectional sweep found scope-awareness, fine-grained factory rules, and repo-hygiene rules in CLAUDE.md with no counterpart in standards doc.
+
+Root cause: rules accumulate in CLAUDE.md when added in response to a slip but aren't promoted into the reviewer-checkable doc. Remedy: automated bidirectional diff in a convention-keeper iter.
+
+**Pattern 10: Domain-bible section gaps** (3 findings, iter 68/70/74)
+
+- `iter68-prompt-bible-missing-delegation-section.md` — prompt-bible had zero project-specific multi-agent delegation guidance.
+- `iter70-loop-prompts-bible-missing-ralph-section.md` — loop-prompts-bible had zero ralph-loop mechanism coverage (completion-promise rule, single-focus, findings-as-product, report length caps, self-correction triggers).
+- `iter74-prompt-bible-missing-skill-content-tags.md` — bible XML tag list missing skill-content layer (`<philosophy>`, `<patterns>`, `<red_flags>`, `<decision_framework>`, `<integration>`, `<performance>`, `<migration_notice>`).
+
+Root cause: bibles were seeded with generic prompt-engineering content and never caught up to project-specific mechanisms (ralph-loop, skill content XML, delegation roster). Remedy: per-bible "domain completeness" audit.
+
+**Pattern 11: Findings-system self-governance drift** (4 findings, iter 40/45/83/85)
+
+- `findings-impact-report-no-regeneration-schedule.md` (iter 40) — this very report lacked a regeneration trigger. Fixed + codified in documentation-bible iter 49.
+- `agent-findings-frontmatter-drift-iter45.md` — findings filed with `**Date:**` body lines instead of YAML frontmatter.
+- `iter83-findings-status-model-codification.md` — two conflicting resolution models (directory-as-status vs frontmatter-as-status); 45 findings used frontmatter, 0 used `done/`. Frontmatter model codified; `done/` demoted to optional cold archive.
+- `iter85-supersedes-asymmetry-one-way-link.md` — `supersedes:`/`superseded_by:` pair had one-way link.
+
+Root cause: the findings directory grew past ~50 entries before anyone audited its own conventions. Remedy: every ~10 iters, run a findings-directory self-audit iter.
+
+---
+
+## Incremental Updates
+
+_Reset iter 92 (2026-04-21). Next regeneration trigger: >10 entries accumulated here, OR a Ralph sweep iter explicitly regenerates._
+
+- 2026-04-21 — `2026-04-21-changelog-summary-bullet-coverage-gap.md` → resolved. Added forward-applying Release Checklist bullet to `.ai-docs/standards/commit-protocol.md` requiring every `### D-xxx` subheading in `changelogs/{version}.md` to have ≥1 bullet in the corresponding `CHANGELOG.md` summary block (mechanically checkable via grep/diff). By Status: open 9→8, resolved 82→83.
+- 2026-04-21 — micro-sync: one partial finding flipped to resolved. By Status: partial 9→8, resolved 87→88. Non-closed 16→15.
+- 2026-04-21 — residual close: `file-path-canonicalization-mixed-forms.md` → resolved by `documentation-bible.md § File-Path Conventions in Docs` (three accepted forms + one-doc-one-form rule). By Status: partial 8→7, resolved 88→89. Non-closed 15→14.
+- 2026-04-21 — filed `2026-04-21-eject-success-log-stale-partial-names.md` (convention-drift, low, architecture/cli, convention-undocumented, open). `src/cli/commands/eject.ts` success-log string references stale partial vocabulary ("templates, agent intro, workflow, and examples") not matching the actual partials (`identity.md`, `playbook.md`, `critical-requirements.md`, `critical-reminders.md`, `output.md`). Total 107→108. By Status: open 9→10. Non-closed 16→17.
+- 2026-04-21 — filed `2026-04-21-pre-implementation-design-docs-unmarked-as-historical.md` (convention-drift, low, architecture/shared, convention-undocumented, resolved). Added `HISTORICAL DESIGN NOTE` banner to `docs/excluded-skills-design.md` + `docs/excluded-skills-edge-cases.md` pointing to `.ai-docs/reference/concepts/tombstone-pattern.md`. Total 108→109. By Status: resolved 89→90.

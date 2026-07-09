@@ -250,7 +250,6 @@ export const stackAgentConfigSchema = z.record(
  */
 export const projectConfigLoaderSchema = z
   .object({
-    version: z.literal("1").optional(),
     /** Project/plugin name in kebab-case */
     name: z.string().optional(),
     description: z.string().optional(),

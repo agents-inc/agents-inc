@@ -11,6 +11,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: buildSourceRows + skill-agent-summary dedup across active/tombstone
 ---
 
 ## What Was Wrong

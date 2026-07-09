@@ -18,6 +18,8 @@ reporting_agent: cli-tester
 category: dry
 domain: e2e
 root_cause: convention-undocumented
+status: resolved
+resolved_by: createTestEnvironment() adopted; tempDir capture pattern applied
 ---
 
 ## What Was Wrong

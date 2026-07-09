@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # Anti-Patterns
 
 Every "never do this" rule with rationale. Organized by category.
@@ -233,6 +237,26 @@ await prompt.arrowDown();
 
 ---
 
+## Parser/Extractor Helpers in Test Files
+
+### Never define parser/extractor helpers with non-trivial logic inside a test file
+
+**What:** A local helper like `getSkillPrefixesByScope(output, skillName)` — a loop, a regex scan (`/([+\-~\u2022])\s+[A-Za-z]/`), a `currentScope` state-machine variable that toggles on label matches, or a first-match-wins rule that plucks diff prefixes out of `lastFrame()` / `getFullOutput()`.
+
+**Why:**
+
+1. **The helper has non-trivial logic and no tests.** A state machine and a regex capturing one of several diff characters would need its own tests to be trusted. An uninstrumented parser silently produces wrong answers when layout changes.
+2. **It obscures the rendered contract.** The actual contract is the substring `"+ React"` / `"• React"` in the frame. A parsed-struct indirection hides what the component produces and what the bug shape looks like.
+3. **It drops the bug-shape negative check.** `toStrictEqual` on a parsed struct only implicitly negates at the scopes the helper happened to look. Explicit `not.toContain("<bug-prefix> <name>")` is strictly stronger.
+
+**Instead:** Assert directly on `lastFrame()` / `getFullOutput()` with `toContain("<prefix> <name>")` for each expected row plus explicit `not.toContain(...)` for every diff prefix that must NOT appear. When two rows share the same prefix, prove it by exhaustively negating all other prefixes (see [assertions.md § Diff-Shape Assertions](./assertions.md)).
+
+If a helper is genuinely reusable across 2+ test files, move it to `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own unit tests — never inline and untested.
+
+See `.ai-docs/agent-findings/2026-04-21-complex-helpers-in-component-tests-anti-pattern.md` and `.ai-docs/agent-findings/2026-04-21-d230-d232-diff-baseline-pre-filter-drift.md`.
+
+---
+
 ## Weak Assertions
 
 ### Never wrap assertions in fileExists conditionals
@@ -298,6 +322,14 @@ Or better, use a matcher: `await expect(project).toHaveSettings({ hasKey: "permi
 **Why:** 3 wrong items pass the same as 3 right items.
 
 **Instead:** `expect(array.sort()).toStrictEqual([...exactItems])` or use assertion utilities like `expectConfigSkills`.
+
+### Never use `expect.arrayContaining` for diff-shape collections
+
+**What:** `expect(rows).toEqual(expect.arrayContaining([{ prefix: "•", name: "React" }]))` for info-panel rows, config section diffs, or scope-per-skill prefix maps.
+
+**Why:** `arrayContaining` passes as long as the expected entries exist — it silently tolerates extra wrong entries. A spurious `- React` row alongside the expected `• React` (the D-230-class "bug shape") ships undetected.
+
+**Instead:** `toStrictEqual` on a scope-anchored slice so the entire rendered shape is pinned. If a positive-only match is unavoidable, pair it with an explicit `.not.toEqual(expect.arrayContaining([<bug-shape>]))`. See [assertions.md § Diff-Shape Assertions](./assertions.md).
 
 ### Never use bare matcher calls
 
@@ -371,7 +403,7 @@ expect(projectHonoSource![1]).not.toBe("eject");
 
 These rules from the original `e2e-testing-bible.md` remain valid:
 
-- **No task IDs in `describe()` blocks.** Task IDs may appear in file-level JSDoc comments only.
+- **No task IDs anywhere except file-level JSDoc.** Never include `D-NNN` / `P-BUILD-1` / `Bug A` tokens in `describe()` names, `it()` names, assertion messages (2nd arg to `expect`), or inline test-body comments. Test names describe BEHAVIOR ("renders spurious minus on G→P toggle"), assertion messages describe INVARIANTS ("config.ts must not contain version field"). IDs look authoritative but rot once the task closes. See `.ai-docs/agent-findings/2026-04-21-task-ids-in-test-names-sweep-needed.md` (151 occurrences across 30 files — pending sweep).
 - **`ensureBinaryExists()` in `beforeAll`.** Every test file must verify the CLI binary exists.
 - **`describe.skipIf()` for external dependencies.** Plugin tests use `describe.skipIf(!claudeAvailable)`. Marketplace tests use `describe.skipIf(!hasSkillsSource)`.
 - **Split files at 300 LOC** or when covering 2+ unrelated concerns.

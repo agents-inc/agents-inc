@@ -1,17 +1,18 @@
 ---
 scope: reference
 area: features
-keywords: [plugins, manifest, marketplace, installation, discovery]
+keywords: [plugins, manifest, marketplace, installation, discovery, per-skill-source, hard-error]
 related:
   - reference/features/compilation-pipeline.md
   - reference/features/skills-and-matrix.md
-  - reference/commands.md
-last_validated: 2026-04-02
+  - reference/commands/index.md
+  - reference/concepts/scope-system.md
+last_validated: 2026-04-21
 ---
 
 # Plugin System
 
-**Last Updated:** 2026-04-02
+**Last Updated:** 2026-04-21
 
 ## Overview
 
@@ -211,6 +212,21 @@ Executed through `src/cli/utils/exec.ts`:
 
 `claudePluginInstall()` and `claudePluginUninstall()` accept `scope: "project" | "user"` and `projectDir` parameters. User-scoped operations run from `os.homedir()` via `resolvePluginCwd()` so Claude CLI writes to `~/.claude/settings.json`. All inputs validated for injection prevention before execution.
 
+## Plugin Reference Formats
+
+Two distinct plugin-ref shapes exist. They are NOT interchangeable -- each is consumed by a different system.
+
+| Form                      | Where                                         | Who emits                  | Who consumes                                                              | Purpose                                                                    |
+| ------------------------- | --------------------------------------------- | -------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `{skillId}@{marketplace}` | `installPluginSkills`                         | `install-plugin-skills.ts` | `claude plugin install` shell command                                     | Tells Claude CLI which marketplace to pull the plugin from                 |
+| `${id}:${id}`             | `compileAgentForPlugin` via `derivePluginRef` | `stack-plugin-compiler.ts` | Rendered agent prompt (frontmatter `skills:` + body `skill:` invocations) | Tells Claude Code that a referenced skill is plugin-installed (vs ejected) |
+
+`derivePluginRef(skill)` returns `undefined` when `skill.source` is `"eject"` or `undefined`, producing a bare id in the compiled agent output. User-authored local skills (no `SkillConfig` entry, therefore no `source`) legitimately fall through to bare id -- this is the expected path, not a silent fallback.
+
+### Latent issue: `sourceById` collapses dual-scope same-id skills
+
+`buildCompileAgents` (`local-installer.ts`) builds `sourceById = new Map<SkillId, string>(config.skills.map((s) => [s.id, s.source]))` keyed by `SkillId` alone. The config's dual-scope compound key is `(id, scope)`, so when the same skill id appears twice (project-eject + global-plugin), the map is last-write-wins -- both `SkillReference` entries receive the same attached `source` when the feeder runs. The leaf (`compileAgentForPlugin`) is per-entry correct (verified by the "dual-scope same id" test in `stack-plugin-compiler.test.ts`), but the production feeder path via `buildCompileAgents` currently flattens. No regression filed; documented here as drift risk. The test case bypasses `buildCompileAgents` by constructing `AgentConfig` directly with two independently-sourced `SkillReference` entries.
+
 ## Installation Modes
 
 ### Plugin Mode
@@ -264,6 +280,10 @@ Install mode is derived at runtime from the skills array via `deriveInstallMode(
 - All non-eject sources = `"plugin"` mode
 - Mixed = `"mixed"` mode
 
+**D-217 -- per-skill `source` is authoritative for compilation:** Aggregate `installMode` is a UI/logging convenience, NOT the input that drives agent compilation. `compileAgentForPlugin` (`src/cli/lib/stacks/stack-plugin-compiler.ts`) calls `derivePluginRef(skill)` for each `SkillReference` and attaches `pluginRef` only when `skill.source` is a non-eject, non-undefined marketplace name. Mixed-mode agents (plugin and eject skills under the same agent) and dual-scope skills (same id, different scope, different sources) each render correctly from per-skill `source`.
+
+**D-217 -- dead plumbing (vestigial):** The `installMode?: InstallMode` parameter still appears on `compileAndWriteAgents` (both `local-installer.ts` and `agent-recompiler.ts`) and on `RecompileAgentsOptions` / `CompileAndWriteParams`, and `installEject` / `installPluginConfig` still pass `deriveInstallMode(finalConfig.skills)` at call sites. The leaf (`compileAgentForPlugin`) no longer reads it. Consolidation is a deferred follow-up -- see finding `2026-04-20-d217-installmode-plumbing-dead-in-wrappers.md`.
+
 **Function:** `getInstallationOrThrow()` in `src/cli/lib/installation/installation.ts` - Same as `detectInstallation()` but throws if no installation found.
 
 ## Mode Migration
@@ -294,25 +314,27 @@ Plugin-related operations extracted to `src/cli/lib/operations/`:
 
 **File:** `src/cli/lib/operations/skills/install-plugin-skills.ts`
 
-**Function:** `installPluginSkills(skills, marketplace, projectDir)` - Installs non-local skills as Claude CLI plugins. Constructs `{skillId}@{marketplace}` refs, routes by scope (`"global"` -> `"user"`, `"project"` -> `"project"`).
+**Function:** `installPluginSkills(skills, marketplace, projectDir)` -- Installs non-local skills as Claude CLI plugins. Filters to `source !== "eject"`, constructs `{skillId}@{marketplace}` refs, routes by per-skill `scope` (`"global"` -> `"user"` CLI scope, otherwise `"project"`). Errors from `claudePluginInstall` are captured per-skill; the function itself never throws.
 
-**Type:** `PluginInstallResult` - `{ installed: Array<{ id, ref }>, failed: Array<{ id, error }> }`
+**Type:** `PluginInstallResult` -- `{ installed: Array<{ id: SkillId; ref: string }>, failed: Array<{ id: SkillId; error: string }> }`
+
+**D-229 -- hard-error contract (callers):** When `PluginInstallResult.failed` is non-empty, callers MUST `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. Otherwise `config.ts` claims plugin installation for skills that `claude plugin install` rejected, producing orphan entries that no `cc` command can self-heal (`detectInstallation` trusts `config.ts`). Enforced in `installPluginsStep` (`init.tsx`) and `applyPluginChanges` (`edit.tsx`) with the `remediation hint: Verify the skill id matches the marketplace, re-run with --refresh ..., or switch affected skills to eject mode.` Uninstall failures are diagnostic-only (no orphan state). See finding `2026-04-20-d229-plugin-install-failure-orphan-config.md`.
 
 ### Uninstall Plugin Skills
 
 **File:** `src/cli/lib/operations/skills/uninstall-plugin-skills.ts`
 
-**Function:** `uninstallPluginSkills(skillIds, oldSkills, projectDir)` - Uninstalls plugins using scope from old config entries.
+**Function:** `uninstallPluginSkills(skillIds, oldSkills, projectDir)` -- Uninstalls plugins using scope from the OLD config entries (`oldSkills.find(s => s.id === skillId)?.scope`). New config has no entry for removed skills.
 
-**Type:** `PluginUninstallResult` - `{ uninstalled: SkillId[], failed: Array<{ id, error }> }`
+**Type:** `PluginUninstallResult` -- `{ uninstalled: SkillId[], failed: Array<{ id: SkillId; error: string }> }`
 
 ### Ensure Marketplace
 
 **File:** `src/cli/lib/operations/source/ensure-marketplace.ts`
 
-**Function:** `ensureMarketplace(sourceResult)` - Registers or updates the marketplace with the Claude CLI. Lazy-resolves marketplace name if `sourceResult.marketplace` is undefined. Silent operation -- callers decide logging.
+**Function:** `ensureMarketplace(sourceResult)` -- Registers or updates the marketplace with the Claude CLI. Lazy-resolves marketplace name via `fetchMarketplace()` if `sourceResult.marketplace` is undefined; mutates `sourceResult.marketplace` in place. If lazy resolution fails, returns `{ marketplace: null, registered: false }` (callers then hard-error via `requireMarketplace` -- see `init.tsx` and `edit.tsx`). On update failure, warns and continues with cached version. Silent operation otherwise -- callers decide logging.
 
-**Type:** `MarketplaceResult` - `{ marketplace: string | null, registered: boolean }`
+**Type:** `MarketplaceResult` -- `{ marketplace: string | null, registered: boolean }`
 
 Uses `claudePluginMarketplaceExists()`, `claudePluginMarketplaceAdd()`, and `claudePluginMarketplaceUpdate()` from exec.ts.
 
@@ -322,6 +344,6 @@ Uses `claudePluginMarketplaceExists()`, `claudePluginMarketplaceAdd()`, and `cla
 
 Re-exports from `installation.ts`: `InstallMode`, `Installation`, `detectGlobalInstallation`, `detectInstallation`, `detectProjectInstallation`, `getInstallationOrThrow`, `deriveInstallMode`
 
-Re-exports from `local-installer.ts`: `EjectInstallOptions`, `EjectInstallResult`, `PluginConfigResult`, `installEject`, `installPluginConfig`, `buildAndMergeConfig`, `writeConfigFile`, `writeScopedConfigs`, `setConfigMetadata`, `resolveInstallPaths`, `buildEjectSkillsMap`, `buildCompileAgents`, `buildAgentScopeMap`
+Re-exports from `local-installer.ts`: `EjectInstallOptions`, `EjectInstallResult`, `PluginConfigResult`, `installEject`, `installPluginConfig`, `buildAndMergeConfig`, `writeConfigFile`, `writeScopedConfigs`, `setConfigMetadata`, `resolveInstallPaths`, `buildEjectSkillsMap`, `buildCompileAgents`, `buildAgentScopeMap`, `deregisterProjectPath`, `propagateGlobalChangesToProjects`
 
 Re-exports from `mode-migrator.ts`: `SkillMigration`, `MigrationPlan`, `MigrationResult`, `detectMigrations`, `executeMigration`

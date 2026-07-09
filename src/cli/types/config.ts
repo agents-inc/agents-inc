@@ -66,9 +66,6 @@ export type ValidationResult = {
 
 /** Unified project configuration stored at .claude-src/config.ts */
 export type ProjectConfig = {
-  /** @default "1" */
-  version?: "1";
-
   /** Project/plugin name (kebab-case) */
   name: string;
 

@@ -11,6 +11,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: rule-not-specific-enough
+status: resolved
+resolved_by: "standards/e2e/test-data.md § Before Extending Fixtures"
 ---
 
 ## What Was Wrong
@@ -64,3 +66,32 @@ principle, but worth calling out explicitly in
 heading: always grep the fixture file for the entity you're being
 asked to add. The cost of a 10-second grep is much less than the cost
 of redundant fixture data that obscures the fixture's actual contract.
+
+## Pickup Notes (2026-04-21)
+
+Verified current state of `.ai-docs/standards/e2e/test-data.md` (header
+`last_validated: 2026-04-21`). The proposed "Before extending fixtures"
+section is **absent** — no such heading exists; the existing "Source
+Fixtures" block (current lines 48–86) describes `createE2ESource()` and
+`createE2EPluginSource()` sharing conventions but does not cover the
+"grep before extending" rule.
+
+Recommended insertion point: as a new `### Before Extending Fixtures`
+subsection immediately after the `createE2EPluginSource` paragraph
+(around current line 64), BEFORE the `### Source Sharing Convention`
+heading at current line 66. Keeping it under "Source Fixtures" scopes
+it to the file that drifts under unrelated edits.
+
+Suggested content (one short paragraph + imperative list):
+
+- Grep/read the fixture for the entity you're being asked to add
+  before editing. If already present, skip the extension and note
+  it in the report; only apply the extension if genuinely absent.
+- Reference the canonical 9-skill / 2-agent / 1-stack table above
+  as the authoritative inventory.
+
+Delegate to cli-tester (docs-only edit is still a non-implementation
+change — no production or test code touched). Tell the sub-agent:
+read CLAUDE.md, do NOT run git commands, do NOT change fixture code.
+Status remains **open**; reclassify to **resolved** only after the
+section lands.

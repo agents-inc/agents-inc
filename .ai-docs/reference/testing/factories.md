@@ -15,13 +15,13 @@ keywords:
 related:
   - reference/testing/infrastructure.md
   - reference/testing/mock-data.md
-last_validated: 2026-04-13
+last_validated: 2026-04-21
 ---
 
 # Test Factories & Helpers
 
-**Last Updated:** 2026-04-13
-**Last Validated:** 2026-04-13
+**Last Updated:** 2026-04-21
+**Last Validated:** 2026-04-21
 
 > **Split from:** `reference/test-infrastructure.md`. See also: [infrastructure.md](./infrastructure.md), [mock-data.md](./mock-data.md), [e2e-infrastructure.md](./e2e-infrastructure.md).
 
@@ -69,7 +69,7 @@ Barrel import: `import { createMockSkill, buildProjectConfig } from "../__tests_
 | `createMockCompileConfig()`              | `plugin-factories.ts`   | Create a CompileConfig mock        | `(agents, overrides?) => CompileConfig`                |
 | `createMockCompiledStackPlugin()`        | `plugin-factories.ts`   | Create a CompiledStackPlugin mock  | `(overrides?) => CompiledStackPlugin`                  |
 | `createMockMarketplace()`                | `plugin-factories.ts`   | Create a Marketplace mock          | `(plugins?) => Marketplace`                            |
-| `createMockMarketplacePlugin()`          | `plugin-factories.ts`   | Create a MarketplacePlugin mock    | `(name, source?) => MarketplacePlugin`                 |
+| `createMockMarketplacePlugin()`          | `plugin-factories.ts`   | Create a MarketplacePlugin mock    | `(name, source?, category?) => MarketplacePlugin`      |
 
 ## Helper Functions (`src/cli/lib/__tests__/helpers/`)
 
@@ -87,6 +87,8 @@ Barrel import: `import { runCliCommand, writeTestSkill } from "../__tests__/help
 | `writeTestAgent()`                | `disk-writers.ts`      | Write agent metadata.yaml to dir              |
 | `createTestDirs()`                | `test-dir-setup.ts`    | Create plugin test directory structure        |
 | `cleanupTestDirs()`               | `test-dir-setup.ts`    | Clean up plugin test directory structure      |
+| `setupIsolatedHome()`             | `isolated-home.ts`     | Isolate cwd + HOME + project dir per test     |
+| `writeTestPackageJson()`          | `config-io.ts`         | Write package.json (marketplace identity)     |
 | `buildSkillConfigs()`             | `wizard-simulation.ts` | Create SkillConfig array                      |
 | `simulateSkillSelections()`       | `wizard-simulation.ts` | Simulate user skill selections                |
 | `buildWizardResultFromStore()`    | `wizard-simulation.ts` | Build WizardResultV2 from store               |
@@ -134,13 +136,14 @@ Canonical expected value constants for test assertions:
 
 Pure content renderers for test file generation:
 
-| Function               | Purpose                            |
-| ---------------------- | ---------------------------------- |
-| `renderSkillMd()`      | Generate SKILL.md with frontmatter |
-| `renderAgentYaml()`    | Generate agent metadata.yaml       |
-| `renderConfigTs()`     | Generate config.ts with export     |
-| `renderCategoriesTs()` | Generate categories config         |
-| `renderRulesTs()`      | Generate rules config              |
+| Function               | Purpose                                                |
+| ---------------------- | ------------------------------------------------------ |
+| `renderSkillMd()`      | Generate SKILL.md with frontmatter                     |
+| `renderAgentYaml()`    | Generate agent source metadata.yaml                    |
+| `renderAgentMd()`      | Generate installed agent markdown (`.claude/agents/*`) |
+| `renderConfigTs()`     | Generate config.ts with export                         |
+| `renderCategoriesTs()` | Generate categories config                             |
+| `renderRulesTs()`      | Generate rules config                                  |
 
 ## Test Source Factory (`src/cli/lib/__tests__/fixtures/create-test-source.ts`)
 

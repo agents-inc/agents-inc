@@ -1,17 +1,17 @@
 ---
 scope: reference
 area: features
-keywords: [compiler, templates, liquid, validation, output]
+keywords: [compiler, templates, liquid, validation, output, plugin-ref, source]
 related:
   - reference/features/agent-system.md
   - reference/features/plugin-system.md
-  - reference/commands.md
-last_validated: 2026-04-02
+  - reference/commands/index.md
+last_validated: 2026-04-21
 ---
 
 # Compilation Pipeline
 
-**Last Updated:** 2026-04-02
+**Last Updated:** 2026-04-21
 
 ## Overview
 
@@ -53,7 +53,8 @@ last_validated: 2026-04-02
    -> recompileAgents() in agent-recompiler.ts
    -> loadProjectConfig() reads project config (.claude-src/config.ts)
    -> resolveAgentNames() determines which agents to compile
-   -> buildCompileConfig() builds CompileConfig from agent names + project config
+   -> buildCompileAgents() maps config entries into CompileAgentConfig per agent
+   -> CompileConfig is constructed inline from the agents map + name/description
    -> resolveAgents() (src/cli/lib/resolver.ts) materializes skill references
    -> For each agent: resolveAgentSkillRefs() -> resolveSkillReferences() -> Skill[]
 
@@ -267,9 +268,46 @@ For native Claude Code plugin distribution:
 
 **Plugin-mode difference:** `compileAgentForPlugin()` in `stack-plugin-compiler.ts` differs from the standard `compileAgent()` in `compiler.ts` by:
 
-- Optionally adding `pluginRef` format (`{id}:{id}`) to skills when `installMode === "plugin"`
-- Using `pluginRef` for preloaded skill IDs in frontmatter (instead of bare skill IDs)
-- Reading agent files directly (not via `readAgentFiles()` helper)
+- Deciding `pluginRef` **per-skill** via `derivePluginRef(skill)` based on each skill's own `source` field (D-217). No agent-wide `installMode` parameter.
+- Using `pluginRef` for preloaded skill IDs in frontmatter when attached; otherwise bare skill IDs.
+- Reading agent files directly (not via `readAgentFiles()` helper).
+
+### D-217 Per-Skill `pluginRef` Format
+
+Helper: `derivePluginRef(skill: Skill): PluginSkillRef | undefined` in `stack-plugin-compiler.ts`.
+Constant: `EJECT_SOURCE = "eject"` in the same file.
+
+Rule (mirrors the helper body):
+
+| `skill.source`                 | Compiled reference | Frontmatter entry |
+| ------------------------------ | ------------------ | ----------------- |
+| `undefined`                    | bare `${id}`       | `${id}`           |
+| `"eject"` (via `EJECT_SOURCE`) | bare `${id}`       | `${id}`           |
+| any other string (marketplace) | `${id}:${id}`      | `${id}:${id}`     |
+
+`undefined` covers user-authored local skills that have no `SkillConfig` entry -- intentional fall-through, not a silent fallback. Mixed-mode agents (some skills eject, some marketplace) produce a mix of bare and qualified refs in the same frontmatter.
+
+**Per-skill resolution at runtime:** bare refs resolve against the user's `.claude/skills/` directory; qualified `${id}:${id}` refs resolve against the Claude Code plugin registry.
+
+### `source` Plumbing Through the Compile Path
+
+- `SkillReference.source?: string` (`src/cli/types/skills.ts`) -- carried alongside `id`, `usage`, `preloaded`.
+- `Skill.source?: string` (same file) -- propagated from `SkillReference.source` by `resolveSkillReference()` in `resolver.ts`.
+- `buildCompileAgents()` in `local-installer.ts` attaches each skill's `source` to its `SkillReference` from a `Map<SkillId, string>` (`sourceById`) built from `config.skills`, so downstream `resolveSkillReference` can propagate it onto the fully-resolved `Skill` consumed by `compileAgentForPlugin`.
+- `compileAgentForPlugin` reads `skill.source` via `derivePluginRef(skill)` -- no `installMode` parameter.
+
+### Vestigial `installMode` in Wrappers
+
+`compileAgentForPlugin` no longer accepts `installMode`, but two wrappers still carry it on their surfaces (finding `agent-findings/2026-04-20-d217-installmode-plumbing-dead-in-wrappers.md`):
+
+- `compileAndWriteAgents` in `local-installer.ts` -- positional `installMode?: InstallMode` param, unused inside the body. Call sites in `installEject`/`installPluginConfig` still pass `deriveInstallMode(finalConfig.skills)`.
+- `CompileAndWriteParams` / `RecompileAgentsOptions` in `agent-recompiler.ts` -- `installMode?: InstallMode` field, threaded from `options.installMode ?? deriveInstallMode(filteredConfig?.skills ?? [])`, then dropped at the call boundary.
+
+Dead plumbing -- scheduled for a companion cleanup. When documenting or validating install-mode behaviour, ignore these wrapper params; the per-skill `source` is authoritative.
+
+### Dual-Scope Latent Issue (0.140.0 Changelog)
+
+The `sourceById` map in `buildCompileAgents` keys by `SkillId` alone. When the same skill id is installed twice under different scopes (`"project"` and `"global"`) with different `source` values, the second entry's `source` overwrites the first (last-write-wins). Known latent issue -- no real-world reports; tracked as a deferred task.
 
 ## Operations Layer Integration
 
@@ -297,7 +335,7 @@ The `compile` command (`src/cli/commands/compile.ts`) uses these operations to:
 3. Merge: project agents override built-in agents
 4. Resolve agent names (from explicit list, config, or existing agents on disk)
 5. Discover skills if not provided: `discoverAllPluginSkills()`
-6. Build compile config: `buildCompileConfig()` creates `CompileConfig` from agent names + project config
+6. Build compile config: `buildCompileAgents()` maps config entries to `CompileAgentConfig` per agent, then `CompileConfig` is constructed inline
 7. Create Liquid engine: `createLiquidEngine()` with project template overrides
 8. Resolve agents: `resolveAgents()` materializes skill references into full `AgentConfig` objects
 9. Compile and write: `compileAndWriteAgents()` routes output by agent scope (global vs project)

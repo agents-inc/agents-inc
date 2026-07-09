@@ -30,6 +30,8 @@ export const FEATURE_FLAGS = {
   SOURCE_CHOICE: envFlag("SOURCE_CHOICE", false),
   INFO_PANEL: envFlag("INFO_PANEL", true),
   NEW_SKILL_COMMAND: envFlag("NEW_SKILL_COMMAND", false),
+  NEW_AGENT_COMMAND: envFlag("NEW_AGENT_COMMAND", false),
+  NEW_MARKETPLACE_COMMAND: envFlag("NEW_MARKETPLACE_COMMAND", false),
 } as const;
 ```
 

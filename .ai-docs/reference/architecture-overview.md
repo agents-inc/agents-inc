@@ -2,26 +2,39 @@
 scope: reference
 area: architecture
 keywords:
-  [scope, directory-structure, data-flow, entry-points, tombstone, stack-grouping, config-writer]
+  [
+    scope,
+    directory-structure,
+    data-flow,
+    entry-points,
+    tombstone,
+    stack-grouping,
+    config-writer,
+    per-skill-source,
+    writer-selection,
+  ]
 related:
-  - reference/dependency-graph.md
-  - reference/boundary-map.md
+  - reference/architecture/dependency-graph.md
+  - reference/architecture/boundary-map.md
   - reference/features/configuration.md
   - reference/features/operations-layer.md
-  - reference/commands.md
-last_validated: 2026-04-13
+  - reference/config/config-writer.md
+  - reference/concepts/tombstone-pattern.md
+  - reference/concepts/scope-system.md
+  - reference/commands/index.md
+last_validated: 2026-04-21
 ---
 
 # Architecture Overview
 
-**Last Updated:** 2026-04-13
+**Last Updated:** 2026-04-21
 
 ## Project Identity
 
 | Field       | Value                                                                    |
 | ----------- | ------------------------------------------------------------------------ |
 | Package     | `@agents-inc/cli`                                                        |
-| Version     | 0.123.0                                                                  |
+| Version     | 0.141.0                                                                  |
 | Binary      | `agentsinc` (also `CLI_BIN_NAME` in `src/cli/consts.ts`)                 |
 | Type        | ESM (`"type": "module"` in package.json)                                 |
 | Entry Point | `src/cli/index.ts` (runs oclif with `run()`)                             |
@@ -53,17 +66,16 @@ src/cli/
   config-exports.ts         # Public API re-exports for @agents-inc/cli/config
   consts.ts                 # ALL global constants (paths, colors, symbols, limits)
   commands/                 # oclif command classes (one per CLI command)
-    build/                  # Build subcommands (marketplace, plugins, stack)
+    build/                  # Build subcommands (marketplace, plugins) — no `stack` subcommand
     import/                 # Import subcommands (skill)
-    new/                    # New subcommands (agent, marketplace, skill)
+    new/                    # New subcommands (agent, marketplace, skill) — all feature-gated
     compile.ts              # Compile agents from installed skills
     doctor.ts               # Health check
     edit.tsx                # Edit installed skills (wizard re-entry, per-agent scope)
     eject.ts                # Eject skills/templates to local filesystem
-    info.ts                 # Show installation info
     init.tsx                # Initialize project (wizard)
     list.tsx                # Show installation information (Ink component)
-    search.tsx              # Search for skills across sources
+    search.ts               # Search for skills across sources (plain ts, no Ink)
     uninstall.tsx           # Uninstall from project
     update.tsx              # Update skills
     validate.ts             # Validate installation
@@ -77,33 +89,33 @@ src/cli/
     init.ts                 # oclif init hook: resolves source, attaches to config
   lib/                      # Core business logic (no UI)
     agents/                 # Agent fetching, compilation, recompilation
-    configuration/          # Config loading/saving/merging/source management/config-writer/config-generator
+    configuration/          # Config loader/saver/merger/writer/generator/source-manager/config-types-writer/project-config/default-*
     installation/           # Install mode detection, local installer, mode migrator
     loading/                # YAML/frontmatter loading, source fetching, multi-source
     matrix/                 # Skills matrix loading, resolving, health checks
-      matrix-provider.ts    # getSkillById(), getSkillBySlug() lookups
-      skill-resolution.ts   # resolveRelationships() — unified resolution
+      matrix-provider.ts    # getSkillById(), getSkillBySlug() asserting lookups
+      skill-resolution.ts   # synthesizeCategory(), mergeMatrixWithSkills() — resolveRelationships is internal
     operations/             # Composable building blocks for CLI commands
       source/               # loadSource(), ensureMarketplace()
-      skills/               # discoverSkills(), copyLocalSkills(), installPluginSkills(), etc.
-      project/              # detectProject(), writeProjectConfig(), compileAgents(), loadAgentDefs()
+      skills/               # discoverSkills(), copyLocalSkills(), installPluginSkills(), uninstallPluginSkills(), compareSkills()
+      project/              # detectProject(), detectBothInstallations(), writeProjectConfig(), compileAgents(), loadAgentDefs()
     plugins/                # Plugin discovery, validation, manifest, settings
-    skills/                 # Skill fetching, copying, metadata, source switching
+    skills/                 # Skill fetching, copying, metadata, source switching, local loader, plugin compiler
     stacks/                 # Stack loading, installing, plugin compilation
     wizard/                 # Build step logic (pure functions)
     compiler.ts             # Liquid template engine, agent/skill compilation
     exit-codes.ts           # Named EXIT_CODES constants
-    feature-flags.ts        # Runtime feature flags (SOURCE_SEARCH, SOURCE_CHOICE, INFO_PANEL)
+    feature-flags.ts        # Runtime feature flags (SOURCE_SEARCH, SOURCE_CHOICE, INFO_PANEL, *_COMMAND gates)
     metadata-keys.ts        # Metadata key constants
     output-validator.ts     # Compiled agent output validation
     permission-checker.tsx  # Claude Code permissions check
     resolver.ts             # Skill/agent reference resolution
     schema-validator.ts     # JSON Schema validation
-    schemas.ts              # ALL Zod schemas (39 exported)
+    schemas.ts              # ALL Zod schemas
     source-validator.ts     # Source directory validation
     versioning.ts           # Content hashing for versioning
     marketplace-generator.ts # Marketplace.json generation
-    __tests__/              # All test files
+    __tests__/              # Integration + journey tests + shared factories / helpers / fixtures / mock-data
   stores/
     wizard-store.ts         # Zustand wizard state + actions
   types/                    # TypeScript type definitions
@@ -223,11 +235,11 @@ Implemented in: `src/cli/lib/compiler.ts` (`createLiquidEngine()`)
 
 ### 6. Zod Schema Validation
 
-All YAML/JSON parse boundaries use Zod schemas from `src/cli/lib/schemas.ts` (39 exported schemas).
+All YAML/JSON parse boundaries use Zod schemas from `src/cli/lib/schemas.ts`.
 
 Pattern: Lenient "loader" schemas with `.passthrough()` at parse boundaries, strict schemas for validation. Bridge pattern: `z.ZodType<ExistingType>` ensures Zod output matches TypeScript interfaces.
 
-Production code calls `parseYaml()` + `schema.safeParse()` directly at individual call sites. (`safeLoadYamlFile()` from `utils/yaml.ts` was removed as dead code.)
+Production code calls `parseYaml()` + `schema.safeParse()` directly at individual call sites.
 
 ### 7. Generated Types
 
@@ -244,7 +256,7 @@ The `src/cli/types/generated/matrix.ts` file contains the full `BUILT_IN_MATRIX`
 - `getSkillById(id)` — asserting lookup by SkillId
 - `getSkillBySlug(slug)` — asserting lookup by SkillSlug
 
-`src/cli/lib/matrix/skill-resolution.ts` contains `resolveRelationships()` — a single unified function that resolves all skill relationships (replaces 5 separate resolve functions).
+`src/cli/lib/matrix/skill-resolution.ts` exports `synthesizeCategory()` and `mergeMatrixWithSkills()`. The unified `resolveRelationships()` traversal is module-private and invoked inside `mergeMatrixWithSkills()`.
 
 ### 9. Security Measures
 
@@ -261,6 +273,13 @@ The `src/cli/types/generated/matrix.ts` file contains the full `BUILT_IN_MATRIX`
 `src/cli/lib/configuration/config-writer.ts` — `generateConfigSource()` generates TypeScript config files from `ProjectConfig` objects. Supports standalone configs and project configs that import/extend global configs.
 
 Key function: `generateConfigSource(config, options?)`. When `options.isProjectConfig` is true, generates config that imports from the global `~/.claude-src/config` and spreads global arrays.
+
+**Config-types writer selection rule (D-228):** There are two writers for `config-types.ts`:
+
+- `writeStandaloneConfigTypes()` / `generateConfigTypesSource()` in `local-installer.ts` + `config-types-writer.ts` — inlines full unions. ONLY for the GLOBAL `~/.claude-src/config-types.ts`.
+- `regenerateConfigTypes()` in `config-types-writer.ts` — emits the global-aware branch (imports `GlobalSkillId`/`GlobalAgentName`/`GlobalDomain`/`GlobalCategory` from the global types, extends with project-only items). ALWAYS use this for any PROJECT `<projectDir>/.claude-src/config-types.ts`.
+
+Never call `writeStandaloneConfigTypes` for a project path — it bypasses the import-from-global branch and produces duplicated standalone unions (D-216 / D-228 regression).
 
 ### 11. Scope System (Project vs Global)
 
@@ -301,7 +320,25 @@ When a project needs to override (disable) a globally-installed skill or agent w
 - Re-selecting a tombstoned skill/agent clears the `excluded` flag (restores it)
 - The `toggleSkillScope()` action checks for existing excluded entries to allow undo of scope overrides
 
-### 13. Stack Grouping System
+### 13. Per-Skill Source (D-217)
+
+The authoritative plugin-reference format is **per-skill**, not per-agent.
+
+- `SkillConfig.source: string` in `src/cli/types/config.ts` is the source of truth: `"eject"` means local filesystem; any other value is a marketplace name (e.g., `"agents-inc"`).
+- Compiled agent skill refs are derived per-skill as `${source}:${skillId}` — not from any whole-agent `installMode`.
+- There is no agent-level install mode. Mixed installs are expressed by different `source` values across the skills of a single agent.
+- Plugin install shell commands still use the registration form `{skillId}@{marketplace}`; only the compiled-agent body uses `${source}:${skillId}`.
+- Hard-error contract: if `installPluginSkills` returns non-empty `failed`, the command MUST hard-error before writing config (`init.tsx::installPluginsStep`, `edit.tsx::applyPluginChanges`) — no silent plugin→eject fallback (D-229).
+
+### 14. Projects Array Lifecycle (Global Config Only)
+
+`ProjectConfig.projects?: string[]` in `src/cli/types/config.ts` tracks per-project install paths registered against the global config.
+
+- Only meaningful in the GLOBAL config (`~/.claude-src/config.ts`). Project configs never carry `projects`.
+- A project init appends the project directory; uninstall removes it.
+- `propagateGlobalChangesToProjects()` in `local-installer.ts` iterates `projects` to rewrite each project's `config-types.ts` when the global unions change. Each per-project rewrite goes through `regenerateConfigTypes()` (per the writer-selection rule above).
+
+### 15. Stack Grouping System
 
 Stacks can be organized into visual groups in the stack selection screen.
 

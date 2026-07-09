@@ -16,6 +16,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: missing-rule
+status: resolved
+resolved_by: setupIsolatedHome helper adopted across all 7 files
 ---
 
 ## What Was Wrong

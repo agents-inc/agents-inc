@@ -1,4 +1,10 @@
+---
+last_validated: 2026-04-21
+---
+
 # The Skill Atomicity Bible
+
+> **Authority order**: When the primer (`skill-atomicity-primer.md`) and this bible disagree, the primer wins.
 
 > **The Core Principle**: A skill should ONLY discuss its own domain.
 
@@ -388,7 +394,7 @@ For each external domain reference found:
 grep -rn "SCSS\|scss-modules\|cva\|zustand\|react-query\|MSW\|msw\|Hono\|Drizzle" "src/skills/path/to/skill/"
 
 # Check specific files
-grep -n "import" skill/examples.md           # Import violations
+grep -n "import" skill/examples/*.md          # Import violations
 grep -n "Works with\|Integrates" skill/*.md  # Integration guide violations
 grep -n "Use.*for" skill/*.md                # Tool recommendation violations
 ```
@@ -644,7 +650,7 @@ When removing valuable content that belongs in another skill:
 - [ ] `<red_flags>` section exists in SKILL.md (not just in reference.md)
 - [ ] No content duplicated between SKILL.md and example files (SKILL.md has brief snippets + links)
 - [ ] No content duplicated between SKILL.md and reference.md (each concept lives in ONE canonical location)
-- [ ] Old technology-named example files replaced with redirect stubs pointing to `core.md`
+- [ ] Old technology-named example files deleted once content is moved to `core.md` + topic files — do not leave redirect stubs
 - [ ] No `NEXT_PUBLIC_*`, `VITE_*`, or other framework-specific env var prefixes
 
 ### Template Contamination
@@ -868,7 +874,7 @@ When extracting patterns from an existing skill:
 
 Do not extract if:
 
-- File is under 500 lines (leave as single `core.md` or `examples.md`)
+- File is under 500 lines (leave as single `examples/core.md`)
 - File has fewer than 5 patterns total
 - All patterns are interdependent (cannot understand one without others)
 - Skill is setup/configuration focused (naturally smaller)
@@ -1164,12 +1170,12 @@ Server data should be:
 ```
 ✓ SKILL.md - checked
 ✗ reference.md - forgot to check
-✗ examples.md - forgot to check
+✗ examples/*.md - forgot to check
 ```
 
-**Rule:** Always check ALL files: `SKILL.md`, `reference.md`, `examples.md`, `metadata.yaml`
+**Rule:** Always check ALL files: `SKILL.md`, `reference.md`, every file in `examples/`, `metadata.yaml`
 
-Violations are often concentrated in `examples.md` because that's where imports live.
+Violations are often concentrated in the `examples/` files because that's where imports live.
 
 ---
 
@@ -1393,7 +1399,7 @@ grep -rn "VIOLATION_KEYWORDS" skill/
 
 # Visual review
 cat skill/SKILL.md | head -100  # Check Quick Guide
-cat skill/examples.md | grep "import"  # Check imports
+cat skill/examples/*.md | grep "import"  # Check imports
 cat skill/reference.md | grep -i "integration"  # Check guides
 ```
 

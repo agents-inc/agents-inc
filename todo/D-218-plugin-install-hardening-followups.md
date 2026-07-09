@@ -1,6 +1,8 @@
 # D-218 — Plugin-install pipeline hardening follow-ups
 
 > **Status** (2026-04-20): Mixed. Item (2) landed 2026-04-17; items (1) and (3) open; audit surfaced three additional soft gaps. Recommend splitting into **D-218A** (high, data loss) and **D-218B** (low, UX polish) + optional **D-218C** (audit soft gaps).
+>
+> **Status update 2026-04-21**: D-229 shipped in 0.141.0 — the per-skill hard-error pattern (`failed.length > 0` → `this.error` before `writeConfigAndCompile`) now lives in `init.tsx::installPluginsStep` and `edit.tsx::applyPluginChanges`. This is the SAME anti-pattern class as D-218 item 1 (failable validation after irreversible FS mutation), just at a different call site. D-218 item 1 (`executeMigration` in `mode-migrator.ts`) remains open — distinct call site, still needs the same pattern applied. Soft gap #1 in D-218C is partially subsumed (init/edit covered by D-229; `migratePluginSkillScopes` still open). See `.ai-docs/agent-findings/2026-04-20-d229-plugin-install-failure-orphan-config.md` for the landed pattern template.
 
 ## Cluster origin
 
@@ -62,7 +64,7 @@ try {
 
 ### Additional soft gaps surfaced by 2026-04-20 audit **(optional D-218C)**
 
-1. **Per-skill install failures exit 0 with only warnings** — `init.tsx::installPluginsStep` and `migratePluginSkillScopes` accumulate a `failed[]` and emit `this.warn(...)`. A run where every plugin install fails shows "Installed 0 skill plugins" with exit 0. Consider: at end of loop, if `installed.length === 0 && failed.length > 0`, hard-error.
+1. **Per-skill install failures exit 0 with only warnings** — ~~`init.tsx::installPluginsStep`~~ (LANDED D-229, 0.141.0) and `migratePluginSkillScopes` accumulate a `failed[]` and emit `this.warn(...)`. A run where every plugin install fails shows "Installed 0 skill plugins" with exit 0. Consider: at end of loop, if `installed.length === 0 && failed.length > 0`, hard-error. _D-229 went stricter than this (hard-errors on ANY failure, not just total failure) at the init/edit sites; apply the same tail-check pattern to `migratePluginSkillScopes`._
 2. **Scope-migration partial state** — `migratePluginSkillScopes` uninstalls project scope before the new-scope install. If install throws, skill is unregistered at both scopes. Either wrap in transaction/rollback, or install-then-uninstall.
 3. **`requireMarketplace` duplication** — identical method in `init.tsx` and `edit.tsx`. The 2026-04-17 finding explicitly says duplication is cheaper than extraction because `this.error` is instance-bound. Keep as-is unless a third command grows the same need.
 

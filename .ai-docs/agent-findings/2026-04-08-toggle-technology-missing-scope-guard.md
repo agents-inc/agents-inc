@@ -11,6 +11,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: missing-rule
+status: resolved
+resolved_by: scope guard added to toggleTechnology
 ---
 
 ## What Was Wrong

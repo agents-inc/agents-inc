@@ -1,0 +1,166 @@
+---
+scope: reference
+area: config
+keywords:
+  [
+    scope-split,
+    splitConfigByScope,
+    scopeEligibilityKey,
+    scopeEligibilityGained,
+    computeNewlyAddedSkillIds,
+    computeScopeEligibilityGained,
+    SplitConfigResult,
+    tombstone-routing,
+    per-agent-curation,
+    D-220,
+    D-223,
+    D-224,
+  ]
+related:
+  - reference/config/config-writer.md
+  - reference/config/config-merger.md
+  - reference/config/configuration.md
+  - reference/concepts/scope-system.md
+  - reference/concepts/tombstone-pattern.md
+last_validated: 2026-04-21
+---
+
+# Config Scope Split Contract
+
+**Last Updated:** 2026-04-21
+**Last Validated:** 2026-04-21
+
+> How a merged `ProjectConfig` is partitioned into global and project halves for writing, and the delta sets the stack builder consumes for per-agent curation preservation. Feeds `mergeGlobalConfigs` and the project config writer (see [config-writer.md](./config-writer.md), [config-merger.md](./config-merger.md)).
+
+## The Two Split Surfaces
+
+| Function                        | File                                                    | Purpose                                                                                                                |
+| ------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `splitConfigByScope`            | `src/cli/lib/configuration/config-generator.ts`         | Partitions a merged `ProjectConfig` into `{ global, project }` halves on `scope` + `excluded`.                         |
+| `scopeEligibilityKey`           | `src/cli/lib/configuration/config-generator.ts`         | Encodes `(agent, skillId)` as `"${agent}                                                                               | ${skillId}"` for set-membership lookups in the stack builder. |
+| `computeNewlyAddedSkillIds`     | `src/cli/lib/installation/local-installer.ts` (private) | Diff: skill ids active in current config but not in prior. Feeds `generateProjectConfigFromSkills.newlyAddedSkillIds`. |
+| `computeScopeEligibilityGained` | `src/cli/lib/installation/local-installer.ts` (private) | Diff: `(agent, skill)` pairs whose scope-compatibility flipped from incompatible to compatible this session.           |
+
+The delta helpers do not partition the config — they compute the sets that `shouldIncludeTriple` inside the stack builder consults. They live alongside `splitConfigByScope` in this doc because both are project-context pipeline plumbing between merger output and writer input.
+
+## `splitConfigByScope` — Partition Rules
+
+**Signature:** `splitConfigByScope(config: ProjectConfig): SplitConfigResult`
+where `SplitConfigResult = { global: ProjectConfig; project: ProjectConfig }`.
+
+### Skills
+
+| Row in `config.skills`                 | Routed to                                    |
+| -------------------------------------- | -------------------------------------------- |
+| `scope === "global" && !excluded`      | global                                       |
+| `scope === "global" && excluded`       | **project** (tombstone suppressing a global) |
+| `scope === "project"` (any `excluded`) | project                                      |
+
+### Agents
+
+| Row in `config.agents`                 | Routed to                                      |
+| -------------------------------------- | ---------------------------------------------- |
+| `scope === "global" && !excluded`      | global                                         |
+| `scope === "global" && excluded`       | **project** (project-level override of global) |
+| `scope === "project"` (any `excluded`) | project                                        |
+
+### Stack
+
+The stack field is partitioned by the **agent** partition first, then each global agent's entries are further split per skill reference so global agents never carry project skill ids:
+
+- **Global agent** → inspect each `(category, assignments)` slot. Assignments whose `id` is in `globalSkillIds` land under the agent in `globalStack`; assignments whose `id` is NOT in `globalSkillIds` land under the same agent in `projectStack`.
+- **Project agent** → the agent's entire stack entry is copied verbatim into `projectStack`. Project agents keep ALL skill references (both project and global) since global skills are available everywhere.
+
+An agent is omitted from its partition's stack when no category slot survives (length 0 after filtering). Empty stack objects are elided from the partition entirely (`stack: undefined`).
+
+`globalSkillIds` is derived from the post-partition global `skills` array — it contains ONLY active globals, so a tombstone for a global skill does not count as "global" when filtering stack entries. A global agent that referenced a now-tombstoned global skill will see that reference drop out of the global stack and reappear in the project stack (carrying the reference to the project side where the tombstone lives).
+
+### Scalar / Array Fields
+
+| Field            | Global split                                                                           | Project split                                   |
+| ---------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `name`           | `"global"` (literal)                                                                   | `config.name` (preserved)                       |
+| `domains`        | `config.domains` (copied)                                                              | `undefined` (project inherits at runtime)       |
+| `selectedAgents` | filtered to names in global agent partition                                            | filtered to names NOT in global agent partition |
+| everything else  | `...config` spread (descriptions, author, source, marketplace, agentsSource, projects) | `...config` spread                              |
+
+The `...config` spread copies every remaining scalar/array to BOTH splits — including `projects`. The authoritative copy is in whichever split the caller writes. In practice the project-context branch of `writeScopedConfigs` overwrites `effectiveGlobalConfig` from an `existing`-spread path, so the duplicated `projects` in `globalConfig` never reaches disk.
+
+## Tombstone Routing Rationale
+
+Excluded global entries (both skills and agents) route to the **project** split, not the global split. This is intentional and load-bearing:
+
+- A tombstone (`scope: "global", excluded: true`) is a **project-level directive to suppress a shared global install for this project**. It is project-local state — other projects must not see it.
+- If tombstones routed to the global split, `mergeGlobalConfigs` would either ignore them (its `!excluded` guard — see [config-merger.md](./config-merger.md) `mergeGlobalConfigs` row) or worse, propagate a suppression that only this project intended.
+- Routing them to the project split means the tombstone is inlined into `<projectDir>/.claude-src/config.ts` via `generateProjectConfigWithInlinedGlobal`, where it participates in the suppression rule documented in [config-writer.md](./config-writer.md) ("Excluded global entries replace their active global counterparts in the global section while the active project entry appears separately in the project section").
+
+The tombstone routing is also what makes the D-224 failure mode tractable: the symptom ("only the tombstone survives the write pipeline") is now isolated to either the merger (drops the active) or the generator (never emits the active), because the split itself routes tombstones cleanly. See `.ai-docs/agent-findings/2026-04-17-d224-ptog-tombstone-not-cleared.md`.
+
+## Interaction with `mergeConfigs` and `mergeGlobalConfigs`
+
+Order in the `cc edit` project-context pipeline:
+
+1. Wizard emits `newConfig` with dual-scope pairs when scope toggles produce tombstones.
+2. `mergeConfigs(newConfig, existingProjectConfig)` reconciles via compound keys. `newConfig` is authoritative for every referenced name/id. Output: `finalConfig` carrying both active and tombstone rows where applicable.
+3. `splitConfigByScope(finalConfig)` → `{ globalSplit, projectSplit }`. Active globals and active global agents to `globalSplit`; everything else (project, tombstones) to `projectSplit`.
+4. `mergeGlobalConfigs(existingGlobalConfig, globalSplit)` is **additive** — existing wins, incoming only appends. `globalSplit` carries only actives, so no tombstones reach this call (which is why `mergeGlobalConfigs` does not need tombstone-handling logic).
+5. The merger's output `effectiveGlobalConfig` is written to `~/.claude-src/config.ts`. The PROJECT split is written to `<projectDir>/.claude-src/config.ts` with `globalConfig: effectiveGlobalConfig` passed to the writer so the inlined-global preamble reflects the merged global state.
+
+Note: the split result is not re-merged. The global half feeds `mergeGlobalConfigs`; the project half is written directly. `splitConfigByScope` is idempotent over already-split configs (a split of a split is a no-op on the same partition).
+
+## `scopeEligibilityKey` — The Stack-Builder Set Key
+
+**Signature:** `scopeEligibilityKey(agent: AgentName, skillId: SkillId): string` → `` `${agent}|${skillId}` ``
+
+**Purpose:** produce a stable string key for set membership lookups against `scopeEligibilityGained: ReadonlySet<string>` in `shouldIncludeTriple` within `config-generator.ts`. Both inputs are string-literal unions so `|` is a safe delimiter.
+
+**Where it's used:**
+
+- Keys inserted: `computeScopeEligibilityGained` in `local-installer.ts` (one add per newly-compatible `(agent, skill)` pair).
+- Keys queried: `shouldIncludeTriple` in `config-generator.ts` (scope-flip admission branch).
+
+No caller parses these keys — they are opaque membership tokens. Changing the delimiter would require updating both sites; the shared helper guarantees they agree.
+
+## The D-220 Delta Pipeline
+
+`generateProjectConfigFromSkills` accepts two optional opt-in delta sets that govern per-agent stack curation:
+
+| Parameter                | Produced by                     | Governs                                                                                                                                   |
+| ------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `newlyAddedSkillIds`     | `computeNewlyAddedSkillIds`     | Skills new to this session (not in prior `existing.config.skills`). Admits them to every existing agent's stack that is scope-compatible. |
+| `scopeEligibilityGained` | `computeScopeEligibilityGained` | `(agent, skill)` pairs whose scope-compatibility flipped this session. Admits pure scope-flip cases that a skill-id-only diff misses.     |
+
+When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` unconditionally — legacy pre-D-220 behavior where every scope-compatible skill lands on every existing agent. Passing an empty array (vs `undefined`) is the opt-in signal: preservation rule applies, delta sets happen to be empty.
+
+**`shouldIncludeTriple` decision table** (when `newlyAddedSkillIds` is provided):
+
+| Agent state in `existingStack` | Skill in prior agent's category | Skill in `newlyAddedSkillIds` or `(agent, skill)` in `scopeEligibilityGained` | Result  |
+| ------------------------------ | ------------------------------- | ----------------------------------------------------------------------------- | ------- |
+| absent (seed branch)           | n/a                             | n/a                                                                           | INCLUDE |
+| present                        | yes                             | n/a                                                                           | KEEP    |
+| present                        | no                              | yes                                                                           | APPEND  |
+| present                        | no                              | no                                                                            | OMIT    |
+
+The OMIT branch is the load-bearing D-220 semantic: a user who previously removed a skill from one agent's curated list keeps it removed across subsequent edits, even when other agents still carry it. See `changelogs/0.137.0.md` D-220 entry.
+
+## Invariants and Caller Contracts
+
+- **Caller-passed scope maps.** `generateProjectConfigFromSkills` throws if `selectedAgents` is provided without matching `skillConfigs` / `agentConfigs`. `getScopeOrThrow` enforces "every selected skill has a `SkillConfig`, every selected agent has an `AgentScopeConfig`" — no silent `"project"` default.
+- **Active entry precedence on dual-scope skills.** When the same skill id appears with both an excluded entry and an active entry in `skillConfigs`, `generateProjectConfigFromSkills` builds `skillScope` from the active entry first so the excluded entry cannot overwrite the authoritative scope. This is what lets a global-excluded-plus-project-active pair survive through to `splitConfigByScope` with the correct routing.
+- **Excluded-id filter is all-or-nothing.** A skill id is only added to `excludedSkillIds` when EVERY entry for that id is excluded. Dual-scope (excluded global + active project) keeps the id out of the exclusion set so the active project entry still reaches the stack builder.
+- **`buildAgentStack` returns `undefined` for empty agent stacks** (no surviving categories) so `buildStackForSelection` can elide the agent from the `stack` property entirely. An agent present in `selectedAgents` but with zero stack entries still appears in `agents`, just not in `stack`.
+
+## Anchors
+
+- `splitConfigByScope`, `scopeEligibilityKey`, `SplitConfigResult`, `generateProjectConfigFromSkills`, `buildStackForSelection`, `buildAgentStack`, `shouldIncludeTriple`, `isScopeCompatible`, `getScopeOrThrow`, `extractCategoryFromPath` — `src/cli/lib/configuration/config-generator.ts`.
+- `computeNewlyAddedSkillIds`, `computeScopeEligibilityGained`, `buildScopeLookup`, `buildAgentScopeLookup` — `src/cli/lib/installation/local-installer.ts`.
+- Call site threading split into writes: `writeScopedConfigs` project-context branch in `local-installer.ts`.
+- Unit tests: `config-generator.test.ts` (generator + split), `local-installer.test.ts` (delta helpers + scope-split behavior in `writeScopedConfigs`).
+
+## Findings That Shaped This Doc
+
+| Finding                                                    | Contribution                                                                                                 |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `2026-04-17-d224-ptog-tombstone-not-cleared.md`            | Tombstone-routing-to-project is correct; active-entry drop is upstream (merger/generator), not in the split. |
+| `2026-04-17-merge-global-configs-per-agent-update-loss.md` | Per-agent update loss that motivated the delta-set opt-in model.                                             |
+| Changelog `0.137.0.md` D-220 entry                         | Source of the `newlyAddedSkillIds` + `scopeEligibilityGained` design.                                        |

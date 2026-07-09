@@ -17,6 +17,8 @@ reporting_agent: codex-keeper
 category: architecture
 domain: cli
 root_cause: enforcement-gap
+status: resolved
+resolved_by: line numbers corrected; MEMORY.md feedback_no_line_numbers_in_docs added
 ---
 
 ## What Was Wrong

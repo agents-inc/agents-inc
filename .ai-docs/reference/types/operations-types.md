@@ -14,13 +14,13 @@ related:
   - reference/types/core-types.md
   - reference/features/operations-layer.md
   - reference/commands/edit.md
-last_validated: 2026-04-13
+last_validated: 2026-04-21
 ---
 
 # Operations Layer Types
 
-**Last Updated:** 2026-04-13
-**Last Validated:** 2026-04-13
+**Last Updated:** 2026-04-21
+**Last Validated:** 2026-04-21
 
 > **Split from:** `reference/type-system.md`. See also: [core-types.md](./core-types.md), [zod-schemas.md](./zod-schemas.md).
 
@@ -60,6 +60,206 @@ The operations layer defines focused result types for each operation, re-exporte
 | `CompileAgentsOptions` | `operations/project/compile-agents.ts`            | Options for agent compilation              |
 | `CompilationResult`    | `operations/project/compile-agents.ts`            | Result of agent compilation                |
 | `AgentDefs`            | `operations/project/load-agent-defs.ts`           | Loaded agent definitions with source paths |
+
+## Key Type Shapes
+
+Shapes verified against source 2026-04-21. No line numbers (names only, per project convention).
+
+### `PluginInstallResult` (D-229 contract)
+
+```typescript
+type PluginInstallResult = {
+  installed: Array<{ id: SkillId; ref: string }>;
+  failed: Array<{ id: SkillId; error: string }>;
+};
+```
+
+`failed` entries MUST cause a hard-error before `writeConfigAndCompile` runs — persisting config for skills that `claude plugin install` rejected produces orphan entries. Enforced by `installPluginsStep` (init) and `applyPluginChanges` (edit). See `2026-04-20-d229-plugin-install-failure-orphan-config.md`.
+
+### `PluginUninstallResult`
+
+```typescript
+type PluginUninstallResult = {
+  uninstalled: SkillId[];
+  failed: Array<{ id: SkillId; error: string }>;
+};
+```
+
+Uninstall failures are diagnostic-only — they do not produce orphan state, so no hard-error.
+
+### `MarketplaceResult` (lazy resolution)
+
+```typescript
+type MarketplaceResult = {
+  marketplace: string | null; // null = no marketplace configured / fetch failed
+  registered: boolean; // true = newly registered, false = updated / already existed
+};
+```
+
+`ensureMarketplace` is intentionally silent. When `sourceResult.marketplace` is undefined it calls `fetchMarketplace()` for lazy resolution; on fetch failure returns `{ marketplace: null, registered: false }` (no throw). Commands decide log output from the `registered` flag. Mutates `sourceResult.marketplace` as a side effect when lazy-resolved.
+
+### `CompilationResult`
+
+```typescript
+type CompilationResult = {
+  compiled: AgentName[];
+  failed: AgentName[];
+  warnings: string[];
+};
+```
+
+Thin re-shape of `recompileAgents()` result. No per-agent error strings on `failed` (just the name).
+
+### `CompileAgentsOptions`
+
+```typescript
+type CompileAgentsOptions = {
+  projectDir: string;
+  sourcePath: string;
+  pluginDir?: string;
+  skills?: SkillDefinitionMap;
+  agentScopeMap?: Map<AgentName, "project" | "global">;
+  agents?: AgentName[];
+  scopeFilter?: "project" | "global"; // loads config and filters by scope
+  outputDir?: string;
+  installMode?: InstallMode; // "eject" | "plugin" | "mixed" — NOT deprecated
+};
+```
+
+`installMode` is alive post-D-217. Derived via `deriveInstallMode(skills)` in `installation.ts` and threaded through `recompileAgents`. D-217 changed the plugin skill-reference _format_ (per-skill source-based), not the `InstallMode` type.
+
+### `LoadedSource`
+
+```typescript
+type LoadedSource = {
+  sourceResult: SourceLoadResult;
+  startupMessages: StartupMessage[]; // empty when captureStartupMessages: false
+};
+```
+
+### `LoadSourceOptions`
+
+```typescript
+type LoadSourceOptions = {
+  sourceFlag?: string;
+  projectDir: string;
+  forceRefresh?: boolean;
+  captureStartupMessages?: boolean; // wraps load in buffer mode for Wizard <Static>
+};
+```
+
+### `ConfigWriteResult`
+
+```typescript
+type ConfigWriteResult = {
+  config: ProjectConfig;
+  configPath: string;
+  globalConfigPath?: string;
+  wasMerged: boolean;
+  existingConfigPath?: string;
+  filesWritten: number; // 2 (global context) or 4 (project context: config + types × 2 scopes)
+};
+```
+
+### `DiscoveredSkills`
+
+```typescript
+type DiscoveredSkills = {
+  allSkills: SkillDefinitionMap;
+  totalSkillCount: number;
+  pluginSkillCount: number; // project + global plugins combined
+  localSkillCount: number; // project + global local combined
+  globalPluginSkillCount: number;
+  globalLocalSkillCount: number;
+};
+```
+
+4-way merge order: global plugins → global local → project plugins → project local (project wins).
+
+### `DetectedProject`
+
+```typescript
+type DetectedProject = {
+  installation: Installation;
+  config: ProjectConfig | null;
+  configPath: string | null;
+};
+```
+
+Never throws — returns `null` when no installation. Callers decide how to react.
+
+### `BothInstallations`
+
+```typescript
+type BothInstallations = {
+  global: Installation | null;
+  project: Installation | null;
+  hasBoth: boolean;
+};
+```
+
+Skips project detection when `projectDir === os.homedir()` (avoids double-compile). `hasBoth` gates dual-scope compile passes.
+
+### `AgentDefs`
+
+```typescript
+type AgentDefs = {
+  agents: Record<AgentName, AgentDefinition>; // CLI defaults + source overrides (source wins)
+  sourcePath: string;
+  agentSourcePaths: AgentSourcePaths; // { agentsDir, templatesDir, sourcePath }
+};
+```
+
+### `SkillCopyResult`
+
+```typescript
+type SkillCopyResult = {
+  projectCopied: CopiedSkill[];
+  globalCopied: CopiedSkill[];
+  totalCopied: number;
+};
+```
+
+### `ScopedSkillDir` / `ScopedSkillDirsResult`
+
+```typescript
+type ScopedSkillDir = {
+  dirName: string;
+  localSkillsPath: string;
+  scope: "project" | "global";
+};
+
+type ScopedSkillDirsResult = {
+  dirs: ScopedSkillDir[];
+  hasProject: boolean;
+  hasGlobal: boolean;
+  projectLocalPath: string;
+  globalLocalPath: string;
+};
+```
+
+Project scope takes precedence on `dirName` conflict. `hasGlobal` is always `false` when `projectDir === homeDir`.
+
+### `SkillComparisonResults`
+
+```typescript
+type SkillComparisonResults = {
+  projectResults: SkillComparisonResult[];
+  globalResults: SkillComparisonResult[];
+  merged: SkillComparisonResult[]; // project takes precedence on id conflict
+};
+```
+
+### `SkillMatchResult`
+
+```typescript
+type SkillMatchResult = {
+  match: SkillComparisonResult | null;
+  similar: string[]; // top-3 fuzzy suggestions when match is null
+};
+```
+
+Match order: exact id → partial-name (strips `(@author)` suffix) → `dirName`.
 
 ## Edit Command Types (`src/cli/commands/edit.tsx`)
 

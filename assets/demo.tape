@@ -1,26 +1,27 @@
 Output demo.mp4
 
 Set Shell "zsh"
-Set FontSize 16
-Set FontFamily "Monaspace Neon"
+Set FontSize 32
+Set FontFamily "Ubuntu Mono"
 Set LineHeight 1.3
-Set Width 1000
-Set Height 1000
-Set Padding 40
-Set Margin 20
-Set BorderRadius 8
+Set Width 2000
+Set Height 2000
+Set Padding 80
+Set Margin 40
+Set BorderRadius 16
 Set WindowBar Colorful
-Set WindowBarSize 40
+Set WindowBarSize 80
 Set TypingSpeed 80ms
 Set CursorBlink true
 Set Framerate 60
-Set Theme { "name": "One Dark", "black": "#21252b", "red": "#e06c75", "green": "#98c379", "yellow": "#c49a2a", "blue": "#61afef", "purple": "#c678dd", "cyan": "#56b6c2", "white": "#abb2bf", "brightBlack": "#767676", "brightRed": "#e06c75", "brightGreen": "#98c379", "brightYellow": "#e5c07b", "brightBlue": "#61afef", "brightPurple": "#c678dd", "brightCyan": "#56b6c2", "brightWhite": "#abb2bf", "background": "#21252b", "foreground": "#abb2bf", "cursor": "#abb2bf", "selection": "#323844" }
+# Set Theme { "name": "One Dark", "black": "#21252b", "red": "#e06c75", "green": "#98c379", "yellow": "#c49a2a", "blue": "#61afef", "purple": "#c678dd", "cyan": "#56b6c2", "white": "#abb2bf", "brightBlack": "#767676", "brightRed": "#e06c75", "brightGreen": "#98c379", "brightYellow": "#e5c07b", "brightBlue": "#61afef", "brightPurple": "#c678dd", "brightCyan": "#56b6c2", "brightWhite": "#abb2bf", "background": "#21252b", "foreground": "#abb2bf", "cursor": "#abb2bf", "selection": "#323844" }
+Set Theme "OneDark"
 
 
 Sleep 1s
 Type "npx @agents-inc/cli init"
 Enter
-Sleep 2500ms
+Sleep 3500ms
 
 # -------------------------------
 # STEP STACK

@@ -114,10 +114,6 @@ export function validateProjectConfig(config: unknown): ValidationResult {
     }
   }
 
-  if (c.version !== undefined && c.version !== "1") {
-    errors.push('version must be "1" (or omitted for default)');
-  }
-
   return {
     valid: errors.length === 0,
     errors,

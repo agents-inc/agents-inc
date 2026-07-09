@@ -4,7 +4,7 @@ import type { SkillId } from "../../types";
 import type { SkillConfig } from "../../types/config";
 import type { SourceLoadResult } from "../loading";
 import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
-import { claudePluginInstall, claudePluginUninstall } from "../../utils/exec";
+import { claudePluginInstall, claudePluginUninstallBestEffort } from "../../utils/exec";
 import { verbose, warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
 import { LOCAL_SKILLS_PATH } from "../../consts";
@@ -120,22 +120,26 @@ export async function executeMigration(
       }
 
       // Uninstall plugin references using per-skill scope
-      for (const migration of plan.toEject) {
-        // Don't uninstall global plugins when migrating to project scope —
-        // the global plugin must remain for other projects. The project config
-        // tombstone (excluded: true) already prevents this project from using it.
-        if (migration.oldScope === "global" && migration.newScope === "project") {
-          verbose(`Keeping global plugin for ${migration.id} (migrated to project-eject)`);
-          continue;
-        }
-        try {
-          const pluginScope = migration.oldScope === "global" ? "user" : "project";
-          await claudePluginUninstall(migration.id, pluginScope, projectDir);
-          verbose(`Uninstalled plugin for ${migration.id}`);
-        } catch (error) {
+      if (!sourceResult.marketplace) {
+        for (const migration of plan.toEject) {
+          if (migration.oldScope === "global" && migration.newScope === "project") continue;
           warnings.push(
-            `Could not uninstall plugin for ${migration.id}: ${getErrorMessage(error)}`,
+            `Could not uninstall plugin for ${migration.id}: no marketplace configured`,
           );
+        }
+      } else {
+        for (const migration of plan.toEject) {
+          // Don't uninstall global plugins when migrating to project scope —
+          // the global plugin must remain for other projects. The project config
+          // tombstone (excluded: true) already prevents this project from using it.
+          if (migration.oldScope === "global" && migration.newScope === "project") {
+            verbose(`Keeping global plugin for ${migration.id} (migrated to project-eject)`);
+            continue;
+          }
+          const pluginScope = migration.oldScope === "global" ? "user" : "project";
+          const pluginRef = `${migration.id}@${sourceResult.marketplace}`;
+          await claudePluginUninstallBestEffort(pluginRef, pluginScope, projectDir);
+          verbose(`Uninstalled plugin for ${migration.id}`);
         }
       }
     } catch (error) {

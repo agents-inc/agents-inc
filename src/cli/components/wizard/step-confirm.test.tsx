@@ -753,4 +753,131 @@ describe("SkillAgentSummary component", () => {
       expect(vitestLine).toContain("+");
     });
   });
+
+  describe("dual-scope G→P toggle diff", () => {
+    it("in-session G→P toggle should show + at Project and • at Global (not -)", () => {
+      // Baseline: react is globally installed. User toggles G→P in this
+      // session. Store emits dual-scope state: active project + global
+      // tombstone. The global install survives (the tombstone is a
+      // dual-scope indicator, not a removal signal). The Global row must
+      // render as `•` (unchanged) — a `-` would falsely suggest the global
+      // install was removed.
+      useWizardStore.setState({
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      });
+
+      const { lastFrame, unmount } = render(
+        <SkillAgentSummary
+          skillConfigs={[
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+            ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
+          ]}
+        />,
+      );
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      expect(output).toContain("+ React");
+      expect(output).toContain("\u2022 React");
+      expect(output).not.toContain("- React");
+      expect(output).not.toContain("~ React");
+    });
+
+    it("re-open with saved dual-scope state should show • at Project and • at Global (not +)", () => {
+      // After the in-session G→P save, the next `cc edit` reads the dual-scope config:
+      // active project + global tombstone. Both sides of the diff see the
+      // same shape — the diff must be a no-op: `•` on both rows, not `+` on
+      // the tombstone row (which would falsely re-tag the long-installed
+      // global as newly added).
+      const savedDualScope: SkillConfig[] = [
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
+      ];
+      useWizardStore.setState({ installedSkillConfigs: savedDualScope });
+
+      const { lastFrame, unmount } = render(
+        <SkillAgentSummary skillConfigs={savedDualScope} />,
+      );
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      expect(output).toContain("\u2022 React");
+      expect(output).not.toContain("+ React");
+      expect(output).not.toContain("- React");
+      expect(output).not.toContain("~ React");
+    });
+
+    it("agent symmetry: in-session agent G→P toggle shows + at Project and • at Global", () => {
+      // Symmetric scenario for agents — `toggleAgentScope` emits the same
+      // dual-scope shape (active project + global tombstone) when the agent
+      // was globally installed. The info panel must render the surviving
+      // global agent row as `•`, not `-`.
+      useWizardStore.setState({
+        installedAgentConfigs: buildAgentConfigs(["web-developer"], { scope: "global" }),
+      });
+
+      const { lastFrame, unmount } = render(
+        <SkillAgentSummary
+          agentConfigs={[
+            ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+            ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
+          ]}
+        />,
+      );
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      expect(output).toContain("+ web-developer");
+      expect(output).toContain("\u2022 web-developer");
+      expect(output).not.toContain("- web-developer");
+      expect(output).not.toContain("~ web-developer");
+    });
+
+    it("agent symmetry: re-open with saved dual-scope agent shows • at both scopes", () => {
+      const savedDualScope = [
+        ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+        ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
+      ];
+      useWizardStore.setState({ installedAgentConfigs: savedDualScope });
+
+      const { lastFrame, unmount } = render(
+        <SkillAgentSummary agentConfigs={savedDualScope} />,
+      );
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      expect(output).toContain("\u2022 web-developer");
+      expect(output).not.toContain("+ web-developer");
+      expect(output).not.toContain("- web-developer");
+      expect(output).not.toContain("~ web-developer");
+    });
+
+    it("P→G restoration should show - at Project and • at Global (not +)", () => {
+      // Scenario: user had dual-scope state, then toggles P→G which drops
+      // the project override AND strips the tombstone. Live is
+      // `[{react, global}]`. The global install was always there (the
+      // tombstone was the dual-scope indicator), so the Global row must be
+      // `•`, not `+` — the user is restoring the pre-existing global
+      // install, not adding a new one.
+      useWizardStore.setState({
+        installedSkillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
+        ],
+      });
+
+      const { lastFrame, unmount } = render(
+        <SkillAgentSummary
+          skillConfigs={buildSkillConfigs(["web-framework-react"], { scope: "global" })}
+        />,
+      );
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      expect(output).toContain("- React");
+      expect(output).toContain("\u2022 React");
+      expect(output).not.toContain("+ React");
+      expect(output).not.toContain("~ React");
+    });
+  });
 });

@@ -7,12 +7,12 @@ related:
   - reference/features/plugin-system.md
   - reference/type-system.md
   - reference/features/wizard-flow.md
-last_validated: 2026-04-02
+last_validated: 2026-04-21
 ---
 
 # Skills & Matrix System
 
-**Last Updated:** 2026-04-02
+**Last Updated:** 2026-04-21
 
 ## Overview
 
@@ -30,12 +30,12 @@ last_validated: 2026-04-02
 | Slug Map           | Bidirectional `SkillSlug <-> SkillId` mapping built during merge            |
 | Source             | Where skills come from (public marketplace, private, local)                 |
 
-## Current Counts (2026-04-02)
+## Current Counts (2026-04-21)
 
 | Type       | Count | Source File                               |
 | ---------- | ----- | ----------------------------------------- |
-| SKILL_MAP  | 161   | `src/cli/types/generated/source-types.ts` |
-| Categories | 51    | `src/cli/types/generated/source-types.ts` |
+| SKILL_MAP  | 222   | `src/cli/types/generated/source-types.ts` |
+| Categories | 89    | `src/cli/types/generated/source-types.ts` |
 | Domains    | 9     | `src/cli/types/generated/source-types.ts` |
 | AgentNames | 23    | `src/cli/types/generated/source-types.ts` |
 
@@ -96,15 +96,22 @@ last_validated: 2026-04-02
    extractAllSkills() (matrix-loader.ts)
    -> Walks source skills directory
    -> Reads SKILL.md frontmatter (parseFrontmatter from loader.ts)
-   -> Reads metadata.yaml (Zod-validated via rawMetadataSchema)
+   -> Reads metadata.yaml (parseYaml then Zod-validated via rawMetadataSchema)
+   -> Invalid Zod shape: warn + skip (per-file, continues)
+   -> Invalid YAML syntax: parseYaml throws and aborts the whole extraction pass
+      (see Known Limitations #2)
    -> Returns ExtractedSkillMetadata[]
 
 5. Matrix Merge
    mergeMatrixWithSkills() (skill-resolution.ts)
    -> Combines categories + extracted metadata + relationship rules
-   -> Builds bidirectional slug map (SkillSlug <-> SkillId)
-   -> Resolves slug-based relationships to canonical SkillIds
-   -> Auto-synthesizes missing categories (exclusive: false by default)
+   -> Builds bidirectional slug map (SkillSlug <-> SkillId) -- primary skills only;
+      local/custom slugs are NOT added (see Known Limitations #3)
+   -> Resolves slug-based relationships to canonical SkillIds; unresolved slugs
+      are warned and dropped (see Known Limitations #4, #7)
+   -> Auto-synthesizes missing categories (exclusive: false by default) -- fires
+      for built-ins too, masking marketplace drift (see Known Limitations #6)
+   -> Duplicate skill IDs silently overwrite (see Known Limitations #1)
    -> Returns MergedSkillsMatrix
 
 6. Multi-Source Loading (optional)
@@ -112,6 +119,8 @@ last_validated: 2026-04-02
    -> Loads skills from primary + extra configured sources
    -> Merges availableSources onto each ResolvedSkill
    -> Sets activeSource based on installation state
+   -> NOTE: extras' skill-categories.ts and skill-rules.ts are NOT loaded.
+      Only their skill metadata is read (tagExtraSources). See Known Limitations #5.
 
 7. Combined Pipeline
    loadSkillsMatrixFromSource() (source-loader.ts)
@@ -149,7 +158,7 @@ Contains the core merge logic that combines categories, relationship rules, and 
 
 **Internal function:**
 
-- `resolveRelationships(skillId, relationships, resolve)` - Unified resolver (R-08) that resolves all five relationship types (conflicts, discourages, compatibleWith, requires, alternatives) in a single pass for each skill
+- `resolveRelationships(skillId, relationships, resolve)` - Unified resolver (R-08) that resolves all five relationship types (conflicts, discourages, compatibleWith, requires, alternatives) in a single pass for each skill. Unresolved slugs are filtered out (`warn` only) and the rule proceeds with the surviving subset -- see Known Limitations #4 and #7.
 
 ## SourceLoadResult (`src/cli/lib/loading/source-loader.ts`)
 
@@ -243,7 +252,7 @@ Checked per-skill by exported functions:
 | `getAvailableSkills()`         | Get skills for a category with state annotations           |
 | `getSkillsByCategory()`        | Get all resolved skills belonging to a category            |
 
-**Barrel re-exports** (from `matrix/index.ts`): All 13 functions above. Additionally exports `validateConflicts`, `validateRequirements`, `validateExclusivity`, `validateRecommendations` only from `matrix-resolver.ts` directly (not from barrel).
+**Barrel re-exports** (from `matrix/index.ts`): All 13 functions above, plus `validateSelection`. `validateConflicts`, `validateRequirements`, `validateExclusivity`, `validateRecommendations` are exported from `matrix-resolver.ts` directly but NOT re-exported from the barrel.
 
 ## Validation
 
@@ -310,6 +319,24 @@ Stacks are pre-configured bundles of skills mapped to agents. Defined in `config
 - `normalizeStackRecord()` - Normalize stack values to `SkillAssignment[]` arrays
 - `normalizeAgentConfig()` - Normalize agent config entries
 - `resolveStackSkills()` - Resolve all stack skills by agent
+
+## Known Limitations (D-214 matrix-hardening gaps)
+
+Cross-ref: `todo/TODO.md` -> D-214 "Matrix composition hardening — prereq to re-enabling `new marketplace`". These are current behaviors, not bugs to fix in the doc. Do not document over them -- they must stay visible until D-214 lands.
+
+| #   | Limitation                                          | Where                                                                                                                | Current behavior                                                                                                                                                                                               |
+| --- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Duplicate skill IDs silently overwrite              | `mergeMatrixWithSkills` in `skill-resolution.ts`                                                                     | Second skill with same `id` replaces the first in `resolvedSkills` with no warn. Order depends on glob order. `buildSlugMap` warns on slug collision -- IDs do not.                                            |
+| 2   | Invalid YAML crashes whole matrix load              | `extractAllSkills` in `matrix-loader.ts`                                                                             | `parseYaml(metadataContent)` is not try-wrapped. One malformed `metadata.yaml` throws and aborts the entire extraction pass, so the whole matrix fails to load.                                                |
+| 3   | Custom skill slugs are never added to `slugMap`     | `mergeLocalSkillsIntoMatrix` in `source-loader.ts`                                                                   | Local/custom skills are appended to `matrix.skills` but `buildSlugMap` is not re-run. `getSkillBySlug("<custom-slug>")` throws. Stacks and rules can't address them.                                           |
+| 4   | Partial `requires` resolution pretends to succeed   | `resolveRelationships` in `skill-resolution.ts` (requires branch)                                                    | Unresolved slugs in `rule.needs` are filtered out; the rule proceeds with whatever remains. `needsAny: false` (AND) silently narrows to "AND of what resolved".                                                |
+| 5   | Extras do not participate in the relationship graph | `tagExtraSources` in `multi-source-loader.ts`                                                                        | Extra sources load only via `extractAllSkills` to tag `availableSources`. Their `skill-categories.ts` and `skill-rules.ts` are never loaded. A skill shipped in an extra with `requires: [...]` has no effect. |
+| 6   | Auto-synth fires for built-ins too                  | `mergeMatrixWithSkills` -> `synthesizeCategory` in `skill-resolution.ts`                                             | Any skill referencing an undefined category gets an `order: 999` placeholder, regardless of `custom`. Built-in marketplace drift is masked instead of failing loudly.                                          |
+| 7   | Unresolved slugs dropped before `checkMatrixHealth` | `resolveToCanonicalId` in `skill-resolution.ts`                                                                      | `warn(...)` only. No `unresolvedSlugs[]` is returned from the merge, so `validate` cannot surface a typo in a marketplace's `skill-rules.ts`.                                                                  |
+| 8   | Duplicate-slug reverse map is half-written          | `buildSlugMap` in `skill-resolution.ts`                                                                              | When slug A is already taken, the loser's `idToSlug[loser.id]` is never written. Consumers reading `idToSlug` for the loser get `undefined`.                                                                   |
+| 9   | Double `initializeMatrix` write                     | `source-loader.ts` (`loadAndMergeFromBasePath` intermediate write, plus final write in `loadSkillsMatrixFromSource`) | Singleton is set twice -- once before local/extra merge, once after. Any consumer reading between the two sees a stale matrix.                                                                                 |
+
+**Consumer rule:** treat the matrix composition pipeline as current-known-behavior. If you are reading the matrix in `validate`, `new marketplace`, or any new path that exercises multi-source / custom-skill composition, assume these gaps exist and guard around them. `new marketplace` itself is gated behind `FEATURE_FLAGS.NEW_MARKETPLACE_COMMAND` (`false`) until D-214 lands.
 
 ## Operations Layer Integration
 

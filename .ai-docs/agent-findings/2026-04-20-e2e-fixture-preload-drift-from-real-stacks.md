@@ -11,6 +11,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: convention-undocumented
+status: resolved
+resolved_by: 0.140.0 realism trim — `webDeveloperAgentConfig` and `apiDeveloperAgentConfig` in `e2e/helpers/create-e2e-source.ts` now flag meta skills as non-preloaded to mirror `default-stacks.ts`; invariant comment added above the declarations.
 ---
 
 ## What Was Wrong

@@ -13,6 +13,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: D-220 stack ownership + preloaded preservation shipped in 0.137.0
 ---
 
 ## What Was Wrong

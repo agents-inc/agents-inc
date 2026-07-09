@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # E2E Testing Standards
 
 Consolidated from 11 audit/strategy docs and 74 E2E test files. Every rule is enforceable and grounded in actual codebase patterns.
@@ -41,7 +45,7 @@ e2e/
 
 **1.2 File naming: `{feature}.e2e.test.ts`.** Smoke tests use `{feature}.smoke.test.ts`. Split files at 300 LOC or 2+ unrelated concerns. Use descriptive names: `edit-wizard-plugin-migration.e2e.test.ts`, not `edit-2.e2e.test.ts`.
 
-**1.3 No task IDs in `describe()` blocks.** No `"P-BUILD-1: ..."` or `"Bug A: ..."` prefixes. Task IDs can appear in file-level JSDoc comments only.
+**1.3 No task IDs in test names, assertion messages, or inline comments.** Never include `D-NNN` / `P-BUILD-1` / `Bug A` in `describe()` names, `it()` names, assertion messages (2nd arg to `expect`), or inline test-body comments. The only permitted location is file-level JSDoc at the top of the file, for scenario context. Test names describe BEHAVIOR ("version field is not emitted on init"), not tickets. Assertion messages describe the INVARIANT ("config.ts must not contain version field"), not the ticket that added it. Names rot — ticket IDs look authoritative but become meaningless once the task is closed. See `.ai-docs/agent-findings/2026-04-21-task-ids-in-test-names-sweep-needed.md`.
 
 **1.4 Vitest config:** `e2e/vitest.config.ts` uses `pool: "forks"`, `testTimeout: 30_000`, `hookTimeout: 60_000`, `retry: 2`. The include pattern is `e2e/**/*.e2e.test.ts` -- smoke tests (`*.smoke.test.ts`) are excluded and must be run explicitly. Long tests override per-test with `{ timeout: TIMEOUTS.LIFECYCLE }`.
 
@@ -189,6 +193,10 @@ await screen.waitForRawText("initialized successfully", TIMEOUTS.INSTALL);
 | `BuildStep.passThroughAllDomains()`           | Web -> API -> Methodology domain build steps                   | `steps/build-step.ts`    |
 | `TerminalScreen.waitForRawText(text, ms)`     | Poll raw PTY output (bypasses xterm buffer limits)             | `terminal-screen.ts`     |
 
+**4.7 Page-object keypress rule.** Every key-press method in an E2E step page object (`e2e/pages/steps/*.ts`, `e2e/pages/base-step.ts`) MUST call `await this.waitForStableRender()` _before_ pressing the key. This applies to `pressEnter`, `pressSpace`, `pressKey`, `pressEscape`, `pressArrowUp`/`Down`/`Left`/`Right`, `pressCtrlC`, and any domain-specific keypress method (e.g. `toggleFocusedSkill`, `openSearch`, `navigateToNextCategory`, `goBack`).
+
+React effects may not have fired yet — without the wait, the PTY write lands between commit and `useEffect`, so the `useInput` handler registered by the new frame isn't listening. The keystroke is silently swallowed and the test passes by not exercising the behavior it claims to test. Post-press waits don't substitute — the race is upstream of the keystroke. Callers cannot be trusted to have left the screen stable, because the previous method may itself have been a keypress-before-settle. In isolation the race is invisible; under parallel suite contention it surfaces as flake. See `.ai-docs/agent-findings/2026-04-21-e2e-build-step-keypress-missing-stable-render.md`.
+
 ---
 
 ## 5. File System
@@ -299,6 +307,10 @@ const content = await readTestFile(agentPath);
 expect(content).toMatch(/^---\n/); // YAML frontmatter
 expect(content).toContain("web-framework-react"); // Expected skill reference
 ```
+
+**6.7 Diff-shape assertions.** For assertions over diff-shape collections (info-panel rows, config section diffs, scope-per-skill prefix maps), use `toStrictEqual([<exact>])` on a scope-anchored slice of the output, NOT `expect.arrayContaining([<expected>])`. `arrayContaining` passes as long as the expected entries exist; it silently tolerates extra wrong entries (e.g. a spurious `- React` row alongside the expected `• React`).
+
+If `arrayContaining` is genuinely needed (the slice isn't scope-anchorable), it MUST be paired with a matching `.not.toEqual(expect.arrayContaining([<bug-prefix>]))` negative check that pins the concrete bug shape. Same rule for `toContain`: pair every positive `toContain("+ React")` with explicit `not.toContain("- React")` / `not.toContain("~ React")` for each diff prefix that must NOT appear. When two rows render the same prefix, prove it by exhaustively negating all other prefixes rather than extracting to a parsed struct — `toContain("• React") + not.toContain("+ React") + not.toContain("- React") + not.toContain("~ React")` is strictly stronger than a parsed `{ project: "•", global: "•" }` assertion because it pins both the positive AND negative shape of the entire rendered frame. See `.ai-docs/agent-findings/2026-04-21-d230-d232-diff-baseline-pre-filter-drift.md`.
 
 ---
 
@@ -435,6 +447,10 @@ it.fails("should handle corrupt source without crashing", async () => {
 ```
 
 When the bug is fixed, removing `it.fails()` makes the test start passing -- no assertion changes needed. Never broaden assertions to accommodate bugs.
+
+**10.13 Never define parser/extractor helpers with non-trivial logic inside a test file.** Loops, regex scans, and state machines that pick data out of rendered output (`lastFrame()`, `getFullOutput()`) or config text belong nowhere near a test file. If a helper has non-trivial logic it would need its OWN tests to be trusted — an uninstrumented parser in a test file silently produces wrong answers when the layout changes, and it obscures the contract (the rendered substring IS the contract).
+
+Instead: assert directly on raw output with `toContain("+ React")`, `toMatchInlineSnapshot`, or a structural load (e.g. `loadProjectConfig` for `config.ts`). If the helper is genuinely reusable across multiple test files, move it to `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested. See `.ai-docs/agent-findings/2026-04-21-complex-helpers-in-component-tests-anti-pattern.md`.
 
 ---
 

@@ -18,6 +18,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: rule-not-visible
+status: resolved
+resolved_by: 9 files migrated to matcher-based assertions
 ---
 
 ## What Was Wrong

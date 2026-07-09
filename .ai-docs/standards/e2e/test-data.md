@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # Test Data
 
 How to set up the world before a test runs.
@@ -58,6 +62,16 @@ The E2E source is an expensive fixture (creates 9 skills, 2 agents, 1 stack, tem
 Returns `{ sourceDir, tempDir }`. The `tempDir` is the parent -- clean it up in `afterAll`.
 
 **`createE2EPluginSource(options?)`** -- Extends the above by building plugins and generating `marketplace.json`. Returns `{ sourceDir, tempDir, marketplaceName, pluginsDir }`.
+
+### Before Extending Fixtures
+
+Before adding a new skill, agent, stack, or mapping to `createE2ESource` / `createE2EPluginSource`, grep the fixture for the entity you're being asked to add. The canonical inventory (9 skills, 2 agents, 1 stack -- see the table above) is defined in `e2e/helpers/create-e2e-source.ts` and already covers most mixed-domain and multi-skill-per-agent scenarios.
+
+- Grep/read the fixture first. If the entity (skill ID, agent name, skill-to-agent mapping) is already present, skip the extension and note it in the report.
+- Only extend when genuinely absent. Redundant fixture data obscures the fixture's actual contract and confuses later readers.
+- Prefer reusing existing entries (e.g. `web-state-zustand` on `web-developer`) over adding a parallel one.
+
+See finding `2026-04-20-d217-test-prereq-already-satisfied.md` for the incident that motivated this rule.
 
 ### Source Sharing Convention
 

@@ -16,6 +16,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: setupIsolatedHome helper created; 7 command tests migrated
 ---
 
 ## What Was Wrong

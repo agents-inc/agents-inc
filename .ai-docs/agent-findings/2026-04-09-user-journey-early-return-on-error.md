@@ -10,6 +10,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: compile-flow tests restructured to use recompileAgents()
 ---
 
 ## What Was Wrong

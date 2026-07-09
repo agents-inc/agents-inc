@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # Skill Atomicity Primer
 
 ## What we're doing

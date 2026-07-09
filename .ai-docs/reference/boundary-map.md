@@ -6,12 +6,12 @@ related:
   - reference/architecture-overview.md
   - reference/type-system.md
   - reference/features/configuration.md
-last_validated: 2026-04-02
+last_validated: 2026-04-21
 ---
 
 # Boundary Map
 
-**Last Updated:** 2026-04-02
+**Last Updated:** 2026-04-21
 
 ## Overview
 
@@ -19,22 +19,25 @@ last_validated: 2026-04-02
 
 **Key Files:**
 
-| File                                         | Purpose                                                |
-| -------------------------------------------- | ------------------------------------------------------ |
-| `src/cli/base-command.ts`                    | Base `--source` flag definition, error handling        |
-| `src/cli/hooks/init.ts`                      | Raw argv extraction of `--source` before oclif parsing |
-| `src/cli/utils/exec.ts`                      | Shell execution boundary, input validation             |
-| `src/cli/utils/fs.ts`                        | `readFileSafe()` with size limits                      |
-| `src/cli/lib/schemas.ts`                     | All Zod schemas (30+) for parse boundaries             |
-| `src/cli/lib/configuration/config.ts`        | Source validation (`validateSourceFormat`)             |
-| `src/cli/lib/configuration/config-loader.ts` | jiti TypeScript config loading                         |
-| `src/cli/lib/configuration/config-writer.ts` | Config file generation                                 |
-| `src/cli/lib/compiler.ts`                    | Liquid template sanitization, agent output             |
-| `src/cli/lib/skills/skill-copier.ts`         | Path traversal prevention                              |
-| `src/cli/lib/plugins/plugin-settings.ts`     | Claude settings/registry JSON parsing                  |
-| `src/cli/lib/plugins/plugin-finder.ts`       | Plugin manifest JSON parsing                           |
-| `src/cli/lib/plugins/plugin-validator.ts`    | Plugin/skill/agent frontmatter validation              |
-| `src/cli/consts.ts`                          | File size limit constants                              |
+| File                                               | Purpose                                                                 |
+| -------------------------------------------------- | ----------------------------------------------------------------------- |
+| `src/cli/base-command.ts`                          | Base `--source` flag definition, error handling                         |
+| `src/cli/hooks/init.ts`                            | Raw argv extraction of `--source` before oclif parsing                  |
+| `src/cli/utils/exec.ts`                            | Shell execution boundary, input validation                              |
+| `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits                                       |
+| `src/cli/lib/schemas.ts`                           | All Zod schemas (30+) for parse boundaries                              |
+| `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`)                              |
+| `src/cli/lib/configuration/config-loader.ts`       | jiti TypeScript config loading                                          |
+| `src/cli/lib/configuration/config-writer.ts`       | Config file generation                                                  |
+| `src/cli/lib/configuration/config-types-writer.ts` | Writer selection (project=import-from-global, global=standalone, D-228) |
+| `src/cli/lib/installation/local-installer.ts`      | Scoped config writes, propagation to registered projects                |
+| `src/cli/lib/stacks/stack-plugin-compiler.ts`      | Per-skill plugin ref derivation (D-217)                                 |
+| `src/cli/lib/compiler.ts`                          | Liquid template sanitization, agent output                              |
+| `src/cli/lib/skills/skill-copier.ts`               | Path traversal prevention                                               |
+| `src/cli/lib/plugins/plugin-settings.ts`           | Claude settings/registry JSON parsing                                   |
+| `src/cli/lib/plugins/plugin-finder.ts`             | Plugin manifest JSON parsing                                            |
+| `src/cli/lib/plugins/plugin-validator.ts`          | Plugin/skill/agent frontmatter validation                               |
+| `src/cli/consts.ts`                                | File size limit constants                                               |
 
 ---
 
@@ -75,7 +78,7 @@ Every command extends `BaseCommand` and defines `static flags`. oclif handles ty
 | `compile`           | `commands/compile.ts`           | `--verbose` (boolean), `--agent-source` (string)                                                                                                                                           |
 | `list`              | `commands/list.tsx`             | (base only)                                                                                                                                                                                |
 | `eject`             | `commands/eject.ts`             | `--force` (boolean), `--output` (string), `--refresh` (boolean)                                                                                                                            |
-| `search`            | `commands/search.tsx`           | `--interactive` (boolean), `--category` (string), `--refresh` (boolean), `--json` (boolean)                                                                                                |
+| `search`            | `commands/search.ts`            | `query` (positional, required); `baseFlags = {}` (inherits none)                                                                                                                           |
 | `update`            | `commands/update.tsx`           | `--yes` (boolean), `--no-recompile` (boolean)                                                                                                                                              |
 | `uninstall`         | `commands/uninstall.tsx`        | `--yes` (boolean), `--all` (boolean)                                                                                                                                                       |
 | `validate`          | `commands/validate.ts`          | `--verbose` (boolean), `--all` (boolean), `--plugins` (boolean)                                                                                                                            |
@@ -113,14 +116,14 @@ Default size limit: `MAX_CONFIG_FILE_SIZE` (1 MB, in `consts.ts`).
 
 Callers:
 
-| Caller                         | File                              | Schema Used                                            |
-| ------------------------------ | --------------------------------- | ------------------------------------------------------ |
-| `loadProjectConfigFromDir()`   | `configuration/project-config.ts` | `projectConfigLoaderSchema` (via raw load + safeParse) |
-| `loadGlobalSourceConfig()`     | `configuration/config.ts`         | `projectSourceConfigSchema`                            |
-| `validateFile()` (config mode) | `schema-validator.ts`             | Various (per `VALIDATION_TARGETS`)                     |
-| Skill categories loader        | via `schema-validator.ts`         | `skillCategoriesFileSchema`                            |
-| Skill rules loader             | via `schema-validator.ts`         | `skillRulesFileSchema`                                 |
-| Stacks loader                  | via `schema-validator.ts`         | `stacksConfigSchema`                                   |
+| Caller                       | File                              | Schema Used                                            |
+| ---------------------------- | --------------------------------- | ------------------------------------------------------ |
+| `loadProjectConfigFromDir()` | `configuration/project-config.ts` | `projectConfigLoaderSchema` (via raw load + safeParse) |
+| `loadGlobalSourceConfig()`   | `configuration/config.ts`         | `projectSourceConfigSchema`                            |
+| `validateTsConfig()`         | `source-validator.ts` (internal)  | Passed by caller for each config file                  |
+| `loadSkillCategories()`      | `matrix/matrix-loader.ts`         | `skillCategoriesFileSchema`                            |
+| `loadSkillRules()`           | `matrix/matrix-loader.ts`         | `skillRulesFileSchema`                                 |
+| `loadStacks()`               | `stacks/stacks-loader.ts`         | `stacksConfigSchema`                                   |
 
 ### 2.3 Direct YAML Parse + Zod safeParse (Production Call Sites)
 
@@ -178,10 +181,16 @@ Config writer uses `JSON.parse(JSON.stringify(x))` to strip undefined values bef
 
 ### 3.2 Config Types Writer
 
-| Function                       | File                                   | What It Writes                                  | Where                           |
-| ------------------------------ | -------------------------------------- | ----------------------------------------------- | ------------------------------- |
-| `writeStandaloneConfigTypes()` | `installation/local-installer.ts`      | Narrowed union types (SkillId, AgentName, etc.) | `.claude-src/config-types.ts`   |
-| `getGlobalConfigTypesPath()`   | `configuration/config-types-writer.ts` | (reads, not writes)                             | `~/.claude-src/config-types.ts` |
+| Function                             | File                                   | What It Writes                                                       | Where                                   |
+| ------------------------------------ | -------------------------------------- | -------------------------------------------------------------------- | --------------------------------------- |
+| `writeStandaloneConfigTypes()`       | `installation/local-installer.ts`      | Fully inlined union types (global path only)                         | `~/.claude-src/config-types.ts`         |
+| `regenerateConfigTypes()`            | `configuration/config-types-writer.ts` | Project config-types.ts; emits import-from-global when global exists | `<project>/.claude-src/config-types.ts` |
+| `generateConfigTypesSource()`        | `configuration/config-types-writer.ts` | Standalone union source string                                       | Returns string                          |
+| `generateProjectConfigTypesSource()` | `configuration/config-types-writer.ts` | Project source extending global types via `import type`              | Returns string                          |
+| `loadConfigTypesDataInBackground()`  | `configuration/config-types-writer.ts` | (reads matrix+agents for regen)                                      | Loads in background                     |
+| `getGlobalConfigTypesPath()`         | `configuration/config-types-writer.ts` | (reads, not writes)                                                  | `~/.claude-src/config-types.ts`         |
+
+**Writer Selection Rule (D-228):** Project path writes go through `regenerateConfigTypes()` — it detects an existing global install and emits `import type { SkillId as GlobalSkillId, ... } from "<relpath>/config-types"` instead of duplicating global unions. Global path writes use `writeStandaloneConfigTypes()` directly. Never call `writeStandaloneConfigTypes()` for a project path — it bypasses the import-from-global branch.
 
 ### 3.3 Skill Copier
 
@@ -193,11 +202,14 @@ Path traversal validation via `validateSkillPath()` in `skill-copier.ts` -- reso
 
 ### 3.4 Local Installer
 
-| Function                       | File                              | What It Writes                            | Where                                        |
-| ------------------------------ | --------------------------------- | ----------------------------------------- | -------------------------------------------- |
-| `writeScopedConfigs()`         | `installation/local-installer.ts` | Scoped config.ts files (global + project) | `.claude-src/config.ts` per scope            |
-| `compileAndWriteAgents()`      | `installation/local-installer.ts` | Compiled agent markdown files             | `.claude/agents/<name>.md` (project or `~/`) |
-| `writeStandaloneConfigTypes()` | (called from local-installer)     | Config types                              | `.claude-src/config-types.ts`                |
+| Function                             | File                              | What It Writes                                         | Where                                                |
+| ------------------------------------ | --------------------------------- | ------------------------------------------------------ | ---------------------------------------------------- |
+| `writeScopedConfigs()`               | `installation/local-installer.ts` | Scoped config.ts files (global + project)              | `.claude-src/config.ts` per scope                    |
+| `compileAndWriteAgents()`            | `installation/local-installer.ts` | Compiled agent markdown files                          | `.claude/agents/<name>.md` (project or `~/`)         |
+| `propagateGlobalChangesToProjects()` | `installation/local-installer.ts` | Re-writes project config-types for registered projects | each tracked project's `.claude-src/config-types.ts` |
+| `writeStandaloneConfigTypes()`       | `installation/local-installer.ts` | Inlined global unions (global path only, see 3.2)      | `~/.claude-src/config-types.ts`                      |
+
+Project-scoped `config-types.ts` writes delegate to `regenerateConfigTypes()` (see 3.2).
 
 ### 3.5 Compiler Agent Output
 
@@ -208,7 +220,16 @@ Path traversal validation via `validateSkillPath()` in `skill-copier.ts` -- reso
 
 Template root resolution in `createLiquidEngine()` in `compiler.ts`: checks local `.claude-src/agents/_templates/`, legacy `.claude/templates/`, then CLI built-in `DIRS.templates`.
 
-### 3.6 Skill Metadata Injection
+### 3.6 Per-Skill Source Propagation (D-217)
+
+| Function                     | File                              | Input                            | Output                                     |
+| ---------------------------- | --------------------------------- | -------------------------------- | ------------------------------------------ |
+| `derivePluginRef()`          | `stacks/stack-plugin-compiler.ts` | `Skill.source` (per-skill field) | `${id}:${id}` when non-eject/non-undefined |
+| `buildSkillRefsFromConfig()` | `resolver/*`                      | `SkillConfig.source` per entry   | `SkillReference` with `source` propagated  |
+
+**Contract (D-217):** `SkillConfig.source` on each skill config entry is authoritative for that skill's install mode. A skill renders a plugin reference (`${id}:${id}`) only when `skill.source` is defined and not `"eject"`. `undefined` source (user-authored local skills) and `"eject"` both fall through to bare id. There is no agent-level `installMode` override -- removing that dead plumbing from wrappers is covered in the D-217 finding.
+
+### 3.7 Skill Metadata Injection
 
 | Function                     | File                       | What It Writes                        | Where                   |
 | ---------------------------- | -------------------------- | ------------------------------------- | ----------------------- |
@@ -253,7 +274,7 @@ All three validate: non-empty, length limit, no control characters (`[\x00-\x08\
 | Property         | Value                                                                    |
 | ---------------- | ------------------------------------------------------------------------ |
 | **Location**     | `src/cli/lib/configuration/config.ts`                                    |
-| **Entry points** | `resolveSource()`, `resolveAgentsSource()`                               |
+| **Entry points** | `resolveSource()`, `resolveAllSources()`                                 |
 | **Applied to**   | `--source` flag, `AGENTS_INC_SOURCE` env var, config file `source` field |
 
 **Checks performed:**

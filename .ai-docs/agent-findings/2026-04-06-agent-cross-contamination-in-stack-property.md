@@ -10,6 +10,8 @@ reporting_agent: orchestrator
 category: architecture
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: buildEjectConfig uses buildStackProperty for per-agent stack; D-220 stack ownership model
 ---
 
 ## What Was Wrong

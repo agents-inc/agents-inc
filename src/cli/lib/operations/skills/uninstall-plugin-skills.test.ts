@@ -12,6 +12,7 @@ import { claudePluginUninstall } from "../../../utils/exec.js";
 const mockClaudePluginUninstall = vi.mocked(claudePluginUninstall);
 
 const PROJECT_DIR = "/tmp/test-project";
+const MARKETPLACE = "agents-inc-marketplace";
 
 function makeSkillConfig(
   id: string,
@@ -33,16 +34,16 @@ describe("uninstallPluginSkills", () => {
       makeSkillConfig("api-framework-hono", "global"),
     ];
 
-    const result = await uninstallPluginSkills(skillIds, oldSkills, PROJECT_DIR);
+    const result = await uninstallPluginSkills(skillIds, oldSkills, MARKETPLACE, PROJECT_DIR);
 
     expect(mockClaudePluginUninstall).toHaveBeenCalledTimes(2);
     expect(mockClaudePluginUninstall).toHaveBeenCalledWith(
-      "web-framework-react",
+      `web-framework-react@${MARKETPLACE}`,
       "project",
       PROJECT_DIR,
     );
     expect(mockClaudePluginUninstall).toHaveBeenCalledWith(
-      "api-framework-hono",
+      `api-framework-hono@${MARKETPLACE}`,
       "user",
       PROJECT_DIR,
     );
@@ -55,10 +56,10 @@ describe("uninstallPluginSkills", () => {
     const skillIds = ["web-framework-react" as SkillId];
     const oldSkills: SkillConfig[] = [];
 
-    await uninstallPluginSkills(skillIds, oldSkills, PROJECT_DIR);
+    await uninstallPluginSkills(skillIds, oldSkills, MARKETPLACE, PROJECT_DIR);
 
     expect(mockClaudePluginUninstall).toHaveBeenCalledWith(
-      "web-framework-react",
+      `web-framework-react@${MARKETPLACE}`,
       "project",
       PROJECT_DIR,
     );
@@ -75,7 +76,7 @@ describe("uninstallPluginSkills", () => {
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error("Plugin not found"));
 
-    const result = await uninstallPluginSkills(skillIds, oldSkills, PROJECT_DIR);
+    const result = await uninstallPluginSkills(skillIds, oldSkills, MARKETPLACE, PROJECT_DIR);
 
     expect(result.uninstalled).toStrictEqual(["web-framework-react"]);
     expect(result.failed).toStrictEqual([{ id: "api-framework-hono", error: "Plugin not found" }]);
@@ -93,7 +94,7 @@ describe("uninstallPluginSkills", () => {
       makeSkillConfig("api-framework-hono", "global"),
     ];
 
-    const result = await uninstallPluginSkills(skillIds, oldSkills, PROJECT_DIR);
+    const result = await uninstallPluginSkills(skillIds, oldSkills, MARKETPLACE, PROJECT_DIR);
 
     expect(result.uninstalled).toStrictEqual([
       "web-framework-react",

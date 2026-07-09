@@ -12,46 +12,24 @@ System documentation for understanding the codebase.
 | ---------------------------------------------- | ---------------------------------------------------- |
 | [architecture.md](./reference/architecture.md) | System architecture, data flow, module relationships |
 | [commands.md](./reference/commands.md)         | CLI command reference with options and examples      |
-| [data-models.md](./reference/data-models.md)   | Type definitions, schemas, data structures           |
 
 ### Guides
 
 How-to documentation for common tasks.
 
-| Document                                                        | Content                                           |
-| --------------------------------------------------------------- | ------------------------------------------------- |
-| [creating-a-marketplace.md](./guides/creating-a-marketplace.md) | Manual and automated marketplace creation         |
-| [migrate-to-marketplace.md](./guides/migrate-to-marketplace.md) | Converting an existing CC repo into a marketplace |
+| Document                                                        | Content                                   |
+| --------------------------------------------------------------- | ----------------------------------------- |
+| [creating-a-marketplace.md](./guides/creating-a-marketplace.md) | Manual and automated marketplace creation |
 
 ### Features
 
 Feature development documentation organized by lifecycle stage.
-
-#### Active (In Development)
-
-| Feature                | Documents                                                                                                                        |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Scroll Viewport        | [research](./features/active/scroll-viewport/research.md), [implementation](./features/active/scroll-viewport/implementation.md) |
-| Stack Domain Filtering | [spec](./features/active/stack-domain-filtering/spec.md)                                                                         |
 
 #### Proposed (Research Only)
 
 | Document                                                 | Content                                                |
 | -------------------------------------------------------- | ------------------------------------------------------ |
 | [skill-consume.md](./features/proposed/skill-consume.md) | AI-assisted skill merging (`agentsinc consume`) design |
-| [skill-search.md](./features/proposed/skill-search.md)   | Enhanced search with fuzzy matching design             |
-
-#### Completed
-
-| Document                                                                                      | Content                                |
-| --------------------------------------------------------------------------------------------- | -------------------------------------- |
-| [multi-skill-categories-findings.md](./features/completed/multi-skill-categories-findings.md) | Multi-skill category research findings |
-
-### Archive
-
-| Document                                                                 | Content                                |
-| ------------------------------------------------------------------------ | -------------------------------------- |
-| [recent-claude-code-updates.md](./archive/recent-claude-code-updates.md) | Historical Claude Code feature updates |
 
 ## Task Tracking
 

@@ -24,7 +24,7 @@ You can also iterate on existing skills by ejecting them first (`agentsinc eject
 agentsinc new agent
 ```
 
-Scaffolds a new subagent with intro, workflow, and requirements partials. Custom subagents are composed from skills just like the built-in ones.
+Scaffolds a new subagent with `identity.md`, `playbook.md`, and optionally `output.md` / `critical-requirements.md`. Custom subagents are composed from skills just like the built-in ones.
 
 The `agent-summoner` subagent can help you design and build new agents.
 

@@ -10,6 +10,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: 12 mislabeled unit tests removed from install-mode integration file
 ---
 
 ## What Was Wrong

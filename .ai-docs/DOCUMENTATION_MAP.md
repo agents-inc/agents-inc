@@ -1,11 +1,15 @@
+---
+last_validated: 2026-04-21
+---
+
 # Documentation Map
 
-**Last Updated:** 2026-04-13
-**Total Areas:** 30 (18 original + 12 new from restructure)
-**Documented:** 30 (100%)
+**Last Updated:** 2026-04-21
+**Total Areas:** 32 (18 original + 14 new from restructure)
+**Documented:** 32 (100%)
 **In Progress:** 0
 **Needs Validation:** 0
-**Last Validated:** 2026-04-13 (pass 24 -- Final sweep: cross-reference verification + DOCUMENTATION_MAP consistency + documentation-bible.md structure diagram update. Verified all `related:` frontmatter paths (50 files, all valid), all markdown links in reference docs (all valid), all pointer file redirect targets (9 pointers, all valid), all staleness dashboard entries (30 files, all exist on disk). Fixed 2 issues: added missing `features/configuration.md` and `features/wizard-flow.md` to DOCUMENTATION_MAP directory structure diagram; updated documentation-bible.md directory structure to include Phase 2+3 subdirectories. Previous: pass 23 -- Concepts + Types + Config validation)
+**Last Validated:** 2026-04-21 (iter 87 re-ran iter-50's 5-invariant audit: (1) header counts 32/18/14 match table rows ✓; (2) no duplicate dashboard rows ✓; (3) cross-surface sync — all 32 Reference-table `Last Validated` = 2026-04-21, all 32 dashboard Days Stale = 0, all 41 disk frontmatter `last_validated: 2026-04-21` ✓; (4) disk-vs-map 41 files = 32 tracked + 9 pointers ✓; (5) date basis = today ✓. No fixes required. Previous: iter 50 first formal audit, iter 43 ad-hoc.)
 
 ## Status Legend
 
@@ -21,46 +25,55 @@ Machine-readable staleness tracker. Thresholds from `standards/documentation-bib
 
 ### Original Files (preserved, authoritative until cleanup)
 
-| Doc                       | Days Stale | Threshold | Status |
-| ------------------------- | ---------- | --------- | ------ |
-| architecture-overview.md  | 0          | 30        | OK     |
-| commands.md               | 0          | 14        | OK     |
-| type-system.md            | 0          | 14        | OK     |
-| store-map.md              | 0          | 7         | OK     |
-| compilation-pipeline.md   | 11         | 14        | OK     |
-| configuration.md          | 0          | 14        | OK     |
-| wizard-flow.md            | 0          | 14        | OK     |
-| skills-and-matrix.md      | 11         | 14        | OK     |
-| plugin-system.md          | 11         | 14        | OK     |
-| component-patterns.md     | 0          | 14        | OK     |
-| utilities.md              | 11         | 14        | OK     |
-| test-infrastructure.md    | 0          | 14        | OK     |
-| operations-layer.md       | 11         | 14        | OK     |
-| agent-system.md           | 11         | 14        | OK     |
-| dependency-graph.md       | 11         | 14        | OK     |
-| boundary-map.md           | 11         | 14        | OK     |
-| state-transitions.md      | 0          | 14        | OK     |
-| findings-impact-report.md | 11         | 30        | OK     |
+| Doc                      | Days Stale | Threshold | Status |
+| ------------------------ | ---------- | --------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| architecture-overview.md | 0          | 30        | OK     | <!-- re-validated 2026-04-21 iter27: version 0.123.0→0.141.0; removed dead `build stack` subcommand (only marketplace.ts + plugins.ts exist); search.tsx→search.ts; removed deleted `info.ts` command entry; marked `new/` commands feature-gated; updated matrix/skill-resolution.ts entry (resolveRelationships is module-private; exports are synthesizeCategory + mergeMatrixWithSkills); expanded lib/configuration/ to list config-types-writer + project-config + default-*; expanded operations/skills list (uninstallPluginSkills, compareSkills); expanded operations/project list (detectBothInstallations); dropped stale Zod count (39); added Section 10 config-types writer selection rule (D-228: project path → regenerateConfigTypes, global path → writeStandaloneConfigTypes); added Section 13 Per-Skill Source (D-217: SkillConfig.source authoritative; no agent-level installMode; D-229 hard-error on plugin failure); added Section 14 Projects Array Lifecycle (global-only, used by propagateGlobalChangesToProjects); renumbered Stack Grouping → Section 15; added concepts/tombstone-pattern + concepts/scope-system + config/config-writer to related frontmatter --> |
+| commands.md              | 0          | 14        | OK     | <!-- re-validated 2026-04-21 iter25: removed dead `build stack` entry (file does not exist in src/cli/commands/build/, only marketplace.ts + plugins.ts); fixed `search` entry (search.ts not .tsx, query required, zero flags — baseFlags overridden to {}); fixed `doctor` flags (no flags, baseFlags overridden, setVerbose(true) unconditional); added feature-gate notes on `new skill`/`new agent`/`new marketplace` (all three gated behind FEATURE_FLAGS.*_COMMAND, currently false in src/cli/lib/feature-flags.ts); added Feature-Gated Commands section -->                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| type-system.md           | 0          | 14        | OK     | <!-- CONVERTED TO POINTER 2026-04-21 iter41: original was 469 lines, heavily drifted (claimed 161 SkillIds / 51 Categories — actually 222 / 89; missing D-231 version removal on ProjectConfig; missing D-217 source field on SkillConfig/SkillReference/Skill; missing SkillConfig + AgentScopeConfig + SkillDefinition entries that exist in types/core-types.md). Content already duplicated in types/core-types.md + types/operations-types.md + types/zod-schemas.md (all iter 23/24/41 validated). Replaced body with pointer + semantic-shift index + verified counts. Rationale: maintaining two parallel views drifts; splits are the source of truth going forward. -->                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| store-map.md             | 0          | 7         | OK     | <!-- re-validated 2026-04-21 iter14: expanded \_stackDomainSelections / installedSkillConfigs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | installedAgentConfigs snapshot semantics (set once by hydrateWizardStore, never modified post-hydration, 3 roles: diff baseline / tombstone probe / locked-row source); documented focusedSkillId | focusedAgentId post-mount race; split domainSelections (selection intent) vs skillConfigs (saved-config shape) semantics; tightened toggleTechnology guard clauses (3 guards); documented selectedAgents | agentConfigs pairing + D-215 retention rationale; added globalPreselections | globalAgentPreselections init-only lifetime; added full Internal Helpers (reconcileSkillConfigs, restoreSkillConfigs, applyAgentToggle, findIncompatibleWebSkills, sortDomainsCanonically, resolveSkillForPopulation, etc.); added Hydration Entry Point section documenting hydrateWizardStore(HydrateOptions) --> |
+| compilation-pipeline.md  | 0          | 14        | OK     | <!-- Reference table shows Last Validated 2026-04-21; dashboard row previously read 11 days stale — corrected iter 43 consistency audit. -->                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+
+| configuration.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter21: added D-220 options (newlyAddedSkillIds, scopeEligibilityGained, existingStack) on generateProjectConfigFromSkills; added scopeEligibilityKey function entry; added caller-contract invariant (skillConfigs + agentConfigs required when selectedAgents non-empty, getScopeOrThrow hard-errors); expanded splitConfigByScope partitioning list to cover selectedAgents + agents split (D-222); added cross-link to config/scope-split.md; prior: D-228/D-229/D-231 drift sweep -->
+| wizard-flow.md | 0 | 14 | OK |
+| skills-and-matrix.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter26: verified all file paths + exported functions in matrix-loader.ts / skill-resolution.ts / source-loader.ts / multi-source-loader.ts still exist; added Known Limitations section cross-ref'd to D-214 (9 gaps: duplicate-IDs-silent-overwrite #1, invalid-YAML-crashes-whole-matrix #2, custom-slugs-not-in-slugMap #3, partial-requires-resolution #4, extras-drop-skill-rules #5, auto-synth-fires-for-builtins #6, unresolved-slugs-dropped-pre-health-check #7, half-written-duplicate-slug-reverse-map #8, double-initializeMatrix #9); tightened Data Flow steps 4-5-6 with inline limitation pointers; tightened resolveRelationships note -->
+
+| plugin-system.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter18: added D-217 per-skill source authoritative section + dead-plumbing note; added D-229 hard-error contract on PluginInstallResult.failed before writeConfigAndCompile; added Plugin Reference Formats table distinguishing {id}@{marketplace} (install shell) from ${id}:${id} (compiled agent); documented latent sourceById dual-scope last-write-wins in buildCompileAgents feeder path -->
+| component-patterns.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter15: removed stale HOTKEY_COPY_LINK row (removed in 0.130.0); rewrote SkillAgentSummary diff-baseline section to reflect D-230/D-232 slot-occupancy match (baseline is NOT pre-filtered; tombstones occupy (id,scope) slot; only prevSourceMap filters to active entries); added tombstone dedup rationale; added init-mode gating of removedGlobal*; added CategoryGrid mount-effect focus seeding pattern (mountedRef + useEffect, Scenario B race reference); added tombstone-pattern + guard-pattern to related frontmatter -->
+| utilities.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter31: fixed message counts (SUCCESS 5->4, STATUS 12->11); removed non-existent UI_LAYOUT/UI_MESSAGES from UI Constants (not defined in consts.ts); added CHECK/CROSS to UI_SYMBOLS list; added pointer to src/cli/lib/exit-codes.ts for EXIT_CODES (lives outside utils/); expanded typed-object section with CLAUDE.md mandate rationale; rewrote stale yaml.ts "DELETED" note into neutral guidance; expanded ERROR/SUCCESS/STATUS/INFO example lists; tightened Claude CLI wrappers section with scope+projectDir contract -->
+
+| test-infrastructure.md | 0 | 14 | OK | <!-- iter42 converted to pointer. Body was drifted (2026-04-13, missing dual-scope POM, waitForStableRender, BaseStep contract, test-fs-utils/expected-values splits) while testing/* children were current (2026-04-21). Now matches type-system.md pointer pattern. -->
+| operations-layer.md | 0 | 14 | OK | <!-- Reference table shows Last Validated 2026-04-21; dashboard row previously read 11 days stale — corrected iter 43 consistency audit. -->
+| agent-system.md | 0 | 14 | OK | <!-- Reference table shows Last Validated 2026-04-21; dashboard row previously read 11 days stale — corrected iter 43 consistency audit. -->
+
+| dependency-graph.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter32: fixed search.tsx→search.ts filename; removed non-existent `build stack` command row (file deleted); removed `components/skill-search/` component row; updated info-panel.tsx import (matrix→findStack); added skill-agent-summary.tsx row (matrix); added init direct-lib imports (detectInstallation, detectGlobalInstallation, loadProjectConfigFromDir replacing stale detectProjectInstallation); added edit Installation type; added doctor filterExcludedEntries; added uninstall deregisterProjectPath; rewrote validate direct-lib imports to match current source; added new/skill schemas+feature-flags; added new/agent feature-flags+ConfigTypesBackgroundData; added new/marketplace feature-flags; added Key Observations 8-10 (config-types-writer routing D-228, removed build stack, search rewrite) -->
+
+| boundary-map.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter33: fixed search.tsx→search.ts filename + flags (query positional, baseFlags={}); added config-types-writer.ts + local-installer.ts + stack-plugin-compiler.ts to Key Files; rewrote Section 3.2 Config Types Writer to distinguish D-228 writer selection boundary (project path → regenerateConfigTypes with import-from-global branch; global path → writeStandaloneConfigTypes standalone); added generateConfigTypesSource, generateProjectConfigTypesSource, loadConfigTypesDataInBackground; added propagateGlobalChangesToProjects row to Section 3.4; added Section 3.6 Per-Skill Source Propagation (D-217) documenting derivePluginRef contract + SkillConfig.source authoritativeness + no agent-level installMode; renumbered Skill Metadata Injection 3.6→3.7 -->
+
+| state-transitions.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter13: removed stale reference to deleted `src/cli/components/hooks/use-wizard-initialization.ts`; rewrote Hydration section against actual `hydrateWizardStore()` in wizard-store.ts (empty history + direct jump, not step walk); documented that `focusedSkillId` is seeded asynchronously by CategoryGrid mount effect (Scenario B race); added Tombstone Lifecycle Transitions (active-project↔dual-scope↔global-only per D-223/D-224), Diff Projection section (D-230/D-232 pre-filter baseline), and Cancellation/Exit transitions -->
+| findings-impact-report.md | 0 | 30 | OK | <!-- FULL REGENERATION 2026-04-21 iter40: replaced 2026-03-28 snapshot + incremental sections with consolidated 2026-04-03..2026-04-21 report (55 findings aggregated); Incremental Updates reset to empty; primary tables: root-cause, severity, category, domain, per-reference-doc impact, per-source-file churn, per-test-area churn; 10 systemic patterns (A-J, replacing old 1-8); 64 deduplicated standards proposals; timeline rollup; open vs closed status (37 closed, 18 open); next full regeneration triggered when >10 entries accumulate in Incremental Updates per documentation-bible rule -->
 
 ### New Files (from Phases 2+3 restructure)
 
-| Doc                           | Days Stale | Threshold | Status |
-| ----------------------------- | ---------- | --------- | ------ |
-| testing/infrastructure.md     | 0          | 14        | OK     |
-| testing/factories.md          | 0          | 14        | OK     |
-| testing/mock-data.md          | 0          | 14        | OK     |
-| testing/e2e-infrastructure.md | 0          | 14        | OK     |
-| types/core-types.md           | 0          | 14        | OK     |
-| types/operations-types.md     | 0          | 14        | OK     |
-| types/zod-schemas.md          | 0          | 14        | OK     |
-| concepts/scope-system.md      | 0          | 14        | OK     |
-| concepts/tombstone-pattern.md | 0          | 14        | OK     |
-| concepts/guard-pattern.md     | 0          | 14        | OK     |
-| commands/edit.md              | 0          | 14        | OK     |
-| config/config-writer.md       | 0          | 14        | OK     |
+| Doc                       | Days Stale | Threshold | Status |
+| ------------------------- | ---------- | --------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| testing/infrastructure.md | 0          | 14        | OK     | <!-- re-validated 2026-04-21 iter34: removed dead stack.test.ts + schema-validator.test.ts entries; added coverage config + vitest.setup.ts section (homedir mock + matrix init + wizard-store reset); added helpers/isolated-home.ts + mock-data/mock-source-files.ts + writeTestPackageJson; added setupIsolatedHome code pattern; fixed test count estimate --> |
+
+| testing/factories.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter36: confirmed 3-dir split (factories/ helpers/ assertions/); fixed createMockMarketplacePlugin signature (added category? param); added setupIsolatedHome + writeTestPackageJson to helpers table; added renderAgentMd to content generators. All 34 factory signatures verified against actual exports -->
+| testing/mock-data.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter37: removed stale claims (PIPELINE_MATRIX, *_EXTRACTED, SINGLE_AGENT_STACK_TEMPLATE, MULTI_AGENT_STACK_TEMPLATE — none exist); added MULTI_STYLING_MATRIX; added missing mock-source-files.ts section (6 VALID_*_FILE fixtures); fixed CATEGORY_GRID_SKILLS count 31→30; enumerated HEALTH_*_MATRIX (12) + ALL_SKILLS_*_MATRIX (8) + pre-built matrix constants + BUILD_STEP matrix names. All SKILLS, TEST_CATEGORIES, AGENT_DEFS verified against source -->
+| testing/e2e-infrastructure.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter35: deeper pass on non-keypress content. Fixed file counts (interactive 32→33, lifecycle 25→45); added missing files (info-panel-scope-toggle-diff, edit-plugin-hard-error, edit-wizard-dual-scope-indicator, plugin-install-failure-hard-error, tombstone-cleanup-PtoG-restoration, ~20 scope-toggle/lifecycle adds); added `assertions/` dir entry; fixed split note (search-interactive doesn't exist; removed build-stack reference); expanded Constants table (added WIZARD_TRANSITION=45s, PLUGIN_TEST=90s, INTERNAL_RETRIES, full EXIT_CODES + SOURCE_PATHS); added new E2E Helpers section (CLI_ROOT, BIN_RUN, FORKED_FROM_METADATA, runCLI, createTempDir, delay, stripAnsi, ensureBinaryExists, writeProjectConfig, createLocalSkill, createPermissionsFile, addForkedFromMetadata, injectMarketplaceIntoConfig, getEjectedTemplatePath, readMarketplaceJson, agentsPath/skillsPath, HOME isolation pattern); added Test-Lifecycle Patterns section (beforeAll/afterAll/afterEach); clarified vitest.config.ts (no setupFiles, no poolOptions); tightened expected-values.ts (9-skill tuple, WEB_AND_API getter). Previous: iter 9 added keypress rule. -->
+| types/core-types.md | 0 | 14 | OK |
+| types/operations-types.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter23: added Key Type Shapes section with explicit shapes for PluginInstallResult (D-229), PluginUninstallResult, MarketplaceResult (lazy), CompilationResult, CompileAgentsOptions (installMode still alive), LoadedSource, ConfigWriteResult, DiscoveredSkills, DetectedProject, BothInstallations, AgentDefs, SkillCopyResult, ScopedSkillDir(sResult), SkillComparisonResults, SkillMatchResult; confirmed all 17 types + file paths exist in src/cli/lib/operations/; cross-ref to D-229 finding -->
+| types/zod-schemas.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter24: confirmed 39 exported schemas match code; D-231 cross-ref on projectConfigLoaderSchema (version field removed); fixed utility-function drift (formatZodErrors → formatZodIssues, added isCustomMetadata) -->
+| concepts/scope-system.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter38: deep pass. Confirmed SkillScope = "project"|"global" in config.ts; resolveInstallPaths(projectDir, scope="project") default + base = os.homedir() vs projectDir verified; splitConfigByScope tombstone→project routing verified; toggleSkillScope/toggleAgentScope G→P gated on wasInstalledGlobally, P→G unconditional cleanup (D-224); isEditingFromGlobalScope asymmetry documented (init uses fs.realpathSync both sides, edit uses plain `===` on cwd); isInitMode = !initialStep via hydrateWizardStore; writeScopedConfigs home-dir fast path uses fs.realpathSync(projectDir)===fs.realpathSync(homeDir). Added: InstallPaths return shape, P→G/G→P gating rules, invariant (no active+tombstone at same (id,scope)), Global Visibility From Project Scope section. -->
+| concepts/tombstone-pattern.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter11 (expanded: D-223 preservation in populateFromSkillIds, D-224 unconditional P→G cleanup invariant, D-230/D-232 slot-occupancy diff baseline in skill-agent-summary.tsx, D-233 known gap in applySkillRemoval dual-scope branch, compound-key survival through mergeConfigs, tombstone-to-project routing cross-refs) -->
+| concepts/guard-pattern.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter12 (added: Only-Skill Deselect guard, Scope Toggle Global-Context hotkey guard, scope silent-guards for direct action callers, shouldIncludeTriple stack-build predicate, warn-and-return table for setSourceSelection/setEnabledSources/bindSkill/populateFromSkillIds; new "Silent Guards and Race Surfaces" section mapping Scenario B focusedSkillId race; fixed outdated "No-op (silent)" claim for agent scope — hotkey layer emits toast, store silent guard only catches direct callers) -->
+| commands/edit.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 (D-228/D-229 drift sweep: hard-error interrupt, writer selection, no-change exit) -->
+| config/config-writer.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter8 (added sibling "Registration observability" subsection: what the stale-filter drops + trigger, user-visible-signal table, relation to propagation gap, cross-link to 2026-04-21-registerProjectPath-sweep-observability-gap.md finding; iter7 added "Propagation observability" subsection) -->
+| config/config-merger.md | 0 | 14 | OK | <!-- created 2026-04-21 iter4 (mergeConfigs compound-key + replace-on-match, mergeGlobalConfigs additive, additiveMergeStack triple rule, tombstone flow, projects-field-drop) -->
+| config/scope-split.md | 0 | 14 | OK | <!-- created 2026-04-21 iter5 (splitConfigByScope partition rules, tombstone-to-project routing, scopeEligibilityKey, D-220 delta pipeline: computeNewlyAddedSkillIds + computeScopeEligibilityGained, shouldIncludeTriple decision table) -->
 
 **Status values:** `OK` = within threshold, `DUE` = at or past threshold, `OVERDUE` = at or past 2x threshold.
-**Date basis:** 2026-04-13. All new files created 2026-04-13. Original files: architecture-overview.md, commands.md, configuration.md, type-system.md, component-patterns.md, store-map.md, wizard-flow.md, state-transitions.md, and test-infrastructure.md updated 2026-04-13; all others last validated 2026-04-02.
+**Date basis:** 2026-04-21. All rows reflect Last Validated dates in the Reference tables below. New Files count is 14 (12 from Pass 20 + config-merger.md and scope-split.md added iter 4-5). Two pointer-only files (`type-system.md`, `test-infrastructure.md`) share a single dashboard row each — the body content lives in the split children (types/_, testing/_).
 
 ## Reference Documentation
 
@@ -83,7 +96,7 @@ reference/
     edit.md                  # Detailed edit command (new content)
   wizard/
     flow.md                  # -> features/wizard-flow.md (pointer)
-    state-transitions.md     # -> state-transitions.md (pointer)
+    state-transitions.md     # CANONICAL (flipped iter 102; root state-transitions.md is now a pointer)
     store-map.md             # -> store-map.md (pointer)
     component-patterns.md    # -> component-patterns.md (pointer)
   types/
@@ -93,6 +106,8 @@ reference/
   config/
     configuration.md         # -> features/configuration.md (pointer)
     config-writer.md         # Split from configuration.md (full content)
+    config-merger.md         # Merge contract: mergeConfigs + mergeGlobalConfigs (new, 2026-04-21)
+    scope-split.md           # splitConfigByScope + scopeEligibilityKey + D-220 delta pipeline (new, 2026-04-21)
   testing/
     infrastructure.md        # Split from test-infrastructure.md (full content)
     factories.md             # Split from test-infrastructure.md (full content)
@@ -113,68 +128,75 @@ reference/
 
 ### Original Files (preserved, authoritative)
 
-| Area                  | Status | File                                         | Last Updated | Last Validated | Next Action          |
-| --------------------- | ------ | -------------------------------------------- | ------------ | -------------- | -------------------- |
-| Architecture Overview | [DONE] | `reference/architecture-overview.md`         | 2026-04-13   | 2026-04-13     | Validate in 30 days  |
-| Commands Reference    | [DONE] | `reference/commands.md`                      | 2026-04-13   | 2026-04-13     | Validate in 14 days  |
-| Type System           | [DONE] | `reference/type-system.md`                   | 2026-04-13   | 2026-04-13     | Validate in 14 days  |
-| State Management      | [DONE] | `reference/store-map.md`                     | 2026-04-13   | 2026-04-13     | Validate in 7 days   |
-| Compilation Pipeline  | [DONE] | `reference/features/compilation-pipeline.md` | 2026-04-02   | 2026-04-02     | Validate in 14 days  |
-| Configuration System  | [DONE] | `reference/features/configuration.md`        | 2026-04-13   | 2026-04-13     | Validate in 14 days  |
-| Wizard Flow           | [DONE] | `reference/features/wizard-flow.md`          | 2026-04-13   | 2026-04-13     | Validate in 14 days  |
-| Skills & Matrix       | [DONE] | `reference/features/skills-and-matrix.md`    | 2026-04-02   | 2026-04-02     | Validate in 14 days  |
-| Plugin System         | [DONE] | `reference/features/plugin-system.md`        | 2026-04-02   | 2026-04-02     | Validate in 14 days  |
-| Component Patterns    | [DONE] | `reference/component-patterns.md`            | 2026-04-13   | 2026-04-13     | Validate in 14 days  |
-| Utilities Reference   | [DONE] | `reference/utilities.md`                     | 2026-04-02   | 2026-04-02     | Validate in 14 days  |
-| Test Infrastructure   | [DONE] | `reference/test-infrastructure.md`           | 2026-04-13   | 2026-04-13     | Validate in 14 days  |
-| Operations Layer      | [DONE] | `reference/features/operations-layer.md`     | 2026-04-02   | 2026-04-02     | Validate in 14 days  |
-| Agent System          | [DONE] | `reference/features/agent-system.md`         | 2026-04-02   | 2026-04-02     | Validate in 14 days  |
-| Dependency Graph      | [DONE] | `reference/dependency-graph.md`              | 2026-04-02   | 2026-04-02     | Validate in 14 days  |
-| Boundary Map          | [DONE] | `reference/boundary-map.md`                  | 2026-04-02   | 2026-04-02     | Validate in 14 days  |
-| State Transitions     | [DONE] | `reference/state-transitions.md`             | 2026-04-13   | 2026-04-13     | Validate in 14 days  |
-| Findings Impact       | [DONE] | `reference/findings-impact-report.md`        | 2026-04-02   | 2026-04-02     | Regenerate as needed |
+| Area                  | Status | File                                                                                                   | Last Updated | Last Validated | Next Action                                                                                                    |
+| --------------------- | ------ | ------------------------------------------------------------------------------------------------------ | ------------ | -------------- | -------------------------------------------------------------------------------------------------------------- |
+| Architecture Overview | [DONE] | `reference/architecture-overview.md`                                                                   | 2026-04-13   | 2026-04-21     | Validate in 30 days                                                                                            |
+| Commands Reference    | [DONE] | `reference/commands/index.md` (canonical; `reference/commands.md` is now a pointer)                    | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Type System           | [DONE] | `reference/type-system.md`                                                                             | 2026-04-13   | 2026-04-21     | Validate in 14 days                                                                                            |
+| State Management      | [DONE] | `reference/store-map.md`                                                                               | 2026-04-21   | 2026-04-21     | Validate in 7 days                                                                                             |
+| Compilation Pipeline  | [DONE] | `reference/features/compilation-pipeline.md`                                                           | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Configuration System  | [DONE] | `reference/features/configuration.md`                                                                  | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Wizard Flow           | [DONE] | `reference/features/wizard-flow.md`                                                                    | 2026-04-13   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Skills & Matrix       | [DONE] | `reference/features/skills-and-matrix.md`                                                              | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Plugin System         | [DONE] | `reference/features/plugin-system.md`                                                                  | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Component Patterns    | [DONE] | `reference/component-patterns.md`                                                                      | 2026-04-13   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Utilities Reference   | [DONE] | `reference/utilities.md`                                                                               | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Test Infrastructure   | [DONE] | `reference/test-infrastructure.md`                                                                     | 2026-04-13   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Operations Layer      | [DONE] | `reference/features/operations-layer.md`                                                               | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Agent System          | [DONE] | `reference/features/agent-system.md`                                                                   | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Dependency Graph      | [DONE] | `reference/dependency-graph.md`                                                                        | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Boundary Map          | [DONE] | `reference/boundary-map.md`                                                                            | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
+| State Transitions     | [DONE] | `reference/wizard/state-transitions.md` (canonical; `reference/state-transitions.md` is now a pointer) | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
+| Findings Impact       | [DONE] | `reference/findings-impact-report.md`                                                                  | 2026-04-21   | 2026-04-21     | Regenerated iter 92 (106 findings; rollups refreshed; Incremental Updates reset); next trigger >10 new entries |
 
 ### New Files (Phase 2+3 restructure, 2026-04-13)
 
 | Area                    | Status | File                                      | Last Updated | Last Validated | Next Action         |
 | ----------------------- | ------ | ----------------------------------------- | ------------ | -------------- | ------------------- |
-| Test Infrastructure     | [DONE] | `reference/testing/infrastructure.md`     | 2026-04-13   | 2026-04-13     | Validate in 14 days |
-| Test Factories          | [DONE] | `reference/testing/factories.md`          | 2026-04-13   | 2026-04-13     | Validate in 14 days |
-| Test Mock Data          | [DONE] | `reference/testing/mock-data.md`          | 2026-04-13   | 2026-04-13     | Validate in 14 days |
-| E2E Infrastructure      | [DONE] | `reference/testing/e2e-infrastructure.md` | 2026-04-13   | 2026-04-13     | Validate in 14 days |
-| Core Types              | [DONE] | `reference/types/core-types.md`           | 2026-04-13   | 2026-04-13     | Validate in 14 days |
-| Operations Types        | [DONE] | `reference/types/operations-types.md`     | 2026-04-13   | 2026-04-13     | Validate in 14 days |
-| Zod Schemas             | [DONE] | `reference/types/zod-schemas.md`          | 2026-04-13   | 2026-04-13     | Validate in 14 days |
-| Scope System            | [DONE] | `reference/concepts/scope-system.md`      | 2026-04-13   | 2026-04-13     | Validate in 14 days |
-| Tombstone Pattern       | [DONE] | `reference/concepts/tombstone-pattern.md` | 2026-04-13   | 2026-04-13     | Validate in 14 days |
-| Guard Pattern           | [DONE] | `reference/concepts/guard-pattern.md`     | 2026-04-13   | 2026-04-13     | Validate in 14 days |
-| Edit Command (Detailed) | [DONE] | `reference/commands/edit.md`              | 2026-04-13   | 2026-04-13     | Validate in 14 days |
-| Config Writer (Detail)  | [DONE] | `reference/config/config-writer.md`       | 2026-04-13   | 2026-04-13     | Validate in 14 days |
+| Test Infrastructure     | [DONE] | `reference/testing/infrastructure.md`     | 2026-04-13   | 2026-04-21     | Validate in 14 days |
+| Test Factories          | [DONE] | `reference/testing/factories.md`          | 2026-04-21   | 2026-04-21     | Validate in 14 days |
+| Test Mock Data          | [DONE] | `reference/testing/mock-data.md`          | 2026-04-21   | 2026-04-21     | Validate in 14 days |
+| E2E Infrastructure      | [DONE] | `reference/testing/e2e-infrastructure.md` | 2026-04-21   | 2026-04-21     | Validate in 14 days |
+| Core Types              | [DONE] | `reference/types/core-types.md`           | 2026-04-21   | 2026-04-21     | Validate in 14 days |
+| Operations Types        | [DONE] | `reference/types/operations-types.md`     | 2026-04-13   | 2026-04-21     | Validate in 14 days |
+| Zod Schemas             | [DONE] | `reference/types/zod-schemas.md`          | 2026-04-13   | 2026-04-21     | Validate in 14 days |
+| Scope System            | [DONE] | `reference/concepts/scope-system.md`      | 2026-04-21   | 2026-04-21     | Validate in 14 days |
+| Tombstone Pattern       | [DONE] | `reference/concepts/tombstone-pattern.md` | 2026-04-21   | 2026-04-21     | Validate in 14 days |
+| Guard Pattern           | [DONE] | `reference/concepts/guard-pattern.md`     | 2026-04-21   | 2026-04-21     | Validate in 14 days |
+| Edit Command (Detailed) | [DONE] | `reference/commands/edit.md`              | 2026-04-21   | 2026-04-21     | Validate in 14 days |
+| Config Writer (Detail)  | [DONE] | `reference/config/config-writer.md`       | 2026-04-21   | 2026-04-21     | Validate in 14 days |
+| Config Merger Contract  | [DONE] | `reference/config/config-merger.md`       | 2026-04-21   | 2026-04-21     | Validate in 14 days |
+| Config Scope Split      | [DONE] | `reference/config/scope-split.md`         | 2026-04-21   | 2026-04-21     | Validate in 14 days |
 
 ## Standards Documentation
 
 Prescriptive rules for code quality, testing, and content authoring. Lighter validation cadence -- validate when convention-keeper proposes updates, or quarterly.
 
-| Area                    | File                                  | Last Moved | Last Audited |
-| ----------------------- | ------------------------------------- | ---------- | ------------ |
-| Clean Code Standards    | `standards/clean-code-standards.md`   | 2026-03-25 | 2026-04-02   |
-| E2E Testing Bible       | `standards/e2e-testing-bible.md`      | 2026-03-25 | 2026-04-02   |
-| E2E Sub-Standards       | `standards/e2e/` (7 files)            | 2026-03-25 | 2026-04-02   |
-| Prompt Engineering      | `standards/prompt-bible.md`           | 2026-03-25 | 2026-04-02   |
-| Loop Prompts            | `standards/loop-prompts-bible.md`     | 2026-03-25 | 2026-04-02   |
-| Skill Atomicity         | `standards/skill-atomicity-bible.md`  | 2026-03-25 | 2026-04-02   |
-| Skill Atomicity Primer  | `standards/skill-atomicity-primer.md` | 2026-03-25 | 2026-04-02   |
-| TypeScript Types        | `standards/typescript-types-bible.md` | 2026-03-25 | 2026-04-02   |
-| Documentation Standards | `standards/documentation-bible.md`    | 2026-03-25 | 2026-04-02   |
-| Commit Protocol         | `standards/commit-protocol.md`        | 2026-03-25 | 2026-04-02   |
+| Area                          | File                                  | Last Moved | Last Audited | Scope disambiguator                                                                   |
+| ----------------------------- | ------------------------------------- | ---------- | ------------ | ------------------------------------------------------------------------------------- |
+| Clean Code Standards          | `standards/clean-code-standards.md`   | 2026-03-25 | 2026-04-02   |                                                                                       |
+| E2E Testing Bible             | `standards/e2e-testing-bible.md`      | 2026-03-25 | 2026-04-02   |                                                                                       |
+| E2E Sub-Standards             | `standards/e2e/` (7 files)            | 2026-03-25 | 2026-04-02   |                                                                                       |
+| Prompt Engineering (phrasing) | `standards/prompt-bible.md`           | 2026-03-25 | 2026-04-21   | XML tags, delegation prompt shape, per-delegation boilerplate — **what to say**       |
+| Loop Prompts (cadence)        | `standards/loop-prompts-bible.md`     | 2026-03-25 | 2026-04-21   | Ralph-loop iter discipline, completion promise, synthesis passes — **when/how often** |
+| Skill Atomicity               | `standards/skill-atomicity-bible.md`  | 2026-03-25 | 2026-04-02   |                                                                                       |
+| Skill Atomicity Primer        | `standards/skill-atomicity-primer.md` | 2026-03-25 | 2026-04-02   |                                                                                       |
+| TypeScript Types              | `standards/typescript-types-bible.md` | 2026-03-25 | 2026-04-02   |                                                                                       |
+| Documentation Standards       | `standards/documentation-bible.md`    | 2026-03-25 | 2026-04-21   |                                                                                       |
+| Commit Protocol               | `standards/commit-protocol.md`        | 2026-03-25 | 2026-04-02   |                                                                                       |
 
 ## Agent Findings Pipeline
 
 Sub-agent feedback loop for standards improvement. See [`agent-findings/README.md`](agent-findings/README.md) for pipeline details.
 
+## Agent Suggestions
+
+Forward-looking proposals (may or may not land). See [`agent-suggestions/README.md`](agent-suggestions/README.md) for the status enum (`proposal` / `approved` / `in-progress` / `mostly-completed` / `absorbed-informally` / `absorbed` / `rejected` / `superseded`) and resolution fields.
+
 ## Coverage Metrics
 
-**Source Files:** 317 TypeScript files in `src/cli/`
+**Source Files:** 328 TypeScript files in `src/cli/` (203 production + 125 co-located tests) -- verified 2026-04-21
+**E2E Suite:** 140 TypeScript files in `e2e/` (107 `*.test.ts` + 33 helpers/fixtures/pages)
 **All major systems documented:** Yes
 
 **Technical Areas:**
@@ -184,7 +206,7 @@ Sub-agent feedback loop for standards improvement. See [`agent-findings/README.m
 - Type System: [DONE] (`types/core-types.md` + `types/operations-types.md` + `types/zod-schemas.md` + `type-system.md`)
 - State Management: [DONE] (`wizard/store-map.md` + `store-map.md`)
 - Compilation Pipeline: [DONE]
-- Configuration: [DONE] (`config/configuration.md` + `config/config-writer.md` + `features/configuration.md`)
+- Configuration: [DONE] (`config/configuration.md` + `config/config-writer.md` + `config/config-merger.md` + `features/configuration.md`)
 - Wizard Flow: [DONE] (`wizard/flow.md` + `features/wizard-flow.md`)
 - Skills & Matrix: [DONE]
 - Plugin System: [DONE]
@@ -195,7 +217,7 @@ Sub-agent feedback loop for standards improvement. See [`agent-findings/README.m
 - Agent System: [DONE]
 - Dependency Graph: [DONE] (`architecture/dependency-graph.md` + `dependency-graph.md`)
 - Boundary Map: [DONE] (`architecture/boundary-map.md` + `boundary-map.md`)
-- State Transitions: [DONE] (`wizard/state-transitions.md` + `state-transitions.md`)
+- State Transitions: [DONE] (`wizard/state-transitions.md` CANONICAL + `state-transitions.md` POINTER)
 - Findings Impact Report: [DONE]
 
 **Cross-Cutting Concepts (NEW):**
@@ -205,6 +227,118 @@ Sub-agent feedback loop for standards improvement. See [`agent-findings/README.m
 - Guard Pattern: [DONE] (`concepts/guard-pattern.md`)
 
 ## Validation History
+
+### 2026-04-21 Ralph iter 50 -- first formal Map Self-Consistency Audit
+
+Applied the 5-invariant audit codified in `standards/documentation-bible.md` (iter 49, rule 10).
+
+**Invariant 1 (header counts match table rows):** PASS. Total Areas 32 = 18 original + 14 new; staleness dashboard 18 + 14 = 32 rows; Reference tables 18 + 14 = 32 rows.
+
+**Invariant 2 (no duplicate rows):** PASS. No duplicate doc names in staleness dashboard.
+
+**Invariant 3 (cross-surface sync):** 8 violations fixed. Reference-table `Last Validated` drifted to `2026-04-13` on 8 rows while staleness dashboard showed `0 days` and frontmatter `last_validated: 2026-04-21`. Bumped all 8 to `2026-04-21`:
+
+1. Architecture Overview (`reference/architecture-overview.md`)
+2. Commands Reference (`reference/commands.md`)
+3. Type System (`reference/type-system.md`)
+4. Component Patterns (`reference/component-patterns.md`)
+5. Test Infrastructure (`reference/test-infrastructure.md`)
+6. Test Infrastructure New (`reference/testing/infrastructure.md`)
+7. Operations Types (`reference/types/operations-types.md`)
+8. Zod Schemas (`reference/types/zod-schemas.md`)
+
+**Invariant 4 (disk-vs-map):** PASS. 41 `.md` files on disk under `reference/` = 32 tracked + 9 pointer files documented in directory diagram (architecture/{overview,dependency-graph,boundary-map}, commands/index, wizard/{flow,state-transitions,store-map,component-patterns}, config/configuration). No orphans.
+
+**Invariant 5 (header date freshness):** PASS. Date basis = 2026-04-21 = today.
+
+**Root-cause enum audit (separate task, flag only):** Grepped `root_cause:` across `.ai-docs/agent-findings/*.md`. Found 1 violation outside widened enum: `2026-04-20-d217-installmode-plumbing-dead-in-wrappers.md` uses `root_cause: scope-boundary-preserved` (not in `missing-rule | rule-not-visible | rule-not-specific-enough | convention-undocumented | enforcement-gap | scope-discipline-deferred`). Not fixed — flagged for convention-keeper disposition (widen enum vs. reclassify finding). `TEMPLATE.md`'s verbatim enum-list root_cause is expected (it's the template).
+
+**No finding filed** — this iter is the codified audit procedure running for the first time; drift it caught (Reference-table dates) is the same class the procedure exists to detect.
+
+### 2026-04-21 Ralph iter 49 -- documentation-bible.md rule incorporation
+
+Cross-referenced 15 proposed rules from iter 11/12/13/16/25/26/32/33/37/39/40/41/42/43/45 findings against `standards/documentation-bible.md`. Rules 10-11 (findings-impact-report append-only + >10 regeneration trigger) already present from iter 40. Thirteen rules incorporated this iter, grouped to minimize surface area:
+
+1. **Re-Validation Triggers (Beyond Calendar Cadence)** — covers iter 11, 12, 13 (finding/task-ID/concept-class triggers override cadence).
+2. **Doc-Touching Changes table** — covers iter 32, 33 (dependency-graph + boundary-map revalidation on command/component/D-feature touches, with `NEEDS-VALIDATION` fallback).
+3. **Command Reference Docs** — covers iter 25 (verify `static flags` / `baseFlags`, glob-diff, `Feature flag:` line).
+4. **Known Limitations Rule** — covers iter 26 (TODO.md cross-ref for hardening-gap systems).
+5. **Hydration-vs-Props / Hook Table / Hotkey Registry** — covers iter 16 (props-vs-hydrate, hook existence check, hotkey registry sentinel).
+6. **Store Map Completeness** — covers store-map hydration finding (non-exported helpers, decision-probe consumers, hydration entry point).
+7. **Guard / Silent-Guard Rules** — covers iter 12 (user-visible outcomes, silent-guard race-risk table).
+8. **Exhaustive Enumeration over Glob Shorthand** — covers iter 37 (no `etc.` shorthand, exhaustive name lists).
+9. **Splits & Pointers** — covers iter 41, 42 (original MUST become pointer same session, drift-candidate heuristic).
+10. **Map Self-Consistency Audit** — covers iter 43 (5 invariants, decennial cadence).
+11. **Agent Findings Frontmatter** section — covers iter 45 (require frontmatter, widen enum, `superseded_by` / `supersedes` keys, audits/ subdir).
+
+No drift found during bible read-through. `Standards Documentation` table row for `standards/documentation-bible.md` bumped to `Last Validated 2026-04-21`.
+
+### 2026-04-21 Ralph iter 43 -- DOCUMENTATION_MAP self-consistency audit
+
+Audited the map itself for drift after ~42 iterations of row-level validation and date bumps. Fixes applied:
+
+1. **Header count:** `Total Areas: 30 (18 original + 12 new)` → `32 (18 original + 14 new)`. New Files section grew to 14 when `config-merger.md` (iter4) and `scope-split.md` (iter5) were added 2026-04-21; header was never bumped.
+2. **Duplicate row removed:** `| type-system.md (pointer) | 0 | - | OK |` deleted — the row above it (`type-system.md`) already carries the CONVERTED TO POINTER annotation. Single row suffices.
+3. **Stale 11-day rows synced:** `compilation-pipeline.md`, `operations-layer.md`, `agent-system.md` showed `Days Stale: 11` while the Reference table showed `Last Validated: 2026-04-21`. All three bumped to `0` with annotation.
+4. **Reference table stale dates synced:** `Dependency Graph` row said `2026-04-02` / `2026-04-02`; staleness dashboard showed `0` from iter32 today. Bumped to `2026-04-21` / `2026-04-21`.
+5. **Date basis note:** updated 2026-04-13 → 2026-04-21, clarified pointer-row semantics.
+6. **Notes for Next Session:** replaced 2026-04-02 context with iter43 summary + forward validation dates.
+
+**Disk vs map audit:** 41 `.md` files under `reference/` on disk. Reference tables track 32 (18 original + 14 new). 9 pointer files (architecture/overview, architecture/dependency-graph, architecture/boundary-map, commands/index, wizard/{flow,state-transitions,store-map,component-patterns}, config/configuration) are intentionally not tracked in staleness dashboard — they redirect to originals. Directory-structure diagram documents all 41.
+
+**Validation History chronology:** Entries are in reverse-chronological order (newest first) by date, but iter numbers interleave (iter 30 before iter 29 before iter 10 before iter 43 at top). Iter numbers are a logical ordering, not the primary sort key — acceptable.
+
+**Finding filed:** `.ai-docs/agent-findings/2026-04-21-documentation-map-drift-iter43.md` — documenting map-self-drift as a new drift class distinct from content-vs-code drift.
+
+### 2026-04-21 Ralph iter 30 -- Link-Integrity Audit: remaining reference/ dirs + root files
+
+Audited link integrity across 30 files: subdirs `architecture/` (3), `commands/` (2), `wizard/` (4), `testing/` (4), `features/` (7); root-level `reference/` files (11): `architecture-overview.md`, `boundary-map.md`, `commands.md`, `component-patterns.md`, `dependency-graph.md`, `findings-impact-report.md`, `state-transitions.md`, `store-map.md`, `test-infrastructure.md`, `type-system.md`, `utilities.md`. Verified `related:` YAML frontmatter, explicit `[text](path)` markdown links, and backtick-wrapped `reference/...` path references.
+
+**Link count:** ~95 link units total (58 frontmatter `related:` entries + 26 relative markdown body links `./` and `../` + 11 backtick-wrapped `reference/...` refs, plus 1 `../../agent-findings/` finding ref).
+
+**Broken links:** 0.
+
+**Pre-restructure path check:** Root-level files (e.g., `reference/architecture-overview.md`, `reference/commands.md`, `reference/component-patterns.md`, `reference/state-transitions.md`, `reference/test-infrastructure.md`, `reference/type-system.md`) are still referenced as "authoritative source until cleanup" by the subdir stubs. All originals exist on disk; stubs correctly point to them. No Phase 2+3 migration drift detected.
+
+**Agent-findings reference:** `.ai-docs/agent-findings/2026-04-21-e2e-build-step-keypress-missing-stable-render.md` (referenced from `testing/e2e-infrastructure.md:425`) resolves.
+
+**No finding filed** -- link integrity clean across all remaining reference/ dirs and root-level files.
+
+### 2026-04-21 Ralph iter 29 -- Link-Integrity Audit: concepts/ + types/ + config/
+
+Audited link integrity across 10 files in `.ai-docs/reference/concepts/` (3), `.ai-docs/reference/types/` (3), `.ai-docs/reference/config/` (4). Verified `related:` YAML frontmatter lists AND markdown-body links (explicit `[text](path)` links + backtick-wrapped path references).
+
+**Scope:**
+
+- `concepts/guard-pattern.md`, `concepts/scope-system.md`, `concepts/tombstone-pattern.md`
+- `types/core-types.md`, `types/operations-types.md`, `types/zod-schemas.md`
+- `config/config-merger.md`, `config/config-writer.md`, `config/configuration.md`, `config/scope-split.md`
+
+**Link count:** 76 link units total (37 frontmatter `related:` + 24 markdown body links + 15 backtick-wrapped path refs, including finding references and `todo/`, `changelogs/` references).
+
+**Broken links:** 0.
+
+**Pre-restructure path check:** The three `types/*.md` files reference `reference/type-system.md` in their "Split from:" headers; `type-system.md` still exists on disk (Phase 2+3 preserves originals alongside new structure), so these resolve correctly.
+
+**Agent-findings references:** All 16 distinct findings referenced across the 10 files resolve in `.ai-docs/agent-findings/`.
+
+**No finding filed** -- link integrity was already clean; this iter confirms no drift.
+
+### 2026-04-21 Ralph iter 10 -- BaseStep Primitives Contract
+
+Added new section "BaseStep Primitives Contract" to `reference/testing/e2e-infrastructure.md`, placed immediately before the existing "Page-Object Keypress Rule" so primitives are defined before the rule cites them.
+
+**Content:**
+
+- Enumerated all BaseStep members by type: 8 key-press primitives (`pressEnter`, `pressSpace`, `pressKey`, `pressEscape`, `pressArrowDown/Up/Right`, `pressCtrlC`), 6 wait primitives (`waitForStep`, `waitForStepAfter`, `waitForStableRender`, `waitForStableRenderAfter`, `waitForItemVisible`, `navigateCursorToItem`), 4 cursor/screen queries (`getOutput`, `getScreen`, `getRawCursor`, `getSummaryDiffEntries`), 4 composition helpers (`pressEnterAndWaitFor`, `abort`, `navigateDown/Up/Right`).
+- Documented each primitive's contract as tables: PTY write, post-press delay (`INTERNAL_DELAYS.KEYSTROKE` 150ms or `STEP_TRANSITION` 500ms), whether it pre-waits for stable render (all NO except `getSummaryDiffEntries`).
+- Captured invariants: callers must ensure prior frame stability; `pressEnterAndWaitFor` sentinel must be unique to next step's first frame; `waitForItemVisible` is visibility-only while `navigateCursorToItem` is cursor-position.
+- Added a "Design Question" subsection presenting three options (A internalize wait in primitives, B status quo, C hybrid `pressAfterStable` helper) with trade-offs and a back-of-envelope cost estimate (~30-60s added suite time under contention if Option A is adopted, with `search-modal.type` as outlier needing exemption). Recommendation is Option C, flagged as doc-only observation.
+- Noted the one primitive that already waits: `getSummaryDiffEntries` calls `waitForStableRender` internally before scraping.
+
+**No finding filed** — iter 9's finding (`2026-04-21-e2e-build-step-keypress-missing-stable-render.md`) already documents the underlying drift; this iter is groundwork, not a new discovery.
+
+**Files touched:** `reference/testing/e2e-infrastructure.md` (+~90 lines, new section only; no existing content changed).
 
 ### 2026-04-13 Pass 24 -- Final Sweep: Cross-Reference Verification + DOCUMENTATION_MAP Consistency
 
@@ -660,7 +794,7 @@ Complete line-by-line reverification of 2 docs with substantial round-1 edits (7
 - All 16 hooks verified to exist in src/cli/components/hooks/
 - Build step logic functions verified: validateBuildStep, isCompatibleWithSelectedFrameworks, buildCategoriesForDomain (build-step-logic.ts:16, :38, :48)
 - All hotkeys in hotkeys.ts verified: HOTKEY_INFO(I), HOTKEY_ACCEPT_DEFAULTS(A), HOTKEY_SCOPE(S), HOTKEY_SETTINGS(S), HOTKEY_TOGGLE_LABELS(D), HOTKEY_FILTER_INCOMPATIBLE(F), HOTKEY_SET_ALL_LOCAL(L), HOTKEY_SET_ALL_PLUGIN(P), HOTKEY_ADD_SOURCE(A)
-- HOTKEY_COPY_LINK(C) exists in hotkeys.ts but is correctly omitted from wizard-flow.md (used only in skill-search.tsx, outside wizard)
+- HOTKEY_COPY_LINK was removed in 0.130.0 cleanup (no longer in hotkeys.ts) — component-patterns.md iter15 removed its table row
 - Key labels verified: KEY_LABEL_ENTER, KEY_LABEL_ESC, KEY_LABEL_SPACE, KEY_LABEL_TAB, KEY_LABEL_DEL, KEY_LABEL_ARROWS, KEY_LABEL_ARROWS_VERT, KEY_LABEL_VIM, KEY_LABEL_VIM_VERT (hotkeys.ts:48-56)
 - isHotkey helper at hotkeys.ts:63 verified
 - Hotkey contexts verified in wizard.tsx: I toggles info (116-128), A on build+stack jumps to confirm (142-149), S on build toggles skill scope (152-158), S on agents toggles agent scope (161-168), S on sources toggles settings (170-173, NOT gated by flag)
@@ -1496,8 +1630,26 @@ Full validation of all 12 documentation files against actual source code. Errors
 
 ## Notes for Next Session
 
-- All 18 reference docs validated 2026-04-02 (cross-document audit + adversarial audits + deep second pass)
-- agent-system.md and compilation-pipeline.md received exhaustive line-by-line deep second pass 2026-04-02
-- store-map.md next validation due 2026-04-09 (7-day cadence)
-- All other docs next validation due 2026-04-16 (14-day cadence)
-- DEAD CODE: `src/cli/utils/yaml.ts` has zero production importers -- confirmed deleted per prior audit
+- Iter 87 re-audit (final sweep of 100-iter Ralph run): all 5 invariants still PASS, no drift introduced by iters 51-86. Dashboard 0-stale across all 32 rows, Reference-table dates uniformly 2026-04-21, disk frontmatter 41/41 at 2026-04-21.
+- Iter 50 Map Self-Consistency Audit: 8 Reference-table `Last Validated` dates bumped 2026-04-13→2026-04-21 (cross-surface sync with dashboard + frontmatter). All 5 invariants now clean.
+- Root-cause enum violation flagged (unfixed): `2026-04-20-d217-installmode-plumbing-dead-in-wrappers.md` uses `scope-boundary-preserved` — convention-keeper must either widen the enum in `TEMPLATE.md` or reclassify the finding.
+- All 41 reference files on disk accounted for. 32 tracked in Reference tables; 9 pointer files tracked only in directory diagram.
+- Next full regeneration of `findings-impact-report.md` triggered when Incremental Updates accumulate >10 entries (per documentation-bible rule). Reset iter 40.
+- Next map self-consistency audit: per bible cadence (decennial iteration cadence, i.e., every ~10 iters) — target iter 60.
+- store-map.md next validation due 2026-04-28 (7-day cadence). All other docs due 2026-05-05 (14-day cadence).
+
+## Ralph Docs Sweep (Apr 2026)
+
+Canonical loop-postmortem: [`agent-findings/2026-04-21-iter99-ralph-docs-sweep-summary.md`](./agent-findings/2026-04-21-iter99-ralph-docs-sweep-summary.md) — 100-iter Ralph run across `.ai-docs/` + docs/guides + CLAUDE.md.
+
+### Agent Routing Pattern
+
+- **codex-keeper**: default for `.ai-docs/reference/` descriptive docs.
+- **general-purpose**: `standards/` normative docs + `CLAUDE.md` + `MEMORY.md`.
+- **cli-tester**: when a docs change requires verifying code claims against source.
+
+### Residual Drifts (for next maintainer)
+
+- Sweep totals (2026-04-21 window, post residual-cleanup + d224 close-out + micro-sync + file-path-canon close-out + 0.42.1 orphan-release filing + eject-success-log filing + pre-impl-design-docs-historical filing): 90 resolved / 7 partial / 10 open / 2 superseded (total 109 on disk). `state-transitions.md` and `commands.md` dual-home splits both RESOLVED (canonical is now the subdir file in each case, root is the pointer). `agent-suggestions/` status model codified in `agent-suggestions/README.md` (iter 98 follow-up) — RESOLVED. `file-path-canonicalization-mixed-forms` closed out by new `documentation-bible.md § File-Path Conventions in Docs`.
+- Residual-cleanup 2026-04-21: 8 findings lacking explicit `status:` classified (4 resolved, 1 superseded, 3 open). See `reference/findings-impact-report.md` "By Status" block for the list. Most recent close-out: `d217-test-prereq-already-satisfied` → `standards/e2e/test-data.md § Before Extending Fixtures`.
+- 17 non-closed findings tracked in `agent-findings/` (7 partial + 10 open) — triage + close-out pass needed.

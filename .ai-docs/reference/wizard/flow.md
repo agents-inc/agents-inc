@@ -19,7 +19,7 @@ related:
   - reference/wizard/component-patterns.md
   - reference/concepts/scope-system.md
   - reference/concepts/guard-pattern.md
-last_validated: 2026-04-13
+last_validated: 2026-04-21
 ---
 
 # Wizard Flow

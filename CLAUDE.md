@@ -25,9 +25,8 @@ This file provides behavioral rules and conventions. For codebase reference docu
 ## NEVER do this
 
 ### Git & Workflow
-- NEVER run ANY git command that modifies the staging area or working tree (`git add`, `git reset`, `git stash`, `git checkout`, `git restore`, `git clean`)
+- NEVER run ANY git command that modifies the staging area or working tree (`git add`, `git reset`, `git stash`, `git checkout`, `git restore`, `git clean`) — the user curates their staging area intentionally; if you think you need to discard working tree changes, ask the user how to proceed
 - NEVER use git worktrees (`isolation: "worktree"`)
-- NEVER use `git checkout`, `git restore`, or any command that discards working tree changes — ask the user how to proceed
 - NEVER introduce new workflow patterns (tools, flags, strategies) that the user hasn't explicitly requested
 - NEVER put machine-specific absolute paths in any file tracked by git
 
@@ -35,7 +34,7 @@ This file provides behavioral rules and conventions. For codebase reference docu
 - NEVER use `as SkillId` or `as SkillSlug` casts on valid union members — the literal string IS the type. Only cast at parse boundaries (YAML, JSON, CLI args) or for deliberately invalid error-path test data (testing that bad IDs produce errors). Fabricated test IDs that aren't in the union should use `string` type, not casts.
 - NEVER use `as unknown as T` double casts — fix the upstream type instead
 - NEVER use `{} as Record<K, V>` — use `const x: Partial<Record<K, V>> = {}` with a type annotation
-- NEVER use `matrix.skills[id]!` non-null assertions — use `getSkillById(id)` from `matrix-provider.ts`
+- NEVER use `matrix.skills[id]!` non-null assertions — use `getSkillById(id)` from `matrix/matrix-provider.ts`
 
 ### Data Integrity
 - NEVER use optional chaining (`?.`) or null coalescing (`?? ""`, `|| []`) on data that must exist — use asserting lookups. Silent fallbacks hide bugs.
@@ -43,6 +42,7 @@ This file provides behavioral rules and conventions. For codebase reference docu
 - NEVER fall back to `path.basename(dir)` as a skill ID — use `frontmatter.name` from `parseFrontmatter()`
 - NEVER derive `slug` from skill ID or directory path — `slug` is a required field in metadata, always pass it explicitly
 - NEVER add backward-compatibility shims or legacy fallbacks — the project is pre-1.0. Remove old code cleanly.
+- NEVER let plugin install per-skill failures silently produce orphan config entries. If `installPluginSkills` returns non-empty `failed`, hard-error (`this.error(..., { exit: EXIT_CODES.ERROR })`) BEFORE `writeConfigAndCompile` runs. Warnings for user context are fine; persisting `config.ts` entries claiming `source: "<marketplace>"` for skills that never installed is not. Uninstall failures are diagnostic-only.
 
 ### Scope Awareness (project vs global)
 - NEVER hardcode `projectDir` for skill/agent paths when a skill has a `scope` field — use `os.homedir()` for `"global"` scope, `projectDir` for `"project"` scope
@@ -52,15 +52,21 @@ This file provides behavioral rules and conventions. For codebase reference docu
 - NEVER let a marketplace `primarySource` override a user's saved `source` in config — saved source (`"local"` or marketplace name) always takes priority over computed defaults
 - NEVER use conditional fallbacks like `if (x.length === 0) { use fallback }` when both primary and fallback data should always be merged
 
+### Test Assertions
+- NEVER define local parser/extractor helpers inside a test file (loops, regex scans, state machines that pick data out of rendered output or config text). If the helper has non-trivial logic it would need its OWN tests to be trusted. Instead: assert directly on the raw output with `toContain`, `toMatchInlineSnapshot`, or a structural load (e.g., `loadProjectConfig` for config.ts). If a helper is genuinely reusable across tests, live it in `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested.
+- NEVER split/loop/regex-scan `lastFrame()` output in component tests — use `toContain("+ React")` or snapshot the frame. The rendered frame is the contract; that's what you assert.
+- NEVER broaden an assertion to make a failing test pass — investigate why it fails. If it's a fixture limitation, keep the strict assertion as a commented-out `// KNOWN GAP:` with an explanation. If it's a product bug, mark the test `it.fails`.
+- NEVER add a key-press method to an E2E step page object without calling `waitForStableRender()` first — React effects may not have fired yet, causing handlers to silently no-op
+
 ### Test Data
-- NEVER construct test data inline — use factories from `__tests__/helpers.ts` and fixtures from `create-test-source.ts`. If a factory doesn't exist, create one.
+- NEVER construct test data inline — use factories from `__tests__/factories/` and `__tests__/helpers/` and fixtures from `__tests__/fixtures/create-test-source.ts`. If a factory doesn't exist, create one.
 - NEVER create custom mock skills when a canonical `SKILLS.*` entry from `test-fixtures.ts` would work
 - NEVER call `createMockMatrix(SKILLS.react)` inline when a pre-built constant exists in `mock-matrices.ts`
 - NEVER pass the entire `SKILLS` registry to `createMockMatrix` — spread individual entries
 - NEVER construct `ProjectConfig`, `ProjectSourceConfig`, or `AgentScopeConfig[]` inline — use `buildProjectConfig()`, `buildSourceConfig()`, `buildAgentConfigs()`
 - NEVER write inline SKILL.md frontmatter or agent YAML template strings — use `renderSkillMd()`, `renderAgentYaml()` from `content-generators.ts`
 - NEVER repeat agent metadata strings inline — use `AGENT_DEFS` from `mock-agents.ts`
-- NEVER put TODO/task IDs in test `describe()` blocks
+- NEVER put TODO/task IDs in test names (`describe()`, `it()`), assertion messages (2nd arg to `expect`), or inline test comments. Task IDs belong in file-level JSDoc ONLY, if anywhere. Test names describe BEHAVIOR ("version field is not emitted on init"), not tickets. Assertion messages describe the INVARIANT ("config.ts must not contain version field"), not the ticket that added it. Names rot — IDs look authoritative but become meaningless once the task is closed.
 - NEVER define path/timeout/text constants locally in E2E test files — use `DIRS`, `FILES`, `TIMEOUTS`, `SOURCE_PATHS`, `STEP_TEXT`, `EXIT_CODES` from `e2e/pages/constants.ts`
 - NEVER write a helper function in an E2E test file without first grepping `e2e/helpers/test-utils.ts` and `e2e/fixtures/` for an existing one
 
@@ -85,12 +91,12 @@ This file provides behavioral rules and conventions. For codebase reference docu
 ### Scope Awareness
 - ALWAYS use `resolveInstallPaths(projectDir, scope)` with the explicit scope parameter when resolving skill/agent directories
 - ALWAYS split skill lists by scope (`filter(s => s.scope === "global")` / `filter(s => s.scope !== "global")`) before any path-dependent operation (copy, delete, install, uninstall)
-- ALWAYS load both project AND global local skills and merge them — see `source-loader.ts` and `compile.ts` for the correct pattern
+- ALWAYS load both project AND global local skills and merge them — see `src/cli/lib/loading/source-loader.ts` and `src/cli/commands/compile.ts` for the correct pattern
 - ALWAYS preserve saved `source` from config over computed `primarySource` when restoring wizard state — `saved?.source ?? primarySource ?? DEFAULT_PUBLIC_SOURCE_NAME`
 
 ### Type Safety
 - ALWAYS use type guards (`isCategory()`, `isDomain()`, `isAgentName()` from `utils/type-guards.ts`) instead of `as` casts for runtime narrowing
-- ALWAYS use `getSkillById(id)` or `getSkillBySlug(slug)` from `matrix-provider.ts` for skill lookups where the skill must exist. Only use `matrix.skills[id]` when genuinely optional.
+- ALWAYS use `getSkillById(id)` or `getSkillBySlug(slug)` from `matrix/matrix-provider.ts` for skill lookups where the skill must exist. Only use `matrix.skills[id]` when genuinely optional.
 - ALWAYS use `parseFrontmatter()` from `lib/loading/loader.ts` for SKILL.md parsing
 - ALWAYS type factory function parameters with the narrowest union type (`SkillId`, not `string`). Error-path tests cast at the call site.
 - ALWAYS use `typedEntries()` / `typedKeys()` from `utils/typed-object.ts` (not raw `Object.entries()`)
@@ -106,18 +112,16 @@ This file provides behavioral rules and conventions. For codebase reference docu
 - ALWAYS read `.ai-docs/standards/e2e/README.md` before writing or modifying E2E tests
 - ALWAYS use `toStrictEqual` (not `toEqual`) for object and array comparisons in assertions
 - ALWAYS verify config AND filesystem after any operation that changes either. If a test completes a wizard flow or runs a command that creates, modifies, or removes files or config entries, assert the resulting state of both. If it should NOT change something, snapshot before and assert identical after. Never check only one side.
-- NEVER broaden an assertion to make a failing test pass — investigate why it fails. If it's a fixture limitation, keep the strict assertion as a commented-out `// KNOWN GAP:` with an explanation. If it's a product bug, mark the test `it.fails`.
-- NEVER add a key-press method to an E2E step page object without calling `waitForStableRender()` first — React effects may not have fired yet, causing handlers to silently no-op
 
 ---
 
 ## Test Data Factories
 
-Use factories from `__tests__/helpers.ts` and constants from `__tests__/mock-data/`. Grep for `createMock*`, `build*`, `SKILLS.*`, `AGENT_DEFS.*`, `render*` to find what's available. Never inline test data — if a factory doesn't exist, create one.
+Use factories from `__tests__/factories/` and `__tests__/helpers/` and constants from `__tests__/mock-data/`. Grep for `createMock*`, `build*`, `SKILLS.*`, `AGENT_DEFS.*`, `render*` to find what's available. Never inline test data — if a factory doesn't exist, create one.
 
 ```
 Is it a complete skill/agent/category object?
-├─ YES → Use factory from helpers.ts (createMockSkill, createMockAgent, createMockCategory)
+├─ YES → Use factory from factories/ (createMockSkill, createMockAgent, createMockCategory)
 └─ NO → Is it a full project directory structure?
     ├─ YES → Use createTestSource() from fixtures/create-test-source.ts
     └─ NO → Does it create a config, matrix, or stack?

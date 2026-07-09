@@ -1,3 +1,5 @@
+> **HISTORICAL DESIGN NOTE** — This was a pre-implementation plan. The feature has shipped. Current authoritative documentation: `.ai-docs/reference/concepts/tombstone-pattern.md`.
+
 # Excluded Skills & Agents Design Document
 
 ## Problem Statement

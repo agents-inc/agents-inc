@@ -9,6 +9,8 @@ reporting_agent: skill-summoner
 category: architecture
 domain: shared
 root_cause: convention-undocumented
+status: resolved
+resolved_by: metadata.yaml fix applied in skills repo
 ---
 
 ## What Was Wrong

@@ -29,7 +29,7 @@ Agents Inc. CLI (`agentsinc`) is a TypeScript CLI that manages AI agent configur
 src/
   agents/               # Agent source partials (YAML + markdown per agent)
   cli/
-    commands/            # oclif command classes (build, config, import, new, + top-level)
+    commands/            # oclif command classes (build, import, new, + top-level)
     components/          # Ink React components
       common/            #   Shared UI (confirm, spinner, select-list)
       hooks/             #   React hooks for wizard behavior
@@ -54,8 +54,6 @@ src/
     types/               # TypeScript type definitions (agents, config, matrix, plugins, skills, stacks)
       generated/         #   Auto-generated union types and built-in matrix from skills source
     utils/               # Cross-cutting utilities (errors, exec, fs, logger, type-guards)
-config/                  # Data config (stacks definitions)
-templates/               # Built-in Liquid templates for agent compilation
 e2e/                     # End-to-end tests (commands, interactive, lifecycle, integration, smoke)
 ```
 
@@ -79,7 +77,7 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
    -> Returns WizardResultV2 (selected skills, agent configs, scope settings)
 
 5. Installation
-   -> installLocal() or installPluginConfig()
+   -> installPluginConfig()
    -> Copies skills to project, generates TypeScript config
    -> writeScopedConfigs() splits config into global + project scopes
 
@@ -144,7 +142,7 @@ Agent prompts are assembled from partials (YAML frontmatter + markdown sections 
 | Commands    | `commands`             | oclif command execution via `runCommand()`      |
 | E2E         | `e2e/vitest.config.ts` | Full CLI flows with real terminal interaction   |
 
-E2E tests cover 5 categories: commands, interactive wizards, lifecycle flows, integration scenarios, and smoke tests. Test data uses factories from `__tests__/helpers.ts` and canonical fixtures from `__tests__/mock-data/`.
+E2E tests cover 5 categories: commands, interactive wizards, lifecycle flows, integration scenarios, and smoke tests. Test data uses factories from `__tests__/factories/` and `__tests__/helpers/` and canonical fixtures from `__tests__/mock-data/`.
 
 ## Conventions
 

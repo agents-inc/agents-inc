@@ -1,50 +1,54 @@
 # Agents Inc. CLI - Task Tracking
 
-| ID    | Task                                                                                                                                                               | Status                   |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
-| D-233 | Spacebar on dual-scope `[P][G]` skill should add/remove only project-scope part — not uninstall the global. Likely landed with D-227/D-230/D-232 as single architectural fix. [Plan](./D-233-dual-scope-spacebar-toggle.md) | Ready for Dev |
-| D-232 | Info panel `+` for globally-installed skill after G→P scope toggle — wizard mis-tags as newly-added on next edit.                                                  | Ready for Dev            |
-| D-231 | Remove dead `version` field from `config.ts` — unused, adds noise.                                                                                                 | Ready for Dev            |
-| D-230 | Info panel `-` on global row when G→P toggle adds project scope — global is not removed (dual-scope), `-` is wrong.                                                | Ready for Dev            |
-| D-229 | Plugin install failure leaves orphan `config.ts` entry — config written but plugin never installed. Related to D-218 item 1.                                       | Ready for Dev            |
-| D-228 | Global skill install does not propagate to project `config-types.ts` / `config.ts`. Duplicate of D-216 Regression #1. [Plan](./D-216-global-config-propagation.md) | Ready for Dev            |
-| D-227 | Agent-path tombstone loss on stack merge + preselect — symmetric to D-223 on the agent path.                                                                       | Ready for Dev            |
-| D-226 | E2E sandbox collapses `HOME` into `projectDir` → `isEditingFromGlobalScope=true` for every project test. [Plan](./D-226-sandbox-home-cwd-collapse.md)              | Ready for Dev            |
-| D-219 | E2E wizard launcher default fixture — fold into D-226 sugar. [Plan](./D-219-wizard-launcher-default-fixture.md)                                                    | Ready for Dev (w/ D-226) |
-| D-218 | Plugin-install hardening follow-ups — `mode-migrator` data-loss + `ensure-marketplace` error wrapping. [Plan](./D-218-plugin-install-hardening-followups.md)       | Ready for Dev            |
-| D-216 | Global → project config propagation + context-sensitive scope defaults. [Plan](./D-216-global-config-propagation.md)                                               | Ready for Dev            |
-| D-215 | Config shape simplification — singular-for-exclusive, drop redundant fields                                                                                        | Ready for Dev            |
-| D-214 | Matrix composition hardening — prereq to re-enabling `new marketplace`                                                                                             | Ready for Dev            |
-| D-213 | Custom agent lifecycle — `new agent` depends on agent-summoner + wiring gaps                                                                                       | Ready for Dev            |
-| D-212 | Custom skill lifecycle — install pipeline bug + UX gaps around `custom: true`                                                                                      | Ready for Dev            |
-| D-211 | Reorder stack-selection render: scratch → React → other frameworks → CLI                                                                                           | Ready for Dev            |
-| D-210 | Merge `validate` into `doctor` — single command, layered output                                                                                                    | Investigate              |
-| D-181 | Add YOLO mode toggle to build step. [Plan](./D-181-yolo-mode-toggle.md)                                                                                            | Ready for Dev            |
-| D-180 | Write "Bring your own skills" guide                                                                                                                                | Investigate              |
-| D-179 | Extract shared post-wizard pipeline into ProjectLifecycle orchestrator                                                                                             | Investigate              |
-| D-170 | Add PostHog anonymous telemetry                                                                                                                                    | Investigate              |
-| D-168 | Audit E2E tests — replace manual file construction with CLI commands                                                                                               | Ready for Dev            |
-| D-138 | Iterate on sub-agents — review and improve all agent definitions                                                                                                   | Ready for Dev            |
-| D-111 | Create a GIF demo for the README                                                                                                                                   | Ready for Dev            |
-| D-110 | Fix the logo in the README                                                                                                                                         | Ready for Dev            |
-| D-109 | Fix the screenshots in the README                                                                                                                                  | Ready for Dev            |
-| D-62  | Review default stacks: add reviewing/research skills                                                                                                               | Ready for Dev            |
-| D-118 | Investigate renaming "project/global" scope to "project/user"                                                                                                      | Investigate              |
-| D-111 | Replace E2E text anchors with stable test identifiers                                                                                                              | Investigate              |
-| D-90  | Add Sentry tracking for unresolved matrix references                                                                                                               | Ready for Dev            |
-| D-41  | Create `agents-inc` configuration skill. [Plan](./D-41-config-sub-agent.md)                                                                                        | Ready for Dev            |
-| D-52  | Expand `new agent` command. [Plan](./D-52-expand-new-agent.md)                                                                                                     | Ready for Dev            |
-| D-64  | Create CLI E2E testing skill + update `cli-framework-oclif-ink`                                                                                                    | Ready for Dev            |
-| D-66  | AI-assisted PR review: categorize diffs by type                                                                                                                    | Investigate              |
-| D-69  | Config migration strategy for outdated config shapes                                                                                                               | Investigate              |
-| D-162 | Skill Olympics — benchmark expressive-typescript skill                                                                                                             | Investigate              |
+## Conventions
+
+- **Table entries are one-liners.** Each row is a short headline (≤ ~110 characters) plus an optional `[Plan](<path-to-plan>)` link (e.g. `./D-NNN-plan.md`). Long descriptions break the table — wide rows wrap unpredictably and destroy the scan-readability that's the whole point of the table.
+- **Detailed context lives below the table**, under `## Active Tasks` → category sub-heading → `#### D-NNN: <headline>` — repro, root cause, fix direction, file list, etc. If a task needs more than a headline, put the detail there.
+- **If a task needs its own file** (large plan, multi-phase, lots of investigation), create `todo/D-NNN-<slug>.md` and link it from the table. Otherwise inline under `## Active Tasks` is fine.
+- **Never add a long description directly to the table row.** It's the single most common convention violation in this file and it makes the table unusable.
+
+| ID    | Task                                                                                                                                                         | Status                   |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
+| D-237 | Create a GIF demo for the README                                                                                                                             | Ready for Dev            |
+| D-236 | Seed `focusedSkillId` synchronously in `hydrateWizardStore` (Fix A — eliminates E2E 500ms focus-race workaround).                                            | Ready for Dev            |
+| D-235 | E2E gap: `buildProjectTypesExtras` new-domain/category path is uncovered.                                                                                    | Ready for Dev            |
+| D-234 | E2E config inspection via `loadProjectConfig` instead of regex-on-config.ts.                                                                                 | Ready for Dev            |
+| D-233 | Spacebar on dual-scope `[P][G]` skill should toggle only project-scope, not uninstall global. [Plan](./D-233-dual-scope-spacebar-toggle.md)                  | Ready for Dev            |
+| D-227 | Agent-path tombstone loss on stack merge + preselect — symmetric to D-223 on the agent path.                                                                 | Ready for Dev            |
+| D-226 | E2E sandbox collapses `HOME` into `projectDir` → `isEditingFromGlobalScope=true` for every project test. [Plan](./D-226-sandbox-home-cwd-collapse.md)        | Ready for Dev            |
+| D-219 | E2E wizard launcher default fixture — fold into D-226 sugar. [Plan](./D-219-wizard-launcher-default-fixture.md)                                              | Ready for Dev (w/ D-226) |
+| D-218 | Plugin-install hardening follow-ups — `mode-migrator` data-loss + `ensure-marketplace` error wrapping. [Plan](./D-218-plugin-install-hardening-followups.md) | Ready for Dev            |
+| D-216 | Global → project config propagation + context-sensitive scope defaults. [Plan](./D-216-global-config-propagation.md)                                         | Ready for Dev            |
+| D-215 | Config shape simplification — singular-for-exclusive, drop redundant fields                                                                                  | Ready for Dev            |
+| D-214 | Matrix composition hardening — prereq to re-enabling `new marketplace`                                                                                       | Ready for Dev            |
+| D-213 | Custom agent lifecycle — `new agent` depends on agent-summoner + wiring gaps                                                                                 | Ready for Dev            |
+| D-212 | Custom skill lifecycle — install pipeline bug + UX gaps around `custom: true`                                                                                | Ready for Dev            |
+| D-211 | Reorder stack-selection render: scratch → React → other frameworks → CLI                                                                                     | Ready for Dev            |
+| D-210 | Merge `validate` into `doctor` — single command, layered output                                                                                              | Investigate              |
+| D-181 | Add YOLO mode toggle to build step. [Plan](./D-181-yolo-mode-toggle.md)                                                                                      | Ready for Dev            |
+| D-180 | Write "Bring your own skills" guide                                                                                                                          | Investigate              |
+| D-179 | Extract shared post-wizard pipeline into ProjectLifecycle orchestrator                                                                                       | Investigate              |
+| D-170 | Add PostHog anonymous telemetry                                                                                                                              | Investigate              |
+| D-168 | Audit E2E tests — replace manual file construction with CLI commands                                                                                         | Ready for Dev            |
+| D-138 | Iterate on sub-agents — review and improve all agent definitions                                                                                             | Ready for Dev            |
+| D-162 | Skill Olympics — benchmark expressive-typescript skill                                                                                                       | Investigate              |
+| D-118 | Investigate renaming "project/global" scope to "project/user"                                                                                                | Investigate              |
+| D-111 | Replace E2E text anchors with stable test identifiers                                                                                                        | Investigate              |
+| D-110 | Fix the logo in the README                                                                                                                                   | Ready for Dev            |
+| D-109 | Fix the screenshots in the README                                                                                                                            | Ready for Dev            |
+| D-90  | Add Sentry tracking for unresolved matrix references                                                                                                         | Ready for Dev            |
+| D-69  | Config migration strategy for outdated config shapes                                                                                                         | Investigate              |
+| D-66  | AI-assisted PR review: categorize diffs by type                                                                                                              | Investigate              |
+| D-64  | Create CLI E2E testing skill + update `cli-framework-oclif-ink`                                                                                              | Ready for Dev            |
+| D-62  | Review default stacks: add reviewing/research skills                                                                                                         | Ready for Dev            |
+| D-52  | Expand `new agent` command. [Plan](./D-52-expand-new-agent.md)                                                                                               | Ready for Dev            |
+| D-41  | Create `agents-inc` configuration skill. [Plan](./D-41-config-sub-agent.md)                                                                                  | Ready for Dev            |
 
 ---
 
 For completed tasks, see [TODO-completed.md](./TODO-completed.md).
 For refactoring tasks, see [TODO-refactor.md](./TODO-refactor.md).
 For deferred tasks, see [TODO-deferred.md](./TODO-deferred.md).
-For final release tasks, see [TODO-final.md](./TODO-final.md).
 
 ---
 
@@ -61,6 +65,7 @@ See [docs/guides/agent-reminders.md](../docs/guides/agent-reminders.md) for the 
 #### D-233: Spacebar on dual-scope skill should toggle only the project-scope presence
 
 **Repro**:
+
 1. Install skill X globally (complete wizard).
 2. In a project, run `cc edit`. Toggle X's scope to project. Complete/save the wizard.
 3. Re-open `cc edit`. X correctly renders with both `[P]` and `[G]` badges (dual-scope — D-223 fix working).
@@ -70,84 +75,19 @@ See [docs/guides/agent-reminders.md](../docs/guides/agent-reminders.md) for the 
 
 **Expected**:
 Spacebar on a dual-scope (`[P][G]`) skill should add/remove **only the project-scope part**. The global install is authoritative from another context (global edit / install); the project wizard must not be able to uninstall the global entry. So:
+
 - First spacebar press → drops the project-scope entry, leaves the global install intact. Badge drops from `[P][G]` → `[G]` (read-only, since it's a pure inherited-global at that point).
 - Second spacebar press → re-adds the project-scope entry. Badge goes back to `[P][G]`.
 - Spacebar on a `[G]`-only (pure global-inherited) skill should already be a no-op / toast (the "globally installed, read-only in this project" path).
 - Scope toggle (`s`) on a dual-scope skill continues to behave per D-223/D-224: flips the project presence between project-only, dual-scope, and absent; never touches the global install.
 
 **Likely fix area**:
+
 - `src/cli/stores/wizard-store.ts::toggleSkill` (or wherever spacebar is wired to selection state) needs to detect dual-scope (`installedSkillConfigs` contains a same-id `{scope: "global"}` entry) and branch: instead of removing the active project entry outright, it should drop the project entry and preserve/restore the global tombstone-or-inherited state.
 - `CategoryOption.selected` semantics for dual-scope rows may need adjusting so that `selected: false` means "project-scope absent, global-inherited remains" rather than "fully uninstalled."
 - Interacts with D-223 (dual-scope hydration must survive the no-project-entry state on reopen) and D-232 (baseline must still recognize the inherited global so it doesn't re-classify as new on re-add).
 
 Related cluster: D-223, D-224, D-230, D-232.
-
----
-
-#### D-232: Info panel `+` for globally-installed skill toggled to project
-
-After a skill is installed globally and the user then toggles its scope to project, the next `cc edit` session renders the info-panel diff with a `+` next to that skill — the wizard treats it as newly-added rather than already-installed. Same symptom for agents that exist globally and are toggled to also exist at project level.
-
-The diff baseline in `src/cli/components/wizard/skill-agent-summary.tsx` reads `installedSkillConfigs` / `installedAgentConfigs`; hypothesis is that the globally-installed entry isn't surviving hydration into that baseline once it's been re-scoped, so `prevSkillKeySet` (keyed on `(id, scope)`) doesn't contain the new `(id, project)` key and the row is classified as `isNew`. D-223's fix (`populateFromSkillIds` preserves tombstones) covers hydration but not the add-to-project-scope case specifically.
-
-Related cluster: D-223 (dual-scope hydration), D-225 (info-panel diff symmetry), D-227 (agent-path tombstone loss).
-
----
-
-#### D-231: Remove dead `version` field from `config.ts`
-
-`ProjectConfig` (and `GlobalConfig`) carries a `version` field that no reader consumes. Writer emits it, loader accepts it, but nothing branches on it. Drop it from:
-
-- `config-writer.ts::generateConfigSource` (emission)
-- `config-types.ts` / `types/config.ts` (type definition)
-- `schemas.ts::projectSourceConfigSchema` (Zod schema)
-- `default-stacks.ts` and any fixtures / snapshots carrying literal `version:` lines
-
-Reader-layer is shape-tolerant so removing from emission is safe; existing configs will round-trip without the field on next `cc edit` save.
-
-Tiny patch — no plan file needed beyond this bullet list.
-
----
-
-#### D-230: Info panel `-` on scope toggle with pre-existing global install
-
-When the user toggles a skill's scope from global to project while a global install already exists, the info panel renders a `-` next to the global entry. This is wrong per the scope model: the global install is NOT removed on G→P toggle in this dual-scope case — the skill simply gains an additional project-scope presence (G+P dual). The `-` suggests removal and misleads the user.
-
-Expected: no `-` on the global row; `+` on the project row; the pre-existing global entry should continue to render with a `•` (unchanged) prefix.
-
-Touches the same renderer as D-225 (`skill-agent-summary.tsx`). Likely fix: refine the diff baseline so tombstones don't drive `-` when the corresponding active entry at the other scope is being added rather than the global being removed. Reference D-225 angle-6 investigation (`todo/D-225-investigations/08-edge-cases.md` Case 4/12 collision) — this may be the exact scenario flagged as unresolved there.
-
-Agents likely exhibit the same bug on G→P toggle; verify under `step-agents` render path.
-
----
-
-#### D-229: Plugin install failure leaves orphan `config.ts` entry
-
-Symptom (user's terminal output):
-
-```
-› Warning: Failed to install plugin mobile-security-react-native: Plugin installation failed: ✘ Failed to install
-› plugin "mobile-security-react-native@agents-inc": Plugin "mobile-security-react-native" not found in marketplace
-› "agents-inc"
-```
-
-After this warning, the skill's entry is written to `config.ts` with `source: "agents-inc"` but the plugin was never actually installed (no plugin registered in Claude Code's registry). Silent partial state — config says "installed as plugin", reality says "never installed".
-
-Same anti-pattern class as D-218 item 1 (eject copy deleted before marketplace check) and the 2026-04-17 finding on init partial state. The fix pattern is identical: validate plugin-install success BEFORE writing the config entry that references it. The per-skill `failed[]` accumulator in `installPluginSkills` emits a warning but the orchestrator writes config unconditionally.
-
-Likely fix site: `installPluginSkills` caller (either `init.tsx::installPluginsStep` or `edit.tsx::applyPluginChanges`) — filter `failed` skills out of the config before `writeProjectConfig` is called. Alternative: hard-error on any plugin-install failure matching the "not found in marketplace" error so the user has a clear remediation path (the plugin name was a typo / source is outdated).
-
-Closely related to D-218; consider landing as D-218 sub-item D-218D or a standalone PR mirroring D-218 structure.
-
----
-
-#### D-228: Global skill install not propagated to project `config-types.ts` / `config.ts`
-
-User-filed 2026-04-20: "Installing a skill in the global scope, like once you're in the global scope and installing it, the project scopes, their config types t s and config t s files don't reflect the newly installed global skill."
-
-This matches **D-216 Regression #1** exactly: `writeScopedConfigs` (`src/cli/lib/installation/local-installer.ts`) unconditionally invokes `writeStandaloneConfigTypes`, bypassing the global-aware branch in `regenerateConfigTypes` (`config-types-writer.ts`). Project `.claude-src/config-types.ts` inlines unions instead of emitting the `import type { SkillId as GlobalSkillId }` from the global install.
-
-**Recommendation**: close D-228 as a duplicate of D-216 once D-216 lands. Kept as a distinct row for visibility of the user-observed symptom; the fix is the one already documented in the [D-216 plan](./D-216-global-config-propagation.md).
 
 ---
 
@@ -668,6 +608,52 @@ The current skill covers oclif command structure and Ink component patterns but 
 
 ### Testing
 
+#### D-236: Seed `focusedSkillId` synchronously in `hydrateWizardStore`
+
+Root fix ("Fix A") for the CategoryGrid mount-effect focus-race currently papered over by a 500ms sleep in E2E.
+
+**Workaround in place**: `FOCUS_EFFECT_FLUSH_MS = 500` in `e2e/pages/steps/build-step.ts::toggleScopeOnFocusedSkill` — delays after `waitForStableRender()` before pressing `s`, giving `CategoryGrid`'s post-mount `useEffect` time to flush `setFocusedSkillId` into the store. Without the sleep, `wizard.tsx`'s HOTKEY_SCOPE branch reads a null `store.focusedSkillId` and silently no-ops.
+
+**Root cause**: `focusedSkillId` is populated by a `CategoryGrid` mount `useEffect` rather than computed at hydration time. Any keypress handler that reads `store.focusedSkillId` between first paint and the post-mount flush observes `null`.
+
+**Proposed fix**: compute the initial focus in `hydrateWizardStore` (`src/cli/stores/wizard-store.ts`) so the store is never in a null-focus state once the build step renders. Remove the `useEffect` seed from `CategoryGrid` (or keep only as a refocus-on-domain-change path, not initial seed). Delete `FOCUS_EFFECT_FLUSH_MS` and the `delay()` call in `build-step.ts`.
+
+**Cross-ref**: `.ai-docs/reference/testing/e2e-infrastructure.md` — "When It's Insufficient — The `FOCUS_EFFECT_FLUSH_MS` Escape Hatch" section names this as the canonical fix. `.ai-docs/agent-findings/2026-04-21-e2e-keypress-rule-coverage-gap-sibling-steps.md` item 4 lists it as the long-term resolution for the entire race class.
+
+---
+
+#### D-235: E2E gap: `buildProjectTypesExtras` new-domain/category path
+
+When a project-scoped skill introduces a domain or category not present in global, the writer extends the `Domain` / `Category` unions in the project's `config-types.ts` accordingly. The unit tests for `buildProjectTypesExtras` silently no-op through this branch (the mock matrix doesn't include the relevant skills). No E2E asserts the behavior end-to-end.
+
+**Scenario to drive**:
+
+1. Global init with web-domain skills only.
+2. Project edit, select an api-domain skill at project scope.
+3. Assert project `.claude-src/config-types.ts` contains `export type Domain = GlobalDomain | "api"` and matching `Category` extension.
+
+Surfaced by the 0.141.0 E2E-gap audit (2026-04-21).
+
+---
+
+#### D-234: E2E config inspection via `loadProjectConfig` instead of regex
+
+Five E2E lifecycle tests hand-roll near-duplicate parsers that regex-scan / brace-match raw `config.ts` text. All target the same writer output (`generateConfigSource`) and break silently when its shape changes (e.g. D-215 reshape, Prettier on `config.ts`):
+
+- `e2e/lifecycle/preloaded-preservation.e2e.test.ts` — `extractStack` (brace-match + `JSON.parse`)
+- `e2e/lifecycle/stack-per-agent-curation.e2e.test.ts` — `extractStack` + `findAssignment` (replicated from above)
+- `e2e/lifecycle/re-edit-cycles.e2e.test.ts` — `parseConfigArrays` (two-strategy regex fallback over `skills[]` / `agents[]` / `domains[]`)
+- `e2e/lifecycle/dual-scope-edit-integrity.e2e.test.ts` — `extractAgentKeys` (inline regex)
+- `e2e/lifecycle/tombstone-cleanup-PtoG-restoration.e2e.test.ts` — `parseSkillEntries` (`\{[^{}]*"id":"<skillId>"[^{}]*\}`, relies on compact `JSON.stringify` shape)
+
+**Fix direction**: land a shared `e2e/helpers/config-reader.ts` that wraps `loadProjectConfig` (jiti-based TS eval) and exposes typed accessors — `readProjectSkills`, `readProjectStack`, `readProjectAgents`, `readProjectDomains`, or a single `readProjectConfig`. Migrate all five tests off their local parsers and delete the helpers.
+
+Background: the CLI's jiti load already handles Prettier-formatted `config.ts` transparently at the product level; the fragility is purely test-side.
+
+**Cross-ref**: [`.ai-docs/agent-findings/2026-04-17-shared-config-stack-parser.md`](../.ai-docs/agent-findings/2026-04-17-shared-config-stack-parser.md) — full audit + proposed standard text for `.ai-docs/standards/e2e/test-data.md`.
+
+---
+
 #### D-167: Remove task IDs from describe() blocks
 
 **Priority:** Low
@@ -757,7 +743,7 @@ Competitive arena: 100 contestants catalogued, 10 selected for proof of concept 
 
 ## Testing Tasks
 
-See [TODO-testing.md](./TODO-testing.md) for the full testing guide: coverage table (what is and isn't tested), automated test tasks T1-T6, step-by-step manual procedures for every command, and the 28-point quick-pass checklist.
+Testing guidance (coverage gaps, automated test tasks, manual procedures, quick-pass checklist) lives alongside the relevant systems — see `docs/guides/` and `.ai-docs/standards/e2e/README.md` for E2E conventions, and `todo/unit-test-tracker.md` for the unit-test gap tracker.
 
 ---
 

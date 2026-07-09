@@ -11,6 +11,8 @@ reporting_agent: web-developer
 category: architecture
 domain: cli
 root_cause: convention-undocumented
+status: resolved
+resolved_by: compound keys in config-merger.ts; tombstone pruning in local-installer.ts
 ---
 
 ## What Was Wrong

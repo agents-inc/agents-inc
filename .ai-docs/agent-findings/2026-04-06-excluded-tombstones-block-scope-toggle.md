@@ -10,6 +10,8 @@ reporting_agent: orchestrator
 category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
+status: resolved
+resolved_by: toggleSkillScope filters !sc.excluded; tombstone semantics documented in CLAUDE.md
 ---
 
 ## What Was Wrong

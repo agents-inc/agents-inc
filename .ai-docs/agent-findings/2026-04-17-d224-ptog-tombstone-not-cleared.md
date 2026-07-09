@@ -11,6 +11,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: rule-not-specific-enough
+status: resolved
+resolved_by: D-224 P→G tombstone cleanup shipped in 0.138.0
 ---
 
 ## What Was Wrong

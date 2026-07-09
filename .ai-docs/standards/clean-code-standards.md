@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # Clean Code Standards
 
 Enforceable rules from 70+ refactoring tasks across 9 iterations. Each rule is reviewer-checkable.
@@ -168,21 +172,21 @@ try {
 
 **6.1** Test file naming: `{module}.test.ts` next to the source, or `__tests__/` for shared test infrastructure and integration tests.
 
-**6.2** Import shared utilities from these files -- never redefine locally:
+**6.2** Import shared utilities from these directories -- never redefine locally:
 
-| Utility                                              | Source                                                      |
-| ---------------------------------------------------- | ----------------------------------------------------------- |
-| `fileExists`, `directoryExists`                      | `__tests__/helpers.ts` (test) or `utils/fs.ts` (production) |
-| `readTestYaml`                                       | `__tests__/helpers.ts`                                      |
-| `buildWizardResult`, `buildSourceResult`             | `__tests__/helpers.ts`                                      |
-| `parseTestFrontmatter`                               | `__tests__/helpers.ts`                                      |
-| `SKILLS.react`, `SKILLS.hono`, etc.                  | `__tests__/test-fixtures.ts` (canonical skill registry)     |
-| `createMockSkill(id, overrides?)`                    | `__tests__/helpers.ts`                                      |
-| `createComprehensiveMatrix()`, `createBasicMatrix()` | `__tests__/helpers.ts`                                      |
-| `createTestDirs()`, `cleanupTestDirs()`              | `__tests__/helpers.ts`                                      |
-| `createTempDir()`, `cleanupTempDir()`                | `__tests__/helpers.ts`                                      |
-| `createTestSource()`, `cleanupTestSource()`          | `__tests__/fixtures/create-test-source.ts`                  |
-| `createMockCategory(id, displayName, overrides?)`    | `__tests__/helpers.ts`                                      |
+| Utility                                              | Source                                                    |
+| ---------------------------------------------------- | --------------------------------------------------------- |
+| `fileExists`, `directoryExists`                      | `__tests__/helpers/` (test) or `utils/fs.ts` (production) |
+| `readTestYaml`                                       | `__tests__/helpers/`                                      |
+| `buildWizardResult`, `buildSourceResult`             | `__tests__/helpers/`                                      |
+| `parseTestFrontmatter`                               | `__tests__/helpers/`                                      |
+| `SKILLS.react`, `SKILLS.hono`, etc.                  | `__tests__/test-fixtures.ts` (canonical registry)         |
+| `createMockSkill(id, overrides?)`                    | `__tests__/factories/skill-factories.ts`                  |
+| `createComprehensiveMatrix()`, `createBasicMatrix()` | `__tests__/factories/matrix-factories.ts`                 |
+| `createTestDirs()`, `cleanupTestDirs()`              | `__tests__/helpers/test-dir-setup.ts`                     |
+| `createTempDir()`, `cleanupTempDir()`                | `__tests__/helpers/test-dir-setup.ts`                     |
+| `createTestSource()`, `cleanupTestSource()`          | `__tests__/fixtures/create-test-source.ts`                |
+| `createMockCategory(id, displayName, overrides?)`    | `__tests__/factories/category-factories.ts`               |
 
 **6.3** Extract local test helpers when 3+ tests share identical setup/assertion logic.
 
@@ -194,13 +198,13 @@ async function expectFlagAccepted(args: string[]): Promise<void> {
 }
 ```
 
-**6.4** Use `SKILLS.*` from `test-fixtures.ts` for standard skill fixtures (e.g., `SKILLS.react`, `SKILLS.hono`). For custom skills not in the registry, use `createMockSkill(id, overrides?)` from `helpers.ts`. Do not define per-test skill factory functions. Available registry keys: `react`, `vue`, `zustand`, `pinia`, `scss`, `tailwind`, `vitest`, `hono`, `drizzle`, `antiOverEng` (methodology).
+**6.4** Use `SKILLS.*` from `test-fixtures.ts` for standard skill fixtures (e.g., `SKILLS.react`, `SKILLS.hono`). For custom skills not in the registry, use `createMockSkill(id, overrides?)` from `__tests__/factories/skill-factories.ts`. Do not define per-test skill factory functions. Available registry keys: `react`, `vue`, `zustand`, `pinia`, `scss`, `tailwind`, `vitest`, `hono`, `drizzle`, `antiOverEng` (methodology).
 
 **6.5** Use named constants from `test-constants.ts` for keyboard input (`ARROW_UP`, `SPACE`, `ENTER`, `ESCAPE`) and timing (`RENDER_DELAY_MS`, `INPUT_DELAY_MS`, `STEP_TRANSITION_DELAY_MS`).
 
 **6.6** Every exported utility function must have a test file.
 
-**6.7** Use `createTempDir()`/`cleanupTempDir()` from `helpers.ts` for temp directory lifecycle. **Never import `mkdtemp` from `fs/promises` or `os` for `tmpdir()` in test files** — these are the #1 recurring violation. If you see `import { mkdtemp }` or `import os from "os"` in a test file, replace with the helpers.
+**6.7** Use `createTempDir()`/`cleanupTempDir()` from `__tests__/helpers/test-dir-setup.ts` for temp directory lifecycle. **Never import `mkdtemp` from `fs/promises` or `os` for `tmpdir()` in test files** — these are the #1 recurring violation. If you see `import { mkdtemp }` or `import os from "os"` in a test file, replace with the helpers.
 
 ```ts
 // BAD
@@ -234,12 +238,12 @@ src/cli/lib/__tests__/fixtures/
 +-- create-test-source.ts  # factory for dynamic fixture directories
 ```
 
-For dynamic test data (created/modified per test), use factory functions from `helpers.ts` or `create-test-source.ts` instead.
+For dynamic test data (created/modified per test), use factory functions from `__tests__/factories/` or `create-test-source.ts` instead.
 
 **6.9** Test factory functions use the signature `(requiredParams..., overrides?: Partial<T>): T`. Required params identify the object; optional overrides customize it. Spread overrides last.
 
 ```ts
-// Pattern used by all factory functions in helpers.ts
+// Pattern used by all factory functions in __tests__/factories/
 function createMockSkill(
   id: SkillId,
   overrides?: Partial<ResolvedSkill>,
@@ -249,6 +253,42 @@ function createMockSkill(
 ```
 
 **6.10** No `as` casts in tests. Use valid typed literals -- if a value doesn't type-check, fix the value or the type. Two exceptions require a `// Boundary cast:` comment: (1) intentionally invalid data for error-path testing (`const invalidId = "bad" as SkillId`), and (2) partial mock data at test fixture boundaries (`{ "web-developer": mockAgent } as Record<AgentName, AgentDefinition>`).
+
+**6.11** No TODO/task IDs in test names (`describe()`, `it()`), assertion messages, or inline test comments. File-level JSDoc only. Names rot; IDs look authoritative but become meaningless once the task is closed or renumbered.
+
+```ts
+// BAD — task ID in describe block
+describe("D-217 per-skill source-based plugin reference", () => { ... });
+
+// BAD — task ID in it() name
+it("D-229 hard-errors before writing config when install fails", () => { ... });
+
+// GOOD — describe the behavior, not the ticket
+describe("per-skill source-based plugin reference", () => { ... });
+it("hard-errors before writing config when install fails", () => { ... });
+```
+
+**6.12** Use `toStrictEqual` for object and array equality in tests. `toEqual` silently tolerates extra keys with `undefined` values, masking contract drift.
+
+```ts
+// BAD — tolerates extra { someNewField: undefined } on the result
+expect(result).toEqual({ id: "react", name: "React" });
+
+// GOOD — catches accidental extra fields or shape drift
+expect(result).toStrictEqual({ id: "react", name: "React" });
+```
+
+**6.13** Use pre-built matrix constants from `mock-matrices.ts` instead of inline `createMockMatrix(SKILLS.*)` calls. Only fall back to `createMockMatrix(...SKILLS.react, SKILLS.hono)` (spread individual entries — never pass the whole `SKILLS` registry) when no pre-built matrix fits. When a factory would mutate its input, spread for isolation: `createMockMatrix({ ...SKILLS.react })`.
+
+**6.14** Use config factories — `buildProjectConfig()`, `buildSourceConfig()`, `buildAgentConfigs()`, `buildSkillConfigs()` from `__tests__/factories/config-factories.ts`. Never construct `ProjectConfig`, `ProjectSourceConfig`, or `AgentScopeConfig[]` inline. Use `AGENT_DEFS` from `__tests__/mock-data/mock-agents.ts` for agent metadata — never repeat agent strings inline.
+
+**6.15** Use `renderSkillMd()` and `renderAgentYaml()` from `__tests__/content-generators.ts` for SKILL.md frontmatter and agent YAML. Never write inline template strings for skill or agent file content — the renderers track real schema drift.
+
+**6.16** Verify config AND filesystem after any state-changing operation. If a test completes a wizard flow or runs a command that creates, modifies, or removes files or config entries, assert the resulting state of both. If the operation should NOT change something, snapshot before and assert identical after. Never check only one side.
+
+**6.17** Do not split, loop, or regex-scan `lastFrame()` output in component tests. Assert directly with `toContain("+ React")` or snapshot the frame. The rendered frame is the contract; that's what you assert. For parser/extractor helpers with non-trivial logic, see 6.18.
+
+**6.18** Never define parser/extractor helpers with non-trivial logic inside a test file (loops, regex scans, state machines that pick data out of rendered output or config text). If a helper is genuinely reusable across tests, live it in `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested. Instead, assert directly on raw output with `toContain`, `toMatchInlineSnapshot`, or a structural load (e.g. `loadProjectConfig` for `config.ts`).
 
 ---
 
@@ -283,6 +323,35 @@ Boundary casts are **NOT** acceptable for: mid-pipeline workarounds (fix the ups
 
 **7.5** Post-safeParse `as T` is acceptable when `.passthrough()` widens Zod output. The `.passthrough()` option preserves unknown fields for forward compatibility, widening the output type to `{ ...fields... } & { [k: string]: unknown }`. The cast narrows back to the validated interface. Add a `// Boundary cast:` comment.
 
+**7.6** No `as SkillId` / `as SkillSlug` / `as AgentName` / `as Category` / `as Domain` casts on valid union members. A literal string that matches the union IS the type — no cast required. Only cast at parse boundaries (see 7.2) or for intentionally invalid error-path test data. Fabricated test IDs that are not in the union should be typed `string`, not cast.
+
+**7.7** No `{} as Record<K, V>` / `{} as Partial<Record<K, V>>`. Annotate the variable type instead.
+
+```ts
+// BAD
+const counts = {} as Record<AgentName, number>;
+// GOOD
+const counts: Partial<Record<AgentName, number>> = {};
+```
+
+**7.8** No `as unknown as T` double casts. If you need two casts to express a type, the upstream return type or schema is wrong — fix it there.
+
+**7.9** No non-null assertions on map/matrix lookups that have an asserting helper. Prefer `getSkillById(id)` / `getSkillBySlug(slug)` from `matrix/matrix-provider.ts` over `matrix.skills[id]!`. Use the raw index access only when the skill is genuinely optional.
+
+**7.10** Type factory function parameters with the narrowest union type (`SkillId`, not `string`). Error-path tests that need invalid values cast at the call site with a `// Boundary cast:` comment — do not widen the signature to accommodate them.
+
+**7.11** Use `parseFrontmatter()` from `lib/loading/loader.ts` for SKILL.md parsing. Do not re-implement frontmatter extraction or import a second parser — the loader already handles schema validation and gives a typed result.
+
+**7.12** No redundant type aliases. Compose with `Pick<>`, `Partial<>`, `Omit<>`, or `&` before introducing a new named type. Check `src/cli/types/` for an existing alias first.
+
+```ts
+// BAD — duplicates existing ResolvedSkill fields
+type SkillSummary = { id: SkillId; name: string; slug: SkillSlug };
+
+// GOOD — derive from the source of truth
+type SkillSummary = Pick<ResolvedSkill, "id" | "name" | "slug">;
+```
+
 ---
 
 ## 8. DRY
@@ -301,6 +370,10 @@ const output = await readFileOptional(path.join(dir, STANDARD_FILES.OUTPUT_MD), 
 **8.3** Compose existing functions before creating new ones.
 
 **8.4** Prefer Remeda utilities over hand-rolled loops when they improve clarity. Production: `unique`, `uniqueBy`, `sortBy`, `groupBy`, `mapValues`, `pipe`, `flatMap`, `filter`, `countBy`, `sumBy`, `difference`, `indexBy`, `zip`. Used across 20+ files.
+
+**8.5** Do not reassign one constant to another. Use the original constant directly — `const MY_NAME = DEFAULT_BRANDING.NAME` is noise.
+
+**8.6** Build derived collections with `.map()`, `.flatMap()`, or literal arrays. Do not declare an empty array and `push()` in a loop — the imperative build step is always a poorer read than the functional form.
 
 ---
 
@@ -368,7 +441,7 @@ populateFromSkillIds: (ids, skills, cats) => set(() => {
 
 **11.2** Add field-level comments on type/interface fields with non-obvious semantics (e.g., `needsAny?: boolean` needs a comment explaining AND vs OR).
 
-**11.3** When production behavior changes, update relevant docs. `docs/reference/architecture.md` for pipeline, data flow, or system design changes. `docs/reference/commands.md` for new flags, wizard steps, or keyboard shortcuts. `README.md` for user-facing setup instructions.
+**11.3** When production behavior changes, update relevant docs. `docs/reference/architecture.md` for pipeline, data flow, or system design changes. `docs/reference/commands/index.md` for new flags, wizard steps, or keyboard shortcuts. `README.md` for user-facing setup instructions.
 
 ---
 
@@ -415,3 +488,53 @@ const sorted = sortBy(skills, [s => s.priority]);
 **14.4** Do not restate a function or variable name in a comment above it (`// Pre-select domains inferred from stack` above `preselectDomainsFromStack()`).
 
 **14.5** Acceptable comments: business rules not evident from code, workaround explanations, TODO items with context, gotchas (e.g., hoisting behavior), JSDoc on exported functions over 20 LOC (per rule 11.1), and `// boundary cast` annotations (per rule 7.2).
+
+---
+
+## 15. Data Integrity
+
+**15.1 No optional chaining (`?.`) or null coalescing (`?? ""`, `|| []`) on data that must exist.** Silent fallbacks hide bugs. Use asserting lookups (e.g., `getSkillById(id)`) or throw explicitly. Optional chaining is for genuinely optional fields; it is not a shortcut to avoid thinking about invariants.
+
+```ts
+// BAD — hides a missing category as an empty array
+const skills = matrix.categories[id]?.skills ?? [];
+// GOOD — asserting helper throws on missing category
+const category = getCategoryById(id);
+const skills = category.skills;
+```
+
+**15.2 No multi-tier resolution fallbacks.** Data matches on the first lookup or it is an error. Do not chain "try exact → try alias → try directory name → fall back to basename". Each alternative lookup hides a data bug. Specifically: never fall back to `path.basename(dir)` as a skill ID — use `frontmatter.name` from `parseFrontmatter()`. Never derive `slug` from skill ID or directory path — `slug` is a required metadata field, always pass it explicitly.
+
+**15.3 No backward-compatibility shims or legacy fallbacks.** The project is pre-1.0. Remove old code cleanly; do not leave a branch that reads an old field "in case the user has a stale config".
+
+**15.4 No conditional data merges (`if (x.length === 0) use fallback`).** When primary and fallback data should both be visible, always merge them. Conditional merges produce scope-dependent behavior that's hard to reproduce.
+
+**15.5 Single-writer normalization.** If one writer normalizes a comparison key with `fs.realpathSync`, every reader and deleter must use `fs.realpathSync`. Mixing `path.resolve` with `fs.realpathSync` on the two sides of a lookup produces silent no-op deletes under symlinks. Pick one normalization and document it at the field definition.
+
+**15.6 Return values must be consumed or removed.** A function returning a multi-field result (`{ updated, skipped }`, `{ config, changed, droppedStale }`) must have every field read by at least one production caller. An architecturally orphaned field is either dead code to delete from the return type OR a missing observability hook. Silent skips, silent sweeps, and silent drops are anti-patterns — surface the count with `warn()` at the caller, or delete the field from the return shape.
+
+**15.7 Hard-error before destructive writes when install intent cannot be honored.** Per-skill install failures (e.g., `installPluginSkills().failed.length > 0`) must `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs — otherwise the config persists entries claiming `source: "<marketplace>"` for skills that never installed, and no `cc` command can self-heal the orphan. Uninstall failures are diagnostic-only and may continue. See `2026-04-20-d229-plugin-install-failure-orphan-config.md`.
+
+**15.8 Writer selection for `config-types.ts`.** When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts`), call `regenerateConfigTypes`. When writing a GLOBAL `config-types.ts` (`~/.claude-src/config-types.ts`), call `writeStandaloneConfigTypes` / `generateConfigTypesSource`. Never call `writeStandaloneConfigTypes` for a project path — it bypasses the import-from-global branch and produces duplicated standalone unions. See `.ai-docs/reference/config/config-writer.md`.
+
+---
+
+## 16. Scope Awareness (project vs global)
+
+**16.1 Always resolve skill/agent paths through `resolveInstallPaths(projectDir, scope)`.** Never hardcode `projectDir` when a skill has a `scope` field. Use `os.homedir()` as the root for `"global"` scope, `projectDir` for `"project"` scope. Passing `projectDir` to a global-scoped skill writes to the wrong filesystem.
+
+**16.2 Never use `path.join(projectDir, LOCAL_SKILLS_PATH)` without checking scope.** Global-scoped local skills live at `~/.claude/skills/`, not `<project>/.claude/skills/`. Split skill lists by scope (`filter(s => s.scope === "global")` / `filter(s => s.scope !== "global")`) before any path-dependent operation (copy, delete, install, uninstall).
+
+**16.3 Merge project and global local skills; never use one as a fallback only when the other is empty.** Always load both and merge — see `source-loader.ts` and `compile.ts` for the canonical pattern. Project takes precedence on ID conflicts. A conditional fallback (`if (project.length === 0) use global`) produces scope-dependent behavior that's impossible to reproduce.
+
+**16.4 Never pass a uniform scope to `claudePluginInstall` / `claudePluginUninstall` for multiple skills.** Each skill carries its own scope in its `SkillConfig`; group per-scope before invoking.
+
+**16.5 Saved `source` wins over computed `primarySource`.** Never let a marketplace `primarySource` override a user's saved `source` in config. The precedence for wizard restoration is `saved?.source ?? primarySource ?? DEFAULT_PUBLIC_SOURCE_NAME`. A saved source (`"local"` or a marketplace name) is the user's intent; computed defaults are only a floor.
+
+---
+
+## 17. Repository Hygiene
+
+**17.1 Never commit machine-specific absolute paths in tracked files.** Paths like `/home/vince/…` or `C:\Users\…` pollute diffs for other contributors and CI. Use `process.cwd()`, `os.homedir()`, `path.join(projectDir, …)`, or a test-local temp dir from `createTempDir()` instead. If a tool insists on an absolute path (e.g., `settings.json` hook commands), parameterize via an env var or scope the file to `.claude/settings.local.json` which is gitignored.
+
+**17.2 Do not introduce git worktrees (`isolation: "worktree"`).** Worktrees fragment the repo state and break the single-working-tree assumption many workflows depend on. If you need isolated branches, use a separate clone.

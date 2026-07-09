@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.141.0] - 2026-04-21
+
+**Config propagation + install-integrity + info-panel correctness (D-228, D-229, D-230, D-231, D-232)**
+
+- Project `config-types.ts` now imports from the global install instead of duplicating unions (D-228 / D-216 Regression #1)
+- Plugin install per-skill failures hard-error before `writeConfigAndCompile`, preventing orphan `config.ts` entries (D-229)
+- Info-panel diff baseline treats tombstones as slot-occupants, fixing spurious `-`/`+` on dual-scope scope toggles and re-opens (D-230, D-232)
+
+See [changelogs/0.141.0.md](./changelogs/0.141.0.md) for full details.
+
 ## [0.140.0] - 2026-04-20
 
 **Per-skill plugin skill reference format in compiled agents (D-217)**

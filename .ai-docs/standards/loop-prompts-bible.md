@@ -1,3 +1,7 @@
+---
+last_validated: 2026-04-21
+---
+
 # The Loop Prompts Bible
 
 > Guide for loop/orchestrator agents that coordinate sub-agents to complete complex tasks.
@@ -301,6 +305,82 @@ Update immediately: `### H21: Task Name [IN PROGRESS]` / `[DONE]`
 
 5. **"Silent Blocker"** -- Working around a blocker silently. Document it, stop dependent work, notify user.
 
+6. **"False Completion Promise"** -- Emitting the completion sentinel to escape the loop when the stated promise is not unequivocally true. See Section 8.
+
+7. **"Duplicate Iteration"** -- Re-investigating territory a previous iter already covered because you did not grep prior findings first. See Section 8.2.
+
+8. **"Report Bloat"** -- 800-word iter reports that bury the signal. Enforce length caps (Section 8.4).
+
+---
+
+## 8. Ralph-Loop Iteration Pattern
+
+Ralph-loop runs the same prompt back to the agent N times (default up to `--max-iterations`). Each iter sees prior iters' artifacts via git/filesystem but **not** in the conversation. This section codifies the discipline that keeps the loop productive.
+
+### 8.1 CRITICAL RULE -- Completion Promise
+
+From `/ralph-loop:ralph-loop`:
+
+> If a completion promise is set, you may ONLY output it when the statement is completely and unequivocally TRUE. Do not output false promises to escape the loop, even if you think you're stuck or should exit for other reasons.
+
+Rules:
+
+- Never emit the sentinel to escape feeling stuck, low-value iters, or context pressure.
+- If iters are producing nothing, that is a signal to **change approach** (Section 8.5), not to exit.
+- A loop with no completion promise ends only when `--max-iterations` is reached or the user cancels.
+
+### 8.2 Single Focus Per Iter
+
+One iter = one focused pass over one area. Do not fan out to unrelated concerns.
+
+Before starting:
+
+1. Grep `.ai-docs/agent-findings/` for the area you are about to work on -- prior iters may have already covered it.
+2. Read the 2-3 most recent findings to see what has been landed and what was deferred.
+3. If the area is already covered, either (a) go deeper on a specific gap, or (b) pick a different area. Do not re-do completed work.
+
+### 8.3 Findings as a Loop Product
+
+Every iter that fixes an anti-pattern, discovers drift, or identifies a missing standard **must** write a finding to `.ai-docs/agent-findings/` using `TEMPLATE.md`. Findings are the durable output of the loop; the report to the user is ephemeral.
+
+Filename convention for loop iters: `YYYY-MM-DD-iterNN-<slug>.md` so iteration history is greppable.
+
+### 8.4 Report Length Caps
+
+**Authoritative source of truth for iteration cadence and report-length caps.** Other docs (e.g. `prompt-bible.md` §8.3) cross-link here rather than restate.
+
+| Report type          | Cap           |
+| -------------------- | ------------- |
+| Per-iter report      | 250-300 words |
+| Finding body         | ~500 words    |
+| Cross-iter synthesis | 400 words     |
+
+Structure the per-iter report as: (a) current coverage, (b) additions/changes, (c) findings filed, (d) next-iter suggestion. Drop reasoning; keep outcomes.
+
+### 8.5 Self-Correction Triggers
+
+Call out and change course when any of these fire:
+
+- **Repeat signal:** two consecutive iters land no new changes in the target area -- the area is saturated. Switch focus.
+- **Trivial signal:** an iter finds only whitespace/typo drift -- the area is healthy. Move on.
+- **Scope creep signal:** an iter touches 5+ files across unrelated areas -- you lost single-focus. Revert non-core edits, re-scope.
+- **Blocker signal:** an iter discovers a dependency on unmerged work -- file a finding, add to TODO, skip.
+
+### 8.6 Multi-Iteration Consolidation
+
+Every ~10 iters, the next iter should be a **synthesis pass**, not a fresh focus:
+
+1. List findings filed since the last synthesis.
+2. Group by theme (e.g., "E2E drift", "type-safety gaps").
+3. Identify cross-cutting patterns that justify a standard-level change rather than point fixes.
+4. Either update the relevant bible, or file a single consolidated finding that supersedes the point findings.
+
+Without synthesis, the findings directory accumulates noise and loses its value as a lookup index.
+
+### 8.7 Seeding the Next Iter
+
+End every iter report with a concrete next-iter suggestion naming (a) the target area, (b) the specific doc/standard to cross-check, (c) the expected artifact (finding, edit, or synthesis). The user runs the loop; your suggestion is how the loop continues with continuity.
+
 ---
 
 ## Quick Reference Checklist
@@ -310,3 +390,13 @@ Update immediately: `### H21: Task Name [IN PROGRESS]` / `[DONE]`
 **During:** Delegate all code changes, provide clear context + file paths, track progress with checkboxes, document decisions, compact at 70% context.
 
 **After:** Verify acceptance criteria, confirm tests pass, confirm no type errors, update to `[DONE]`, archive task, report concisely to user.
+
+### Ralph-loop addenda
+
+**Before iter:** Grep prior findings for the target area; pick a specific gap, not a broad sweep.
+
+**During iter:** Single focus, delegate all code edits, file a finding if you fix anti-pattern/drift, keep edits minimal.
+
+**After iter:** Write 250-300-word report with (coverage, additions, findings, next-iter suggestion). Never emit completion sentinel unless unequivocally true.
+
+**Every ~10 iters:** Run a synthesis pass instead of fresh focus (Section 8.6).
