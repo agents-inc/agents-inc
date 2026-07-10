@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <img alt="Agents Inc" src="./assets/logo.svg" width="300">
 </p>
@@ -20,9 +22,11 @@ See the [Guides](#guides) section below for more.
 
 <br />
 
-<p align="center">
-  <img src="./assets/demo.gif" alt="Agents Inc init wizard" width="700">
-</p>
+<img src="./assets/demo.gif" alt="Agents Inc init wizard">
+
+### Walkthrough (recommended)
+https://github.com/user-attachments/assets/387b99ff-0a43-40e2-b757-9d035be5b550
+  
 
 ## Getting Started
 
@@ -67,14 +71,15 @@ npx @agents-inc/cli init
 
 150+ skills across 8 domains:
 
-**Web:** React, Vue, Angular, Svelte, SolidJS, Next.js, Remix, Nuxt, SvelteKit, Astro, Qwik, Tailwind, SCSS Modules, Zustand, Redux, Pinia, Vitest, Playwright, Storybook, and more
-**API:** Hono, Express, Fastify, NestJS, Elysia, Drizzle, Prisma, PostgreSQL, MongoDB, Redis, Stripe, and more
-**AI:** Anthropic SDK, OpenAI SDK, Vercel AI SDK, LangChain, LlamaIndex, Pinecone, ChromaDB, and more
-**Mobile:** React Native, Expo
-**CLI:** Commander, oclif + Ink
-**Infra:** Docker, GitHub Actions, Cloudflare Workers
-**Shared:** Turborepo, ESLint + Prettier, Code Reviewing, Auth Security, and more
-**Meta:** Research Methodology, CLI Reviewing
+| Domain | Skills                                                                                                                                          |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Web    | React, Vue, Angular, Svelte, SolidJS, Next.js, Remix, Nuxt, SvelteKit, Astro, Qwik, Tailwind, SCSS Modules, Zustand, Redux, Pinia, Vitest, Playwright, Storybook, and more |
+| API    | Hono, Express, Fastify, NestJS, Elysia, Drizzle, Prisma, PostgreSQL, MongoDB, Redis, Stripe, and more                                              |
+| AI     | Anthropic SDK, OpenAI SDK, Vercel AI SDK, LangChain, LlamaIndex, Pinecone, ChromaDB, and more                                                      |
+| Mobile | React Native, Expo                                                                                                                                  |
+| Infra  | Docker, GitHub Actions, Cloudflare Workers                                                                                                          |
+| Shared | Turborepo, ESLint + Prettier, Code Reviewing, Auth Security                                                                               |
+| Meta   | Research Methodology, CLI Reviewing                                                                                                                 |
 
 Browse the full catalog on the [Plugin Marketplace](https://github.com/agents-inc/skills).
 
@@ -111,9 +116,9 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 | ----------------- | ----------------------------------------------------------------------------------- |
 | `eject <type>`    | Export for customization (`agent-partials`, `templates`, `skills`, `all`)           |
 | `import skill`    | Import a skill from an external GitHub repository                                   |
-| `new skill`       | (FEATURE-GATED: `NEW_SKILL_COMMAND=false`) Scaffold a new local skill               |
-| `new agent`       | (FEATURE-GATED: `NEW_AGENT_COMMAND=false`) Scaffold a new custom subagent           |
-| `new marketplace` | (FEATURE-GATED: `NEW_MARKETPLACE_COMMAND=false`) Scaffold a new marketplace project |
+| `new skill`       | (IN PROGRESS) Scaffold a new local skill               |
+| `new agent`       | (IN PROGRESS) Scaffold a new custom subagent           |
+| `new marketplace` | (IN PROGRESS) Scaffold a new marketplace project |
 
 ### Build
 
