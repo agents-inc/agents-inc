@@ -7,6 +7,7 @@ import {
   resolveInstallPaths,
 } from "../../installation/index.js";
 import { loadAllAgents, type SourceLoadResult } from "../../loading/index.js";
+import type { AuthoritativeScope } from "../../configuration/index.js";
 import { ensureBlankGlobalConfig } from "../../configuration/config-writer.js";
 import { ensureDir } from "../../../utils/fs.js";
 import { PROJECT_ROOT } from "../../../consts.js";
@@ -20,6 +21,12 @@ export type ConfigWriteOptions = {
   sourceFlag?: string;
   /** Pre-loaded agent definitions. If omitted, loads from CLI + source. */
   agents?: Record<AgentName, AgentDefinition>;
+  /**
+   * Authority of `cc edit`'s newConfig over absent entries (D-233 Scenario C):
+   * `"all"` (global edit) drops any deselected entry, `"owned"` (project edit) drops deselected
+   * project-owned entries only, `undefined` (init) keeps additive union-preserve.
+   */
+  authoritativeScope?: AuthoritativeScope;
 };
 
 export type ConfigWriteResult = {
@@ -55,7 +62,13 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
     agents = { ...cliAgents, ...sourceAgents };
   }
 
-  const mergeResult = await buildAndMergeConfig(wizardResult, sourceResult, projectDir, sourceFlag);
+  const mergeResult = await buildAndMergeConfig(
+    wizardResult,
+    sourceResult,
+    projectDir,
+    sourceFlag,
+    options.authoritativeScope,
+  );
   const finalConfig = mergeResult.config;
 
   const isProjectContext = fs.realpathSync(projectDir) !== fs.realpathSync(os.homedir());

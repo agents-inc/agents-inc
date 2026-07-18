@@ -8,6 +8,7 @@ export {
   writeTestTsConfig,
   writeTestPackageJson,
 } from "./config-io.js";
+export { normalizeGlobalConfig } from "./config-comparison.js";
 export { writeTestSkill, writeSourceSkill, writeTestAgent } from "./disk-writers.js";
 export {
   buildSkillConfigs,

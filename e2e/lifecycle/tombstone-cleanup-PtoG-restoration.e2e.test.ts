@@ -124,10 +124,16 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
   }
 
   /**
-   * Drive `cc edit` once to toggle the first-focused skill P→G. On the second
-   * session, web-framework-react is focused by default (Web domain, first
-   * category, first option) and currently carries the dual-scope state from
-   * the prior G→P. This is the toggle that D-224 mis-handles.
+   * Drive `cc edit` once to restore the first-focused skill from project to
+   * global scope. On the second session, web-framework-react is focused by
+   * default (Web domain, first category, first option) and carries the
+   * persisted dual-scope state from the prior G→P.
+   *
+   * `s` is intentionally inert on a persisted dual-scope pair (the dual-scope
+   * scope-toggle guard), so the sanctioned way to drop the project half is
+   * space (deselect): it collapses [P][G] → [G], removing the tombstone and
+   * the project override while leaving the global install untouched — the same
+   * P→G restoration end-state.
    */
   async function performProjectToGlobalToggle(projectDir: string, fakeHome: string): Promise<void> {
     const toggleWizard = await EditWizard.launch({
@@ -140,8 +146,8 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
 
     try {
       // Web domain: focus defaults to web-framework-react (now at P with G
-      // tombstone). Toggle P→G — should collapse to pure global, no tombstone.
-      await toggleWizard.build.toggleScopeOnFocusedSkill();
+      // tombstone). Space collapses [P][G] → [G] — pure global, no tombstone.
+      await toggleWizard.build.toggleFocusedSkill();
       await toggleWizard.build.advanceDomain();
       // API domain: pass through.
       await toggleWizard.build.advanceDomain();

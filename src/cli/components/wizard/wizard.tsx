@@ -35,6 +35,13 @@ export type WizardResultV2 = {
   selectedStackId: string | null;
   domainSelections: DomainSelections;
   selectedDomains: Domain[];
+  /**
+   * Skill ids from the saved config that could not be resolved against the loaded source matrix
+   * this session. The wizard could not represent them, so the merge layer must preserve any
+   * existing config entry with these ids rather than treat their absence as a deselection
+   * (D-233 Scenario C data-loss guard).
+   */
+  unresolvableSkillIds: SkillId[];
   cancelled: boolean;
   validation: {
     valid: boolean;
@@ -186,6 +193,7 @@ export const Wizard: React.FC<WizardProps> = ({
       selectedStackId: store.selectedStackId,
       domainSelections: store.domainSelections,
       selectedDomains: store.selectedDomains,
+      unresolvableSkillIds: store.unresolvableSkillIds,
       cancelled: false,
       validation,
     };

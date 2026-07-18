@@ -43,7 +43,13 @@ import { matrix, getSkillById } from "../lib/matrix/matrix-provider";
 import type { SourceLoadResult } from "../lib/loading/index.js";
 import { discoverAllPluginSkills } from "../lib/plugins/index.js";
 import { deleteLocalSkill, migrateLocalSkillScope } from "../lib/skills/index.js";
-import type { SkillId, SkillConfig, AgentName, ProjectConfig } from "../types/index.js";
+import type {
+  SkillId,
+  SkillConfig,
+  AgentName,
+  AgentScopeConfig,
+  ProjectConfig,
+} from "../types/index.js";
 import { claudePluginInstall, claudePluginUninstall } from "../utils/exec.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { remove } from "../utils/fs.js";
@@ -119,7 +125,12 @@ export default class Edit extends BaseCommand {
       ? { ...context.projectConfig, skills: activeOldSkills, agents: activeOldAgents }
       : null;
 
-    const changes = detectConfigChanges(filteredOldConfig, filteredResult);
+    const changes = detectConfigChanges(filteredOldConfig, filteredResult, {
+      newSkills: result.skills,
+      oldSkills: context.projectConfig?.skills ?? [],
+      newAgents: result.agentConfigs,
+      oldAgents: context.projectConfig?.agents ?? [],
+    });
     if (!hasAnyChanges(changes)) {
       this.log(chalk.hex(CLI_COLORS.NEUTRAL)("No changes made."));
       return;
@@ -137,8 +148,9 @@ export default class Edit extends BaseCommand {
     await this.applySourceChanges(changes, activeOldSkills, context, cwd, migratedSkillIds);
     await this.applyPluginChanges(changes, filteredResult, activeOldSkills, context, cwd);
     await this.copyNewLocalSkills(changes, filteredResult, context, cwd);
+    await this.removeDeletedLocalSkills(changes, activeOldSkills, cwd);
     await this.writeConfigAndCompile(result, activeNewSkills, context, flags, cwd);
-    await this.cleanupStaleAgentFiles(changes, cwd);
+    await this.cleanupStaleAgentFiles(changes, activeOldAgents, cwd);
     this.logCompletionSummary(changes);
   }
 
@@ -279,6 +291,8 @@ export default class Edit extends BaseCommand {
       sourceChanges,
       scopeChanges,
       agentScopeChanges,
+      dualScopeSkillTransitions,
+      dualScopeAgentTransitions,
     } = changes;
 
     this.log(`\n${chalk.hex(CLI_COLORS.WHITE).bold("Changes:")}`);
@@ -317,6 +331,18 @@ export default class Edit extends BaseCommand {
     }
     for (const [skillId, change] of scopeChanges) {
       const displayName = matrix.skills[skillId]?.displayName ?? skillId;
+
+      // Dual-scope add/remove: the project half of a [P][G] pair was toggled while
+      // the global half persists. Report it as a project-scope addition/removal \u2014
+      // "[G] \u2192 [P]" would falsely claim the global install moved.
+      if (dualScopeSkillTransitions.has(skillId)) {
+        const isAdd = change.to === "project";
+        const prefix = isAdd ? "+" : "-";
+        const color = isAdd ? CLI_COLORS.SUCCESS : CLI_COLORS.ERROR;
+        this.log(chalk.hex(color)(`  ${prefix} ${displayName} [P]`));
+        continue;
+      }
+
       const fromLabel = change.from === "global" ? "[G]" : "[P]";
       const toLabel = change.to === "global" ? "[G]" : "[P]";
       const isGlobalToProject = change.from === "global" && change.to === "project";
@@ -328,6 +354,18 @@ export default class Edit extends BaseCommand {
       );
     }
     for (const [agentName, change] of agentScopeChanges) {
+      // Dual-scope add/remove for agents \u2014 mirrors the skill path above.
+      if (dualScopeAgentTransitions.has(agentName)) {
+        const isAdd = change.to === "project";
+        const prefix = isAdd ? "+" : "-";
+        const color = isAdd ? CLI_COLORS.SUCCESS : CLI_COLORS.ERROR;
+        this.log(
+          chalk.hex(color)(`  ${prefix} ${agentName} [P]`) +
+            chalk.hex(CLI_COLORS.NEUTRAL)(" (agent)"),
+        );
+        continue;
+      }
+
       const fromLabel = change.from === "global" ? "[G]" : "[P]";
       const toLabel = change.to === "global" ? "[G]" : "[P]";
       this.log(
@@ -544,6 +582,26 @@ export default class Edit extends BaseCommand {
     }
   }
 
+  private async removeDeletedLocalSkills(
+    changes: ConfigChanges,
+    activeOldSkills: SkillConfig[],
+    cwd: string,
+  ): Promise<void> {
+    const { removedSkills } = changes;
+
+    // A fully-deselected eject-mode skill is a genuine uninstall — its copied directory under
+    // .claude/skills/<id>/ must be removed from the scope it was installed at (D-233). Plugin
+    // removals are handled by applyPluginChanges; source-change (eject->marketplace) deletions by
+    // applySourceChanges. deleteLocalSkill is a no-op when the directory is absent.
+    for (const skillId of removedSkills) {
+      const oldSkill = activeOldSkills.find((s) => s.id === skillId);
+      if (oldSkill?.source !== "eject") continue;
+
+      const deleteDir = oldSkill.scope === "global" ? os.homedir() : cwd;
+      await deleteLocalSkill(deleteDir, skillId);
+    }
+  }
+
   private async writeConfigAndCompile(
     result: WizardResultV2,
     activeNewSkills: SkillConfig[],
@@ -569,6 +627,11 @@ export default class Edit extends BaseCommand {
         projectDir: cwd,
         sourceFlag: flags.source,
         agents: agentDefsResult.agents,
+        // A full `cc edit` pass is authoritative over the roster it owns, so deselected entries
+        // are removed rather than union-preserved (D-233 Scenario C). Global-context edit owns
+        // the entire config ("all"); a project edit owns only project-scoped entries and its own
+        // tombstones ("owned"), never inherited global-active entries.
+        authoritativeScope: cwd === GLOBAL_INSTALL_ROOT ? "all" : "owned",
       });
     } catch (error) {
       this.warn(`Could not update config: ${getErrorMessage(error)}`);
@@ -642,8 +705,12 @@ export default class Edit extends BaseCommand {
     }
   }
 
-  private async cleanupStaleAgentFiles(changes: ConfigChanges, cwd: string): Promise<void> {
-    const { agentScopeChanges } = changes;
+  private async cleanupStaleAgentFiles(
+    changes: ConfigChanges,
+    oldAgents: AgentScopeConfig[],
+    cwd: string,
+  ): Promise<void> {
+    const { agentScopeChanges, removedAgents } = changes;
 
     // Clean up old agent .md files after scope changes.
     // Recompilation wrote the new file to the correct scope directory;
@@ -658,6 +725,20 @@ export default class Edit extends BaseCommand {
         await remove(oldAgentPath);
       } catch (error) {
         this.warn(`Could not remove old agent file ${oldAgentPath}: ${getErrorMessage(error)}`);
+      }
+    }
+
+    // Deselected agents are a genuine uninstall — recompilation never rewrites their .md, so
+    // delete the compiled file from the scope it was installed at (D-233). remove() is a no-op
+    // when the file is absent.
+    for (const agentName of removedAgents) {
+      const oldScope = oldAgents.find((a) => a.name === agentName)?.scope ?? "project";
+      const baseDir = oldScope === "global" ? os.homedir() : cwd;
+      const agentPath = path.join(baseDir, CLAUDE_DIR, "agents", `${agentName}.md`);
+      try {
+        await remove(agentPath);
+      } catch (error) {
+        this.warn(`Could not remove agent file ${agentPath}: ${getErrorMessage(error)}`);
       }
     }
   }
@@ -676,12 +757,39 @@ export type ConfigChanges = {
   sourceChanges: Map<SkillId, { from: string; to: string }>;
   scopeChanges: Map<SkillId, { from: "project" | "global"; to: "project" | "global" }>;
   agentScopeChanges: Map<AgentName, { from: "project" | "global"; to: "project" | "global" }>;
+  /**
+   * Skill ids whose `scopeChanges` entry is a dual-scope add/remove — the project
+   * half of a `[P][G]` pair was toggled while the global half persists — NOT a true
+   * single-entry migration. The disk-side scope work still flows through
+   * `scopeChanges`; this set only steers the completion-summary display so a
+   * dual-scope addition is not misreported as a `[G] → [P]` migration.
+   */
+  dualScopeSkillTransitions: Set<SkillId>;
+  /** Agent equivalent of `dualScopeSkillTransitions`. */
+  dualScopeAgentTransitions: Set<AgentName>;
 };
 
-/** @internal Exported for testing */
+/** Full (tombstone-inclusive) entry lists used to classify dual-scope transitions. */
+type FullScopeEntries = {
+  newSkills: SkillConfig[];
+  oldSkills: SkillConfig[];
+  newAgents: AgentScopeConfig[];
+  oldAgents: AgentScopeConfig[];
+};
+
+/**
+ * @internal Exported for testing
+ *
+ * `oldConfig` / `wizardResult` carry the ACTIVE (tombstone-filtered) entries used
+ * for add/remove/source/scope diffing. `fullEntries`, when provided, carries the
+ * unfiltered lists (including excluded tombstones) used ONLY to tell a genuine
+ * scope migration apart from a dual-scope add/remove. When omitted, every scope
+ * change is treated as a migration (the pre-dual-scope behaviour).
+ */
 export function detectConfigChanges(
   oldConfig: ProjectConfig | null,
   wizardResult: WizardResultV2,
+  fullEntries?: FullScopeEntries,
 ): ConfigChanges {
   const oldSkillIds = oldConfig?.skills?.map((s) => s.id) ?? [];
   const newSkillIds = wizardResult.skills.map((s) => s.id);
@@ -690,6 +798,19 @@ export function detectConfigChanges(
 
   const oldSkillsById = indexBy(oldConfig?.skills ?? [], (s) => s.id);
   const oldAgentsByName = indexBy(oldConfig?.agents ?? [], (a) => a.name);
+
+  const scopeChanges = detectPropertyChanges(
+    wizardResult.skills,
+    oldSkillsById,
+    (s) => s.id,
+    (s) => s.scope,
+  );
+  const agentScopeChanges = detectPropertyChanges(
+    wizardResult.agentConfigs,
+    oldAgentsByName,
+    (a) => a.name,
+    (a) => a.scope,
+  );
 
   return {
     addedSkills: difference(newSkillIds, oldSkillIds),
@@ -702,17 +823,19 @@ export function detectConfigChanges(
       (s) => s.id,
       (s) => s.source,
     ),
-    scopeChanges: detectPropertyChanges(
-      wizardResult.skills,
-      oldSkillsById,
+    scopeChanges,
+    agentScopeChanges,
+    dualScopeSkillTransitions: detectDualScopeTransitions(
+      scopeChanges,
+      fullEntries?.newSkills ?? [],
+      fullEntries?.oldSkills ?? [],
       (s) => s.id,
-      (s) => s.scope,
     ),
-    agentScopeChanges: detectPropertyChanges(
-      wizardResult.agentConfigs,
-      oldAgentsByName,
+    dualScopeAgentTransitions: detectDualScopeTransitions(
+      agentScopeChanges,
+      fullEntries?.newAgents ?? [],
+      fullEntries?.oldAgents ?? [],
       (a) => a.name,
-      (a) => a.scope,
     ),
   };
 }
@@ -732,6 +855,42 @@ function detectPropertyChanges<T, K extends string, V>(
     }
   }
   return changes;
+}
+
+/**
+ * A scope change is a dual-scope transition (not a migration) when the canonical
+ * dual-scope tombstone — an excluded global entry — sits alongside it:
+ *  - G→P add: the NEW state keeps a global tombstone, so the global install
+ *    survives and the project half was merely added.
+ *  - P→G remove: the OLD state held a global tombstone, so the pair was already
+ *    dual-scope and the project half was merely removed.
+ * Either way the item occupied both scopes, so `[X] → [Y]` would misdescribe it.
+ */
+function detectDualScopeTransitions<
+  K extends string,
+  T extends { scope: "project" | "global"; excluded?: boolean },
+>(
+  scopeChanges: Map<K, { from: "project" | "global"; to: "project" | "global" }>,
+  fullNew: T[],
+  fullOld: T[],
+  getKey: (item: T) => K,
+): Set<K> {
+  const hasGlobalTombstone = (items: T[], key: K): boolean =>
+    items.some((item) => getKey(item) === key && item.scope === "global" && item.excluded === true);
+
+  const result = new Set<K>();
+  for (const [key, change] of scopeChanges) {
+    if (change.from === "global" && change.to === "project" && hasGlobalTombstone(fullNew, key)) {
+      result.add(key);
+    } else if (
+      change.from === "project" &&
+      change.to === "global" &&
+      hasGlobalTombstone(fullOld, key)
+    ) {
+      result.add(key);
+    }
+  }
+  return result;
 }
 
 function hasAnyChanges(changes: ConfigChanges): boolean {

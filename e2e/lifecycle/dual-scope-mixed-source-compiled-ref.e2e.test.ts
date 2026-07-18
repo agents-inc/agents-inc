@@ -1,0 +1,236 @@
+import { mkdir } from "fs/promises";
+import path from "path";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createE2ESource } from "../helpers/create-e2e-source.js";
+import "../matchers/setup.js";
+import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import {
+  cleanupTempDir,
+  createLocalSkill,
+  createPermissionsFile,
+  createTempDir,
+  ensureBinaryExists,
+  readTestFile,
+  runCLI,
+  writeProjectConfig,
+} from "../helpers/test-utils.js";
+import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
+import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/types/index.js";
+
+/**
+ * Dual-scope MIXED source-mode + compiled-agent ref-format verification.
+ *
+ * A skill can be installed at BOTH scopes: the project owns an active copy
+ * `{id, scope:"project", source}` while the global install is masked by a
+ * tombstone `{id, scope:"global", excluded:true, source}`. When the two halves
+ * carry DIFFERENT sources (plugin vs eject), the compiled agent must render the
+ * skill in the format dictated by the ACTIVE (project) entry:
+ *   - eject  -> bare `id`
+ *   - plugin -> `id:id` (PluginSkillRef form)
+ *
+ * `buildCompileAgents` (local-installer.ts) builds `sourceById` keyed by
+ * `SkillId` ALONE. If both halves of a dual-scope pair reached it, the map's
+ * last-write-wins could stamp the WRONG source onto the compiled ref. This
+ * suite drives the REAL production compile command (`cc compile`) against a
+ * genuine dual-scope config to prove which format the active entry produces —
+ * the first end-to-end exercise of this path (the unit test constructs
+ * AgentConfig directly, bypassing buildCompileAgents).
+ *
+ * The active project skill's content is ejected to `.claude/skills/` so the
+ * compiler can resolve it; the ref FORMAT is driven purely by the config
+ * `source` string, independent of content location.
+ */
+
+const HONO = "api-framework-hono";
+const HONO_PLUGIN_REF = `${HONO}:${HONO}`;
+const MARKET = "test-marketplace";
+
+const HONO_METADATA =
+  `author: "@agents-inc"\ncategory: api-api\ndomain: api\nslug: hono\n` +
+  `displayName: ${HONO}\ncliDescription: "Hono edge framework"\n` +
+  `usageGuidance: "Use when testing E2E scenarios"\ncontentHash: "a1b2c3d"\n`;
+const API_DEVELOPER: AgentName = "api-developer";
+const WEB_DEVELOPER: AgentName = "web-developer";
+
+// Project agent (api-developer) preloads hono — appears in compiled frontmatter.
+const projectStack = {
+  [API_DEVELOPER]: {
+    "api-api": [{ id: HONO, preloaded: true }],
+  },
+} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+
+// Global agent (web-developer) also preloads hono so the SAME skill id renders
+// under the GLOBAL scope's source — proving per-scope format independence.
+const globalStack = {
+  [WEB_DEVELOPER]: {
+    "api-api": [{ id: HONO, preloaded: true }],
+  },
+} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+
+async function seedScope(
+  baseDir: string,
+  config: Partial<ProjectConfig> & Pick<ProjectConfig, "name">,
+): Promise<void> {
+  await mkdir(baseDir, { recursive: true });
+  await createPermissionsFile(baseDir);
+  await createLocalSkill(baseDir, HONO, {
+    description: "Hono edge framework",
+    metadata: HONO_METADATA,
+  });
+  await writeProjectConfig(baseDir, config);
+}
+
+describe("dual-scope mixed-source compiled agent ref format", () => {
+  let sourceDir: string;
+  let sourceTempDir: string;
+
+  beforeAll(async () => {
+    await ensureBinaryExists();
+    const source = await createE2ESource();
+    sourceDir = source.sourceDir;
+    sourceTempDir = source.tempDir;
+  }, TIMEOUTS.SETUP);
+
+  afterAll(async () => {
+    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
+  });
+
+  let tempDir: string | undefined;
+
+  afterEach(async () => {
+    if (tempDir) {
+      await cleanupTempDir(tempDir);
+      tempDir = undefined;
+    }
+  });
+
+  it(
+    "global=plugin, project=eject: project agent renders bare id, global agent renders id:id",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      tempDir = await createTempDir();
+      const fakeHome = path.join(tempDir, "home");
+      const projectDir = path.join(tempDir, "project");
+
+      // Global install: hono active at global scope, sourced from the marketplace (plugin).
+      await seedScope(fakeHome, {
+        name: "dual-global-plugin",
+        skills: buildSkillConfigs([HONO], { scope: "global", source: MARKET }),
+        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+        selectedAgents: [WEB_DEVELOPER],
+        stack: globalStack,
+        projects: [projectDir],
+      });
+
+      // Project override: global tombstone FIRST (production config-writer order),
+      // active project entry SECOND. Project copy is ejected (source:"eject").
+      await seedScope(projectDir, {
+        name: "dual-project-eject",
+        skills: [
+          ...buildSkillConfigs([HONO], { scope: "global", source: MARKET, excluded: true }),
+          ...buildSkillConfigs([HONO], { scope: "project", source: "eject" }),
+        ],
+        agents: buildAgentConfigs([API_DEVELOPER], { scope: "project" }),
+        selectedAgents: [API_DEVELOPER],
+        stack: projectStack,
+      });
+
+      const result = await runCLI(["compile", "--source", sourceDir], projectDir, {
+        env: { HOME: fakeHome },
+      });
+      expect(result.exitCode, `compile failed:\n${result.combined}`).toBe(EXIT_CODES.SUCCESS);
+
+      // Config check: dual-scope pair intact after compile (compile must not rewrite config).
+      const projectLoaded = await loadProjectConfigFromDir(projectDir);
+      expect(projectLoaded, "project config.ts must exist").not.toBeNull();
+      expect(projectLoaded!.config.skills).toStrictEqual([
+        { id: HONO, scope: "global", source: MARKET, excluded: true },
+        { id: HONO, scope: "project", source: "eject" },
+      ]);
+
+      // CRITICAL CHECK: project (active=eject) agent renders BARE id, NOT id:id.
+      const projectAgent = await readTestFile(
+        path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, `${API_DEVELOPER}.md`),
+      );
+      expect(projectAgent).toContain(HONO);
+      expect(
+        projectAgent,
+        "project/eject active entry must render bare id, not the plugin ref",
+      ).not.toContain(HONO_PLUGIN_REF);
+
+      // Cross-scope evidence: the GLOBAL (active=plugin) agent renders id:id for the SAME skill.
+      const globalAgent = await readTestFile(
+        path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, `${WEB_DEVELOPER}.md`),
+      );
+      expect(globalAgent, "global/plugin active entry must render the plugin ref id:id").toContain(
+        HONO_PLUGIN_REF,
+      );
+    },
+  );
+
+  it(
+    "global=eject, project=plugin: project agent renders id:id, global agent renders bare id",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      tempDir = await createTempDir();
+      const fakeHome = path.join(tempDir, "home");
+      const projectDir = path.join(tempDir, "project");
+
+      // Global install: hono active at global scope, ejected (source:"eject").
+      await seedScope(fakeHome, {
+        name: "dual-global-eject",
+        skills: buildSkillConfigs([HONO], { scope: "global", source: "eject" }),
+        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+        selectedAgents: [WEB_DEVELOPER],
+        stack: globalStack,
+        projects: [projectDir],
+      });
+
+      // Project override: global tombstone FIRST (ejected), active project entry
+      // SECOND, sourced from the marketplace (plugin).
+      await seedScope(projectDir, {
+        name: "dual-project-plugin",
+        skills: [
+          ...buildSkillConfigs([HONO], { scope: "global", source: "eject", excluded: true }),
+          ...buildSkillConfigs([HONO], { scope: "project", source: MARKET }),
+        ],
+        agents: buildAgentConfigs([API_DEVELOPER], { scope: "project" }),
+        selectedAgents: [API_DEVELOPER],
+        stack: projectStack,
+      });
+
+      const result = await runCLI(["compile", "--source", sourceDir], projectDir, {
+        env: { HOME: fakeHome },
+      });
+      expect(result.exitCode, `compile failed:\n${result.combined}`).toBe(EXIT_CODES.SUCCESS);
+
+      const projectLoaded = await loadProjectConfigFromDir(projectDir);
+      expect(projectLoaded, "project config.ts must exist").not.toBeNull();
+      expect(projectLoaded!.config.skills).toStrictEqual([
+        { id: HONO, scope: "global", source: "eject", excluded: true },
+        { id: HONO, scope: "project", source: MARKET },
+      ]);
+
+      // CRITICAL CHECK: project (active=plugin) agent renders id:id.
+      const projectAgent = await readTestFile(
+        path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, `${API_DEVELOPER}.md`),
+      );
+      expect(
+        projectAgent,
+        "project/plugin active entry must render the plugin ref id:id",
+      ).toContain(HONO_PLUGIN_REF);
+
+      // Cross-scope evidence: the GLOBAL (active=eject) agent renders bare id.
+      const globalAgent = await readTestFile(
+        path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, `${WEB_DEVELOPER}.md`),
+      );
+      expect(globalAgent).toContain(HONO);
+      expect(
+        globalAgent,
+        "global/eject active entry must render bare id, not the plugin ref",
+      ).not.toContain(HONO_PLUGIN_REF);
+    },
+  );
+});

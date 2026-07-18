@@ -55,7 +55,7 @@ describe("Integration: Full Skill Pipeline", () => {
   });
 
   it("should compile all skills to plugins without errors", async () => {
-    const results = await compileAllSkillPlugins(dirs.skillsDir, outputDir);
+    const { compiled: results } = await compileAllSkillPlugins(dirs.skillsDir, outputDir);
 
     const expectedSkillNames = DEFAULT_TEST_SKILLS.map((s) => s.id).sort();
     expect(results.map((r) => r.skillName).sort()).toStrictEqual(expectedSkillNames);
@@ -76,7 +76,7 @@ describe("Integration: Full Skill Pipeline", () => {
   });
 
   it("should generate marketplace with correct plugin count", async () => {
-    const compileResults = await compileAllSkillPlugins(dirs.skillsDir, outputDir);
+    await compileAllSkillPlugins(dirs.skillsDir, outputDir);
 
     const marketplace = await generateMarketplace(outputDir, {
       name: "test-marketplace",
@@ -97,7 +97,7 @@ describe("Integration: Full Skill Pipeline", () => {
   });
 
   it("should produce plugins with unique names", async () => {
-    const results = await compileAllSkillPlugins(dirs.skillsDir, outputDir);
+    const { compiled: results } = await compileAllSkillPlugins(dirs.skillsDir, outputDir);
 
     const names = results.map((r) => r.manifest.name);
     const uniqueNames = new Set(names);
@@ -364,7 +364,7 @@ describe("Integration: End-to-End Pipeline", () => {
   });
 
   it("should compile skills then stacks in sequence", async () => {
-    const skillResults = await compileAllSkillPlugins(dirs.skillsDir, pluginsDir);
+    const { compiled: skillResults } = await compileAllSkillPlugins(dirs.skillsDir, pluginsDir);
     const expectedSkillNames = DEFAULT_TEST_SKILLS.map((s) => s.id).sort();
     expect(skillResults.map((r) => r.skillName).sort()).toStrictEqual(expectedSkillNames);
 
@@ -407,7 +407,7 @@ describe("Integration: End-to-End Pipeline", () => {
   });
 
   it("should compile skills and stacks that share common patterns", async () => {
-    const skillResults = await compileAllSkillPlugins(dirs.skillsDir, pluginsDir);
+    const { compiled: skillResults } = await compileAllSkillPlugins(dirs.skillsDir, pluginsDir);
 
     const stackResult = await compileStackPlugin({
       stackId: COMPILATION_TEST_STACK.id,

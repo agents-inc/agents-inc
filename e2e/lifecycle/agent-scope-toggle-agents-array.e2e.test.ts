@@ -179,8 +179,10 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         await sources.waitForReady();
         const agents = await sources.advance();
 
-        await agents.navigateCursorToAgent("API Developer");
-        await agents.toggleScopeOnFocusedAgent();
+        // api-developer is a persisted dual-scope [P][G] agent — `s` is inert on
+        // it. Space (deselect) collapses [P][G] → [G], the sanctioned P→G
+        // restoration path.
+        await agents.toggleAgent("API Developer");
         const confirm = await agents.advance("edit");
 
         const result = await confirm.confirm();
@@ -197,7 +199,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         const duplicates = findDuplicateNameScopePairs(rows);
         expect(
           duplicates,
-          `D-221: agents array must not contain duplicate (name, scope) pairs, got: ${duplicates.join(
+          `agents array must not contain duplicate (name, scope) pairs, got: ${duplicates.join(
             ", ",
           )}\nFull agents array: ${JSON.stringify(rows, null, 2)}`,
         ).toStrictEqual([]);
@@ -279,8 +281,9 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         const sources1 = await wizard1.build.passThroughAllDomains();
         await sources1.waitForReady();
         const agents1 = await sources1.advance();
-        await agents1.navigateCursorToAgent("API Developer");
-        await agents1.toggleScopeOnFocusedAgent();
+        // api-developer is a persisted dual-scope [P][G] agent — `s` is inert;
+        // space (deselect) collapses [P][G] → [G], restoring it to global.
+        await agents1.toggleAgent("API Developer");
         const confirm1 = await agents1.advance("edit");
         const result1 = await confirm1.confirm();
         expect(await result1.exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -405,7 +408,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         const duplicates = findDuplicateNameScopePairs(rows);
         expect(
           duplicates,
-          `D-221: agents array must not contain duplicate (name, scope) pairs after G→P. Got: ${duplicates.join(
+          `agents array must not contain duplicate (name, scope) pairs after G→P. Got: ${duplicates.join(
             ", ",
           )}\nFull agents array: ${JSON.stringify(rows, null, 2)}`,
         ).toStrictEqual([]);

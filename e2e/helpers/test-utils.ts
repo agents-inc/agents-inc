@@ -10,6 +10,7 @@ import {
   renderSkillMd,
 } from "../../src/cli/lib/__tests__/content-generators.js";
 import { writeTestPackageJson } from "../../src/cli/lib/__tests__/helpers/config-io.js";
+import { normalizeGlobalConfig } from "../../src/cli/lib/__tests__/helpers/config-comparison.js";
 import {
   cleanupTempDir,
   createTempDir as createTempDirBase,
@@ -56,6 +57,7 @@ export {
   cleanupTempDir,
   directoryExists,
   fileExists,
+  normalizeGlobalConfig,
   renderAgentYaml,
   renderConfigTs,
   renderSkillMd,

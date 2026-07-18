@@ -46,6 +46,7 @@ export function buildWizardResult(
     selectedStackId: null,
     domainSelections: {} as DomainSelections,
     selectedDomains: [],
+    unresolvableSkillIds: [],
     cancelled: false,
     validation: { valid: true, errors: [], warnings: [] },
     ...overrides,

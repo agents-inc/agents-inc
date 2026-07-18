@@ -181,9 +181,14 @@ describe("scope toggle config snapshot", () => {
   );
 
   it(
-    "P->G skill scope toggle should remove skill from project config and add to global config",
+    "scope toggle (s) is inert on a persisted dual-scope skill locked to a selected agent — configs unchanged",
     { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
     async () => {
+      // api-framework-hono is a persisted dual-scope [P][G] pair AND locked to the
+      // selected api-developer agent, so neither `s` (dual-scope guard) nor space
+      // (agent lock) can drop the project half. Both config snapshots must be
+      // byte-identical after the edit.
+
       // BEFORE: Snapshot both configs
       const globalConfigBefore = await readTestFile(
         path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
@@ -192,7 +197,6 @@ describe("scope toggle config snapshot", () => {
         path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
       );
 
-      // ACTION: Launch EditWizard, advance to API domain, toggle api-framework-hono scope
       const wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
@@ -205,70 +209,49 @@ describe("scope toggle config snapshot", () => {
       // Build step -- Web domain (pass through)
       await wizard.build.advanceDomain();
 
-      // Build step -- API domain: toggle api-framework-hono scope to global
+      // Build step -- API domain: press `s` on api-framework-hono (must be inert)
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
 
       // Build step -- Shared domain (pass through)
       const sources = await wizard.build.advanceToSources();
-
-      // Sources step (pass through)
       await sources.waitForReady();
       const agents = await sources.advance();
-
-      // Agents step (pass through)
       const confirm = await agents.acceptDefaults("edit");
 
-      // Confirm step
       const result = await confirm.confirm();
       const exitCode = await result.exitCode;
 
-      // AFTER assertions
+      // AFTER assertions — configs and filesystem unchanged
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Project config does NOT have api-framework-hono with scope:"project"
       const projectConfigAfter = await readTestFile(
         path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
       );
-      const honoProjectLines = projectConfigAfter
-        .split("\n")
-        .filter((l: string) => l.includes("api-framework-hono") && l.includes('"scope":"project"'));
-      expect(honoProjectLines).toStrictEqual([]);
+      expect(
+        projectConfigAfter,
+        "project config.ts must be unchanged after an inert scope toggle",
+      ).toBe(projectConfigBefore);
 
-      // Global config contains api-framework-hono with scope:"global"
       const globalConfigAfter = await readTestFile(
         path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
       );
-      const honoGlobalLines = globalConfigAfter
-        .split("\n")
-        .filter((l: string) => l.includes("api-framework-hono") && l.includes('"scope":"global"'));
-      expect(honoGlobalLines.length).toBeGreaterThan(0);
+      expect(
+        globalConfigAfter,
+        "global config.ts must be unchanged after an inert scope toggle",
+      ).toBe(globalConfigBefore);
 
-      // Project .claude/skills/api-framework-hono does NOT exist (P->G is a move)
+      // Skill directory still present at BOTH scopes — the dual-scope pair survives
       const projectSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, "api-framework-hono");
       expect(
         await directoryExists(projectSkillDir),
-        "api-framework-hono directory must NOT exist at project scope after P->G toggle",
-      ).toBe(false);
+        "api-framework-hono must remain at project scope — `s` is inert on a locked dual-scope pair",
+      ).toBe(true);
 
-      // SKILL.md must NOT exist at project scope after P->G
-      const projectSkillMd = path.join(
-        projectDir,
-        DIRS.CLAUDE,
-        DIRS.SKILLS,
-        "api-framework-hono",
-        FILES.SKILL_MD,
-      );
-      expect(
-        await fileExists(projectSkillMd),
-        "SKILL.md must NOT exist at project scope after P->G",
-      ).toBe(false);
-
-      // Global .claude/skills/api-framework-hono exists
       const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, "api-framework-hono");
       expect(
         await directoryExists(globalSkillDir),
-        "api-framework-hono directory must exist at global scope after P->G toggle",
+        "api-framework-hono must remain at global scope (inert `s`)",
       ).toBe(true);
 
       await result.destroy();

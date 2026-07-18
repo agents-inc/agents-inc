@@ -90,7 +90,7 @@ function findAssignment(
   return assignments.find((a) => (typeof a === "string" ? a === skillId : a.id === skillId));
 }
 
-describe("D-220 stack per-agent curation survives edit", () => {
+describe("stack per-agent curation survives edit", () => {
   let sourceDir: string;
   let sourceTempDir: string;
 

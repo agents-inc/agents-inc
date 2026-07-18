@@ -119,6 +119,7 @@ describe("write-project-config", () => {
       sourceResult,
       projectDir,
       undefined,
+      undefined,
     );
     expect(mockEnsureBlankGlobalConfig).toHaveBeenCalledWith();
     expect(mockWriteScopedConfigs).toHaveBeenCalledWith(

@@ -26,6 +26,7 @@ export {
 export {
   type MergeContext,
   type MergeResult,
+  type AuthoritativeScope,
   mergeConfigs,
   mergeWithExistingConfig,
 } from "./config-merger";

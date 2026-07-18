@@ -212,7 +212,6 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
     );
   });
 
-  /** Gap 3: Plugin scope routing */
   describe("plugin scope routing", () => {
     it(
       "should install plugin skills with correct scope routing",

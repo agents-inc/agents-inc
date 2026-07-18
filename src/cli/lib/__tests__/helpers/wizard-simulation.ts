@@ -104,6 +104,7 @@ export function buildWizardResultFromStore(
     selectedStackId: store.selectedStackId,
     domainSelections: store.domainSelections,
     selectedDomains: store.selectedDomains,
+    unresolvableSkillIds: store.unresolvableSkillIds,
     cancelled: false,
     validation,
     ...overrides,

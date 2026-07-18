@@ -85,6 +85,50 @@ describe("config-merger", () => {
       expect(result.config.agentsSource).toBe("github:my-org/agents");
     });
 
+    it("drops a fully-deselected dual-scope agent's project entry and tombstone from the written config", async () => {
+      await writeFullConfig(
+        buildProjectConfig({
+          name: "project",
+          agents: [
+            ...buildAgentConfigs(["api-developer"], { scope: "project" }),
+            ...buildAgentConfigs(["api-developer"], { scope: "global", excluded: true }),
+          ],
+          skills: [],
+        }),
+      );
+
+      // Wizard result after a full deselect: zero entries for api-developer.
+      const newConfig = buildProjectConfig({ name: "project", agents: [], skills: [] });
+
+      const result = await mergeWithExistingConfig(newConfig, { projectDir: tempDir });
+
+      expect(result.merged).toBe(true);
+      expect(result.config.agents.filter((a) => a.name === "api-developer")).toStrictEqual([]);
+    });
+
+    it("drops a fully-deselected dual-scope skill's project entry and tombstone from the written config", async () => {
+      await writeFullConfig(
+        buildProjectConfig({
+          name: "project",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-framework-react"], {
+              scope: "global",
+              source: "agents-inc",
+              excluded: true,
+            }),
+          ],
+        }),
+      );
+
+      const newConfig = buildProjectConfig({ name: "project", skills: [] });
+
+      const result = await mergeWithExistingConfig(newConfig, { projectDir: tempDir });
+
+      expect(result.merged).toBe(true);
+      expect(result.config.skills.filter((s) => s.id === "web-framework-react")).toStrictEqual([]);
+    });
+
     describe("merge precedence rules", () => {
       it.each([
         { field: "name" as const, existingValue: "existing-project", newValue: "new-project" },
@@ -779,6 +823,20 @@ describe("config-merger", () => {
       });
     });
 
+    it("preserves the existing projects registration when new config omits it (propagation)", () => {
+      const newConfig = buildProjectConfig({ name: "global", skills: [], agents: [] });
+      const existingConfig = buildProjectConfig({
+        name: "global",
+        skills: [],
+        agents: [],
+        projects: ["/home/user/project-a", "/home/user/project-b"],
+      });
+
+      const result = mergeConfigs(newConfig, existingConfig);
+
+      expect(result.projects).toStrictEqual(["/home/user/project-a", "/home/user/project-b"]);
+    });
+
     it("should not mutate the input configs", () => {
       const newConfig = buildProjectConfig({
         name: "new-project",
@@ -931,6 +989,155 @@ describe("config-merger", () => {
         });
       });
 
+      it("drops BOTH the lingering active project entry and the stale tombstone when a dual-scope skill is fully deselected", () => {
+        // Skill-side twin of the agent full-deselect test above.
+        const newConfig = buildProjectConfig({
+          name: "project",
+          skills: [],
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-framework-react"], {
+              scope: "global",
+              source: "agents-inc",
+              excluded: true,
+            }),
+            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+          ],
+        });
+
+        const result = mergeConfigs(newConfig, existingConfig);
+
+        expect(result.skills.filter((s) => s.id === "web-framework-react")).toStrictEqual([]);
+        // A genuinely-untouched inherited-global skill (no tombstone) is preserved.
+        expect(result.skills.find((s) => s.id === "web-testing-vitest")).toStrictEqual({
+          id: "web-testing-vitest",
+          scope: "global",
+          source: "agents-inc",
+        });
+      });
+
+      it("drops an active global skill absent from new when newConfig is authoritative (global-context edit)", () => {
+        const newConfig = buildProjectConfig({
+          name: "project",
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "global", source: "eject" }),
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "eject" }),
+            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "eject" }),
+          ],
+        });
+
+        const authoritative = mergeConfigs(newConfig, existingConfig, {
+          authoritativeScope: "all",
+        });
+        expect(authoritative.skills.some((s) => s.id === "web-testing-vitest")).toBe(false);
+        expect(authoritative.skills.some((s) => s.id === "web-framework-react")).toBe(true);
+
+        const projectEdit = mergeConfigs(newConfig, existingConfig);
+        expect(projectEdit.skills.some((s) => s.id === "web-testing-vitest")).toBe(true);
+      });
+
+      it("owned-scope edit drops a deselected PROJECT skill but preserves inherited global-active skills (project-context)", () => {
+        // Project edit: newConfig keeps react (project) but omits a previously-selected project
+        // skill (zustand). The deselected project skill must drop; an inherited global-active
+        // skill the project does not own must be preserved even though it is absent from new.
+        const newConfig = buildProjectConfig({
+          name: "project",
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-state-zustand"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+          ],
+        });
+
+        const result = mergeConfigs(newConfig, existingConfig, { authoritativeScope: "owned" });
+
+        // Deselected project-owned skill dropped.
+        expect(result.skills.some((s) => s.id === "web-state-zustand")).toBe(false);
+        // Inherited global-active skill preserved (not owned by the project edit).
+        expect(result.skills.some((s) => s.id === "web-testing-vitest")).toBe(true);
+        expect(result.skills.some((s) => s.id === "web-framework-react")).toBe(true);
+      });
+
+      it("preserves an existing skill whose id could not be resolved this session, regardless of authoritativeScope", () => {
+        // A real installed skill absent from the currently-loaded source matrix is skipped by the
+        // wizard (populateFromSkillIds) and never reaches newConfig. Its absence is a resolution
+        // gap, NOT a deselection, so it must survive an authoritative edit at BOTH scopes.
+        const newConfig = buildProjectConfig({
+          name: "project",
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-styling-tailwind"], { scope: "project", source: "eject" }),
+          ],
+        });
+
+        const unresolvableSkillIds: SkillId[] = ["web-styling-tailwind"];
+        const preservedEntry = {
+          id: "web-styling-tailwind",
+          scope: "project" as const,
+          source: "eject" as const,
+        };
+
+        const globalEdit = mergeConfigs(newConfig, existingConfig, {
+          authoritativeScope: "all",
+          unresolvableSkillIds,
+        });
+        expect(globalEdit.skills.find((s) => s.id === "web-styling-tailwind")).toStrictEqual(
+          preservedEntry,
+        );
+
+        const projectEdit = mergeConfigs(newConfig, existingConfig, {
+          authoritativeScope: "owned",
+          unresolvableSkillIds,
+        });
+        expect(projectEdit.skills.find((s) => s.id === "web-styling-tailwind")).toStrictEqual(
+          preservedEntry,
+        );
+      });
+
+      it("still drops a genuinely deselected resolvable skill even when an unrelated id is unresolvable", () => {
+        // Boundary proof: the unresolvable exemption is narrow. web-state-zustand was resolvable and
+        // shown but the user deselected it (absent from newConfig, not in the unresolvable set), so
+        // it must still drop — while the unrelated unresolvable skill is preserved.
+        const newConfig = buildProjectConfig({
+          name: "project",
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-state-zustand"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-styling-tailwind"], { scope: "project", source: "eject" }),
+          ],
+        });
+
+        const result = mergeConfigs(newConfig, existingConfig, {
+          authoritativeScope: "all",
+          unresolvableSkillIds: ["web-styling-tailwind"],
+        });
+
+        // Genuine deselection still drops.
+        expect(result.skills.some((s) => s.id === "web-state-zustand")).toBe(false);
+        // Unresolvable skill preserved.
+        expect(result.skills.some((s) => s.id === "web-styling-tailwind")).toBe(true);
+        // Actively-selected skill preserved.
+        expect(result.skills.some((s) => s.id === "web-framework-react")).toBe(true);
+      });
+
       it("should handle both configs having excluded entries for the same skill ID", () => {
         const newConfig = buildProjectConfig({
           name: "project",
@@ -1068,6 +1275,96 @@ describe("config-merger", () => {
           name: "web-developer",
           scope: "global",
         });
+      });
+
+      it("drops BOTH the lingering active project entry and the stale tombstone when a dual-scope agent is fully deselected", () => {
+        // Scenario B full-deselect: the wizard emits ZERO entries for the name
+        // (a fully-deselected dual-scope agent is neither an active selection nor
+        // a tombstone), while the on-disk config still has both the active project
+        // entry and the global tombstone. Both must be dropped, not preserved.
+        const newConfig = buildProjectConfig({
+          name: "project",
+          agents: [],
+          skills: [],
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          agents: [
+            ...buildAgentConfigs(["api-developer"], { scope: "project" }),
+            ...buildAgentConfigs(["api-developer"], { scope: "global", excluded: true }),
+            ...buildAgentConfigs(["web-developer"], { scope: "global" }),
+          ],
+          skills: [],
+        });
+
+        const result = mergeConfigs(newConfig, existingConfig);
+
+        expect(result.agents.filter((a) => a.name === "api-developer")).toStrictEqual([]);
+        // A genuinely-untouched inherited-global agent (no tombstone) is preserved.
+        expect(result.agents.find((a) => a.name === "web-developer")).toStrictEqual({
+          name: "web-developer",
+          scope: "global",
+        });
+      });
+
+      it("drops an active global agent absent from new when newConfig is authoritative (global-context edit)", () => {
+        // A global-context edit at ~/ loads the entire global config; removing an active
+        // global agent yields a newConfig with no entry for it. Union-preserve would wrongly
+        // keep it (there is no tombstone to key on) — authoritative merge must drop it.
+        const newConfig = buildProjectConfig({
+          name: "project",
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+          skills: [],
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          agents: [
+            ...buildAgentConfigs(["web-developer"], { scope: "global" }),
+            ...buildAgentConfigs(["api-developer"], { scope: "global" }),
+          ],
+          skills: [],
+        });
+
+        const authoritative = mergeConfigs(newConfig, existingConfig, {
+          authoritativeScope: "all",
+        });
+        expect(authoritative.agents.some((a) => a.name === "api-developer")).toBe(false);
+        expect(authoritative.agents.some((a) => a.name === "web-developer")).toBe(true);
+
+        // Without a scope (init / additive merge) the absent agent is union-preserved.
+        const initMerge = mergeConfigs(newConfig, existingConfig);
+        expect(initMerge.agents.some((a) => a.name === "api-developer")).toBe(true);
+      });
+
+      it("owned-scope edit drops a deselected PROJECT agent but preserves inherited global-active agents (project-context)", () => {
+        // The exact reported bug: a project-only agent, never dual-scope, fully deselected in a
+        // project-context edit. It must drop. An inherited global-active agent the project does
+        // not own must survive even though it is absent from newConfig.
+        const newConfig = buildProjectConfig({
+          name: "project",
+          agents: buildAgentConfigs(["cli-developer"], { scope: "project" }),
+          skills: [],
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          agents: [
+            ...buildAgentConfigs(["cli-developer"], { scope: "project" }),
+            ...buildAgentConfigs(["cli-tester"], { scope: "project" }),
+            ...buildAgentConfigs(["web-developer"], { scope: "global" }),
+          ],
+          skills: [],
+        });
+
+        const result = mergeConfigs(newConfig, existingConfig, { authoritativeScope: "owned" });
+
+        // Deselected project-only agent dropped (no tombstone to key on).
+        expect(result.agents.some((a) => a.name === "cli-tester")).toBe(false);
+        // Inherited global-active agent preserved (not owned by the project edit).
+        expect(result.agents.find((a) => a.name === "web-developer")).toStrictEqual({
+          name: "web-developer",
+          scope: "global",
+        });
+        expect(result.agents.some((a) => a.name === "cli-developer")).toBe(true);
       });
 
       it("should handle both configs having excluded entries for the same agent name", () => {

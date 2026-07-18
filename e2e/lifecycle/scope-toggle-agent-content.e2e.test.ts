@@ -134,7 +134,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
   );
 
   it(
-    "P->G skill scope toggle should keep agent at original scope",
+    "scope toggle (s) is inert on a persisted dual-scope skill locked to a selected agent, leaving the agent untouched",
     { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
     async () => {
       // BEFORE: Verify project api-developer contains api-framework-hono
@@ -142,7 +142,10 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
         contains: ["api-framework-hono"],
       });
 
-      // ACTION: Launch EditWizard, advance to API domain, toggle api-framework-hono to global
+      // api-framework-hono is a persisted dual-scope [P][G] pair AND locked to the
+      // selected api-developer agent, so `s` is inert (dual-scope guard) and space
+      // cannot deselect it (agent lock). Pressing `s` must leave both the skill
+      // (still dual-scope) and the agent untouched.
       const wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
@@ -155,52 +158,42 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       // Build step -- Web domain (pass through)
       await wizard.build.advanceDomain();
 
-      // Build step -- API domain: toggle api-framework-hono scope to global
+      // Build step -- API domain: press `s` on api-framework-hono (must be inert)
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
 
       // Build step -- Methodology domain (pass through) -> Sources
       const sources = await wizard.build.advanceToSources();
-
-      // Sources step (pass through)
       await sources.waitForReady();
       const agents = await sources.advance();
-
-      // Agents step (pass through)
       const confirm = await agents.acceptDefaults("edit");
 
-      // Confirm step
       const result = await confirm.confirm();
       const exitCode = await result.exitCode;
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // AFTER assertions
+      // AFTER assertions — nothing moved
 
-      // api-developer.md STILL exists at project scope (only the skill moved, not the agent)
+      // api-developer.md STILL exists at project scope (agent untouched)
       const projectApiDevPath = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
       expect(
         await fileExists(projectApiDevPath),
-        "api-developer.md must still exist at project scope — only the skill moved, not the agent",
+        "api-developer.md must still exist at project scope",
       ).toBe(true);
-
-      // Project api-developer.md is recompiled — content may or may not include
-      // api-framework-hono depending on whether the compile pass discovers global
-      // skills. The key assertion is that the agent FILE exists (it wasn't moved).
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
 
-      // Skill directory was moved to global scope
+      // Skill directory still present at BOTH scopes — the dual-scope pair survives
       const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, "api-framework-hono");
       expect(
         await directoryExists(globalSkillDir),
-        "api-framework-hono must exist at global scope after P->G toggle",
+        "api-framework-hono must remain at global scope (inert `s`)",
       ).toBe(true);
 
-      // Skill directory no longer at project scope (P->G moves the skill)
       const projectSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, "api-framework-hono");
       expect(
         await directoryExists(projectSkillDir),
-        "api-framework-hono must NOT exist at project scope after P->G toggle",
-      ).toBe(false);
+        "api-framework-hono must remain at project scope — `s` is inert on a locked dual-scope pair",
+      ).toBe(true);
 
       await result.destroy();
     },
@@ -232,9 +225,10 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       await sources.waitForReady();
       const agents = await sources.advance();
 
-      // Agents step -- navigate to API Developer and toggle scope to global
-      await agents.navigateCursorToAgent("API Developer");
-      await agents.toggleScopeOnFocusedAgent();
+      // Agents step -- restore api-developer to global scope. It is a persisted
+      // dual-scope [P][G] agent, so `s` is inert on it; space (deselect)
+      // collapses [P][G] → [G], the sanctioned P→G restoration path.
+      await agents.toggleAgent("API Developer");
       const confirm = await agents.advance("edit");
 
       // Confirm step

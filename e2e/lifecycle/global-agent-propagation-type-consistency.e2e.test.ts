@@ -453,7 +453,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       // THIS IS THE D-222 ASSERTION — expected to FAIL on current main.
       expect(
         projectBTypeUnionAfter,
-        "Project B config-types.ts::SelectedAgentName must include api-developer after global promotion (D-222)",
+        "Project B config-types.ts::SelectedAgentName must include api-developer after global promotion",
       ).toContain(API_DEVELOPER_AGENT);
       expect(
         projectBTypeUnionAfter,
@@ -466,7 +466,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       // writers is the bug.
       expect(
         [...projectBTypeUnionAfter].sort(),
-        `D-222 symmetry: config.ts::selectedAgents and config-types.ts::SelectedAgentName must match.
+        `config.ts::selectedAgents and config-types.ts::SelectedAgentName must match.
 config.ts:       ${JSON.stringify(projectBSelectedAfter.sort())}
 config-types.ts: ${JSON.stringify(projectBTypeUnionAfter.sort())}`,
       ).toStrictEqual([...projectBSelectedAfter].sort());

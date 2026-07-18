@@ -86,7 +86,6 @@ describe("init wizard — source management", () => {
     });
   });
 
-  /** Gap 8: Source management outcome verification */
   describe("source management — outcome verification", () => {
     it(
       "should complete install with all local sources after pressing L hotkey",

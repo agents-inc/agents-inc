@@ -59,10 +59,20 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
   });
 
   it(
-    "Toggle a project skill's scope to global",
+    "Scope toggle (s) is inert on a persisted dual-scope skill locked to a selected agent",
     { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
     async () => {
-      // Phase C: Edit -- toggle api-framework-hono from project to global scope
+      // api-framework-hono is a persisted dual-scope [P][G] pair AND a preloaded
+      // skill locked to the selected api-developer agent. `s` is intentionally
+      // inert on a persisted dual-scope pair, and space cannot deselect a
+      // skill locked to a selected agent — so neither key removes the project
+      // half. The pair must survive the edit untouched: config and filesystem
+      // unchanged at both scopes.
+      const projectSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, "api-framework-hono");
+      const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, "api-framework-hono");
+      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const projectConfigBefore = await readTestFile(projectConfigPath);
+
       const wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
@@ -75,73 +85,44 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
       // Build step -- Web domain (pass through)
       await wizard.build.advanceDomain();
 
-      // Build step -- API domain -- toggle api-framework-hono scope to global
+      // Build step -- API domain -- press `s` on api-framework-hono (must be inert)
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
 
       // Build step -- Shared domain (pass through)
       const sources = await wizard.build.advanceToSources();
-
-      // Sources step (pass through)
       await sources.waitForReady();
       const agents = await sources.advance();
-
-      // Agents step (pass through)
       const confirm = await agents.acceptDefaults("edit");
 
-      // Confirm step
       const result = await confirm.confirm();
       const exitCode = await result.exitCode;
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Phase D: Assertions
+      // Phase D: Assertions — the dual-scope pair is unchanged
 
-      // D-1: Skill directory EXISTS at global scope (P→G is a MOVE for skills)
-      const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, "api-framework-hono");
+      // D-1: Skill directory still exists at BOTH scopes (project override preserved)
       expect(
         await directoryExists(globalSkillDir),
-        "api-framework-hono directory must exist at global scope after P→G toggle",
+        "api-framework-hono must remain at global scope (inert `s`)",
       ).toBe(true);
-
-      // SKILL.md must exist at global scope with content
-      const globalSkillMd = path.join(globalSkillDir, FILES.SKILL_MD);
-      expect(await fileExists(globalSkillMd), "SKILL.md must exist at global scope").toBe(true);
-
-      // D-2: Skill directory does NOT exist at project scope (moved away)
-      const projectSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, "api-framework-hono");
       expect(
         await directoryExists(projectSkillDir),
-        "api-framework-hono directory must NOT exist at project scope after P→G toggle",
-      ).toBe(false);
+        "api-framework-hono must remain at project scope — `s` is inert on a locked dual-scope pair",
+      ).toBe(true);
 
-      // D-3: Global config has api-framework-hono with scope: "global"
-      await expect({ dir: fakeHome }).toHaveConfig({
-        skillIds: [
-          "web-framework-react",
-          "web-testing-vitest",
-          "web-state-zustand",
-          "api-framework-hono",
-        ],
-        agents: ["web-developer"],
-      });
-      const globalConfig = await readTestFile(
-        path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
-      expect(globalConfig).toContain('"scope":"global"');
-
-      // D-4: Project config does NOT contain api-framework-hono at project scope (it moved to global)
-      await expect({ dir: projectDir }).toHaveConfig({
-        agents: ["api-developer"],
-      });
-      const projectConfig = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
-      const honoProjectLines = projectConfig
+      // D-2: Project config still carries the dual-scope pair (project override + global tombstone)
+      const projectConfigAfter = await readTestFile(projectConfigPath);
+      expect(
+        projectConfigAfter,
+        "project config.ts must be unchanged after an inert scope toggle",
+      ).toBe(projectConfigBefore);
+      const honoProjectLines = projectConfigAfter
         .split("\n")
         .filter((l: string) => l.includes("api-framework-hono") && l.includes('"scope":"project"'));
-      expect(honoProjectLines).toStrictEqual([]);
+      expect(honoProjectLines.length).toBeGreaterThan(0);
 
-      // D-5: Agent files at both scopes still exist (unchanged — collateral damage check)
+      // D-3: Agent files at both scopes still exist (unchanged)
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
 
@@ -170,9 +151,11 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
       await sources.waitForReady();
       const agents = await sources.advance();
 
-      // Agents step -- toggle api-developer to global scope
-      await agents.navigateCursorToAgent("API Developer");
-      await agents.toggleScopeOnFocusedAgent();
+      // Agents step -- restore api-developer to global scope. api-developer is a
+      // persisted dual-scope [P][G] agent, so `s` is intentionally inert on it.
+      // Space (deselect) is the sanctioned way to drop the project half — it
+      // collapses [P][G] → [G], the same P→G restoration end-state.
+      await agents.toggleAgent("API Developer");
       const confirm = await agents.advance("edit");
 
       // Confirm step

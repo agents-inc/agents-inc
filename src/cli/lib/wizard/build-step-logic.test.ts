@@ -332,6 +332,39 @@ describe("buildCategoriesForDomain", () => {
       expect(reactOption?.scope).toBeUndefined();
       expect(reactOption?.secondaryScope).toBeUndefined();
     });
+
+    it("renders an inherited-global entry as unselected with a global badge and no secondaryScope", () => {
+      initializeMatrix(BUILD_STEP_WEB_MATRIX);
+
+      // Active global entry that the project does not select at project scope — the
+      // inherited-global row that renders `[G]` read-only after a dual-scope deselect.
+      const skillConfigs = buildSkillConfigs(["web-framework-react"], { scope: "global" });
+
+      const result = buildCategoriesForDomain("web", [], {}, [], skillConfigs);
+
+      const frameworkRow = result.find((r) => r.id === frameworkCategory);
+      const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
+      expect(reactOption?.selected).toBe(false);
+      expect(reactOption?.scope).toBe("global");
+      expect(reactOption?.secondaryScope).toBeUndefined();
+    });
+
+    it("renders a dual-scope entry as selected with project primary and global secondary", () => {
+      initializeMatrix(BUILD_STEP_WEB_MATRIX);
+
+      const skillConfigs = [
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
+      ];
+
+      const result = buildCategoriesForDomain("web", ["web-framework-react"], {}, [], skillConfigs);
+
+      const frameworkRow = result.find((r) => r.id === frameworkCategory);
+      const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
+      expect(reactOption?.selected).toBe(true);
+      expect(reactOption?.scope).toBe("project");
+      expect(reactOption?.secondaryScope).toBe("global");
+    });
   });
 
   it("should propagate category required and exclusive flags", () => {

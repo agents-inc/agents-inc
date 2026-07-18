@@ -23,7 +23,6 @@ import "../matchers/setup.js";
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
-/** D-122: Auto-update marketplace before plugin install */
 describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", () => {
   let fixtureV1: E2EPluginSource;
   let fixtureV2: E2EPluginSource;
@@ -117,7 +116,6 @@ describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", ()
   );
 });
 
-/** D-123: Eject mode ENOENT on consuming projects */
 describe("init wizard — default source eject mode ENOENT", () => {
   let wizard: InitWizard | undefined;
 

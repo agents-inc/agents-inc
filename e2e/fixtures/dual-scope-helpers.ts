@@ -285,6 +285,70 @@ export async function initProjectAllGlobal(
 }
 
 /**
+ * Fresh project init (NO prior global install) that toggles web-testing-vitest
+ * (a non-preloaded skill) and api-developer (agent) to PROJECT scope, leaving
+ * web-framework-react and web-developer at GLOBAL scope.
+ *
+ * Because nothing was installed globally first, the project-scoped vitest/api-developer
+ * are genuine project-only entries — no global install underneath them and no global
+ * tombstone. web-framework-react / web-developer land in the freshly-created global
+ * config as inherited global-active entries. This is the exact shape for testing
+ * project-scope deselection (project-only entries get dropped) against inherited-global
+ * preservation (global entries must survive a project edit).
+ *
+ * vitest is deliberately a non-preloaded (dynamic) skill: a preloaded skill (react/hono)
+ * is locked to its selected agent and cannot be deselected on its own, so it could never
+ * exercise the skill-drop merge path.
+ */
+export async function setupProjectOnlyMixedScope(
+  sourceDir: string,
+  sourceTempDir: string,
+  homeDir: string,
+  projectDir: string,
+): Promise<void> {
+  const wizard = await InitWizard.launch({
+    source: { sourceDir, tempDir: sourceTempDir },
+    projectDir,
+    env: { HOME: homeDir },
+    rows: 60,
+    cols: 120,
+  });
+
+  try {
+    const domain = await wizard.stack.selectFirstStack();
+    const build = await domain.acceptDefaults();
+
+    // Web domain: toggle web-testing-vitest to project scope (react stays global).
+    await build.focusSkill("vitest");
+    await build.toggleScopeOnFocusedSkill();
+    await build.advanceDomain();
+    // API domain: pass through (hono + api-framework stay global).
+    await build.advanceDomain();
+    // Methodology domain -> Sources.
+    const sources = await build.advanceToSources();
+
+    await sources.waitForReady();
+    await sources.setAllLocal();
+    const agents = await sources.advance();
+
+    // Toggle api-developer to project scope (project-only agent).
+    await agents.navigateCursorToAgent("API Developer");
+    await agents.toggleScopeOnFocusedAgent();
+    const confirm = await agents.advance("init");
+
+    const result = await confirm.confirm();
+    const exitCode = await result.exitCode;
+    expect(exitCode, `Project-only mixed-scope init failed: ${result.rawOutput}`).toBe(
+      EXIT_CODES.SUCCESS,
+    );
+    await result.destroy();
+  } catch (e) {
+    await wizard.destroy();
+    throw e;
+  }
+}
+
+/**
  * Creates a global-only environment via wizard interactions with eject mode.
  * Phase A initializes the global home, Phase B initializes the project
  * with all skills remaining global-scoped (no scope toggling).

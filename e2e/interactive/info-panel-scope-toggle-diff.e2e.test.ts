@@ -138,7 +138,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
   }
 
   it(
-    "Scenario A: P→G restoration shows `-` in Project and `•` in Global (D-230)",
+    "Scenario A: P→G restoration shows `-` in Project and `•` in Global",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
     async () => {
       // Baseline: global-only install, then G→P to seat react at project scope
@@ -166,8 +166,11 @@ describe("info panel — scope-toggle diff symmetry", () => {
         cols: 120,
       });
 
-      // Web domain: react is now at project scope — toggle P→G.
-      await wizard.build.toggleScopeOnFocusedSkill();
+      // Web domain: react is a persisted [P][G] pair, so `s` is now inert on it
+      // (dual-scope scope-toggle guard). Space (deselect) is the sanctioned way to
+      // drop the project half — it collapses [P][G] → [G], the same P→G restoration
+      // end-state the scope toggle used to produce.
+      await wizard.build.toggleFocusedSkill();
       await wizard.build.advanceDomain();
       // API + Methodology: pass through.
       await wizard.build.advanceDomain();
@@ -197,7 +200,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
   );
 
   it(
-    "Scenario B: G→P skill toggle on pre-existing global install shows `+` in Project and `•` in Global (D-230)",
+    "Scenario B: G→P skill toggle on pre-existing global install shows `+` in Project and `•` in Global",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
     async () => {
       // Baseline: global-only install — react starts at global scope. User
@@ -247,7 +250,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
   );
 
   it(
-    "Scenario C: agent P→G restoration shows `-` in Project and `•` in Global (D-230)",
+    "Scenario C: agent P→G restoration shows `-` in Project and `•` in Global",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
     async () => {
       // Baseline: global-only install, then toggle web-developer G→P via a
@@ -272,8 +275,10 @@ describe("info panel — scope-toggle diff symmetry", () => {
       const sources = await wizard.build.passThroughAllDomains();
       await sources.waitForReady();
       const agentsStep = await sources.advance();
-      await agentsStep.navigateCursorToAgent("Web Developer");
-      await agentsStep.toggleScopeOnFocusedAgent();
+      // web-developer is a persisted [P][G] pair, so `s` is now inert on it.
+      // Space (deselect) is the sanctioned way to drop the project half — it
+      // collapses [P][G] → [G], the same P→G restoration end-state.
+      await agentsStep.toggleAgent("Web Developer");
       const confirm = await agentsStep.advance("edit");
       await confirm.waitForReady();
 
@@ -297,7 +302,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
   );
 
   it(
-    "Scenario D: build-step info-panel overlay on P→G restoration shows `-` in Project and `•` in Global (D-230)",
+    "Scenario D: build-step info-panel overlay on P→G restoration shows `-` in Project and `•` in Global",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
     async () => {
       // Setup seeds react at project scope with a live global install (the
@@ -319,10 +324,11 @@ describe("info panel — scope-toggle diff symmetry", () => {
         cols: 120,
       });
 
-      // Web domain: react is at project scope — toggle P→G (tombstone is
-      // stripped, global goes active). Open the info panel overlay (`i`) to
-      // inspect the live-diff path.
-      await wizard.build.toggleScopeOnFocusedSkill();
+      // Web domain: react is a persisted [P][G] pair, so `s` is now inert on it.
+      // Space (deselect) collapses [P][G] → [G] — the same P→G restoration
+      // end-state (tombstone stripped, global goes active). Open the info panel
+      // overlay (`i`) to inspect the live-diff path.
+      await wizard.build.toggleFocusedSkill();
       await wizard.build.toggleInfoPanel();
 
       const skillEntries = await wizard.build.getSummaryDiffEntries(REACT_SKILL_DISPLAY_NAME);
@@ -345,7 +351,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
   );
 
   it(
-    "Scenario E: re-open with saved dual-scope shape shows no + or - for the dual-scope skill (D-232)",
+    "Scenario E: re-open with saved dual-scope shape shows no + or - for the dual-scope skill",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
     async () => {
       // D-232: after a G→P toggle is saved, the config carries `[{react,

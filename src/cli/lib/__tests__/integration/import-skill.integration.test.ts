@@ -153,7 +153,7 @@ describe("Integration: Import Skill -> Compile Pipeline", () => {
     const outputDir = path.join(tempDir, "plugins");
     await mkdir(outputDir, { recursive: true });
 
-    const results = await compileAllSkillPlugins(importedSkillsDir, outputDir);
+    const { compiled: results } = await compileAllSkillPlugins(importedSkillsDir, outputDir);
 
     // Step 5: Verify all skills compiled successfully
     expect(results).toHaveLength(3);
@@ -556,7 +556,7 @@ describe("Integration: Import Error Recovery", () => {
     const outputDir = path.join(tempDir, "plugins");
     await mkdir(outputDir, { recursive: true });
 
-    const results = await compileAllSkillPlugins(importedSkillsDir, outputDir);
+    const { compiled: results } = await compileAllSkillPlugins(importedSkillsDir, outputDir);
 
     const names = results.map((r) => r.manifest.name);
     const uniqueNames = new Set(names);

@@ -7,6 +7,18 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.142.0] - 2026-07-18
+
+**Dual-scope skill/agent scope-toggle semantics fixed end-to-end (D-233, D-227)**
+
+- Spacebar on a persisted `[P][G]` skill/agent now collapses cleanly to inherited-global instead of leaving an orphan tombstone; spacebar again restores it
+- `s` is now a guarded no-op on a persisted dual-scope pair (use spacebar there) instead of silently corrupting it — restoring project scope from inherited-global uses `s`, same as any other globally-inherited item
+- Dual-scope tombstones now survive domain/stack re-preselection on the agent path (D-227), mirroring the existing skill-side fix
+- Unresolvable skills (wrong `--source`, stale cache) no longer silently dropped on an authoritative edit
+- Backlog: a low-severity, E2E-unreachable same-scope duplicate case remains open (D-227 follow-up)
+
+See [changelogs/0.142.0.md](./changelogs/0.142.0.md) for full details.
+
 ## [0.141.8] - 2026-07-18
 
 **Fixed: propagation to registered projects now reconciles `stack` and `selectedAgents`, not just `skills[]`/`agents[]`**

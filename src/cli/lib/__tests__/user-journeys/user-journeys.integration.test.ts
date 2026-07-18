@@ -1282,22 +1282,22 @@ describe("per-agent scope", () => {
     expect(config).toBeUndefined();
   });
 
-  it("deselecting global agent marks it as excluded during edit", () => {
+  it("deselecting global agent removes it entirely when editing from global scope", () => {
     simulateSkillSelections(["web-framework-react"], matrix, ["web"]);
     useWizardStore.getState().preselectAgentsFromDomains();
-    // Simulate edit flow from global scope: set installed agent configs
+    // Editing at ~/ : the config IS the global config, so there is no project overlay and a
+    // deselect is a genuine removal (not a tombstone). This is the Scenario C precondition.
     useWizardStore.setState({
       installedAgentConfigs: buildAgentConfigs(["web-developer"], { scope: "global" }),
       isEditingFromGlobalScope: true,
     });
 
-    // Deselect web-developer (global scope, installed) → should be marked excluded
+    // Deselect web-developer (global scope, installed) → cleanly removed
     useWizardStore.getState().toggleAgent("web-developer");
 
     const config = useWizardStore.getState().agentConfigs.find((ac) => ac.name === "web-developer");
-    expect(config).toStrictEqual(
-      buildAgentConfigs(["web-developer"], { scope: "global", excluded: true })[0],
-    );
+    expect(config).toBeUndefined();
+    expect(useWizardStore.getState().selectedAgents).not.toContain("web-developer");
   });
 
   it("agent scope changes detected in edit flow", () => {

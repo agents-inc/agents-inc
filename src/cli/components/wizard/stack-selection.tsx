@@ -109,8 +109,15 @@ export type StackSelectionProps = {
 };
 
 export const StackSelection: React.FC<StackSelectionProps> = ({ onCancel }) => {
-  const { selectStack, setApproach, setStackAction, populateFromSkillIds, toggleDomain, setStep } =
-    useWizardStore();
+  const {
+    selectStack,
+    setApproach,
+    setStackAction,
+    populateFromSkillIds,
+    preselectAgentsFromStack,
+    toggleDomain,
+    setStep,
+  } = useWizardStore();
 
   const stacks = matrix.suggestedStacks;
   const groups = useMemo(() => groupStacks(stacks), [stacks]);
@@ -214,23 +221,7 @@ export const StackSelection: React.FC<StackSelectionProps> = ({ onCancel }) => {
 
         // Derive agent preselection from stack agent keys, merged with global agent preselections
         const stackAgents = typedKeys<AgentName>(focusedStack.skills);
-        const globalAgentPre = useWizardStore.getState().globalAgentPreselections;
-        const mergedAgents = [
-          ...new Set([...stackAgents, ...(globalAgentPre?.agents ?? [])]),
-        ].sort();
-        const existingConfigs = new Map((globalAgentPre?.configs ?? []).map((ac) => [ac.name, ac]));
-        const mergedAgentConfigs = mergedAgents.map((name) => {
-          const ex = existingConfigs.get(name);
-          return ex ? { ...ex, excluded: undefined } : { name, scope: "global" as const };
-        });
-        // Preserve excluded entries not in the merged list
-        const excludedConfigs = (globalAgentPre?.configs ?? []).filter(
-          (ac) => ac.excluded && !mergedAgents.includes(ac.name),
-        );
-        useWizardStore.setState({
-          selectedAgents: mergedAgents,
-          agentConfigs: [...mergedAgentConfigs, ...excludedConfigs],
-        });
+        preselectAgentsFromStack(stackAgents);
 
         // Merge global preselections with stack skills
         const globalPreselections = useWizardStore.getState().globalPreselections;

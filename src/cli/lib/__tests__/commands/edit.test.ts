@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { ReactElement } from "react";
+import os from "os";
 import path from "path";
 import { mkdir } from "fs/promises";
 import { runCliCommand, CLI_ROOT } from "../helpers/cli-runner.js";
@@ -36,6 +37,7 @@ const {
   mockLoadProjectConfig,
   mockDiscoverAllPluginSkills,
   mockCopySkillsToLocalFlattened,
+  mockDeleteLocalSkill,
   mockEnsureDir,
   mockGetAgentDefinitions,
 } = vi.hoisted(() => ({
@@ -47,6 +49,7 @@ const {
   mockLoadProjectConfig: vi.fn().mockResolvedValue(null),
   mockDiscoverAllPluginSkills: vi.fn().mockResolvedValue({}),
   mockCopySkillsToLocalFlattened: vi.fn().mockResolvedValue(undefined),
+  mockDeleteLocalSkill: vi.fn().mockResolvedValue(undefined),
   mockEnsureDir: vi.fn().mockResolvedValue(undefined),
   mockGetAgentDefinitions: vi.fn().mockResolvedValue({
     agentsDir: "/mock/agents",
@@ -107,6 +110,7 @@ vi.mock("../../skills/index.js", async (importOriginal) => {
     ...original,
     copySkillsToLocalFlattened: (...args: unknown[]) =>
       mockCopySkillsToLocalFlattened(...(args as [])),
+    deleteLocalSkill: (...args: unknown[]) => mockDeleteLocalSkill(...(args as [])),
   };
 });
 
@@ -754,6 +758,105 @@ describe("edit command copies newly added local skills", () => {
   });
 });
 
+describe("edit command removes deselected local skills", () => {
+  let tempDir: string;
+  let projectDir: string;
+  let originalCwd: string;
+
+  const testMatrix = FULLSTACK_PAIR_MATRIX;
+  const testSourceResult = buildSourceResult(testMatrix, "/test/source");
+
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    tempDir = await createTempDir("cc-edit-local-remove-");
+    projectDir = path.join(tempDir, "project");
+    await mkdir(projectDir, { recursive: true });
+    process.chdir(projectDir);
+
+    mockRender.mockClear();
+    mockDeleteLocalSkill.mockClear();
+    mockDetectInstallation.mockResolvedValue({
+      mode: "eject",
+      scope: "project",
+      configPath: path.join(projectDir, ".claude-src/config.ts"),
+      agentsDir: path.join(projectDir, ".claude/agents"),
+      skillsDir: path.join(projectDir, ".claude/skills"),
+      projectDir,
+    });
+    mockLoadSkillsMatrixFromSource.mockResolvedValue(testSourceResult);
+    initializeMatrix(testSourceResult.matrix);
+    mockDiscoverAllPluginSkills.mockResolvedValue({});
+  });
+
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    await cleanupTempDir(tempDir);
+  });
+
+  function mockRemovalWizard(): void {
+    mockRender.mockImplementation((element: ReactElement) => {
+      const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
+      if (onComplete) {
+        onComplete(buildWizardResult([], { agentConfigs: buildAgentConfigs(["web-developer"]) }));
+      }
+      return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
+    });
+  }
+
+  it("deletes a deselected PROJECT-scope eject skill's directory from the project dir", async () => {
+    mockLoadProjectConfig.mockResolvedValue({
+      config: {
+        name: "test-project",
+        agents: buildAgentConfigs(["web-developer"]),
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+      },
+      configPath: path.join(projectDir, ".claude-src/config.ts"),
+    });
+    mockRemovalWizard();
+
+    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+
+    // Project-scope eject skill dir is removed from the project directory (cwd), not home.
+    expect(mockDeleteLocalSkill).toHaveBeenCalledWith(process.cwd(), "web-framework-react");
+  });
+
+  it("deletes a deselected GLOBAL-scope eject skill's directory from the home dir", async () => {
+    mockLoadProjectConfig.mockResolvedValue({
+      config: {
+        name: "test-project",
+        agents: buildAgentConfigs(["web-developer"]),
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global", source: "eject" }),
+      },
+      configPath: path.join(projectDir, ".claude-src/config.ts"),
+    });
+    mockRemovalWizard();
+
+    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+
+    // Global-scope eject skill dir is removed from the home directory, not the project.
+    expect(mockDeleteLocalSkill).toHaveBeenCalledWith(os.homedir(), "web-framework-react");
+  });
+
+  it("does NOT delete a directory for a deselected plugin-mode skill (handled by plugin uninstall)", async () => {
+    mockLoadProjectConfig.mockResolvedValue({
+      config: {
+        name: "test-project",
+        agents: buildAgentConfigs(["web-developer"]),
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          source: "agents-inc",
+        }),
+      },
+      configPath: path.join(projectDir, ".claude-src/config.ts"),
+    });
+    mockRemovalWizard();
+
+    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+
+    expect(mockDeleteLocalSkill).not.toHaveBeenCalledWith(expect.anything(), "web-framework-react");
+  });
+});
+
 // Bug regression: migratePluginSkillScopes must NOT uninstall the global ("user")
 // plugin when re-scoping from global to project. The global registration is shared
 // across projects and must remain intact. Only project→global should uninstall.
@@ -1160,6 +1263,136 @@ describe("detectConfigChanges", () => {
     expect(changes.addedAgents).toStrictEqual(["api-developer"]);
     expect(changes.removedAgents).toStrictEqual([]);
   });
+
+  // A dual-scope addition (adding project scope to an already-global install)
+  // produces TWO new entries for the same id: an active project entry plus an
+  // excluded global tombstone. The active-only diff sees only the project entry
+  // and would misread it as a G→P migration. detectConfigChanges must flag it as
+  // a dual-scope transition using the tombstone-inclusive `fullEntries`.
+  it("classifies a G→P dual-scope skill addition as a dual-scope transition, not a migration", () => {
+    const oldConfig = buildProjectConfig({
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      agents: [],
+    });
+    const wizardResult = buildWizardResult(
+      buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+    );
+    const fullEntries = {
+      newSkills: [
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
+      ],
+      oldSkills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      newAgents: [],
+      oldAgents: [],
+    };
+
+    const changes = detectConfigChanges(oldConfig, wizardResult, fullEntries);
+
+    // The scope change stays in scopeChanges — it still drives the disk-side
+    // project-scope install and keeps hasAnyChanges truthy.
+    expect(changes.scopeChanges.get("web-framework-react")).toStrictEqual({
+      from: "global",
+      to: "project",
+    });
+    // ...but it is flagged so the summary renders it as a project-scope addition.
+    expect(changes.dualScopeSkillTransitions.has("web-framework-react")).toBe(true);
+  });
+
+  it("classifies a P→G dual-scope skill removal as a dual-scope transition, not a migration", () => {
+    const oldConfig = buildProjectConfig({
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+      agents: [],
+    });
+    const wizardResult = buildWizardResult(
+      buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+    );
+    const fullEntries = {
+      newSkills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      oldSkills: [
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
+      ],
+      newAgents: [],
+      oldAgents: [],
+    };
+
+    const changes = detectConfigChanges(oldConfig, wizardResult, fullEntries);
+
+    expect(changes.scopeChanges.get("web-framework-react")).toStrictEqual({
+      from: "project",
+      to: "global",
+    });
+    expect(changes.dualScopeSkillTransitions.has("web-framework-react")).toBe(true);
+  });
+
+  it("keeps a genuine G→P migration (no tombstone) out of the dual-scope set", () => {
+    const oldConfig = buildProjectConfig({
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      agents: [],
+    });
+    const wizardResult = buildWizardResult(
+      buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+    );
+    const fullEntries = {
+      newSkills: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+      oldSkills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      newAgents: [],
+      oldAgents: [],
+    };
+
+    const changes = detectConfigChanges(oldConfig, wizardResult, fullEntries);
+
+    expect(changes.scopeChanges.get("web-framework-react")).toStrictEqual({
+      from: "global",
+      to: "project",
+    });
+    expect(changes.dualScopeSkillTransitions.has("web-framework-react")).toBe(false);
+  });
+
+  it("classifies a G→P dual-scope AGENT addition as a dual-scope transition", () => {
+    const oldConfig = buildProjectConfig({
+      skills: [],
+      agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+    });
+    const wizardResult = buildWizardResult([], {
+      agentConfigs: buildAgentConfigs(["web-developer"], { scope: "project" }),
+    });
+    const fullEntries = {
+      newSkills: [],
+      oldSkills: [],
+      newAgents: [
+        ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+        ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
+      ],
+      oldAgents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+    };
+
+    const changes = detectConfigChanges(oldConfig, wizardResult, fullEntries);
+
+    // Boundary cast: buildAgentConfigs uses AgentName cast for test names
+    expect(changes.agentScopeChanges.get("web-developer" as AgentName)).toStrictEqual({
+      from: "global",
+      to: "project",
+    });
+    expect(changes.dualScopeAgentTransitions.has("web-developer" as AgentName)).toBe(true);
+  });
+
+  it("treats every scope change as a migration when fullEntries is omitted", () => {
+    const oldConfig = buildProjectConfig({
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      agents: [],
+    });
+    const wizardResult = buildWizardResult(
+      buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+    );
+
+    const changes = detectConfigChanges(oldConfig, wizardResult);
+
+    expect(changes.scopeChanges.size).toBe(1);
+    expect(changes.dualScopeSkillTransitions.size).toBe(0);
+    expect(changes.dualScopeAgentTransitions.size).toBe(0);
+  });
 });
 
 // The change summary must display human-readable names, scope labels, and
@@ -1295,6 +1528,48 @@ describe("edit change summary display", () => {
     expect(output).toContain("[G]");
     expect(output).toContain("[P]");
     // Should NOT show "~" for G→P changes
+    expect(output).not.toContain("~ React");
+  });
+
+  it("should report a dual-scope addition as a project-scope add, not a G→P migration", async () => {
+    mockLoadProjectConfig.mockResolvedValue({
+      config: buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+        agents: buildAgentConfigs(["web-developer"]),
+      }),
+      configPath: path.join(projectDir, ".claude-src/config.ts"),
+    });
+
+    mockRender.mockImplementation((element: ReactElement) => {
+      const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
+      if (onComplete) {
+        // Dual-scope shape: active project entry + excluded global tombstone.
+        // The global install survives; only project scope is added.
+        onComplete(
+          buildWizardResult(
+            [
+              ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+              ...buildSkillConfigs(["web-framework-react"], {
+                scope: "global",
+                excluded: true,
+              }),
+            ],
+            { agentConfigs: buildAgentConfigs(["web-developer"]) },
+          ),
+        );
+      }
+      return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
+    });
+
+    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+
+    const output = stdoutChunks.join("");
+
+    // Rendered as a project-scope addition
+    expect(output).toContain("+ React");
+    expect(output).toContain("[P]");
+    // Must NOT be rendered as a scope migration
+    expect(output).not.toContain("[G] → [P]");
     expect(output).not.toContain("~ React");
   });
 

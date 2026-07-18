@@ -36,6 +36,43 @@ export class AgentsStep extends BaseStep {
     await this.pressKey("s");
   }
 
+  /**
+   * Extract the rendered scope badges (in display order) for a specific agent
+   * in the current agents-step list.
+   *
+   * A single-scope agent renders one bracketed badge ("[P]" or "[G]") between
+   * the checkbox and the agent label. A dual-scope agent (active entry plus an
+   * excluded tombstone at the other scope) renders BOTH badges back-to-back
+   * ("[P][G]"). Returns ["P"], ["G"], ["P", "G"], ["G", "P"], or [] when no
+   * badge is present.
+   *
+   * Scans newest-to-oldest so a re-opened wizard reads the current frame rather
+   * than stale scrollback. Only the "[P]" / "[G]" scope badges match the
+   * bracket-letter pattern — the checkbox tokens ("[✓]", "[ ]") never
+   * contain a bare P or G. Mirrors BuildStep.getScopeBadgesForSkill.
+   *
+   * Requires a stable render — the agents step must have finished redraws.
+   */
+  async getScopeBadgesForAgent(agentLabel: string): Promise<Array<"P" | "G">> {
+    await this.waitForStableRender();
+    const output = this.getOutput();
+    const lines = output.split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      const nameIdx = line.indexOf(agentLabel);
+      if (nameIdx === -1) continue;
+      const prefix = line.slice(0, nameIdx);
+      if (!prefix.includes("[")) continue;
+      const badges = Array.from(prefix.matchAll(/\[([PG])\]/g)).map(
+        (match) => match[1] as "P" | "G",
+      );
+      if (badges.length > 0) return badges;
+    }
+    throw new Error(
+      `getScopeBadgesForAgent: "${agentLabel}" badge cell not found.\nOutput:\n${output}`,
+    );
+  }
+
   /** Advance to confirm step (Enter). */
   async advance(wizardType: "init" | "edit" = "init"): Promise<ConfirmStep> {
     await this.pressEnter();
