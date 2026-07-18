@@ -2,10 +2,9 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { initializeMatrix } from "../../lib/matrix/matrix-provider";
 import { createMockMatrix } from "../../lib/__tests__/factories/matrix-factories";
 import { createMockResolvedStack } from "../../lib/__tests__/factories/stack-factories";
-import { createMockCategory } from "../../lib/__tests__/factories/category-factories";
 import { SKILLS } from "../../lib/__tests__/test-fixtures";
-import type { Category, CategoryDefinition, Domain, ResolvedStack } from "../../types";
-import { getDomainDisplayName, orderDomains, getDomainsFromStack, getStackName } from "./utils";
+import type { Domain } from "../../types";
+import { getDomainDisplayName, orderDomains, getStackName } from "./utils";
 
 describe("getDomainDisplayName", () => {
   it("should return display name for known domains", () => {
@@ -39,47 +38,6 @@ describe("orderDomains", () => {
 
   it("should handle single domain", () => {
     expect(orderDomains(["api"])).toStrictEqual(["api"]);
-  });
-});
-
-describe("getDomainsFromStack", () => {
-  beforeEach(() => {
-    const categories = {
-      "web-framework": createMockCategory("web-framework", "Framework", { domain: "web" }),
-      "api-api": createMockCategory("api-api", "API", { domain: "api" }),
-    } as Record<Category, CategoryDefinition>;
-
-    initializeMatrix(
-      createMockMatrix(SKILLS.react, SKILLS.hono, {
-        categories,
-      }),
-    );
-  });
-
-  it("should extract unique domains from a stack", () => {
-    const stack: ResolvedStack = createMockResolvedStack("test-stack", "Test Stack", {
-      skills: {
-        "web-developer": {
-          "web-framework": ["web-framework-react"],
-        },
-        "api-developer": {
-          "api-api": ["api-framework-hono"],
-        },
-      } as ResolvedStack["skills"],
-      allSkillIds: ["web-framework-react", "api-framework-hono"],
-    });
-
-    const result = getDomainsFromStack(stack);
-    expect(result).toStrictEqual(["api", "web"]);
-  });
-
-  it("should return empty array for stack with no matching categories", () => {
-    const stack: ResolvedStack = createMockResolvedStack("empty-stack", "Empty Stack", {
-      skills: {},
-      allSkillIds: [],
-    });
-
-    expect(getDomainsFromStack(stack)).toStrictEqual([]);
   });
 });
 

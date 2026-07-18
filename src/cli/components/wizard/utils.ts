@@ -1,8 +1,6 @@
-import { unique } from "remeda";
 import { BUILT_IN_DOMAIN_ORDER } from "../../consts.js";
-import { matrix, findStack } from "../../lib/matrix/matrix-provider.js";
-import type { Domain, ResolvedStack } from "../../types/index.js";
-import { typedKeys } from "../../utils/typed-object.js";
+import { findStack } from "../../lib/matrix/matrix-provider.js";
+import type { Domain } from "../../types/index.js";
 import { isDomain } from "../../utils/type-guards.js";
 
 export function getDomainDisplayName(domain: string): string {
@@ -33,18 +31,4 @@ export function orderDomains(domains: Domain[]): Domain[] {
   const builtIn = BUILT_IN_DOMAIN_ORDER.filter((d) => domains.includes(d));
   const custom = domains.filter((d) => !BUILT_IN_DOMAIN_ORDER.includes(d)).sort();
   return [...custom, ...builtIn];
-}
-
-/** Extract unique domains from a stack's agent-to-skill mappings. */
-export function getDomainsFromStack(stack: ResolvedStack): Domain[] {
-  const { categories } = matrix;
-  const categoryKeys = Object.values(stack.skills).flatMap((config) =>
-    config ? typedKeys(config) : [],
-  );
-  return unique(
-    categoryKeys.flatMap((sub) => {
-      const d = categories[sub]?.domain;
-      return d ? [d] : [];
-    }),
-  ).sort();
 }
