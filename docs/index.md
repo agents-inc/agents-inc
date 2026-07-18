@@ -44,8 +44,7 @@ Feature development documentation organized by lifecycle stage.
 ### Installation Modes
 
 1. **Plugin Mode** - Native Claude plugins via `claude plugin install`
-2. **Local Mode** - Copies to `.claude/skills/` and `.claude/agents/`
-3. **Eject Mode** - Export templates/config for full customization
+2. **Eject Mode** - Copies to `.claude/skills/` and `.claude/agents/` for full customization
 
 ### Key Commands
 
@@ -67,5 +66,5 @@ claude plugin install stackname --scope project
 ### Three Main Use Cases
 
 1. **End User** - Install pre-built stacks via plugin mode
-2. **Team/Enterprise** - Create private marketplace, install via plugin or local mode
+2. **Team/Enterprise** - Create private marketplace, install via plugin or eject mode
 3. **Contributor** - Eject templates, create custom skills/agents/stacks

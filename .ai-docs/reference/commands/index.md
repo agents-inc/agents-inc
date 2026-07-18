@@ -390,15 +390,11 @@ All commands extend `BaseCommand` (`src/cli/base-command.ts`).
 
 **Flags:**
 
-| Flag          | Short | Type    | Description                                              |
-| ------------- | ----- | ------- | -------------------------------------------------------- |
+| Flag          | Short | Type    | Description                                               |
+| ------------- | ----- | ------- | ----------------------------------------------------------- |
 | --plugins-dir | -p    | string  | Plugins directory (default: `dist/plugins`)              |
 | --output      | -o    | string  | Output file (default: `.claude-plugin/marketplace.json`) |
-| --name        |       | string  | Marketplace name                                         |
-| --version     |       | string  | Marketplace version                                      |
-| --description |       | string  | Marketplace description                                  |
-| --owner-name  |       | string  | Owner name                                               |
-| --owner-email |       | string  | Owner email                                              |
+| --name        |       | string  | Marketplace name override                                |
 | --verbose     | -v    | boolean | Enable verbose logging                                   |
 | --source      | -s    | string  | Skills source path or URL                                |
 

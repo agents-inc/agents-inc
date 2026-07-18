@@ -6,7 +6,7 @@ Agents Inc supports two install modes and two scopes. Both can be set per-skill 
 
 **Plugin** (default) — Skills are installed as Claude Code plugins in `.claude/plugins/`. No files are copied into your project. Updates are pulled directly from the source.
 
-**Local** — Skills are copied into `.claude/skills/` in your project directory. Use this when you want full ownership of the skill files or need to modify them.
+**Eject** — Skills are copied into `.claude/skills/` in your project directory. Use this when you want full ownership of the skill files or need to modify them.
 
 You can switch modes after initial install using `agentsinc edit`.
 
