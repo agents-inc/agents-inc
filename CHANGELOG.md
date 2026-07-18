@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.142.3] - 2026-07-18
+
+**Test-only fix: a test never actually exercised project scope, and asserted the wrong behavior (D-241)**
+
+- `init-dashboard-edit-plugin-install.e2e.test.ts` never set an explicit `HOME`, so the E2E sandbox collapsed it into a global edit (D-226) — it was never really testing project scope
+- The store's existing exclusive-category guard already blocks the scenario correctly in genuine project scope; no product code changed
+- Test rewritten to exercise real project scope and assert the correct (blocked) behavior
+
+See [changelogs/0.142.3.md](./changelogs/0.142.3.md) for full details.
+
 ## [0.142.2] - 2026-07-18
 
 **Fixed: two more dual-scope wizard bugs found right after 0.142.0 shipped**
