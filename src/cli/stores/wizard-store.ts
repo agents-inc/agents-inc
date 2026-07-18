@@ -421,6 +421,19 @@ export type WizardState = {
   installedSkillConfigs: SkillConfig[] | null;
   installedAgentConfigs: AgentScopeConfig[] | null;
 
+  /**
+   * Skill ids whose dual-scope `[P][G]` pair was (re)established by a store action THIS
+   * session — via `s` (toggleSkillScope G→P re-adding the global tombstone) or a spacebar
+   * re-select that rebuilds the pair. Such a pair is session-authored, not the pristine pair
+   * carried in `installedSkillConfigs` from hydration. The "persisted dual-scope pair" guard
+   * in toggleSkillScope consults this set so it lets `s` freely round-trip a reconstructed
+   * pair instead of locking it: a snapshot/shape comparison alone cannot tell a pristine
+   * reopened pair apart from one collapsed and rebuilt within the same session.
+   */
+  _sessionRebuiltScopePairSkills: Set<SkillId>;
+  /** Agent-name equivalent of `_sessionRebuiltScopePairSkills` (toggleAgentScope / toggleAgent restore). */
+  _sessionRebuiltScopePairAgents: Set<AgentName>;
+
   /** True when running init (first-time setup), false when editing an existing installation */
   isInitMode: boolean;
 
@@ -739,6 +752,8 @@ type WizardStateData = Pick<
   | "boundSkills"
   | "installedSkillConfigs"
   | "installedAgentConfigs"
+  | "_sessionRebuiltScopePairSkills"
+  | "_sessionRebuiltScopePairAgents"
   | "isInitMode"
   | "isEditingFromGlobalScope"
   | "toastMessage"
@@ -772,6 +787,8 @@ export const createInitialState = (overrides?: Partial<WizardStateData>): Wizard
   boundSkills: [],
   installedSkillConfigs: null,
   installedAgentConfigs: null,
+  _sessionRebuiltScopePairSkills: new Set(),
+  _sessionRebuiltScopePairAgents: new Set(),
   isInitMode: false,
   isEditingFromGlobalScope: false,
   toastMessage: null,
@@ -959,13 +976,27 @@ export const useWizardStore = create<WizardState>((set, get) => ({
   toggleTechnology: (domain, category, technology, exclusive) =>
     set((state) => {
       const installed = state.installedSkillConfigs ?? [];
-      const isInstalledGlobal = hasGlobalActive(installed, technology);
-      if (isInstalledGlobal && !state.isEditingFromGlobalScope && !state.isInitMode) {
-        return { toastMessage: "Global skills cannot be changed from project scope" };
-      }
-
       const currentSelections = state.domainSelections[domain]?.[category] || [];
       const isSelected = currentSelections.includes(technology);
+
+      // Block a globally-installed skill from being changed at project scope. An active global
+      // entry in the hydration snapshot (genuinely global-only) blocks both directions, matching
+      // the long-standing read-only behaviour. The tombstone arm additionally blocks a DESELECT
+      // of the stale-snapshot state a persisted `[P][G]` reaches after an in-session spacebar
+      // collapse (installed still shows the tombstone; the live config now shows a plain active
+      // global), whose deselect would silently tombstone the still-real global install. It is
+      // gated on `isSelected` so the sanctioned re-select restore path (reconcileSkillConfigs
+      // rebuilds `[P][G]`) still runs, does NOT fire while the live config still holds the full
+      // `[P][G]` pair (so the FIRST collapse spacebar is allowed), and never touches a skill
+      // freshly added this session (absent from the snapshot).
+      const isActiveGlobal =
+        hasGlobalActive(installed, technology) ||
+        (isSelected &&
+          hasGlobalTombstone(installed, technology) &&
+          hasGlobalActive(state.skillConfigs, technology));
+      if (isActiveGlobal && !state.isEditingFromGlobalScope && !state.isInitMode) {
+        return { toastMessage: "Global skills cannot be changed from project scope" };
+      }
 
       if (isSelected) {
         const categoryDef = matrix.categories[category];
@@ -982,8 +1013,11 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       // In exclusive mode, selecting a new skill replaces the current one.
       // Block if that would implicitly deselect a globally-installed skill.
       if (exclusive && !isSelected) {
-        const hasGlobalSelection = currentSelections.some((selectedId) =>
-          hasGlobalActive(installed, selectedId),
+        const hasGlobalSelection = currentSelections.some(
+          (selectedId) =>
+            hasGlobalActive(installed, selectedId) ||
+            (hasGlobalTombstone(installed, selectedId) &&
+              hasGlobalActive(state.skillConfigs, selectedId)),
         );
         if (hasGlobalSelection && !state.isEditingFromGlobalScope && !state.isInitMode) {
           return { toastMessage: "Global skills cannot be changed from project scope" };
@@ -1002,19 +1036,45 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       const removed = currentSelections.filter((id) => !newSelections.includes(id));
       const added = newSelections.filter((id) => !currentSelections.includes(id));
 
+      const skillConfigs = reconcileSkillConfigs(
+        state.skillConfigs,
+        added,
+        removed,
+        state.installedSkillConfigs,
+        state.isEditingFromGlobalScope,
+      );
+
+      // A dual-scope deselect collapses to a single active inherited-global entry, so the
+      // skill is still genuinely active. Keep it in the domain selection (mirroring what a
+      // save-and-reopen re-derives via populateFromSkillIds) instead of dropping it purely
+      // because it left the pre-removal selection array. A genuine full removal leaves no
+      // active entry and still drops normally.
+      const stillActiveAfterRemoval =
+        isSelected &&
+        !newSelections.includes(technology) &&
+        (hasProjectActive(skillConfigs, technology) || hasGlobalActive(skillConfigs, technology));
+      const resolvedSelections = stillActiveAfterRemoval
+        ? [...newSelections, technology]
+        : newSelections;
+
+      // A spacebar re-select that rebuilds a dual-scope `[P][G]` pair marks the id as
+      // session-authored, so the toggleSkillScope persisted-pair guard lets `s` round-trip it.
+      const rebuiltPairSkills = added.filter(
+        (id) => hasProjectActive(skillConfigs, id) && hasGlobalTombstone(skillConfigs, id),
+      );
+      const nextRebuiltScopePairSkills =
+        rebuiltPairSkills.length > 0
+          ? new Set([...state._sessionRebuiltScopePairSkills, ...rebuiltPairSkills])
+          : state._sessionRebuiltScopePairSkills;
+
       return {
-        skillConfigs: reconcileSkillConfigs(
-          state.skillConfigs,
-          added,
-          removed,
-          state.installedSkillConfigs,
-          state.isEditingFromGlobalScope,
-        ),
+        skillConfigs,
+        _sessionRebuiltScopePairSkills: nextRebuiltScopePairSkills,
         domainSelections: {
           ...state.domainSelections,
           [domain]: {
             ...state.domainSelections[domain],
-            [category]: newSelections,
+            [category]: resolvedSelections,
           },
         },
       };
@@ -1087,15 +1147,16 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       const config = state.skillConfigs.find((sc) => sc.id === skillId && !sc.excluded);
       if (!config) return state;
 
-      // A PERSISTED dual-scope pair ([P][G]) reopened for edit: the saved snapshot
-      // carries the excluded global tombstone, so `wasInstalledGlobally` is
-      // structurally false and a G→P after a P→G can no longer re-add the tombstone
-      // — repeated `s` corrupts the pair ([P][G] → [G] → [P], losing [G]). `s` has
-      // no well-defined single target here; space (toggleTechnology) is the only
-      // sanctioned way to change the project half (it drops/restores both). No-op
-      // with a toast. Within-session G↔P round-trips — where the snapshot still holds
-      // an ACTIVE global entry — are unaffected and keep working.
+      // A PERSISTED dual-scope pair ([P][G]) reopened for edit and UNTOUCHED this session:
+      // the saved snapshot carries the excluded global tombstone, so `s` has no well-defined
+      // single target (space is the sanctioned way to change the project half — it drops or
+      // restores both). No-op with a toast. Suppressed once the pair has been reconstructed by
+      // a store action this session (`_sessionRebuiltScopePairSkills`): a pair collapsed and
+      // then rebuilt in-session is session-authored, so `s` must round-trip it normally even
+      // though its shape now matches the pristine snapshot. Within-session G↔P round-trips —
+      // where the snapshot still holds an ACTIVE global entry — are unaffected either way.
       if (
+        !state._sessionRebuiltScopePairSkills.has(skillId) &&
         hasGlobalTombstone(state.installedSkillConfigs ?? [], skillId) &&
         hasProjectActive(state.skillConfigs, skillId) &&
         hasGlobalTombstone(state.skillConfigs, skillId)
@@ -1119,16 +1180,22 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         }
       }
 
+      // A real global install exists when the snapshot carries EITHER an active global entry
+      // or a global tombstone: a tombstone means the skill IS installed globally and this
+      // project was overriding it. Both must re-create the tombstone on a G→P toggle, so an
+      // in-session collapse→`s` restores a genuine `[P][G]` pair rather than a bare `[P]` that
+      // loses the still-real global install. (Matches the agent-path derivation, which already
+      // counts tombstones.)
       const wasInstalledGlobally =
-        state.installedSkillConfigs?.some(
-          (sc) => sc.id === skillId && sc.scope === "global" && !sc.excluded,
-        ) ?? false;
+        state.installedSkillConfigs?.some((sc) => sc.id === skillId && sc.scope === "global") ??
+        false;
       const newScope = config.scope === "project" ? "global" : "project";
 
       let updatedConfigs = state.skillConfigs.map((sc) =>
         sc.id === skillId && !sc.excluded ? { ...sc, scope: newScope as "project" | "global" } : sc,
       );
 
+      let pairRebuilt = false;
       if (newScope === "project") {
         // Moving global → project: add excluded global entry if not already there.
         // Gated on wasInstalledGlobally so fresh init toggles don't create spurious tombstones.
@@ -1140,6 +1207,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
             ...updatedConfigs,
             { id: skillId, scope: "global" as const, excluded: true, source: config.source },
           ];
+          pairRebuilt = true;
         }
       } else {
         // Moving project → global: always drop any excluded global tombstone for this id.
@@ -1151,7 +1219,17 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         updatedConfigs = updatedConfigs.filter((sc) => !(sc.id === skillId && sc.excluded));
       }
 
-      return { skillConfigs: updatedConfigs };
+      // Mark a freshly (re)built `[P][G]` pair as session-authored so a subsequent `s` is not
+      // blocked by the persisted-pair guard above — the pair now flips P↔G freely this session.
+      return pairRebuilt
+        ? {
+            skillConfigs: updatedConfigs,
+            _sessionRebuiltScopePairSkills: new Set([
+              ...state._sessionRebuiltScopePairSkills,
+              skillId,
+            ]),
+          }
+        : { skillConfigs: updatedConfigs };
     }),
 
   setSkillSource: (skillId, source) =>
@@ -1230,8 +1308,15 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         agentHasProjectActive(state.agentConfigs, agent) &&
         agentHasGlobalTombstone(state.agentConfigs, agent)
       ) {
+        // Collapses to a single active inherited-global entry — the agent is STILL active, so
+        // keep it in selectedAgents (mirroring the skill path and what a save-and-reopen
+        // re-derives) rather than dropping it just because the project half was removed. The
+        // grid reads its checkbox from selectedAgents, so dropping it would render the still-
+        // active agent as unselected in the same session.
         return {
-          selectedAgents: state.selectedAgents.filter((a) => a !== agent),
+          selectedAgents: state.selectedAgents.includes(agent)
+            ? state.selectedAgents
+            : [...state.selectedAgents, agent],
           agentConfigs: [
             ...state.agentConfigs.filter((ac) => ac.name !== agent),
             { name: agent, scope: "global" as const },
@@ -1256,11 +1341,21 @@ export const useWizardStore = create<WizardState>((set, get) => ({
             { name: agent, scope: "project" as const },
             { name: agent, scope: "global" as const, excluded: true },
           ],
+          // Rebuilt `[P][G]` pair is session-authored — see _sessionRebuiltScopePairAgents.
+          _sessionRebuiltScopePairAgents: new Set([...state._sessionRebuiltScopePairAgents, agent]),
         };
       }
 
-      const isInstalledGlobal = agentHasGlobalActive(installed, agent);
-      if (isInstalledGlobal && !state.isEditingFromGlobalScope && !state.isInitMode) {
+      // Block a globally-installed agent from being changed at project scope. Mirrors the
+      // skill-path guard in toggleTechnology: fire on an active global entry in the snapshot,
+      // or on a snapshot tombstone paired with a LIVE plain active global entry (the stale
+      // state a persisted `[P][G]` reaches after an in-session collapse). A freshly-added
+      // global agent (absent from the snapshot) stays freely deselectable.
+      const isActiveGlobal =
+        agentHasGlobalActive(installed, agent) ||
+        (agentHasGlobalTombstone(installed, agent) &&
+          agentHasGlobalActive(state.agentConfigs, agent));
+      if (isActiveGlobal && !state.isEditingFromGlobalScope && !state.isInitMode) {
         return { toastMessage: "Global agents cannot be changed from project scope" };
       }
 
@@ -1317,10 +1412,13 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       const config = state.agentConfigs.find((ac) => ac.name === agentName && !ac.excluded);
       if (!config) return state;
 
-      // Persisted dual-scope pair reopened for edit — mirrors toggleSkillScope.
-      // Guarded on the saved snapshot carrying the global tombstone so within-session
-      // G↔P round-trips (snapshot still holds an ACTIVE global entry) keep working.
+      // Persisted dual-scope pair reopened for edit and UNTOUCHED this session — mirrors
+      // toggleSkillScope. Suppressed once the pair has been reconstructed by a store action
+      // this session (`_sessionRebuiltScopePairAgents`) so a collapse→`s` rebuild flips P↔G
+      // freely. Within-session G↔P round-trips (snapshot still holds an ACTIVE global entry)
+      // keep working regardless.
       if (
+        !state._sessionRebuiltScopePairAgents.has(agentName) &&
         agentHasGlobalTombstone(state.installedAgentConfigs ?? [], agentName) &&
         agentHasProjectActive(state.agentConfigs, agentName) &&
         agentHasGlobalTombstone(state.agentConfigs, agentName)
@@ -1328,6 +1426,9 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         return { toastMessage: "Installed at both scopes — use space to change project scope" };
       }
 
+      // Counts a global tombstone as "installed globally" (a tombstone means a real global
+      // install this project overrides), so an in-session collapse→`s` restores a genuine
+      // `[P][G]` pair.
       const wasInstalledGlobally =
         state.installedAgentConfigs?.some((ac) => ac.name === agentName && ac.scope === "global") ??
         false;
@@ -1337,6 +1438,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         ac.name === agentName && !ac.excluded ? { ...ac, scope: newScope } : ac,
       );
 
+      let pairRebuilt = false;
       if (newScope === "project") {
         // Moving global → project: add excluded global entry if not already there.
         // Gated on wasInstalledGlobally so fresh init toggles don't create spurious tombstones.
@@ -1348,6 +1450,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
             ...updatedConfigs,
             { name: agentName, scope: "global" as const, excluded: true },
           ];
+          pairRebuilt = true;
         }
       } else {
         // Moving project → global: always drop any excluded global tombstone for this name.
@@ -1355,7 +1458,17 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         updatedConfigs = updatedConfigs.filter((ac) => !(ac.name === agentName && ac.excluded));
       }
 
-      return { agentConfigs: updatedConfigs };
+      // Mark a freshly (re)built `[P][G]` pair as session-authored so a subsequent `s` is not
+      // blocked by the persisted-pair guard above.
+      return pairRebuilt
+        ? {
+            agentConfigs: updatedConfigs,
+            _sessionRebuiltScopePairAgents: new Set([
+              ...state._sessionRebuiltScopePairAgents,
+              agentName,
+            ]),
+          }
+        : { agentConfigs: updatedConfigs };
     }),
 
   setFocusedAgentId: (id) => set({ focusedAgentId: id }),

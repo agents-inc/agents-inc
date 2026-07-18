@@ -294,6 +294,43 @@ export class BuildStep extends BaseStep {
   }
 
   /**
+   * Read the live "(selected of total)" selection counter that an EXCLUSIVE
+   * category header renders (e.g. `Framework * (1 of 1)`). Returns the selected
+   * count — the number the grid currently treats as chosen in that category,
+   * derived from the option `selected` flags (NOT from the scope badges).
+   *
+   * This is the only text-observable signal of a skill's in-grid selected
+   * state: the E2E harness runs with NO_COLOR, so the teal/dim color that also
+   * distinguishes selected rows is stripped from captured output. The scope
+   * badge (` G `/` P `) is a separate element sourced from `skillConfigs.scope`,
+   * so it can disagree with this counter when `domainSelections` and
+   * `skillConfigs` diverge.
+   *
+   * Matches the display name only when it heads a `(N of M)` counter, so
+   * "Framework" never collides with "Meta-Framework" (the `-` before the inner
+   * "Framework" fails the leading word boundary). Walks newest-to-oldest so a
+   * re-opened wizard reads the latest frame, not stale scrollback.
+   *
+   * Requires a stable render — callers should ensure the build step has
+   * finished any pending redraws before invoking.
+   */
+  async getExclusiveCategorySelectedCount(categoryDisplayName: string): Promise<number> {
+    await this.waitForStableRender();
+    const output = this.getOutput();
+    const escaped = categoryDisplayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`(?:^|\\s)${escaped}\\s*\\*?\\s*\\((\\d+) of (\\d+)\\)`);
+    const lines = output.split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const match = lines[i].match(pattern);
+      if (match) return Number(match[1]);
+    }
+    throw new Error(
+      `getExclusiveCategorySelectedCount: no "(N of M)" counter for category ` +
+        `"${categoryDisplayName}" found on screen.\nOutput:\n${output}`,
+    );
+  }
+
+  /**
    * Parse the screen to find a skill's grid position (row, col).
    *
    * Category headers are non-empty text lines without box-drawing chars,

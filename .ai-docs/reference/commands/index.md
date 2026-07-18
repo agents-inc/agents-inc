@@ -390,8 +390,8 @@ All commands extend `BaseCommand` (`src/cli/base-command.ts`).
 
 **Flags:**
 
-| Flag          | Short | Type    | Description                                               |
-| ------------- | ----- | ------- | ----------------------------------------------------------- |
+| Flag          | Short | Type    | Description                                              |
+| ------------- | ----- | ------- | -------------------------------------------------------- |
 | --plugins-dir | -p    | string  | Plugins directory (default: `dist/plugins`)              |
 | --output      | -o    | string  | Output file (default: `.claude-plugin/marketplace.json`) |
 | --name        |       | string  | Marketplace name override                                |

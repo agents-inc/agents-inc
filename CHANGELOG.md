@@ -7,6 +7,17 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.142.2] - 2026-07-18
+
+**Fixed: two more dual-scope wizard bugs found right after 0.142.0 shipped**
+
+- A dual-scope skill/agent collapsed via spacebar lost its active/selected styling in the same session, even though it was still genuinely active via the global install
+- A second spacebar press on that collapsed row incorrectly removed the global install too, instead of being blocked like any other global-only item
+- `s` on the collapsed row now correctly restores a fresh `[P][G]` pair, and freely toggles it within the same session, while a pair reopened untouched from a previous session still stays locked to spacebar-only
+- Backlog: a pre-existing test was found to never actually exercise project-scope editing due to the already-tracked D-226 E2E sandbox gap — confirmed not a regression from this release, filed as D-241
+
+See [changelogs/0.142.2.md](./changelogs/0.142.2.md) for full details.
+
 ## [0.142.1] - 2026-07-18
 
 **Housekeeping: standards-gap findings + formatting-only cleanup**

@@ -1,6 +1,6 @@
 {
   "name": "@agents-inc/cli",
-  "version": "0.142.1",
+  "version": "0.142.2",
   "description": "CLI for managing Agents Inc. skills, stacks, and agents for Claude Code",
   "type": "module",
   "main": "dist/index.js",
