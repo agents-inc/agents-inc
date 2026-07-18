@@ -2161,6 +2161,165 @@ describe("local-installer", () => {
 
       expect(result).toStrictEqual({ updated: [], skipped: [] });
     });
+
+    it("drops a skill tombstone when the global skill has been removed", async () => {
+      const projectDir = path.join(tempDir, "target-project");
+      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+      await mkdir(configDir, { recursive: true });
+
+      const projectConfig = buildProjectConfig({
+        name: "target",
+        skills: [
+          ...buildSkillConfigs(["web-testing-vitest"]),
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+            excluded: true,
+          }),
+        ],
+        agents: [],
+      });
+      await writeConfigFile(projectConfig, path.join(configDir, STANDARD_FILES.CONFIG_TS));
+
+      // Global no longer installs react — the tombstone is now stale.
+      const globalConfig = buildProjectConfig({
+        name: "global",
+        skills: [],
+        agents: [],
+        projects: [projectDir],
+      });
+
+      await propagateGlobalChangesToProjects(
+        globalConfig,
+        SINGLE_REACT_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+      );
+
+      const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+      const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+      expect(parsedConfig.skills.every((s) => s.id !== "web-framework-react")).toBe(true);
+      expect(parsedConfig.skills.some((s) => s.id === "web-testing-vitest")).toBe(true);
+    });
+
+    it("preserves a skill tombstone when the global skill still exists", async () => {
+      const projectDir = path.join(tempDir, "target-project");
+      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+      await mkdir(configDir, { recursive: true });
+
+      const projectConfig = buildProjectConfig({
+        name: "target",
+        skills: [
+          ...buildSkillConfigs(["web-testing-vitest"]),
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+            excluded: true,
+          }),
+        ],
+        agents: [],
+      });
+      await writeConfigFile(projectConfig, path.join(configDir, STANDARD_FILES.CONFIG_TS));
+
+      // Global still installs react — the tombstone must survive.
+      const globalConfig = buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+        agents: [],
+        projects: [projectDir],
+      });
+
+      await propagateGlobalChangesToProjects(
+        globalConfig,
+        SINGLE_REACT_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+      );
+
+      const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+      const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+      expect(
+        parsedConfig.skills.some(
+          (s) => s.id === "web-framework-react" && s.scope === "global" && s.excluded === true,
+        ),
+      ).toBe(true);
+      expect(parsedConfig.skills.some((s) => s.id === "web-testing-vitest")).toBe(true);
+    });
+
+    it("drops an agent tombstone when the global agent has been removed", async () => {
+      const projectDir = path.join(tempDir, "target-project");
+      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+      await mkdir(configDir, { recursive: true });
+
+      const projectConfig = buildProjectConfig({
+        name: "target",
+        skills: [],
+        agents: [
+          ...buildAgentConfigs(["web-reviewer"]),
+          ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
+        ],
+      });
+      await writeConfigFile(projectConfig, path.join(configDir, STANDARD_FILES.CONFIG_TS));
+
+      // Global no longer installs web-developer — the tombstone is now stale.
+      const globalConfig = buildProjectConfig({
+        name: "global",
+        skills: [],
+        agents: [],
+        projects: [projectDir],
+      });
+
+      await propagateGlobalChangesToProjects(
+        globalConfig,
+        EMPTY_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+      );
+
+      const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+      const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+      expect(parsedConfig.agents.every((a) => a.name !== "web-developer")).toBe(true);
+      expect(parsedConfig.agents.some((a) => a.name === "web-reviewer")).toBe(true);
+    });
+
+    it("preserves an agent tombstone when the global agent still exists", async () => {
+      const projectDir = path.join(tempDir, "target-project");
+      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+      await mkdir(configDir, { recursive: true });
+
+      const projectConfig = buildProjectConfig({
+        name: "target",
+        skills: [],
+        agents: [
+          ...buildAgentConfigs(["web-reviewer"]),
+          ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
+        ],
+      });
+      await writeConfigFile(projectConfig, path.join(configDir, STANDARD_FILES.CONFIG_TS));
+
+      // Global still installs web-developer — the tombstone must survive.
+      const globalConfig = buildProjectConfig({
+        name: "global",
+        skills: [],
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        projects: [projectDir],
+      });
+
+      await propagateGlobalChangesToProjects(
+        globalConfig,
+        EMPTY_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+      );
+
+      const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+      const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+      expect(
+        parsedConfig.agents.some(
+          (a) => a.name === "web-developer" && a.scope === "global" && a.excluded === true,
+        ),
+      ).toBe(true);
+      expect(parsedConfig.agents.some((a) => a.name === "web-reviewer")).toBe(true);
+    });
   });
 
   // D-216 / D-228: propagateGlobalChangesToProjects writes PROJECT config-types.ts

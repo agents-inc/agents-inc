@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.141.8] - 2026-07-18
+
+**Fixed: propagation to registered projects now reconciles `stack` and `selectedAgents`, not just `skills[]`/`agents[]`**
+
+- A registered project's `stack` kept referencing a global skill after it was removed at global scope — now pruned, surgically, everywhere else left untouched
+- A removed global agent's name lingered in a registered project's `selectedAgents[]` even though it correctly disappeared from `agents[]`
+- Filed as backlog (D-240): propagation still doesn't recompile a registered project's compiled agent files, only its config — bigger fix, deliberately deferred
+
+See [changelogs/0.141.8.md](./changelogs/0.141.8.md) for full details.
+
 ## [0.141.7] - 2026-07-18
 
 **Fixed: removing the last skill in a stack category no longer resurrects a stale entry**

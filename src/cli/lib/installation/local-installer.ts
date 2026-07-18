@@ -25,6 +25,7 @@ import type { WizardResultV2 } from "../../components/wizard/wizard";
 import { type CopiedSkill, copySkillsToLocalFlattened, deleteLocalSkill } from "../skills";
 import {
   type MergeResult,
+  type AuthoritativeScope,
   mergeWithExistingConfig,
   loadProjectConfig,
   loadProjectConfigFromDir,
@@ -400,13 +401,21 @@ export async function buildAndMergeConfig(
   sourceResult: SourceLoadResult,
   projectDir: string,
   sourceFlag?: string,
+  authoritativeScope?: AuthoritativeScope,
 ): Promise<MergeResult> {
   const { config } = await buildEjectConfig(wizardResult, sourceResult, projectDir);
   verbose(
     `buildAndMergeConfig: before merge — stack=${config.stack ? Object.keys(config.stack).length + " agents" : "UNDEFINED"}`,
   );
   const configWithMetadata = setConfigMetadata(config, wizardResult, sourceResult, sourceFlag);
-  const result = await mergeWithExistingConfig(configWithMetadata, { projectDir });
+  const result = await mergeWithExistingConfig(configWithMetadata, {
+    projectDir,
+    authoritativeScope,
+    // Skills the wizard could not resolve from the loaded source this session must survive an
+    // authoritative edit — their absence from the wizard result is a resolution gap, not a
+    // deselection (D-233 Scenario C data-loss guard).
+    unresolvableSkillIds: wizardResult.unresolvableSkillIds,
+  });
   verbose(
     `buildAndMergeConfig: after merge — stack=${result.config.stack ? Object.keys(result.config.stack).length + " agents" : "UNDEFINED"}, merged=${result.merged}`,
   );
@@ -659,8 +668,143 @@ export async function deregisterProjectPath(projectDir: string): Promise<void> {
   verbose(`Deregistered project ${normalizedPath} from global config`);
 }
 
-function isProjectOwnedEntry(entry: { scope?: string; excluded?: boolean }): boolean {
-  return entry.scope === "project" || (entry.scope === "global" && !!entry.excluded);
+function isProjectScopedEntry(entry: { scope?: string; excluded?: boolean }): boolean {
+  return entry.scope === "project";
+}
+
+function isGlobalTombstone(entry: { scope?: string; excluded?: boolean }): boolean {
+  return entry.scope === "global" && !!entry.excluded;
+}
+
+/** True when the global config still has an active (non-excluded) skill for this id. */
+function globalHasActiveSkill(globalConfig: ProjectConfig, id: SkillId): boolean {
+  return globalConfig.skills.some((s) => s.id === id && s.scope === "global" && !s.excluded);
+}
+
+/** True when the global config still has an active (non-excluded) agent for this name. */
+function globalHasActiveAgent(globalConfig: ProjectConfig, name: AgentName): boolean {
+  return globalConfig.agents.some((a) => a.name === name && a.scope === "global" && !a.excluded);
+}
+
+/**
+ * Keeps a project's own entries when re-inlining fresh global data, dropping tombstones
+ * that no longer correspond to a real global install.
+ *
+ * A tombstone (`scope === "global" && excluded`) only has meaning while the global entry
+ * it masks still exists. Once the skill/agent has been removed from the global config,
+ * the tombstone is stale — carrying it forward would leave the project showing a masked
+ * global item that no longer exists. Project-scoped entries are always retained.
+ */
+function retainReconciledSkills(skills: SkillConfig[], globalConfig: ProjectConfig): SkillConfig[] {
+  return skills.filter(
+    (entry) =>
+      isProjectScopedEntry(entry) ||
+      (isGlobalTombstone(entry) && globalHasActiveSkill(globalConfig, entry.id)),
+  );
+}
+
+function retainReconciledAgents(
+  agents: AgentScopeConfig[],
+  globalConfig: ProjectConfig,
+): AgentScopeConfig[] {
+  return agents.filter(
+    (entry) =>
+      isProjectScopedEntry(entry) ||
+      (isGlobalTombstone(entry) && globalHasActiveAgent(globalConfig, entry.name)),
+  );
+}
+
+/**
+ * Prunes a project's inlined `selectedAgents[]` symmetrically with `retainReconciledAgents`.
+ *
+ * A registered project's stored `selectedAgents` is a flat name union that legitimately
+ * contains global agent names — the inlined writer emits `union(global, project)`. Carried
+ * forward verbatim, a global agent removed at global scope survives the writer's next union
+ * and lingers in `selectedAgents[]` while being absent from `agents[]` — an internal drift
+ * that never self-heals across propagation cycles. A name is retained only when it is backed
+ * by a real active agent: either a project-scoped agent the project owns, or an agent still
+ * active in the current global config. Project ownership is read from the already-reconciled
+ * `agents[]` (project-scoped entries are always retained), so a name the project owns at
+ * project scope survives even when a same-named global agent is removed.
+ */
+function retainReconciledSelectedAgents(
+  selectedAgents: AgentName[] | undefined,
+  reconciledAgents: AgentScopeConfig[],
+  globalConfig: ProjectConfig,
+): AgentName[] | undefined {
+  if (!selectedAgents) return selectedAgents;
+  const projectOwnedNames = new Set(
+    reconciledAgents.filter((a) => a.scope === "project" && !a.excluded).map((a) => a.name),
+  );
+  return selectedAgents.filter(
+    (name) => projectOwnedNames.has(name) || globalHasActiveAgent(globalConfig, name),
+  );
+}
+
+/**
+ * Computes the skill ids that this project inherited from global scope but that are
+ * no longer active at global scope after the change being propagated — and that the
+ * project does not own at project scope. These are the only ids that should be pruned
+ * from the project's stack: a project-scoped agent may legitimately reference a
+ * globally-installed skill, and once that skill is removed at global scope the
+ * reference becomes dangling.
+ *
+ * `priorProjectSkills` is the project's pre-reconciliation (on-disk, inlined) skills.
+ * A global skill that was just removed still appears here as a `scope: "global"`,
+ * non-excluded entry, which is the signal we key on. Project-scoped skills and
+ * user-authored local skills (which carry no SkillConfig entry at all) are never in
+ * this set, so they are always preserved.
+ */
+function computeRemovedGlobalSkillIds(
+  priorProjectSkills: SkillConfig[],
+  globalConfig: ProjectConfig,
+): Set<SkillId> {
+  const activeGlobalIds = new Set(
+    globalConfig.skills.filter((s) => s.scope === "global" && !s.excluded).map((s) => s.id),
+  );
+  const projectOwnedIds = new Set(
+    priorProjectSkills.filter((s) => s.scope === "project" && !s.excluded).map((s) => s.id),
+  );
+  return new Set(
+    priorProjectSkills
+      .filter(
+        (s) =>
+          s.scope === "global" &&
+          !s.excluded &&
+          !activeGlobalIds.has(s.id) &&
+          !projectOwnedIds.has(s.id),
+      )
+      .map((s) => s.id),
+  );
+}
+
+/**
+ * Prunes stack references to global skills that were just removed at global scope,
+ * so a project-scoped agent stops referencing a skill that no longer exists anywhere.
+ * Only ids in `removedGlobalSkillIds` are dropped — every other assignment is kept
+ * verbatim, in order, with its `preloaded` flag untouched. Categories and agents left
+ * empty by the pruning are removed. When nothing was removed, the stack is returned
+ * unchanged so unaffected projects produce byte-identical config output.
+ */
+function retainReconciledStack(
+  stack: Record<string, StackAgentConfig> | undefined,
+  removedGlobalSkillIds: Set<SkillId>,
+): Record<string, StackAgentConfig> | undefined {
+  if (!stack || removedGlobalSkillIds.size === 0) return stack;
+
+  const reconciled: Record<string, StackAgentConfig> = {};
+  for (const [agent, agentStack] of Object.entries(stack)) {
+    const reconciledAgentStack: StackAgentConfig = {};
+    for (const [category, assignments] of typedEntries<Category, SkillAssignment[]>(agentStack)) {
+      if (!assignments) continue;
+      const kept = assignments.filter((assignment) => !removedGlobalSkillIds.has(assignment.id));
+      if (kept.length > 0) reconciledAgentStack[category] = kept;
+    }
+    if (typedKeys<Category>(reconciledAgentStack).length > 0) {
+      reconciled[agent] = reconciledAgentStack;
+    }
+  }
+  return reconciled;
 }
 
 /**
@@ -701,11 +845,29 @@ export async function propagateGlobalChangesToProjects(
 
       const projectConfig = existingProject.config;
 
-      // Derive project split (project-scoped + excluded globals only)
+      // Derive project split: project-scoped entries plus tombstones that still
+      // correspond to a live global install. Tombstones whose global entry has been
+      // removed are dropped here so the project stops referencing a global item that
+      // no longer exists (D-233 Scenario C). The stack is reconciled against the same
+      // now-current global data so a project-scoped agent stops referencing a global
+      // skill that was just removed at global scope. `projectConfig.skills` (pre-
+      // reconciliation) is used to detect removed globals because the removed entry
+      // is still present here as a `scope: "global"` reference.
+      const removedGlobalSkillIds = computeRemovedGlobalSkillIds(
+        projectConfig.skills,
+        globalConfig,
+      );
+      const reconciledAgents = retainReconciledAgents(projectConfig.agents, globalConfig);
       const projectSplit: ProjectConfig = {
         ...projectConfig,
-        skills: projectConfig.skills.filter(isProjectOwnedEntry),
-        agents: projectConfig.agents.filter(isProjectOwnedEntry),
+        skills: retainReconciledSkills(projectConfig.skills, globalConfig),
+        agents: reconciledAgents,
+        stack: retainReconciledStack(projectConfig.stack, removedGlobalSkillIds),
+        selectedAgents: retainReconciledSelectedAgents(
+          projectConfig.selectedAgents,
+          reconciledAgents,
+          globalConfig,
+        ),
       };
 
       // Update config.ts with re-inlined global data
