@@ -3,8 +3,8 @@ dist
 .claude
 .claude-src
 CLAUDE.md
+.cache
 
-launch-strategy.md
 V2.md
 
 todo/*
