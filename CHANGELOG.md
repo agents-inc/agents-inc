@@ -7,6 +7,15 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.141.7] - 2026-07-18
+
+**Fixed: removing the last skill in a stack category no longer resurrects a stale entry**
+
+- Deselecting a skill that was the only active one left in its category used to leave a stale reference in `config.ts`'s `stack` property, even though it was correctly gone from `skills[]`
+- Root cause was an "empty vs. untouched" ambiguity between `config-generator.ts` and `config-merger.ts` — now made explicit
+
+See [changelogs/0.141.7.md](./changelogs/0.141.7.md) for full details.
+
 ## [0.141.6] - 2026-07-18
 
 **`build plugins` prunes stale `dist/plugins` entries**

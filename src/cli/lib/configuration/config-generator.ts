@@ -173,20 +173,24 @@ function buildAgentStack(agent: AgentName, inputs: StackBuildInputs): StackAgent
 function buildStackForSelection(
   inputs: StackBuildInputs,
 ): Partial<Record<AgentName, StackAgentConfig>> | undefined {
-  if (inputs.agentList.length === 0 || inputs.activeSkillsByCategory.size === 0) {
-    verbose(
-      `buildStackForSelection: short-circuit (agents=${inputs.agentList.length}, ` +
-        `categories=${inputs.activeSkillsByCategory.size}) — returning undefined`,
-    );
+  // No agents in play → this caller is not managing the stack. Return
+  // `undefined` (key omitted) so the merger preserves any existing stack.
+  if (inputs.agentList.length === 0) {
+    verbose(`buildStackForSelection: no agents — returning undefined (stack untouched)`);
     return undefined;
   }
 
+  // Agents are in play → the generator authoritatively rebuilt the stack from
+  // the current selection. An empty result is a real "nothing preloads" outcome
+  // (e.g. the last categorized skill was removed), so return `{}` — NOT
+  // `undefined`. The merger trusts `{}` and drops the stale existing stack,
+  // whereas `undefined` would resurrect it (the removed-last-skill bug).
   const result: Partial<Record<AgentName, StackAgentConfig>> = {};
   for (const agent of inputs.agentList) {
     const built = buildAgentStack(agent, inputs);
     if (built) result[agent] = built;
   }
-  return typedKeys<AgentName>(result).length > 0 ? result : undefined;
+  return result;
 }
 
 /**

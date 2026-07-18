@@ -176,11 +176,15 @@ describe("config-generator", () => {
         agentConfigs: buildAgentConfigs(selectedAgents),
       });
 
-      // Local skills have category "local" which is excluded from stack
+      // Local skills have category "local" which is excluded from stack. With an
+      // agent selected, the generator authoritatively rebuilt the stack and found
+      // nothing to preload, so it emits an explicit empty `{}` (not an omitted
+      // key) — the merger trusts `{}` and won't resurrect a stale existing stack.
       expect(config).toStrictEqual({
         name: "my-project",
         agents: buildAgentConfigs(["web-developer"]),
         skills: buildSkillConfigs(["web-local-skill" as SkillId]),
+        stack: {},
       });
     });
 
