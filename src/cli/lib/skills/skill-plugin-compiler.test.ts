@@ -279,7 +279,7 @@ describe("skill-plugin-compiler", () => {
       await writeTestSkill(skillsDir, "web-state-zustand");
       await writeTestSkill(skillsDir, "api-framework-hono");
 
-      const results = await compileAllSkillPlugins(skillsDir, outputDir);
+      const { compiled: results } = await compileAllSkillPlugins(skillsDir, outputDir);
 
       expect(results).toHaveLength(3);
       const skillNames = results.map((r) => r.skillName);
@@ -292,7 +292,7 @@ describe("skill-plugin-compiler", () => {
       await writeTestSkill(skillsDir, "web-framework-react");
       await writeTestSkill(skillsDir, "api-framework-hono");
 
-      const results = await compileAllSkillPlugins(skillsDir, outputDir);
+      const { compiled: results } = await compileAllSkillPlugins(skillsDir, outputDir);
 
       for (const result of results) {
         const stats = await stat(result.pluginPath);
@@ -301,8 +301,9 @@ describe("skill-plugin-compiler", () => {
     });
 
     it("should handle empty skills directory", async () => {
-      const results = await compileAllSkillPlugins(skillsDir, outputDir);
+      const { compiled: results, failed } = await compileAllSkillPlugins(skillsDir, outputDir);
       expect(results).toHaveLength(0);
+      expect(failed).toHaveLength(0);
     });
 
     it("should use frontmatter.name as skill name (not directory name)", async () => {
@@ -310,7 +311,7 @@ describe("skill-plugin-compiler", () => {
         skillContent: renderSkillMd("actual-skill-name", "Skill description", "# Content"),
       });
 
-      const results = await compileAllSkillPlugins(skillsDir, outputDir);
+      const { compiled: results } = await compileAllSkillPlugins(skillsDir, outputDir);
 
       expect(results).toHaveLength(1);
       // Should use frontmatter.name, not directory name
@@ -331,13 +332,16 @@ describe("skill-plugin-compiler", () => {
 
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-      const results = await compileAllSkillPlugins(skillsDir, outputDir);
+      const { compiled: results, failed } = await compileAllSkillPlugins(skillsDir, outputDir);
 
       // Should have compiled the valid skills
       expect(results).toHaveLength(2);
       const skillNames = results.map((r) => r.skillName);
       expect(skillNames).toContain("web-framework-react");
       expect(skillNames).toContain("web-state-zustand");
+
+      // The failed skill is reported by directory basename so callers can skip pruning
+      expect(failed).toStrictEqual(["bad-skill"]);
 
       // Should have warned about the failed skill
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Warning:"));
@@ -362,7 +366,7 @@ describe("skill-plugin-compiler", () => {
       await writeTestSkill(skillsDir, "web-framework-react");
       await writeTestSkill(skillsDir, "api-framework-hono");
 
-      const results = await compileAllSkillPlugins(skillsDir, outputDir);
+      const { compiled: results } = await compileAllSkillPlugins(skillsDir, outputDir);
 
       for (const result of results) {
         // Plugin name = skill name (no prefix)

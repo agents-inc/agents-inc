@@ -7,6 +7,15 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.141.6] - 2026-07-18
+
+**`build plugins` prunes stale `dist/plugins` entries**
+
+- Removing a skill from the source repo and re-running `build plugins` no longer leaves its compiled output behind forever (D-238)
+- Pruning is skipped (not guessed at) for single-skill compiles and any run with a partial compile failure, to avoid mistaking a failed skill for a removed one
+
+See [changelogs/0.141.6.md](./changelogs/0.141.6.md) for full details.
+
 ## [0.141.5] - 2026-07-09
 
 **`build marketplace` gains a `--name` override**

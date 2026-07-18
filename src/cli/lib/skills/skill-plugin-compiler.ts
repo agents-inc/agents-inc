@@ -30,6 +30,12 @@ export type CompiledSkillPlugin = {
   skillName: string;
 };
 
+export type SkillCompilationRun = {
+  compiled: CompiledSkillPlugin[];
+  /** Directory basenames of skills that failed to compile this run. */
+  failed: string[];
+};
+
 function sanitizeSkillName(name: string): string {
   return name.replace(/\+/g, "-");
 }
@@ -185,8 +191,9 @@ export async function compileSkillPlugin(
 export async function compileAllSkillPlugins(
   skillsDir: string,
   outputDir: string,
-): Promise<CompiledSkillPlugin[]> {
-  const results: CompiledSkillPlugin[] = [];
+): Promise<SkillCompilationRun> {
+  const compiled: CompiledSkillPlugin[] = [];
+  const failed: string[] = [];
 
   const skillMdFiles = await glob(`**/${STANDARD_FILES.SKILL_MD}`, skillsDir);
 
@@ -198,16 +205,17 @@ export async function compileAllSkillPlugins(
         skillPath,
         outputDir,
       });
-      results.push(result);
+      compiled.push(result);
       log(`  [OK] ${result.skillName}`);
     } catch (error) {
       const errorMessage = getErrorMessage(error);
       const dirBasename = path.basename(skillPath);
+      failed.push(dirBasename);
       warn(`Failed to compile skill from '${dirBasename}': ${errorMessage}`);
     }
   }
 
-  return results;
+  return { compiled, failed };
 }
 
 export function printCompilationSummary(results: CompiledSkillPlugin[]): void {

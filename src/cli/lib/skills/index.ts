@@ -24,6 +24,7 @@ export {
 export {
   type SkillPluginOptions,
   type CompiledSkillPlugin,
+  type SkillCompilationRun,
   compileSkillPlugin,
   compileAllSkillPlugins,
   printCompilationSummary,

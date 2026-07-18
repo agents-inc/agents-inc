@@ -287,4 +287,115 @@ describe("build:plugins command", () => {
       expect(stdout).toContain("Plugin compilation complete!");
     });
   });
+
+  describe("stale plugin pruning", () => {
+    let skillsDir: string;
+    let outputDir: string;
+
+    beforeEach(async () => {
+      skillsDir = path.join(projectDir, "src", "skills");
+      outputDir = path.join(projectDir, "dist", "plugins");
+    });
+
+    async function writeSkill(name: string): Promise<void> {
+      const skillDir = path.join(skillsDir, name);
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), renderSkillMd(name));
+    }
+
+    async function writePluginDir(name: string, manifest: PluginManifest): Promise<string> {
+      const pluginDir = path.join(outputDir, name);
+      await mkdir(path.join(pluginDir, PLUGIN_MANIFEST_DIR), { recursive: true });
+      await writeFile(
+        path.join(pluginDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE),
+        JSON.stringify({ version: "1.0.0", ...manifest }),
+      );
+      return pluginDir;
+    }
+
+    it("should prune a stale skill plugin whose source was removed", async () => {
+      await writeSkill("web-framework-react");
+      const orphanDir = await writePluginDir("old-removed-skill", {
+        name: "old-removed-skill",
+        skills: "./skills/",
+      });
+
+      const { error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
+
+      expect(error).toBeUndefined();
+      // Current skill survives, stale orphan is deleted
+      expect(await directoryExists(path.join(outputDir, "web-framework-react"))).toBe(true);
+      expect(await directoryExists(orphanDir)).toBe(false);
+    });
+
+    it("should NOT prune in single-skill mode", async () => {
+      await writeSkill("web-framework-react");
+      await writeSkill("api-framework-hono");
+      const orphanDir = await writePluginDir("old-removed-skill", {
+        name: "old-removed-skill",
+        skills: "./skills/",
+      });
+
+      const { error } = await runCliCommand([
+        "build:plugins",
+        "--output-dir",
+        outputDir,
+        "--skill",
+        "web-framework-react",
+      ]);
+
+      expect(error).toBeUndefined();
+      // Single-skill mode must not treat every other plugin as an orphan
+      expect(await directoryExists(orphanDir)).toBe(true);
+      expect(await directoryExists(path.join(outputDir, "api-framework-hono"))).toBe(false);
+    });
+
+    it("should NOT prune when a skill fails to compile (partial-failure safety)", async () => {
+      await writeSkill("web-framework-react");
+      const orphanDir = await writePluginDir("old-removed-skill", {
+        name: "old-removed-skill",
+        skills: "./skills/",
+      });
+
+      // A skill with no frontmatter fails to compile and is indistinguishable from a removed one
+      const badSkillDir = path.join(skillsDir, "bad-skill");
+      await mkdir(badSkillDir, { recursive: true });
+      await writeFile(path.join(badSkillDir, STANDARD_FILES.SKILL_MD), "# no frontmatter");
+
+      const { error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
+
+      expect(error).toBeUndefined();
+      // Pruning is skipped entirely, so the orphan is preserved rather than falsely deleted
+      expect(await directoryExists(orphanDir)).toBe(true);
+      expect(await directoryExists(path.join(outputDir, "web-framework-react"))).toBe(true);
+    });
+
+    it("should not delete directories that are not plugin dirs", async () => {
+      await writeSkill("web-framework-react");
+      const nonPluginDir = path.join(outputDir, "not-a-plugin");
+      await mkdir(nonPluginDir, { recursive: true });
+      await writeFile(path.join(nonPluginDir, "notes.txt"), "unrelated file");
+
+      const { error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
+
+      expect(error).toBeUndefined();
+      // A directory without .claude-plugin/plugin.json is left untouched
+      expect(await directoryExists(nonPluginDir)).toBe(true);
+      expect(await fileExists(path.join(nonPluginDir, "notes.txt"))).toBe(true);
+    });
+
+    it("should preserve agent plugins when pruning skill orphans", async () => {
+      await writeSkill("web-framework-react");
+      const agentDir = await writePluginDir("agent-cli-developer", {
+        name: "agent-cli-developer",
+        agents: "./agents/",
+      });
+
+      const { error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
+
+      expect(error).toBeUndefined();
+      // Agent plugins are out of scope for skill-only pruning and must survive
+      expect(await directoryExists(agentDir)).toBe(true);
+    });
+  });
 });

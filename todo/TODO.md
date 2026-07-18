@@ -9,6 +9,8 @@
 
 | ID    | Task                                                                                                                                                         | Status                   |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
+| D-240 | Propagating a global config change must recompile affected agents in every registered project, not just rewrite config.ts. [Detail](#d-240-propagate-agent-recompilation-to-registered-projects) | Ready for Dev             |
+| D-239 | Web UI: extract shared matrix/config-types package for a new browser skill-picker repo. [Plan](./D-239-web-ui-shared-matrix-package.md) | Investigate               |
 | D-237 | Create a GIF demo for the README                                                                                                                             | Ready for Dev            |
 | D-236 | Seed `focusedSkillId` synchronously in `hydrateWizardStore` (Fix A — eliminates E2E 500ms focus-race workaround).                                            | Ready for Dev            |
 | D-235 | E2E gap: `buildProjectTypesExtras` new-domain/category path is uncovered.                                                                                    | Ready for Dev            |
@@ -59,6 +61,29 @@ See [docs/guides/agent-reminders.md](../docs/guides/agent-reminders.md) for the 
 ---
 
 ## Active Tasks
+
+### Bugs
+
+#### D-240: Propagate agent recompilation to registered projects
+
+**Context**: two related bugs surfaced and were fixed in the same session (2026-07-18):
+
+1. Removing the only skill an agent's stack referenced left a stale reference behind in `config.ts`'s `stack` property (`generateProjectConfigFromSkills` / `mergeConfigs` — fixed).
+2. `propagateGlobalChangesToProjects` (`local-installer.ts`) carried a registered project's `stack` forward verbatim during propagation, never pruning references to a skill that was just removed at global scope (fixed — see `computeRemovedGlobalSkillIds` / `retainReconciledStack`).
+
+Fixing #2 closed the `config.ts` gap, but surfaced a **third, still-open gap**: `propagateGlobalChangesToProjects` only rewrites a registered project's `config.ts` (via `writeConfigFile`) and `config-types.ts` (via `regenerateConfigTypes`). It never recompiles that project's agents. So after a global skill is removed and propagation runs, a registered project's `config.ts` is correct, but its already-compiled `.claude/agents/<name>.md` files still reference the removed skill until the user happens to run a command inside that project directly (which triggers `compileAndWriteAgents` through the normal install/edit path).
+
+**Decision (user, 2026-07-18): once the global installation changes, it should recompile all projects.** This resolves the "decide the intended contract" question left open in the finding below in favor of option (a) — active recompilation during propagation, not a lazy/deferred refresh.
+
+**Why this is a real change, not a small addition** (per the investigating agent): `propagateGlobalChangesToProjects` is currently config-only — its parameters are `(globalConfig, matrix, agents, currentProjectDir?)`. `compileAndWriteAgents` needs materially more per-project context: a `SourceLoadResult` (`sourcePath`), each project's resolved `localSkills`, a per-project Liquid engine (`createLiquidEngine(projectDir)`), a `CompileConfig` (`buildCompileAgents`), and an `agentScopeMap`. Implementing this means loading the marketplace source and each registered project's local skills, then running Liquid compilation per project, inside what is today a lightweight config-rewrite loop — a filesystem-and-compilation fan-out with its own failure modes (source unavailable, project-local skill drift, partial-write recovery across N registered projects).
+
+**Fix direction**: thread the source/local-skill/engine context into `propagateGlobalChangesToProjects` (or a sibling function it calls per project) and invoke agent recompilation for each registered project after its config is rewritten. Decide how to handle partial failure across multiple registered projects (one project's compile failing shouldn't silently corrupt or skip the others — likely needs the same per-item failure-collection pattern used by `installPluginSkills`/`uninstallPluginSkills`).
+
+**Regression coverage needed**: an E2E test that, after a global skill removal propagates to a registered project, asserts the project's `.claude/agents/<name>.md` no longer references the removed skill (not just `config.ts`).
+
+**Related findings**: `.ai-docs/agent-findings/2026-07-18-propagation-stack-reconcile-gap-reachable.md` (resolved — the config-side fix), `.ai-docs/agent-findings/2026-07-18-propagation-skips-agent-recompile.md` (open — this task).
+
+---
 
 ### Wizard UX
 
@@ -664,26 +689,7 @@ Violates convention: task IDs belong in file-level JSDoc, not embedded in descri
 - `e2e/interactive/init-wizard-default-source.e2e.test.ts:104` — `"(D-123)"` in describe string
 - `e2e/interactive/init-wizard-sources.e2e.test.ts` — `"(Gap 8)"` in describe string
 
-Move IDs to JSDoc comment above the describe block. Also fix: `e2e/interactive/search-interactive.e2e.test.ts:40` uses `sourceTempDir = undefined` instead of `sourceTempDir = undefined!` per documented reset pattern.
-
----
-
-#### D-150: Migrate E2E tests from `toggleSkill` to `selectSkill`
-
-**Priority:** Low
-
-`toggleSkill(label)` in `BuildStep` only verifies the label is visible on screen, then presses Space on **whatever is currently focused** — it doesn't navigate to the target. All existing usages work by coincidence because the target skill happens to be at the focused position (col 0 of the focused category). If a future test targets a skill at a different position, `toggleSkill` would silently toggle the wrong item.
-
-**Affected tests (7 call sites across 4 files):**
-
-- `init-wizard-scratch.e2e.test.ts:50` — `toggleSkill("react")` (works: react is at (0,0))
-- `init-wizard-stack.e2e.test.ts:166` — `toggleSkill("react")` (works: same reason)
-- `edit-wizard-local.e2e.test.ts:73` — `toggleFocusedSkill()` after `navigateDown()` (fine: intentionally position-based)
-- `edit-wizard-local.e2e.test.ts:110,144` — `toggleSkill("vitest")` after `navigateDown()` (works: vitest is only item in Testing)
-
-**Action:** Replace `toggleSkill(label)` calls with `selectSkill(label)` which properly navigates to the target's (row, col) position in the grid before pressing Space. Leave `toggleFocusedSkill()` calls as-is — they're intentionally position-based.
-
-**Also consider:** deprecating or removing `toggleSkill` from `BuildStep` to prevent future misuse.
+Move IDs to JSDoc comment above the describe block. **Note (2026-07-17, cli-developer investigation):** this write-up is stale — see `todo/active-bugfixes.md` D-167 section for the corrected, exhaustive location list (the `search-interactive.e2e.test.ts` file was renamed to `search-static.e2e.test.ts` and its cited `undefined!` issue was already resolved by an unrelated refactor; 5 additional, stronger violations were found beyond the 3 listed here).
 
 ---
 

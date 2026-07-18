@@ -305,8 +305,8 @@ export default class NewMarketplace extends BaseCommand {
 
     try {
       this.log("Building plugins...");
-      const results = await compileAllSkillPlugins(skillsDir, pluginsOutputDir);
-      this.logSuccess(`Built ${results.length} skill plugins.`);
+      const { compiled } = await compileAllSkillPlugins(skillsDir, pluginsOutputDir);
+      this.logSuccess(`Built ${compiled.length} skill plugins.`);
 
       this.log("Generating marketplace.json...");
       const marketplace = await generateMarketplace(pluginsOutputDir, {

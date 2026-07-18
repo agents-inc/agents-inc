@@ -3,13 +3,17 @@ import path from "path";
 
 import { BaseCommand } from "../../base-command";
 import { setVerbose } from "../../utils/logger";
-import { DIRS } from "../../consts";
+import { getErrorMessage } from "../../utils/errors";
+import { fileExists, listDirectories, readFile, remove } from "../../utils/fs";
+import { DIRS, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import {
   compileAllSkillPlugins,
   compileSkillPlugin,
   printCompilationSummary,
 } from "../../lib/skills";
 import { compileAllAgentPlugins, printAgentCompilationSummary } from "../../lib/agents";
+import { pluginManifestSchema } from "../../lib/schemas";
+import type { PluginManifest } from "../../types";
 
 const DEFAULT_OUTPUT_DIR = "dist/plugins";
 
@@ -76,10 +80,14 @@ export default class BuildPlugins extends BaseCommand {
     this.printHeader(skillsDir, outputDir);
 
     try {
-      await this.compileSkills(flags.skill, skillsDir, outputDir);
+      const expectedSkillPlugins = await this.compileSkills(flags.skill, skillsDir, outputDir);
 
       if (flags["agents-dir"]) {
         await this.compileAgents(projectRoot, flags["agents-dir"], outputDir);
+      }
+
+      if (expectedSkillPlugins) {
+        await this.pruneStaleSkillPlugins(outputDir, expectedSkillPlugins);
       }
 
       this.log("");
@@ -98,11 +106,18 @@ export default class BuildPlugins extends BaseCommand {
     this.log("");
   }
 
+  /**
+   * Compiles skills and returns the set of plugin directory names that should
+   * exist afterward — used to prune stale plugins. Returns `null` when pruning
+   * must be skipped: single-skill mode (would wipe every other plugin) or a
+   * partial compile failure (a failed skill is indistinguishable from a removed
+   * one, so deleting it would be a worse bug than the stale entry).
+   */
   private async compileSkills(
     skillFlag: string | undefined,
     skillsDir: string,
     outputDir: string,
-  ): Promise<void> {
+  ): Promise<Set<string> | null> {
     if (skillFlag) {
       const skillPath = path.resolve(skillsDir, skillFlag);
       this.log(`Compiling skill at ${skillPath}...`);
@@ -114,14 +129,25 @@ export default class BuildPlugins extends BaseCommand {
 
       this.log(`Compiled ${result.skillName}`);
       this.log(`  Plugin path: ${result.pluginPath}`);
-    } else {
-      this.log("Finding and compiling all skills...");
-
-      const results = await compileAllSkillPlugins(skillsDir, outputDir);
-
-      this.log(`Compiled ${results.length} skill plugins`);
-      printCompilationSummary(results);
+      return null;
     }
+
+    this.log("Finding and compiling all skills...");
+
+    const { compiled, failed } = await compileAllSkillPlugins(skillsDir, outputDir);
+
+    this.log(`Compiled ${compiled.length} skill plugins`);
+    printCompilationSummary(compiled);
+
+    if (failed.length > 0) {
+      this.warn(
+        `Skipping stale-plugin pruning: ${failed.length} skill(s) failed to compile ` +
+          `(${failed.join(", ")}). A failed skill is indistinguishable from a removed one.`,
+      );
+      return null;
+    }
+
+    return new Set(compiled.map((result) => result.skillName));
   }
 
   private async compileAgents(
@@ -142,5 +168,46 @@ export default class BuildPlugins extends BaseCommand {
 
     this.log(`Compiled ${agentResults.length} agent plugins`);
     printAgentCompilationSummary(agentResults);
+  }
+
+  /**
+   * Removes skill-plugin directories in `outputDir` that no longer correspond to
+   * a compiled skill. Only skill plugins are pruned: agent plugins are preserved
+   * (this run has no authority over them) and non-plugin directories are left
+   * untouched. Callers must only invoke this after a clean full-scan compile.
+   */
+  private async pruneStaleSkillPlugins(
+    outputDir: string,
+    expectedSkillPlugins: ReadonlySet<string>,
+  ): Promise<void> {
+    const dirNames = await listDirectories(outputDir);
+
+    for (const dirName of dirNames) {
+      if (expectedSkillPlugins.has(dirName)) continue;
+
+      const pluginDir = path.join(outputDir, dirName);
+      const manifest = await this.readPluginManifest(pluginDir);
+      if (!manifest) continue;
+      if (manifest.agents !== undefined) continue;
+
+      await remove(pluginDir);
+      this.log(`  Pruned stale plugin: ${dirName}`);
+    }
+  }
+
+  private async readPluginManifest(pluginDir: string): Promise<PluginManifest | null> {
+    const manifestPath = path.join(pluginDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
+    if (!(await fileExists(manifestPath))) return null;
+
+    try {
+      const raw: unknown = JSON.parse(await readFile(manifestPath));
+      const result = pluginManifestSchema.safeParse(raw);
+      return result.success ? result.data : null;
+    } catch (error) {
+      this.warn(
+        `Skipping unreadable plugin manifest at '${manifestPath}': ${getErrorMessage(error)}`,
+      );
+      return null;
+    }
   }
 }
