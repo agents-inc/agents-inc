@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.142.1] - 2026-07-18
+
+**Housekeeping: standards-gap findings + formatting-only cleanup**
+
+- Filed: CLAUDE.md's "no task IDs in test names/assertions" rule keeps recurring with no automated enforcement — proposes an ESLint rule
+- Filed: a `*.test.ts` placed directly under `e2e/helpers/` never actually runs under either vitest project — documents the correct pattern (already applied in 0.142.0)
+- `README.md` / `todo/TODO-completed.md` — formatting-only, no content changes
+
+See [changelogs/0.142.1.md](./changelogs/0.142.1.md) for full details.
+
 ## [0.142.0] - 2026-07-18
 
 **Dual-scope skill/agent scope-toggle semantics fixed end-to-end (D-233, D-227)**
