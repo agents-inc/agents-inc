@@ -1,6 +1,7 @@
 import type { TerminalSession } from "../helpers/terminal-session.js";
 import { delay } from "../helpers/test-utils.js";
 import { INTERNAL_DELAYS, INTERNAL_RETRIES, TIMEOUTS } from "./constants.js";
+import { retryEnterUntil } from "./retry-enter.js";
 import { TerminalScreen } from "./terminal-screen.js";
 
 export abstract class BaseStep {
@@ -17,42 +18,42 @@ export abstract class BaseStep {
 
   protected async pressEnter(): Promise<void> {
     this.session.enter();
-    await this.delay(INTERNAL_DELAYS.STEP_TRANSITION);
+    await delay(INTERNAL_DELAYS.STEP_TRANSITION);
   }
 
   protected async pressSpace(): Promise<void> {
     this.session.space();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   protected async pressKey(key: string): Promise<void> {
     this.session.write(key);
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   protected async pressEscape(): Promise<void> {
     this.session.escape();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   protected async pressArrowDown(): Promise<void> {
     this.session.arrowDown();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   protected async pressArrowUp(): Promise<void> {
     this.session.arrowUp();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   protected async pressArrowRight(): Promise<void> {
     this.session.arrowRight();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   protected async pressCtrlC(): Promise<void> {
     this.session.ctrlC();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   /** Wait for an item to be visible on screen. Scrolls down looking for it, throws if not found. */
@@ -137,13 +138,8 @@ export abstract class BaseStep {
   }
 
   /**
-   * Press Enter and wait for `nextStepText` to appear AFTER the snapshot cursor.
-   *
-   * Closed-loop retry: under parallel-suite contention, Ink's useInput handler
-   * for the next step may not be mounted when the first Enter fires, dropping
-   * the keystroke silently. We snapshot the cursor before each press and poll
-   * for the sentinel post-cursor; if the sentinel does not appear within
-   * INTERNAL_RETRIES.INTERVAL_MS we re-press. Mirrors DashboardSession.selectEdit.
+   * Press Enter (with closed-loop retry, see retryEnterUntil) and wait for
+   * `nextStepText` to appear AFTER the snapshot cursor.
    *
    * IMPORTANT: the sentinel must be text that is ONLY printed by the next
    * step's first frame — not text that also appears in the current step's
@@ -151,19 +147,9 @@ export abstract class BaseStep {
    * own repaint.
    */
   protected async pressEnterAndWaitFor(nextStepText: string): Promise<void> {
-    let lastError: unknown;
-    for (let i = 0; i < INTERNAL_RETRIES.MAX_ATTEMPTS; i++) {
-      const cursor = this.getRawCursor();
-      this.session.enter();
-      await this.delay(INTERNAL_DELAYS.STEP_TRANSITION);
-      try {
-        await this.screen.waitForTextAfter(nextStepText, cursor, INTERNAL_RETRIES.INTERVAL_MS);
-        return;
-      } catch (err) {
-        lastError = err;
-      }
-    }
-    throw lastError;
+    await retryEnterUntil(this.session, this.screen, (cursor) =>
+      this.screen.waitForTextAfter(nextStepText, cursor, INTERNAL_RETRIES.INTERVAL_MS),
+    );
   }
 
   /** Get the full output including scrollback (for test assertions). */
@@ -206,7 +192,6 @@ export abstract class BaseStep {
     const diffRowPattern = new RegExp(`([+\\-~\\u2022])\\s+${escapedName}(?:\\s|$)`);
 
     const entries: Array<{ prefix: "+" | "-" | "~" | "\u2022"; scope: "Project" | "Global" }> = [];
-    let currentScope: "Project" | "Global" | null = null;
 
     // Each line may carry both a Skills-column segment and an Agents-column
     // segment separated by a `│` divider (from SkillAgentSummary's
@@ -242,10 +227,6 @@ export abstract class BaseStep {
         });
       }
     }
-    // Remove the no-longer-used single-scope tracker to keep the declaration
-    // surface honest — retained as a void statement only for TypeScript's
-    // unused-let detection when the file is edited in isolation.
-    void currentScope;
 
     return entries;
   }
@@ -268,9 +249,5 @@ export abstract class BaseStep {
   /** Navigate right one item (arrow right). */
   async navigateRight(): Promise<void> {
     await this.pressArrowRight();
-  }
-
-  protected delay(ms: number): Promise<void> {
-    return delay(ms);
   }
 }

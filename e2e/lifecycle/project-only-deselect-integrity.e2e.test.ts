@@ -11,6 +11,7 @@ import {
 } from "../helpers/test-utils.js";
 import {
   createTestEnvironment,
+  readConfigSkillIds,
   setupProjectOnlyMixedScope,
 } from "../fixtures/dual-scope-helpers.js";
 import "../matchers/setup.js";
@@ -57,7 +58,7 @@ describe("project-only deselection integrity", () => {
 
   it(
     "deselecting a project-only agent removes it from config, the generated union, and disk while the inherited global agent is untouched",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       testTempDir = tempDir;
@@ -133,7 +134,7 @@ describe("project-only deselection integrity", () => {
 
   it(
     "deselecting a project-only skill removes it from the config skills array and the generated union while the inherited global skill is untouched",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       testTempDir = tempDir;
@@ -176,12 +177,8 @@ describe("project-only deselection integrity", () => {
 
       // The project-only skill is removed from the config's skills array.
       const projectConfigAfter = await readTestFile(projectConfigPath);
-      const skillsBlockMatch = projectConfigAfter.match(
-        /const skills:\s*SkillConfig\[\]\s*=\s*\[([\s\S]*?)\];/,
-      );
-      expect(skillsBlockMatch, "project config.ts must have a skills array").not.toBeNull();
       expect(
-        skillsBlockMatch![1],
+        await readConfigSkillIds(projectDir),
         "skills array must not retain the deselected project-only skill",
       ).not.toContain("web-testing-vitest");
       const projectTypesAfter = await readTestFile(projectTypesPath);

@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { SkillConfig } from "../../../types/config.js";
+import type { SkillId } from "../../../types/index.js";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
 import type { CopiedSkill } from "../../skills/index.js";
+import { buildSourceResult } from "../../__tests__/factories/config-factories.js";
+import { createMockMatrix } from "../../__tests__/factories/matrix-factories.js";
 
 vi.mock("../../installation/index.js", () => ({
   resolveInstallPaths: vi.fn(),
@@ -26,20 +29,22 @@ const mockEnsureDir = vi.mocked(ensureDir);
 
 const PROJECT_DIR = "/tmp/test-project";
 
-const MOCK_SOURCE_RESULT = {
-  matrix: { skills: {}, categories: {}, suggestedStacks: [], slugMap: { bySlug: {}, byId: {} } },
-  sourceConfig: { source: "github:test/source", sourceOrigin: "flag" as const },
-  sourcePath: "/tmp/test-source",
-  isLocal: false,
-} as unknown as SourceLoadResult;
+const MOCK_SOURCE_RESULT: SourceLoadResult = buildSourceResult(
+  createMockMatrix(),
+  "/tmp/test-source",
+  {
+    sourceConfig: { source: "github:test/source", sourceOrigin: "flag" },
+    isLocal: false,
+  },
+);
 
-function makeSkillConfig(id: string, scope: "project" | "global", source = "eject"): SkillConfig {
-  return { id: id as SkillConfig["id"], scope, source };
+function makeSkillConfig(id: SkillId, scope: "project" | "global", source = "eject"): SkillConfig {
+  return { id, scope, source };
 }
 
-function makeCopiedSkill(id: string): CopiedSkill {
+function makeCopiedSkill(id: SkillId): CopiedSkill {
   return {
-    skillId: id as CopiedSkill["skillId"],
+    skillId: id,
     contentHash: "abc1234",
     sourcePath: `/tmp/source/${id}`,
     destPath: `/tmp/dest/${id}`,
@@ -89,13 +94,11 @@ describe("copyLocalSkills", () => {
     expect(mockCopySkillsToLocalFlattened).toHaveBeenCalledWith(
       ["web-framework-react", "web-styling-tailwind"],
       `${PROJECT_DIR}/.claude/skills`,
-      MOCK_SOURCE_RESULT.matrix,
       MOCK_SOURCE_RESULT,
     );
     expect(mockCopySkillsToLocalFlattened).toHaveBeenCalledWith(
       ["api-framework-hono"],
       "/home/user/.claude/skills",
-      MOCK_SOURCE_RESULT.matrix,
       MOCK_SOURCE_RESULT,
     );
 

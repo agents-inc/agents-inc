@@ -6,12 +6,16 @@ import {
   directoryExists,
   ensureBinaryExists,
   fileExists,
-  readTestFile,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { createGlobalOnlyEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import {
+  createGlobalOnlyEnv,
+  readSkillEntries,
+  runEditWithFirstSkillAction,
+  type DualScopeEnv,
+} from "../fixtures/dual-scope-helpers.js";
 
 /**
  * D-224 — Wizard hides global install state after P→G toggle when a prior
@@ -45,26 +49,6 @@ import { createGlobalOnlyEnv, type DualScopeEnv } from "../fixtures/dual-scope-h
 
 const REACT_SKILL_ID = "web-framework-react";
 
-type SkillEntry = {
-  id: string;
-  scope: "project" | "global";
-  source: string;
-  excluded?: boolean;
-};
-
-/**
- * Extract all `{...}` JSON objects referencing the given skill id from a
- * rendered `config.ts` string. The writer emits each skill entry as a single
- * flat object literal per line, so a non-greedy match on `{...}` blocks that
- * include `"id":"<skillId>"` captures exactly the entries we want.
- */
-function parseSkillEntries(configText: string, skillId: string): SkillEntry[] {
-  const pattern = new RegExp(`\\{[^{}]*"id":"${skillId}"[^{}]*\\}`, "g");
-  const matches = Array.from(configText.matchAll(pattern));
-  // Boundary cast: JSON.parse returns unknown, caller consumes as SkillEntry.
-  return matches.map((match) => JSON.parse(match[0]) as SkillEntry);
-}
-
 describe("edit wizard — tombstone cleanup after P→G restoration", () => {
   let sourceDir: string;
   let sourceTempDir: string;
@@ -89,84 +73,9 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
     env = undefined;
   });
 
-  /**
-   * Drive `cc edit` once to toggle the first-focused skill (web-framework-react
-   * in the Web domain) G→P. Produces the dual-scope config: an active
-   * `{scope:"project"}` entry alongside a `{scope:"global", excluded:true}`
-   * tombstone.
-   */
-  async function performGlobalToProjectToggle(projectDir: string, fakeHome: string): Promise<void> {
-    const toggleWizard = await EditWizard.launch({
-      projectDir,
-      source: { sourceDir, tempDir: sourceTempDir },
-      env: { HOME: fakeHome },
-      rows: 60,
-      cols: 120,
-    });
-
-    try {
-      // Web domain: focus defaults to web-framework-react. Toggle G→P.
-      await toggleWizard.build.toggleScopeOnFocusedSkill();
-      await toggleWizard.build.advanceDomain();
-      // API domain: pass through.
-      await toggleWizard.build.advanceDomain();
-      // Methodology domain: advance to sources.
-      const sources = await toggleWizard.build.advanceToSources();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
-    } finally {
-      await toggleWizard.destroy();
-    }
-  }
-
-  /**
-   * Drive `cc edit` once to restore the first-focused skill from project to
-   * global scope. On the second session, web-framework-react is focused by
-   * default (Web domain, first category, first option) and carries the
-   * persisted dual-scope state from the prior G→P.
-   *
-   * `s` is intentionally inert on a persisted dual-scope pair (the dual-scope
-   * scope-toggle guard), so the sanctioned way to drop the project half is
-   * space (deselect): it collapses [P][G] → [G], removing the tombstone and
-   * the project override while leaving the global install untouched — the same
-   * P→G restoration end-state.
-   */
-  async function performProjectToGlobalToggle(projectDir: string, fakeHome: string): Promise<void> {
-    const toggleWizard = await EditWizard.launch({
-      projectDir,
-      source: { sourceDir, tempDir: sourceTempDir },
-      env: { HOME: fakeHome },
-      rows: 60,
-      cols: 120,
-    });
-
-    try {
-      // Web domain: focus defaults to web-framework-react (now at P with G
-      // tombstone). Space collapses [P][G] → [G] — pure global, no tombstone.
-      await toggleWizard.build.toggleFocusedSkill();
-      await toggleWizard.build.advanceDomain();
-      // API domain: pass through.
-      await toggleWizard.build.advanceDomain();
-      // Methodology domain: advance to sources.
-      const sources = await toggleWizard.build.advanceToSources();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
-    } finally {
-      await toggleWizard.destroy();
-    }
-  }
-
   it(
     "Scenario A: P→G restoration removes the tombstone and collapses to a single global entry",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Phase 1: install all E2E skills globally, bootstrap an all-global project.
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
@@ -174,16 +83,14 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
 
       // Phase 2: toggle react G→P via real `cc edit`. Produces the dual-scope
       // state in project config (D-223 territory — validated by its own suite).
-      await performGlobalToProjectToggle(projectDir, fakeHome);
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       // Phase 3: toggle react P→G. D-224's failure point — must remove the
       // tombstone and collapse to a single global entry.
-      await performProjectToGlobalToggle(projectDir, fakeHome);
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
 
       // Config assertion: exactly ONE react entry, scope global, no tombstone.
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const projectConfig = await readTestFile(projectConfigPath);
-      const reactEntries = parseSkillEntries(projectConfig, REACT_SKILL_ID);
+      const reactEntries = await readSkillEntries(projectDir, REACT_SKILL_ID);
 
       expect(reactEntries).toHaveLength(1);
       expect(reactEntries[0]).toStrictEqual({
@@ -231,7 +138,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
 
   it(
     "Scenario B: full G→P→G cycle roundtrip — each phase asserted on config and filesystem",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Phase 1: install globally. Assert pure global state, no tombstone.
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
@@ -245,8 +152,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       // file may not exist at all (the skill is inherited). If it does exist,
       // it must carry no tombstone and no project-scoped entry for react.
       if (await fileExists(projectConfigPath)) {
-        const configPhase1 = await readTestFile(projectConfigPath);
-        const entriesPhase1 = parseSkillEntries(configPhase1, REACT_SKILL_ID);
+        const entriesPhase1 = await readSkillEntries(projectDir, REACT_SKILL_ID);
         expect(entriesPhase1.filter((entry) => entry.excluded === true)).toStrictEqual([]);
         expect(entriesPhase1.filter((entry) => entry.scope === "project")).toStrictEqual([]);
       }
@@ -254,10 +160,9 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       expect(await directoryExists(projectSkillDir)).toBe(false);
 
       // Phase 2: toggle G→P. Assert active project + global tombstone.
-      await performGlobalToProjectToggle(projectDir, fakeHome);
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
-      const configPhase2 = await readTestFile(projectConfigPath);
-      const entriesPhase2 = parseSkillEntries(configPhase2, REACT_SKILL_ID);
+      const entriesPhase2 = await readSkillEntries(projectDir, REACT_SKILL_ID);
       const activePhase2 = entriesPhase2.find((entry) => entry.excluded !== true);
       const tombstonePhase2 = entriesPhase2.find((entry) => entry.excluded === true);
       expect(activePhase2, "G→P must produce an active project entry").toBeDefined();
@@ -270,10 +175,9 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
 
       // Phase 3: toggle P→G. Assert ONLY global active, no tombstone, no
       // project entry. This is the D-224 failure point.
-      await performProjectToGlobalToggle(projectDir, fakeHome);
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
 
-      const configPhase3 = await readTestFile(projectConfigPath);
-      const entriesPhase3 = parseSkillEntries(configPhase3, REACT_SKILL_ID);
+      const entriesPhase3 = await readSkillEntries(projectDir, REACT_SKILL_ID);
       expect(entriesPhase3).toHaveLength(1);
       expect(entriesPhase3[0]).toStrictEqual({
         id: REACT_SKILL_ID,
@@ -289,14 +193,14 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
 
   it(
     "Scenario C: no-op edit between G→P and P→G does not leave orphaned state",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Phase 1: install globally.
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
 
       // Phase 2: toggle G→P.
-      await performGlobalToProjectToggle(projectDir, fakeHome);
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       // Phase 3: no-op passthrough edit — MUST NOT leave orphaned state that
       // would interfere with the subsequent P→G toggle.
@@ -316,12 +220,10 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       }
 
       // Phase 4: toggle P→G. Must produce the same clean end-state as Scenario A.
-      await performProjectToGlobalToggle(projectDir, fakeHome);
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
 
       // Config assertion: exactly ONE react entry at global scope, no tombstone.
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const projectConfig = await readTestFile(projectConfigPath);
-      const reactEntries = parseSkillEntries(projectConfig, REACT_SKILL_ID);
+      const reactEntries = await readSkillEntries(projectDir, REACT_SKILL_ID);
 
       expect(reactEntries).toHaveLength(1);
       expect(reactEntries[0]).toStrictEqual({

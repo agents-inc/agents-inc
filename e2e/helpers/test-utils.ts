@@ -5,8 +5,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../src/cli/consts.js";
 import {
+  renderAgentMd,
   renderAgentYaml,
   renderConfigTs,
+  renderMetadataYaml,
   renderSkillMd,
 } from "../../src/cli/lib/__tests__/content-generators.js";
 import { writeTestPackageJson } from "../../src/cli/lib/__tests__/helpers/config-io.js";
@@ -34,15 +36,11 @@ const E2E_TEMP_PREFIX = "ai-e2e-";
  * Standard forkedFrom metadata block for E2E plugin/uninstall tests.
  * Represents a skill forked from web-framework-react in the E2E source.
  */
-export const FORKED_FROM_METADATA =
-  [
-    'author: "@agents-inc"',
-    'contentHash: "e2e-hash"',
-    "forkedFrom:",
-    "  skillId: web-framework-react",
-    '  contentHash: "e2e-hash"',
-    "  date: 2026-01-01",
-  ].join("\n") + "\n";
+export const FORKED_FROM_METADATA = renderMetadataYaml({
+  author: "@agents-inc",
+  contentHash: "e2e-hash",
+  forkedFrom: { skillId: "web-framework-react", contentHash: "e2e-hash", date: "2026-01-01" },
+});
 
 export async function createTempDir(): Promise<string> {
   return createTempDirBase(E2E_TEMP_PREFIX);
@@ -53,13 +51,35 @@ export function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+const POLL_INTERVAL_MS = 50;
+
+/**
+ * Polls `isSatisfied` until it returns true, or throws `buildTimeoutError()`
+ * once `timeoutMs` has elapsed. Shared skeleton for all PTY wait helpers.
+ */
+export async function pollUntil(
+  isSatisfied: () => boolean,
+  timeoutMs: number,
+  buildTimeoutError: () => Error,
+): Promise<void> {
+  const start = Date.now();
+  while (!isSatisfied()) {
+    if (Date.now() - start > timeoutMs) {
+      throw buildTimeoutError();
+    }
+    await delay(POLL_INTERVAL_MS);
+  }
+}
+
 export {
   cleanupTempDir,
   directoryExists,
   fileExists,
   normalizeGlobalConfig,
+  renderAgentMd,
   renderAgentYaml,
   renderConfigTs,
+  renderMetadataYaml,
   renderSkillMd,
   writeTestPackageJson,
 };
@@ -156,7 +176,7 @@ export async function readMarketplaceJson(outputPath: string): Promise<Marketpla
 export async function createLocalSkill(
   projectDir: string,
   skillId: SkillId,
-  options?: { description?: string; metadata?: string },
+  options?: { description?: string; body?: string; metadata?: string },
 ): Promise<string> {
   const skillDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, skillId);
   await mkdir(skillDir, { recursive: true });
@@ -164,7 +184,7 @@ export async function createLocalSkill(
   const description = options?.description ?? `A test skill`;
   await writeFile(
     path.join(skillDir, STANDARD_FILES.SKILL_MD),
-    renderSkillMd(skillId, description, `# ${skillId}`),
+    renderSkillMd(skillId, description, options?.body ?? `# ${skillId}`),
   );
 
   if (options?.metadata) {
@@ -172,6 +192,26 @@ export async function createLocalSkill(
   }
 
   return skillDir;
+}
+
+/** Write a minimal agent .md file to the agents directory (no frontmatter needed for doctor). */
+export async function writeAgentFile(baseDir: string, agentName: string): Promise<void> {
+  await writeFile(path.join(agentsPath(baseDir), `${agentName}.md`), `# ${agentName}\n`);
+}
+
+/**
+ * Writes minimal compiled-agent stubs (frontmatter with name only) into
+ * `<projectDir>/.claude/agents/`, as left behind by a prior compile.
+ */
+export async function writeAgentStubs(projectDir: string, agents: string[]): Promise<void> {
+  const agentsDir = agentsPath(projectDir);
+  await mkdir(agentsDir, { recursive: true });
+  for (const agent of agents) {
+    await writeFile(
+      path.join(agentsDir, `${agent}.md`),
+      `---\nname: ${agent}\n---\nTest agent content.\n`,
+    );
+  }
 }
 
 /**

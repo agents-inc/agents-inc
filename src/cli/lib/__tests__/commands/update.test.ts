@@ -16,6 +16,34 @@ import { renderSkillMd } from "../content-generators";
 import { stringify as stringifyYaml } from "yaml";
 import type { SkillId, SkillSlug } from "../../../types";
 
+/** Hash of a source skill's SKILL.md — the value `update` compares forks against. */
+async function computeSourceSkillHash(localDirs: TestDirs, skillId: SkillId): Promise<string> {
+  const sourceSkillDir = path.join(localDirs.sourceDir, "src", "skills", "web-framework", skillId);
+  return computeFileHash(path.join(sourceSkillDir, STANDARD_FILES.SKILL_MD));
+}
+
+/** Write a local fork of `skillId` claiming `contentHash` as its fork-point hash. */
+async function writeForkedLocalSkill(
+  localDirs: TestDirs,
+  skillId: SkillId,
+  contentHash: string,
+  description: string,
+): Promise<void> {
+  const localSkillDir = path.join(localDirs.projectDir, ".claude", "skills", skillId);
+  await mkdir(localSkillDir, { recursive: true });
+  await writeFile(
+    path.join(localSkillDir, STANDARD_FILES.SKILL_MD),
+    renderSkillMd(skillId, description),
+  );
+  await writeFile(
+    path.join(localSkillDir, STANDARD_FILES.METADATA_YAML),
+    stringifyYaml({
+      displayName: "React",
+      forkedFrom: { skillId, contentHash, date: "2025-01-01" },
+    }),
+  );
+}
+
 describe("update command", () => {
   let tempDir: string;
   let projectDir: string;
@@ -298,42 +326,11 @@ describe("update command", () => {
     });
 
     it("should detect outdated skill when local hash differs from source hash", async () => {
-      // 1. Compute the real source hash for the react skill
-      const sourceSkillDir = path.join(
-        localDirs.sourceDir,
-        "src",
-        "skills",
-        "web-framework",
-        REACT_SKILL_ID,
-      );
-      const realSourceHash = await computeFileHash(
-        path.join(sourceSkillDir, STANDARD_FILES.SKILL_MD),
-      );
-
-      // 2. Create a local skill that claims to be forked from react but with a STALE hash
-      const localSkillsDir = path.join(localDirs.projectDir, ".claude", "skills");
-      const localSkillDir = path.join(localSkillsDir, REACT_SKILL_ID);
-      await mkdir(localSkillDir, { recursive: true });
-
-      // Write SKILL.md with DIFFERENT content than source (simulating local modifications)
-      await writeFile(
-        path.join(localSkillDir, STANDARD_FILES.SKILL_MD),
-        renderSkillMd(REACT_SKILL_ID, "Modified locally"),
-      );
-
-      // Write metadata.yaml with a contentHash that does NOT match source
+      // Create a local skill that claims to be forked from react but with a
+      // STALE hash and SKILL.md content that differs from the source
+      // (simulating local modifications).
       const staleHash = "0000000000";
-      await writeFile(
-        path.join(localSkillDir, STANDARD_FILES.METADATA_YAML),
-        stringifyYaml({
-          displayName: "React",
-          forkedFrom: {
-            skillId: REACT_SKILL_ID,
-            contentHash: staleHash,
-            date: "2025-01-01",
-          },
-        }),
-      );
+      await writeForkedLocalSkill(localDirs, REACT_SKILL_ID, staleHash, "Modified locally");
 
       process.chdir(localDirs.projectDir);
 
@@ -353,39 +350,9 @@ describe("update command", () => {
     });
 
     it("should report 'up to date' when targeting a skill whose hash matches source", async () => {
-      // 1. Compute the real source hash
-      const sourceSkillDir = path.join(
-        localDirs.sourceDir,
-        "src",
-        "skills",
-        "web-framework",
-        REACT_SKILL_ID,
-      );
-      const realSourceHash = await computeFileHash(
-        path.join(sourceSkillDir, STANDARD_FILES.SKILL_MD),
-      );
-
-      // 2. Create a local skill with a matching hash
-      const localSkillsDir = path.join(localDirs.projectDir, ".claude", "skills");
-      const localSkillDir = path.join(localSkillsDir, REACT_SKILL_ID);
-      await mkdir(localSkillDir, { recursive: true });
-
-      await writeFile(
-        path.join(localSkillDir, STANDARD_FILES.SKILL_MD),
-        renderSkillMd(REACT_SKILL_ID, "Same content"),
-      );
-
-      await writeFile(
-        path.join(localSkillDir, STANDARD_FILES.METADATA_YAML),
-        stringifyYaml({
-          displayName: "React",
-          forkedFrom: {
-            skillId: REACT_SKILL_ID,
-            contentHash: realSourceHash,
-            date: "2025-01-01",
-          },
-        }),
-      );
+      // Create a local skill whose fork-point hash matches the source
+      const realSourceHash = await computeSourceSkillHash(localDirs, REACT_SKILL_ID);
+      await writeForkedLocalSkill(localDirs, REACT_SKILL_ID, realSourceHash, "Same content");
 
       process.chdir(localDirs.projectDir);
 
@@ -423,38 +390,9 @@ describe("update command", () => {
         localSkills: [],
       });
 
-      // Compute the real source hash
-      const sourceSkillDir = path.join(
-        localDirs.sourceDir,
-        "src",
-        "skills",
-        "web-framework",
-        skillId,
-      );
-      const realSourceHash = await computeFileHash(
-        path.join(sourceSkillDir, STANDARD_FILES.SKILL_MD),
-      );
-
-      // Create local skill with matching hash
-      const localSkillsDir = path.join(localDirs.projectDir, ".claude", "skills");
-      const localSkillDir = path.join(localSkillsDir, skillId);
-      await mkdir(localSkillDir, { recursive: true });
-
-      await writeFile(
-        path.join(localSkillDir, STANDARD_FILES.SKILL_MD),
-        renderSkillMd(skillId, "React"),
-      );
-      await writeFile(
-        path.join(localSkillDir, STANDARD_FILES.METADATA_YAML),
-        stringifyYaml({
-          displayName: "React",
-          forkedFrom: {
-            skillId,
-            contentHash: realSourceHash,
-            date: "2025-01-01",
-          },
-        }),
-      );
+      // Create a local skill whose fork-point hash matches the source
+      const realSourceHash = await computeSourceSkillHash(localDirs, skillId);
+      await writeForkedLocalSkill(localDirs, skillId, realSourceHash, "React");
 
       process.chdir(localDirs.projectDir);
 

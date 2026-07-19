@@ -19,6 +19,19 @@ import { CLAUDE_DIR, STANDARD_FILES } from "../../consts";
 import { VITEST_REACT_HONO_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { expectValidAgentMarkdown } from "../__tests__/assertions/agent-assertions";
 
+const REACT_AND_VITEST_SKILLS: Record<string, { id: string; description: string; path: string }> = {
+  "web-framework-react": {
+    id: "web-framework-react",
+    description: "React framework skill",
+    path: "web-framework-react/",
+  },
+  "web-testing-vitest": {
+    id: "web-testing-vitest",
+    description: "Vitest testing skill",
+    path: "web-testing-vitest/",
+  },
+};
+
 describe("agent-recompiler", () => {
   let testDirs: PluginTestDirs;
 
@@ -201,24 +214,11 @@ describe("agent-recompiler", () => {
         }),
       );
 
-      const providedSkills = {
-        "web-framework-react": {
-          id: "web-framework-react",
-          description: "React framework skill",
-          path: "web-framework-react/",
-        },
-        "web-testing-vitest": {
-          id: "web-testing-vitest",
-          description: "Vitest testing skill",
-          path: "web-testing-vitest/",
-        },
-      } as Record<string, { id: string; description: string; path: string }>;
-
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
         projectDir: testDirs.projectDir,
-        skills: providedSkills,
+        skills: REACT_AND_VITEST_SKILLS,
       });
 
       expect(result.compiled).toContain("web-developer");
@@ -254,24 +254,11 @@ describe("agent-recompiler", () => {
         }),
       );
 
-      const providedSkills = {
-        "web-framework-react": {
-          id: "web-framework-react",
-          description: "React framework skill",
-          path: "web-framework-react/",
-        },
-        "web-testing-vitest": {
-          id: "web-testing-vitest",
-          description: "Vitest testing skill",
-          path: "web-testing-vitest/",
-        },
-      } as Record<string, { id: string; description: string; path: string }>;
-
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
         projectDir: testDirs.projectDir,
-        skills: providedSkills,
+        skills: REACT_AND_VITEST_SKILLS,
       });
 
       expect(result.compiled).toContain("web-developer");

@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
@@ -15,12 +15,17 @@ import "../matchers/setup.js";
  */
 describe("edit wizard — confirm step and completion", () => {
   let wizard: EditWizard | undefined;
+  let sourceTempDir: string | undefined;
 
   beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();
     wizard = undefined;
+    if (sourceTempDir) {
+      await cleanupTempDir(sourceTempDir);
+      sourceTempDir = undefined;
+    }
   });
 
   describe("confirm step and completion", () => {
@@ -59,6 +64,7 @@ describe("edit wizard — confirm step and completion", () => {
         });
 
         const source = await createE2ESource();
+        sourceTempDir = source.tempDir;
 
         wizard = await EditWizard.launch({
           projectDir: project.dir,

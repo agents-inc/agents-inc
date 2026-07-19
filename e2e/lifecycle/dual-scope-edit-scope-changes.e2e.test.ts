@@ -21,10 +21,6 @@ import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
  * in the edit wizard.
  */
 
-// =====================================================================
-// Test Suite -- Scope Changes via S Hotkey
-// =====================================================================
-
 describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
   let sourceDir: string;
   let sourceTempDir: string;
@@ -60,7 +56,7 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
 
   it(
     "Scope toggle (s) is inert on a persisted dual-scope skill locked to a selected agent",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // api-framework-hono is a persisted dual-scope [P][G] pair AND a preloaded
       // skill locked to the selected api-developer agent. `s` is intentionally
@@ -130,160 +126,150 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
     },
   );
 
-  it(
-    "Toggle a project agent's scope to global",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
-    async () => {
-      // Phase C: Edit -- toggle api-developer from project to global scope
-      const wizard = await EditWizard.launch({
-        projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
-        env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
-      });
-      testWizard = wizard;
+  it("Toggle a project agent's scope to global", { timeout: TIMEOUTS.LIFECYCLE }, async () => {
+    // Phase C: Edit -- toggle api-developer from project to global scope
+    const wizard = await EditWizard.launch({
+      projectDir,
+      source: { sourceDir, tempDir: sourceTempDir },
+      env: { HOME: fakeHome },
+      rows: 60,
+      cols: 120,
+    });
+    testWizard = wizard;
 
-      // Build step -- pass through all three domains
-      const sources = await wizard.build.passThroughAllDomains();
+    // Build step -- pass through all three domains
+    const sources = await wizard.build.passThroughAllDomains();
 
-      // Sources step (pass through)
-      await sources.waitForReady();
-      const agents = await sources.advance();
+    // Sources step (pass through)
+    await sources.waitForReady();
+    const agents = await sources.advance();
 
-      // Agents step -- restore api-developer to global scope. api-developer is a
-      // persisted dual-scope [P][G] agent, so `s` is intentionally inert on it.
-      // Space (deselect) is the sanctioned way to drop the project half — it
-      // collapses [P][G] → [G], the same P→G restoration end-state.
-      await agents.toggleAgent("API Developer");
-      const confirm = await agents.advance("edit");
+    // Agents step -- restore api-developer to global scope. api-developer is a
+    // persisted dual-scope [P][G] agent, so `s` is intentionally inert on it.
+    // Space (deselect) is the sanctioned way to drop the project half — it
+    // collapses [P][G] → [G], the same P→G restoration end-state.
+    await agents.toggleAgent("API Developer");
+    const confirm = await agents.advance("edit");
 
-      // Confirm step
-      const result = await confirm.confirm();
-      const exitCode = await result.exitCode;
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+    // Confirm step
+    const result = await confirm.confirm();
+    const exitCode = await result.exitCode;
+    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Phase D: Assertions
+    // Phase D: Assertions
 
-      // D-1: api-developer.md exists at global scope (HOME)
-      await expect({ dir: fakeHome }).toHaveCompiledAgent("api-developer");
+    // D-1: api-developer.md exists at global scope (HOME)
+    await expect({ dir: fakeHome }).toHaveCompiledAgent("api-developer");
 
-      // D-2: api-developer.md does NOT exist at project scope (P→G is a MOVE for agents)
-      const projectApiDevPath = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
-      expect(
-        await fileExists(projectApiDevPath),
-        "api-developer.md must NOT exist in project agents dir after scope toggle to global",
-      ).toBe(false);
+    // D-2: api-developer.md does NOT exist at project scope (P→G is a MOVE for agents)
+    const projectApiDevPath = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
+    expect(
+      await fileExists(projectApiDevPath),
+      "api-developer.md must NOT exist in project agents dir after scope toggle to global",
+    ).toBe(false);
 
-      // D-3: Agent content at global scope is properly compiled
-      await expect({ dir: fakeHome }).toHaveCompiledAgentContent("api-developer", {
-        contains: ["api-developer"],
-      });
+    // D-3: Agent content at global scope is properly compiled
+    await expect({ dir: fakeHome }).toHaveCompiledAgentContent("api-developer", {
+      contains: ["api-developer"],
+    });
 
-      // D-4: Global config has api-developer with scope: "global"
-      await expect({ dir: fakeHome }).toHaveConfig({
-        skillIds: [
-          "web-framework-react",
-          "web-testing-vitest",
-          "web-state-zustand",
-          "api-framework-hono",
-        ],
-        agents: ["web-developer", "api-developer"],
-      });
-      const globalConfig = await readTestFile(
-        path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
-      expect(globalConfig).toContain('"scope":"global"');
+    // D-4: Global config has api-developer with scope: "global"
+    await expect({ dir: fakeHome }).toHaveConfig({
+      skillIds: [
+        "web-framework-react",
+        "web-testing-vitest",
+        "web-state-zustand",
+        "api-framework-hono",
+      ],
+      agents: ["web-developer", "api-developer"],
+    });
+    const globalConfig = await readTestFile(path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS));
+    expect(globalConfig).toContain('"scope":"global"');
 
-      // D-5: Project config does NOT have api-developer at project scope
-      const projectConfig = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
-      const apiDevProjectLines = projectConfig
-        .split("\n")
-        .filter((l: string) => l.includes("api-developer") && l.includes('"scope":"project"'));
-      expect(apiDevProjectLines).toStrictEqual([]);
+    // D-5: Project config does NOT have api-developer at project scope
+    const projectConfig = await readTestFile(
+      path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
+    );
+    const apiDevProjectLines = projectConfig
+      .split("\n")
+      .filter((l: string) => l.includes("api-developer") && l.includes('"scope":"project"'));
+    expect(apiDevProjectLines).toStrictEqual([]);
 
-      // D-6: web-developer.md still at global scope (unchanged — collateral damage check)
-      await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
+    // D-6: web-developer.md still at global scope (unchanged — collateral damage check)
+    await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
 
-      // D-7: Global skill files unchanged (web skills still at global)
-      await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
+    // D-7: Global skill files unchanged (web skills still at global)
+    await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
 
-      await result.destroy();
-    },
-  );
+    await result.destroy();
+  });
 
-  it(
-    "Toggle a global agent's scope to project",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
-    async () => {
-      // Phase C: Edit -- toggle web-developer from global to project scope
-      const wizard = await EditWizard.launch({
-        projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
-        env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
-      });
-      testWizard = wizard;
+  it("Toggle a global agent's scope to project", { timeout: TIMEOUTS.LIFECYCLE }, async () => {
+    // Phase C: Edit -- toggle web-developer from global to project scope
+    const wizard = await EditWizard.launch({
+      projectDir,
+      source: { sourceDir, tempDir: sourceTempDir },
+      env: { HOME: fakeHome },
+      rows: 60,
+      cols: 120,
+    });
+    testWizard = wizard;
 
-      // Build step -- pass through all three domains
-      const sources = await wizard.build.passThroughAllDomains();
+    // Build step -- pass through all three domains
+    const sources = await wizard.build.passThroughAllDomains();
 
-      // Sources step (pass through)
-      await sources.waitForReady();
-      const agents = await sources.advance();
+    // Sources step (pass through)
+    await sources.waitForReady();
+    const agents = await sources.advance();
 
-      // Agents step -- toggle web-developer to project scope
-      await agents.navigateCursorToAgent("Web Developer");
-      await agents.toggleScopeOnFocusedAgent();
-      const confirm = await agents.advance("edit");
+    // Agents step -- toggle web-developer to project scope
+    await agents.navigateCursorToAgent("Web Developer");
+    await agents.toggleScopeOnFocusedAgent();
+    const confirm = await agents.advance("edit");
 
-      // Confirm step
-      const result = await confirm.confirm();
-      const exitCode = await result.exitCode;
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+    // Confirm step
+    const result = await confirm.confirm();
+    const exitCode = await result.exitCode;
+    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Phase D: Assertions
+    // Phase D: Assertions
 
-      // D-1: web-developer.md exists at project scope
-      await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
+    // D-1: web-developer.md exists at project scope
+    await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
 
-      // D-2: web-developer.md STILL exists at global scope (global untouched — override model)
-      await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
+    // D-2: web-developer.md STILL exists at global scope (global untouched — override model)
+    await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
 
-      // D-3: web-developer.md at project was properly compiled
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["web-developer"],
-      });
+    // D-3: web-developer.md at project was properly compiled
+    await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
+      contains: ["web-developer"],
+    });
 
-      // D-4: api-developer.md still exists at project scope (unchanged)
-      await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
+    // D-4: api-developer.md still exists at project scope (unchanged)
+    await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
 
-      // D-5: Project config has web-developer with scope: "project"
-      await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: ["api-framework-hono"],
-        agents: ["api-developer", "web-developer"],
-      });
-      const projectConfig = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
-      expect(projectConfig).toContain('"scope":"project"');
+    // D-5: Project config has web-developer with scope: "project"
+    await expect({ dir: projectDir }).toHaveConfig({
+      skillIds: ["api-framework-hono"],
+      agents: ["api-developer", "web-developer"],
+    });
+    const projectConfig = await readTestFile(
+      path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
+    );
+    expect(projectConfig).toContain('"scope":"project"');
 
-      // D-6: Global config STILL has web-developer (global untouched)
-      await expect({ dir: fakeHome }).toHaveConfig({
-        skillIds: ["web-framework-react", "web-testing-vitest", "web-state-zustand"],
-        agents: ["web-developer"],
-      });
+    // D-6: Global config STILL has web-developer (global untouched)
+    await expect({ dir: fakeHome }).toHaveConfig({
+      skillIds: ["web-framework-react", "web-testing-vitest", "web-state-zustand"],
+      agents: ["web-developer"],
+    });
 
-      await result.destroy();
-    },
-  );
+    await result.destroy();
+  });
 
   it(
     "Toggle a global ejected skill's scope to project",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Phase C: Edit -- toggle web-framework-react from global to project scope
       const wizard = await EditWizard.launch({

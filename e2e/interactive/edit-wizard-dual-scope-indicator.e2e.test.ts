@@ -10,7 +10,12 @@ import {
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { createGlobalOnlyEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import {
+  createGlobalOnlyEnv,
+  readSkillEntries,
+  runEditWithFirstSkillAction,
+  type DualScopeEnv,
+} from "../fixtures/dual-scope-helpers.js";
 
 /**
  * D-223 — Wizard scope indicator missing for tombstoned global skills.
@@ -63,50 +68,9 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
     env = undefined;
   });
 
-  /**
-   * Drives `cc edit` in the project once to toggle `web-framework-react` from
-   * global to project scope (G→P). Produces the dual-scope state that D-223
-   * regresses when re-opening the wizard.
-   *
-   * Web is the first (and first-focused) domain; react is the first category's
-   * first option, so the wizard opens with focus already on it — no explicit
-   * navigation needed. `toggleScopeOnFocusedSkill()` sends `s`, switching the
-   * skill to project scope and leaving a `{scope:"global", excluded:true}`
-   * tombstone alongside the new `{scope:"project"}` active entry.
-   */
-  async function performGlobalToProjectToggle(projectDir: string, fakeHome: string): Promise<void> {
-    const toggleWizard = await EditWizard.launch({
-      projectDir,
-      source: { sourceDir, tempDir: sourceTempDir },
-      env: { HOME: fakeHome },
-      rows: 60,
-      cols: 120,
-    });
-
-    try {
-      // Web domain: focus defaults to web-framework-react. Toggle its scope G→P.
-      await toggleWizard.build.toggleScopeOnFocusedSkill();
-      await toggleWizard.build.advanceDomain();
-
-      // API domain: pass through unchanged.
-      await toggleWizard.build.advanceDomain();
-
-      // Methodology domain: advance to sources.
-      const sources = await toggleWizard.build.advanceToSources();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
-    } finally {
-      await toggleWizard.destroy();
-    }
-  }
-
   it(
     "Scenario A: re-opened wizard shows BOTH P and G badges for a dual-scope skill",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Phase 1: install all E2E skills globally, then bootstrap an all-global project.
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
@@ -115,7 +79,7 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
       // Phase 2: toggle react G→P via a real `cc edit` run. After this, the
       // project's config.ts holds the dual-scope shape: active project entry +
       // global excluded tombstone.
-      await performGlobalToProjectToggle(projectDir, fakeHome);
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       // Phase 3: re-open the wizard. On `main`, the hydrator drops the tombstone,
       // so only a single badge renders. Expected after fix: BOTH badges visible.
@@ -140,12 +104,12 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
 
   it(
     "Scenario B: dual-scope badge survives a no-op edit round-trip",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Phase 1 + 2 (same as A): establish the dual-scope config on disk.
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
-      await performGlobalToProjectToggle(projectDir, fakeHome);
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       // Phase 3: open the wizard, pass through every step without changes,
       // let the CLI re-save. On `main`, the hydrator drops the tombstone on
@@ -187,12 +151,12 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
 
   it(
     "Scenario C: filesystem + config remain dual-scope after a no-op re-open",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Phase 1 + 2: establish dual-scope state via real CLI flows.
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
-      await performGlobalToProjectToggle(projectDir, fakeHome);
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
       const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, REACT_SKILL_ID);
@@ -225,25 +189,10 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
         await passThroughWizard.destroy();
       }
 
-      // Phase 4: the config on disk MUST still carry both entries. Parse the
-      // rendered config to isolate the react entries and compare shapes
-      // structurally instead of relying on substring containment.
-      const configAfterNoop = await readTestFile(projectConfigPath);
-      // eslint-disable-next-line no-console
-      console.log("=== CONFIG AFTER NO-OP ===\n", configAfterNoop, "\n===");
-
-      type SkillEntry = {
-        id: string;
-        scope: "project" | "global";
-        source: string;
-        excluded?: boolean;
-      };
-
-      const reactEntryMatches = Array.from(
-        configAfterNoop.matchAll(/\{[^{}]*"id":"web-framework-react"[^{}]*\}/g),
-      );
-      // Boundary cast: JSON.parse returns `unknown`, caller consumes as SkillEntry.
-      const reactEntries = reactEntryMatches.map((match) => JSON.parse(match[0]) as SkillEntry);
+      // Phase 4: the config on disk MUST still carry both entries. Load the
+      // config structurally to isolate the react entries and compare shapes
+      // instead of relying on substring containment.
+      const reactEntries = await readSkillEntries(projectDir, REACT_SKILL_ID);
 
       const activeEntry = reactEntries.find((entry) => entry.excluded !== true);
       const tombstoneEntry = reactEntries.find((entry) => entry.excluded === true);

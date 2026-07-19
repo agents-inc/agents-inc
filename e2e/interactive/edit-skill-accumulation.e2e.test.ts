@@ -14,6 +14,7 @@ import {
 } from "../helpers/test-utils.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { DIRS, FILES, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
+import { readSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import "../matchers/setup.js";
 
 /** Write a minimal agent .md stub to the agents directory. */
@@ -144,13 +145,12 @@ describe("project config does not accumulate global skills after edit", () => {
       expect(updatedProjectConfig).not.toContain("globalConfig.agents");
 
       // Key invariant: the global skill must appear exactly once in the skills array (no accumulation).
-      // The skill ID may also appear in the stack section — only check the skills array portion.
-      const skillsSection = updatedProjectConfig.match(/const skills:[\s\S]*?];/)?.[0] ?? "";
-      const reactSkillOccurrences = skillsSection.split("web-framework-react").length - 1;
+      // Structural load scopes the check to the skills array (the ID may also appear in the stack).
+      const reactEntries = await readSkillEntries(projectDir, "web-framework-react");
       expect(
-        reactSkillOccurrences,
+        reactEntries,
         "Global skill 'web-framework-react' should appear exactly once in skills array (no accumulation)",
-      ).toBe(1);
+      ).toHaveLength(1);
 
       // Also verify the global config still has its skill (it wasn't removed)
       await expect({ dir: tempHOME }).toHaveConfig({

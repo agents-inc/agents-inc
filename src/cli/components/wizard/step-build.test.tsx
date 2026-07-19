@@ -206,7 +206,7 @@ describe("StepBuild component", () => {
 
     it("should display domains in canonical order regardless of selection order", () => {
       // Domains selected in reverse order: CLI, Mobile, API, Web
-      expect(orderDomains(["cli", "mobile", "api", "web"])).toEqual([
+      expect(orderDomains(["cli", "mobile", "api", "web"])).toStrictEqual([
         "web",
         "api",
         "mobile",
@@ -216,11 +216,11 @@ describe("StepBuild component", () => {
 
     it("should preserve canonical order with partial domain selection", () => {
       // Only CLI and Web selected, in reverse order
-      expect(orderDomains(["cli", "web"])).toEqual(["web", "cli"]);
+      expect(orderDomains(["cli", "web"])).toStrictEqual(["web", "cli"]);
     });
 
     it("should place custom domains before built-in domains", () => {
-      expect(orderDomains(["web", "gaming" as Domain, "api", "devops" as Domain])).toEqual([
+      expect(orderDomains(["web", "gaming" as Domain, "api", "devops" as Domain])).toStrictEqual([
         "devops",
         "gaming",
         "web",

@@ -81,7 +81,7 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
 
   it(
     "strips the global copy and leaves the project-scope copy untouched",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // ================================================================
       // Phase 1: Seed a GLOBAL install (HOME === globalHome) that owns a global

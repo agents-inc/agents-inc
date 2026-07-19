@@ -37,8 +37,6 @@ import { initializeMatrix } from "../matrix/matrix-provider";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
 import type { LocalSkillDiscoveryResult } from "../skills";
 
-// ── Shared fixture ──────────────────────────────────────────────────────────────
-
 const FIXTURE_SKILLS = [...DEFAULT_TEST_SKILLS, ...EXTRA_DOMAIN_TEST_SKILLS];
 
 const FIXTURE_SKILL_COUNT = FIXTURE_SKILLS.length;
@@ -70,8 +68,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await cleanupTestSource(fixtureDirs);
 });
-
-// ── Tests ───────────────────────────────────────────────────────────────────────
 
 describe("source-loader", () => {
   let tempDir: string;
@@ -721,8 +717,6 @@ describe("source-loader integration", () => {
     expect(categoryIds.length).toBeGreaterThan(10);
   });
 });
-
-// ── Unit tests for pure/exported functions ──────────────────────────────────────
 
 describe("extractSourceName", () => {
   it("should strip github: protocol and return org name", () => {

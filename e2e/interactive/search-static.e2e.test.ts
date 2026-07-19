@@ -7,6 +7,7 @@ import {
   cleanupTempDir,
   createE2ESource,
   ensureBinaryExists,
+  renderSkillMd,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
@@ -29,7 +30,7 @@ async function createExtrasSourceWithSkill(
   await mkdir(skillPath, { recursive: true });
   await writeFile(
     path.join(skillPath, "SKILL.md"),
-    `---\nname: ${skillDir}\ndescription: ${description}\n---\n\n# ${skillDir}\n`,
+    renderSkillMd(skillDir, description, `# ${skillDir}`),
   );
   return sourceDir;
 }

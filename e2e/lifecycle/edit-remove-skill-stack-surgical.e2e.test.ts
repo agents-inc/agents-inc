@@ -74,7 +74,7 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
 
   it(
     "leaves every other stack triple byte-identical after removing one skill",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // ================================================================
       // Phase 1: Seed a GLOBAL installation (HOME === project dir) with three

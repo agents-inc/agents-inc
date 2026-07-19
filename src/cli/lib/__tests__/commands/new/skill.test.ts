@@ -12,11 +12,8 @@ import {
   generateSkillCategoriesTs,
   generateSkillRulesTs,
 } from "../../../skills/generators";
-import {
-  validateSkillName,
-  generateSkillMd,
-  generateMetadataYaml,
-} from "../../../../commands/new/skill";
+import { generateSkillMd, generateMetadataYaml } from "../../../../commands/new/skill";
+import { validateKebabCaseName } from "../../../validate-kebab-name";
 import {
   LOCAL_SKILLS_PATH,
   SKILL_CATEGORIES_PATH,
@@ -29,63 +26,63 @@ import type { CategoryPath } from "../../../../types";
 
 const TEST_CONTENT_HASH = "abc1234";
 
-describe("validateSkillName", () => {
+describe("validateKebabCaseName (skill names)", () => {
   it("should return null for valid kebab-case name", () => {
-    expect(validateSkillName("my-skill")).toBeNull();
+    expect(validateKebabCaseName("my-skill", "Skill")).toBeNull();
   });
 
   it("should return null for single word lowercase name", () => {
-    expect(validateSkillName("react")).toBeNull();
+    expect(validateKebabCaseName("react", "Skill")).toBeNull();
   });
 
   it("should return null for name with numbers", () => {
-    expect(validateSkillName("web3-utils")).toBeNull();
+    expect(validateKebabCaseName("web3-utils", "Skill")).toBeNull();
   });
 
   it("should return error for uppercase characters", () => {
-    const result = validateSkillName("MySkill");
+    const result = validateKebabCaseName("MySkill", "Skill");
     expect(result).not.toBeNull();
     expect(result).toContain("kebab-case");
   });
 
   it("should return error for spaces", () => {
-    const result = validateSkillName("my skill");
+    const result = validateKebabCaseName("my skill", "Skill");
     expect(result).not.toBeNull();
     expect(result).toContain("kebab-case");
   });
 
   it("should return error for empty string", () => {
-    const result = validateSkillName("");
+    const result = validateKebabCaseName("", "Skill");
     expect(result).not.toBeNull();
     expect(result).toContain("required");
   });
 
   it("should return error for whitespace-only string", () => {
-    const result = validateSkillName("   ");
+    const result = validateKebabCaseName("   ", "Skill");
     expect(result).not.toBeNull();
     expect(result).toContain("required");
   });
 
   it("should return error for name starting with number", () => {
-    const result = validateSkillName("3d-utils");
+    const result = validateKebabCaseName("3d-utils", "Skill");
     expect(result).not.toBeNull();
     expect(result).toContain("kebab-case");
   });
 
   it("should return error for name starting with hyphen", () => {
-    const result = validateSkillName("-my-skill");
+    const result = validateKebabCaseName("-my-skill", "Skill");
     expect(result).not.toBeNull();
     expect(result).toContain("kebab-case");
   });
 
   it("should return error for trailing hyphen", () => {
-    const result = validateSkillName("my-skill-");
+    const result = validateKebabCaseName("my-skill-", "Skill");
     expect(result).not.toBeNull();
     expect(result).toContain("kebab-case");
   });
 
   it("should return error for consecutive hyphens", () => {
-    const result = validateSkillName("my--skill");
+    const result = validateKebabCaseName("my--skill", "Skill");
     expect(result).not.toBeNull();
     expect(result).toContain("kebab-case");
   });

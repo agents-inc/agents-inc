@@ -1,6 +1,5 @@
 import { expect } from "vitest";
-
-// --- Types ---
+import { parse as parseYaml } from "yaml";
 
 export interface ParsedAgentOutput {
   raw: string;
@@ -10,49 +9,27 @@ export interface ParsedAgentOutput {
   dynamicSkillIds: string[];
 }
 
-// --- Internal Helpers ---
-
-/** Lightweight YAML line parser for frontmatter — handles scalars and one array */
-function parseYamlLines(yaml: string): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  const lines = yaml.split("\n");
-  let arrayKey = "";
-  let arrayItems: string[] = [];
-
-  for (const line of lines) {
-    if (/^\w+:$/.test(line.trim())) {
-      if (arrayKey) {
-        result[arrayKey] = [...arrayItems];
-        arrayItems = [];
-      }
-      arrayKey = line.trim().slice(0, -1);
-      continue;
-    }
-    if (arrayKey && line.trim().startsWith("- ")) {
-      arrayItems.push(line.trim().slice(2));
-      continue;
-    }
-    if (arrayKey) {
-      result[arrayKey] = [...arrayItems];
-      arrayKey = "";
-      arrayItems = [];
-    }
-    const keyMatch = line.match(/^(\w+):\s*(.*)$/);
-    if (keyMatch) result[keyMatch[1]] = keyMatch[2];
+/**
+ * Parses compiled-agent frontmatter with the real YAML parser. Compiled agents
+ * are consumed by Claude Code itself, so their frontmatter is guaranteed valid
+ * YAML; unparseable or non-object frontmatter degrades to an empty record.
+ */
+function parseFrontmatterYaml(yaml: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = parseYaml(yaml);
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
   }
-  if (arrayKey && arrayItems.length > 0) result[arrayKey] = [...arrayItems];
-  return result;
 }
-
-// --- Functions ---
 
 /** Parse compiled agent content into structured frontmatter + body sections */
 export function parseCompiledAgent(content: string): ParsedAgentOutput {
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-  const frontmatter = fmMatch ? parseYamlLines(fmMatch[1]) : {};
+  const frontmatter = fmMatch ? parseFrontmatterYaml(fmMatch[1]) : {};
   const body = content.split(/^---\n[\s\S]*?\n---\n/m)[1] ?? content;
 
-  const preloadedSkillIds = (frontmatter.skills as string[] | undefined) ?? [];
+  const preloadedSkillIds = Array.isArray(frontmatter.skills) ? frontmatter.skills.map(String) : [];
   const dynamicSkillIds = [...body.matchAll(/skill:\s*"([^"]+)"/g)].map((m) => m[1]);
 
   return { raw: content, frontmatter, body, preloadedSkillIds, dynamicSkillIds };

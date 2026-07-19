@@ -27,10 +27,6 @@ export class InteractivePrompt {
     this.screen = new TerminalScreen(this.session);
   }
 
-  private delay(ms: number): Promise<void> {
-    return delay(ms);
-  }
-
   async waitForText(text: string, timeoutMs: number = TIMEOUTS.WIZARD_LOAD): Promise<void> {
     await this.screen.waitForText(text, timeoutMs);
   }
@@ -41,61 +37,61 @@ export class InteractivePrompt {
 
   async confirm(): Promise<void> {
     this.session.write("y");
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
     this.session.enter();
-    await this.delay(INTERNAL_DELAYS.STEP_TRANSITION);
+    await delay(INTERNAL_DELAYS.STEP_TRANSITION);
   }
 
   async deny(): Promise<void> {
     this.session.write("n");
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
     this.session.enter();
-    await this.delay(INTERNAL_DELAYS.STEP_TRANSITION);
+    await delay(INTERNAL_DELAYS.STEP_TRANSITION);
   }
 
   async pressEnter(): Promise<void> {
     this.session.enter();
-    await this.delay(INTERNAL_DELAYS.STEP_TRANSITION);
+    await delay(INTERNAL_DELAYS.STEP_TRANSITION);
   }
 
   async arrowDown(): Promise<void> {
     this.session.arrowDown();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   async arrowUp(): Promise<void> {
     this.session.arrowUp();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   async arrowRight(): Promise<void> {
     this.session.arrowRight();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   async arrowLeft(): Promise<void> {
     this.session.arrowLeft();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   async space(): Promise<void> {
     this.session.space();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   async pressKey(key: string): Promise<void> {
     this.session.write(key);
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   async ctrlC(): Promise<void> {
     this.session.ctrlC();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   async escape(): Promise<void> {
     this.session.escape();
-    await this.delay(INTERNAL_DELAYS.KEYSTROKE);
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   async waitForExit(timeoutMs: number = TIMEOUTS.EXIT): Promise<number> {

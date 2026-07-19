@@ -28,6 +28,16 @@ import {
 import { EXPECTED_AGENTS, EXPECTED_SKILLS } from "../expected-values.js";
 import { ALL_TEST_SKILLS } from "../mock-data/mock-skills";
 
+/**
+ * Expected config.stack shape after init: every WEB_AND_API agent carries the
+ * same category->skills assignments (the fan-out the installer produces).
+ */
+function buildExpectedStack(assignments: Record<string, string[]>) {
+  return Object.fromEntries(
+    [...EXPECTED_AGENTS.WEB_AND_API].sort().map((name) => [name, assignments]),
+  );
+}
+
 describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
   let dirs: TestDirs;
   let originalCwd: string;
@@ -70,7 +80,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       // Simulate navigating to agents step and preselecting agents from domains
       useWizardStore.getState().preselectAgentsFromDomains();
 
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
 
       // Verify agents were preselected from domains (sorted)
       expect(wizardResult.selectedAgents).toStrictEqual(EXPECTED_AGENTS.WEB_AND_API);
@@ -104,10 +114,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         "web-framework": ["web-framework-react"],
         "web-styling": ["web-styling-scss-modules"],
       };
-      const expectedStack = Object.fromEntries(
-        [...EXPECTED_AGENTS.WEB_AND_API].sort().map((name) => [name, allAssignments]),
-      );
-      expect(config.stack).toStrictEqual(expectedStack);
+      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments));
     });
 
     it("should assign skills only to agents in the user's selection", async () => {
@@ -116,7 +123,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       simulateSkillSelections(selectedSkillIds, matrix, ["web", "api"]);
       useWizardStore.getState().preselectAgentsFromDomains();
 
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
       const result = await installEject({
         wizardResult,
         sourceResult,
@@ -141,10 +148,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         "api-api": ["api-framework-hono"],
         "web-framework": ["web-framework-react"],
       };
-      const expectedStack = Object.fromEntries(
-        [...EXPECTED_AGENTS.WEB_AND_API].sort().map((name) => [name, allAssignments]),
-      );
-      expect(config.stack).toStrictEqual(expectedStack);
+      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments));
     });
 
     it("should compile agent .md files that exist and have content", async () => {
@@ -157,7 +161,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       simulateSkillSelections(selectedSkillIds, matrix, ["web", "api"]);
       useWizardStore.getState().preselectAgentsFromDomains();
 
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
       const result = await installEject({
         wizardResult,
         sourceResult,
@@ -188,7 +192,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       simulateSkillSelections(selectedSkillIds, matrix, ["web", "api"]);
 
       // Do NOT call preselectAgentsFromDomains — selectedAgents stays []
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
       expect(wizardResult.selectedAgents).toStrictEqual([]);
 
       const result = await installEject({
@@ -215,7 +219,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       simulateSkillSelections(selectedSkillIds, matrix, ["web"]);
       // No preselectAgentsFromDomains call -> selectedAgents stays []
 
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
       const result = await installEject({
         wizardResult,
         sourceResult,
@@ -242,7 +246,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       simulateSkillSelections(selectedSkillIds, matrix, ["web", "api"]);
       useWizardStore.getState().preselectAgentsFromDomains();
 
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
 
       const result = await installPluginConfig({
         wizardResult,
@@ -271,10 +275,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         "web-client-state": ["web-state-zustand"],
         "web-framework": ["web-framework-react"],
       };
-      const expectedStack = Object.fromEntries(
-        [...EXPECTED_AGENTS.WEB_AND_API].sort().map((name) => [name, allAssignments]),
-      );
-      expect(config.stack).toStrictEqual(expectedStack);
+      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments));
 
       // Compiled agents should exist as .md files
       expectCompiledAgents(result, EXPECTED_AGENTS.WEB_AND_API);
@@ -294,14 +295,14 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       // Setup for plugin mode
       simulateSkillSelections(selectedSkillIds, matrix, ["web", "api"]);
       useWizardStore.getState().preselectAgentsFromDomains();
-      const pluginResult = buildWizardResultFromStore(matrix);
+      const pluginResult = buildWizardResultFromStore();
       const pluginAgents = [...pluginResult.selectedAgents].sort();
 
       // Reset and setup for eject mode with same selections
       useWizardStore.getState().reset();
       simulateSkillSelections(selectedSkillIds, matrix, ["web", "api"]);
       useWizardStore.getState().preselectAgentsFromDomains();
-      const ejectResult = buildWizardResultFromStore(matrix);
+      const ejectResult = buildWizardResultFromStore();
       const ejectAgents = [...ejectResult.selectedAgents].sort();
 
       // Same selections should produce same agent list
@@ -328,7 +329,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       simulateSkillSelections(selectedSkillIds, matrix, ["web", "api", "shared"]);
       useWizardStore.getState().preselectAgentsFromDomains();
 
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
       const result = await installEject({
         wizardResult,
         sourceResult,
@@ -357,10 +358,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         "web-styling": ["web-styling-scss-modules"],
         "web-testing": ["web-testing-vitest"],
       };
-      const expectedStack = Object.fromEntries(
-        [...EXPECTED_AGENTS.WEB_AND_API].sort().map((name) => [name, allAssignments]),
-      );
-      expect(config.stack).toStrictEqual(expectedStack);
+      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments));
     });
 
     it("every skill ID in config.stack should be in config.skills", async () => {
@@ -374,7 +372,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       simulateSkillSelections(selectedSkillIds, matrix, ["web", "api"]);
       useWizardStore.getState().preselectAgentsFromDomains();
 
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
       const result = await installEject({
         wizardResult,
         sourceResult,
@@ -399,10 +397,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         "web-client-state": ["web-state-zustand"],
         "web-framework": ["web-framework-react"],
       };
-      const expectedStack = Object.fromEntries(
-        [...EXPECTED_AGENTS.WEB_AND_API].sort().map((name) => [name, allAssignments]),
-      );
-      expect(config.stack).toStrictEqual(expectedStack);
+      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments));
     });
 
     it("no DEFAULT_AGENTS in stack when selectedAgents is populated without them", async () => {
@@ -417,7 +412,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       expect(store.selectedAgents).not.toContain("skill-summoner");
       expect(store.selectedAgents).not.toContain("codex-keeper");
 
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
       const result = await installEject({
         wizardResult,
         sourceResult,
@@ -470,7 +465,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       const selectedSkillIds: SkillId[] = [...EXPECTED_SKILLS.WEB_DEFAULT];
 
       simulateSkillSelections(selectedSkillIds, matrix, ["web"]);
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
 
       expect(wizardResult.validation.valid).toBe(true);
       expect(wizardResult.validation.errors).toHaveLength(0);
@@ -484,7 +479,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       ];
 
       simulateSkillSelections(selectedSkillIds, matrix, ["web"]);
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
 
       // Validation should report errors for conflicting skills
       expect(wizardResult.validation.errors).toHaveLength(1);
@@ -509,7 +504,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       // Preselect agents from domains
       useWizardStore.getState().preselectAgentsFromDomains();
 
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
 
       // Skills should come from stack.allSkillIds (exact match)
       const sortedStackSkillIds = [...stack!.allSkillIds].sort();
@@ -535,7 +530,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       simulateSkillSelections(selectedSkillIds, matrix, ["web", "api"]);
       useWizardStore.getState().preselectAgentsFromDomains();
 
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
       const result = await installEject({
         wizardResult,
         sourceResult,
@@ -563,7 +558,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       const selectedSkillIds: SkillId[] = ["web-framework-react"];
 
       simulateSkillSelections(selectedSkillIds, matrix, ["web"]);
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
 
       const result = await installEject({
         wizardResult,
@@ -589,7 +584,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       const selectedSkillIds: SkillId[] = ["web-framework-react"];
 
       simulateSkillSelections(selectedSkillIds, matrix, ["web"]);
-      const wizardResult = buildWizardResultFromStore(matrix);
+      const wizardResult = buildWizardResultFromStore();
 
       const result = await installEject({
         wizardResult,

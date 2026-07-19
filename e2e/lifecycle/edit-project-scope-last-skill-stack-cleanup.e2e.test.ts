@@ -66,7 +66,7 @@ describe("edit removes the only project-scoped skill an agent references", () =>
 
   it(
     "does not leave the removed skill behind in the project stack property",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // ================================================================
       // Phase 1: Seed a PROJECT installation (HOME distinct from the project

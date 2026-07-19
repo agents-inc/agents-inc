@@ -4,15 +4,122 @@ import { expect } from "vitest";
 import { cleanupTempDir, createPermissionsFile, createTempDir } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import type { DashboardSession } from "../pages/dashboard-session.js";
 import type { ConfirmStep } from "../pages/steps/confirm-step.js";
 import type { WizardResult } from "../pages/wizard-result.js";
+import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
+import type {
+  AgentName,
+  AgentScopeConfig,
+  SkillConfig,
+  SkillId,
+} from "../../src/cli/types/index.js";
 
 export type DualScopeEnv = {
   fakeHome: string;
   projectDir: string;
   destroy: () => Promise<void>;
 };
+
+/**
+ * Read a skill's SkillConfig entries from the project's config.ts via a
+ * structural load, sorted deterministically (scope, then excluded flag) so
+ * assertions are order-independent.
+ */
+export async function readSkillEntries(
+  projectDir: string,
+  skillId: SkillId,
+): Promise<SkillConfig[]> {
+  const loaded = await loadProjectConfigFromDir(projectDir);
+  expect(loaded, `project config.ts must exist at ${projectDir}`).not.toBeNull();
+  if (!loaded) return [];
+  return loaded.config.skills
+    .filter((sc) => sc.id === skillId)
+    .sort((a, b) => {
+      const aKey = `${a.scope}${a.excluded ? "-excluded" : ""}`;
+      const bKey = `${b.scope}${b.excluded ? "-excluded" : ""}`;
+      return aKey.localeCompare(bKey);
+    });
+}
+
+/** Load a scope's config.ts structurally and return its agents array. */
+export async function readAgentEntries(dir: string): Promise<AgentScopeConfig[]> {
+  const loaded = await loadProjectConfigFromDir(dir);
+  expect(loaded, `config.ts must exist at ${dir}`).not.toBeNull();
+  return loaded ? loaded.config.agents : [];
+}
+
+/** Load a scope's config.ts structurally and return its selectedAgents list. */
+export async function readSelectedAgents(dir: string): Promise<AgentName[]> {
+  const loaded = await loadProjectConfigFromDir(dir);
+  expect(loaded, `config.ts must exist at ${dir}`).not.toBeNull();
+  const selected = loaded?.config.selectedAgents;
+  expect(selected, `config.ts at ${dir} must declare selectedAgents`).toBeDefined();
+  return selected ?? [];
+}
+
+/** Load a scope's config.ts structurally and return its full skills array. */
+export async function readAllSkillEntries(dir: string): Promise<SkillConfig[]> {
+  const loaded = await loadProjectConfigFromDir(dir);
+  expect(loaded, `config.ts must exist at ${dir}`).not.toBeNull();
+  return loaded ? loaded.config.skills : [];
+}
+
+/** Load a scope's config.ts structurally and return the ids in its skills array. */
+export async function readConfigSkillIds(dir: string): Promise<SkillId[]> {
+  return (await readAllSkillEntries(dir)).map((sc) => sc.id);
+}
+
+/**
+ * Drive one `cc edit` session, applying the given action to the first-focused
+ * skill (web-framework-react in the Web domain), then save through to
+ * completion.
+ *
+ *   - "scope": press `s` (G->P toggle — produces the persisted dual-scope
+ *     `[P][G]` pair)
+ *   - "space": press space (toggle project-scope presence). On a persisted
+ *     dual-scope pair this is the sanctioned P->G restoration: `s` is
+ *     intentionally inert there (the dual-scope scope-toggle guard), and space
+ *     collapses [P][G] -> [G], removing the tombstone and project override
+ *     while leaving the global install untouched.
+ */
+export async function runEditWithFirstSkillAction(
+  projectDir: string,
+  fakeHome: string,
+  sourceDir: string,
+  sourceTempDir: string,
+  action: "scope" | "space",
+): Promise<void> {
+  const wizard = await EditWizard.launch({
+    projectDir,
+    source: { sourceDir, tempDir: sourceTempDir },
+    env: { HOME: fakeHome },
+    rows: 60,
+    cols: 120,
+  });
+
+  try {
+    if (action === "scope") {
+      await wizard.build.toggleScopeOnFocusedSkill();
+    } else {
+      await wizard.build.toggleFocusedSkill();
+    }
+    await wizard.build.advanceDomain();
+    // API domain: pass through.
+    await wizard.build.advanceDomain();
+    // Methodology domain -> Sources.
+    const sources = await wizard.build.advanceToSources();
+    await sources.waitForReady();
+    const agents = await sources.advance();
+    const confirm = await agents.acceptDefaults("edit");
+    const result = await confirm.confirm();
+    expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+    await result.destroy();
+  } finally {
+    await wizard.destroy();
+  }
+}
 
 /**
  * Shared helpers for dual-scope lifecycle E2E tests.

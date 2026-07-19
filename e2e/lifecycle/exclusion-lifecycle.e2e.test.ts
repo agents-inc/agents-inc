@@ -48,7 +48,7 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
 
   it(
     "should place agent files at correct scope and persist through edit passthrough",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       testTempDir = tempDir;

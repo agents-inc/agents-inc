@@ -13,7 +13,7 @@ import {
   fileExists,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment, readSelectedAgents } from "../fixtures/dual-scope-helpers.js";
 
 /**
  * D-222 — Global-agent propagation writes `selectedAgents` value but not its
@@ -72,27 +72,6 @@ import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 const WEB_DEVELOPER_AGENT = "web-developer";
 const API_DEVELOPER_AGENT = "api-developer";
 const API_DEVELOPER_DISPLAY = "API Developer";
-
-/**
- * Extract the `selectedAgents` literal array from a rendered `config.ts`.
- * The writer emits a single-line declaration:
- *   const selectedAgents: SelectedAgentName[] = ["name1", "name2"];
- *
- * Returns the list of agent names. Throws (via expect) if the declaration
- * block is not found — preferable to returning [] silently.
- */
-function parseSelectedAgentsArray(configContent: string): string[] {
-  const blockMatch = configContent.match(
-    /const selectedAgents:\s*SelectedAgentName\[\]\s*=\s*\[([\s\S]*?)\];/,
-  );
-  expect(
-    blockMatch,
-    "Expected config.ts to declare `const selectedAgents: SelectedAgentName[] = [...]`",
-  ).not.toBeNull();
-
-  const body = blockMatch![1];
-  return Array.from(body.matchAll(/"([^"]+)"/g)).map((m) => m[1]);
-}
 
 /**
  * Extract the `SelectedAgentName` union literal members from a rendered
@@ -323,9 +302,8 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       // several other web-/api-scope agents — what matters here is that
       // api-developer is absent and that the value/type sides agree on
       // the initial narrow set.
-      const globalConfigPhase1 = await readTestFile(globalConfigPath);
       const globalTypesPhase1 = await readTestFile(globalTypesPath);
-      const globalSelectedPhase1 = parseSelectedAgentsArray(globalConfigPhase1);
+      const globalSelectedPhase1 = await readSelectedAgents(fakeHome);
       const globalTypeUnionPhase1 = parseSelectedAgentNameUnion(globalTypesPhase1);
       expect(globalSelectedPhase1).toContain(WEB_DEVELOPER_AGENT);
       expect(globalSelectedPhase1).not.toContain(API_DEVELOPER_AGENT);
@@ -360,9 +338,8 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       // sides agree. The exact contents depend on DOMAIN_AGENTS preselection
       // (several web-/api-scope agents) — the invariant under test is
       // symmetry and api-developer's absence, not the specific composition.
-      const projectBConfigBefore = await readTestFile(projectBConfigPath);
       const projectBTypesBefore = await readTestFile(projectBTypesPath);
-      const projectBSelectedBefore = parseSelectedAgentsArray(projectBConfigBefore);
+      const projectBSelectedBefore = await readSelectedAgents(projectBDir);
       const projectBTypeUnionBefore = parseSelectedAgentNameUnion(projectBTypesBefore);
       expect(
         projectBSelectedBefore,
@@ -418,8 +395,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
         "Pre-condition: propagation must rewrite Project B's config.ts after Phase 4",
       ).not.toStrictEqual(projectBContentBefore);
 
-      const globalConfigAfter = await readTestFile(globalConfigPath);
-      const globalSelectedAfter = parseSelectedAgentsArray(globalConfigAfter);
+      const globalSelectedAfter = await readSelectedAgents(fakeHome);
       expect(
         globalSelectedAfter,
         "Pre-condition: global selectedAgents must include api-developer after Phase 4",
@@ -436,7 +412,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       // ================================================================
       const projectBTypesAfter = await readTestFile(projectBTypesPath);
 
-      const projectBSelectedAfter = parseSelectedAgentsArray(projectBContentAfter);
+      const projectBSelectedAfter = await readSelectedAgents(projectBDir);
       const projectBTypeUnionAfter = parseSelectedAgentNameUnion(projectBTypesAfter);
 
       // Value side: config.ts::selectedAgents MUST contain api-developer.

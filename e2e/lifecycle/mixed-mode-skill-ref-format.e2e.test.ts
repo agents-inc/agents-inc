@@ -74,13 +74,11 @@ describe.skipIf(!claudeAvailable)(
         "web-developer.md frontmatter and body each carry the format dictated by the skill's own source",
         { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
         async () => {
-          // ----------------------------------------------------------------
           // Phase 1: init with the plugin source using defaults — every
           // skill ends at `source: "<marketplaceName>"` (plugin). This is
           // the same path covered by `init-wizard-stack.e2e.test.ts:71-93`,
           // which confirms react renders as `web-framework-react:web-framework-react`
           // in pure plugin mode.
-          // ----------------------------------------------------------------
           tempDir = await createTempDir();
           const projectDir = path.join(tempDir, "project");
 
@@ -98,7 +96,6 @@ describe.skipIf(!claudeAvailable)(
           });
           await initResult.destroy();
 
-          // ----------------------------------------------------------------
           // Phase 2: edit + flip the FIRST source-row's source from the
           // plugin marketplace (col 1) back to eject (col 0) via arrow-left
           // + Space. The first row in the customize grid for this stack is
@@ -110,7 +107,6 @@ describe.skipIf(!claudeAvailable)(
           // there but not on the SourcesStep page object — the existing
           // mixed-source lifecycle test (source-switching-per-skill) sets
           // the precedent.
-          // ----------------------------------------------------------------
           await createPermissionsFile(projectDir);
           prompt = new InteractivePrompt(
             ["edit", "--source", pluginSource!.sourceDir],
@@ -145,12 +141,10 @@ describe.skipIf(!claudeAvailable)(
           const editExitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
           expect(editExitCode).toBe(EXIT_CODES.SUCCESS);
 
-          // ----------------------------------------------------------------
           // Phase 3: assert config.ts records the per-skill split.
           // web-framework-react → "eject" after the toggle.
           // The other web-developer skills (vitest, zustand, meta skills) →
           // marketplaceName (still plugin).
-          // ----------------------------------------------------------------
           const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
           expect(await fileExists(configPath)).toBe(true);
           const configContent = await readTestFile(configPath);
@@ -176,7 +170,6 @@ describe.skipIf(!claudeAvailable)(
             /"id":"web-state-zustand","scope":"(?:project|global)","source":"agents-inc"/,
           );
 
-          // ----------------------------------------------------------------
           // Phase 4: assert the compiled web-developer.md honors per-skill
           // source for frontmatter emission — the D-217 contract.
           //
@@ -188,25 +181,7 @@ describe.skipIf(!claudeAvailable)(
           // in the agent (or the whole-agent installMode decision) would
           // force plugin form. Post-fix, each preloaded skill's frontmatter
           // emission is governed strictly by its own source.
-          // ----------------------------------------------------------------
           await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
-
-          // TEMP DEBUG: dump compiled agent + config stack for investigation
-          {
-            const { readFile } = await import("fs/promises");
-            const agentPath = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, "web-developer.md");
-            const agentContent = await readFile(agentPath, "utf-8");
-            const fmMatch = agentContent.match(/^---\n([\s\S]*?)\n---/);
-            // eslint-disable-next-line no-console -- diagnostic
-            console.log(
-              "=== DEBUG FRONTMATTER ===\n" + (fmMatch?.[1] ?? "(none)") + "\n=== CONFIG STACK ===",
-            );
-            const stackMatch = configContent.match(/"web-developer":\s*\{[\s\S]*?\n\s*\}/);
-            // eslint-disable-next-line no-console -- diagnostic
-            console.log(stackMatch?.[0] ?? "(web-developer stack not found)");
-            // eslint-disable-next-line no-console -- diagnostic
-            console.log("=== END DEBUG ===");
-          }
 
           // Post-toggle: the toggled skill (react) appears in BARE form in
           // the frontmatter because its source is now "eject". The fixture
@@ -234,7 +209,6 @@ describe.skipIf(!claudeAvailable)(
           // edit-path recompile re-emitted with the new per-skill source
           // rather than caching the prior format.
 
-          // ----------------------------------------------------------------
           // Phase 5: filesystem routing — the toggled skill (react) lands
           // at .claude/skills/. The eject-side artifact existing is the
           // crucial side-effect that proves the per-skill source took
@@ -248,7 +222,6 @@ describe.skipIf(!claudeAvailable)(
           // dedicated tests (e.g. init-dashboard-edit-plugin-install.e2e).
           // D-217 is strictly about the COMPILED-AGENT format-per-skill
           // contract; the install-side routing is covered separately.
-          // ----------------------------------------------------------------
           await expect({ dir: projectDir }).toHaveSkillCopied("web-framework-react");
         },
       );

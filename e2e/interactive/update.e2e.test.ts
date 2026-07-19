@@ -23,6 +23,22 @@ import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
  * Note: The update confirmation prompt is NOT the wizard, so interactive tests
  * use InteractivePrompt (which wraps TerminalSession internally).
  */
+
+/**
+ * Metadata for a local skill forked from `forkedFromId` at a stale hash
+ * ("0000000"), so `update` flags it as outdated against the E2E source.
+ */
+function outdatedForkMetadata(displayName: string, forkedFromId: string): string {
+  return [
+    'author: "@agents-inc"',
+    `displayName: ${displayName}`,
+    "forkedFrom:",
+    `  skillId: ${forkedFromId}`,
+    '  contentHash: "0000000"',
+    "  date: 2025-01-01",
+  ].join("\n");
+}
+
 describe("update command", () => {
   let tempDir: string;
   let prompt: InteractivePrompt | undefined;
@@ -190,25 +206,11 @@ describe("update command", () => {
       const projectDir = project.dir;
 
       await createLocalSkill(projectDir, "web-meta-framework-nextjs", {
-        metadata: [
-          'author: "@agents-inc"',
-          "displayName: web-meta-framework-nextjs",
-          "forkedFrom:",
-          "  skillId: web-framework-react",
-          '  contentHash: "0000000"',
-          "  date: 2025-01-01",
-        ].join("\n"),
+        metadata: outdatedForkMetadata("web-meta-framework-nextjs", "web-framework-react"),
       });
 
       await createLocalSkill(projectDir, "web-testing-cypress-e2e", {
-        metadata: [
-          'author: "@agents-inc"',
-          "displayName: web-testing-cypress-e2e",
-          "forkedFrom:",
-          "  skillId: web-testing-vitest",
-          '  contentHash: "0000000"',
-          "  date: 2025-01-01",
-        ].join("\n"),
+        metadata: outdatedForkMetadata("web-testing-cypress-e2e", "web-testing-vitest"),
       });
 
       const { exitCode, output } = await CLI.run(
@@ -234,14 +236,7 @@ describe("update command", () => {
       const projectDir = project.dir;
 
       await createLocalSkill(projectDir, "web-meta-framework-nextjs", {
-        metadata: [
-          'author: "@agents-inc"',
-          "displayName: web-meta-framework-nextjs",
-          "forkedFrom:",
-          "  skillId: web-framework-react",
-          '  contentHash: "0000000"',
-          "  date: 2025-01-01",
-        ].join("\n"),
+        metadata: outdatedForkMetadata("web-meta-framework-nextjs", "web-framework-react"),
       });
 
       const { exitCode, output } = await CLI.run(
@@ -266,14 +261,7 @@ describe("update command", () => {
       const projectDir = project.dir;
 
       await createLocalSkill(projectDir, "web-meta-framework-nextjs", {
-        metadata: [
-          'author: "@agents-inc"',
-          "displayName: web-meta-framework-nextjs",
-          "forkedFrom:",
-          "  skillId: web-framework-react",
-          '  contentHash: "0000000"',
-          "  date: 2025-01-01",
-        ].join("\n"),
+        metadata: outdatedForkMetadata("web-meta-framework-nextjs", "web-framework-react"),
       });
 
       prompt = new InteractivePrompt(["update", "--source", source.sourceDir], projectDir);
@@ -285,8 +273,7 @@ describe("update command", () => {
       expect(output).toContain(STEP_TEXT.CONFIRM_UPDATE);
     });
 
-    // BUG: The update command's interactive confirm hangs after pressing 'y'.
-    it.fails("should confirm and update all outdated skills interactively", async () => {
+    it("should confirm and update all outdated skills interactively", async () => {
       const source = await createE2ESource();
       sourceTempDir = source.tempDir;
       const project = await ProjectBuilder.editable({
@@ -296,25 +283,11 @@ describe("update command", () => {
       const projectDir = project.dir;
 
       await createLocalSkill(projectDir, "web-meta-framework-nextjs", {
-        metadata: [
-          'author: "@agents-inc"',
-          "displayName: web-meta-framework-nextjs",
-          "forkedFrom:",
-          "  skillId: web-framework-react",
-          '  contentHash: "0000000"',
-          "  date: 2025-01-01",
-        ].join("\n"),
+        metadata: outdatedForkMetadata("web-meta-framework-nextjs", "web-framework-react"),
       });
 
       await createLocalSkill(projectDir, "web-testing-cypress-e2e", {
-        metadata: [
-          'author: "@agents-inc"',
-          "displayName: web-testing-cypress-e2e",
-          "forkedFrom:",
-          "  skillId: web-testing-vitest",
-          '  contentHash: "0000000"',
-          "  date: 2025-01-01",
-        ].join("\n"),
+        metadata: outdatedForkMetadata("web-testing-cypress-e2e", "web-testing-vitest"),
       });
 
       prompt = new InteractivePrompt(["update", "--source", source.sourceDir], projectDir);

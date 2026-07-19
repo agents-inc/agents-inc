@@ -19,7 +19,9 @@ import type {
 } from "../../src/cli/types/index.js";
 import { createMockSkillAssignment } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import {
+  renderAgentYaml,
   renderConfigTs,
+  renderMetadataYaml,
   renderRulesTs,
   renderSkillMd,
 } from "../../src/cli/lib/__tests__/content-generators.js";
@@ -230,7 +232,16 @@ async function writeSkills(sourceDir: string, skills: E2ESkill[]): Promise<void>
 
     await writeFile(
       path.join(skillDir, STANDARD_FILES.METADATA_YAML),
-      `author: "@agents-inc"\ncategory: ${skill.category}\ndomain: ${skill.domain}\nslug: ${skill.slug}\ndisplayName: ${skill.displayName}\ncliDescription: "${skill.description}"\nusageGuidance: "Use when testing E2E scenarios"\ncontentHash: "a1b2c3d"\n`,
+      renderMetadataYaml({
+        author: "@agents-inc",
+        category: skill.category,
+        domain: skill.domain,
+        slug: skill.slug,
+        displayName: skill.displayName,
+        cliDescription: skill.description,
+        usageGuidance: "Use when testing E2E scenarios",
+        contentHash: "a1b2c3d",
+      }),
     );
   }
 }
@@ -288,7 +299,12 @@ async function writeAgents(sourceDir: string): Promise<void> {
 
     await writeFile(
       path.join(agentDir, STANDARD_FILES.AGENT_METADATA_YAML),
-      `id: ${agent.name}\ntitle: ${agent.title}\ndescription: ${agent.description}\ntools:\n  - Read\n  - Write\n  - Edit\n  - Grep\n  - Glob\n  - Bash\nmodel: opus\npermissionMode: default\n`,
+      renderAgentYaml(agent.name, agent.description, {
+        title: agent.title,
+        tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash"],
+        model: "opus",
+        permissionMode: "default",
+      }) + "\n",
     );
 
     await writeFile(

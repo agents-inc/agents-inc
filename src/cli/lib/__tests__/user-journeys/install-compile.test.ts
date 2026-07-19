@@ -19,6 +19,7 @@ import {
 } from "../fixtures/create-test-source";
 import { renderAgentYaml, renderSkillMd } from "../content-generators";
 import { expectValidAgentMarkdown } from "../assertions";
+import type { Stack } from "../../../types";
 
 let testCounter = 0;
 
@@ -75,6 +76,11 @@ let dirs: TestDirs;
 let projectRoot: string;
 let outputDir: string;
 
+/** Compiles the given stack from the shared projectRoot into the shared outputDir. */
+function compileStack(stackId: string, stack: Stack) {
+  return compileStackPlugin({ stackId, outputDir, projectRoot, stack });
+}
+
 beforeEach(async () => {
   dirs = await createTestSource({ skills: [], agents: [] });
   projectRoot = dirs.sourceDir;
@@ -101,12 +107,7 @@ describe("User Journey: Install -> Compile -> Verify", () => {
       agents: { "web-developer": {} },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     // Plugin directory should be created at outputDir/stackId
     expect(result.pluginPath).toBe(path.join(outputDir, stackId));
@@ -135,12 +136,7 @@ describe("User Journey: Install -> Compile -> Verify", () => {
       agents: { "web-developer": {} },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     // plugin.json should exist in .claude-plugin directory
     const manifestPath = path.join(result.pluginPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
@@ -173,12 +169,7 @@ describe("User Journey: Install -> Compile -> Verify", () => {
       agents: { "web-developer": {} },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     // Agent markdown should be compiled
     const agentMdPath = path.join(result.pluginPath, "agents", "web-developer.md");
@@ -218,12 +209,7 @@ describe("User Journey: Install -> Compile -> Verify", () => {
       agents: { "web-developer": {} },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     // Skills are only copied if they're referenced in the stack property
     // With an empty agent config {}, no skills are resolved via the stack
@@ -267,12 +253,7 @@ describe("User Journey: Install -> Compile -> Verify", () => {
       },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     // All three agents should be compiled
     expect([...result.agents].sort()).toStrictEqual([
@@ -317,12 +298,7 @@ describe("User Journey: Plugin Structure Verification", () => {
       agents: { "web-developer": {} },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     const readmePath = path.join(result.pluginPath, "README.md");
     expect(await fileExists(readmePath)).toBe(true);
@@ -350,12 +326,7 @@ describe("User Journey: Plugin Structure Verification", () => {
       agents: { "web-developer": {} },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     // First install should use default version
     expect(result.manifest.version).toBe("1.0.0");
@@ -387,12 +358,7 @@ describe("User Journey: Plugin Structure Verification", () => {
       agents: { "web-developer": {} },
     });
 
-    const result1 = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack: stack1,
-    });
+    const result1 = await compileStack(stackId, stack1);
 
     expect(result1.manifest.version).toBe("1.0.0");
 
@@ -403,12 +369,7 @@ describe("User Journey: Plugin Structure Verification", () => {
       agents: { "web-developer": {}, "api-developer": {} },
     });
 
-    const result2 = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack: stack2,
-    });
+    const result2 = await compileStack(stackId, stack2);
 
     // Version should be bumped since stack config changed
     expect(result2.manifest.version).toBe("2.0.0");
@@ -430,22 +391,12 @@ describe("User Journey: Plugin Structure Verification", () => {
     });
 
     // First compilation
-    const result1 = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result1 = await compileStack(stackId, stack);
 
     expect(result1.manifest.version).toBe("1.0.0");
 
     // Second compilation with same config
-    const result2 = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result2 = await compileStack(stackId, stack);
 
     // Version should stay the same
     expect(result2.manifest.version).toBe("1.0.0");
@@ -474,12 +425,7 @@ You are a specialized web developer with deep expertise in:
       agents: { "web-developer": {} },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     const agentContent = await readFile(
       path.join(result.pluginPath, "agents", "web-developer.md"),
@@ -513,12 +459,7 @@ You are a specialized web developer with deep expertise in:
       agents: { "web-developer": {} },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     const agentContent = await readFile(
       path.join(result.pluginPath, "agents", "web-developer.md"),
@@ -543,12 +484,7 @@ You are a specialized web developer with deep expertise in:
       agents: { "web-developer": {} },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     const agentContent = await readFile(
       path.join(result.pluginPath, "agents", "web-developer.md"),
@@ -579,12 +515,7 @@ You are a specialized web developer with deep expertise in:
       agents: { "web-developer": {} },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     const agentContent = await readFile(
       path.join(result.pluginPath, "agents", "web-developer.md"),
@@ -607,14 +538,7 @@ describe("User Journey: Install -> Compile Error Handling", () => {
       agents: { "nonexistent-agent": {} },
     });
 
-    await expect(
-      compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      }),
-    ).rejects.toThrow();
+    await expect(compileStack(stackId, stack)).rejects.toThrow();
   });
 
   it("should throw when no stack is provided and stacks.ts missing", async () => {
@@ -642,12 +566,7 @@ describe("User Journey: Install -> Compile Error Handling", () => {
       agents: { "web-developer": {} },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     // Should compile successfully with no skill plugins
     expect(result.skillPlugins).toHaveLength(0);
@@ -672,12 +591,7 @@ describe("User Journey: Install -> Compile Error Handling", () => {
       agents: { "web-developer": {} },
     });
 
-    const result = await compileStackPlugin({
-      stackId,
-      outputDir,
-      projectRoot,
-      stack,
-    });
+    const result = await compileStack(stackId, stack);
 
     // README should use fallback description
     const readmeContent = await readFile(path.join(result.pluginPath, "README.md"), "utf-8");

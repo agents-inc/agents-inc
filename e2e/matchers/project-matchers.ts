@@ -1,30 +1,13 @@
 import path from "path";
 import { readFile, readdir } from "fs/promises";
 import { DIRS, FILES } from "../pages/constants.js";
+import { directoryExists, fileExists } from "../helpers/test-utils.js";
 
 export type PluginScope = "project" | "user";
 type AgentContentExpectations = {
   contains?: string[];
   notContains?: string[];
 };
-
-async function fileExists(filePath: string): Promise<boolean> {
-  try {
-    await readFile(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function directoryExists(dirPath: string): Promise<boolean> {
-  try {
-    await readdir(dirPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 export type ConfigExpectations = {
   skillIds?: string[];
@@ -57,38 +40,30 @@ export const projectMatchers = {
 
     const content = await readFile(configPath, "utf-8");
 
-    if (expectations.skillIds) {
-      for (const id of expectations.skillIds) {
-        if (!content.includes(id)) {
-          return {
-            pass: false,
-            message: () =>
-              `Expected config.ts to contain skill "${id}" but it does not.\nContent:\n${content}`,
-          };
-        }
-      }
+    const missingSkill = expectations.skillIds?.find((id) => !content.includes(id));
+    if (missingSkill) {
+      return {
+        pass: false,
+        message: () =>
+          `Expected config.ts to contain skill "${missingSkill}" but it does not.\nContent:\n${content}`,
+      };
     }
 
-    if (expectations.source) {
-      if (!content.includes(expectations.source)) {
-        return {
-          pass: false,
-          message: () =>
-            `Expected config.ts to contain source "${expectations.source}" but it does not.\nContent:\n${content}`,
-        };
-      }
+    if (expectations.source && !content.includes(expectations.source)) {
+      return {
+        pass: false,
+        message: () =>
+          `Expected config.ts to contain source "${expectations.source}" but it does not.\nContent:\n${content}`,
+      };
     }
 
-    if (expectations.agents) {
-      for (const agent of expectations.agents) {
-        if (!content.includes(agent)) {
-          return {
-            pass: false,
-            message: () =>
-              `Expected config.ts to contain agent "${agent}" but it does not.\nContent:\n${content}`,
-          };
-        }
-      }
+    const missingAgent = expectations.agents?.find((agent) => !content.includes(agent));
+    if (missingAgent) {
+      return {
+        pass: false,
+        message: () =>
+          `Expected config.ts to contain agent "${missingAgent}" but it does not.\nContent:\n${content}`,
+      };
     }
 
     return {
@@ -319,28 +294,22 @@ export const projectMatchers = {
 
     const content = await readFile(agentPath, "utf-8");
 
-    if (expectations.contains) {
-      for (const text of expectations.contains) {
-        if (!content.includes(text)) {
-          return {
-            pass: false,
-            message: () =>
-              `Expected compiled agent "${agentName}" to contain "${text}" but it does not.\nContent excerpt:\n${content.slice(0, 500)}`,
-          };
-        }
-      }
+    const missingText = expectations.contains?.find((text) => !content.includes(text));
+    if (missingText) {
+      return {
+        pass: false,
+        message: () =>
+          `Expected compiled agent "${agentName}" to contain "${missingText}" but it does not.\nContent excerpt:\n${content.slice(0, 500)}`,
+      };
     }
 
-    if (expectations.notContains) {
-      for (const text of expectations.notContains) {
-        if (content.includes(text)) {
-          return {
-            pass: false,
-            message: () =>
-              `Expected compiled agent "${agentName}" to NOT contain "${text}" but it does`,
-          };
-        }
-      }
+    const forbiddenText = expectations.notContains?.find((text) => content.includes(text));
+    if (forbiddenText) {
+      return {
+        pass: false,
+        message: () =>
+          `Expected compiled agent "${agentName}" to NOT contain "${forbiddenText}" but it does`,
+      };
     }
 
     return {
@@ -366,16 +335,13 @@ export const projectMatchers = {
 
     const entries = await readdir(skillsDir);
 
-    if (expectedSkillIds) {
-      for (const id of expectedSkillIds) {
-        if (!entries.includes(id)) {
-          return {
-            pass: false,
-            message: () =>
-              `Expected skill "${id}" in ${skillsDir} but found: ${entries.join(", ")}`,
-          };
-        }
-      }
+    const missingId = expectedSkillIds?.find((id) => !entries.includes(id));
+    if (missingId) {
+      return {
+        pass: false,
+        message: () =>
+          `Expected skill "${missingId}" in ${skillsDir} but found: ${entries.join(", ")}`,
+      };
     }
 
     return {
@@ -434,11 +400,9 @@ export const projectMatchers = {
     const settings = JSON.parse(content);
 
     if (expectations.hasKey) {
-      const keys = expectations.hasKey.split(".");
-      let val: unknown = settings;
-      for (const k of keys) {
-        val = (val as Record<string, unknown>)?.[k];
-      }
+      const val = expectations.hasKey
+        .split(".")
+        .reduce<unknown>((v, k) => (v as Record<string, unknown> | undefined)?.[k], settings);
       if (val === undefined) {
         return {
           pass: false,

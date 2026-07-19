@@ -159,7 +159,7 @@ describe("scope toggle roundtrip", () => {
 
   it(
     "Passthrough edit should not change scope of any skill or agent",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // BEFORE: Snapshot configs
       const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);

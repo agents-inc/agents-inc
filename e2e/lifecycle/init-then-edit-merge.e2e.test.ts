@@ -1,18 +1,13 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import {
-  cleanupTempDir,
-  createTempDir,
-  ensureBinaryExists,
-  readTestFile,
-} from "../helpers/test-utils.js";
+import { cleanupTempDir, createTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { readConfigSkillIds } from "../fixtures/dual-scope-helpers.js";
 
 /**
  * Init -> Edit merge lifecycle E2E test.
@@ -21,16 +16,6 @@ import {
  * with changes, produces a merged config (not an overwrite). The original
  * skills from init should be preserved alongside new skills added in edit.
  */
-
-/** Extracts skill IDs from config.ts content using regex. */
-function extractSkillIds(configContent: string): string[] {
-  const ids: string[] = [];
-  const matches = configContent.matchAll(/"id"\s*:\s*"([^"]+)"/g);
-  for (const m of matches) {
-    ids.push(m[1]);
-  }
-  return ids;
-}
 
 describe("init -> edit merge: config preserved across lifecycle", () => {
   let sourceDir: string;
@@ -59,11 +44,10 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
 
     it.fails(
       "should merge config after init -> edit with skill addition (no duplicates)",
-      { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+      { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
         tempDir = await createTempDir();
         const projectDir = tempDir;
-        const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
 
         // ================================================================
         // Phase 1: Init via wizard
@@ -86,8 +70,7 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
           },
         );
 
-        const configAfterInit = await readTestFile(configPath);
-        const initSkillIds = extractSkillIds(configAfterInit);
+        const initSkillIds = await readConfigSkillIds(projectDir);
         expectNoDuplicates(initSkillIds, "skills after init");
 
         // Verify agent frontmatter and skill content
@@ -138,8 +121,7 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
           },
         );
 
-        const configAfterEdit = await readTestFile(configPath);
-        const editSkillIds = extractSkillIds(configAfterEdit);
+        const editSkillIds = await readConfigSkillIds(projectDir);
 
         expectNoDuplicates(editSkillIds, "skills after edit");
 

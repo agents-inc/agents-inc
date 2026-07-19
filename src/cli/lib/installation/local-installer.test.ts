@@ -12,10 +12,10 @@ vi.mock("../../consts", async (importOriginal) => {
   return { ...mod, GLOBAL_INSTALL_ROOT: "/tmp/nonexistent-global-root" };
 });
 
+import { resolveInstallPaths } from "./install-base-dir";
 import {
   installEject,
   writeScopedConfigs,
-  resolveInstallPaths,
   buildEjectSkillsMap,
   buildCompileAgents,
   buildAgentScopeMap,
@@ -46,6 +46,7 @@ import {
 } from "../__tests__/factories/config-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
 import { readTestTsConfig } from "../__tests__/helpers/config-io";
+import { fileExists } from "../../utils/fs";
 import { expectInstallResult } from "../__tests__/assertions/index.js";
 import { SKILLS } from "../__tests__/test-fixtures";
 import {
@@ -87,14 +88,10 @@ vi.mock("../resolver", async (importOriginal) => ({
   buildSkillRefsFromConfig: vi.fn().mockReturnValue([]),
 }));
 
-vi.mock("../stacks/stack-plugin-compiler", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../stacks/stack-plugin-compiler")>()),
-  compileAgentForPlugin: vi.fn().mockResolvedValue("# compiled agent content"),
-}));
-
 vi.mock("../compiler", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../compiler")>()),
   createLiquidEngine: vi.fn().mockResolvedValue({}),
+  compileAgentForPlugin: vi.fn().mockResolvedValue("# compiled agent content"),
 }));
 
 vi.mock("../configuration/config-generator", async (importOriginal) => {
@@ -112,16 +109,62 @@ vi.mock("../configuration/config-generator", async (importOriginal) => {
     // Use real scopeEligibilityKey — pure string helper used by buildEjectConfig's
     // D-220 delta computation.
     scopeEligibilityKey: original.scopeEligibilityKey,
+    // Use real isScopePairCompatible — pure scope rule used by computeScopeEligibilityGained
+    isScopePairCompatible: original.isScopePairCompatible,
   };
 });
 
 // Access the mock to verify installMode is passed through
-const mockCompileAgentForPlugin = vi.mocked(
-  (await import("../stacks/stack-plugin-compiler")).compileAgentForPlugin,
+const mockCompileAgentForPlugin = vi.mocked((await import("../compiler")).compileAgentForPlugin);
+const mockResolveAgents = vi.mocked((await import("../resolver")).resolveAgents);
+const mockBuildSkillRefs = vi.mocked((await import("../resolver")).buildSkillRefsFromConfig);
+const mockGenerateProjectConfig = vi.mocked(
+  (await import("../configuration/config-generator")).generateProjectConfigFromSkills,
 );
+const mockBuildStackProperty = vi.mocked(
+  (await import("../configuration/config-generator")).buildStackProperty,
+);
+const mockLoadStackById = vi.mocked((await import("../stacks/stacks-loader")).loadStackById);
 
 // Boundary cast: fictional skill ID used throughout local-installer tests
 const TEST_SKILL_ID = "meta-test-skill" as SkillId;
+
+/**
+ * Registers hooks that point HOME at `<tempDir>/fake-home` for each test and
+ * restore the original value afterwards. Pass `setHome: false` when the test
+ * itself decides when to point HOME at the fake home. Returns a live view of
+ * the fake home dir.
+ */
+function useFakeHome(
+  getTempDir: () => string,
+  options?: { setHome?: boolean },
+): { readonly dir: string } {
+  let savedHome: string | undefined;
+  let fakeHome: string;
+
+  beforeEach(async () => {
+    savedHome = process.env.HOME;
+    fakeHome = path.join(getTempDir(), "fake-home");
+    await mkdir(fakeHome, { recursive: true });
+    if (options?.setHome !== false) {
+      process.env.HOME = fakeHome;
+    }
+  });
+
+  afterEach(() => {
+    if (savedHome !== undefined) {
+      process.env.HOME = savedHome;
+    } else {
+      delete process.env.HOME;
+    }
+  });
+
+  return {
+    get dir() {
+      return fakeHome;
+    },
+  };
+}
 
 describe("local-installer", () => {
   let tempDir: string;
@@ -136,22 +179,7 @@ describe("local-installer", () => {
   });
 
   describe("installEject", () => {
-    let savedHome: string | undefined;
-
-    beforeEach(async () => {
-      savedHome = process.env.HOME;
-      const fakeHome = path.join(tempDir, "fake-home");
-      await mkdir(fakeHome, { recursive: true });
-      process.env.HOME = fakeHome;
-    });
-
-    afterEach(() => {
-      if (savedHome !== undefined) {
-        process.env.HOME = savedHome;
-      } else {
-        delete process.env.HOME;
-      }
-    });
+    useFakeHome(() => tempDir);
 
     it("should create required directories", async () => {
       const matrix = EMPTY_MATRIX;
@@ -165,7 +193,6 @@ describe("local-installer", () => {
       });
 
       // Verify directories were created
-      const { fileExists } = await import("../../utils/fs");
       expect(await fileExists(path.join(tempDir, CLAUDE_DIR, "skills"))).toBe(true);
       expect(await fileExists(path.join(tempDir, CLAUDE_DIR, "agents"))).toBe(true);
       expect(await fileExists(path.join(tempDir, CLAUDE_SRC_DIR))).toBe(true);
@@ -385,7 +412,6 @@ describe("local-installer", () => {
       const pluginSkill: Skill = createMockSkillEntry(TEST_SKILL_ID, false, {
         source: "agents-inc",
       });
-      const mockResolveAgents = vi.mocked((await import("../resolver")).resolveAgents);
       // Boundary cast: test provides partial agents record; mock only needs the test agent
       mockResolveAgents.mockResolvedValueOnce({
         "web-developer": {
@@ -398,10 +424,7 @@ describe("local-installer", () => {
       } as unknown as Record<AgentName, AgentConfig>);
 
       // Override generateProjectConfigFromSkills to return plugin-sourced skills
-      const mockGenerateConfig = vi.mocked(
-        (await import("../configuration/config-generator")).generateProjectConfigFromSkills,
-      );
-      mockGenerateConfig.mockReturnValueOnce(
+      mockGenerateProjectConfig.mockReturnValueOnce(
         buildProjectConfig({
           name: "agents-inc",
           skills: buildSkillConfigs([TEST_SKILL_ID], { source: "agents-inc" }),
@@ -443,7 +466,6 @@ describe("local-installer", () => {
       const ejectSkill: Skill = createMockSkillEntry(TEST_SKILL_ID, false, {
         source: "eject",
       });
-      const mockResolveAgents = vi.mocked((await import("../resolver")).resolveAgents);
       // Boundary cast: test provides partial agents record; mock only needs the test agent
       mockResolveAgents.mockResolvedValueOnce({
         "web-developer": {
@@ -519,16 +541,10 @@ describe("local-installer", () => {
       const configGenerator = await vi.importActual<
         typeof import("../configuration/config-generator")
       >("../configuration/config-generator");
-      const mockGenerateConfig = vi.mocked(
-        (await import("../configuration/config-generator")).generateProjectConfigFromSkills,
+      mockGenerateProjectConfig.mockImplementationOnce(
+        configGenerator.generateProjectConfigFromSkills,
       );
-      const mockBuildStackProperty = vi.mocked(
-        (await import("../configuration/config-generator")).buildStackProperty,
-      );
-      mockGenerateConfig.mockImplementationOnce(configGenerator.generateProjectConfigFromSkills);
       mockBuildStackProperty.mockImplementationOnce(configGenerator.buildStackProperty);
-
-      const mockLoadStackById = vi.mocked((await import("../stacks/stacks-loader")).loadStackById);
       mockLoadStackById.mockResolvedValueOnce({
         id: "test-stack",
         name: "Test Stack",
@@ -578,16 +594,10 @@ describe("local-installer", () => {
       const configGenerator = await vi.importActual<
         typeof import("../configuration/config-generator")
       >("../configuration/config-generator");
-      const mockGenerateConfig = vi.mocked(
-        (await import("../configuration/config-generator")).generateProjectConfigFromSkills,
+      mockGenerateProjectConfig.mockImplementationOnce(
+        configGenerator.generateProjectConfigFromSkills,
       );
-      const mockBuildStackProperty = vi.mocked(
-        (await import("../configuration/config-generator")).buildStackProperty,
-      );
-      mockGenerateConfig.mockImplementationOnce(configGenerator.generateProjectConfigFromSkills);
       mockBuildStackProperty.mockImplementationOnce(configGenerator.buildStackProperty);
-
-      const mockLoadStackById = vi.mocked((await import("../stacks/stacks-loader")).loadStackById);
       mockLoadStackById.mockResolvedValueOnce({
         id: "fullstack",
         name: "Fullstack",
@@ -637,23 +647,7 @@ describe("local-installer", () => {
     // require Record<AgentName, AgentDefinition>; the cast happens at each call
     // site where the empty map is acceptable because the callees don't read it.
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
-    let savedHome: string | undefined;
-    let globalHome: string;
-
-    beforeEach(async () => {
-      savedHome = process.env.HOME;
-      globalHome = path.join(tempDir, "fake-home");
-      await mkdir(globalHome, { recursive: true });
-      process.env.HOME = globalHome;
-    });
-
-    afterEach(() => {
-      if (savedHome !== undefined) {
-        process.env.HOME = savedHome;
-      } else {
-        delete process.env.HOME;
-      }
-    });
+    const fakeHomeHandle = useFakeHome(() => tempDir);
 
     it("should skip project config when no existing project installation and no project-scoped items", async () => {
       // Setup: all items are global-scoped, so project split will be empty.
@@ -682,8 +676,11 @@ describe("local-installer", () => {
       );
 
       // Global config should be written (blank existing global + has global-scoped items)
-      const globalConfigPath = path.join(globalHome, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const { fileExists } = await import("../../utils/fs");
+      const globalConfigPath = path.join(
+        fakeHomeHandle.dir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TS,
+      );
       expect(await fileExists(globalConfigPath)).toBe(true);
 
       // Project config should NOT be written (no existing config and no project-scoped items)
@@ -716,8 +713,11 @@ describe("local-installer", () => {
       );
 
       // Global config should be written (blank existing global + has global-scoped items)
-      const globalConfigPath = path.join(globalHome, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const { fileExists } = await import("../../utils/fs");
+      const globalConfigPath = path.join(
+        fakeHomeHandle.dir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TS,
+      );
       expect(await fileExists(globalConfigPath)).toBe(true);
       // Project config should be written (has project-scoped items)
       expect(await fileExists(projectConfigPath)).toBe(true);
@@ -893,7 +893,6 @@ describe("local-installer", () => {
 
     it("should filter global agent skills to only global-scoped skills (cross-scope safety net)", async () => {
       // Set up buildSkillRefsFromConfig mock to return both skills
-      const mockBuildSkillRefs = vi.mocked((await import("../resolver")).buildSkillRefsFromConfig);
       mockBuildSkillRefs.mockReturnValueOnce([
         { id: "web-framework-react", usage: "when working with web-framework" },
         { id: "web-testing-vitest", usage: "when working with web-testing" },
@@ -927,7 +926,6 @@ describe("local-installer", () => {
 
     it("should not filter project-scoped agent skills", async () => {
       // Set up buildSkillRefsFromConfig mock to return both skills
-      const mockBuildSkillRefs = vi.mocked((await import("../resolver")).buildSkillRefsFromConfig);
       mockBuildSkillRefs.mockReturnValueOnce([
         { id: "web-framework-react", usage: "when working with web-framework" },
         { id: "web-testing-vitest", usage: "when working with web-testing" },
@@ -961,9 +959,6 @@ describe("local-installer", () => {
 
     describe("excluded filtering", () => {
       it("should exclude skills with excluded: true from compilation", async () => {
-        const mockBuildSkillRefs = vi.mocked(
-          (await import("../resolver")).buildSkillRefsFromConfig,
-        );
         mockBuildSkillRefs.mockReturnValueOnce([
           { id: "web-framework-react", usage: "when working with web-framework" },
           { id: "web-testing-vitest", usage: "when working with web-testing" },
@@ -1014,9 +1009,6 @@ describe("local-installer", () => {
       });
 
       it("should handle mixed active and excluded entries for the same skill ID", async () => {
-        const mockBuildSkillRefs = vi.mocked(
-          (await import("../resolver")).buildSkillRefsFromConfig,
-        );
         mockBuildSkillRefs.mockReturnValueOnce([
           { id: "web-framework-react", usage: "when working with web-framework" },
         ]);
@@ -1596,28 +1588,12 @@ describe("local-installer", () => {
     // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
     // callees require Record<AgentName, AgentDefinition>.
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
-    let savedHome: string | undefined;
-    let globalHome: string;
-
-    beforeEach(async () => {
-      savedHome = process.env.HOME;
-      globalHome = path.join(tempDir, "fake-home");
-      await mkdir(globalHome, { recursive: true });
-    });
-
-    afterEach(() => {
-      // Restore HOME after each test
-      if (savedHome !== undefined) {
-        process.env.HOME = savedHome;
-      } else {
-        delete process.env.HOME;
-      }
-    });
+    const fakeHomeHandle = useFakeHome(() => tempDir, { setHome: false });
 
     it("should skip project config file when no existing config on disk and no project-scoped items", async () => {
       const projectDir = path.join(tempDir, "project");
 
-      process.env.HOME = globalHome;
+      process.env.HOME = fakeHomeHandle.dir;
 
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], {
@@ -1640,8 +1616,11 @@ describe("local-installer", () => {
       );
 
       // Global config should be written (blank existing global + has global-scoped items)
-      const globalConfigPath = path.join(globalHome, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const { fileExists } = await import("../../utils/fs");
+      const globalConfigPath = path.join(
+        fakeHomeHandle.dir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TS,
+      );
       expect(await fileExists(globalConfigPath)).toBe(true);
 
       // Verify global config contains the global-scoped skill
@@ -1655,7 +1634,7 @@ describe("local-installer", () => {
     it("should write project config when project split has project-scoped items", async () => {
       const projectDir = path.join(tempDir, "project");
 
-      process.env.HOME = globalHome;
+      process.env.HOME = fakeHomeHandle.dir;
 
       const config = buildProjectConfig({
         skills: [
@@ -1681,8 +1660,11 @@ describe("local-installer", () => {
       );
 
       // Global config should be written (blank existing global + has global-scoped items)
-      const globalConfigPath = path.join(globalHome, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const { fileExists } = await import("../../utils/fs");
+      const globalConfigPath = path.join(
+        fakeHomeHandle.dir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TS,
+      );
       expect(await fileExists(globalConfigPath)).toBe(true);
       // Project config should be written (has project-scoped items)
       expect(await fileExists(projectConfigPath)).toBe(true);
@@ -1785,7 +1767,6 @@ describe("local-installer", () => {
         CLAUDE_SRC_DIR,
         STANDARD_FILES.CONFIG_TYPES_TS,
       );
-      const { fileExists } = await import("../../utils/fs");
       expect(await fileExists(projectTypesPath)).toBe(true);
 
       const typesContent = await readFile(projectTypesPath, "utf-8");
@@ -1845,7 +1826,6 @@ describe("local-installer", () => {
         CLAUDE_SRC_DIR,
         STANDARD_FILES.CONFIG_TYPES_TS,
       );
-      const { fileExists } = await import("../../utils/fs");
       expect(await fileExists(projectTypesPath)).toBe(true);
 
       const typesContent = await readFile(projectTypesPath, "utf-8");
@@ -1902,23 +1882,7 @@ describe("local-installer", () => {
   });
 
   describe("deregisterProjectPath", () => {
-    let savedHome: string | undefined;
-    let globalHome: string;
-
-    beforeEach(async () => {
-      savedHome = process.env.HOME;
-      globalHome = path.join(tempDir, "fake-home");
-      await mkdir(globalHome, { recursive: true });
-      process.env.HOME = globalHome;
-    });
-
-    afterEach(() => {
-      if (savedHome !== undefined) {
-        process.env.HOME = savedHome;
-      } else {
-        delete process.env.HOME;
-      }
-    });
+    const fakeHomeHandle = useFakeHome(() => tempDir);
 
     it("should remove project from global config's projects array", async () => {
       const projectDir = path.join(tempDir, "my-project");
@@ -1931,7 +1895,11 @@ describe("local-installer", () => {
         agents: [],
         projects: [projectDir],
       });
-      const globalConfigPath = path.join(globalHome, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const globalConfigPath = path.join(
+        fakeHomeHandle.dir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TS,
+      );
       await mkdir(path.dirname(globalConfigPath), { recursive: true });
       await writeConfigFile(globalConfig, globalConfigPath);
 
@@ -1951,7 +1919,11 @@ describe("local-installer", () => {
         agents: [],
         projects: [otherPath],
       });
-      const globalConfigPath = path.join(globalHome, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const globalConfigPath = path.join(
+        fakeHomeHandle.dir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TS,
+      );
       await mkdir(path.dirname(globalConfigPath), { recursive: true });
       await writeConfigFile(globalConfig, globalConfigPath);
 
@@ -1970,7 +1942,11 @@ describe("local-installer", () => {
         skills: [],
         agents: [],
       });
-      const globalConfigPath = path.join(globalHome, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const globalConfigPath = path.join(
+        fakeHomeHandle.dir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TS,
+      );
       await mkdir(path.dirname(globalConfigPath), { recursive: true });
       await writeConfigFile(globalConfig, globalConfigPath);
 
@@ -2097,7 +2073,6 @@ describe("local-installer", () => {
       );
 
       const typesPath = path.join(configDir, STANDARD_FILES.CONFIG_TYPES_TS);
-      const { fileExists } = await import("../../utils/fs");
       expect(await fileExists(typesPath)).toBe(true);
 
       const typesContent = await readFile(typesPath, "utf-8");

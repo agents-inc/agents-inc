@@ -31,10 +31,6 @@ afterAll(async () => {
   if (sourceTempDir) await cleanupTempDir(sourceTempDir);
 });
 
-// =====================================================================
-// Test Suite 1 -- Source Loader: Global local skills always merged
-// =====================================================================
-
 describe("global scope lifecycle -- source loader merge", () => {
   let env: DualScopeEnv | undefined;
 
@@ -69,10 +65,6 @@ describe("global scope lifecycle -- source loader merge", () => {
     },
   );
 });
-
-// =====================================================================
-// Test Suite 2 -- Doctor: shared read-only dual-scope state
-// =====================================================================
 
 describe("global scope lifecycle -- doctor command", () => {
   let sharedEnv: DualScopeEnv;
@@ -115,10 +107,6 @@ describe("global scope lifecycle -- doctor command", () => {
   });
 });
 
-// =====================================================================
-// Test Suite 5 -- Uninstall: per-skill scope from config
-// =====================================================================
-
 describe("global scope lifecycle -- uninstall with dual scope", () => {
   let env: DualScopeEnv | undefined;
 
@@ -150,10 +138,6 @@ describe("global scope lifecycle -- uninstall with dual scope", () => {
     },
   );
 });
-
-// =====================================================================
-// Test Suite 6 -- Full init wizard with mixed scope -> verify file placement
-// =====================================================================
 
 describe("global scope lifecycle -- init wizard with scope toggling", () => {
   let tempDir: string;

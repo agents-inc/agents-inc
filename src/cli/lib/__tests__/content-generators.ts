@@ -22,16 +22,20 @@ export function renderConfigTs(config: Record<string, unknown>): string {
 export function renderAgentYaml(
   name: string,
   description?: string,
-  options?: { title?: string; tools?: string[] },
+  options?: { title?: string; tools?: string[]; model?: string; permissionMode?: string },
 ): string {
   const desc = description ?? `Test ${name} agent`;
   const title = options?.title ?? `${name} Agent`;
   const tools = options?.tools ?? ["Read", "Write"];
-  return `id: ${name}
-title: ${title}
-description: ${desc}
-tools:
-${tools.map((t) => `  - ${t}`).join("\n")}`;
+  return [
+    `id: ${name}`,
+    `title: ${title}`,
+    `description: ${desc}`,
+    "tools:",
+    ...tools.map((t) => `  - ${t}`),
+    ...(options?.model ? [`model: ${options.model}`] : []),
+    ...(options?.permissionMode ? [`permissionMode: ${options.permissionMode}`] : []),
+  ].join("\n");
 }
 
 /**
@@ -55,6 +59,46 @@ tools: ${tools}
 
 ${body}
 `;
+}
+
+export interface SkillMetadataFields {
+  custom?: boolean;
+  domain?: string;
+  author?: string;
+  displayName?: string;
+  category?: string;
+  slug?: string;
+  cliDescription?: string;
+  usageGuidance?: string;
+  contentHash: string;
+  forkedFrom?: { skillId: string; contentHash: string; date: string };
+}
+
+/**
+ * Renders a metadata.yaml for a test skill. Only the fields provided are
+ * emitted, so fixtures keep control over which metadata keys exist.
+ */
+export function renderMetadataYaml(fields: SkillMetadataFields): string {
+  const lines = [
+    ...(fields.custom ? ["custom: true"] : []),
+    ...(fields.domain ? [`domain: ${fields.domain}`] : []),
+    `author: "${fields.author ?? "@test"}"`,
+    ...(fields.displayName ? [`displayName: ${fields.displayName}`] : []),
+    ...(fields.category ? [`category: ${fields.category}`] : []),
+    ...(fields.slug ? [`slug: ${fields.slug}`] : []),
+    ...(fields.cliDescription ? [`cliDescription: "${fields.cliDescription}"`] : []),
+    ...(fields.usageGuidance ? [`usageGuidance: "${fields.usageGuidance}"`] : []),
+    `contentHash: "${fields.contentHash}"`,
+    ...(fields.forkedFrom
+      ? [
+          "forkedFrom:",
+          `  skillId: ${fields.forkedFrom.skillId}`,
+          `  contentHash: "${fields.forkedFrom.contentHash}"`,
+          `  date: ${fields.forkedFrom.date}`,
+        ]
+      : []),
+  ];
+  return lines.join("\n") + "\n";
 }
 
 export function renderCategoriesTs(categories: Record<string, unknown>): string {

@@ -15,11 +15,11 @@ const PROJECT_DIR = "/tmp/test-project";
 const MARKETPLACE = "agents-inc-marketplace";
 
 function makeSkillConfig(
-  id: string,
+  id: SkillId,
   scope: "project" | "global",
   source = "agents-inc",
 ): SkillConfig {
-  return { id: id as SkillConfig["id"], scope, source };
+  return { id, scope, source };
 }
 
 describe("uninstallPluginSkills", () => {
@@ -28,7 +28,7 @@ describe("uninstallPluginSkills", () => {
   });
 
   it("should uninstall skills with scope from old config", async () => {
-    const skillIds = ["web-framework-react" as SkillId, "api-framework-hono" as SkillId];
+    const skillIds: SkillId[] = ["web-framework-react", "api-framework-hono"];
     const oldSkills = [
       makeSkillConfig("web-framework-react", "project"),
       makeSkillConfig("api-framework-hono", "global"),
@@ -53,7 +53,7 @@ describe("uninstallPluginSkills", () => {
   });
 
   it("should default to 'project' scope when old skill not found", async () => {
-    const skillIds = ["web-framework-react" as SkillId];
+    const skillIds: SkillId[] = ["web-framework-react"];
     const oldSkills: SkillConfig[] = [];
 
     await uninstallPluginSkills(skillIds, oldSkills, MARKETPLACE, PROJECT_DIR);
@@ -66,7 +66,7 @@ describe("uninstallPluginSkills", () => {
   });
 
   it("should collect failures without throwing", async () => {
-    const skillIds = ["web-framework-react" as SkillId, "api-framework-hono" as SkillId];
+    const skillIds: SkillId[] = ["web-framework-react", "api-framework-hono"];
     const oldSkills = [
       makeSkillConfig("web-framework-react", "project"),
       makeSkillConfig("api-framework-hono", "project"),
@@ -83,10 +83,10 @@ describe("uninstallPluginSkills", () => {
   });
 
   it("should return uninstalled skill IDs", async () => {
-    const skillIds = [
-      "web-framework-react" as SkillId,
-      "web-styling-tailwind" as SkillId,
-      "api-framework-hono" as SkillId,
+    const skillIds: SkillId[] = [
+      "web-framework-react",
+      "web-styling-tailwind",
+      "api-framework-hono",
     ];
     const oldSkills = [
       makeSkillConfig("web-framework-react", "project"),

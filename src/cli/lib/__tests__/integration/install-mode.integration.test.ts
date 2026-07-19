@@ -22,6 +22,7 @@ import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/
 import { INIT_SKILL_IDS, INIT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
 import path from "path";
+import { mkdir } from "fs/promises";
 
 const REACT_SKILL_ID: SkillId = "web-framework-react";
 const HONO_SKILL_ID: SkillId = "api-framework-hono";
@@ -29,20 +30,29 @@ const VITEST_SKILL_ID: SkillId = "web-testing-vitest";
 
 const INIT_TEST_MATRIX = FULLSTACK_TRIO_MATRIX;
 
+/** Mixed-source skill set: react local (eject), hono plugin, vitest local. */
+const MIXED_SOURCE_SKILLS: SkillConfig[] = [
+  { id: REACT_SKILL_ID, scope: "project", source: "eject" },
+  { id: HONO_SKILL_ID, scope: "project", source: "agents-inc" },
+  { id: VITEST_SKILL_ID, scope: "project", source: "eject" },
+];
+
+// Shared per-test source setup for the install-mode suites (the
+// writeConfigFile suite manages its own temp dir instead)
+let dirs: TestDirs;
+let sourceResult: SourceLoadResult;
+
+beforeEach(async () => {
+  dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
+  sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
+  initializeMatrix(INIT_TEST_MATRIX);
+});
+
+afterEach(async () => {
+  await cleanupTestSource(dirs);
+});
+
 describe("Integration: Install Mode Persistence", () => {
-  let dirs: TestDirs;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    await cleanupTestSource(dirs);
-  });
-
   it("should persist skills with 'local' source in config after install", async () => {
     const skills = buildSkillConfigs(INIT_SKILL_IDS, { source: "eject" });
     const result = await installEject({
@@ -73,8 +83,7 @@ describe("Integration: Install Mode Persistence", () => {
 
   it("should persist skills with 'mixed' sources in config after install", async () => {
     const skills: SkillConfig[] = [
-      { id: REACT_SKILL_ID, scope: "project", source: "eject" },
-      { id: HONO_SKILL_ID, scope: "project", source: "agents-inc" },
+      ...MIXED_SOURCE_SKILLS.slice(0, 2),
       { id: VITEST_SKILL_ID, scope: "project", source: "agents-inc" },
     ];
     const result = await installEject({
@@ -90,11 +99,7 @@ describe("Integration: Install Mode Persistence", () => {
   });
 
   it("should persist per-skill source in config after install", async () => {
-    const skills: SkillConfig[] = [
-      { id: REACT_SKILL_ID, scope: "project", source: "eject" },
-      { id: HONO_SKILL_ID, scope: "project", source: "agents-inc" },
-      { id: VITEST_SKILL_ID, scope: "project", source: "eject" },
-    ];
+    const skills = MIXED_SOURCE_SKILLS;
 
     const result = await installEject({
       wizardResult: buildWizardResult(skills, {
@@ -131,19 +136,6 @@ describe("Integration: Install Mode Persistence", () => {
 });
 
 describe("Integration: Install Mode Config Round-Trip", () => {
-  let dirs: TestDirs;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    await cleanupTestSource(dirs);
-  });
-
   it("should round-trip install mode through config write and read", async () => {
     // First install with "eject" sources
     const localSkills = buildSkillConfigs(INIT_SKILL_IDS, { source: "eject" });
@@ -173,11 +165,7 @@ describe("Integration: Install Mode Config Round-Trip", () => {
   });
 
   it("should round-trip per-skill source through config write and read", async () => {
-    const skills: SkillConfig[] = [
-      { id: REACT_SKILL_ID, scope: "project", source: "eject" },
-      { id: HONO_SKILL_ID, scope: "project", source: "agents-inc" },
-      { id: VITEST_SKILL_ID, scope: "project", source: "eject" },
-    ];
+    const skills = MIXED_SOURCE_SKILLS;
 
     const result = await installEject({
       wizardResult: buildWizardResult(skills, {
@@ -196,19 +184,6 @@ describe("Integration: Install Mode Config Round-Trip", () => {
 });
 
 describe("Integration: buildAndMergeConfig Install Mode", () => {
-  let dirs: TestDirs;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    await cleanupTestSource(dirs);
-  });
-
   it("should derive installMode from skills in merged config", async () => {
     const skills = buildSkillConfigs(INIT_SKILL_IDS, { source: "agents-inc" });
     const wizardResult = buildWizardResult(skills, {
@@ -221,11 +196,7 @@ describe("Integration: buildAndMergeConfig Install Mode", () => {
   });
 
   it("should preserve per-skill source in merged config when non-uniform", async () => {
-    const skills: SkillConfig[] = [
-      { id: REACT_SKILL_ID, scope: "project", source: "eject" },
-      { id: HONO_SKILL_ID, scope: "project", source: "agents-inc" },
-      { id: VITEST_SKILL_ID, scope: "project", source: "eject" },
-    ];
+    const skills = MIXED_SOURCE_SKILLS;
 
     const wizardResult = buildWizardResult(skills, {
       selectedAgents: ["web-developer"],
@@ -277,9 +248,13 @@ describe("Integration: buildAndMergeConfig Install Mode", () => {
 
 describe("Integration: writeConfigFile Round-Trip", () => {
   let tempDir: string;
+  let configPath: string;
 
   beforeEach(async () => {
     tempDir = await createTempDir("config-roundtrip-");
+    const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
+    await mkdir(configDir, { recursive: true });
+    configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
   });
 
   afterEach(async () => {
@@ -287,11 +262,6 @@ describe("Integration: writeConfigFile Round-Trip", () => {
   });
 
   it("should write and read back skills with derived installMode", async () => {
-    const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
-    const { mkdir } = await import("fs/promises");
-    await mkdir(configDir, { recursive: true });
-    const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
-
     const config = buildProjectConfig({
       skills: [
         { id: REACT_SKILL_ID, scope: "project", source: "eject" },
@@ -307,11 +277,6 @@ describe("Integration: writeConfigFile Round-Trip", () => {
   });
 
   it("should write and read back per-skill source", async () => {
-    const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
-    const { mkdir } = await import("fs/promises");
-    await mkdir(configDir, { recursive: true });
-    const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
-
     const config = buildProjectConfig({
       skills: [
         { id: REACT_SKILL_ID, scope: "project", source: "eject" },
@@ -329,11 +294,6 @@ describe("Integration: writeConfigFile Round-Trip", () => {
   });
 
   it("should write config with all-local skills correctly", async () => {
-    const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
-    const { mkdir } = await import("fs/promises");
-    await mkdir(configDir, { recursive: true });
-    const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
-
     const config = buildProjectConfig({
       skills: [{ id: REACT_SKILL_ID, scope: "project", source: "eject" }],
     });

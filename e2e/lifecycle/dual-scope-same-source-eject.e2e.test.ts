@@ -112,7 +112,7 @@ describe("dual-scope same-source (both eject)", () => {
 
   it(
     "config dual-scope shape, bare agent ref, [P][G] badges, and s-toggle is a guarded no-op",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       env = await createDualScopeEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
@@ -175,7 +175,7 @@ describe("dual-scope same-source (both eject)", () => {
 
   it(
     "removing the GLOBAL copy (edit at global scope) leaves the project's own copy untouched",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Fresh seeded dual-scope env (do NOT chain off the previous test):
       //   global: vitest (eject) referenced by web-developer (preloaded:false)

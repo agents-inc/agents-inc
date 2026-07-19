@@ -4,7 +4,7 @@ import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
@@ -12,9 +12,9 @@ import {
   createPermissionsFile,
   createTempDir,
   ensureBinaryExists,
-  readTestFile,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
 
 /**
  * Re-edit / multiple edit cycle E2E tests.
@@ -25,63 +25,22 @@ import { ProjectBuilder } from "../fixtures/project-builder.js";
  */
 
 /**
- * Parses a config.ts file and extracts skill IDs, agent names, and domains
- * for duplicate detection and structural comparison.
+ * Structurally loads a config.ts and returns its skill IDs, agent names, and
+ * domains for duplicate detection and structural comparison.
  */
-function parseConfigArrays(configContent: string): {
+async function readConfigArrays(projectDir: string): Promise<{
   skillIds: string[];
   agentNames: string[];
   domains: string[];
-} {
-  const skillIds: string[] = [];
-  const agentNames: string[] = [];
-  const domains: string[] = [];
-
-  // Strategy 1: Extract from typed named variable declarations (real CLI format)
-  const skillsBlockMatch = configContent.match(
-    /const skills:\s*SkillConfig\[\]\s*=\s*\[([\s\S]*?)\];/,
-  );
-  if (skillsBlockMatch) {
-    const skillMatches = skillsBlockMatch[1].matchAll(/"id"\s*:\s*"([^"]+)"/g);
-    for (const m of skillMatches) {
-      skillIds.push(m[1]);
-    }
-  }
-
-  const agentsBlockMatch = configContent.match(
-    /const agents:\s*AgentScopeConfig\[\]\s*=\s*\[([\s\S]*?)\];/,
-  );
-  if (agentsBlockMatch) {
-    const agentMatches = agentsBlockMatch[1].matchAll(/"name"\s*:\s*"([^"]+)"/g);
-    for (const m of agentMatches) {
-      agentNames.push(m[1]);
-    }
-  }
-
-  const domainsBlockMatch = configContent.match(
-    /const domains:\s*Domain\[\]\s*=\s*\[([\s\S]*?)\];/,
-  );
-  if (domainsBlockMatch) {
-    const domainMatches = domainsBlockMatch[1].matchAll(/"([^"]+)"/g);
-    for (const m of domainMatches) {
-      domains.push(m[1]);
-    }
-  }
-
-  // Strategy 2: Last resort regex (covers both JSON and non-standard formats)
-  if (skillIds.length === 0 && agentNames.length === 0) {
-    const idMatches = configContent.matchAll(/"id"\s*:\s*"([^"]+)"/g);
-    for (const m of idMatches) {
-      skillIds.push(m[1]);
-    }
-
-    const nameMatches = configContent.matchAll(/"name"\s*:\s*"([^"]+)"/g);
-    for (const m of nameMatches) {
-      agentNames.push(m[1]);
-    }
-  }
-
-  return { skillIds, agentNames, domains };
+}> {
+  const loaded = await loadProjectConfigFromDir(projectDir);
+  expect(loaded, `project config.ts must exist at ${projectDir}`).not.toBeNull();
+  if (!loaded) return { skillIds: [], agentNames: [], domains: [] };
+  return {
+    skillIds: loaded.config.skills.map((sc) => sc.id),
+    agentNames: loaded.config.agents.map((agent) => agent.name),
+    domains: loaded.config.domains ?? [],
+  };
 }
 
 describe("re-edit cycles: config stability across multiple edits", () => {
@@ -115,7 +74,6 @@ describe("re-edit cycles: config stability across multiple edits", () => {
       async () => {
         tempDir = await createTempDir();
         const projectDir = tempDir;
-        const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
 
         // ================================================================
         // Phase 1: Init via wizard
@@ -154,8 +112,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           skills: ["web-framework-react"],
         });
 
-        const configAfterInit = await readTestFile(configPath);
-        const initArrays = parseConfigArrays(configAfterInit);
+        const initArrays = await readConfigArrays(projectDir);
         expectNoDuplicates(initArrays.skillIds, "skills after init");
         expectNoDuplicates(initArrays.agentNames, "agents after init");
         expectNoDuplicates(initArrays.domains, "domains after init");
@@ -187,8 +144,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           skills: ["web-framework-react"],
         });
 
-        const configAfterEdit1 = await readTestFile(configPath);
-        const edit1Arrays = parseConfigArrays(configAfterEdit1);
+        const edit1Arrays = await readConfigArrays(projectDir);
 
         expectNoDuplicates(edit1Arrays.skillIds, "skills after first edit");
         expectNoDuplicates(edit1Arrays.agentNames, "agents after first edit");
@@ -223,8 +179,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           skills: ["web-framework-react"],
         });
 
-        const configAfterEdit2 = await readTestFile(configPath);
-        const edit2Arrays = parseConfigArrays(configAfterEdit2);
+        const edit2Arrays = await readConfigArrays(projectDir);
 
         expectNoDuplicates(edit2Arrays.skillIds, "skills after second edit");
         expectNoDuplicates(edit2Arrays.agentNames, "agents after second edit");
@@ -274,7 +229,6 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         const projectDir = project.dir;
 
         await createPermissionsFile(projectDir);
-        const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
 
         // Verify initial state via matcher and detailed parsing
         await expect({ dir: projectDir }).toHaveConfig({
@@ -282,8 +236,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           agents: ["web-developer"],
           source: "eject",
         });
-        const configBefore = await readTestFile(configPath);
-        const beforeArrays = parseConfigArrays(configBefore);
+        const beforeArrays = await readConfigArrays(projectDir);
 
         // ================================================================
         // Phase 2: First edit -- add a skill
@@ -329,8 +282,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           skills: ["web-framework-react"],
         });
 
-        const configAfterAdd = await readTestFile(configPath);
-        const addArrays = parseConfigArrays(configAfterAdd);
+        const addArrays = await readConfigArrays(projectDir);
 
         expect(addArrays.skillIds.length).toBeGreaterThanOrEqual(beforeArrays.skillIds.length);
         expectNoDuplicates(addArrays.skillIds, "skills after adding");
@@ -376,8 +328,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           skills: ["web-framework-react"],
         });
 
-        const configAfterNoChange = await readTestFile(configPath);
-        const noChangeArrays = parseConfigArrays(configAfterNoChange);
+        const noChangeArrays = await readConfigArrays(projectDir);
 
         expectNoDuplicates(noChangeArrays.skillIds, "skills after no-change edit");
         expectNoDuplicates(noChangeArrays.agentNames, "agents after no-change edit");

@@ -1,13 +1,25 @@
 import { BaseStep } from "../base-step.js";
-import { INTERNAL_DELAYS, INTERNAL_RETRIES, STEP_TEXT, TIMEOUTS } from "../constants.js";
+import { INTERNAL_RETRIES, STEP_TEXT, TIMEOUTS } from "../constants.js";
+import { retryEnterUntil } from "../retry-enter.js";
 import { SearchModal } from "./search-modal.js";
 import { SourcesStep } from "./sources-step.js";
 
-/** Slack after `waitForStableRender` to let `CategoryGrid`'s post-mount
- *  `useEffect` flush `setFocusedSkillId` into the store before a focus-
- *  dependent keypress (the `s` handler in `wizard.tsx`'s HOTKEY_SCOPE branch
- *  reads `store.focusedSkillId` and silently no-ops when null). */
-const FOCUS_EFFECT_FLUSH_MS = 500;
+const BOX_DRAWING_CHARS = ["│", "┌", "└", "┐", "┘", "─"];
+
+/**
+ * Category headers are non-empty text lines without box-drawing chars,
+ * immediately followed by a `┌` line. This pattern only matches skill
+ * category headers — step tabs, domain tabs, and info panels don't have
+ * text headers before their `┌` borders.
+ */
+function isCategoryHeaderLine(line: string, nextLine: string | undefined): boolean {
+  const trimmed = line.trim();
+  return (
+    trimmed.length > 0 &&
+    BOX_DRAWING_CHARS.every((char) => !trimmed.includes(char)) &&
+    (nextLine?.trimStart().startsWith("┌") ?? false)
+  );
+}
 
 export class BuildStep extends BaseStep {
   /** Tracked grid position — row resets on domain change, col resets on Tab/DOWN */
@@ -23,9 +35,8 @@ export class BuildStep extends BaseStep {
   }
 
   /**
-   * Press Enter and wait for the NEXT frame's footer to paint AFTER the cursor
-   * snapshot. Retries with INTERNAL_RETRIES budget to absorb dropped keystrokes
-   * when Ink's useInput handler for the incoming frame is not yet mounted.
+   * Press Enter (with closed-loop retry, see retryEnterUntil) and wait for the
+   * NEXT frame's footer to paint AFTER the cursor snapshot.
    *
    * Used for build-step domain → domain transitions, where both the current
    * and next frame render the same tab labels ("Web | API | Methodology") in
@@ -35,19 +46,9 @@ export class BuildStep extends BaseStep {
    * frame without depending on domain-specific text.
    */
   private async pressEnterWaitNewFrame(): Promise<void> {
-    let lastError: unknown;
-    for (let i = 0; i < INTERNAL_RETRIES.MAX_ATTEMPTS; i++) {
-      const cursor = this.getRawCursor();
-      this.session.enter();
-      await this.delay(INTERNAL_DELAYS.STEP_TRANSITION);
-      try {
-        await this.waitForStableRenderAfter(cursor, INTERNAL_RETRIES.INTERVAL_MS);
-        return;
-      } catch (err) {
-        lastError = err;
-      }
-    }
-    throw lastError;
+    await retryEnterUntil(this.session, this.screen, (cursor) =>
+      this.waitForStableRenderAfter(cursor, INTERNAL_RETRIES.INTERVAL_MS),
+    );
   }
 
   /**
@@ -96,18 +97,13 @@ export class BuildStep extends BaseStep {
   /**
    * Toggle scope on the currently focused skill (press "s").
    *
-   * `CategoryGrid` seeds `focusedSkillId` in a post-mount `useEffect`; the
-   * `s` handler in `wizard.tsx`'s HOTKEY_SCOPE branch silently no-ops when
-   * that id is null. `waitForStableRender` returns when the frame has
-   * painted but the effect may not have flushed yet — the extra delay
-   * gives it time to run before the keypress.
-   *
-   * TODO: Fix A — seed `focusedSkillId` synchronously in `hydrateWizardStore`
-   * so this delay becomes unnecessary.
+   * `focusedSkillId` is seeded synchronously by the wizard store at build-step
+   * entry and on every domain change (`seedFocusedSkillForActiveDomain`), so the
+   * `s` handler in `wizard.tsx`'s HOTKEY_SCOPE branch resolves the visually-
+   * focused skill as soon as the frame paints — no post-mount effect to await.
    */
   async toggleScopeOnFocusedSkill(): Promise<void> {
     await this.waitForStableRender();
-    await this.delay(FOCUS_EFFECT_FLUSH_MS);
     await this.pressKey("s");
   }
 
@@ -330,36 +326,14 @@ export class BuildStep extends BaseStep {
     );
   }
 
-  /**
-   * Parse the screen to find a skill's grid position (row, col).
-   *
-   * Category headers are non-empty text lines without box-drawing chars,
-   * immediately followed by a `┌` line. This pattern only matches skill
-   * category headers — step tabs, domain tabs, and info panels don't have
-   * text headers before their `┌` borders.
-   */
+  /** Parse the screen to find a skill's grid position (row, col). */
   private findSkillGridPosition(label: string): { row: number; col: number; totalRows: number } {
     const output = this.getOutput();
     const lines = output.split("\n");
 
-    // Find category headers: non-empty text lines without box-drawing chars,
-    // immediately followed by a ┌ line.
-    const categoryHeaders: number[] = [];
-    for (let i = 0; i < lines.length - 1; i++) {
-      const trimmed = lines[i].trim();
-      if (
-        trimmed.length > 0 &&
-        !trimmed.includes("│") &&
-        !trimmed.includes("┌") &&
-        !trimmed.includes("└") &&
-        !trimmed.includes("┐") &&
-        !trimmed.includes("┘") &&
-        !trimmed.includes("─") &&
-        lines[i + 1]?.trimStart().startsWith("┌")
-      ) {
-        categoryHeaders.push(i);
-      }
-    }
+    const categoryHeaders = lines
+      .map((line, i) => (isCategoryHeaderLine(line, lines[i + 1]) ? i : -1))
+      .filter((i) => i !== -1);
 
     if (categoryHeaders.length === 0) {
       throw new Error(
@@ -368,27 +342,19 @@ export class BuildStep extends BaseStep {
       );
     }
 
-    // Find which category contains the label and its column position
     for (let row = 0; row < categoryHeaders.length; row++) {
       const headerIdx = categoryHeaders[row];
-      const nextHeaderIdx =
-        row + 1 < categoryHeaders.length ? categoryHeaders[row + 1] : lines.length;
+      const nextHeaderIdx = categoryHeaders[row + 1] ?? lines.length;
 
-      // Collect content lines (│ lines) within this category's range
-      let colOffset = 0;
-      for (let i = headerIdx + 1; i < nextHeaderIdx; i++) {
-        if (!lines[i].includes("│")) continue;
+      // Flatten the category's │-delimited cells; the flat index IS the column.
+      const cells = lines
+        .slice(headerIdx + 1, nextHeaderIdx)
+        .filter((line) => line.includes("│"))
+        .flatMap((line) => line.split("│").filter((segment) => segment.trim().length > 0));
 
-        const segments = lines[i].split("│").filter((s) => s.trim().length > 0);
-        const segIdx = segments.findIndex((s) => s.includes(label));
-        if (segIdx !== -1) {
-          return {
-            row,
-            col: colOffset + segIdx,
-            totalRows: categoryHeaders.length,
-          };
-        }
-        colOffset += segments.length;
+      const col = cells.findIndex((cell) => cell.includes(label));
+      if (col !== -1) {
+        return { row, col, totalRows: categoryHeaders.length };
       }
     }
 

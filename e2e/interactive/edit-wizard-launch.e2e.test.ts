@@ -24,6 +24,7 @@ import path from "path";
 describe("edit wizard — launch and display", () => {
   let wizard: EditWizard | undefined;
   let tempDir: string | undefined;
+  let sourceTempDir: string | undefined;
 
   beforeAll(ensureBinaryExists);
 
@@ -33,6 +34,10 @@ describe("edit wizard — launch and display", () => {
     if (tempDir) {
       await cleanupTempDir(tempDir);
       tempDir = undefined;
+    }
+    if (sourceTempDir) {
+      await cleanupTempDir(sourceTempDir);
+      sourceTempDir = undefined;
     }
   });
 
@@ -139,6 +144,7 @@ describe("edit wizard — launch and display", () => {
       tempDir = path.dirname(project.dir);
 
       const source = await createE2ESource();
+      sourceTempDir = source.tempDir;
 
       wizard = await EditWizard.launch({
         projectDir: project.dir,

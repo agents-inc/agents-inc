@@ -8,6 +8,7 @@ import {
 } from "./agent-plugin-compiler";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
+import { renderAgentMd } from "../__tests__/content-generators";
 
 describe("agent-plugin-compiler", () => {
   let tempDir: string;
@@ -26,20 +27,10 @@ describe("agent-plugin-compiler", () => {
     await cleanupTempDir(tempDir);
   });
 
-  function createAgentMd(
-    name: string,
-    description: string,
-    body = "# Agent Content",
-    extraFrontmatter = "",
-  ): string {
-    const extra = extraFrontmatter ? `\n${extraFrontmatter}` : "";
-    return `---\nname: ${name}\ndescription: ${description}${extra}\n---\n\n${body}`;
-  }
-
   describe("compileAgentPlugin", () => {
     it("should compile a single agent into a plugin", async () => {
       const agentPath = path.join(agentsDir, "web-developer.md");
-      await writeFile(agentPath, createAgentMd("web-developer", "Expert frontend developer"));
+      await writeFile(agentPath, renderAgentMd("web-developer", "Expert frontend developer"));
 
       const result = await compileAgentPlugin({
         agentPath,
@@ -56,7 +47,7 @@ describe("agent-plugin-compiler", () => {
 
     it("should create correct directory structure", async () => {
       const agentPath = path.join(agentsDir, "cli-developer.md");
-      await writeFile(agentPath, createAgentMd("cli-developer", "CLI development agent"));
+      await writeFile(agentPath, renderAgentMd("cli-developer", "CLI development agent"));
 
       const result = await compileAgentPlugin({
         agentPath,
@@ -76,7 +67,7 @@ describe("agent-plugin-compiler", () => {
 
     it("should generate valid plugin.json with agents path", async () => {
       const agentPath = path.join(agentsDir, "api-developer.md");
-      await writeFile(agentPath, createAgentMd("api-developer", "Backend API developer"));
+      await writeFile(agentPath, renderAgentMd("api-developer", "Backend API developer"));
 
       const result = await compileAgentPlugin({
         agentPath,
@@ -95,7 +86,7 @@ describe("agent-plugin-compiler", () => {
 
     it("should read name and description from frontmatter", async () => {
       const agentPath = path.join(agentsDir, "my-agent.md");
-      await writeFile(agentPath, createAgentMd("custom-agent", "A custom agent for testing"));
+      await writeFile(agentPath, renderAgentMd("custom-agent", "A custom agent for testing"));
 
       const result = await compileAgentPlugin({
         agentPath,
@@ -109,7 +100,10 @@ describe("agent-plugin-compiler", () => {
     it("should copy agent .md file to agents/ subdirectory", async () => {
       const body = "# Web Developer\n\nYou are an expert frontend developer.";
       const agentPath = path.join(agentsDir, "web-dev.md");
-      await writeFile(agentPath, createAgentMd("web-dev", "Frontend developer agent", body));
+      await writeFile(
+        agentPath,
+        renderAgentMd("web-dev", "Frontend developer agent", { body: body }),
+      );
 
       const result = await compileAgentPlugin({
         agentPath,
@@ -145,7 +139,10 @@ describe("agent-plugin-compiler", () => {
 
     it("should bump version on content change", async () => {
       const agentPath = path.join(agentsDir, "versioned.md");
-      await writeFile(agentPath, createAgentMd("versioned", "Versioned agent", "# Version 1"));
+      await writeFile(
+        agentPath,
+        renderAgentMd("versioned", "Versioned agent", { body: "# Version 1" }),
+      );
 
       // First compile
       const result1 = await compileAgentPlugin({ agentPath, outputDir });
@@ -158,7 +155,7 @@ describe("agent-plugin-compiler", () => {
       // Modify content
       await writeFile(
         agentPath,
-        createAgentMd("versioned", "Versioned agent", "# Version 2 - updated"),
+        renderAgentMd("versioned", "Versioned agent", { body: "# Version 2 - updated" }),
       );
 
       // Recompile with changes - version should bump
@@ -171,15 +168,15 @@ describe("agent-plugin-compiler", () => {
     it("should compile all agent .md files from directory", async () => {
       await writeFile(
         path.join(agentsDir, "web-developer.md"),
-        createAgentMd("web-developer", "Frontend developer"),
+        renderAgentMd("web-developer", "Frontend developer"),
       );
       await writeFile(
         path.join(agentsDir, "api-developer.md"),
-        createAgentMd("api-developer", "Backend developer"),
+        renderAgentMd("api-developer", "Backend developer"),
       );
       await writeFile(
         path.join(agentsDir, "cli-developer.md"),
-        createAgentMd("cli-developer", "CLI developer"),
+        renderAgentMd("cli-developer", "CLI developer"),
       );
 
       const results = await compileAllAgentPlugins(agentsDir, outputDir);
@@ -197,7 +194,7 @@ describe("agent-plugin-compiler", () => {
     it("should warn and skip agents with missing frontmatter", async () => {
       await writeFile(
         path.join(agentsDir, "good-agent.md"),
-        createAgentMd("good-agent", "A good agent"),
+        renderAgentMd("good-agent", "A good agent"),
       );
       await writeFile(path.join(agentsDir, "bad-agent.md"), "# No frontmatter here");
 
@@ -214,8 +211,8 @@ describe("agent-plugin-compiler", () => {
     });
 
     it("should create plugin directories for each agent", async () => {
-      await writeFile(path.join(agentsDir, "alpha.md"), createAgentMd("alpha", "Alpha agent"));
-      await writeFile(path.join(agentsDir, "beta.md"), createAgentMd("beta", "Beta agent"));
+      await writeFile(path.join(agentsDir, "alpha.md"), renderAgentMd("alpha", "Alpha agent"));
+      await writeFile(path.join(agentsDir, "beta.md"), renderAgentMd("beta", "Beta agent"));
 
       const results = await compileAllAgentPlugins(agentsDir, outputDir);
 
@@ -236,7 +233,7 @@ describe("agent-plugin-compiler", () => {
     it("should log success messages for compiled agents", async () => {
       await writeFile(
         path.join(agentsDir, "web-developer.md"),
-        createAgentMd("web-developer", "Frontend developer"),
+        renderAgentMd("web-developer", "Frontend developer"),
       );
 
       const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});

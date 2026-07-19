@@ -261,33 +261,30 @@ This skill has invalid YAML frontmatter.
       const projectDir = project.dir;
       const agentsDir = agentsPath(project.dir);
 
+      const readAgentContents = async (): Promise<Record<string, string>> => {
+        const files = await listFiles(agentsDir);
+        return Object.fromEntries(
+          await Promise.all(
+            files.map(async (file) => [file, await readTestFile(path.join(agentsDir, file))]),
+          ),
+        );
+      };
+
       // First compile
       const firstResult = await CLI.run(["compile"], { dir: projectDir });
       expect(firstResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // Read all compiled agent files after first compile
-      const firstFiles = await listFiles(agentsDir);
-      const firstContents: Record<string, string> = {};
-      for (const file of firstFiles) {
-        firstContents[file] = await readTestFile(path.join(agentsDir, file));
-      }
+      const firstContents = await readAgentContents();
 
       // Second compile
       const secondResult = await CLI.run(["compile"], { dir: projectDir });
       expect(secondResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // Read all compiled agent files after second compile
-      const secondFiles = await listFiles(agentsDir);
-      const secondContents: Record<string, string> = {};
-      for (const file of secondFiles) {
-        secondContents[file] = await readTestFile(path.join(agentsDir, file));
-      }
+      const secondContents = await readAgentContents();
 
       // Same set of files
-      expect(secondFiles.sort()).toStrictEqual(firstFiles.sort());
+      expect(Object.keys(secondContents).sort()).toStrictEqual(Object.keys(firstContents).sort());
 
       // Identical content for each file
-      for (const file of firstFiles) {
+      for (const file of Object.keys(firstContents)) {
         expect(secondContents[file]).toBe(firstContents[file]);
       }
     });

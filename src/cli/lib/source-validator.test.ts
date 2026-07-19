@@ -230,9 +230,14 @@ describe("source-validator", () => {
 
   describe("validateSource", () => {
     let tempDir: string;
+    let sourceDir: string;
+    let skillsDir: string;
 
     beforeEach(async () => {
       tempDir = await createTempDir("source-validator-");
+      sourceDir = path.join(tempDir, "source");
+      skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
+      await mkdir(skillsDir, { recursive: true });
     });
 
     afterEach(async () => {
@@ -240,10 +245,6 @@ describe("source-validator", () => {
     });
 
     it("should handle source with zero skills gracefully", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-      await mkdir(skillsDir, { recursive: true });
-
       const result = await validateSource(sourceDir);
 
       expect(result.skillCount).toBe(0);
@@ -252,8 +253,6 @@ describe("source-validator", () => {
     });
 
     it("should report specific error for malformed YAML in metadata", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
       const skillDir = path.join(skillsDir, "web", "framework", "react");
       await mkdir(skillDir, { recursive: true });
 
@@ -277,10 +276,6 @@ describe("source-validator", () => {
     });
 
     it("should not crash when source has skills dir but no agent directories", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-      await mkdir(skillsDir, { recursive: true });
-
       // Source with skills dir but no agents dir — should not crash
       const result = await validateSource(sourceDir);
 
@@ -297,10 +292,6 @@ describe("source-validator", () => {
 
     describe("stack config validation", () => {
       it("should report zero issues when src/stacks/ is absent", async () => {
-        const sourceDir = path.join(tempDir, "source");
-        const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-        await mkdir(skillsDir, { recursive: true });
-
         const result = await validateSource(sourceDir);
 
         const stackIssues = result.issues.filter((i) => i.file.startsWith(DIRS.stacks));
@@ -308,10 +299,6 @@ describe("source-validator", () => {
       });
 
       it("should report zero issues for valid stack config.yaml and embedded-skill metadata", async () => {
-        const sourceDir = path.join(tempDir, "source");
-        const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-        await mkdir(skillsDir, { recursive: true });
-
         const stackDir = path.join(sourceDir, DIRS.stacks, "test-stack");
         await mkdir(stackDir, { recursive: true });
         await writeFile(
@@ -333,10 +320,6 @@ describe("source-validator", () => {
       });
 
       it("should report error when stack config.yaml has schema violation", async () => {
-        const sourceDir = path.join(tempDir, "source");
-        const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-        await mkdir(skillsDir, { recursive: true });
-
         const stackDir = path.join(sourceDir, DIRS.stacks, "test-stack");
         await mkdir(stackDir, { recursive: true });
         const invalidStackConfig = { ...VALID_STACK_CONFIG_FILE, version: undefined };
@@ -356,10 +339,6 @@ describe("source-validator", () => {
       });
 
       it("should report error when embedded-skill metadata.yaml has schema violation", async () => {
-        const sourceDir = path.join(tempDir, "source");
-        const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-        await mkdir(skillsDir, { recursive: true });
-
         const stackDir = path.join(sourceDir, DIRS.stacks, "test-stack");
         await mkdir(stackDir, { recursive: true });
         await writeFile(
@@ -394,10 +373,6 @@ describe("source-validator", () => {
 
     describe("source-side agent metadata validation", () => {
       it("should report zero issues when src/agents/ is absent", async () => {
-        const sourceDir = path.join(tempDir, "source");
-        const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-        await mkdir(skillsDir, { recursive: true });
-
         const result = await validateSource(sourceDir);
 
         const agentIssues = result.issues.filter((i) => i.file.startsWith(DIRS.agents));
@@ -405,10 +380,6 @@ describe("source-validator", () => {
       });
 
       it("should report zero issues for valid agent metadata.yaml", async () => {
-        const sourceDir = path.join(tempDir, "source");
-        const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-        await mkdir(skillsDir, { recursive: true });
-
         const agentDir = path.join(sourceDir, DIRS.agents, "developer", "web-developer");
         await mkdir(agentDir, { recursive: true });
         await writeFile(
@@ -423,10 +394,6 @@ describe("source-validator", () => {
       });
 
       it("should report error when agent metadata.yaml has schema violation", async () => {
-        const sourceDir = path.join(tempDir, "source");
-        const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-        await mkdir(skillsDir, { recursive: true });
-
         const agentDir = path.join(sourceDir, DIRS.agents, "developer", "web-developer");
         await mkdir(agentDir, { recursive: true });
         // Missing required 'tools' field (schema requires min(1))
@@ -458,10 +425,6 @@ describe("source-validator", () => {
 
     describe("TS config file validation", () => {
       it("should report zero issues when config/ directory is absent", async () => {
-        const sourceDir = path.join(tempDir, "source");
-        const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-        await mkdir(skillsDir, { recursive: true });
-
         const result = await validateSource(sourceDir);
 
         const configFilePaths = [SKILL_CATEGORIES_PATH, SKILL_RULES_PATH, STACKS_FILE_PATH];
@@ -474,10 +437,6 @@ describe("source-validator", () => {
       });
 
       it("should report zero issues for valid config/skill-categories.ts, skill-rules.ts, stacks.ts", async () => {
-        const sourceDir = path.join(tempDir, "source");
-        const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-        await mkdir(skillsDir, { recursive: true });
-
         const configDir = path.join(sourceDir, "config");
         await mkdir(configDir, { recursive: true });
         await writeFile(
@@ -501,10 +460,6 @@ describe("source-validator", () => {
       });
 
       it("should report error when config/skill-categories.ts default export fails schema", async () => {
-        const sourceDir = path.join(tempDir, "source");
-        const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-        await mkdir(skillsDir, { recursive: true });
-
         const configDir = path.join(sourceDir, "config");
         await mkdir(configDir, { recursive: true });
         // Missing required 'version' field
@@ -522,10 +477,6 @@ describe("source-validator", () => {
       });
 
       it("should report error when config/stacks.ts has no default export", async () => {
-        const sourceDir = path.join(tempDir, "source");
-        const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
-        await mkdir(skillsDir, { recursive: true });
-
         const configDir = path.join(sourceDir, "config");
         await mkdir(configDir, { recursive: true });
         await writeFile(path.join(sourceDir, STACKS_FILE_PATH), "export const stacks = {};\n");

@@ -29,10 +29,6 @@ import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
  *
  */
 
-// =====================================================================
-// Test Suite -- Display and Locking
-// =====================================================================
-
 describe("dual-scope edit lifecycle -- display and locking", () => {
   let sourceDir: string;
   let sourceTempDir: string;
@@ -60,7 +56,7 @@ describe("dual-scope edit lifecycle -- display and locking", () => {
 
   it(
     "Edit shows global items as locked, project items as editable",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const env = await createTestEnvironment();
       tempDir = env.tempDir;

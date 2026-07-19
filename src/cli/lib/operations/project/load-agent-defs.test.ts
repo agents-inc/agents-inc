@@ -6,7 +6,7 @@ vi.mock("../../agents/index.js", () => ({
 }));
 
 vi.mock("../../loading/index.js", () => ({
-  loadAllAgents: vi.fn(),
+  loadMergedAgents: vi.fn(),
 }));
 
 vi.mock("../../../consts.js", async (importOriginal) => {
@@ -19,10 +19,10 @@ vi.mock("../../../consts.js", async (importOriginal) => {
 
 import { loadAgentDefs } from "./load-agent-defs";
 import { getAgentDefinitions } from "../../agents/index.js";
-import { loadAllAgents } from "../../loading/index.js";
+import { loadMergedAgents } from "../../loading/index.js";
 
 const mockGetAgentDefinitions = vi.mocked(getAgentDefinitions);
-const mockLoadAllAgents = vi.mocked(loadAllAgents);
+const mockLoadMergedAgents = vi.mocked(loadMergedAgents);
 
 const MOCK_AGENT_SOURCE_PATHS: AgentSourcePaths = {
   agentsDir: "/tmp/source/src/agents",
@@ -60,23 +60,18 @@ describe("loadAgentDefs", () => {
     mockGetAgentDefinitions.mockResolvedValue(MOCK_AGENT_SOURCE_PATHS);
   });
 
-  it("should merge CLI agents with source agents (source overrides)", async () => {
-    const cliAgents: Partial<Record<AgentName, AgentDefinition>> = {
-      "web-developer": CLI_AGENT,
+  it("should return merged agents from loadMergedAgents(sourcePath)", async () => {
+    const mergedAgents: Partial<Record<AgentName, AgentDefinition>> = {
+      "web-developer": SOURCE_AGENT,
       "api-reviewer": CLI_ONLY_AGENT,
     };
-    const sourceAgents: Partial<Record<AgentName, AgentDefinition>> = {
-      "web-developer": SOURCE_AGENT,
-    };
 
-    mockLoadAllAgents.mockResolvedValueOnce(cliAgents as Record<AgentName, AgentDefinition>);
-    mockLoadAllAgents.mockResolvedValueOnce(sourceAgents as Record<AgentName, AgentDefinition>);
+    mockLoadMergedAgents.mockResolvedValue(mergedAgents as Record<AgentName, AgentDefinition>);
 
     const result = await loadAgentDefs();
 
-    expect(mockLoadAllAgents).toHaveBeenCalledTimes(2);
-    expect(mockLoadAllAgents).toHaveBeenNthCalledWith(1, "/mock/cli/root");
-    expect(mockLoadAllAgents).toHaveBeenNthCalledWith(2, "/tmp/source");
+    expect(mockLoadMergedAgents).toHaveBeenCalledTimes(1);
+    expect(mockLoadMergedAgents).toHaveBeenCalledWith("/tmp/source");
 
     // Source overrides CLI for "web-developer"
     expect(result.agents["web-developer"]).toStrictEqual(SOURCE_AGENT);
@@ -90,7 +85,7 @@ describe("loadAgentDefs", () => {
   });
 
   it("should return sourcePath from agentSourcePaths", async () => {
-    mockLoadAllAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
+    mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
 
     const result = await loadAgentDefs();
 
@@ -98,7 +93,7 @@ describe("loadAgentDefs", () => {
   });
 
   it("should return complete agentSourcePaths", async () => {
-    mockLoadAllAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
+    mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
 
     const result = await loadAgentDefs();
 

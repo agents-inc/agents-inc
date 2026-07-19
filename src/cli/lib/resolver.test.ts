@@ -50,18 +50,12 @@ import type {
   StackAgentConfig,
 } from "../types";
 
-// ---------------------------------------------------------------------------
-// Shared SkillAssignment shorthand
-// ---------------------------------------------------------------------------
-
 /** Shorthand: creates a SkillAssignment from an id and optional preloaded flag */
 function sa(id: SkillId, preloaded = false): SkillAssignment {
   return { id, preloaded };
 }
 
-// ---------------------------------------------------------------------------
 // Skill definitions (single-consumer — only used in this test file)
-// ---------------------------------------------------------------------------
 
 const REACT_DEFINITION = createMockSkillDefinition("web-framework-react", {
   path: "skills/web/framework/react/",
@@ -88,9 +82,7 @@ const DRIZZLE_DEFINITION = createMockSkillDefinition("api-database-drizzle", {
   description: "Drizzle ORM",
 });
 
-// ---------------------------------------------------------------------------
 // Composite skill maps (test-specific groupings of shared definitions)
-// ---------------------------------------------------------------------------
 
 const RESOLVE_SKILL_MAP: Record<string, SkillDefinition> = {
   "web-framework-react": REACT_DEFINITION,
@@ -108,10 +100,6 @@ const RESOLVE_AGENTS_SKILL_MAP: Record<string, SkillDefinition> = {
   "api-framework-hono": HONO_DEFINITION,
   "api-database-drizzle": DRIZZLE_DEFINITION,
 };
-
-// ---------------------------------------------------------------------------
-// resolveClaudeMd
-// ---------------------------------------------------------------------------
 
 describe("resolveClaudeMd", () => {
   let tempDir: string;
@@ -146,10 +134,6 @@ describe("resolveClaudeMd", () => {
     await expect(resolveClaudeMd(tempDir, "missing-stack")).rejects.toThrow(expectedPath);
   });
 });
-
-// ---------------------------------------------------------------------------
-// buildSkillRefsFromConfig
-// ---------------------------------------------------------------------------
 
 describe("buildSkillRefsFromConfig", () => {
   it("should build skill references from agent stack config", () => {
@@ -232,10 +216,6 @@ describe("buildSkillRefsFromConfig", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// resolveSkillReference
-// ---------------------------------------------------------------------------
-
 describe("resolveSkillReference", () => {
   it("should resolve a skill reference to a full Skill object", () => {
     const ref: SkillReference = {
@@ -313,10 +293,6 @@ describe("resolveSkillReference", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// resolveSkillReferences
-// ---------------------------------------------------------------------------
-
 describe("resolveSkillReferences", () => {
   it("should resolve multiple skill references with full skill shape", () => {
     const refs: SkillReference[] = [
@@ -365,10 +341,6 @@ describe("resolveSkillReferences", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// convertStackToCompileConfig
-// ---------------------------------------------------------------------------
-
 describe("convertStackToCompileConfig", () => {
   it("should convert a project config to a compile config", () => {
     const config = buildProjectConfig({
@@ -415,10 +387,6 @@ describe("convertStackToCompileConfig", () => {
     expect(result.description).toBe("");
   });
 });
-
-// ---------------------------------------------------------------------------
-// Preloaded vs dynamic skills in compiled agent output
-// ---------------------------------------------------------------------------
 
 describe("preloaded vs dynamic skills in compiled agent output", () => {
   let tempDir: string;
@@ -702,10 +670,6 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
   });
 });
 
-// ---------------------------------------------------------------------------
-// resolveAgentSkillsFromStack
-// ---------------------------------------------------------------------------
-
 describe("resolveAgentSkillsFromStack", () => {
   it("should return skill references from stack agent config", () => {
     const result = resolveAgentSkillsFromStack("web-developer", WEB_REACT_AND_SCSS_STACK);
@@ -744,10 +708,6 @@ describe("resolveAgentSkillsFromStack", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// resolveAgentSkillRefs
-// ---------------------------------------------------------------------------
-
 describe("resolveAgentSkillRefs", () => {
   it("should return skills from stack when stack provided", async () => {
     const result = await resolveAgentSkillRefs("web-developer", {}, WEB_REACT_ONLY_STACK);
@@ -780,10 +740,6 @@ describe("resolveAgentSkillRefs", () => {
     expect(result).toStrictEqual([]);
   });
 });
-
-// ---------------------------------------------------------------------------
-// resolveAgents with stack
-// ---------------------------------------------------------------------------
 
 describe("resolveAgents with stack", () => {
   describe("when resolving agents from fullstack configuration", () => {

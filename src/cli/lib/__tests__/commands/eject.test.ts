@@ -466,7 +466,7 @@ async function runEjectCopy(dirs: TestDirs, outputDir: string, localSkillIds?: S
   const skillIds = localSkillIds
     ? typedKeys<SkillId>(matrix.skills).filter((id) => !matrix.skills[id]?.local)
     : typedKeys<SkillId>(matrix.skills);
-  return copySkillsToLocalFlattened(skillIds, outputDir, matrix, sourceResult);
+  return copySkillsToLocalFlattened(skillIds, outputDir, sourceResult);
 }
 
 // These tests exercise the eject skill-copying pipeline directly by calling

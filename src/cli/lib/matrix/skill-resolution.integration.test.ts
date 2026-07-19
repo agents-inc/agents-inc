@@ -16,7 +16,6 @@ import {
   getIncompatibleReason,
   hasUnmetRequirements,
   getUnmetRequirementsReason,
-  resolveAlias,
 } from ".";
 import {
   createMockSkill,
@@ -35,7 +34,7 @@ import {
 } from "../__tests__/mock-data/mock-skills.js";
 import { buildMultiSourceMatrix } from "../__tests__/mock-data/mock-matrices.js";
 import type { MergedSkillsMatrix, ProjectConfig, SkillId, Category } from "../../types";
-import { initializeMatrix } from "./matrix-provider";
+import { initializeMatrix, getSkillById } from "./matrix-provider";
 
 describe("Integration: Multi-Source Skill Resolution", () => {
   describe("Scenario 1: Skills from 3 sources resolve into unified matrix", () => {
@@ -180,15 +179,15 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       // Select a skill that doesn't exist in any source
       const selections: SkillId[] = ["web-framework-react", "web-nonexistent-skill" as SkillId];
 
-      // resolveAlias throws for unknown skill IDs — invalid input is a bug
-      expect(() => validateSelection(selections)).toThrow("Unknown skill ID");
+      // getSkillById throws for unknown skill IDs — invalid input is a bug
+      expect(() => validateSelection(selections)).toThrow("Skill not found");
     });
 
-    it("should throw for unknown skill ID through alias lookup", () => {
+    it("should throw for unknown skill ID lookup", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);
 
-      expect(() => resolveAlias("web-nonexistent-skill" as SkillId)).toThrow("Unknown skill ID");
+      expect(() => getSkillById("web-nonexistent-skill" as SkillId)).toThrow("Skill not found");
     });
 
     it("should not include missing skill in getAvailableSkills for any category", () => {
@@ -557,7 +556,7 @@ describe("Integration: Skill ID Resolution in Multi-Source Context", () => {
     const matrix = buildMultiSourceMatrix();
     initializeMatrix(matrix);
 
-    const resolved = resolveAlias("web-framework-react");
+    const resolved = getSkillById("web-framework-react").id;
     expect(resolved).toBe("web-framework-react");
 
     // Resolved skill should have multi-source metadata

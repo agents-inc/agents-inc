@@ -8,6 +8,7 @@ import {
   createTempDir,
   fileExists,
   readTestFile,
+  renderAgentMd,
 } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
 
@@ -40,12 +41,6 @@ import { CLI } from "../fixtures/cli.js";
 const AGENT_NAMES = ["web-developer", "api-developer"] as const;
 const EXPECTED_AGENT_COUNT = 2;
 
-/** Creates a minimal agent .md file with valid YAML frontmatter. */
-function createAgentMd(name: string, description: string, body?: string): string {
-  const content = body ?? `# ${name}\n\nYou are a ${description}.`;
-  return `---\nname: ${name}\ndescription: ${description}\n---\n\n${content}`;
-}
-
 describe("build agent plugins", () => {
   let tempDir: string;
   let agentsDir: string;
@@ -64,7 +59,7 @@ describe("build agent plugins", () => {
     for (const agentName of AGENT_NAMES) {
       await writeFile(
         path.join(agentsDir, `${agentName}.md`),
-        createAgentMd(agentName, `E2E test agent for ${agentName}`),
+        renderAgentMd(agentName, `E2E test agent for ${agentName}`),
       );
     }
   }, TIMEOUTS.INSTALL);
@@ -200,7 +195,7 @@ describe("build agent plugins", () => {
       // Valid agent
       await writeFile(
         path.join(edgeAgentsDir, "good-agent.md"),
-        createAgentMd("good-agent", "A valid agent"),
+        renderAgentMd("good-agent", "A valid agent"),
       );
 
       // Invalid agent (no frontmatter)
@@ -248,7 +243,7 @@ describe("build agent plugins", () => {
 
       await writeFile(
         path.join(customAgentsDir, "test-agent.md"),
-        createAgentMd("test-agent", "Agent for output dir test"),
+        renderAgentMd("test-agent", "Agent for output dir test"),
       );
 
       const result = await CLI.run(

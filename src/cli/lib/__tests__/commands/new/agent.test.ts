@@ -10,6 +10,7 @@ import { buildAgentPrompt } from "../../../../commands/new/agent";
 import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../../consts";
 import { renderConfigTs } from "../../content-generators";
 import { EXIT_CODES } from "../../../exit-codes";
+import type { AgentName } from "../../../../types";
 
 describe("buildAgentPrompt", () => {
   it("should include agent name in prompt", () => {
@@ -162,6 +163,31 @@ describe.skip("new:agent command", () => {
   });
 });
 
+/**
+ * Creates a minimal installation for list-count tests: empty agents/skills
+ * dirs plus a config.ts registering the given agents. Returns the agents dir.
+ */
+async function setupProjectWithAgents(
+  projectDir: string,
+  agentNames: AgentName[],
+): Promise<string> {
+  const claudeDir = path.join(projectDir, CLAUDE_DIR);
+  const agentsDir = path.join(claudeDir, "agents");
+  await mkdir(agentsDir, { recursive: true });
+  await mkdir(path.join(claudeDir, "skills"), { recursive: true });
+
+  const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
+  await mkdir(claudeSrcDir, { recursive: true });
+  await writeFile(
+    path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
+    renderConfigTs({
+      name: "test-project",
+      agents: buildAgentConfigs(agentNames),
+    }),
+  );
+  return agentsDir;
+}
+
 describe("agent visibility in list command", () => {
   let tempDir: string;
   let projectDir: string;
@@ -188,23 +214,7 @@ describe("agent visibility in list command", () => {
 
   it("should count agent .md files in .claude/agents/ directory", async () => {
     // Set up a minimal installation with agents
-    const claudeDir = path.join(projectDir, CLAUDE_DIR);
-    const agentsDir = path.join(claudeDir, "agents");
-    const skillsDir = path.join(claudeDir, "skills");
-
-    await mkdir(agentsDir, { recursive: true });
-    await mkdir(skillsDir, { recursive: true });
-
-    // Write config
-    const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-    await mkdir(claudeSrcDir, { recursive: true });
-    await writeFile(
-      path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs({
-        name: "test-project",
-        agents: buildAgentConfigs(["web-developer"]),
-      }),
-    );
+    const agentsDir = await setupProjectWithAgents(projectDir, ["web-developer"]);
 
     // Write agent files (simulating what the new:agent command would produce)
     await writeFile(
@@ -220,22 +230,7 @@ describe("agent visibility in list command", () => {
 
   it("should count multiple agents after additional agent files are created", async () => {
     // Set up installation
-    const claudeDir = path.join(projectDir, CLAUDE_DIR);
-    const agentsDir = path.join(claudeDir, "agents");
-    const skillsDir = path.join(claudeDir, "skills");
-
-    await mkdir(agentsDir, { recursive: true });
-    await mkdir(skillsDir, { recursive: true });
-
-    const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-    await mkdir(claudeSrcDir, { recursive: true });
-    await writeFile(
-      path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs({
-        name: "test-project",
-        agents: buildAgentConfigs(["web-developer", "api-developer"]),
-      }),
-    );
+    const agentsDir = await setupProjectWithAgents(projectDir, ["web-developer", "api-developer"]);
 
     // Write two agent files
     await writeFile(
@@ -252,22 +247,7 @@ describe("agent visibility in list command", () => {
 
   it("should count a custom agent file as an agent in list output", async () => {
     // Set up installation with a custom agent (simulating new:agent output)
-    const claudeDir = path.join(projectDir, CLAUDE_DIR);
-    const agentsDir = path.join(claudeDir, "agents");
-    const skillsDir = path.join(claudeDir, "skills");
-
-    await mkdir(agentsDir, { recursive: true });
-    await mkdir(skillsDir, { recursive: true });
-
-    const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-    await mkdir(claudeSrcDir, { recursive: true });
-    await writeFile(
-      path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs({
-        name: "test-project",
-        agents: buildAgentConfigs(["web-developer"]),
-      }),
-    );
+    const agentsDir = await setupProjectWithAgents(projectDir, ["web-developer"]);
 
     // Write existing agent
     await writeFile(
@@ -291,22 +271,7 @@ describe("agent visibility in list command", () => {
   });
 
   it("should not count non-.md files in agents directory", async () => {
-    const claudeDir = path.join(projectDir, CLAUDE_DIR);
-    const agentsDir = path.join(claudeDir, "agents");
-    const skillsDir = path.join(claudeDir, "skills");
-
-    await mkdir(agentsDir, { recursive: true });
-    await mkdir(skillsDir, { recursive: true });
-
-    const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-    await mkdir(claudeSrcDir, { recursive: true });
-    await writeFile(
-      path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs({
-        name: "test-project",
-        agents: buildAgentConfigs(["web-developer"]),
-      }),
-    );
+    const agentsDir = await setupProjectWithAgents(projectDir, ["web-developer"]);
 
     // Write one real agent and one non-.md file
     await writeFile(

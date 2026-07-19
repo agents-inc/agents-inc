@@ -137,25 +137,11 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
         // reference — only those unresolved raw slugs appear in the warning messages.
         //
         // Message format: "Skill 'X' has unresolved reference 'Y' in 'field'"
-        // X = the skill that has the reference (canonical ID, may be an E2E skill)
-        // Y = the unresolved reference (the slug that couldn't be resolved)
-        // We check that Y (the unresolved part) is never an E2E skill's resolved ID.
-        const unresolvedRefPattern = /has unresolved reference '([^']+)'/;
-        const unresolvedLines = output
-          .split("\n")
-          .filter((line) => line.includes("unresolved reference"));
-
-        const unresolvedRefs = unresolvedLines
-          .map((line) => unresolvedRefPattern.exec(line)?.[1])
-          .filter(Boolean);
-
-        // None of the E2E source canonical IDs should appear as unresolved references
-        for (const ref of unresolvedRefs) {
-          expect(ref).not.toBe("web-framework-react");
-          expect(ref).not.toBe("web-testing-vitest");
-          expect(ref).not.toBe("web-state-zustand");
-          expect(ref).not.toBe("api-framework-hono");
-        }
+        // The quoted reference position must never hold an E2E skill's resolved ID.
+        expect(output).not.toContain("unresolved reference 'web-framework-react'");
+        expect(output).not.toContain("unresolved reference 'web-testing-vitest'");
+        expect(output).not.toContain("unresolved reference 'web-state-zustand'");
+        expect(output).not.toContain("unresolved reference 'api-framework-hono'");
       },
     );
   });

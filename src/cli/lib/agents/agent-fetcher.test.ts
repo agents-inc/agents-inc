@@ -43,6 +43,26 @@ import { loadProjectSourceConfig } from "../configuration";
 const mockFetchFromSource = vi.mocked(fetchFromSource);
 const mockLoadProjectSourceConfig = vi.mocked(loadProjectSourceConfig);
 
+const REMOTE_SOURCE = "github:my-org/agents";
+
+/**
+ * Creates a fetched-source dir containing `agentsSubdir` and points the
+ * fetchFromSource mock at it. Returns the fetched dir.
+ */
+async function mockFetchedRemote(
+  tempDir: string,
+  agentsSubdir = "src/agents/_templates",
+): Promise<string> {
+  const fetchedDir = path.join(tempDir, "fetched");
+  await mkdir(path.join(fetchedDir, agentsSubdir), { recursive: true });
+  mockFetchFromSource.mockResolvedValue({
+    path: fetchedDir,
+    fromCache: false,
+    source: REMOTE_SOURCE,
+  });
+  return fetchedDir;
+}
+
 async function createAgentDirStructure(
   root: string,
   options: { agents?: boolean; templates?: boolean } = {},
@@ -125,18 +145,9 @@ describe("agent-fetcher", () => {
   });
 
   describe("fetchAgentDefinitionsFromRemote", () => {
-    const REMOTE_SOURCE = "github:my-org/agents";
-
     it("should fetch agent definitions from remote source", async () => {
       // Create a temp dir simulating the fetched remote content
-      const fetchedDir = path.join(tempDir, "fetched");
-      await mkdir(path.join(fetchedDir, "src/agents/_templates"), { recursive: true });
-
-      mockFetchFromSource.mockResolvedValue({
-        path: fetchedDir,
-        fromCache: false,
-        source: REMOTE_SOURCE,
-      });
+      const fetchedDir = await mockFetchedRemote(tempDir);
 
       const result = await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE);
 
@@ -152,14 +163,7 @@ describe("agent-fetcher", () => {
     });
 
     it("should pass forceRefresh option to fetchFromSource", async () => {
-      const fetchedDir = path.join(tempDir, "fetched");
-      await mkdir(path.join(fetchedDir, "src/agents/_templates"), { recursive: true });
-
-      mockFetchFromSource.mockResolvedValue({
-        path: fetchedDir,
-        fromCache: false,
-        source: REMOTE_SOURCE,
-      });
+      const fetchedDir = await mockFetchedRemote(tempDir);
 
       await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE, {
         forceRefresh: true,
@@ -198,14 +202,7 @@ describe("agent-fetcher", () => {
     });
 
     it("should use custom agentsDir when provided", async () => {
-      const fetchedDir = path.join(tempDir, "fetched");
-      await mkdir(path.join(fetchedDir, "lib/agents/_templates"), { recursive: true });
-
-      mockFetchFromSource.mockResolvedValue({
-        path: fetchedDir,
-        fromCache: false,
-        source: REMOTE_SOURCE,
-      });
+      const fetchedDir = await mockFetchedRemote(tempDir, "lib/agents/_templates");
 
       const result = await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE, {
         agentsDir: "lib/agents",
@@ -216,14 +213,7 @@ describe("agent-fetcher", () => {
     });
 
     it("should use default DIRS.agents when agentsDir is not provided", async () => {
-      const fetchedDir = path.join(tempDir, "fetched");
-      await mkdir(path.join(fetchedDir, "src/agents/_templates"), { recursive: true });
-
-      mockFetchFromSource.mockResolvedValue({
-        path: fetchedDir,
-        fromCache: false,
-        source: REMOTE_SOURCE,
-      });
+      const fetchedDir = await mockFetchedRemote(tempDir);
 
       const result = await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE);
 
@@ -354,15 +344,7 @@ describe("agent-fetcher", () => {
 
   describe("getAgentDefinitions", () => {
     it("should delegate to fetchAgentDefinitionsFromRemote when remoteSource is provided", async () => {
-      const REMOTE_SOURCE = "github:my-org/agents";
-      const fetchedDir = path.join(tempDir, "fetched");
-      await mkdir(path.join(fetchedDir, "src/agents/_templates"), { recursive: true });
-
-      mockFetchFromSource.mockResolvedValue({
-        path: fetchedDir,
-        fromCache: false,
-        source: REMOTE_SOURCE,
-      });
+      const fetchedDir = await mockFetchedRemote(tempDir);
 
       const result = await getAgentDefinitions(REMOTE_SOURCE);
 
@@ -392,15 +374,7 @@ describe("agent-fetcher", () => {
     });
 
     it("should pass options through to fetchAgentDefinitionsFromRemote", async () => {
-      const REMOTE_SOURCE = "github:my-org/agents";
-      const fetchedDir = path.join(tempDir, "fetched");
-      await mkdir(path.join(fetchedDir, "src/agents/_templates"), { recursive: true });
-
-      mockFetchFromSource.mockResolvedValue({
-        path: fetchedDir,
-        fromCache: false,
-        source: REMOTE_SOURCE,
-      });
+      const fetchedDir = await mockFetchedRemote(tempDir);
 
       await getAgentDefinitions(REMOTE_SOURCE, { forceRefresh: true });
 

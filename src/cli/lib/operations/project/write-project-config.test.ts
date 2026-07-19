@@ -11,8 +11,6 @@ import {
 import { buildSkillConfigs } from "../../__tests__/helpers/wizard-simulation";
 import { EMPTY_MATRIX } from "../../__tests__/mock-data/mock-matrices";
 
-// --- Module-level mocks ---
-
 // Use vi.hoisted so mock fn is available when vi.mock factory runs (hoisted to top)
 const { mockRealpathSync } = vi.hoisted(() => ({
   mockRealpathSync: vi.fn((p: string) => p),
@@ -29,14 +27,22 @@ vi.mock("fs", async (importOriginal) => {
   };
 });
 
-vi.mock("../../installation/index.js", () => ({
-  buildAndMergeConfig: vi.fn(),
-  writeScopedConfigs: vi.fn(),
-  resolveInstallPaths: vi.fn(),
-}));
+vi.mock("../../installation/index.js", async () => {
+  // Real isHomeDirectory so the fs.realpathSync mock above keeps driving the
+  // project-vs-home branch; the heavy installer exports stay mocked.
+  const { isHomeDirectory } = await vi.importActual<
+    typeof import("../../installation/is-home-directory.js")
+  >("../../installation/is-home-directory.js");
+  return {
+    buildAndMergeConfig: vi.fn(),
+    writeScopedConfigs: vi.fn(),
+    resolveInstallPaths: vi.fn(),
+    isHomeDirectory,
+  };
+});
 
 vi.mock("../../loading/index.js", () => ({
-  loadAllAgents: vi.fn(),
+  loadMergedAgents: vi.fn(),
 }));
 
 vi.mock("../../configuration/config-writer.js", () => ({
@@ -47,22 +53,20 @@ vi.mock("../../../utils/fs.js", () => ({
   ensureDir: vi.fn(),
 }));
 
-// --- Imports after mocks ---
-
 import { writeProjectConfig } from "./write-project-config";
 import {
   buildAndMergeConfig,
   writeScopedConfigs,
   resolveInstallPaths,
 } from "../../installation/index.js";
-import { loadAllAgents } from "../../loading/index.js";
+import { loadMergedAgents } from "../../loading/index.js";
 import { ensureBlankGlobalConfig } from "../../configuration/config-writer.js";
 import { ensureDir } from "../../../utils/fs.js";
 
 const mockBuildAndMergeConfig = vi.mocked(buildAndMergeConfig);
 const mockWriteScopedConfigs = vi.mocked(writeScopedConfigs);
 const mockResolveInstallPaths = vi.mocked(resolveInstallPaths);
-const mockLoadAllAgents = vi.mocked(loadAllAgents);
+const mockLoadMergedAgents = vi.mocked(loadMergedAgents);
 const mockEnsureBlankGlobalConfig = vi.mocked(ensureBlankGlobalConfig);
 const mockEnsureDir = vi.mocked(ensureDir);
 
@@ -92,7 +96,7 @@ describe("write-project-config", () => {
       merged: false,
     });
 
-    mockLoadAllAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
+    mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
     mockEnsureBlankGlobalConfig.mockResolvedValue(false);
     mockWriteScopedConfigs.mockResolvedValue(undefined);
     mockEnsureDir.mockResolvedValue(undefined);
@@ -102,9 +106,7 @@ describe("write-project-config", () => {
   });
 
   it("should build, merge, and write config in project context", async () => {
-    const cliAgents = {} as Record<AgentName, AgentDefinition>;
-    const sourceAgents = {} as Record<AgentName, AgentDefinition>;
-    mockLoadAllAgents.mockResolvedValueOnce(cliAgents).mockResolvedValueOnce(sourceAgents);
+    mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
 
     const result = await writeProjectConfig({
       wizardResult,
@@ -125,7 +127,7 @@ describe("write-project-config", () => {
     expect(mockWriteScopedConfigs).toHaveBeenCalledWith(
       finalConfig,
       sourceResult.matrix,
-      { ...cliAgents, ...sourceAgents },
+      {},
       projectDir,
       configPath,
       true,
@@ -141,9 +143,7 @@ describe("write-project-config", () => {
 
   it("should skip ensureBlankGlobalConfig when installing from homedir", async () => {
     const homeDir = "/home/user";
-    const cliAgents = {} as Record<AgentName, AgentDefinition>;
-    const sourceAgents = {} as Record<AgentName, AgentDefinition>;
-    mockLoadAllAgents.mockResolvedValueOnce(cliAgents).mockResolvedValueOnce(sourceAgents);
+    mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
 
     // Both resolve to the same path -> not a project context
     mockRealpathSync.mockReturnValue(homeDir);
@@ -158,7 +158,7 @@ describe("write-project-config", () => {
     expect(mockWriteScopedConfigs).toHaveBeenCalledWith(
       finalConfig,
       sourceResult.matrix,
-      { ...cliAgents, ...sourceAgents },
+      {},
       homeDir,
       configPath,
       false,
@@ -184,7 +184,7 @@ describe("write-project-config", () => {
       agents: preloadedAgents,
     });
 
-    expect(mockLoadAllAgents).not.toHaveBeenCalled();
+    expect(mockLoadMergedAgents).not.toHaveBeenCalled();
     expect(mockWriteScopedConfigs).toHaveBeenCalledWith(
       finalConfig,
       sourceResult.matrix,
@@ -195,15 +195,13 @@ describe("write-project-config", () => {
     );
   });
 
-  it("should load agents from CLI + source when not provided", async () => {
-    const cliAgents = {
+  it("should load merged agents when not provided", async () => {
+    const mergedAgents = {
       "web-developer": createMockAgent("web-developer"),
-    } as Record<AgentName, AgentDefinition>;
-    const sourceAgents = {
       "api-developer": createMockAgent("api-developer"),
     } as Record<AgentName, AgentDefinition>;
 
-    mockLoadAllAgents.mockResolvedValueOnce(cliAgents).mockResolvedValueOnce(sourceAgents);
+    mockLoadMergedAgents.mockResolvedValue(mergedAgents);
 
     await writeProjectConfig({
       wizardResult,
@@ -211,11 +209,11 @@ describe("write-project-config", () => {
       projectDir,
     });
 
-    expect(mockLoadAllAgents).toHaveBeenCalledTimes(2);
+    expect(mockLoadMergedAgents).toHaveBeenCalledWith(sourceResult.sourcePath);
     expect(mockWriteScopedConfigs).toHaveBeenCalledWith(
       finalConfig,
       sourceResult.matrix,
-      { ...cliAgents, ...sourceAgents },
+      mergedAgents,
       projectDir,
       configPath,
       true,

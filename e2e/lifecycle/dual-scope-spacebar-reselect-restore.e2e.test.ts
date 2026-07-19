@@ -5,9 +5,13 @@ import { cleanupTempDir, ensureBinaryExists, readTestFile } from "../helpers/tes
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { createGlobalOnlyEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import {
+  createGlobalOnlyEnv,
+  readSkillEntries,
+  runEditWithFirstSkillAction,
+  type DualScopeEnv,
+} from "../fixtures/dual-scope-helpers.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
-import type { SkillConfig } from "../../src/cli/types/config.js";
 
 /**
  * D-233 — spacebar collapse of a persisted dual-scope `[P][G]` skill, and the
@@ -42,62 +46,6 @@ import type { SkillConfig } from "../../src/cli/types/config.js";
 const REACT_SKILL_ID = "web-framework-react";
 
 /** Load the project config's react entries, sorted deterministically for toStrictEqual. */
-async function readReactEntries(projectDir: string): Promise<SkillConfig[]> {
-  const loaded = await loadProjectConfigFromDir(projectDir);
-  expect(loaded, `project config.ts must exist at ${projectDir}`).not.toBeNull();
-  if (!loaded) return [];
-  return loaded.config.skills
-    .filter((sc) => sc.id === REACT_SKILL_ID)
-    .sort((a, b) => {
-      const aKey = `${a.scope}${a.excluded ? "-excluded" : ""}`;
-      const bKey = `${b.scope}${b.excluded ? "-excluded" : ""}`;
-      return aKey.localeCompare(bKey);
-    });
-}
-
-/**
- * Drive one `cc edit` session, applying the given action to the first-focused
- * skill (web-framework-react in the Web domain), then save through to completion.
- *
- *   - "scope": press `s` (G->P scope toggle)
- *   - "space": press space (toggle project-scope presence)
- */
-async function runEditWithFirstSkillAction(
-  projectDir: string,
-  fakeHome: string,
-  sourceDir: string,
-  sourceTempDir: string,
-  action: "scope" | "space",
-): Promise<void> {
-  const wizard = await EditWizard.launch({
-    projectDir,
-    source: { sourceDir, tempDir: sourceTempDir },
-    env: { HOME: fakeHome },
-    rows: 60,
-    cols: 120,
-  });
-
-  try {
-    if (action === "scope") {
-      await wizard.build.toggleScopeOnFocusedSkill();
-    } else {
-      await wizard.build.toggleFocusedSkill();
-    }
-    await wizard.build.advanceDomain();
-    // API domain: pass through.
-    await wizard.build.advanceDomain();
-    // Methodology domain -> Sources.
-    const sources = await wizard.build.advanceToSources();
-    await sources.waitForReady();
-    const agents = await sources.advance();
-    const confirm = await agents.acceptDefaults("edit");
-    const result = await confirm.confirm();
-    expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-    await result.destroy();
-  } finally {
-    await wizard.destroy();
-  }
-}
 
 /** Re-open `cc edit`, read react's scope badges, then abort without saving. */
 async function readReactBadges(
@@ -135,14 +83,14 @@ async function collapseToInheritedGlobal(
 ): Promise<void> {
   // `s` G->P: produces the persisted dual-scope pair.
   await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
-  expect(await readReactEntries(projectDir)).toStrictEqual([
+  expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
     { id: REACT_SKILL_ID, scope: "global", source: "eject", excluded: true },
     { id: REACT_SKILL_ID, scope: "project", source: "eject" },
   ]);
 
   // Spacebar: collapse dual-scope pair to a single inherited-global entry.
   await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
-  expect(await readReactEntries(projectDir)).toStrictEqual([
+  expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
     { id: REACT_SKILL_ID, scope: "global", source: "eject" },
   ]);
 }
@@ -170,7 +118,7 @@ describe("D-233 — spacebar dual-scope collapse and re-select restoration", () 
 
   it(
     "collapses a persisted [P][G] to a single inherited-global [G] on spacebar",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
@@ -185,7 +133,7 @@ describe("D-233 — spacebar dual-scope collapse and re-select restoration", () 
 
   it(
     "spacebar is a no-op on the collapsed [G] row while `s` restores it to a fresh [P][G] pair",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
@@ -201,7 +149,7 @@ describe("D-233 — spacebar dual-scope collapse and re-select restoration", () 
 
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
 
-      expect(await readReactEntries(projectDir)).toStrictEqual([
+      expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
         { id: REACT_SKILL_ID, scope: "global", source: "eject" },
       ]);
       const configAfterSpace = await readTestFile(projectConfigPath);
@@ -218,7 +166,7 @@ describe("D-233 — spacebar dual-scope collapse and re-select restoration", () 
       // pair (active project entry + global excluded tombstone).
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
-      expect(await readReactEntries(projectDir)).toStrictEqual([
+      expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
         { id: REACT_SKILL_ID, scope: "global", source: "eject", excluded: true },
         { id: REACT_SKILL_ID, scope: "project", source: "eject" },
       ]);

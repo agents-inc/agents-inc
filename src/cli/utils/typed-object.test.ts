@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { typedEntries, typedKeys } from "./typed-object";
+import { typedEntries, typedKeys, typedValues } from "./typed-object";
 
 describe("typedEntries", () => {
   it("should return entries of a Record with correct key-value pairs", () => {
@@ -114,5 +114,39 @@ describe("typedKeys", () => {
     expect(result).toStrictEqual(["b", "d"]);
     expect(result).not.toContain("a");
     expect(result).not.toContain("c");
+  });
+});
+
+describe("typedValues", () => {
+  it("should return values of a Record", () => {
+    const obj: Record<"a" | "b", number> = { a: 1, b: 2 };
+
+    const result = typedValues(obj);
+
+    expect(result).toStrictEqual([1, 2]);
+  });
+
+  it("should return only present values on a partial record", () => {
+    const obj: Partial<Record<"x" | "y" | "z", string>> = { x: "hello", z: "world" };
+
+    const result = typedValues(obj);
+
+    expect(result).toStrictEqual(["hello", "world"]);
+  });
+
+  it("should filter explicitly-undefined slots", () => {
+    const obj: Partial<Record<"a" | "b", number>> = { a: 1, b: undefined };
+
+    const result = typedValues(obj);
+
+    expect(result).toStrictEqual([1]);
+  });
+
+  it("should return an empty array for empty objects", () => {
+    const obj: Partial<Record<"a", number>> = {};
+
+    const result = typedValues(obj);
+
+    expect(result).toStrictEqual([]);
   });
 });

@@ -37,6 +37,27 @@ const navigateDomainSelectionToBuild = async (stdin: {
   await delay(STEP_TRANSITION_DELAY_MS);
 };
 
+/**
+ * Drives the full happy path: select the first stack, pass through domain
+ * selection, both build domains, sources, and agents, then confirm — the
+ * completion ENTER sequence shared by the result-shape tests.
+ */
+const completeStackFlowFromStart = async (stdin: { write: (data: string) => void }) => {
+  await stdin.write(ENTER); // Select first stack
+  await delay(STEP_TRANSITION_DELAY_MS);
+  await navigateDomainSelectionToBuild(stdin); // Domain -> Build
+  await stdin.write(ENTER); // Build: advance from web to api domain
+  await delay(STEP_TRANSITION_DELAY_MS);
+  await stdin.write(ENTER); // Build: advance from api domain -> Sources
+  await delay(STEP_TRANSITION_DELAY_MS);
+  await stdin.write(ENTER); // Sources -> Agents
+  await delay(STEP_TRANSITION_DELAY_MS);
+  await stdin.write(ENTER); // Agents -> Confirm
+  await delay(STEP_TRANSITION_DELAY_MS);
+  await stdin.write(ENTER); // Confirm -> complete
+  await delay(STEP_TRANSITION_DELAY_MS);
+};
+
 describe("Wizard integration", () => {
   let cleanup: (() => void) | undefined;
 
@@ -733,19 +754,7 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Complete full flow: stack -> domain -> build (2 domains) -> sources -> agents -> confirm
-      await stdin.write(ENTER); // Select first stack
-      await delay(STEP_TRANSITION_DELAY_MS);
-      await navigateDomainSelectionToBuild(stdin); // Domain -> Build
-      await stdin.write(ENTER); // Build: advance from web to api domain
-      await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER); // Build: advance from api domain -> Sources
-      await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER); // Sources -> Agents
-      await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER); // Agents -> Confirm
-      await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER); // Confirm -> complete
-      await delay(STEP_TRANSITION_DELAY_MS);
+      await completeStackFlowFromStart(stdin);
 
       // Verify result structure
       expect(onComplete).toHaveBeenCalledTimes(1);
@@ -772,19 +781,7 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Complete full flow: stack -> domain -> build (2 domains) -> sources -> agents -> confirm
-      await stdin.write(ENTER); // Select first stack
-      await delay(STEP_TRANSITION_DELAY_MS);
-      await navigateDomainSelectionToBuild(stdin); // Domain -> Build
-      await stdin.write(ENTER); // Build: advance from web to api domain
-      await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER); // Build: advance from api domain -> Sources
-      await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER); // Sources -> Agents
-      await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER); // Agents -> Confirm
-      await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER); // Confirm -> complete
-      await delay(STEP_TRANSITION_DELAY_MS);
+      await completeStackFlowFromStart(stdin);
 
       const result = onComplete.mock.calls[0][0];
 
@@ -889,10 +886,7 @@ describe("Wizard integration", () => {
 
       hydrateWizardStore({
         initialStep: "build",
-        installedSkillIds: [
-          "web-framework-react" as import("../../../types").SkillId,
-          "api-framework-hono" as import("../../../types").SkillId,
-        ],
+        installedSkillIds: ["web-framework-react", "api-framework-hono"],
       });
 
       const { lastFrame, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
@@ -947,10 +941,7 @@ describe("Wizard integration", () => {
 
       hydrateWizardStore({
         initialStep: "build",
-        installedSkillIds: [
-          "web-framework-react" as import("../../../types").SkillId,
-          "api-framework-hono" as import("../../../types").SkillId,
-        ],
+        installedSkillIds: ["web-framework-react", "api-framework-hono"],
       });
 
       const { stdin, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);

@@ -6,9 +6,9 @@ import type {
   SkillConfig,
   SkillId,
 } from "../../../types";
-import type { WizardResultV2 } from "../../../components/wizard/wizard";
+import { resolveSelectedSkillIds, type WizardResultV2 } from "../../../components/wizard/wizard";
 import { useWizardStore } from "../../../stores/wizard-store";
-import { resolveAlias, validateSelection } from "../../matrix";
+import { validateSelection } from "../../matrix";
 
 /** Build a SkillConfig array from skill IDs with default scope and source */
 export function buildSkillConfigs(
@@ -61,27 +61,16 @@ export function simulateSkillSelections(
 /**
  * Replicates `handleComplete` from wizard.tsx for the "customize" path.
  *
- * Given the wizard store state (after simulated user selections), this
- * builds the same WizardResultV2 that the real wizard produces:
- * 1. Collects all selected technologies from domainSelections
- * 2. Resolves aliases to canonical skill IDs
- * 3. Runs validation
+ * Given the wizard store state (after simulated user selections), this builds
+ * the same WizardResultV2 that the real wizard produces, delegating skill-id
+ * resolution to the wizard's own `resolveSelectedSkillIds` (stack defaults or
+ * per-domain selections), then running validation. Requires the matrix
+ * provider to be initialized (as the real wizard does).
  */
-export function buildWizardResultFromStore(
-  matrix: MergedSkillsMatrix,
-  overrides?: Partial<WizardResultV2>,
-): WizardResultV2 {
+export function buildWizardResultFromStore(overrides?: Partial<WizardResultV2>): WizardResultV2 {
   const store = useWizardStore.getState();
 
-  let allSkills: SkillId[];
-
-  if (store.selectedStackId && store.stackAction === "defaults") {
-    const stack = matrix.suggestedStacks.find((s) => s.id === store.selectedStackId);
-    allSkills = [...(stack?.allSkillIds || [])];
-  } else {
-    const techNames = store.getAllSelectedTechnologies();
-    allSkills = techNames.map((tech) => resolveAlias(tech));
-  }
+  const allSkills = resolveSelectedSkillIds(store);
 
   const validation = validateSelection(allSkills);
 

@@ -34,6 +34,17 @@ const REACT_SKILL_ID: SkillId = "web-framework-react";
 // Boundary cast: TestSkill.id is string, but SWITCHABLE_SKILLS contains valid SkillIds
 const ALL_SKILL_NAMES = SWITCHABLE_SKILLS.map((s) => s.id) as SkillId[];
 
+/** Re-runs the eject install for every switchable skill (the re-copy path). */
+async function reinstallAllSkills(dirs: TestDirs) {
+  const matrix = buildMatrixFromTestSkills(SWITCHABLE_SKILLS);
+  initializeMatrix(matrix);
+  const wizardResult = buildWizardResult(buildSkillConfigs(ALL_SKILL_NAMES, { source: "eject" }), {
+    selectedAgents: ["web-developer"],
+  });
+  const sourceResult = buildSourceResult(matrix, dirs.sourceDir);
+  return installEject({ wizardResult, sourceResult, projectDir: dirs.projectDir });
+}
+
 describe("Integration: Source Switching with Delete", () => {
   let dirs: TestDirs;
 
@@ -100,23 +111,7 @@ describe("Integration: Source Switching with Delete", () => {
       expect(await directoryExists(skillDir)).toBe(false);
 
       // Re-copy from source using installEject
-      const matrix = buildMatrixFromTestSkills(SWITCHABLE_SKILLS);
-      initializeMatrix(matrix);
-      const skillConfigs: SkillConfig[] = ALL_SKILL_NAMES.map((id) => ({
-        id: id as SkillId,
-        scope: "project" as const,
-        source: "eject",
-      }));
-      const wizardResult = buildWizardResult(skillConfigs, {
-        selectedAgents: ["web-developer"],
-      });
-      const sourceResult = buildSourceResult(matrix, dirs.sourceDir);
-
-      await installEject({
-        wizardResult,
-        sourceResult,
-        projectDir: dirs.projectDir,
-      });
+      await reinstallAllSkills(dirs);
 
       // Read the re-copied content - should contain "Marketplace Version" (from source), NOT "Local Version"
       const reCopiedContent = await readFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), "utf-8");
@@ -129,18 +124,7 @@ describe("Integration: Source Switching with Delete", () => {
       await deleteLocalSkill(dirs.projectDir, REACT_SKILL_ID);
 
       // Run installEject with all skills
-      const matrix = buildMatrixFromTestSkills(SWITCHABLE_SKILLS);
-      initializeMatrix(matrix);
-      const wizardResult = buildWizardResult(buildSkillConfigs(ALL_SKILL_NAMES), {
-        selectedAgents: ["web-developer"],
-      });
-      const sourceResult = buildSourceResult(matrix, dirs.sourceDir);
-
-      const installResult = await installEject({
-        wizardResult,
-        sourceResult,
-        projectDir: dirs.projectDir,
-      });
+      const installResult = await reinstallAllSkills(dirs);
 
       // Verify install result shape
       expectInstallResult(installResult, {
@@ -172,23 +156,7 @@ describe("Integration: Source Switching with Delete", () => {
       expect(await directoryExists(skillDir)).toBe(false);
 
       // Re-copy from source (simulates plugin -> eject switch)
-      const matrix = buildMatrixFromTestSkills(SWITCHABLE_SKILLS);
-      initializeMatrix(matrix);
-      const roundTripConfigs: SkillConfig[] = ALL_SKILL_NAMES.map((id) => ({
-        id: id as SkillId,
-        scope: "project" as const,
-        source: "eject",
-      }));
-      const wizardResult = buildWizardResult(roundTripConfigs, {
-        selectedAgents: ["web-developer"],
-      });
-      const sourceResult = buildSourceResult(matrix, dirs.sourceDir);
-
-      await installEject({
-        wizardResult,
-        sourceResult,
-        projectDir: dirs.projectDir,
-      });
+      await reinstallAllSkills(dirs);
 
       // Content should be marketplace version (NOT preserved local edits)
       const reCopiedContent = await readFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), "utf-8");

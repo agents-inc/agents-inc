@@ -51,13 +51,20 @@ async function createPluginProject(projectDir: string): Promise<void> {
 
 describe("installation", () => {
   let tempDir: string;
+  let fakeHome: string;
 
   beforeEach(async () => {
     tempDir = await createTempDir("installation-test-");
+    // Isolate from the dev machine's real ~/.claude-src so global-fallback
+    // behavior is deterministic
+    fakeHome = await createTempDir("installation-test-home-");
+    vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await cleanupTempDir(tempDir);
+    await cleanupTempDir(fakeHome);
   });
 
   describe("detectInstallation", () => {
@@ -161,23 +168,19 @@ describe("installation", () => {
 
   describe("global fallback", () => {
     it("falls back to global when project config not found", async () => {
-      // If the home directory has a config, detectInstallation falls back
-      const homeDir = os.homedir();
-      const homeConfigPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const { fileExists } = await import("../../utils/fs");
-      const homeHasConfig = await fileExists(homeConfigPath);
+      // Project dir has no config; the isolated home does -> fallback to global
+      await createLocalProject(fakeHome);
 
-      if (homeHasConfig) {
-        // Test the fallback: project dir without config -> uses global
-        const result = await detectInstallation(tempDir);
-        expect(result).not.toBeNull();
+      const result = await detectInstallation(tempDir);
 
-        expect(result!.projectDir).toBe(homeDir);
-      } else {
-        // No global config either -> null
-        const result = await detectInstallation(tempDir);
-        expect(result).toBeNull();
-      }
+      expect(result).not.toBeNull();
+      expect(result!.projectDir).toBe(fakeHome);
+    });
+
+    it("returns null when neither project nor global config exists", async () => {
+      const result = await detectInstallation(tempDir);
+
+      expect(result).toBeNull();
     });
 
     it("project takes precedence over global", async () => {
@@ -204,28 +207,13 @@ describe("installation", () => {
     });
 
     it("throws error when no installation found", async () => {
-      // Only test this when home dir has no global config
-      const homeDir = os.homedir();
-      const homeConfigPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const { fileExists } = await import("../../utils/fs");
-      const homeHasConfig = await fileExists(homeConfigPath);
-
-      if (!homeHasConfig) {
-        await expect(getInstallationOrThrow(tempDir)).rejects.toThrow(
-          "No Agents Inc. installation found",
-        );
-      }
+      await expect(getInstallationOrThrow(tempDir)).rejects.toThrow(
+        "No Agents Inc. installation found",
+      );
     });
 
     it("error message suggests running init", async () => {
-      const homeDir = os.homedir();
-      const homeConfigPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const { fileExists } = await import("../../utils/fs");
-      const homeHasConfig = await fileExists(homeConfigPath);
-
-      if (!homeHasConfig) {
-        await expect(getInstallationOrThrow(tempDir)).rejects.toThrow(`${CLI_INVOKE_COMMAND} init`);
-      }
+      await expect(getInstallationOrThrow(tempDir)).rejects.toThrow(`${CLI_INVOKE_COMMAND} init`);
     });
 
     it("returns plugin installation when config has installMode: plugin", async () => {

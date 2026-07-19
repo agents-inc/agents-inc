@@ -71,7 +71,7 @@ describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () =>
 
   it(
     "Check 1+2: dual-scope config shape and both [P][G] badges render on re-open",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       env = await createDualScopeEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
@@ -127,7 +127,7 @@ describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () =>
 
   it(
     "Check 3: `s` on a persisted dual-scope agent is a guarded no-op (badges + config unchanged)",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       env = await createDualScopeEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;

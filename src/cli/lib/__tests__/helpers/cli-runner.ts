@@ -8,6 +8,24 @@ const __dirname = path.dirname(__filename);
 
 export const CLI_ROOT = path.resolve(__dirname, "../../../../..");
 
+function makeCapturingWrite(buf: string[]): typeof process.stdout.write {
+  return function (str: unknown, encoding?: unknown, cb?: unknown): boolean {
+    buf.push(String(str));
+    if (typeof encoding === "function") {
+      (encoding as () => void)();
+    } else if (typeof cb === "function") {
+      (cb as () => void)();
+    }
+    return true;
+  } as typeof process.stdout.write;
+}
+
+function makeCapturingConsoleMethod(buf: string[]): (...args: unknown[]) => void {
+  return (...consoleArgs: unknown[]) => {
+    buf.push(consoleArgs.map(String).join(" ") + "\n");
+  };
+}
+
 /**
  * Run a CLI command and capture its output.
  *
@@ -27,36 +45,13 @@ export async function runCliCommand(args: string[]) {
   const stderrBuf: string[] = [];
 
   // Intercept process.stdout/stderr.write (Node.js path)
-  process.stdout.write = function (str: unknown, encoding?: unknown, cb?: unknown): boolean {
-    stdoutBuf.push(String(str));
-    if (typeof encoding === "function") {
-      (encoding as () => void)();
-    } else if (typeof cb === "function") {
-      (cb as () => void)();
-    }
-    return true;
-  } as typeof process.stdout.write;
-
-  process.stderr.write = function (str: unknown, encoding?: unknown, cb?: unknown): boolean {
-    stderrBuf.push(String(str));
-    if (typeof encoding === "function") {
-      (encoding as () => void)();
-    } else if (typeof cb === "function") {
-      (cb as () => void)();
-    }
-    return true;
-  } as typeof process.stderr.write;
+  process.stdout.write = makeCapturingWrite(stdoutBuf);
+  process.stderr.write = makeCapturingWrite(stderrBuf);
 
   // Intercept console methods (bun path — console.log bypasses process.stdout.write)
-  console.log = (...logArgs: unknown[]) => {
-    stdoutBuf.push(logArgs.map(String).join(" ") + "\n");
-  };
-  console.warn = (...warnArgs: unknown[]) => {
-    stderrBuf.push(warnArgs.map(String).join(" ") + "\n");
-  };
-  console.error = (...errArgs: unknown[]) => {
-    stderrBuf.push(errArgs.map(String).join(" ") + "\n");
-  };
+  console.log = makeCapturingConsoleMethod(stdoutBuf);
+  console.warn = makeCapturingConsoleMethod(stderrBuf);
+  console.error = makeCapturingConsoleMethod(stderrBuf);
 
   let error: (Error & Partial<Errors.CLIError>) | undefined;
   try {

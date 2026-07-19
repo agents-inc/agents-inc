@@ -7,6 +7,7 @@ vi.mock("../../utils/logger");
 import {
   parseFrontmatter,
   loadAllAgents,
+  loadMergedAgents,
   loadProjectAgents,
   loadSkillsByIds,
   loadPluginSkills,
@@ -387,6 +388,28 @@ describe("loadAllAgents", () => {
     const result = await loadAllAgents("/project");
 
     expect(result).toStrictEqual({});
+  });
+
+  it("loadMergedAgents merges CLI and source agents with source precedence", async () => {
+    const SOURCE_ROOT = "/merged-source";
+    vi.mocked(glob).mockImplementation(async (_pattern: string, dir?: string) =>
+      dir?.startsWith(SOURCE_ROOT)
+        ? ["web-developer/metadata.yaml"]
+        : ["web-developer/metadata.yaml", "api-developer/metadata.yaml"],
+    );
+    vi.mocked(readFile).mockImplementation(async (filePath: string) => {
+      if (filePath.includes("api-developer")) return renderAgentYaml("api-developer");
+      if (filePath.startsWith(SOURCE_ROOT)) {
+        return renderAgentYaml("web-developer", undefined, { title: "Source Override" });
+      }
+      return renderAgentYaml("web-developer");
+    });
+
+    const merged = await loadMergedAgents(SOURCE_ROOT);
+
+    expect(Object.keys(merged).sort()).toStrictEqual(["api-developer", "web-developer"]);
+    expect(merged["web-developer"]?.title).toBe("Source Override");
+    expect(merged["api-developer"]?.title).toBe("api-developer Agent");
   });
 
   it("should warn and skip when metadata.yaml has valid YAML but wrong types", async () => {

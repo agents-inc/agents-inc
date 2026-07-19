@@ -14,8 +14,6 @@ import { initializeMatrix } from "../../lib/matrix/matrix-provider";
 import { useWizardStore } from "../../stores/wizard-store";
 import { StepAgents } from "./step-agents";
 
-const EXPECTED_AGENT_COUNT = 18;
-
 describe("StepAgents component", () => {
   let cleanup: (() => void) | undefined;
 

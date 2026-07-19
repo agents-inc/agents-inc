@@ -95,7 +95,7 @@ describe("global skill toggle guard from project scope", () => {
 
   it(
     "should block selecting a different skill in exclusive category when current is globally installed",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Setup: global init + project init with all skills staying global
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);

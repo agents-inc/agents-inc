@@ -78,7 +78,7 @@ describe("edit removes one of several skills an agent references", () => {
 
   it(
     "drops only the removed skill's category, leaving the agent's other stack entries intact",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       globalHome = await createTempDir();
 

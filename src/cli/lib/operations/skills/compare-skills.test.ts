@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { MergedSkillsMatrix, SkillId } from "../../../types/index.js";
+import { createMockSkill } from "../../__tests__/factories/skill-factories.js";
+import { createMockMatrix } from "../../__tests__/factories/matrix-factories.js";
 import type { SkillComparisonResult } from "../../skills/index.js";
 import type { ScopedSkillDirsResult } from "./collect-scoped-skill-dirs.js";
 
@@ -35,28 +37,11 @@ function makeScopedResult(hasProject: boolean, hasGlobal: boolean): ScopedSkillD
 const SOURCE_PATH = "/tmp/test-source";
 
 function makeMatrix(skills: Record<string, { path: string; local?: boolean }>): MergedSkillsMatrix {
-  const matrixSkills: MergedSkillsMatrix["skills"] = {};
-  for (const [id, skill] of Object.entries(skills)) {
-    matrixSkills[id as SkillId] = {
-      id: id as SkillId,
-      slug: id,
-      path: skill.path,
-      local: skill.local,
-      description: "",
-      category: "framework" as MergedSkillsMatrix["skills"][SkillId] extends infer S | undefined
-        ? S extends { category: infer C }
-          ? C
-          : never
-        : never,
-    } as MergedSkillsMatrix["skills"][SkillId];
-  }
-  return {
-    version: "1.0.0",
-    categories: {},
-    skills: matrixSkills,
-    suggestedStacks: [],
-    slugMap: { bySlug: {}, byId: {} },
-  } as unknown as MergedSkillsMatrix;
+  const resolvedSkills = Object.entries(skills).map(([id, skill]) =>
+    // Boundary cast: fixtures include custom (non-union) skill ids like "web-custom-skill"
+    createMockSkill(id as SkillId, { path: skill.path, local: skill.local }),
+  );
+  return createMockMatrix(...resolvedSkills);
 }
 
 function makeComparisonResult(

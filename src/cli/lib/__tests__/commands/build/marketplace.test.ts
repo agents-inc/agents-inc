@@ -8,15 +8,20 @@ import { fileExists } from "../../test-fs-utils";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../../../consts";
 import type { Marketplace, PluginManifest } from "../../../../types";
 
-/** Creates a plugin directory with a valid plugin.json manifest */
+/**
+ * Creates a plugin directory with a valid plugin.json manifest. The manifest
+ * name mirrors the directory name and version defaults to "1.0.0".
+ */
 async function createPluginDir(
   pluginsDir: string,
   name: string,
-  manifest: PluginManifest,
+  description: string,
+  overrides?: Partial<PluginManifest>,
 ): Promise<string> {
   const pluginDir = path.join(pluginsDir, name);
   const manifestDir = path.join(pluginDir, PLUGIN_MANIFEST_DIR);
   await mkdir(manifestDir, { recursive: true });
+  const manifest: PluginManifest = { name, description, version: "1.0.0", ...overrides };
   await writeFile(path.join(manifestDir, PLUGIN_MANIFEST_FILE), JSON.stringify(manifest, null, 2));
   return pluginDir;
 }
@@ -25,6 +30,18 @@ async function createPluginDir(
 async function readMarketplaceJson(outputPath: string): Promise<Marketplace> {
   const content = await readFile(outputPath, "utf-8");
   return JSON.parse(content) as Marketplace;
+}
+
+/** Runs `build:marketplace` against the given plugins dir and output path. */
+function runBuildMarketplace(pluginsDir: string, outputPath: string, ...extraArgs: string[]) {
+  return runCliCommand([
+    "build:marketplace",
+    "--plugins-dir",
+    pluginsDir,
+    "--output",
+    outputPath,
+    ...extraArgs,
+  ]);
 }
 
 describe("build:marketplace command", () => {
@@ -69,21 +86,21 @@ describe("build:marketplace command", () => {
   });
 
   describe("author parsing from package.json", () => {
+    let pluginsDir: string;
+    let outputPath: string;
+
+    beforeEach(async () => {
+      pluginsDir = path.join(projectDir, "dist", "plugins");
+      outputPath = path.join(projectDir, "marketplace.json");
+      await mkdir(pluginsDir, { recursive: true });
+    });
+
     it('should parse string-form author "Name <email>"', async () => {
       await writeTestPackageJson(projectDir, {
         author: "Jane Doe <jane@example.com>",
       });
-      const pluginsDir = path.join(projectDir, "dist", "plugins");
-      const outputPath = path.join(projectDir, "marketplace.json");
-      await mkdir(pluginsDir, { recursive: true });
 
-      const { error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       const marketplace = await readMarketplaceJson(outputPath);
@@ -96,17 +113,8 @@ describe("build:marketplace command", () => {
         // Object-form author; the schema accepts strings or objects
         author: { name: "Jane Doe", email: "jane@example.com" } as unknown as string,
       });
-      const pluginsDir = path.join(projectDir, "dist", "plugins");
-      const outputPath = path.join(projectDir, "marketplace.json");
-      await mkdir(pluginsDir, { recursive: true });
 
-      const { error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       const marketplace = await readMarketplaceJson(outputPath);
@@ -124,17 +132,8 @@ describe("build:marketplace command", () => {
           description: "Marketplace without an author",
         }),
       );
-      const pluginsDir = path.join(projectDir, "dist", "plugins");
-      const outputPath = path.join(projectDir, "marketplace.json");
-      await mkdir(pluginsDir, { recursive: true });
 
-      const { error, stderr } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { error, stderr } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       expect(stderr).toContain("author");
@@ -147,17 +146,8 @@ describe("build:marketplace command", () => {
       await writeTestPackageJson(projectDir, {
         author: "<solo@example.com>",
       });
-      const pluginsDir = path.join(projectDir, "dist", "plugins");
-      const outputPath = path.join(projectDir, "marketplace.json");
-      await mkdir(pluginsDir, { recursive: true });
 
-      const { error, stderr } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { error, stderr } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       // Warns because name is empty
@@ -171,17 +161,8 @@ describe("build:marketplace command", () => {
       await writeTestPackageJson(projectDir, {
         author: "Solo Name",
       });
-      const pluginsDir = path.join(projectDir, "dist", "plugins");
-      const outputPath = path.join(projectDir, "marketplace.json");
-      await mkdir(pluginsDir, { recursive: true });
 
-      const { error, stderr } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { error, stderr } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       // Warns because no email is parseable
@@ -195,17 +176,8 @@ describe("build:marketplace command", () => {
       await writeTestPackageJson(projectDir, {
         author: "",
       });
-      const pluginsDir = path.join(projectDir, "dist", "plugins");
-      const outputPath = path.join(projectDir, "marketplace.json");
-      await mkdir(pluginsDir, { recursive: true });
 
-      const { error, stderr } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { error, stderr } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       // Empty string is treated as missing author
@@ -219,17 +191,8 @@ describe("build:marketplace command", () => {
       await writeTestPackageJson(projectDir, {
         author: "Jane Doe <jane@example.com> (https://jane.example.com)",
       });
-      const pluginsDir = path.join(projectDir, "dist", "plugins");
-      const outputPath = path.join(projectDir, "marketplace.json");
-      await mkdir(pluginsDir, { recursive: true });
 
-      const { error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       const marketplace = await readMarketplaceJson(outputPath);
@@ -246,17 +209,8 @@ describe("build:marketplace command", () => {
           url: "https://jane.example.com",
         } as unknown as string,
       });
-      const pluginsDir = path.join(projectDir, "dist", "plugins");
-      const outputPath = path.join(projectDir, "marketplace.json");
-      await mkdir(pluginsDir, { recursive: true });
 
-      const { error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       const marketplace = await readMarketplaceJson(outputPath);
@@ -371,11 +325,7 @@ describe("build:marketplace command", () => {
       await mkdir(pluginsDir, { recursive: true });
 
       // Valid plugin
-      await createPluginDir(pluginsDir, "web-framework-react", {
-        name: "web-framework-react",
-        description: "React framework",
-        version: "1.0.0",
-      });
+      await createPluginDir(pluginsDir, "web-framework-react", "React framework");
 
       // Invalid plugin: plugin.json exists but contains invalid JSON
       const invalidPluginDir = path.join(pluginsDir, "broken-plugin");
@@ -386,13 +336,7 @@ describe("build:marketplace command", () => {
         "{ this is not valid json }",
       );
 
-      const { stdout, error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { stdout, error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       expect(stdout).toContain("1 plugins");
@@ -408,11 +352,7 @@ describe("build:marketplace command", () => {
       await mkdir(pluginsDir, { recursive: true });
 
       // Valid plugin
-      await createPluginDir(pluginsDir, "api-framework-hono", {
-        name: "api-framework-hono",
-        description: "Hono framework",
-        version: "1.0.0",
-      });
+      await createPluginDir(pluginsDir, "api-framework-hono", "Hono framework");
 
       // Invalid plugin: valid JSON but missing required 'name' field
       const invalidPluginDir = path.join(pluginsDir, "nameless-plugin");
@@ -423,13 +363,7 @@ describe("build:marketplace command", () => {
         JSON.stringify({ description: "No name field", version: "1.0.0" }),
       );
 
-      const { stdout, error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { stdout, error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       expect(stdout).toContain("1 plugins");
@@ -452,19 +386,9 @@ describe("build:marketplace command", () => {
     });
 
     it("should create marketplace.json from a single plugin", async () => {
-      await createPluginDir(pluginsDir, "web-framework-react", {
-        name: "web-framework-react",
-        description: "React framework skills",
-        version: "1.0.0",
-      });
+      await createPluginDir(pluginsDir, "web-framework-react", "React framework skills");
 
-      const { stdout, error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { stdout, error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       expect(stdout).toContain("1 plugins");
@@ -486,19 +410,9 @@ describe("build:marketplace command", () => {
         author: "TestOwner <owner@test.com>",
       });
 
-      await createPluginDir(pluginsDir, "web-test-a", {
-        name: "web-test-a",
-        description: "Test plugin",
-        version: "0.1.0",
-      });
+      await createPluginDir(pluginsDir, "web-test-a", "Test plugin", { version: "0.1.0" });
 
-      await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      await runBuildMarketplace(pluginsDir, outputPath);
 
       const marketplace = await readMarketplaceJson(outputPath);
 
@@ -520,20 +434,10 @@ describe("build:marketplace command", () => {
       ];
 
       for (const plugin of plugins) {
-        await createPluginDir(pluginsDir, plugin.name, {
-          name: plugin.name,
-          description: plugin.description,
-          version: "1.0.0",
-        });
+        await createPluginDir(pluginsDir, plugin.name, plugin.description);
       }
 
-      const { stdout, error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { stdout, error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       expect(stdout).toContain("5 plugins");
@@ -549,29 +453,11 @@ describe("build:marketplace command", () => {
 
     it("should sort plugins alphabetically in output", async () => {
       // Create plugins in non-alphabetical order
-      await createPluginDir(pluginsDir, "web-state-zustand", {
-        name: "web-state-zustand",
-        description: "Zustand",
-        version: "1.0.0",
-      });
-      await createPluginDir(pluginsDir, "api-framework-hono", {
-        name: "api-framework-hono",
-        description: "Hono",
-        version: "1.0.0",
-      });
-      await createPluginDir(pluginsDir, "web-framework-react", {
-        name: "web-framework-react",
-        description: "React",
-        version: "1.0.0",
-      });
+      await createPluginDir(pluginsDir, "web-state-zustand", "Zustand");
+      await createPluginDir(pluginsDir, "api-framework-hono", "Hono");
+      await createPluginDir(pluginsDir, "web-framework-react", "React");
 
-      await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      await runBuildMarketplace(pluginsDir, outputPath);
 
       const marketplace = await readMarketplaceJson(outputPath);
       const names = marketplace.plugins.map((p) => p.name);
@@ -584,29 +470,15 @@ describe("build:marketplace command", () => {
     });
 
     it("should preserve explicit categories from plugin manifests", async () => {
-      await createPluginDir(pluginsDir, "web-framework-react", {
-        name: "web-framework-react",
-        description: "React",
-        version: "1.0.0",
-      });
-      await createPluginDir(pluginsDir, "api-database-drizzle", {
-        name: "api-database-drizzle",
-        description: "Drizzle",
-        version: "1.0.0",
-      });
-      await createPluginDir(pluginsDir, "meta-methodology-anti-over-engineering", {
-        name: "meta-methodology-anti-over-engineering",
-        description: "Anti over-engineering",
-        version: "1.0.0",
-      });
-
-      await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
+      await createPluginDir(pluginsDir, "web-framework-react", "React");
+      await createPluginDir(pluginsDir, "api-database-drizzle", "Drizzle");
+      await createPluginDir(
         pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+        "meta-methodology-anti-over-engineering",
+        "Anti over-engineering",
+      );
+
+      await runBuildMarketplace(pluginsDir, outputPath);
 
       const marketplace = await readMarketplaceJson(outputPath);
 
@@ -623,19 +495,9 @@ describe("build:marketplace command", () => {
     });
 
     it("should generate correct source paths referencing plugin directories", async () => {
-      await createPluginDir(pluginsDir, "web-framework-react", {
-        name: "web-framework-react",
-        description: "React",
-        version: "1.0.0",
-      });
+      await createPluginDir(pluginsDir, "web-framework-react", "React");
 
-      await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      await runBuildMarketplace(pluginsDir, outputPath);
 
       const marketplace = await readMarketplaceJson(outputPath);
       const plugin = marketplace.plugins[0];
@@ -646,21 +508,12 @@ describe("build:marketplace command", () => {
     });
 
     it("should preserve author and keywords from plugin manifests", async () => {
-      await createPluginDir(pluginsDir, "web-framework-react", {
-        name: "web-framework-react",
-        description: "React framework",
-        version: "1.0.0",
+      await createPluginDir(pluginsDir, "web-framework-react", "React framework", {
         author: { name: "@vince", email: "vince@example.com" },
         keywords: ["react", "framework", "web"],
       });
 
-      await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      await runBuildMarketplace(pluginsDir, outputPath);
 
       const marketplace = await readMarketplaceJson(outputPath);
       const plugin = marketplace.plugins[0];
@@ -673,60 +526,30 @@ describe("build:marketplace command", () => {
     it("should use version from package.json", async () => {
       await writeTestPackageJson(projectDir, { version: "3.0.0" });
 
-      await createPluginDir(pluginsDir, "web-test-a", {
-        name: "web-test-a",
-        description: "Test",
-        version: "1.0.0",
-      });
+      await createPluginDir(pluginsDir, "web-test-a", "Test");
 
-      await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      await runBuildMarketplace(pluginsDir, outputPath);
 
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.version).toBe("3.0.0");
     });
 
     it("should overwrite existing marketplace.json on repeated builds", async () => {
-      await createPluginDir(pluginsDir, "web-test-a", {
-        name: "web-test-a",
-        description: "Test",
-        version: "1.0.0",
-      });
+      await createPluginDir(pluginsDir, "web-test-a", "Test");
 
       // First build with version 1.0.0
       await writeTestPackageJson(projectDir, { version: "1.0.0" });
-      await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      await runBuildMarketplace(pluginsDir, outputPath);
 
       const first = await readMarketplaceJson(outputPath);
       expect(first.version).toBe("1.0.0");
       expect(first.plugins).toHaveLength(1);
 
       // Add another plugin and rebuild with bumped version
-      await createPluginDir(pluginsDir, "api-framework-hono", {
-        name: "api-framework-hono",
-        description: "Hono",
-        version: "1.0.0",
-      });
+      await createPluginDir(pluginsDir, "api-framework-hono", "Hono");
       await writeTestPackageJson(projectDir, { version: "1.1.0" });
 
-      await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      await runBuildMarketplace(pluginsDir, outputPath);
 
       const second = await readMarketplaceJson(outputPath);
       expect(second.version).toBe("1.1.0");
@@ -735,24 +558,14 @@ describe("build:marketplace command", () => {
 
     it("should skip directories without valid plugin.json manifests", async () => {
       // Valid plugin
-      await createPluginDir(pluginsDir, "web-framework-react", {
-        name: "web-framework-react",
-        description: "React",
-        version: "1.0.0",
-      });
+      await createPluginDir(pluginsDir, "web-framework-react", "React");
 
       // Invalid: directory without .claude-plugin/plugin.json
       const invalidDir = path.join(pluginsDir, "not-a-plugin");
       await mkdir(invalidDir, { recursive: true });
       await writeFile(path.join(invalidDir, "README.md"), "# Not a plugin");
 
-      await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      await runBuildMarketplace(pluginsDir, outputPath);
 
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.plugins).toHaveLength(1);
@@ -763,13 +576,7 @@ describe("build:marketplace command", () => {
       // pluginsDir exists but is empty
       await writeTestPackageJson(projectDir, { name: "empty-marketplace" });
 
-      const { error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       expect(await fileExists(outputPath)).toBe(true);
@@ -780,19 +587,9 @@ describe("build:marketplace command", () => {
     });
 
     it("should write valid JSON with 2-space indentation and trailing newline", async () => {
-      await createPluginDir(pluginsDir, "web-test-a", {
-        name: "web-test-a",
-        description: "Test",
-        version: "1.0.0",
-      });
+      await createPluginDir(pluginsDir, "web-test-a", "Test");
 
-      await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      await runBuildMarketplace(pluginsDir, outputPath);
 
       const raw = await readFile(outputPath, "utf-8");
 
@@ -807,24 +604,10 @@ describe("build:marketplace command", () => {
     });
 
     it("should report plugin count and category breakdown in stdout", async () => {
-      await createPluginDir(pluginsDir, "web-framework-react", {
-        name: "web-framework-react",
-        description: "React",
-        version: "1.0.0",
-      });
-      await createPluginDir(pluginsDir, "api-framework-hono", {
-        name: "api-framework-hono",
-        description: "Hono",
-        version: "1.0.0",
-      });
+      await createPluginDir(pluginsDir, "web-framework-react", "React");
+      await createPluginDir(pluginsDir, "api-framework-hono", "Hono");
 
-      const { stdout, error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { stdout, error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       expect(stdout).toContain("2 plugins");
@@ -842,26 +625,19 @@ describe("build:marketplace command", () => {
       pluginsDir = path.join(projectDir, "dist", "plugins");
       outputPath = path.join(projectDir, "marketplace.json");
       await mkdir(pluginsDir, { recursive: true });
-      await createPluginDir(pluginsDir, "web-test-a", {
-        name: "web-test-a",
-        description: "Test",
-        version: "1.0.0",
-      });
+      await createPluginDir(pluginsDir, "web-test-a", "Test");
     });
 
     it("should override package.json name when --name is provided", async () => {
       // package.json has an npm scoped name, which is not a valid marketplace name
       await writeTestPackageJson(projectDir, { name: "@agents-inc/skills" });
 
-      const { error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
+      const { error } = await runBuildMarketplace(
         pluginsDir,
-        "--output",
         outputPath,
         "--name",
         "agents-inc-skills",
-      ]);
+      );
 
       expect(error).toBeUndefined();
       expect(await fileExists(outputPath)).toBe(true);
@@ -872,13 +648,7 @@ describe("build:marketplace command", () => {
     it("should use package.json name when --name is omitted", async () => {
       await writeTestPackageJson(projectDir, { name: "my-marketplace" });
 
-      const { error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        pluginsDir,
-        "--output",
-        outputPath,
-      ]);
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       expect(await fileExists(outputPath)).toBe(true);
@@ -889,15 +659,12 @@ describe("build:marketplace command", () => {
     it("should error and write no file when --name contains a path separator", async () => {
       await writeTestPackageJson(projectDir, { name: "my-marketplace" });
 
-      const { error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
+      const { error } = await runBuildMarketplace(
         pluginsDir,
-        "--output",
         outputPath,
         "--name",
         "@agents-inc/skills",
-      ]);
+      );
 
       expect(error).toBeInstanceOf(Error);
       expect(error!.message).toContain("Invalid --name");

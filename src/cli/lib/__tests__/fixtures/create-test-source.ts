@@ -123,6 +123,18 @@ export { fileExists, directoryExists };
  * keyed by valid categorySchema values. Skill data is loaded separately
  * via `extractAllSkills`.
  */
+/** Display-friendly category part after the domain prefix: "web-framework" -> "framework". */
+function categoryPartOf(category: string): string {
+  const dashIndex = category.indexOf("-");
+  return dashIndex >= 0 ? category.slice(dashIndex + 1) : category;
+}
+
+/** Domain prefix of a category key: "web-framework" -> "web". */
+function domainOf(category: string): string {
+  const dashIndex = category.indexOf("-");
+  return dashIndex >= 0 ? category.slice(0, dashIndex) : category;
+}
+
 function generateMatrix(
   skills: TestSkill[],
   overrides?: Partial<TestMatrix>,
@@ -131,23 +143,24 @@ function generateMatrix(
   diskCategories: Record<string, unknown>;
   diskRules: Record<string, unknown>;
 } {
-  const skillsMap: Record<string, TestSkill> = {};
-  const categories: Record<string, { name: string; description: string }> = {};
+  const skillsMap: Record<string, TestSkill> = Object.fromEntries(
+    skills.map((skill) => [skill.id, skill]),
+  );
 
-  for (const skill of skills) {
-    skillsMap[skill.id] = skill;
-    // Category is hyphen-separated (e.g., "web-framework", "api-api")
-    const category = skill.category;
-    if (!categories[category]) {
-      // Extract display-friendly name from the category part after the domain prefix
-      const dashIndex = category.indexOf("-");
-      const categoryPart = dashIndex >= 0 ? category.slice(dashIndex + 1) : category;
-      categories[category] = {
-        name: categoryPart.charAt(0).toUpperCase() + categoryPart.slice(1),
-        description: `${categoryPart} skills`,
-      };
-    }
-  }
+  // Category keys are hyphen-separated and domain-prefixed (e.g., "web-framework", "api-api")
+  const uniqueCategories = [...new Set(skills.map((skill) => skill.category))];
+  const categories: Record<string, { name: string; description: string }> = Object.fromEntries(
+    uniqueCategories.map((category) => {
+      const categoryPart = categoryPartOf(category);
+      return [
+        category,
+        {
+          name: categoryPart.charAt(0).toUpperCase() + categoryPart.slice(1),
+          description: `${categoryPart} skills`,
+        },
+      ];
+    }),
+  );
 
   const testMatrix: TestMatrix = {
     version: "1.0.0",
@@ -160,22 +173,20 @@ function generateMatrix(
   // Build skill-categories.ts-compatible structure for disk serialization.
   // Categories need full CategoryDefinition fields keyed by valid category enum values.
   // Skills carry their own category via metadata.yaml — these are only for UI grouping.
-  const diskCategoriesMap: Record<string, Record<string, unknown>> = {};
-  let order = 0;
-  for (const [category, cat] of Object.entries(categories)) {
-    // Category keys are already domain-prefixed (e.g., "web-framework", "api-api")
-    const dashIndex = category.indexOf("-");
-    const domain = dashIndex >= 0 ? category.slice(0, dashIndex) : category;
-    diskCategoriesMap[category] = {
-      id: category,
-      displayName: cat.name,
-      description: cat.description,
-      domain,
-      exclusive: true,
-      required: false,
-      order: order++,
-    };
-  }
+  const diskCategoriesMap: Record<string, Record<string, unknown>> = Object.fromEntries(
+    Object.entries(categories).map(([category, cat], order) => [
+      category,
+      {
+        id: category,
+        displayName: cat.name,
+        description: cat.description,
+        domain: domainOf(category),
+        exclusive: true,
+        required: false,
+        order,
+      },
+    ]),
+  );
 
   const diskCategories = {
     version: "1.0.0",

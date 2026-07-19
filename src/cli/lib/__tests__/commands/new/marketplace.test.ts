@@ -7,11 +7,8 @@ import { writeTestTsConfig } from "../../helpers/config-io.js";
 import { setupIsolatedHome } from "../../helpers/isolated-home.js";
 import { buildSourceConfig } from "../../factories/config-factories.js";
 import { EXIT_CODES } from "../../../exit-codes";
-import {
-  validateMarketplaceName,
-  generateStacksTs,
-  generateReadme,
-} from "../../../../commands/new/marketplace";
+import { generateStacksTs, generateReadme } from "../../../../commands/new/marketplace";
+import { validateKebabCaseName } from "../../../validate-kebab-name";
 import {
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
@@ -21,63 +18,63 @@ import {
   PLUGIN_MANIFEST_DIR,
 } from "../../../../consts";
 
-describe("validateMarketplaceName", () => {
+describe("validateKebabCaseName (marketplace names)", () => {
   it("should return null for valid kebab-case name", () => {
-    expect(validateMarketplaceName("acme-skills")).toBeNull();
+    expect(validateKebabCaseName("acme-skills", "Marketplace")).toBeNull();
   });
 
   it("should return null for single word lowercase name", () => {
-    expect(validateMarketplaceName("acme")).toBeNull();
+    expect(validateKebabCaseName("acme", "Marketplace")).toBeNull();
   });
 
   it("should return null for name with numbers", () => {
-    expect(validateMarketplaceName("acme2-skills")).toBeNull();
+    expect(validateKebabCaseName("acme2-skills", "Marketplace")).toBeNull();
   });
 
   it("should return error for uppercase characters", () => {
-    const result = validateMarketplaceName("AcmeSkills");
+    const result = validateKebabCaseName("AcmeSkills", "Marketplace");
     expect(result).not.toBeNull();
     expect(result).toContain("kebab-case");
   });
 
   it("should return error for spaces", () => {
-    const result = validateMarketplaceName("acme skills");
+    const result = validateKebabCaseName("acme skills", "Marketplace");
     expect(result).not.toBeNull();
     expect(result).toContain("kebab-case");
   });
 
   it("should return error for empty string", () => {
-    const result = validateMarketplaceName("");
+    const result = validateKebabCaseName("", "Marketplace");
     expect(result).not.toBeNull();
     expect(result).toContain("required");
   });
 
   it("should return error for whitespace-only string", () => {
-    const result = validateMarketplaceName("   ");
+    const result = validateKebabCaseName("   ", "Marketplace");
     expect(result).not.toBeNull();
     expect(result).toContain("required");
   });
 
   it("should return error for name starting with number", () => {
-    const result = validateMarketplaceName("3acme");
+    const result = validateKebabCaseName("3acme", "Marketplace");
     expect(result).not.toBeNull();
     expect(result).toContain("kebab-case");
   });
 
   it("should return error for name starting with hyphen", () => {
-    const result = validateMarketplaceName("-acme");
+    const result = validateKebabCaseName("-acme", "Marketplace");
     expect(result).not.toBeNull();
     expect(result).toContain("kebab-case");
   });
 
   it("should return error for name ending with hyphen", () => {
-    const result = validateMarketplaceName("acme-");
+    const result = validateKebabCaseName("acme-", "Marketplace");
     expect(result).not.toBeNull();
     expect(result).toContain("kebab-case");
   });
 
   it("should return error for consecutive hyphens", () => {
-    const result = validateMarketplaceName("acme--skills");
+    const result = validateKebabCaseName("acme--skills", "Marketplace");
     expect(result).not.toBeNull();
     expect(result).toContain("kebab-case");
   });

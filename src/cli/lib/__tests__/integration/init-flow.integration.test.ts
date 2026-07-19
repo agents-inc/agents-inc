@@ -58,27 +58,25 @@ afterEach(async () => {
   await cleanupTempDir(fakeHomeDir);
 });
 
-// ── Test Suites ────────────────────────────────────────────────────────────────
+// Shared per-test source/project setup for every suite in this file
+let dirs: TestDirs;
+let originalCwd: string;
+let sourceResult: SourceLoadResult;
+
+beforeEach(async () => {
+  originalCwd = process.cwd();
+  dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
+  process.chdir(dirs.projectDir);
+  sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
+  initializeMatrix(INIT_TEST_MATRIX);
+});
+
+afterEach(async () => {
+  process.chdir(originalCwd);
+  await cleanupTestSource(dirs);
+});
 
 describe("Init Flow Integration: Eject Mode", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should create .claude-src/config.ts with correct structure", async () => {
     const result = await installEject({
       wizardResult: buildWizardResult(buildSkillConfigs(SELECTED_SKILLS_REACT_HONO), {
@@ -195,23 +193,6 @@ describe("Init Flow Integration: Eject Mode", () => {
 });
 
 describe("Init Flow Integration: Single Skill Selection", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should handle single skill selection correctly", async () => {
     const selectedSkills: SkillId[] = ["web-testing-vitest"];
 
@@ -233,23 +214,6 @@ describe("Init Flow Integration: Single Skill Selection", () => {
 });
 
 describe("Init Flow Integration: All Skills Selection", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should handle all skills selected from matrix", async () => {
     const result = await installEject({
       wizardResult: buildWizardResult(buildSkillConfigs(SELECTED_SKILLS_ALL), {
@@ -273,23 +237,6 @@ describe("Init Flow Integration: All Skills Selection", () => {
 });
 
 describe("Init Flow Integration: Source Configuration", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should save source flag to config.ts when provided", async () => {
     const result = await installEject({
       wizardResult: buildWizardResult(buildSkillConfigs(["web-framework-react"])),
@@ -319,23 +266,6 @@ describe("Init Flow Integration: Source Configuration", () => {
 });
 
 describe("Init Flow Integration: Directory Structure Verification", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should create complete directory structure", async () => {
     await installEject({
       wizardResult: buildWizardResult(buildSkillConfigs(SELECTED_SKILLS_REACT_HONO)),
@@ -409,23 +339,6 @@ describe("Init Flow Integration: Directory Structure Verification", () => {
 });
 
 describe("Init Flow Integration: Idempotency and Merge", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should merge with existing config on second init", async () => {
     // First init with one skill
     const firstResult = await installEject({
@@ -452,23 +365,6 @@ describe("Init Flow Integration: Idempotency and Merge", () => {
 });
 
 describe("Init Flow Integration: Install Mode in Config", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should set installMode to eject in config", async () => {
     const result = await installEject({
       wizardResult: buildWizardResult(
@@ -497,23 +393,6 @@ describe("Init Flow Integration: Install Mode in Config", () => {
 });
 
 describe("Init Flow Integration: Skill Content Verification", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should preserve skill content when copying", async () => {
     const result = await installEject({
       wizardResult: buildWizardResult(buildSkillConfigs(SELECTED_SKILLS_REACT_HONO)),
@@ -567,23 +446,6 @@ describe("Init Flow Integration: Skill Content Verification", () => {
 });
 
 describe("Init Flow Integration: Selected Agents Filtering", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should only include selected agents and exclude DEFAULT_AGENTS from stack", async () => {
     const result = await installEject({
       wizardResult: buildWizardResult(buildSkillConfigs(SELECTED_SKILLS_REACT_HONO), {
@@ -622,23 +484,6 @@ describe("Init Flow Integration: Selected Agents Filtering", () => {
 });
 
 describe("Init Flow Integration: Recompile Round-Trip", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should recompile agents from installEject output", async () => {
     const wizardResult = buildWizardResult(buildSkillConfigs(SELECTED_SKILLS_ALL), {
       selectedAgents: SELECTED_AGENTS_WEB_API,
@@ -683,47 +528,22 @@ describe("Init Flow Integration: Recompile Round-Trip", () => {
       projectDir: dirs.projectDir,
     });
 
-    let foundSkillContent = false;
-    for (const agentName of installResult.compiledAgents) {
-      const agentFilePath = path.join(
-        dirs.projectDir,
-        CLAUDE_DIR,
-        AGENTS_SUBDIR,
-        `${agentName}.md`,
-      );
-      const agentContent = await readFile(agentFilePath, "utf-8");
+    const agentContents = await Promise.all(
+      installResult.compiledAgents.map((agentName) =>
+        readFile(path.join(dirs.projectDir, CLAUDE_DIR, AGENTS_SUBDIR, `${agentName}.md`), "utf-8"),
+      ),
+    );
 
-      for (const skill of INIT_TEST_SKILLS) {
-        if (agentContent.includes(skill.description) || agentContent.includes(skill.id)) {
-          foundSkillContent = true;
-          break;
-        }
-      }
-      if (foundSkillContent) break;
-    }
-
+    const foundSkillContent = agentContents.some((agentContent) =>
+      INIT_TEST_SKILLS.some(
+        (skill) => agentContent.includes(skill.description) || agentContent.includes(skill.id),
+      ),
+    );
     expect(foundSkillContent).toBe(true);
   });
 });
 
 describe("Init Flow Integration: Global Scope Skills", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-    sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-    initializeMatrix(INIT_TEST_MATRIX);
-  });
-
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should route global-scoped skills to home dir and project-scoped to project dir", async () => {
     const projectSkill: SkillId = "web-framework-react";
     const globalSkill: SkillId = "api-framework-hono";

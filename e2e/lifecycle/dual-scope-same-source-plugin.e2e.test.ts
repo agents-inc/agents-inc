@@ -124,7 +124,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
 
   it(
     "config dual-scope shape (plugin source), colon agent ref, [P][G] badges, and s-toggle is a guarded no-op",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       const { tempDir, fakeHome, projectDir } = await establishPluginDualScope();
       currentTempDir = tempDir;
@@ -188,7 +188,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
 
   it(
     "removing the GLOBAL copy (edit at global scope) leaves the project's own plugin copy untouched",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Fresh seeded dual-scope env (do NOT chain off the previous test):
       //   global: vitest (plugin marketplace source) referenced by web-developer

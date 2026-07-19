@@ -7,11 +7,64 @@ import {
   ensureBinaryExists,
   listFiles,
   agentsPath,
+  renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, DIRS } from "../pages/constants.js";
+import { EXIT_CODES } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
+import type { SkillAssignment, SkillConfig } from "../../src/cli/types/index.js";
+
+/** Standard global side: web-developer agent preloading web-testing-cypress-e2e. */
+async function arrangeGlobalWebDeveloper(
+  globalHome: string,
+  options: { description: string; contentHash: string },
+): Promise<void> {
+  await writeProjectConfig(globalHome, {
+    name: "global-test",
+    skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
+    agents: [{ name: "web-developer", scope: "global" }],
+    domains: ["web"],
+    stack: {
+      "web-developer": {
+        "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
+      },
+    },
+  });
+
+  await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
+    description: options.description,
+    metadata: renderMetadataYaml({ contentHash: options.contentHash }),
+  });
+}
+
+/** Standard project side: api-developer agent plus a local playwright skill. */
+async function arrangeProjectApiDeveloper(
+  projectDir: string,
+  options: {
+    skills: SkillConfig[];
+    stackSkills: SkillAssignment[];
+    description: string;
+    contentHash: string;
+  },
+): Promise<void> {
+  await writeProjectConfig(projectDir, {
+    name: "project-test",
+    skills: options.skills,
+    agents: [{ name: "api-developer", scope: "project" }],
+    domains: ["web"],
+    stack: {
+      "api-developer": {
+        "web-testing": options.stackSkills,
+      },
+    },
+  });
+
+  await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+    description: options.description,
+    metadata: renderMetadataYaml({ contentHash: options.contentHash }),
+  });
+}
 
 /**
  * Regression tests for compile scope-filtering fixes.
@@ -38,45 +91,23 @@ describe("compile scope filtering", () => {
       const projectDir = path.join(tempDir, "project");
 
       // Global installation: web-developer agent with a skill
-      await writeProjectConfig(globalHome, {
-        name: "global-test",
-        skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
-        agents: [{ name: "web-developer", scope: "global" }],
-        domains: ["web"],
-        stack: {
-          "web-developer": {
-            "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
-          },
-        },
-      });
-
-      await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
+      await arrangeGlobalWebDeveloper(globalHome, {
         description: "Global skill for scope filtering test",
-        metadata: `author: "@test"\ncontentHash: "hash-global-sf"\n`,
+        contentHash: "hash-global-sf",
       });
 
       // Project installation: api-developer agent with a different skill.
       // The project config does NOT have web-developer in its agents list,
       // but before the fix, the project pass would compile ALL agents from
       // the agent definitions source, including web-developer, with zero skills.
-      await writeProjectConfig(projectDir, {
-        name: "project-test",
+      await arrangeProjectApiDeveloper(projectDir, {
         skills: [
           { id: "web-testing-playwright-e2e", scope: "project", source: "eject" },
           { id: "web-testing-cypress-e2e", scope: "global", source: "eject" },
         ],
-        agents: [{ name: "api-developer", scope: "project" }],
-        domains: ["web"],
-        stack: {
-          "api-developer": {
-            "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
-          },
-        },
-      });
-
-      await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+        stackSkills: [{ id: "web-testing-playwright-e2e", preloaded: true }],
         description: "Project skill for scope filtering test",
-        metadata: `author: "@test"\ncontentHash: "hash-project-sf"\n`,
+        contentHash: "hash-project-sf",
       });
 
       const { exitCode, output } = await CLI.run(
@@ -198,47 +229,25 @@ describe("compile scope filtering", () => {
       const projectDir = path.join(tempDir, "project");
 
       // Global installation: one global skill
-      await writeProjectConfig(globalHome, {
-        name: "global-test",
-        skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
-        agents: [{ name: "web-developer", scope: "global" }],
-        domains: ["web"],
-        stack: {
-          "web-developer": {
-            "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
-          },
-        },
-      });
-
-      await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
+      await arrangeGlobalWebDeveloper(globalHome, {
         description: "Global local skill for discovery test",
-        metadata: `author: "@test"\ncontentHash: "hash-gd"\n`,
+        contentHash: "hash-gd",
       });
 
       // Project installation: project agent references the GLOBAL skill via stack.
       // Before the fix, the project pass only discovered project plugins,
       // so it couldn't find globally-installed local skills.
-      await writeProjectConfig(projectDir, {
-        name: "project-test",
+      await arrangeProjectApiDeveloper(projectDir, {
         skills: [
           { id: "web-testing-cypress-e2e", scope: "global", source: "eject" },
           { id: "web-testing-playwright-e2e", scope: "project", source: "eject" },
         ],
-        agents: [{ name: "api-developer", scope: "project" }],
-        domains: ["web"],
-        stack: {
-          "api-developer": {
-            "web-testing": [
-              { id: "web-testing-cypress-e2e", preloaded: true },
-              { id: "web-testing-playwright-e2e", preloaded: true },
-            ],
-          },
-        },
-      });
-
-      await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+        stackSkills: [
+          { id: "web-testing-cypress-e2e", preloaded: true },
+          { id: "web-testing-playwright-e2e", preloaded: true },
+        ],
         description: "Project-local skill for discovery test",
-        metadata: `author: "@test"\ncontentHash: "hash-pd"\n`,
+        contentHash: "hash-pd",
       });
 
       const { exitCode, output } = await CLI.run(
@@ -272,40 +281,18 @@ describe("compile scope filtering", () => {
       const projectDir = path.join(tempDir, "project");
 
       // Global installation with a skill
-      await writeProjectConfig(globalHome, {
-        name: "global-test",
-        skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
-        agents: [{ name: "web-developer", scope: "global" }],
-        domains: ["web"],
-        stack: {
-          "web-developer": {
-            "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
-          },
-        },
-      });
-
-      await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
+      await arrangeGlobalWebDeveloper(globalHome, {
         description: "Global skill for project discovery",
-        metadata: `author: "@test"\ncontentHash: "hash-gpd"\n`,
+        contentHash: "hash-gpd",
       });
 
       // Project installation: references the global skill in its stack
       // but only has project-scoped skills in config
-      await writeProjectConfig(projectDir, {
-        name: "project-test",
+      await arrangeProjectApiDeveloper(projectDir, {
         skills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
-        agents: [{ name: "api-developer", scope: "project" }],
-        domains: ["web"],
-        stack: {
-          "api-developer": {
-            "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
-          },
-        },
-      });
-
-      await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+        stackSkills: [{ id: "web-testing-cypress-e2e", preloaded: true }],
         description: "Project skill (not referenced in stack)",
-        metadata: `author: "@test"\ncontentHash: "hash-ppd"\n`,
+        contentHash: "hash-ppd",
       });
 
       const { exitCode } = await CLI.run(
@@ -342,42 +329,20 @@ describe("compile scope filtering", () => {
       const projectDir = path.join(tempDir, "project");
 
       // Global installation: web-developer only
-      await writeProjectConfig(globalHome, {
-        name: "global-test",
-        skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
-        agents: [{ name: "web-developer", scope: "global" }],
-        domains: ["web"],
-        stack: {
-          "web-developer": {
-            "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
-          },
-        },
-      });
-
-      await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
+      await arrangeGlobalWebDeveloper(globalHome, {
         description: "Global skill",
-        metadata: `author: "@test"\ncontentHash: "hash-g13"\n`,
+        contentHash: "hash-g13",
       });
 
       // Project installation: api-developer with its own skill assignment
-      await writeProjectConfig(projectDir, {
-        name: "project-test",
+      await arrangeProjectApiDeveloper(projectDir, {
         skills: [
           { id: "web-testing-playwright-e2e", scope: "project", source: "eject" },
           { id: "web-testing-cypress-e2e", scope: "global", source: "eject" },
         ],
-        agents: [{ name: "api-developer", scope: "project" }],
-        domains: ["web"],
-        stack: {
-          "api-developer": {
-            "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
-          },
-        },
-      });
-
-      await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+        stackSkills: [{ id: "web-testing-playwright-e2e", preloaded: true }],
         description: "Project skill for non-clobber test",
-        metadata: `author: "@test"\ncontentHash: "hash-p13"\n`,
+        contentHash: "hash-p13",
       });
 
       const { exitCode } = await CLI.run(
@@ -411,42 +376,20 @@ describe("compile scope filtering", () => {
       const projectDir = path.join(tempDir, "project");
 
       // Global: web-developer
-      await writeProjectConfig(globalHome, {
-        name: "global-test",
-        skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
-        agents: [{ name: "web-developer", scope: "global" }],
-        domains: ["web"],
-        stack: {
-          "web-developer": {
-            "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
-          },
-        },
-      });
-
-      await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
+      await arrangeGlobalWebDeveloper(globalHome, {
         description: "Global skill for dedup test",
-        metadata: `author: "@test"\ncontentHash: "hash-gdd"\n`,
+        contentHash: "hash-gdd",
       });
 
       // Project: api-developer
-      await writeProjectConfig(projectDir, {
-        name: "project-test",
+      await arrangeProjectApiDeveloper(projectDir, {
         skills: [
           { id: "web-testing-playwright-e2e", scope: "project", source: "eject" },
           { id: "web-testing-cypress-e2e", scope: "global", source: "eject" },
         ],
-        agents: [{ name: "api-developer", scope: "project" }],
-        domains: ["web"],
-        stack: {
-          "api-developer": {
-            "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
-          },
-        },
-      });
-
-      await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+        stackSkills: [{ id: "web-testing-playwright-e2e", preloaded: true }],
         description: "Project skill for dedup test",
-        metadata: `author: "@test"\ncontentHash: "hash-pdd"\n`,
+        contentHash: "hash-pdd",
       });
 
       const { exitCode } = await CLI.run(
@@ -477,39 +420,17 @@ describe("compile scope filtering", () => {
       const projectDir = path.join(tempDir, "project");
 
       // Global: web-developer
-      await writeProjectConfig(globalHome, {
-        name: "global-test",
-        skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
-        agents: [{ name: "web-developer", scope: "global" }],
-        domains: ["web"],
-        stack: {
-          "web-developer": {
-            "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
-          },
-        },
-      });
-
-      await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
+      await arrangeGlobalWebDeveloper(globalHome, {
         description: "Global skill for verbose test",
-        metadata: `author: "@test"\ncontentHash: "hash-gv"\n`,
+        contentHash: "hash-gv",
       });
 
       // Project: api-developer
-      await writeProjectConfig(projectDir, {
-        name: "project-test",
+      await arrangeProjectApiDeveloper(projectDir, {
         skills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
-        agents: [{ name: "api-developer", scope: "project" }],
-        domains: ["web"],
-        stack: {
-          "api-developer": {
-            "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
-          },
-        },
-      });
-
-      await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+        stackSkills: [{ id: "web-testing-playwright-e2e", preloaded: true }],
         description: "Project skill for verbose test",
-        metadata: `author: "@test"\ncontentHash: "hash-pv"\n`,
+        contentHash: "hash-pv",
       });
 
       const { exitCode, output } = await CLI.run(

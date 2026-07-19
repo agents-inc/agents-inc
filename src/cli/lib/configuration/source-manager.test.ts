@@ -4,6 +4,9 @@ import { loadProjectSourceConfig } from "./config";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { buildSourceConfig } from "../__tests__/factories/config-factories.js";
+import { fetchMarketplace } from "../loading/source-fetcher";
+import { discoverLocalSkills } from "../skills/local-skill-loader";
+import { discoverAllPluginSkills } from "../plugins/plugin-discovery";
 
 // Mock the source-fetcher module
 vi.mock("../loading/source-fetcher", async (importOriginal) => ({
@@ -23,6 +26,10 @@ vi.mock("../plugins/plugin-discovery", async (importOriginal) => ({
   discoverAllPluginSkills: vi.fn().mockResolvedValue({}),
 }));
 
+const mockFetchMarketplace = vi.mocked(fetchMarketplace);
+const mockDiscoverLocalSkills = vi.mocked(discoverLocalSkills);
+const mockDiscoverAllPluginSkills = vi.mocked(discoverAllPluginSkills);
+
 describe("source-manager", () => {
   let tempDir: string;
 
@@ -39,8 +46,7 @@ describe("source-manager", () => {
     it("should add a source after validating via fetchMarketplace", async () => {
       await writeTestTsConfig(tempDir, buildSourceConfig({ name: "test-project" }));
 
-      const { fetchMarketplace } = await import("../loading/source-fetcher");
-      vi.mocked(fetchMarketplace).mockResolvedValue({
+      mockFetchMarketplace.mockResolvedValue({
         marketplace: {
           name: "acme-corp",
           version: "1.0.0",
@@ -78,8 +84,7 @@ describe("source-manager", () => {
         }),
       );
 
-      const { fetchMarketplace } = await import("../loading/source-fetcher");
-      vi.mocked(fetchMarketplace).mockResolvedValue({
+      mockFetchMarketplace.mockResolvedValue({
         marketplace: {
           name: "acme-corp",
           version: "1.0.0",
@@ -96,8 +101,7 @@ describe("source-manager", () => {
     });
 
     it("should throw if fetchMarketplace fails", async () => {
-      const { fetchMarketplace } = await import("../loading/source-fetcher");
-      vi.mocked(fetchMarketplace).mockRejectedValue(new Error("Repository not found"));
+      mockFetchMarketplace.mockRejectedValue(new Error("Repository not found"));
 
       await expect(addSource(tempDir, "github:nonexistent/repo")).rejects.toThrow(
         "Repository not found",
@@ -110,8 +114,7 @@ describe("source-manager", () => {
         buildSourceConfig({ name: "test-project", source: "github:custom/skills" }),
       );
 
-      const { fetchMarketplace } = await import("../loading/source-fetcher");
-      vi.mocked(fetchMarketplace).mockResolvedValue({
+      mockFetchMarketplace.mockResolvedValue({
         marketplace: {
           name: "team-skills",
           version: "1.0.0",
@@ -133,8 +136,7 @@ describe("source-manager", () => {
     });
 
     it("should throw when no config file exists", async () => {
-      const { fetchMarketplace } = await import("../loading/source-fetcher");
-      vi.mocked(fetchMarketplace).mockResolvedValue({
+      mockFetchMarketplace.mockResolvedValue({
         marketplace: {
           name: "new-source",
           version: "1.0.0",
@@ -158,8 +160,7 @@ describe("source-manager", () => {
         }),
       );
 
-      const { fetchMarketplace } = await import("../loading/source-fetcher");
-      vi.mocked(fetchMarketplace).mockResolvedValue({
+      mockFetchMarketplace.mockResolvedValue({
         marketplace: {
           name: "existing",
           version: "1.0.0",
@@ -250,8 +251,7 @@ describe("source-manager", () => {
 
   describe("getSourceSummary", () => {
     it("should return default public source when no config exists", async () => {
-      const { discoverLocalSkills } = await import("../skills/local-skill-loader");
-      vi.mocked(discoverLocalSkills).mockResolvedValue(null);
+      mockDiscoverLocalSkills.mockResolvedValue(null);
 
       const summary = await getSourceSummary(tempDir);
 
@@ -270,8 +270,7 @@ describe("source-manager", () => {
         }),
       );
 
-      const { discoverLocalSkills } = await import("../skills/local-skill-loader");
-      vi.mocked(discoverLocalSkills).mockResolvedValue(null);
+      mockDiscoverLocalSkills.mockResolvedValue(null);
 
       const summary = await getSourceSummary(tempDir);
 
@@ -282,13 +281,9 @@ describe("source-manager", () => {
     });
 
     it("should count local skills", async () => {
-      const { discoverLocalSkills } = await import("../skills/local-skill-loader");
-      vi.mocked(discoverLocalSkills).mockResolvedValue({
-        skills: [
-          { id: "skill-1" } as never,
-          { id: "skill-2" } as never,
-          { id: "skill-3" } as never,
-        ],
+      mockDiscoverLocalSkills.mockResolvedValue({
+        // Boundary cast: only the array length feeds localSkillCount
+        skills: [{ id: "skill-1" }, { id: "skill-2" }, { id: "skill-3" }] as never,
         localSkillsPath: "/project/.claude/skills",
       });
 
@@ -298,8 +293,7 @@ describe("source-manager", () => {
     });
 
     it("when discoverLocalSkills throws a permission error, should return localSkillCount of 0", async () => {
-      const { discoverLocalSkills } = await import("../skills/local-skill-loader");
-      vi.mocked(discoverLocalSkills).mockRejectedValue(new Error("Permission denied"));
+      mockDiscoverLocalSkills.mockRejectedValue(new Error("Permission denied"));
 
       const summary = await getSourceSummary(tempDir);
 
@@ -307,11 +301,9 @@ describe("source-manager", () => {
     });
 
     it("should count plugin skills via discoverAllPluginSkills", async () => {
-      const { discoverLocalSkills } = await import("../skills/local-skill-loader");
-      vi.mocked(discoverLocalSkills).mockResolvedValue(null);
+      mockDiscoverLocalSkills.mockResolvedValue(null);
 
-      const { discoverAllPluginSkills } = await import("../plugins/plugin-discovery");
-      vi.mocked(discoverAllPluginSkills).mockResolvedValue({
+      mockDiscoverAllPluginSkills.mockResolvedValue({
         "web-framework-react": {
           id: "web-framework-react",
           path: "skills/react/",
@@ -322,6 +314,7 @@ describe("source-manager", () => {
           path: "skills/zustand/",
           description: "Zustand",
         },
+        // Boundary cast: only the key count feeds pluginSkillCount
       } as never);
 
       const summary = await getSourceSummary(tempDir);
@@ -330,13 +323,9 @@ describe("source-manager", () => {
     });
 
     it("should return pluginSkillCount of 0 when discoverAllPluginSkills throws", async () => {
-      const { discoverLocalSkills } = await import("../skills/local-skill-loader");
-      vi.mocked(discoverLocalSkills).mockResolvedValue(null);
+      mockDiscoverLocalSkills.mockResolvedValue(null);
 
-      const { discoverAllPluginSkills } = await import("../plugins/plugin-discovery");
-      vi.mocked(discoverAllPluginSkills).mockRejectedValue(
-        new Error("ENOENT: no such file or directory"),
-      );
+      mockDiscoverAllPluginSkills.mockRejectedValue(new Error("ENOENT: no such file or directory"));
 
       const summary = await getSourceSummary(tempDir);
 
@@ -351,8 +340,7 @@ describe("source-manager", () => {
         }),
       );
 
-      const { discoverLocalSkills } = await import("../skills/local-skill-loader");
-      vi.mocked(discoverLocalSkills).mockResolvedValue(null);
+      mockDiscoverLocalSkills.mockResolvedValue(null);
 
       const summary = await getSourceSummary(tempDir);
 
@@ -372,8 +360,7 @@ describe("source-manager", () => {
         }),
       );
 
-      const { discoverLocalSkills } = await import("../skills/local-skill-loader");
-      vi.mocked(discoverLocalSkills).mockResolvedValue(null);
+      mockDiscoverLocalSkills.mockResolvedValue(null);
 
       const summary = await getSourceSummary(tempDir);
 
@@ -388,8 +375,7 @@ describe("source-manager", () => {
     });
 
     it("should return 0 local skills when discoverLocalSkills returns empty array", async () => {
-      const { discoverLocalSkills } = await import("../skills/local-skill-loader");
-      vi.mocked(discoverLocalSkills).mockResolvedValue({
+      mockDiscoverLocalSkills.mockResolvedValue({
         skills: [],
         localSkillsPath: "/project/.claude/skills",
       });
@@ -400,14 +386,13 @@ describe("source-manager", () => {
     });
 
     it("should count both local and plugin skills together", async () => {
-      const { discoverLocalSkills } = await import("../skills/local-skill-loader");
-      vi.mocked(discoverLocalSkills).mockResolvedValue({
-        skills: [{ id: "local-1" } as never, { id: "local-2" } as never],
+      mockDiscoverLocalSkills.mockResolvedValue({
+        // Boundary cast: only the array length feeds localSkillCount
+        skills: [{ id: "local-1" }, { id: "local-2" }] as never,
         localSkillsPath: "/project/.claude/skills",
       });
 
-      const { discoverAllPluginSkills } = await import("../plugins/plugin-discovery");
-      vi.mocked(discoverAllPluginSkills).mockResolvedValue({
+      mockDiscoverAllPluginSkills.mockResolvedValue({
         "web-framework-react": {
           id: "web-framework-react",
           path: "skills/react/",

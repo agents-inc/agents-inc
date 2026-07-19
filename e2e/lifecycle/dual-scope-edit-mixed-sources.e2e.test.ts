@@ -15,7 +15,12 @@ import {
   fileExists,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { createTestEnvironment, initGlobal, initProject } from "../fixtures/dual-scope-helpers.js";
+import {
+  createTestEnvironment,
+  initGlobal,
+  initProject,
+  readSkillEntries,
+} from "../fixtures/dual-scope-helpers.js";
 
 /**
  * Dual-scope edit lifecycle E2E test -- mixed source coexistence.
@@ -25,10 +30,6 @@ import { createTestEnvironment, initGlobal, initProject } from "../fixtures/dual
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
-
-// =====================================================================
-// Test Suite -- Mixed Source Coexistence (Requires Claude CLI)
-// =====================================================================
 
 describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coexistence", () => {
   let pluginFixture: E2EPluginSource;
@@ -122,17 +123,14 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
 
       // D-5: Project-scoped api-framework-hono source must have been updated from eject to plugin
       // (excluded global entries may legitimately retain source:"eject")
-      const projectConfig = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
-      const projectHonoSource = projectConfig.match(
-        /"api-framework-hono","scope":"project","source":"([^"]+)"/,
+      const projectHonoEntry = (await readSkillEntries(projectDir, "api-framework-hono")).find(
+        (entry) => entry.scope === "project",
       );
       expect(
-        projectHonoSource,
+        projectHonoEntry,
         "project-scoped api-framework-hono must exist in config",
-      ).not.toBeNull();
-      expect(projectHonoSource![1]).not.toBe("eject");
+      ).toBeDefined();
+      expect(projectHonoEntry?.source).not.toBe("eject");
 
       await result.destroy();
     },

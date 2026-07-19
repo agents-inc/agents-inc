@@ -4,7 +4,11 @@ import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { createGlobalOnlyEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import {
+  createGlobalOnlyEnv,
+  runEditWithFirstSkillAction,
+  type DualScopeEnv,
+} from "../fixtures/dual-scope-helpers.js";
 
 /**
  * Info-panel scope-toggle diff — D-225 symmetry + D-230 / D-232 correctness.
@@ -68,43 +72,6 @@ describe("info panel — scope-toggle diff symmetry", () => {
   });
 
   /**
-   * Drive `cc edit` to completion, toggling G→P on the first-focused skill
-   * (web-framework-react in the Web domain). Leaves the project config in the
-   * dual-scope shape: `{scope:"project"}` active entry + `{scope:"global",
-   * excluded:true}` tombstone. Used as the setup for P→G scenarios that need
-   * a project-scope baseline.
-   */
-  async function performSkillGlobalToProjectToggle(
-    projectDir: string,
-    fakeHome: string,
-  ): Promise<void> {
-    const toggleWizard = await EditWizard.launch({
-      projectDir,
-      source: { sourceDir, tempDir: sourceTempDir },
-      env: { HOME: fakeHome },
-      rows: 60,
-      cols: 120,
-    });
-
-    try {
-      // Web domain: focus defaults to web-framework-react. G→P.
-      await toggleWizard.build.toggleScopeOnFocusedSkill();
-      await toggleWizard.build.advanceDomain();
-      // API + Methodology: pass through.
-      await toggleWizard.build.advanceDomain();
-      const sources = await toggleWizard.build.advanceToSources();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
-    } finally {
-      await toggleWizard.destroy();
-    }
-  }
-
-  /**
    * Drive `cc edit` to completion, toggling the web-developer agent G→P. The
    * E2E source's web-developer agent is the first of two; navigating the
    * cursor to it by display name keeps the helper independent of cursor
@@ -139,7 +106,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
 
   it(
     "Scenario A: P→G restoration shows `-` in Project and `•` in Global",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Baseline: global-only install, then G→P to seat react at project scope
       // — the saved config carries `[{react, project}, {react, global,
@@ -151,7 +118,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       // global as newly added).
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
-      await performSkillGlobalToProjectToggle(projectDir, fakeHome);
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       // The P→G toggle session. Drive the wizard up to the confirm step and
       // capture the change summary BEFORE confirming — no filesystem mutation
@@ -192,7 +159,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       expect(
         skillEntries,
         `P→G restoration must NOT tag the pre-existing global as newly added.\nScreen:\n${confirm.getScreen()}`,
-      ).not.toEqual(expect.arrayContaining([{ scope: "Global", prefix: "+" }]));
+      ).not.toStrictEqual(expect.arrayContaining([{ scope: "Global", prefix: "+" }]));
 
       wizard.abort();
       await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
@@ -201,7 +168,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
 
   it(
     "Scenario B: G→P skill toggle on pre-existing global install shows `+` in Project and `•` in Global",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Baseline: global-only install — react starts at global scope. User
       // toggles G→P: the store emits dual-scope state `[{react, project},
@@ -242,7 +209,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       expect(
         skillEntries,
         `G→P toggle must NOT render Global as -.\nScreen:\n${confirm.getScreen()}`,
-      ).not.toEqual(expect.arrayContaining([{ scope: "Global", prefix: "-" }]));
+      ).not.toStrictEqual(expect.arrayContaining([{ scope: "Global", prefix: "-" }]));
 
       wizard.abort();
       await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
@@ -251,7 +218,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
 
   it(
     "Scenario C: agent P→G restoration shows `-` in Project and `•` in Global",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Baseline: global-only install, then toggle web-developer G→P via a
       // real edit run. After this the project config has the dual-scope agent
@@ -294,7 +261,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       expect(
         agentEntries,
         `Agent P→G restoration must NOT tag the pre-existing global agent as newly added.\nScreen:\n${confirm.getScreen()}`,
-      ).not.toEqual(expect.arrayContaining([{ scope: "Global", prefix: "+" }]));
+      ).not.toStrictEqual(expect.arrayContaining([{ scope: "Global", prefix: "+" }]));
 
       wizard.abort();
       await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
@@ -303,7 +270,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
 
   it(
     "Scenario D: build-step info-panel overlay on P→G restoration shows `-` in Project and `•` in Global",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Setup seeds react at project scope with a live global install (the
       // D-223 dual-scope shape). Opening the wizard, toggling P→G restores
@@ -314,7 +281,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       // so the invariant must hold on both surfaces.
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
-      await performSkillGlobalToProjectToggle(projectDir, fakeHome);
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       wizard = await EditWizard.launch({
         projectDir,
@@ -343,7 +310,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       expect(
         skillEntries,
         `P→G restoration must NOT render Global as +.\nScreen:\n${wizard.build.getScreen()}`,
-      ).not.toEqual(expect.arrayContaining([{ scope: "Global", prefix: "+" }]));
+      ).not.toStrictEqual(expect.arrayContaining([{ scope: "Global", prefix: "+" }]));
 
       wizard.abort();
       await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
@@ -352,7 +319,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
 
   it(
     "Scenario E: re-open with saved dual-scope shape shows no + or - for the dual-scope skill",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // D-232: after a G→P toggle is saved, the config carries `[{react,
       // project}, {react, global, excluded: true}]`. On NEXT `cc edit`, the
@@ -362,7 +329,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       // appear for react at all.
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
-      await performSkillGlobalToProjectToggle(projectDir, fakeHome);
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       // Second session — no changes — advance through to the confirm step.
       wizard = await EditWizard.launch({
@@ -399,15 +366,15 @@ describe("info panel — scope-toggle diff symmetry", () => {
       expect(
         skillEntries,
         `Re-open with saved dual-scope must NOT tag react as newly added.\nScreen:\n${confirm.getScreen()}`,
-      ).not.toEqual(expect.arrayContaining([{ scope: "Global", prefix: "+" }]));
+      ).not.toStrictEqual(expect.arrayContaining([{ scope: "Global", prefix: "+" }]));
       expect(
         skillEntries,
         `Re-open with saved dual-scope must NOT render react as removed.\nScreen:\n${confirm.getScreen()}`,
-      ).not.toEqual(expect.arrayContaining([{ scope: "Global", prefix: "-" }]));
+      ).not.toStrictEqual(expect.arrayContaining([{ scope: "Global", prefix: "-" }]));
       expect(
         skillEntries,
         `Re-open with saved dual-scope must NOT tag react as newly added at project scope.\nScreen:\n${confirm.getScreen()}`,
-      ).not.toEqual(expect.arrayContaining([{ scope: "Project", prefix: "+" }]));
+      ).not.toStrictEqual(expect.arrayContaining([{ scope: "Project", prefix: "+" }]));
 
       wizard.abort();
       await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);

@@ -1,12 +1,13 @@
 import path from "path";
 import { writeFile, mkdir, rm } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
 import {
   createTempDir,
   cleanupTempDir,
   ensureBinaryExists,
   agentsPath,
+  writeAgentFile,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
@@ -14,32 +15,29 @@ import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
 import type { SkillId } from "../../src/cli/types/index.js";
 
-/** Write a minimal agent .md file to the agents directory (no frontmatter needed for doctor). */
-async function writeAgentFile(baseDir: string, agentName: string): Promise<void> {
-  await writeFile(path.join(agentsPath(baseDir), `${agentName}.md`), `# ${agentName}\n`);
-}
-
 describe("doctor diagnostics", () => {
   let tempDir: string;
-  let sourceTempDir: string | undefined;
+  // Created once for the whole file — doctor only reads the source via CC_SOURCE
+  let source: { sourceDir: string; tempDir: string };
 
-  beforeAll(ensureBinaryExists);
+  beforeAll(async () => {
+    await ensureBinaryExists();
+    source = await createE2ESource();
+  });
+
+  afterAll(async () => {
+    await cleanupTempDir(source.tempDir);
+  });
 
   afterEach(async () => {
     if (tempDir) {
       await cleanupTempDir(tempDir);
-    }
-    if (sourceTempDir) {
-      await cleanupTempDir(sourceTempDir);
-      sourceTempDir = undefined;
     }
   });
 
   describe("verbose diagnostics always emitted", () => {
     it("should show additional details for all checks", async () => {
       tempDir = await createTempDir();
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
 
       const { exitCode, stdout } = await CLI.run(
         ["doctor"],
@@ -56,9 +54,6 @@ describe("doctor diagnostics", () => {
 
   describe("valid config with local E2E source", () => {
     it("should show Source Reachable with local source info and skill count", async () => {
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       const project = await ProjectBuilder.editable();
       tempDir = path.dirname(project.dir);
 
@@ -81,9 +76,6 @@ describe("doctor diagnostics", () => {
 
   describe("agents compiled check", () => {
     it("should pass when agent .md files exist for configured agents", async () => {
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
       });
@@ -106,9 +98,6 @@ describe("doctor diagnostics", () => {
     });
 
     it("should warn when agent .md files are missing for configured agents", async () => {
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
       });
@@ -133,9 +122,6 @@ describe("doctor diagnostics", () => {
 
   describe("orphaned agent files check", () => {
     it("should warn when orphaned .md files exist in agents dir", async () => {
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
       });
@@ -163,8 +149,6 @@ describe("doctor diagnostics", () => {
   describe("missing skills directory with valid config", () => {
     it("should report missing skills when skills directory does not exist", async () => {
       tempDir = await createTempDir();
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
 
       // Create valid config referencing a skill NOT in the E2E source matrix
       await writeProjectConfig(tempDir, {
@@ -196,9 +180,6 @@ describe("doctor diagnostics", () => {
 
   describe("orphaned skill dirs", () => {
     it("should warn when .claude/skills has dirs not referenced in config", async () => {
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       // Create project with one skill in config
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
@@ -236,9 +217,6 @@ describe("doctor diagnostics", () => {
 
   describe("missing skill dirs", () => {
     it("should fail when config references skills not found in source or locally", async () => {
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       tempDir = await createTempDir();
 
       // Create config referencing a skill that does NOT exist in the E2E source
@@ -270,9 +248,6 @@ describe("doctor diagnostics", () => {
 
   describe("no agents compiled", () => {
     it("should warn when no agent .md files exist for configured agents", async () => {
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       const project = await ProjectBuilder.editable({
         agents: ["web-developer", "api-developer"],
       });
@@ -298,9 +273,6 @@ describe("doctor diagnostics", () => {
 
   describe("details always emitted", () => {
     it("should show detailed output for passing checks", async () => {
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
       });
@@ -324,9 +296,6 @@ describe("doctor diagnostics", () => {
     });
 
     it("should show skill resolution details when skills are missing", async () => {
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       tempDir = await createTempDir();
       await writeProjectConfig(tempDir, {
         name: "test-missing-skill-details",
@@ -353,9 +322,6 @@ describe("doctor diagnostics", () => {
 
   describe("tip discrimination by check kind", () => {
     it("should emit 'Check skill IDs' tip when skills check fails", async () => {
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       tempDir = await createTempDir();
       await writeProjectConfig(tempDir, {
         name: "skills-check-fails",
@@ -379,9 +345,6 @@ describe("doctor diagnostics", () => {
     });
 
     it("should emit 'reinstall missing skill files' tip when installed check warns", async () => {
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
       });
@@ -420,9 +383,6 @@ describe("doctor diagnostics", () => {
 
   describe("healthy project", () => {
     it("should pass all checks on a properly configured project", async () => {
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
       });

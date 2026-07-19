@@ -58,7 +58,7 @@ describe.skipIf(!claudeAvailable)(
 
     it.fails(
       "should init with mixed scopes, verify agent content, and verify preservation (expected fail -- scope routing bugs)",
-      { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+      { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
       async () => {
         // ================================================================
         // Phase 1: Init wizard with scope toggling

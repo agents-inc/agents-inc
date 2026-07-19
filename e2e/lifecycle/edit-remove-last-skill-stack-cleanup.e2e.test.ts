@@ -73,7 +73,7 @@ describe("edit removes the only skill an agent references", () => {
 
   it(
     "does not leave the removed skill behind in the stack property",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // ================================================================
       // Phase 1: Seed a GLOBAL installation (HOME === project dir) where

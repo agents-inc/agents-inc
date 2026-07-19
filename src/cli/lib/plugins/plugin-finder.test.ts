@@ -13,7 +13,13 @@ import {
 } from "./plugin-finder";
 import type { PluginManifest } from "../../types";
 import { initializeMatrix } from "../matrix/matrix-provider";
-import { DEFAULT_PLUGIN_NAME, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
+import {
+  CLAUDE_DIR,
+  DEFAULT_PLUGIN_NAME,
+  PLUGIN_MANIFEST_DIR,
+  PLUGIN_MANIFEST_FILE,
+  PLUGINS_SUBDIR,
+} from "../../consts";
 import {
   EMPTY_MATRIX,
   SINGLE_REACT_MATRIX,
@@ -40,9 +46,6 @@ const mockedReadFileSafe = vi.mocked(readFileSafe);
 const mockedGlob = vi.mocked(glob);
 
 const TEST_PLUGIN_SKILLS_PATH = "/plugin/skills";
-
-const CLAUDE_DIR = ".claude";
-const PLUGINS_SUBDIR = "plugins";
 
 describe("plugin-finder", () => {
   describe("getUserPluginsDir", () => {

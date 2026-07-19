@@ -7,16 +7,12 @@ import {
   createLocalSkill,
   ensureBinaryExists,
   agentsPath,
+  writeAgentFile,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
-
-/** Write a minimal agent .md file to the agents directory (no frontmatter needed for list). */
-async function writeAgentFile(baseDir: string, agentName: string): Promise<void> {
-  await writeFile(path.join(agentsPath(baseDir), `${agentName}.md`), `# ${agentName}\n`);
-}
 
 describe("list command", () => {
   let tempDir: string;

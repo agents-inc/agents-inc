@@ -716,7 +716,7 @@ describe("formatZodIssues", () => {
 
   it("should handle empty path", () => {
     const issues: z.ZodIssue[] = [{ code: "custom" as const, path: [], message: "Invalid input" }];
-    expect(formatZodIssues(issues)).toBe(": Invalid input");
+    expect(formatZodIssues(issues)).toBe("Invalid input");
   });
 
   it("should handle empty issues array", () => {

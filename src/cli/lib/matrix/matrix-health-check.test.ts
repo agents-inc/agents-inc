@@ -24,10 +24,6 @@ vi.mock("../../utils/logger");
 
 import { warn } from "../../utils/logger";
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe("matrix-health-check", () => {
   describe("healthy matrix", () => {
     it("returns no issues for a valid matrix", () => {

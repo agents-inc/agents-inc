@@ -152,7 +152,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
 
   it(
     "Inert skill scope toggle on a locked dual-scope pair alongside a working agent G->P",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // api-framework-hono is a persisted dual-scope [P][G] pair locked to the
       // selected api-developer agent, so `s` is inert on it (and space can't

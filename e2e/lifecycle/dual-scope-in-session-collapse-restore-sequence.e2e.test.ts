@@ -5,9 +5,12 @@ import { cleanupTempDir, ensureBinaryExists, readTestFile } from "../helpers/tes
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { createGlobalOnlyEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
-import type { SkillConfig } from "../../src/cli/types/config.js";
+import {
+  createGlobalOnlyEnv,
+  readSkillEntries,
+  runEditWithFirstSkillAction,
+  type DualScopeEnv,
+} from "../fixtures/dual-scope-helpers.js";
 
 /**
  * Full in-session scope state machine for a persisted dual-scope `[P][G]` skill,
@@ -39,54 +42,6 @@ const REACT_SKILL_ID = "web-framework-react";
 const FRAMEWORK_CATEGORY_LABEL = "Framework";
 
 /** Load react's project-config entries, sorted deterministically for toStrictEqual. */
-async function readReactEntries(projectDir: string): Promise<SkillConfig[]> {
-  const loaded = await loadProjectConfigFromDir(projectDir);
-  expect(loaded, `project config.ts must exist at ${projectDir}`).not.toBeNull();
-  if (!loaded) return [];
-  return loaded.config.skills
-    .filter((sc) => sc.id === REACT_SKILL_ID)
-    .sort((a, b) => {
-      const aKey = `${a.scope}${a.excluded ? "-excluded" : ""}`;
-      const bKey = `${b.scope}${b.excluded ? "-excluded" : ""}`;
-      return aKey.localeCompare(bKey);
-    });
-}
-
-/**
- * Drive one `cc edit` session that presses `s` on the first-focused skill
- * (web-framework-react in the Web domain) — G->P — then saves through to
- * completion, producing the persisted dual-scope `[P][G]` pair.
- */
-async function seedPersistedDualScope(
-  projectDir: string,
-  fakeHome: string,
-  sourceDir: string,
-  sourceTempDir: string,
-): Promise<void> {
-  const wizard = await EditWizard.launch({
-    projectDir,
-    source: { sourceDir, tempDir: sourceTempDir },
-    env: { HOME: fakeHome },
-    rows: 60,
-    cols: 120,
-  });
-  try {
-    await wizard.build.toggleScopeOnFocusedSkill();
-    await wizard.build.advanceDomain();
-    // API domain: pass through.
-    await wizard.build.advanceDomain();
-    // Methodology domain -> Sources.
-    const sources = await wizard.build.advanceToSources();
-    await sources.waitForReady();
-    const agents = await sources.advance();
-    const confirm = await agents.acceptDefaults("edit");
-    const result = await confirm.confirm();
-    expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-    await result.destroy();
-  } finally {
-    await wizard.destroy();
-  }
-}
 
 describe("dual-scope in-session collapse → blocked-space → s-restore → s-flip", () => {
   let sourceDir: string;
@@ -111,14 +66,14 @@ describe("dual-scope in-session collapse → blocked-space → s-restore → s-f
 
   it(
     "collapses, blocks a second spacebar, then s-restores and freely flips the pair — all in one session",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
 
       // Establish the persisted dual-scope pair via a real `s` toggle + save.
-      await seedPersistedDualScope(projectDir, fakeHome, sourceDir, sourceTempDir);
-      expect(await readReactEntries(projectDir)).toStrictEqual([
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
         { id: REACT_SKILL_ID, scope: "global", source: "eject", excluded: true },
         { id: REACT_SKILL_ID, scope: "project", source: "eject" },
       ]);
@@ -192,7 +147,7 @@ describe("dual-scope in-session collapse → blocked-space → s-restore → s-f
         await readTestFile(projectConfigPath),
         "aborted in-session edit must not rewrite config.ts",
       ).toBe(configBefore);
-      expect(await readReactEntries(projectDir)).toStrictEqual([
+      expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
         { id: REACT_SKILL_ID, scope: "global", source: "eject", excluded: true },
         { id: REACT_SKILL_ID, scope: "project", source: "eject" },
       ]);

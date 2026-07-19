@@ -10,6 +10,13 @@ import type { Marketplace } from "../types";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../consts";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 
+/** Standard marketplace-generation options shared across tests. */
+const TEST_MARKETPLACE_OPTIONS = {
+  name: "test-marketplace",
+  ownerName: "Test Owner",
+  pluginRoot: "./plugins",
+};
+
 describe("marketplace-generator", () => {
   let tempDir: string;
   let pluginsDir: string;
@@ -48,11 +55,7 @@ describe("marketplace-generator", () => {
         version: "1.0.0",
       });
 
-      const marketplace = await generateMarketplace(pluginsDir, {
-        name: "test-marketplace",
-        ownerName: "Test Owner",
-        pluginRoot: "./plugins",
-      });
+      const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
       expect(marketplace.plugins).toHaveLength(2);
       const names = marketplace.plugins.map((p) => p.name);
@@ -67,11 +70,7 @@ describe("marketplace-generator", () => {
         version: "1.0.0",
       });
 
-      const marketplace = await generateMarketplace(pluginsDir, {
-        name: "test-marketplace",
-        ownerName: "Test Owner",
-        pluginRoot: "./plugins",
-      });
+      const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
       const reactPlugin = marketplace.plugins.find((p) => p.name === "web-framework-react");
       expect(reactPlugin?.category).toBeUndefined();
@@ -94,11 +93,7 @@ describe("marketplace-generator", () => {
         version: "1.0.0",
       });
 
-      const marketplace = await generateMarketplace(pluginsDir, {
-        name: "test-marketplace",
-        ownerName: "Test Owner",
-        pluginRoot: "./plugins",
-      });
+      const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
       const names = marketplace.plugins.map((p) => p.name);
       expect(names).toStrictEqual(["api-http-axios", "web-state-mobx", "web-state-zustand"]);
@@ -135,11 +130,7 @@ describe("marketplace-generator", () => {
         version: "1.0.0",
       });
 
-      const marketplace = await generateMarketplace(pluginsDir, {
-        name: "test-marketplace",
-        ownerName: "Test Owner",
-        pluginRoot: "./plugins",
-      });
+      const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
       expect(marketplace.$schema).toBe("https://anthropic.com/claude-code/marketplace.schema.json");
     });
@@ -151,11 +142,7 @@ describe("marketplace-generator", () => {
         version: "1.0.0",
       });
 
-      const marketplace = await generateMarketplace(pluginsDir, {
-        name: "test-marketplace",
-        ownerName: "Test Owner",
-        pluginRoot: "./plugins",
-      });
+      const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
       expect(marketplace.version).toBe("1.0.0");
     });
@@ -182,11 +169,7 @@ describe("marketplace-generator", () => {
       await mkdir(path.join(pluginsDir, "not-a-plugin"), { recursive: true });
       await writeFile(path.join(pluginsDir, "not-a-plugin", "README.md"), "# Not a plugin");
 
-      const marketplace = await generateMarketplace(pluginsDir, {
-        name: "test-marketplace",
-        ownerName: "Test Owner",
-        pluginRoot: "./plugins",
-      });
+      const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
       expect(marketplace.plugins).toHaveLength(1);
       expect(marketplace.plugins[0].name).toBe("web-valid-a");
@@ -203,11 +186,7 @@ describe("marketplace-generator", () => {
         },
       });
 
-      const marketplace = await generateMarketplace(pluginsDir, {
-        name: "test-marketplace",
-        ownerName: "Test Owner",
-        pluginRoot: "./plugins",
-      });
+      const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
       const plugin = marketplace.plugins[0];
       expect(plugin.author?.name).toBe("@vince");
@@ -222,11 +201,7 @@ describe("marketplace-generator", () => {
         keywords: ["web", "react", "ui"],
       });
 
-      const marketplace = await generateMarketplace(pluginsDir, {
-        name: "test-marketplace",
-        ownerName: "Test Owner",
-        pluginRoot: "./plugins",
-      });
+      const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
       const plugin = marketplace.plugins[0];
       expect(plugin.keywords).toStrictEqual(["web", "react", "ui"]);

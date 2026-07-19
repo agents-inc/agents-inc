@@ -113,6 +113,21 @@ const DOMAIN_PREFIX_MAP: Record<string, Domain> = {
   security: "shared",
 };
 
+/** Strip the domain-category prefix: "web-framework-react" -> "react". */
+function deriveSlugFromId(id: SkillId): SkillSlug {
+  const segments = id.split("-");
+  // Boundary cast: slug is derived from the ID's trailing segments
+  return (segments.length >= 3 ? segments.slice(2).join("-") : id) as SkillSlug;
+}
+
+/** Title-case each slug segment: "react-query" -> "React Query". */
+function deriveDisplayName(slug: SkillSlug): string {
+  return slug
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 /**
  * Creates a TestSkill for disk-based integration tests (createTestSource).
  * Derives slug, displayName, domain, and category from the skill ID,
@@ -129,11 +144,8 @@ export function createTestSkill(
   const canonicalCategories = getCanonicalSkillCategories();
   // Boundary cast: category registry returns arbitrary strings for non-canonical IDs
   const category = (canonicalCategories[id] ?? `${segments[0]}-${segments[1]}`) as CategoryPath;
-  const slug = (segments.length >= 3 ? segments.slice(2).join("-") : id) as SkillSlug;
-  const displayName = slug
-    .split("-")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+  const slug = deriveSlugFromId(id);
+  const displayName = deriveDisplayName(slug);
 
   return {
     id,
@@ -159,16 +171,8 @@ export function createMockSkill(id: SkillId, overrides?: Partial<ResolvedSkill>)
     );
   }
 
-  // Derive slug from skill ID: strip domain-category prefix to get the last segment(s)
-  // e.g., "web-framework-react" -> "react", "meta-reviewing-reviewing" -> "reviewing"
-  const segments = id.split("-");
-  const defaultSlug = (segments.length >= 3 ? segments.slice(2).join("-") : id) as SkillSlug;
-
-  // Derive display name from slug: title-case each segment
-  const defaultDisplayName = defaultSlug
-    .split("-")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+  const defaultSlug = deriveSlugFromId(id);
+  const defaultDisplayName = deriveDisplayName(defaultSlug);
 
   return {
     id,

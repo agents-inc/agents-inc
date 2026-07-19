@@ -19,6 +19,7 @@ import {
   initGlobal,
   initGlobalWithEject,
   initProject,
+  readAllSkillEntries,
 } from "../fixtures/dual-scope-helpers.js";
 
 /**
@@ -61,10 +62,6 @@ async function initGlobalWithLocalSource(
   await result.destroy();
   return { exitCode, output };
 }
-
-// =====================================================================
-// Test Suite 1 -- Source priority preservation (Item 1)
-// =====================================================================
 
 describe("config-scope integrity -- source priority preservation", () => {
   let sourceDir: string;
@@ -131,36 +128,22 @@ describe("config-scope integrity -- source priority preservation", () => {
       await result.destroy();
       wizard = undefined;
 
-      // Phase C: Verify config still has source: "eject"
-      const configAfterEdit = await readTestFile(globalConfigPath);
-
-      const skillsMatch = configAfterEdit.match(/const skills[\s\S]*?\[([\s\S]*?)\];/);
-      expect(skillsMatch, "Config must have a skills variable").not.toBeNull();
-      const skillsBlock = skillsMatch![1];
-
-      // Every skill must have source: "eject" — no marketplace override
-      const allSourceMatches = skillsBlock.match(/"source":"([^"]+)"/g) ?? [];
-      expect(allSourceMatches.length).toBeGreaterThanOrEqual(3);
-      for (const match of allSourceMatches) {
-        expect(match).toBe('"source":"eject"');
+      // Phase C: every skill must still have source: "eject" — no marketplace override
+      const skillEntries = await readAllSkillEntries(fakeHome);
+      expect(skillEntries.length).toBeGreaterThanOrEqual(3);
+      for (const entry of skillEntries) {
+        expect(entry.source, `skill ${entry.id} must keep source "eject"`).toBe("eject");
       }
     },
   );
 });
 
-// =====================================================================
-// Test Suite 2 -- Agent scope change preserved through merge (Item 5)
 //                + Old agent file deleted on scope change (Item 6)
-// =====================================================================
 
 describe("config-scope integrity -- agent scope change merge and file cleanup", () => {
   // Blocked by D-128: scope toggle from global context should be disabled (no-op).
   it.todo("should ignore scope toggle on global agents when editing from global context");
 });
-
-// =====================================================================
-// Test Suite 3 -- Global stack only references global skills (Item 7)
-// =====================================================================
 
 describe("config-scope integrity -- global stack scope filtering", () => {
   // Blocked by D-123: project-scoped skills require local copy, but source path
@@ -168,18 +151,10 @@ describe("config-scope integrity -- global stack scope filtering", () => {
   it.todo("should not reference project-scoped skills in global config stack section");
 });
 
-// =====================================================================
-// Test Suite 4 -- All domains in global config (Item 9)
-// =====================================================================
-
 describe("config-scope integrity -- domains in global config only", () => {
   // Blocked by D-123: same as stack scope filtering test above.
   it.todo("should store ALL domains in global config and no domains in project config");
 });
-
-// =====================================================================
-// Test Suite 5 -- config-types.ts Domain type includes config.domains (Item 10)
-// =====================================================================
 
 describe("config-scope integrity -- config-types Domain type includes config.domains", () => {
   let sourceDir: string;
@@ -234,10 +209,12 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       await writeFile(configPath, modifiedConfig);
 
       // Verify modification: config should still have domains with "api"
-      // but the skills array should not contain api-framework-hono as an id
+      // but the skills array should not contain api-framework-hono as an id.
+      // NOTE: raw-text check on purpose — this config was just hand-mangled by
+      // the regex surgery above and may not pass the structural loader's
+      // validation; the CLI's own tolerance for it is what Phase C exercises.
       const verifyConfig = await readTestFile(configPath);
       expect(verifyConfig).toContain('"api"');
-      // Extract just the skills array section to verify the skill was removed
       const skillsMatch = verifyConfig.match(/const skills[\s\S]*?\];/);
       expect(skillsMatch?.[0] ?? "").not.toContain("api-framework-hono");
 
@@ -281,10 +258,6 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
     },
   );
 });
-
-// =====================================================================
-// Test Suite 6 -- Global config includes source field after scope split
-// =====================================================================
 
 describe("config-scope integrity -- global config includes source field", () => {
   let sourceDir: string;

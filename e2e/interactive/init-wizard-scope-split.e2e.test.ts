@@ -10,8 +10,8 @@ import {
   ensureBinaryExists,
   createPermissionsFile,
   fileExists,
-  readTestFile,
 } from "../helpers/test-utils.js";
+import { readConfigSkillIds, readSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import "../matchers/setup.js";
 
 /**
@@ -114,16 +114,9 @@ describe("init wizard — mixed scope config split", () => {
       });
 
       // Global config should NOT contain the project-scoped skill (scope-specific check)
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const globalContent = await readTestFile(globalConfigPath);
-      const globalSkillsMatch = globalContent.match(
-        /const skills:\s*SkillConfig\[\]\s*=\s*\[([\s\S]*?)\];/,
-      );
-      expect(globalSkillsMatch, "Global config must have a skills array").not.toBeNull();
-      const globalSkillsBlock = globalSkillsMatch![1];
-
-      expect(globalSkillsBlock).not.toContain("web-framework-react");
-      expect(globalSkillsBlock).toContain("web-testing-vitest");
+      const globalSkillIds = await readConfigSkillIds(fakeHome);
+      expect(globalSkillIds).not.toContain("web-framework-react");
+      expect(globalSkillIds).toContain("web-testing-vitest");
 
       // web-developer should be compiled (global agent)
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
@@ -184,29 +177,14 @@ describe("init wizard — mixed scope config split", () => {
         skillIds: ["web-framework-react", "api-framework-hono"],
       });
 
-      // Global config: scope-specific checks require raw file reading
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const globalContent = await readTestFile(globalConfigPath);
-
-      // Extract global skills array
-      const globalSkillsMatch = globalContent.match(
-        /const skills:\s*SkillConfig\[\]\s*=\s*\[([\s\S]*?)\];/,
-      );
-      expect(globalSkillsMatch, "Global config must have a skills array").not.toBeNull();
-      const globalSkillsBlock = globalSkillsMatch![1];
-
       // Global skills: should NOT contain project-scoped skills
-      expect(globalSkillsBlock).not.toContain("web-framework-react");
-      expect(globalSkillsBlock).not.toContain("api-framework-hono");
+      const globalSkillIds = await readConfigSkillIds(fakeHome);
+      expect(globalSkillIds).not.toContain("web-framework-react");
+      expect(globalSkillIds).not.toContain("api-framework-hono");
 
       // Verify scope field values in the project config (scope-specific check)
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const projectContent = await readTestFile(projectConfigPath);
-      const projectSkillMatch = projectContent.match(
-        /"id":\s*"web-framework-react"[^}]*"scope":\s*"(\w+)"/,
-      );
-      expect(projectSkillMatch).not.toBeNull();
-      expect(projectSkillMatch?.[1]).toBe("project");
+      const projectReactEntries = await readSkillEntries(projectDir, "web-framework-react");
+      expect(projectReactEntries.map((entry) => entry.scope)).toStrictEqual(["project"]);
     },
   );
 });

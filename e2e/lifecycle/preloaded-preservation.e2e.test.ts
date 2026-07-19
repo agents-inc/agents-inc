@@ -1,4 +1,3 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import {
@@ -6,7 +5,7 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
@@ -14,8 +13,9 @@ import {
   createTempDir,
   ensureBinaryExists,
   isClaudeCLIAvailable,
-  readTestFile,
 } from "../helpers/test-utils.js";
+import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
+import type { AgentName, Category } from "../../src/cli/types/index.js";
 
 /**
  * Preloaded flag preservation across init and edit lifecycle.
@@ -33,65 +33,36 @@ import {
  */
 
 /**
- * Extracts the stack JSON from config.ts by finding the `const stack` declaration
- * and parsing its value. Returns the parsed stack object.
- */
-function extractStack(configContent: string): Record<string, Record<string, unknown[]>> {
-  // Find the start of the stack assignment
-  const marker = "const stack";
-  const startIdx = configContent.indexOf(marker);
-  expect(startIdx, "Expected config.ts to contain a stack variable declaration").not.toBe(-1);
-
-  // Find the opening brace after the `=`
-  const eqIdx = configContent.indexOf("=", startIdx);
-  const braceIdx = configContent.indexOf("{", eqIdx);
-
-  // Track braces to find the matching closing brace
-  let depth = 0;
-  let endIdx = braceIdx;
-  for (let i = braceIdx; i < configContent.length; i++) {
-    if (configContent[i] === "{") depth++;
-    if (configContent[i] === "}") depth--;
-    if (depth === 0) {
-      endIdx = i + 1;
-      break;
-    }
-  }
-
-  const stackJson = configContent.slice(braceIdx, endIdx);
-  return JSON.parse(stackJson) as Record<string, Record<string, unknown[]>>;
-}
-
-/**
- * Asserts that a given skill ID appears as a preloaded assignment within
- * a specific agent's category in the config.ts stack.
+ * Asserts that a given skill ID appears as a preloaded assignment within a
+ * specific agent's category in the structurally-loaded config.ts stack.
  *
- * The compact format means preloaded: true -> { "id": "...", "preloaded": true }
- * and preloaded: false -> bare string ID. So we check for the object form.
+ * The rendered compact format stores preloaded: true skills as
+ * { "id": "...", "preloaded": true } and preloaded: false skills as bare
+ * string IDs; the loader normalizes both, so the object-form find below
+ * matches exactly the preloaded entries.
  */
-function assertPreloadedInStack(
-  configContent: string,
-  agentName: string,
-  category: string,
+async function assertPreloadedInStack(
+  projectDir: string,
+  agentName: AgentName,
+  category: Category,
   skillId: string,
-): void {
-  const stack = extractStack(configContent);
+): Promise<void> {
+  const loaded = await loadProjectConfigFromDir(projectDir);
+  expect(loaded, `project config.ts must exist at ${projectDir}`).not.toBeNull();
+  const stack = loaded?.config.stack;
+  expect(stack, "Expected config.ts to contain a stack").toBeDefined();
 
-  expect(stack[agentName], `Expected stack to contain agent "${agentName}"`).toBeDefined();
+  const agentConfig = stack?.[agentName];
+  expect(agentConfig, `Expected stack to contain agent "${agentName}"`).toBeDefined();
 
-  const agentConfig = stack[agentName];
+  const assignments = agentConfig?.[category];
   expect(
-    agentConfig[category],
+    assignments,
     `Expected stack to contain category "${category}" under agent "${agentName}"`,
   ).toBeDefined();
 
-  const assignments = agentConfig[category];
-  const preloadedEntry = assignments.find(
-    (a) =>
-      typeof a === "object" &&
-      a !== null &&
-      (a as Record<string, unknown>).id === skillId &&
-      (a as Record<string, unknown>).preloaded === true,
+  const preloadedEntry = (assignments ?? []).find(
+    (a) => typeof a === "object" && a !== null && a.id === skillId && a.preloaded === true,
   );
 
   expect(
@@ -126,11 +97,10 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
 
     it(
       "should preserve preloaded: true flags from stack through init and edit passthrough",
-      { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+      { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
         tempDir = await createTempDir();
         const projectDir = tempDir;
-        const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
 
         // ================================================================
         // Phase A: Stack-picked init
@@ -153,15 +123,13 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
         );
 
         // Verify preloaded flags in config after init
-        const configAfterInit = await readTestFile(configPath);
-
-        assertPreloadedInStack(
-          configAfterInit,
+        await assertPreloadedInStack(
+          projectDir,
           "web-developer",
           "web-framework",
           "web-framework-react",
         );
-        assertPreloadedInStack(configAfterInit, "api-developer", "api-api", "api-framework-hono");
+        await assertPreloadedInStack(projectDir, "api-developer", "api-api", "api-framework-hono");
 
         // ================================================================
         // Phase B: Edit passthrough (no changes)
@@ -177,15 +145,13 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
         expect(await editResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
         // Verify preloaded flags survive edit passthrough
-        const configAfterEdit = await readTestFile(configPath);
-
-        assertPreloadedInStack(
-          configAfterEdit,
+        await assertPreloadedInStack(
+          projectDir,
           "web-developer",
           "web-framework",
           "web-framework-react",
         );
-        assertPreloadedInStack(configAfterEdit, "api-developer", "api-api", "api-framework-hono");
+        await assertPreloadedInStack(projectDir, "api-developer", "api-api", "api-framework-hono");
       },
     );
   });

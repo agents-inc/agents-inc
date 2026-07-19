@@ -28,12 +28,12 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack").full);
-      expect(output).toContain(formatStepLabel("domains").full);
-      expect(output).toContain(formatStepLabel("build").full);
-      expect(output).toContain(formatStepLabel("sources").full);
-      expect(output).toContain(formatStepLabel("agents").full);
-      expect(output).toContain(formatStepLabel("confirm").full);
+      expect(output).toContain(formatStepLabel("stack"));
+      expect(output).toContain(formatStepLabel("domains"));
+      expect(output).toContain(formatStepLabel("build"));
+      expect(output).toContain(formatStepLabel("sources"));
+      expect(output).toContain(formatStepLabel("agents"));
+      expect(output).toContain(formatStepLabel("confirm"));
     });
 
     it("should render with custom steps", () => {
@@ -69,7 +69,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("build").full);
+      expect(output).toContain(formatStepLabel("build"));
     });
 
     it("should mark first step as current by default", () => {
@@ -80,7 +80,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack").full);
+      expect(output).toContain(formatStepLabel("stack"));
     });
 
     it("should update current step when changed", () => {
@@ -91,7 +91,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("confirm").full);
+      expect(output).toContain(formatStepLabel("confirm"));
     });
   });
 
@@ -104,7 +104,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack").full);
+      expect(output).toContain(formatStepLabel("stack"));
     });
 
     it("should render multiple completed steps", () => {
@@ -115,8 +115,8 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack").full);
-      expect(output).toContain(formatStepLabel("build").full);
+      expect(output).toContain(formatStepLabel("stack"));
+      expect(output).toContain(formatStepLabel("build"));
     });
 
     it("should render current step separately from completed steps", () => {
@@ -127,7 +127,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack").full);
+      expect(output).toContain(formatStepLabel("stack"));
     });
   });
 
@@ -140,9 +140,9 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("domains").full);
-      expect(output).toContain(formatStepLabel("build").full);
-      expect(output).toContain(formatStepLabel("sources").full);
+      expect(output).toContain(formatStepLabel("domains"));
+      expect(output).toContain(formatStepLabel("build"));
+      expect(output).toContain(formatStepLabel("sources"));
     });
 
     it("should render steps after current", () => {
@@ -153,7 +153,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("confirm").full);
+      expect(output).toContain(formatStepLabel("confirm"));
     });
   });
 
@@ -167,7 +167,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("build").full);
+      expect(output).toContain(formatStepLabel("build"));
     });
 
     it("should handle multiple skipped steps", () => {
@@ -179,8 +179,8 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("build").full);
-      expect(output).toContain(formatStepLabel("sources").full);
+      expect(output).toContain(formatStepLabel("build"));
+      expect(output).toContain(formatStepLabel("sources"));
     });
 
     it("should prioritize completed over skipped when step is in both arrays", () => {
@@ -192,8 +192,8 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack").full);
-      expect(output).toContain(formatStepLabel("build").full);
+      expect(output).toContain(formatStepLabel("stack"));
+      expect(output).toContain(formatStepLabel("build"));
     });
   });
 
@@ -206,7 +206,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack").full);
+      expect(output).toContain(formatStepLabel("stack"));
     });
 
     it("should prioritize current over skipped", () => {
@@ -218,7 +218,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("build").full);
+      expect(output).toContain(formatStepLabel("build"));
     });
 
     it("should prioritize completed over skipped", () => {
@@ -230,7 +230,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack").full);
+      expect(output).toContain(formatStepLabel("stack"));
     });
   });
 
@@ -240,8 +240,8 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack").label);
-      expect(output).toContain(formatStepLabel("confirm").label);
+      expect(output).toContain(formatStepLabel("stack"));
+      expect(output).toContain(formatStepLabel("confirm"));
     });
 
     it("should include step labels", () => {
@@ -250,7 +250,7 @@ describe("WizardTabs component", () => {
 
       const output = lastFrame();
       WIZARD_STEPS.forEach((step) => {
-        expect(output).toContain(formatStepLabel(step.id).label);
+        expect(output).toContain(formatStepLabel(step.id));
       });
     });
   });
@@ -264,8 +264,8 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack").full);
-      expect(output).toContain(formatStepLabel("confirm").full);
+      expect(output).toContain(formatStepLabel("stack"));
+      expect(output).toContain(formatStepLabel("confirm"));
     });
 
     it("should handle empty skipped steps", () => {
@@ -277,9 +277,9 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack").full);
-      expect(output).toContain(formatStepLabel("build").full);
-      expect(output).toContain(formatStepLabel("sources").full);
+      expect(output).toContain(formatStepLabel("stack"));
+      expect(output).toContain(formatStepLabel("build"));
+      expect(output).toContain(formatStepLabel("sources"));
     });
 
     it("should handle all steps completed", () => {
@@ -290,11 +290,11 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack").full);
-      expect(output).toContain(formatStepLabel("domains").full);
-      expect(output).toContain(formatStepLabel("build").full);
-      expect(output).toContain(formatStepLabel("sources").full);
-      expect(output).toContain(formatStepLabel("confirm").full);
+      expect(output).toContain(formatStepLabel("stack"));
+      expect(output).toContain(formatStepLabel("domains"));
+      expect(output).toContain(formatStepLabel("build"));
+      expect(output).toContain(formatStepLabel("sources"));
+      expect(output).toContain(formatStepLabel("confirm"));
     });
 
     it("should handle single step", () => {

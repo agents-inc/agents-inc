@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { SkillConfig } from "../../../types/config.js";
+import type { SkillId } from "../../../types/index.js";
 
 vi.mock("../../../utils/exec.js", () => ({
   claudePluginInstall: vi.fn(),
@@ -13,8 +14,8 @@ const mockClaudePluginInstall = vi.mocked(claudePluginInstall);
 const PROJECT_DIR = "/tmp/test-project";
 const MARKETPLACE = "agents-inc";
 
-function makeSkillConfig(id: string, scope: "project" | "global", source: string): SkillConfig {
-  return { id: id as SkillConfig["id"], scope, source };
+function makeSkillConfig(id: SkillId, scope: "project" | "global", source: string): SkillConfig {
+  return { id, scope, source };
 }
 
 describe("installPluginSkills", () => {

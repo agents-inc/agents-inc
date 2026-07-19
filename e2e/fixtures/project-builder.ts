@@ -5,6 +5,8 @@ import {
   createLocalSkill,
   createPermissionsFile,
   writeProjectConfig,
+  writeAgentStubs,
+  renderMetadataYaml,
   renderSkillMd,
 } from "../helpers/test-utils.js";
 import { DIRS, FILES } from "../pages/constants.js";
@@ -44,6 +46,15 @@ export type PluginProjectOptions = {
   omitMarketplaceField?: boolean;
 };
 
+/** Derive category/slug from a skill ID (e.g. "web-framework-react" -> "web-framework"/"react"). */
+function derivedCategorySlug(skillId: string): { category: string; slug: string } {
+  const parts = skillId.split("-");
+  return {
+    category: parts.slice(0, 2).join("-"),
+    slug: parts.slice(2).join("-") || skillId,
+  };
+}
+
 export class ProjectBuilder {
   /**
    * Creates a minimal project with one local skill and config.
@@ -62,23 +73,18 @@ export class ProjectBuilder {
   static async minimal(): Promise<ProjectHandle> {
     const tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
-    const skillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, "web-testing-vitest");
 
-    await mkdir(skillDir, { recursive: true });
-
-    await writeFile(
-      path.join(skillDir, FILES.SKILL_MD),
-      renderSkillMd(
-        "web-testing-vitest",
-        "E2E test skill for compile verification",
-        "# Test E2E Skill\n\nThis skill exists solely for E2E testing of the compile command.",
-      ),
-    );
-
-    await writeFile(
-      path.join(skillDir, FILES.METADATA_YAML),
-      `author: "@test"\ndisplayName: web-testing-vitest\nslug: vitest\ncliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\ncontentHash: "a1b2c3d"\n`,
-    );
+    await createLocalSkill(projectDir, "web-testing-vitest", {
+      description: "E2E test skill for compile verification",
+      body: "# Test E2E Skill\n\nThis skill exists solely for E2E testing of the compile command.",
+      metadata: renderMetadataYaml({
+        displayName: "web-testing-vitest",
+        slug: "vitest",
+        cliDescription: "E2E test skill",
+        usageGuidance: "Use when testing E2E scenarios",
+        contentHash: "a1b2c3d",
+      }),
+    });
 
     const config: ProjectConfig = {
       name: "e2e-compile-test",
@@ -137,23 +143,17 @@ export class ProjectBuilder {
     await writeProjectConfig(projectDir, config);
 
     for (const skillId of skills) {
-      const skillDir = path.join(skillsDir, skillId);
-      await mkdir(skillDir, { recursive: true });
-
-      await writeFile(
-        path.join(skillDir, FILES.SKILL_MD),
-        renderSkillMd(skillId, "Test skill for E2E", `# ${skillId}\n\nTest content.`),
-      );
-
-      // Derive category from skill ID (e.g., "web-framework-react" -> "web-framework")
-      const parts = skillId.split("-");
-      const category = parts.slice(0, 2).join("-");
-      const slug = parts.slice(2).join("-") || skillId;
-
-      await writeFile(
-        path.join(skillDir, FILES.METADATA_YAML),
-        `author: "@test"\ndisplayName: ${skillId}\ncategory: ${category}\nslug: ${slug}\ncliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\ncontentHash: "b2c3d4e"\n`,
-      );
+      await createLocalSkill(projectDir, skillId, {
+        description: "Test skill for E2E",
+        body: `# ${skillId}\n\nTest content.`,
+        metadata: renderMetadataYaml({
+          displayName: skillId,
+          ...derivedCategorySlug(skillId),
+          cliDescription: "E2E test skill",
+          usageGuidance: "Use when testing E2E scenarios",
+          contentHash: "b2c3d4e",
+        }),
+      });
     }
 
     return { dir: projectDir };
@@ -192,7 +192,12 @@ export class ProjectBuilder {
 
     await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
       description: "Global E2E skill for dual-scope testing",
-      metadata: `author: "@test"\ndisplayName: web-testing-cypress-e2e\ncliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\ncontentHash: "c3d4e5f"\n`,
+      metadata: renderMetadataYaml({
+        displayName: "web-testing-cypress-e2e",
+        cliDescription: "E2E test skill",
+        usageGuidance: "Use when testing E2E scenarios",
+        contentHash: "c3d4e5f",
+      }),
     });
 
     // --- Project installation ---
@@ -215,7 +220,12 @@ export class ProjectBuilder {
 
     await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
       description: "Project-local E2E skill for dual-scope testing",
-      metadata: `author: "@test"\ndisplayName: web-testing-playwright-e2e\ncliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\ncontentHash: "d4e5f6a"\n`,
+      metadata: renderMetadataYaml({
+        displayName: "web-testing-playwright-e2e",
+        cliDescription: "E2E test skill",
+        usageGuidance: "Use when testing E2E scenarios",
+        contentHash: "d4e5f6a",
+      }),
     });
 
     return {
@@ -261,7 +271,11 @@ export class ProjectBuilder {
 
     await createLocalSkill(globalHome, "web-framework-react", {
       description: "React framework skill for global scope testing",
-      metadata: `author: "@test"\ncategory: web-framework\nslug: react\ncontentHash: "hash-react"\n`,
+      metadata: renderMetadataYaml({
+        category: "web-framework",
+        slug: "react",
+        contentHash: "hash-react",
+      }),
     });
 
     // --- Shared config-types.ts ---
@@ -326,7 +340,11 @@ export default {
     // --- Project skill ---
     await createLocalSkill(projectDir, "web-testing-vitest", {
       description: "Vitest testing skill for project scope testing",
-      metadata: `author: "@test"\ncategory: web-testing\nslug: vitest\ncontentHash: "hash-vitest"\n`,
+      metadata: renderMetadataYaml({
+        category: "web-testing",
+        slug: "vitest",
+        contentHash: "hash-vitest",
+      }),
     });
 
     return {
@@ -429,7 +447,8 @@ export default {
 
     await writeFile(path.join(configDir, FILES.CONFIG_TS), configContent);
 
-    // Custom skill SKILL.md
+    // Written directly (not via createLocalSkill) because the custom skill ID
+    // is intentionally outside the SkillId union.
     await writeFile(
       path.join(skillDir, FILES.SKILL_MD),
       renderSkillMd(
@@ -439,19 +458,18 @@ export default {
       ),
     );
 
-    // Custom skill metadata.yaml with custom: true
     await writeFile(
       path.join(skillDir, FILES.METADATA_YAML),
-      `custom: true
-domain: custom-e2e
-category: web-custom-e2e
-slug: e2e-widget
-author: "@test"
-displayName: Custom E2E Widget
-cliDescription: "E2E custom test skill"
-usageGuidance: "Use when testing custom skill scenarios"
-contentHash: "e5f6a7b"
-`,
+      renderMetadataYaml({
+        custom: true,
+        domain: "custom-e2e",
+        category: "web-custom-e2e",
+        slug: "e2e-widget",
+        displayName: "Custom E2E Widget",
+        cliDescription: "E2E custom test skill",
+        usageGuidance: "Use when testing custom skill scenarios",
+        contentHash: "e5f6a7b",
+      }),
     );
 
     return { dir: projectDir };
@@ -482,29 +500,17 @@ contentHash: "e5f6a7b"
     });
 
     for (const skillId of skills) {
-      const skillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, skillId);
-      await mkdir(skillDir, { recursive: true });
-      await writeFile(
-        path.join(skillDir, FILES.SKILL_MD),
-        renderSkillMd(skillId, "Test skill", `# ${skillId}`),
-      );
-      const parts = skillId.split("-");
-      const category = parts.slice(0, 2).join("-");
-      const slug = parts.slice(2).join("-") || skillId;
-      await writeFile(
-        path.join(skillDir, FILES.METADATA_YAML),
-        `author: "@test"\ndisplayName: ${skillId}\ncategory: ${category}\nslug: ${slug}\ncontentHash: "e2e-hash-${skillId}"\n`,
-      );
+      await createLocalSkill(projectDir, skillId, {
+        description: "Test skill",
+        metadata: renderMetadataYaml({
+          displayName: skillId,
+          ...derivedCategorySlug(skillId),
+          contentHash: `e2e-hash-${skillId}`,
+        }),
+      });
     }
 
-    const agentsDir = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS);
-    await mkdir(agentsDir, { recursive: true });
-    for (const agent of agents) {
-      await writeFile(
-        path.join(agentsDir, `${agent}.md`),
-        `---\nname: ${agent}\n---\nTest agent content.\n`,
-      );
-    }
+    await writeAgentStubs(projectDir, agents);
 
     await createPermissionsFile(projectDir);
 
@@ -535,29 +541,17 @@ contentHash: "e5f6a7b"
     });
 
     for (const skillId of skills) {
-      const skillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, skillId);
-      await mkdir(skillDir, { recursive: true });
-      await writeFile(
-        path.join(skillDir, FILES.SKILL_MD),
-        renderSkillMd(skillId, "Test skill", `# ${skillId}`),
-      );
-      const parts = skillId.split("-");
-      const category = parts.slice(0, 2).join("-");
-      const slug = parts.slice(2).join("-") || skillId;
-      await writeFile(
-        path.join(skillDir, FILES.METADATA_YAML),
-        `author: "@test"\ndisplayName: ${skillId}\ncategory: ${category}\nslug: ${slug}\ncontentHash: "e2e-hash-${skillId}"\n`,
-      );
+      await createLocalSkill(projectDir, skillId, {
+        description: "Test skill",
+        metadata: renderMetadataYaml({
+          displayName: skillId,
+          ...derivedCategorySlug(skillId),
+          contentHash: `e2e-hash-${skillId}`,
+        }),
+      });
     }
 
-    const agentsDir = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS);
-    await mkdir(agentsDir, { recursive: true });
-    for (const agent of agents) {
-      await writeFile(
-        path.join(agentsDir, `${agent}.md`),
-        `---\nname: ${agent}\n---\nTest agent content.\n`,
-      );
-    }
+    await writeAgentStubs(projectDir, agents);
 
     await createPermissionsFile(projectDir);
 
@@ -587,16 +581,16 @@ contentHash: "e5f6a7b"
       domains: ["web"],
     });
 
-    const skillDir = path.join(tempDir, DIRS.CLAUDE, DIRS.SKILLS, "web-framework-react");
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(
-      path.join(skillDir, FILES.SKILL_MD),
-      renderSkillMd("web-framework-react", "React", "# React"),
-    );
-    await writeFile(
-      path.join(skillDir, FILES.METADATA_YAML),
-      'author: "@test"\ndisplayName: web-framework-react\ncategory: web-framework\nslug: react\ncontentHash: "hash"\n',
-    );
+    await createLocalSkill(tempDir, "web-framework-react", {
+      description: "React",
+      body: "# React",
+      metadata: renderMetadataYaml({
+        displayName: "web-framework-react",
+        category: "web-framework",
+        slug: "react",
+        contentHash: "hash",
+      }),
+    });
 
     const subDir = path.join(tempDir, "subproject");
     await mkdir(subDir, { recursive: true });

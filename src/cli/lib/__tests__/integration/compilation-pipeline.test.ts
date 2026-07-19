@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
-import { mkdir, readFile, stat } from "fs/promises";
+import { mkdir, readFile } from "fs/promises";
 import { compileAllSkillPlugins } from "../../skills";
 import { compileStackPlugin, loadStacks } from "../../stacks";
 import {
@@ -18,7 +18,7 @@ import {
 import type { Marketplace, PluginManifest } from "../../../types";
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
-import { createTempDir, cleanupTempDir } from "../test-fs-utils";
+import { createTempDir, cleanupTempDir, directoryExists, fileExists } from "../test-fs-utils";
 import { COMPILATION_TEST_STACK } from "../mock-data/mock-stacks.js";
 
 async function readPluginManifest(pluginDir: string): Promise<PluginManifest | null> {
@@ -28,11 +28,23 @@ async function readPluginManifest(pluginDir: string): Promise<PluginManifest | n
     .catch(() => null);
 }
 
-async function pathExists(p: string): Promise<boolean> {
-  return stat(p)
-    .then(() => true)
-    .catch(() => false);
+/** Compiles COMPILATION_TEST_STACK from the test source into `outputDir`. */
+function compileTestStack(outputDir: string, sourceDir: string) {
+  return compileStackPlugin({
+    stackId: COMPILATION_TEST_STACK.id,
+    outputDir,
+    projectRoot: sourceDir,
+    agentSourcePath: sourceDir,
+    stack: COMPILATION_TEST_STACK,
+  });
 }
+
+/** Standard marketplace-generation options shared across pipeline tests. */
+const TEST_MARKETPLACE_OPTIONS = {
+  name: "test-marketplace",
+  ownerName: "Test Owner",
+  pluginRoot: "./plugins",
+};
 
 describe("Integration: Full Skill Pipeline", () => {
   let dirs: TestDirs;
@@ -78,11 +90,7 @@ describe("Integration: Full Skill Pipeline", () => {
   it("should generate marketplace with correct plugin count", async () => {
     await compileAllSkillPlugins(dirs.skillsDir, outputDir);
 
-    const marketplace = await generateMarketplace(outputDir, {
-      name: "test-marketplace",
-      ownerName: "Test Owner",
-      pluginRoot: "./plugins",
-    });
+    const marketplace = await generateMarketplace(outputDir, TEST_MARKETPLACE_OPTIONS);
 
     const expectedSkillNames = DEFAULT_TEST_SKILLS.map((s) => s.id).sort();
     expect(marketplace.plugins.map((p) => p.name).sort()).toStrictEqual(expectedSkillNames);
@@ -149,24 +157,18 @@ describe("Integration: Full Stack Pipeline", () => {
   });
 
   it("should compile test stack successfully", async () => {
-    const result = await compileStackPlugin({
-      stackId: COMPILATION_TEST_STACK.id,
-      outputDir,
-      projectRoot: dirs.sourceDir,
-      agentSourcePath: dirs.sourceDir,
-      stack: COMPILATION_TEST_STACK,
-    });
+    const result = await compileTestStack(outputDir, dirs.sourceDir);
 
     expect(result.pluginPath).toBe(path.join(outputDir, COMPILATION_TEST_STACK.id));
     expect(result.stackName).toBe("Test Stack");
     expect(result.agents.sort()).toStrictEqual(["api-developer", "web-developer"]);
 
-    expect(await pathExists(result.pluginPath)).toBe(true);
-    expect(await pathExists(path.join(result.pluginPath, "agents"))).toBe(true);
+    expect(await directoryExists(result.pluginPath)).toBe(true);
+    expect(await directoryExists(path.join(result.pluginPath, "agents"))).toBe(true);
     expect(
-      await pathExists(path.join(result.pluginPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE)),
+      await fileExists(path.join(result.pluginPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE)),
     ).toBe(true);
-    expect(await pathExists(path.join(result.pluginPath, "README.md"))).toBe(true);
+    expect(await fileExists(path.join(result.pluginPath, "README.md"))).toBe(true);
 
     const manifest = await readPluginManifest(result.pluginPath);
     expect(manifest).not.toBeNull();
@@ -176,13 +178,7 @@ describe("Integration: Full Stack Pipeline", () => {
   });
 
   it("should generate README with agent list", async () => {
-    const result = await compileStackPlugin({
-      stackId: COMPILATION_TEST_STACK.id,
-      outputDir,
-      projectRoot: dirs.sourceDir,
-      agentSourcePath: dirs.sourceDir,
-      stack: COMPILATION_TEST_STACK,
-    });
+    const result = await compileTestStack(outputDir, dirs.sourceDir);
 
     const readmePath = path.join(result.pluginPath, "README.md");
     const readme = await readFile(readmePath, "utf-8");
@@ -197,25 +193,13 @@ describe("Integration: Full Stack Pipeline", () => {
   });
 
   it("should include skill plugin references in manifest", async () => {
-    const result = await compileStackPlugin({
-      stackId: COMPILATION_TEST_STACK.id,
-      outputDir,
-      projectRoot: dirs.sourceDir,
-      agentSourcePath: dirs.sourceDir,
-      stack: COMPILATION_TEST_STACK,
-    });
+    const result = await compileTestStack(outputDir, dirs.sourceDir);
 
     expect(result.skillPlugins.sort()).toStrictEqual(["api-framework-hono", "web-framework-react"]);
   });
 
   it("should validate compiled stack plugins", async () => {
-    await compileStackPlugin({
-      stackId: COMPILATION_TEST_STACK.id,
-      outputDir,
-      projectRoot: dirs.sourceDir,
-      agentSourcePath: dirs.sourceDir,
-      stack: COMPILATION_TEST_STACK,
-    });
+    await compileTestStack(outputDir, dirs.sourceDir);
 
     const pluginPath = path.join(outputDir, COMPILATION_TEST_STACK.id);
     const validationResult = await validatePlugin(pluginPath);
@@ -276,11 +260,7 @@ describe("Integration: Marketplace Integrity", () => {
   it("should have no duplicate plugin names", async () => {
     await compileAllSkillPlugins(dirs.skillsDir, pluginsDir);
 
-    const marketplace = await generateMarketplace(pluginsDir, {
-      name: "test-marketplace",
-      ownerName: "Test Owner",
-      pluginRoot: "./plugins",
-    });
+    const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
     const names = marketplace.plugins.map((p) => p.name);
     const uniqueNames = new Set(names);
@@ -291,18 +271,14 @@ describe("Integration: Marketplace Integrity", () => {
   it("should have all plugin source paths resolvable", async () => {
     await compileAllSkillPlugins(dirs.skillsDir, pluginsDir);
 
-    const marketplace = await generateMarketplace(pluginsDir, {
-      name: "test-marketplace",
-      ownerName: "Test Owner",
-      pluginRoot: "./plugins",
-    });
+    const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
     for (const plugin of marketplace.plugins) {
       if (typeof plugin.source === "string") {
         const relativePath = plugin.source.replace("./plugins/", "");
         const absolutePath = path.join(pluginsDir, relativePath);
 
-        const exists = await pathExists(absolutePath);
+        const exists = await directoryExists(absolutePath);
         expect(exists).toBe(true);
       }
     }
@@ -311,11 +287,7 @@ describe("Integration: Marketplace Integrity", () => {
   it("should have plugins sorted alphabetically", async () => {
     await compileAllSkillPlugins(dirs.skillsDir, pluginsDir);
 
-    const marketplace = await generateMarketplace(pluginsDir, {
-      name: "test-marketplace",
-      ownerName: "Test Owner",
-      pluginRoot: "./plugins",
-    });
+    const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
     const names = marketplace.plugins.map((p) => p.name);
     const sortedNames = [...names].sort((a, b) => a.localeCompare(b));
@@ -326,11 +298,7 @@ describe("Integration: Marketplace Integrity", () => {
   it("should categorize plugins correctly", async () => {
     await compileAllSkillPlugins(dirs.skillsDir, pluginsDir);
 
-    const marketplace = await generateMarketplace(pluginsDir, {
-      name: "test-marketplace",
-      ownerName: "Test Owner",
-      pluginRoot: "./plugins",
-    });
+    const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
     const stats = getMarketplaceStats(marketplace);
 
@@ -371,34 +339,18 @@ describe("Integration: End-to-End Pipeline", () => {
     const skillValidation = await validateAllPlugins(pluginsDir);
     expect(skillValidation.summary.invalid).toBe(0);
 
-    const stackResult = await compileStackPlugin({
-      stackId: COMPILATION_TEST_STACK.id,
-      outputDir: stacksDir,
-      projectRoot: dirs.sourceDir,
-      agentSourcePath: dirs.sourceDir,
-      stack: COMPILATION_TEST_STACK,
-    });
+    const stackResult = await compileTestStack(stacksDir, dirs.sourceDir);
     expect(stackResult.agents.sort()).toStrictEqual(["api-developer", "web-developer"]);
 
     const stackValidation = await validatePlugin(stackResult.pluginPath);
     expect(stackValidation.valid).toBe(true);
 
-    const marketplace = await generateMarketplace(pluginsDir, {
-      name: "test-marketplace",
-      ownerName: "Test Owner",
-      pluginRoot: "./plugins",
-    });
+    const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
     expect(marketplace.plugins.map((p) => p.name).sort()).toStrictEqual(expectedSkillNames);
   });
 
   it("should have valid skill plugin reference format", async () => {
-    const stackResult = await compileStackPlugin({
-      stackId: COMPILATION_TEST_STACK.id,
-      outputDir: stacksDir,
-      projectRoot: dirs.sourceDir,
-      agentSourcePath: dirs.sourceDir,
-      stack: COMPILATION_TEST_STACK,
-    });
+    const stackResult = await compileTestStack(stacksDir, dirs.sourceDir);
 
     expect(stackResult.skillPlugins.sort()).toStrictEqual([
       "api-framework-hono",
@@ -409,13 +361,7 @@ describe("Integration: End-to-End Pipeline", () => {
   it("should compile skills and stacks that share common patterns", async () => {
     const { compiled: skillResults } = await compileAllSkillPlugins(dirs.skillsDir, pluginsDir);
 
-    const stackResult = await compileStackPlugin({
-      stackId: COMPILATION_TEST_STACK.id,
-      outputDir: stacksDir,
-      projectRoot: dirs.sourceDir,
-      agentSourcePath: dirs.sourceDir,
-      stack: COMPILATION_TEST_STACK,
-    });
+    const stackResult = await compileTestStack(stacksDir, dirs.sourceDir);
 
     const stackSkillNames = new Set(stackResult.skillPlugins);
     const compiledSkillNames = new Set(skillResults.map((r) => r.manifest.name));

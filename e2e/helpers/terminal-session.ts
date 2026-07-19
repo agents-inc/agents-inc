@@ -2,12 +2,15 @@ import { stripVTControlCharacters } from "node:util";
 import pty from "@lydell/node-pty";
 import { Terminal } from "@xterm/headless";
 import treeKill from "tree-kill";
-import { BIN_RUN } from "./test-utils.js";
+import { BIN_RUN, pollUntil } from "./test-utils.js";
 import { TIMEOUTS } from "../pages/constants.js";
 
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 40;
-const POLL_INTERVAL_MS = 50;
+
+function isDefinedEntry(entry: [string, string | undefined]): entry is [string, string] {
+  return entry[1] !== undefined;
+}
 
 function getDefaultTimeout(): number {
   return process.env.CI ? TIMEOUTS.SESSION_DEFAULT_CI : TIMEOUTS.SESSION_DEFAULT;
@@ -58,10 +61,7 @@ export class TerminalSession {
       NO_COLOR: "1",
       FORCE_COLOR: "0",
     };
-    const cleanEnv: Record<string, string> = {};
-    for (const [key, value] of Object.entries(rawEnv)) {
-      if (value !== undefined) cleanEnv[key] = value;
-    }
+    const cleanEnv = Object.fromEntries(Object.entries(rawEnv).filter(isDefinedEntry));
 
     this.ptyProcess = pty.spawn("node", [BIN_RUN, ...args], {
       name: "xterm-256color",
@@ -83,26 +83,24 @@ export class TerminalSession {
     });
   }
 
+  /** Reads the first `lineCount` xterm buffer lines as trimmed text. */
+  private readBufferLines(lineCount: number): string {
+    const buffer = this.xterm.buffer.active;
+    return Array.from({ length: lineCount }, (_, i) => buffer.getLine(i))
+      .filter((line) => line !== undefined)
+      .map((line) => line.translateToString(true))
+      .join("\n")
+      .trimEnd();
+  }
+
   /** Reads the visible screen area (viewport only, no scrollback). */
   getScreen(): string {
-    const buffer = this.xterm.buffer.active;
-    const lines: string[] = [];
-    for (let i = 0; i < buffer.viewportY + this.xterm.rows; i++) {
-      const line = buffer.getLine(i);
-      if (line) lines.push(line.translateToString(true));
-    }
-    return lines.join("\n").trimEnd();
+    return this.readBufferLines(this.xterm.buffer.active.viewportY + this.xterm.rows);
   }
 
   /** Reads ALL output including scrollback above the viewport. */
   getFullOutput(): string {
-    const buffer = this.xterm.buffer.active;
-    const lines: string[] = [];
-    for (let i = 0; i < buffer.length; i++) {
-      const line = buffer.getLine(i);
-      if (line) lines.push(line.translateToString(true));
-    }
-    return lines.join("\n").trimEnd();
+    return this.readBufferLines(this.xterm.buffer.active.length);
   }
 
   /**
@@ -121,18 +119,16 @@ export class TerminalSession {
    */
   async waitForText(text: string, timeoutMs?: number): Promise<void> {
     const timeout = timeoutMs ?? this.defaultTimeout;
-    const start = Date.now();
-
-    while (!this.getFullOutput().includes(text)) {
-      if (Date.now() - start > timeout) {
-        throw new Error(
+    await pollUntil(
+      () => this.getFullOutput().includes(text),
+      timeout,
+      () =>
+        new Error(
           `Timeout waiting for "${text}" after ${timeout}ms.\n` +
             `Screen:\n${this.getScreen()}\n` +
             `Full output:\n${this.getFullOutput()}`,
-        );
-      }
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-    }
+        ),
+    );
   }
 
   /**

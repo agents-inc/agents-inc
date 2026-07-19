@@ -1,10 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { loadSkillsFromAllSources, searchExtraSources } from "./multi-source-loader";
-import type { SkillId } from "../../types";
+import type { SkillDefinition, SkillId } from "../../types";
 import type { ResolvedConfig, SourceEntry } from "../configuration";
 import { SKILLS } from "../__tests__/test-fixtures";
 import { createMockExtractedSkill } from "../__tests__/factories/skill-factories.js";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
+import { warn } from "../../utils/logger";
+import { resolveAllSources } from "../configuration";
+import { fetchFromSource, fetchMarketplace } from "./source-fetcher";
+import { extractAllSkills } from "../matrix";
+import { discoverAllPluginSkills } from "../plugins";
 
 // Mock external dependencies
 vi.mock("../../utils/logger", async (importOriginal) => ({
@@ -40,6 +45,13 @@ vi.mock("../plugins", async (importOriginal) => ({
   discoverAllPluginSkills: vi.fn().mockResolvedValue({}),
 }));
 
+const mockWarn = vi.mocked(warn);
+const mockResolveAllSources = vi.mocked(resolveAllSources);
+const mockFetchFromSource = vi.mocked(fetchFromSource);
+const mockFetchMarketplace = vi.mocked(fetchMarketplace);
+const mockExtractAllSkills = vi.mocked(extractAllSkills);
+const mockDiscoverAllPluginSkills = vi.mocked(discoverAllPluginSkills);
+
 const DEFAULT_SOURCE_CONFIG: ResolvedConfig = {
   source: "github:agents-inc/skills",
   sourceOrigin: "default",
@@ -49,14 +61,12 @@ describe("multi-source-loader", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     // Reset discoverAllPluginSkills to default empty result (clearAllMocks does not reset implementations)
-    const { discoverAllPluginSkills } = await import("../plugins");
-    vi.mocked(discoverAllPluginSkills).mockResolvedValue({});
+    mockDiscoverAllPluginSkills.mockResolvedValue({});
   });
 
   describe("primary source tagging", () => {
     it("should tag non-local skills with public source", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:agents-inc/skills" },
         extras: [],
       });
@@ -89,8 +99,7 @@ describe("multi-source-loader", () => {
     });
 
     it("should tag skills with private marketplace source when source is not default", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:private-org/skills" },
         extras: [],
       });
@@ -129,8 +138,7 @@ describe("multi-source-loader", () => {
     });
 
     it("should use marketplace from marketplace parameter over sourceConfig", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:private-org/skills" },
         extras: [],
       });
@@ -158,8 +166,7 @@ describe("multi-source-loader", () => {
     });
 
     it("should tag as public when default source has marketplace set", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:agents-inc/skills" },
         extras: [],
       });
@@ -188,8 +195,7 @@ describe("multi-source-loader", () => {
     });
 
     it("should tag local skills with both public and local sources", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:agents-inc/skills" },
         extras: [],
       });
@@ -226,8 +232,7 @@ describe("multi-source-loader", () => {
 
   describe("local skill tagging", () => {
     it("should tag local skills with local source and installed: true", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:agents-inc/skills" },
         extras: [],
       });
@@ -256,8 +261,7 @@ describe("multi-source-loader", () => {
 
   describe("activeSource", () => {
     it("should set activeSource to installed variant when available", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:agents-inc/skills" },
         extras: [],
       });
@@ -280,8 +284,7 @@ describe("multi-source-loader", () => {
     });
 
     it("should set activeSource to public when no installed variant", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:agents-inc/skills" },
         extras: [],
       });
@@ -303,16 +306,11 @@ describe("multi-source-loader", () => {
 
   describe("extra source failures", () => {
     it("should produce warnings for failed extra sources, not hard errors", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      const { warn } = await import("../../utils/logger");
-
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:agents-inc/skills" },
         extras: [{ name: "acme-corp", url: "github:acme-corp/skills" }],
       });
-
-      const { fetchFromSource } = await import("./source-fetcher");
-      vi.mocked(fetchFromSource).mockRejectedValue(new Error("Network timeout"));
+      mockFetchFromSource.mockRejectedValue(new Error("Network timeout"));
 
       const matrix = createMockMatrix({ ...SKILLS.react });
 
@@ -340,22 +338,18 @@ describe("multi-source-loader", () => {
 
   describe("overlapping skill IDs", () => {
     it("should collect all source variants for the same skill", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      const { fetchFromSource } = await import("./source-fetcher");
-      const { extractAllSkills } = await import("../matrix");
-
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:agents-inc/skills" },
         extras: [{ name: "acme-corp", url: "github:acme-corp/skills" }],
       });
 
-      vi.mocked(fetchFromSource).mockResolvedValue({
+      mockFetchFromSource.mockResolvedValue({
         path: "/tmp/cached/acme-corp",
         fromCache: true,
         source: "github:acme-corp/skills",
       });
 
-      vi.mocked(extractAllSkills).mockResolvedValue([
+      mockExtractAllSkills.mockResolvedValue([
         createMockExtractedSkill("web-framework-react", {
           author: "@acme",
         }),
@@ -381,25 +375,20 @@ describe("multi-source-loader", () => {
 
   describe("plugin skill tagging", () => {
     it("should tag plugin-installed skills", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      const { discoverAllPluginSkills } = await import("../plugins");
-
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:agents-inc/skills" },
         extras: [],
       });
 
       // Mock discoverAllPluginSkills to return skills from global cache
-      vi.mocked(discoverAllPluginSkills).mockResolvedValue({
+      mockDiscoverAllPluginSkills.mockResolvedValue({
         "web-framework-react": {
           id: "web-framework-react",
           description: "React framework skill",
           path: "/global/cache/react/skills/web/framework/react",
         },
-      } as Partial<Record<SkillId, import("../../types").SkillDefinition>> as Record<
-        SkillId,
-        import("../../types").SkillDefinition
-      >);
+        // Boundary cast: test fixture covers a subset of all SkillIds
+      } as Record<SkillId, SkillDefinition>);
 
       const matrix = createMockMatrix({ ...SKILLS.react });
 
@@ -420,15 +409,12 @@ describe("multi-source-loader", () => {
     });
 
     it("should tag skills from multiple plugins discovered via settings.json", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      const { discoverAllPluginSkills } = await import("../plugins");
-
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:agents-inc/skills" },
         extras: [],
       });
 
-      vi.mocked(discoverAllPluginSkills).mockResolvedValue({
+      mockDiscoverAllPluginSkills.mockResolvedValue({
         "web-framework-react": {
           id: "web-framework-react",
           description: "React",
@@ -439,10 +425,8 @@ describe("multi-source-loader", () => {
           description: "Zustand",
           path: "/global/cache/zustand/skills/web/state/zustand",
         },
-      } as Partial<Record<SkillId, import("../../types").SkillDefinition>> as Record<
-        SkillId,
-        import("../../types").SkillDefinition
-      >);
+        // Boundary cast: test fixture covers a subset of all SkillIds
+      } as Record<SkillId, SkillDefinition>);
 
       const matrix = createMockMatrix({ ...SKILLS.react }, { ...SKILLS.zustand });
 
@@ -476,18 +460,13 @@ describe("multi-source-loader", () => {
 
   describe("public source fallback tagging", () => {
     it("should tag matching skills with public source when primary is non-default", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      const { fetchFromSource } = await import("./source-fetcher");
-      const { fetchMarketplace } = await import("./source-fetcher");
-      const { extractAllSkills } = await import("../matrix");
-
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:private-org/skills" },
         extras: [],
       });
 
       // fetchMarketplace for public source -- return a marketplace name
-      vi.mocked(fetchMarketplace).mockResolvedValue({
+      mockFetchMarketplace.mockResolvedValue({
         marketplace: {
           name: "agents-inc",
           version: "1.0.0",
@@ -500,14 +479,14 @@ describe("multi-source-loader", () => {
       });
 
       // fetchFromSource for public source
-      vi.mocked(fetchFromSource).mockResolvedValue({
+      mockFetchFromSource.mockResolvedValue({
         path: "/tmp/cached/agents-inc",
         fromCache: true,
         source: "github:agents-inc/skills",
       });
 
       // extractAllSkills for public source -- react exists in public, vitest does not
-      vi.mocked(extractAllSkills).mockResolvedValue([
+      mockExtractAllSkills.mockResolvedValue([
         createMockExtractedSkill("web-framework-react", {
           author: "@agents-inc",
         }),
@@ -550,10 +529,7 @@ describe("multi-source-loader", () => {
     });
 
     it("should not duplicate public source when primary IS the default source", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      const { fetchFromSource } = await import("./source-fetcher");
-
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:agents-inc/skills" },
         extras: [],
       });
@@ -579,26 +555,21 @@ describe("multi-source-loader", () => {
     });
 
     it("should use fallback name when public source has no marketplace.json", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      const { fetchFromSource } = await import("./source-fetcher");
-      const { fetchMarketplace } = await import("./source-fetcher");
-      const { extractAllSkills } = await import("../matrix");
-
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:private-org/skills" },
         extras: [],
       });
 
       // fetchMarketplace fails -- no marketplace.json in public source
-      vi.mocked(fetchMarketplace).mockRejectedValue(new Error("Not found"));
+      mockFetchMarketplace.mockRejectedValue(new Error("Not found"));
 
-      vi.mocked(fetchFromSource).mockResolvedValue({
+      mockFetchFromSource.mockResolvedValue({
         path: "/tmp/cached/agents-inc",
         fromCache: true,
         source: "github:agents-inc/skills",
       });
 
-      vi.mocked(extractAllSkills).mockResolvedValue([
+      mockExtractAllSkills.mockResolvedValue([
         createMockExtractedSkill("web-framework-react", {
           author: "@agents-inc",
         }),
@@ -629,18 +600,13 @@ describe("multi-source-loader", () => {
     });
 
     it("should handle public source fetch failure gracefully", async () => {
-      const { resolveAllSources } = await import("../configuration");
-      const { fetchFromSource } = await import("./source-fetcher");
-      const { fetchMarketplace } = await import("./source-fetcher");
-      const { warn } = await import("../../utils/logger");
-
-      vi.mocked(resolveAllSources).mockResolvedValue({
+      mockResolveAllSources.mockResolvedValue({
         primary: { name: "marketplace", url: "github:private-org/skills" },
         extras: [],
       });
 
-      vi.mocked(fetchMarketplace).mockRejectedValue(new Error("Not found"));
-      vi.mocked(fetchFromSource).mockRejectedValue(new Error("Network error"));
+      mockFetchMarketplace.mockRejectedValue(new Error("Not found"));
+      mockFetchFromSource.mockRejectedValue(new Error("Network error"));
 
       const privateSourceConfig: ResolvedConfig = {
         source: "github:private-org/skills",
@@ -677,16 +643,13 @@ describe("multi-source-loader", () => {
     });
 
     it("should find matching skills by alias from a single source", async () => {
-      const { fetchFromSource } = await import("./source-fetcher");
-      const { extractAllSkills } = await import("../matrix");
-
-      vi.mocked(fetchFromSource).mockResolvedValue({
+      mockFetchFromSource.mockResolvedValue({
         path: "/tmp/cached/acme-corp",
         fromCache: true,
         source: "github:acme-corp/skills",
       });
 
-      vi.mocked(extractAllSkills).mockResolvedValue([
+      mockExtractAllSkills.mockResolvedValue([
         createMockExtractedSkill("web-framework-react-pro" as SkillId, {
           directoryPath: "web/framework/react",
           description: "Opinionated React with strict TS",
@@ -716,10 +679,7 @@ describe("multi-source-loader", () => {
     });
 
     it("should find matching skills from multiple sources", async () => {
-      const { fetchFromSource } = await import("./source-fetcher");
-      const { extractAllSkills } = await import("../matrix");
-
-      vi.mocked(fetchFromSource)
+      mockFetchFromSource
         .mockResolvedValueOnce({
           path: "/tmp/cached/acme-corp",
           fromCache: true,
@@ -731,7 +691,7 @@ describe("multi-source-loader", () => {
           source: "github:team-xyz/skills",
         });
 
-      vi.mocked(extractAllSkills)
+      mockExtractAllSkills
         .mockResolvedValueOnce([
           createMockExtractedSkill("web-framework-react-pro" as SkillId, {
             directoryPath: "web/framework/react",
@@ -773,11 +733,7 @@ describe("multi-source-loader", () => {
     });
 
     it("should handle failed sources gracefully without throwing", async () => {
-      const { fetchFromSource } = await import("./source-fetcher");
-      const { extractAllSkills } = await import("../matrix");
-      const { warn } = await import("../../utils/logger");
-
-      vi.mocked(fetchFromSource)
+      mockFetchFromSource
         .mockRejectedValueOnce(new Error("Network timeout"))
         .mockResolvedValueOnce({
           path: "/tmp/cached/team-xyz",
@@ -785,7 +741,7 @@ describe("multi-source-loader", () => {
           source: "github:team-xyz/skills",
         });
 
-      vi.mocked(extractAllSkills).mockResolvedValueOnce([
+      mockExtractAllSkills.mockResolvedValueOnce([
         createMockExtractedSkill("web-framework-react-strict" as SkillId, {
           directoryPath: "web/framework/react",
           author: "@team-xyz",
@@ -818,16 +774,13 @@ describe("multi-source-loader", () => {
     });
 
     it("should return empty array when no skills match the alias", async () => {
-      const { fetchFromSource } = await import("./source-fetcher");
-      const { extractAllSkills } = await import("../matrix");
-
-      vi.mocked(fetchFromSource).mockResolvedValue({
+      mockFetchFromSource.mockResolvedValue({
         path: "/tmp/cached/acme-corp",
         fromCache: true,
         source: "github:acme-corp/skills",
       });
 
-      vi.mocked(extractAllSkills).mockResolvedValue([
+      mockExtractAllSkills.mockResolvedValue([
         createMockExtractedSkill("web-framework-vue-pro" as SkillId, {
           directoryPath: "web/framework/vue",
           author: "@acme",
@@ -842,16 +795,13 @@ describe("multi-source-loader", () => {
     });
 
     it("should match alias case-insensitively", async () => {
-      const { fetchFromSource } = await import("./source-fetcher");
-      const { extractAllSkills } = await import("../matrix");
-
-      vi.mocked(fetchFromSource).mockResolvedValue({
+      mockFetchFromSource.mockResolvedValue({
         path: "/tmp/cached/acme-corp",
         fromCache: true,
         source: "github:acme-corp/skills",
       });
 
-      vi.mocked(extractAllSkills).mockResolvedValue([
+      mockExtractAllSkills.mockResolvedValue([
         createMockExtractedSkill("web-framework-react-pro" as SkillId, {
           directoryPath: "web/framework/React",
           author: "@acme",

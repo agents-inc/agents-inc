@@ -10,7 +10,7 @@ import {
   INPUT_DELAY_MS,
   delay,
 } from "../../lib/__tests__/test-constants";
-import { DEFAULT_BRANDING } from "../../consts";
+import { DEFAULT_BRANDING, UI_SYMBOLS } from "../../consts";
 
 const defaultProps: StepRefineProps = {
   technologyCount: 12,
@@ -66,8 +66,8 @@ describe("StepRefine component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      // The option should have the ">" indicator
-      expect(output).toContain(">");
+      // The focused card should have the chevron indicator
+      expect(output).toContain(UI_SYMBOLS.CHEVRON);
       expect(output).toContain("Use all recommended skills");
     });
 
@@ -184,8 +184,8 @@ describe("StepRefine component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      // Should still show the recommended option with indicator
-      expect(output).toContain(">");
+      // Should still show the recommended option with the focus indicator
+      expect(output).toContain(UI_SYMBOLS.CHEVRON);
       expect(output).toContain("Use all recommended");
     });
 

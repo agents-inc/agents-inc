@@ -72,6 +72,18 @@ async function writeValidInstalledAgent(
   );
 }
 
+const REACT_SOURCE_SKILL: TestSkill = {
+  id: "web-framework-react",
+  description: "React framework",
+  category: "web-framework",
+  domain: "web",
+  displayName: "react",
+  cliDescription: "React JavaScript framework",
+  usageGuidance: "Use React for building component-based UIs",
+  slug: "react",
+  author: "@test",
+};
+
 /**
  * Creates a valid skill directory with full metadata.yaml fields
  * that pass the strict metadataValidationSchema.
@@ -109,19 +121,20 @@ async function writeTestMatrix(
   configDir: string,
   categories: Record<string, { domain: string; displayName: string }>,
 ): Promise<void> {
-  const matrixCategories: Record<string, Record<string, unknown>> = {};
-  let order = 0;
-  for (const [id, cat] of Object.entries(categories)) {
-    matrixCategories[id] = {
+  const matrixCategories: Record<string, Record<string, unknown>> = Object.fromEntries(
+    Object.entries(categories).map(([id, cat], order) => [
       id,
-      displayName: cat.displayName,
-      description: `${cat.displayName} skills`,
-      domain: cat.domain,
-      exclusive: true,
-      required: false,
-      order: order++,
-    };
-  }
+      {
+        id,
+        displayName: cat.displayName,
+        description: `${cat.displayName} skills`,
+        domain: cat.domain,
+        exclusive: true,
+        required: false,
+        order,
+      },
+    ]),
+  );
 
   const categoriesData = { ...VALID_SKILL_CATEGORIES_FILE, categories: matrixCategories };
   await writeFile(path.join(configDir, "skill-categories.ts"), renderConfigTs(categoriesData));
@@ -145,17 +158,7 @@ async function buildValidSource(sourceDir: string): Promise<void> {
   const configDir = path.join(sourceDir, "config");
   await mkdir(configDir, { recursive: true });
 
-  await writeValidSourceSkill(skillsDir, "web/framework/react", {
-    id: "web-framework-react",
-    description: "React framework",
-    category: "web-framework",
-    domain: "web",
-    displayName: "react",
-    cliDescription: "React JavaScript framework",
-    usageGuidance: "Use React for building component-based UIs",
-    slug: "react",
-    author: "@test",
-  });
+  await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
 
   await writeTestMatrix(configDir, {
     "web-framework": { domain: "web", displayName: "Framework" },
@@ -180,6 +183,23 @@ async function buildInvalidSource(sourceDir: string): Promise<void> {
   );
 }
 
+/**
+ * Standard arrange: builds a valid minimal source under `<tempDir>/source` and
+ * registers it as the project's primary source in an otherwise-empty config.
+ * Returns the source directory.
+ */
+async function setupValidatedProject(tempDir: string, projectDir: string): Promise<string> {
+  const sourceDir = path.join(tempDir, "source");
+  await buildValidSource(sourceDir);
+  await writeTestTsConfig(projectDir, {
+    name: "test-project",
+    skills: [],
+    agents: [],
+    source: sourceDir,
+  });
+  return sourceDir;
+}
+
 describe("validate command", () => {
   let tempDir: string;
   let projectDir: string;
@@ -196,14 +216,7 @@ describe("validate command", () => {
 
   describe("no-args flow", () => {
     it("should iterate over the registered primary source and exit 0 when it is valid", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const { stdout, error } = await runCliCommand(["validate"]);
 
@@ -232,14 +245,7 @@ describe("validate command", () => {
     });
 
     it("should iterate over plugin directories and report when absent", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const { stdout, error } = await runCliCommand(["validate"]);
 
@@ -249,14 +255,7 @@ describe("validate command", () => {
     });
 
     it("should iterate over installed plugins when present", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       // Create a plugin in the project's .claude/plugins/ directory
       const pluginDir = path.join(projectDir, CLAUDE_DIR, PLUGINS_SUBDIR, "my-plugin");
@@ -276,14 +275,7 @@ describe("validate command", () => {
     });
 
     it("should surface plugin errors in the aggregate exit code", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       // Create a plugin with malformed plugin.json — validator should report it as invalid
       const pluginDir = path.join(projectDir, CLAUDE_DIR, PLUGINS_SUBDIR, "broken-plugin");
@@ -315,14 +307,7 @@ describe("validate command", () => {
     });
 
     it("should continue past one broken skill and report valid skills in the same pass", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       // One valid skill alongside one broken skill in the same directory.
@@ -431,14 +416,7 @@ describe("validate command", () => {
 
   describe("installed skills pass", () => {
     it("should render Validating skills header in the output", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const { stdout, error } = await runCliCommand(["validate"]);
 
@@ -447,14 +425,7 @@ describe("validate command", () => {
     });
 
     it("should render — not present when no skills dir exists", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const { stdout, error } = await runCliCommand(["validate"]);
 
@@ -464,14 +435,7 @@ describe("validate command", () => {
     });
 
     it("should render — none when the skills dir exists but is empty", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
       await mkdir(path.join(fakeHome, INSTALLED_SKILLS_SUBDIR), { recursive: true });
       await mkdir(path.join(projectDir, INSTALLED_SKILLS_SUBDIR), { recursive: true });
 
@@ -483,14 +447,7 @@ describe("validate command", () => {
     });
 
     it("should count a valid installed skill and exit 0", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       await writeValidInstalledSkill(globalSkillsDir, "web-framework-react");
@@ -504,14 +461,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when an installed skill is missing SKILL.md", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       const skillDir = path.join(globalSkillsDir, "web-framework-react");
@@ -536,14 +486,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when an installed skill is missing metadata.yaml", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       const skillDir = path.join(globalSkillsDir, "web-framework-react");
@@ -560,14 +503,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when metadata.yaml is malformed YAML", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       const skillDir = path.join(globalSkillsDir, "web-framework-react");
@@ -588,14 +524,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when metadata has custom: true but a non-kebab slug", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       await writeValidInstalledSkill(globalSkillsDir, "custom-tools-my-skill", {
@@ -611,14 +540,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when metadata has custom: false and an unknown category", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       await writeValidInstalledSkill(globalSkillsDir, "web-framework-react", {
@@ -634,14 +556,7 @@ describe("validate command", () => {
 
   describe("installed agents pass", () => {
     it("should render Validating agents header in the output", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const { stdout, error } = await runCliCommand(["validate"]);
 
@@ -650,14 +565,7 @@ describe("validate command", () => {
     });
 
     it("should render — not present when no agents dir exists", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const { stdout, error } = await runCliCommand(["validate"]);
 
@@ -667,14 +575,7 @@ describe("validate command", () => {
     });
 
     it("should count a valid installed agent and exit 0", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const globalAgentsDir = path.join(fakeHome, INSTALLED_AGENTS_SUBDIR);
       await writeValidInstalledAgent(globalAgentsDir, "web-developer", {
@@ -690,14 +591,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when an agent .md has no frontmatter", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const globalAgentsDir = path.join(fakeHome, INSTALLED_AGENTS_SUBDIR);
       await mkdir(globalAgentsDir, { recursive: true });
@@ -713,14 +607,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when an agent frontmatter has a non-kebab name", async () => {
-      const sourceDir = path.join(tempDir, "source");
-      await buildValidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: [],
-        source: sourceDir,
-      });
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
 
       const globalAgentsDir = path.join(fakeHome, INSTALLED_AGENTS_SUBDIR);
       await writeValidInstalledAgent(globalAgentsDir, "BadAgent", {
@@ -811,17 +698,7 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    await writeValidSourceSkill(skillsDir, "web/framework/react", {
-      id: "web-framework-react",
-      description: "React framework",
-      category: "web-framework",
-      domain: "web",
-      displayName: "react",
-      cliDescription: "React JavaScript framework",
-      usageGuidance: "Use React for building component-based UIs",
-      slug: "react",
-      author: "@test",
-    });
+    await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
 
     await writeTestMatrix(configDir, {
       "web-framework": { domain: "web", displayName: "Framework" },
@@ -938,15 +815,9 @@ describe("source validation (validateSource)", () => {
 
     // Directory name is "react" but displayName is "react-v2"
     await writeValidSourceSkill(skillsDir, "web/framework/react", {
-      id: "web-framework-react",
-      description: "React framework",
-      category: "web-framework",
-      domain: "web",
+      ...REACT_SOURCE_SKILL,
       displayName: "react-v2",
       cliDescription: "React JavaScript framework v2",
-      usageGuidance: "Use React for building component-based UIs",
-      slug: "react",
-      author: "@test",
     });
 
     await writeTestMatrix(configDir, {
@@ -1037,17 +908,7 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    await writeValidSourceSkill(skillsDir, "web/framework/react", {
-      id: "web-framework-react",
-      description: "React framework",
-      category: "web-framework",
-      domain: "web",
-      displayName: "react",
-      cliDescription: "React JavaScript framework",
-      usageGuidance: "Use React for building component-based UIs",
-      slug: "react",
-      author: "@test",
-    });
+    await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
 
     await writeValidSourceSkill(skillsDir, "api/api/hono", {
       id: "api-framework-hono",
@@ -1078,17 +939,7 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    await writeValidSourceSkill(skillsDir, "web/framework/react", {
-      id: "web-framework-react",
-      description: "React framework",
-      category: "web-framework",
-      domain: "web",
-      displayName: "react",
-      cliDescription: "React JavaScript framework",
-      usageGuidance: "Use React for building component-based UIs",
-      slug: "react",
-      author: "@test",
-    });
+    await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
 
     await writeTestMatrix(configDir, {
       "web-framework": { domain: "web", displayName: "Framework" },
@@ -1111,17 +962,7 @@ describe("source validation (validateSource)", () => {
     await mkdir(skillsDir, { recursive: true });
 
     // Create a valid skill but with a malformed categories config to trigger Phase 3 failure
-    await writeValidSourceSkill(skillsDir, "web/framework/react", {
-      id: "web-framework-react",
-      description: "React framework",
-      category: "web-framework",
-      domain: "web",
-      displayName: "react",
-      cliDescription: "React JavaScript framework",
-      usageGuidance: "Use React for building component-based UIs",
-      slug: "react",
-      author: "@test",
-    });
+    await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
 
     // Write a malformed categories file so loadSkillsMatrixFromSource throws
     const configDir = path.join(sourceDir, "config");

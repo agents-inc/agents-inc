@@ -15,6 +15,14 @@ import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { detectInstallation, getInstallationOrThrow } from "../../installation";
 import { renderConfigTs } from "../content-generators";
+import type { ProjectConfig } from "../../../types";
+
+/** Writes a `.claude-src/config.ts` with the given config into the temp dir. */
+async function writeInstallationConfig(tempDir: string, config: ProjectConfig): Promise<void> {
+  const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
+  await mkdir(claudeSrcDir, { recursive: true });
+  await writeFile(path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS), renderConfigTs(config));
+}
 
 describe("installation", () => {
   let tempDir: string;
@@ -29,28 +37,18 @@ describe("installation", () => {
 
   describe("detectInstallation - eject mode", () => {
     it("should return eject installation when .claude-src/config.ts exists", async () => {
-      const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs(buildProjectConfig()),
-      );
+      await writeInstallationConfig(tempDir, buildProjectConfig());
 
       const result = await detectInstallation(tempDir);
 
       expect(result).not.toBeNull();
       expect(result?.mode).toBe("eject");
-      expect(result?.configPath).toBe(path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS));
+      expect(result?.configPath).toBe(path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS));
       expect(result?.projectDir).toBe(tempDir);
     });
 
     it("should default to eject mode when installMode is not in config", async () => {
-      const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs(buildProjectConfig()),
-      );
+      await writeInstallationConfig(tempDir, buildProjectConfig());
 
       const result = await detectInstallation(tempDir);
 
@@ -59,13 +57,8 @@ describe("installation", () => {
     });
 
     it("should use correct paths for agentsDir and skillsDir in eject mode", async () => {
-      const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
       const claudeDir = path.join(tempDir, CLAUDE_DIR);
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs(buildProjectConfig()),
-      );
+      await writeInstallationConfig(tempDir, buildProjectConfig());
 
       const result = await detectInstallation(tempDir);
 
@@ -77,36 +70,28 @@ describe("installation", () => {
 
   describe("detectInstallation - plugin mode", () => {
     it("should return plugin installation when skills have non-local sources", async () => {
-      const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs(
-          buildProjectConfig({
-            skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
-          }),
-        ),
+      await writeInstallationConfig(
+        tempDir,
+        buildProjectConfig({
+          skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+        }),
       );
 
       const result = await detectInstallation(tempDir);
 
       expect(result).not.toBeNull();
       expect(result?.mode).toBe("plugin");
-      expect(result?.configPath).toBe(path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS));
+      expect(result?.configPath).toBe(path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS));
       expect(result?.projectDir).toBe(tempDir);
     });
 
     it("should use correct plugin paths for agentsDir and skillsDir", async () => {
-      const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
       const claudeDir = path.join(tempDir, CLAUDE_DIR);
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs(
-          buildProjectConfig({
-            skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
-          }),
-        ),
+      await writeInstallationConfig(
+        tempDir,
+        buildProjectConfig({
+          skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+        }),
       );
 
       const result = await detectInstallation(tempDir);
@@ -145,13 +130,8 @@ describe("installation", () => {
 
   describe("detectInstallation - priority", () => {
     it("should detect local installation from config.ts", async () => {
-      const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
       const claudeDir = path.join(tempDir, CLAUDE_DIR);
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs(buildProjectConfig()),
-      );
+      await writeInstallationConfig(tempDir, buildProjectConfig());
 
       const pluginDir = path.join(claudeDir, "plugins", DEFAULT_PLUGIN_NAME);
       await mkdir(pluginDir, { recursive: true });
@@ -175,12 +155,7 @@ describe("installation", () => {
     });
 
     it("should return installation when found (local)", async () => {
-      const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs(buildProjectConfig()),
-      );
+      await writeInstallationConfig(tempDir, buildProjectConfig());
 
       const result = await getInstallationOrThrow(tempDir);
 
@@ -190,15 +165,11 @@ describe("installation", () => {
     });
 
     it("should return installation when found (plugin)", async () => {
-      const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs(
-          buildProjectConfig({
-            skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
-          }),
-        ),
+      await writeInstallationConfig(
+        tempDir,
+        buildProjectConfig({
+          skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+        }),
       );
 
       const result = await getInstallationOrThrow(tempDir);
@@ -211,22 +182,18 @@ describe("installation", () => {
 
   describe("edge cases", () => {
     it("should derive plugin mode from skills with non-local sources", async () => {
-      const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs(
-          buildProjectConfig({
-            skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
-          }),
-        ),
+      await writeInstallationConfig(
+        tempDir,
+        buildProjectConfig({
+          skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+        }),
       );
 
       const result = await detectInstallation(tempDir);
 
       expect(result).not.toBeNull();
       expect(result?.mode).toBe("plugin");
-      expect(result?.configPath).toBe(path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS));
+      expect(result?.configPath).toBe(path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS));
     });
 
     it("should treat invalid config file as eject mode (file exists)", async () => {
@@ -250,12 +217,7 @@ describe("installation", () => {
       const originalCwd = process.cwd();
       process.chdir(tempDir);
 
-      const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs(buildProjectConfig()),
-      );
+      await writeInstallationConfig(tempDir, buildProjectConfig());
 
       const result = await detectInstallation();
 

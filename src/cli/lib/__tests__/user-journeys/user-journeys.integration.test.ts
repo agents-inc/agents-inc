@@ -12,6 +12,7 @@ import { BUILT_IN_MATRIX } from "../../../types/generated/matrix";
 import { loadProjectConfig } from "../../configuration";
 import { DEFAULT_PLUGIN_NAME, STANDARD_FILES } from "../../../consts";
 import type {
+  AgentName,
   AgentScopeConfig,
   MergedSkillsMatrix,
   ProjectConfig,
@@ -47,35 +48,51 @@ import { EXPECTED_AGENTS, EXPECTED_SKILLS } from "../expected-values";
 
 const CLI_REPO_PATH = path.resolve(__dirname, "../../../../..");
 
-// ── Journey 1: Init -> Edit -> Recompile (Add Skills) ────────────────────────
+/**
+ * Asserts the stack maps exactly the given agents, and that every agent's
+ * per-category assignments cover exactly `categories` (all skills fan out to
+ * all agents — no domain ownership filtering).
+ */
+function expectStackCategories(
+  stack: ProjectConfig["stack"],
+  agents: readonly AgentName[],
+  categories: string[],
+): void {
+  expect(stack).toBeDefined();
+  expect(Object.keys(stack ?? {}).sort()).toStrictEqual([...agents]);
+  for (const agentName of agents) {
+    const agentStack = stack?.[agentName];
+    expect(agentStack, `stack must contain agent "${agentName}"`).toBeDefined();
+    expect(Object.keys(agentStack ?? {}).sort()).toStrictEqual(categories);
+  }
+}
+
+// Shared per-test journey setup: isolated source project, homedir pinned to the
+// project dir (home-dir install: no scope splitting, agents compile into the
+// project's .claude/agents/), comprehensive matrix initialized.
+let dirs: TestDirs;
+let originalCwd: string;
+let matrix: MergedSkillsMatrix;
+let sourceResult: SourceLoadResult;
+
+beforeEach(async () => {
+  originalCwd = process.cwd();
+  dirs = await createTestSource({ skills: ALL_TEST_SKILLS });
+  process.chdir(dirs.projectDir);
+  vi.spyOn(os, "homedir").mockReturnValue(dirs.projectDir);
+
+  matrix = createComprehensiveMatrix();
+  initializeMatrix(matrix);
+  sourceResult = buildSourceResult(matrix, dirs.sourceDir);
+});
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  process.chdir(originalCwd);
+  await cleanupTestSource(dirs);
+});
 
 describe("Init -> Edit -> Recompile (Add Skills)", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let matrix: MergedSkillsMatrix;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: ALL_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-
-    // Mock os.homedir() to return the project dir so writeScopedConfigs treats this
-    // as a home-dir install (no scope splitting) and compileAndWriteAgents writes
-    // all agents to the project's .claude/agents/ instead of the real ~/.claude/agents/
-    vi.spyOn(os, "homedir").mockReturnValue(dirs.projectDir);
-
-    matrix = createComprehensiveMatrix();
-    initializeMatrix(matrix);
-    sourceResult = buildSourceResult(matrix, dirs.sourceDir);
-  });
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should add a new skill to an existing installation and recompile agents", async () => {
     // Step 1: Initial install with skills A, B (react + zustand)
     const initialSkills: SkillId[] = [...EXPECTED_SKILLS.WEB_DEFAULT];
@@ -83,7 +100,7 @@ describe("Init -> Edit -> Recompile (Add Skills)", () => {
     simulateSkillSelections(initialSkills, matrix, ["web"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const initialWizardResult = buildWizardResultFromStore(matrix);
+    const initialWizardResult = buildWizardResultFromStore();
     const initialResult = await installEject({
       wizardResult: initialWizardResult,
       sourceResult,
@@ -120,7 +137,7 @@ describe("Init -> Edit -> Recompile (Add Skills)", () => {
     simulateSkillSelections(expandedSkills, matrix, ["web", "api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const editWizardResult = buildWizardResultFromStore(matrix);
+    const editWizardResult = buildWizardResultFromStore();
     const editResult = await installEject({
       wizardResult: editWizardResult,
       sourceResult,
@@ -181,7 +198,7 @@ describe("Init -> Edit -> Recompile (Add Skills)", () => {
     simulateSkillSelections(initialSkills, matrix, ["web"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const initialWizardResult = buildWizardResultFromStore(matrix);
+    const initialWizardResult = buildWizardResultFromStore();
     const initialResult = await installEject({
       wizardResult: initialWizardResult,
       sourceResult,
@@ -213,7 +230,7 @@ describe("Init -> Edit -> Recompile (Add Skills)", () => {
     simulateSkillSelections(expandedSkills, matrix, ["web", "api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const editWizardResult = buildWizardResultFromStore(matrix);
+    const editWizardResult = buildWizardResultFromStore();
     const editResult = await installEject({
       wizardResult: editWizardResult,
       sourceResult,
@@ -252,42 +269,14 @@ describe("Init -> Edit -> Recompile (Add Skills)", () => {
   });
 });
 
-// ── Journey 2: Init -> Edit -> Recompile (Remove Skills) ─────────────────────
-
 describe("Init -> Edit -> Recompile (Remove Skills)", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let matrix: MergedSkillsMatrix;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: ALL_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-
-    // Mock os.homedir() to return the project dir so writeScopedConfigs treats this
-    // as a home-dir install (no scope splitting) and compileAndWriteAgents writes
-    // all agents to the project's .claude/agents/ instead of the real ~/.claude/agents/
-    vi.spyOn(os, "homedir").mockReturnValue(dirs.projectDir);
-
-    matrix = createComprehensiveMatrix();
-    initializeMatrix(matrix);
-    sourceResult = buildSourceResult(matrix, dirs.sourceDir);
-  });
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should remove a skill from config and recompile agents without it", async () => {
     // Step 1: Init with A, B, C (react, zustand, hono)
     const initialSkills: SkillId[] = [...EXPECTED_SKILLS.WEB_AND_API];
     simulateSkillSelections(initialSkills, matrix, ["web", "api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const initialWizardResult = buildWizardResultFromStore(matrix);
+    const initialWizardResult = buildWizardResultFromStore();
     const initialResult = await installEject({
       wizardResult: initialWizardResult,
       sourceResult,
@@ -323,7 +312,7 @@ describe("Init -> Edit -> Recompile (Remove Skills)", () => {
     simulateSkillSelections(reducedSkills, matrix, ["web", "api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const editWizardResult = buildWizardResultFromStore(matrix);
+    const editWizardResult = buildWizardResultFromStore();
     const editResult = await installEject({
       wizardResult: editWizardResult,
       sourceResult,
@@ -376,7 +365,7 @@ describe("Init -> Edit -> Recompile (Remove Skills)", () => {
     simulateSkillSelections(initialSkills, matrix, ["web", "api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const initialWizardResult = buildWizardResultFromStore(matrix);
+    const initialWizardResult = buildWizardResultFromStore();
     const initialResult = await installEject({
       wizardResult: initialWizardResult,
       sourceResult,
@@ -408,7 +397,7 @@ describe("Init -> Edit -> Recompile (Remove Skills)", () => {
     simulateSkillSelections(webOnlySkills, matrix, ["web"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const editWizardResult = buildWizardResultFromStore(matrix);
+    const editWizardResult = buildWizardResultFromStore();
     const editResult = await installEject({
       wizardResult: editWizardResult,
       sourceResult,
@@ -447,35 +436,7 @@ describe("Init -> Edit -> Recompile (Remove Skills)", () => {
   });
 });
 
-// ── Journey 3: Init -> Compile Standalone (From Existing Config) ─────────────
-
 describe("Init -> Compile Standalone (From Existing Config)", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let matrix: MergedSkillsMatrix;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: ALL_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-
-    // Mock os.homedir() to return the project dir so writeScopedConfigs treats this
-    // as a home-dir install (no scope splitting) and compileAndWriteAgents writes
-    // all agents to the project's .claude/agents/ instead of the real ~/.claude/agents/
-    vi.spyOn(os, "homedir").mockReturnValue(dirs.projectDir);
-
-    matrix = createComprehensiveMatrix();
-    initializeMatrix(matrix);
-    sourceResult = buildSourceResult(matrix, dirs.sourceDir);
-  });
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should recompile agents from existing config on disk", async () => {
     // Step 1: Initial install to create config + agents
     const selectedSkills: SkillId[] = [
@@ -486,7 +447,7 @@ describe("Init -> Compile Standalone (From Existing Config)", () => {
     simulateSkillSelections(selectedSkills, matrix, ["web", "api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const wizardResult = buildWizardResultFromStore(matrix);
+    const wizardResult = buildWizardResultFromStore();
     const installResult = await installEject({
       wizardResult,
       sourceResult,
@@ -514,13 +475,7 @@ describe("Init -> Compile Standalone (From Existing Config)", () => {
 
     // Loaded stack: all skills go to all agents (no domain ownership filtering)
     const allCategories = ["api-api", "web-client-state", "web-framework"];
-    const loadedStack = loadedConfig!.config.stack;
-    expect(loadedStack).toBeDefined();
-    expect(Object.keys(loadedStack!).sort()).toStrictEqual([...EXPECTED_AGENTS.WEB_AND_API]);
-    for (const agentName of EXPECTED_AGENTS.WEB_AND_API) {
-      const agentStack = loadedStack![agentName];
-      expect(Object.keys(agentStack!).sort()).toStrictEqual(allCategories);
-    }
+    expectStackCategories(loadedConfig!.config.stack, EXPECTED_AGENTS.WEB_AND_API, allCategories);
 
     // Step 3: Recompile using recompileAgents (simulating `compile` command)
     const agentsDir = installResult.agentsDir;
@@ -551,7 +506,7 @@ describe("Init -> Compile Standalone (From Existing Config)", () => {
     simulateSkillSelections(selectedSkills, matrix, ["web", "api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const wizardResult = buildWizardResultFromStore(matrix);
+    const wizardResult = buildWizardResultFromStore();
     const installResult = await installEject({
       wizardResult,
       sourceResult,
@@ -574,13 +529,7 @@ describe("Init -> Compile Standalone (From Existing Config)", () => {
 
     // Loaded stack: all skills go to all agents (no domain ownership filtering)
     const allCategories = ["api-api", "web-framework"];
-    const loadedStack = loadedConfig!.config.stack;
-    expect(loadedStack).toBeDefined();
-    expect(Object.keys(loadedStack!).sort()).toStrictEqual([...EXPECTED_AGENTS.WEB_AND_API]);
-    for (const agentName of EXPECTED_AGENTS.WEB_AND_API) {
-      const agentStack = loadedStack![agentName];
-      expect(Object.keys(agentStack!).sort()).toStrictEqual(allCategories);
-    }
+    expectStackCategories(loadedConfig!.config.stack, EXPECTED_AGENTS.WEB_AND_API, allCategories);
 
     // Recompile
     const recompileResult = await recompileAgents({
@@ -603,42 +552,14 @@ describe("Init -> Compile Standalone (From Existing Config)", () => {
   });
 });
 
-// ── Journey 4: Init Local -> Re-init Local (Config Merge) ────────────────────
-
 describe("Init Local -> Re-init Local (Config Merge)", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let matrix: MergedSkillsMatrix;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: ALL_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-
-    // Mock os.homedir() to return the project dir so writeScopedConfigs treats this
-    // as a home-dir install (no scope splitting) and compileAndWriteAgents writes
-    // all agents to the project's .claude/agents/ instead of the real ~/.claude/agents/
-    vi.spyOn(os, "homedir").mockReturnValue(dirs.projectDir);
-
-    matrix = createComprehensiveMatrix();
-    initializeMatrix(matrix);
-    sourceResult = buildSourceResult(matrix, dirs.sourceDir);
-  });
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should merge configs when running init twice with different selections", async () => {
     // First init: react + zustand, web agents
     const firstSkills: SkillId[] = [...EXPECTED_SKILLS.WEB_DEFAULT];
     simulateSkillSelections(firstSkills, matrix, ["web"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const firstWizardResult = buildWizardResultFromStore(matrix);
+    const firstWizardResult = buildWizardResultFromStore();
     const firstResult = await installEject({
       wizardResult: firstWizardResult,
       sourceResult,
@@ -653,7 +574,7 @@ describe("Init Local -> Re-init Local (Config Merge)", () => {
     simulateSkillSelections(secondSkills, matrix, ["api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const secondWizardResult = buildWizardResultFromStore(matrix);
+    const secondWizardResult = buildWizardResultFromStore();
     const secondResult = await installEject({
       wizardResult: secondWizardResult,
       sourceResult,
@@ -700,7 +621,7 @@ describe("Init Local -> Re-init Local (Config Merge)", () => {
     simulateSkillSelections(firstSkills, matrix, ["web", "api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const firstWizardResult = buildWizardResultFromStore(matrix);
+    const firstWizardResult = buildWizardResultFromStore();
     await installEject({
       wizardResult: firstWizardResult,
       sourceResult,
@@ -717,7 +638,7 @@ describe("Init Local -> Re-init Local (Config Merge)", () => {
     simulateSkillSelections(secondSkills, matrix, ["web", "api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const secondWizardResult = buildWizardResultFromStore(matrix);
+    const secondWizardResult = buildWizardResultFromStore();
     const secondResult = await installEject({
       wizardResult: secondWizardResult,
       sourceResult,
@@ -751,7 +672,7 @@ describe("Init Local -> Re-init Local (Config Merge)", () => {
     const firstSkills: SkillId[] = ["web-framework-react"];
     simulateSkillSelections(firstSkills, matrix, ["web"]);
 
-    const firstWizardResult = buildWizardResultFromStore(matrix);
+    const firstWizardResult = buildWizardResultFromStore();
     const firstResult = await installEject({
       wizardResult: firstWizardResult,
       sourceResult,
@@ -766,7 +687,7 @@ describe("Init Local -> Re-init Local (Config Merge)", () => {
     const secondSkills: SkillId[] = [...EXPECTED_SKILLS.API_DEFAULT];
     simulateSkillSelections(secondSkills, matrix, ["api"]);
 
-    const secondWizardResult = buildWizardResultFromStore(matrix);
+    const secondWizardResult = buildWizardResultFromStore();
     const secondResult = await installEject({
       wizardResult: secondWizardResult,
       sourceResult,
@@ -782,35 +703,7 @@ describe("Init Local -> Re-init Local (Config Merge)", () => {
   });
 });
 
-// ── Journey 5: Multi-Domain Init (Web + API + Shared Skills) ─────────────────
-
 describe("Multi-Domain Init (Web + API + Shared Skills)", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let matrix: MergedSkillsMatrix;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: ALL_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-
-    // Mock os.homedir() to return the project dir so writeScopedConfigs treats this
-    // as a home-dir install (no scope splitting) and compileAndWriteAgents writes
-    // all agents to the project's .claude/agents/ instead of the real ~/.claude/agents/
-    vi.spyOn(os, "homedir").mockReturnValue(dirs.projectDir);
-
-    matrix = createComprehensiveMatrix();
-    initializeMatrix(matrix);
-    sourceResult = buildSourceResult(matrix, dirs.sourceDir);
-  });
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should assign all skills to all agents", async () => {
     const selectedSkills: SkillId[] = [
       "web-framework-react",
@@ -822,7 +715,7 @@ describe("Multi-Domain Init (Web + API + Shared Skills)", () => {
     simulateSkillSelections(selectedSkills, matrix, ["web", "api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const wizardResult = buildWizardResultFromStore(matrix);
+    const wizardResult = buildWizardResultFromStore();
     const result = await installEject({
       wizardResult,
       sourceResult,
@@ -860,12 +753,7 @@ describe("Multi-Domain Init (Web + API + Shared Skills)", () => {
       "web-framework",
       "web-styling",
     ];
-    expect(config.stack).toBeDefined();
-    expect(Object.keys(config.stack!).sort()).toStrictEqual([...EXPECTED_AGENTS.WEB_AND_API]);
-    for (const agentName of EXPECTED_AGENTS.WEB_AND_API) {
-      const agentStack = config.stack![agentName];
-      expect(Object.keys(agentStack!).sort()).toStrictEqual(allCategories);
-    }
+    expectStackCategories(config.stack, EXPECTED_AGENTS.WEB_AND_API, allCategories);
     // Verify exact skill assignments per category on representative agents.
     expect(
       extractSkillIdsFromAssignment(
@@ -906,7 +794,7 @@ describe("Multi-Domain Init (Web + API + Shared Skills)", () => {
     simulateSkillSelections(selectedSkills, matrix, ["web", "api", "shared"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const wizardResult = buildWizardResultFromStore(matrix);
+    const wizardResult = buildWizardResultFromStore();
     const result = await installEject({
       wizardResult,
       sourceResult,
@@ -937,7 +825,7 @@ describe("Multi-Domain Init (Web + API + Shared Skills)", () => {
     simulateSkillSelections(selectedSkills, matrix, ["web", "api", "shared"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const wizardResult = buildWizardResultFromStore(matrix);
+    const wizardResult = buildWizardResultFromStore();
     const result = await installEject({
       wizardResult,
       sourceResult,
@@ -977,12 +865,7 @@ describe("Multi-Domain Init (Web + API + Shared Skills)", () => {
       "web-styling",
       "web-testing",
     ];
-    expect(config.stack).toBeDefined();
-    expect(Object.keys(config.stack!).sort()).toStrictEqual([...EXPECTED_AGENTS.WEB_AND_API]);
-    for (const agentName of EXPECTED_AGENTS.WEB_AND_API) {
-      const agentStack = config.stack![agentName];
-      expect(Object.keys(agentStack!).sort()).toStrictEqual(allCategories);
-    }
+    expectStackCategories(config.stack, EXPECTED_AGENTS.WEB_AND_API, allCategories);
 
     // Every skill in stack must be in config.skills (invariant)
     const configSkillIds = config.skills.map((s) => s.id);
@@ -997,42 +880,14 @@ describe("Multi-Domain Init (Web + API + Shared Skills)", () => {
   });
 });
 
-// ── Journey: Recompile Idempotency ───────────────────────────────────────────
-
 describe("Recompile Idempotency", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let matrix: MergedSkillsMatrix;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: ALL_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-
-    // Mock os.homedir() to return the project dir so writeScopedConfigs treats this
-    // as a home-dir install (no scope splitting) and compileAndWriteAgents writes
-    // all agents to the project's .claude/agents/ instead of the real ~/.claude/agents/
-    vi.spyOn(os, "homedir").mockReturnValue(dirs.projectDir);
-
-    matrix = createComprehensiveMatrix();
-    initializeMatrix(matrix);
-    sourceResult = buildSourceResult(matrix, dirs.sourceDir);
-  });
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should produce identical output on consecutive recompiles without changes", async () => {
     // Install
     const selectedSkills: SkillId[] = ["web-framework-react", "api-framework-hono"];
     simulateSkillSelections(selectedSkills, matrix, ["web", "api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const wizardResult = buildWizardResultFromStore(matrix);
+    const wizardResult = buildWizardResultFromStore();
     const installResult = await installEject({
       wizardResult,
       sourceResult,
@@ -1080,35 +935,7 @@ describe("Recompile Idempotency", () => {
   });
 });
 
-// ── Journey: Config Roundtrip (Write -> Load -> Verify) ──────────────────────
-
 describe("Config Roundtrip (Write -> Load -> Verify)", () => {
-  let dirs: TestDirs;
-  let originalCwd: string;
-  let matrix: MergedSkillsMatrix;
-  let sourceResult: SourceLoadResult;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    dirs = await createTestSource({ skills: ALL_TEST_SKILLS });
-    process.chdir(dirs.projectDir);
-
-    // Mock os.homedir() to return the project dir so writeScopedConfigs treats this
-    // as a home-dir install (no scope splitting) and compileAndWriteAgents writes
-    // all agents to the project's .claude/agents/ instead of the real ~/.claude/agents/
-    vi.spyOn(os, "homedir").mockReturnValue(dirs.projectDir);
-
-    matrix = createComprehensiveMatrix();
-    initializeMatrix(matrix);
-    sourceResult = buildSourceResult(matrix, dirs.sourceDir);
-  });
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-    process.chdir(originalCwd);
-    await cleanupTestSource(dirs);
-  });
-
   it("should write config that can be loaded back identically", async () => {
     const selectedSkills: SkillId[] = [
       "web-framework-react",
@@ -1118,7 +945,7 @@ describe("Config Roundtrip (Write -> Load -> Verify)", () => {
     simulateSkillSelections(selectedSkills, matrix, ["web", "api"]);
     useWizardStore.getState().preselectAgentsFromDomains();
 
-    const wizardResult = buildWizardResultFromStore(matrix);
+    const wizardResult = buildWizardResultFromStore();
     await installEject({
       wizardResult,
       sourceResult,
@@ -1151,19 +978,14 @@ describe("Config Roundtrip (Write -> Load -> Verify)", () => {
 
     // Stack roundtrip: all skills go to all agents (no domain ownership filtering)
     const allCategories = ["api-api", "web-client-state", "web-framework"];
-    expect(config.stack).toBeDefined();
-    expect(Object.keys(config.stack!).sort()).toStrictEqual([...EXPECTED_AGENTS.WEB_AND_API]);
-    for (const agentName of EXPECTED_AGENTS.WEB_AND_API) {
-      const agentStack = config.stack![agentName];
-      expect(Object.keys(agentStack!).sort()).toStrictEqual(allCategories);
-    }
+    expectStackCategories(config.stack, EXPECTED_AGENTS.WEB_AND_API, allCategories);
   });
 
   it("should produce valid config with satisfies ProjectConfig", async () => {
     const selectedSkills: SkillId[] = ["web-framework-react"];
     simulateSkillSelections(selectedSkills, matrix, ["web"]);
 
-    const wizardResult = buildWizardResultFromStore(matrix);
+    const wizardResult = buildWizardResultFromStore();
     const installResult = await installEject({
       wizardResult,
       sourceResult,
@@ -1178,8 +1000,6 @@ describe("Config Roundtrip (Write -> Load -> Verify)", () => {
     expect(configContent).toContain("satisfies ProjectConfig");
   });
 });
-
-// ── Journey: Per-Agent Scope ──────────────────────────────────────────────────
 
 describe("per-agent scope", () => {
   let matrix: MergedSkillsMatrix;
@@ -1239,7 +1059,7 @@ describe("per-agent scope", () => {
     useWizardStore.getState().preselectAgentsFromDomains();
     useWizardStore.getState().toggleAgentScope("web-developer");
 
-    const result = buildWizardResultFromStore(comprehensiveMatrix);
+    const result = buildWizardResultFromStore();
 
     const webDevConfig = result.agentConfigs.find((ac) => ac.name === "web-developer");
     expect(webDevConfig).toStrictEqual(buildAgentConfigs(["web-developer"])[0]);
@@ -1325,8 +1145,6 @@ describe("per-agent scope", () => {
   });
 });
 
-// ── Excluded Skills — Global/Project Interaction ────────────────────────────────
-
 describe("Excluded Skills — Global/Project Interaction", () => {
   let matrix: MergedSkillsMatrix;
 
@@ -1356,7 +1174,7 @@ describe("Excluded Skills — Global/Project Interaction", () => {
       ],
     });
 
-    const wizardResult = buildWizardResultFromStore(matrix);
+    const wizardResult = buildWizardResultFromStore();
     const config = buildProjectConfig({
       skills: wizardResult.skills,
       agents: wizardResult.agentConfigs,
@@ -1481,7 +1299,7 @@ describe("Excluded Skills — Global/Project Interaction", () => {
     );
 
     // Build wizard result — excluded entries flow through
-    const wizardResult = buildWizardResultFromStore(matrix);
+    const wizardResult = buildWizardResultFromStore();
     const excludedInResult = wizardResult.skills.find((sc) => sc.id === "web-state-zustand");
     expect(excludedInResult).toStrictEqual(
       buildSkillConfigs(["web-state-zustand"], {
@@ -1573,8 +1391,6 @@ describe("Excluded Skills — Global/Project Interaction", () => {
   });
 });
 
-// ── D-198: Config Propagation — Skill Scope Corruption ─────────────────────
-
 describe("Config Propagation — Dual-Scope Skill Rendering", () => {
   let matrix: MergedSkillsMatrix;
 
@@ -1595,7 +1411,7 @@ describe("Config Propagation — Dual-Scope Skill Rendering", () => {
       agentConfigs: buildAgentConfigs(["web-developer"]),
     });
 
-    const wizardResult = buildWizardResultFromStore(matrix);
+    const wizardResult = buildWizardResultFromStore();
     const config = buildProjectConfig({
       skills: wizardResult.skills,
       agents: wizardResult.agentConfigs,

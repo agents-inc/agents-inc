@@ -49,7 +49,7 @@ describe("compile after scope change", () => {
 
   it(
     "compile after G->P skill scope toggle produces scope-correct agents",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Phase C: Edit -- toggle web-framework-react from global to project scope
       const wizard = await EditWizard.launch({
@@ -118,7 +118,7 @@ describe("compile after scope change", () => {
 
   it(
     "compile after P->G skill scope toggle produces scope-correct agents",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Phase C: Edit -- toggle api-framework-hono from project to global scope
       const wizard = await EditWizard.launch({
@@ -172,35 +172,31 @@ describe("compile after scope change", () => {
     },
   );
 
-  it(
-    "compile is idempotent after scope change",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
-    async () => {
-      // Phase C: First compile
-      const { exitCode: firstExitCode } = await runCLI(["compile"], projectDir, {
-        env: { HOME: fakeHome },
-      });
-      expect(firstExitCode).toBe(EXIT_CODES.SUCCESS);
+  it("compile is idempotent after scope change", { timeout: TIMEOUTS.LIFECYCLE }, async () => {
+    // Phase C: First compile
+    const { exitCode: firstExitCode } = await runCLI(["compile"], projectDir, {
+      env: { HOME: fakeHome },
+    });
+    expect(firstExitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Read agent files after first compile
-      const globalWebDevPath = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, "web-developer.md");
-      const projectApiDevPath = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
-      const firstGlobalWebDev = await readTestFile(globalWebDevPath);
-      const firstProjectApiDev = await readTestFile(projectApiDevPath);
+    // Read agent files after first compile
+    const globalWebDevPath = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, "web-developer.md");
+    const projectApiDevPath = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
+    const firstGlobalWebDev = await readTestFile(globalWebDevPath);
+    const firstProjectApiDev = await readTestFile(projectApiDevPath);
 
-      // Phase D: Second compile
-      const { exitCode: secondExitCode } = await runCLI(["compile"], projectDir, {
-        env: { HOME: fakeHome },
-      });
-      expect(secondExitCode).toBe(EXIT_CODES.SUCCESS);
+    // Phase D: Second compile
+    const { exitCode: secondExitCode } = await runCLI(["compile"], projectDir, {
+      env: { HOME: fakeHome },
+    });
+    expect(secondExitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Read agent files after second compile
-      const secondGlobalWebDev = await readTestFile(globalWebDevPath);
-      const secondProjectApiDev = await readTestFile(projectApiDevPath);
+    // Read agent files after second compile
+    const secondGlobalWebDev = await readTestFile(globalWebDevPath);
+    const secondProjectApiDev = await readTestFile(projectApiDevPath);
 
-      // Agent file contents are identical between first and second compile
-      expect(secondGlobalWebDev).toBe(firstGlobalWebDev);
-      expect(secondProjectApiDev).toBe(firstProjectApiDev);
-    },
-  );
+    // Agent file contents are identical between first and second compile
+    expect(secondGlobalWebDev).toBe(firstGlobalWebDev);
+    expect(secondProjectApiDev).toBe(firstProjectApiDev);
+  });
 });

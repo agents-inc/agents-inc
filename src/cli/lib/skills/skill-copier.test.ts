@@ -6,7 +6,8 @@ import {
   copySkillsToLocalFlattened,
   validateSkillPath,
 } from "./skill-copier";
-import type { SkillId } from "../../types";
+import type { MergedSkillsMatrix, SkillId } from "../../types";
+import type { SourceLoadResult } from "../loading/source-loader.js";
 import { CLAUDE_DIR, PROJECT_ROOT, STANDARD_DIRS, STANDARD_FILES } from "../../consts";
 import { initializeMatrix, matrix } from "../matrix/matrix-provider";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
@@ -63,6 +64,14 @@ async function writeRemoteSkillOnDisk(
     },
   });
   return skillDir;
+}
+
+/** Registers the matrix with the provider and builds the standard PROJECT_ROOT-sourced result. */
+function initSourceResult(matrix: MergedSkillsMatrix, projectDir: string): SourceLoadResult {
+  initializeMatrix(matrix);
+  return buildSourceResult(matrix, projectDir, {
+    sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
+  });
 }
 
 describe("validateSkillPath", () => {
@@ -180,11 +189,7 @@ describe("skill-copier", () => {
         local: true,
         localPath: localSkillPath,
       });
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       // Change cwd to project dir for local skill resolution
       process.chdir(projectDir);
@@ -192,7 +197,6 @@ describe("skill-copier", () => {
       const result = await copySkillsToPluginFromSource(
         ["web-framework-vue-composition-api"],
         pluginDir,
-        matrix,
         sourceResult,
       );
 
@@ -233,18 +237,13 @@ describe("skill-copier", () => {
         local: true,
         localPath: localSkillPath,
       });
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       process.chdir(projectDir);
 
       const result = await copySkillsToPluginFromSource(
         ["web-styling-scss-modules"],
         pluginDir,
-        matrix,
         sourceResult,
       );
 
@@ -288,18 +287,13 @@ describe("skill-copier", () => {
           path: remoteSkillRelPath,
         },
       );
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       process.chdir(projectDir);
 
       const result = await copySkillsToPluginFromSource(
         ["web-styling-tailwind", "web-framework-react"],
         pluginDir,
-        matrix,
         sourceResult,
       );
 
@@ -355,12 +349,7 @@ describe("skill-copier", () => {
       });
 
       await expect(
-        copySkillsToPluginFromSource(
-          ["web-unknown-skill" as SkillId],
-          pluginDir,
-          EMPTY_MATRIX,
-          sourceResult,
-        ),
+        copySkillsToPluginFromSource(["web-unknown-skill" as SkillId], pluginDir, sourceResult),
       ).rejects.toThrow("Skill not found: web-unknown-skill");
     });
 
@@ -371,7 +360,7 @@ describe("skill-copier", () => {
         sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
       });
 
-      const result = await copySkillsToPluginFromSource([], pluginDir, EMPTY_MATRIX, sourceResult);
+      const result = await copySkillsToPluginFromSource([], pluginDir, sourceResult);
 
       expect(result).toStrictEqual([]);
     });
@@ -393,18 +382,13 @@ describe("skill-copier", () => {
         local: true,
         localPath: localSkillPath,
       });
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       process.chdir(projectDir);
 
       const result = await copySkillsToPluginFromSource(
         ["web-framework-react"],
         pluginDir,
-        matrix,
         sourceResult,
         { "web-framework-react": "public" },
       );
@@ -432,18 +416,13 @@ describe("skill-copier", () => {
         local: true,
         localPath: localSkillPath,
       });
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       process.chdir(projectDir);
 
       const result = await copySkillsToPluginFromSource(
         ["web-framework-react"],
         pluginDir,
-        matrix,
         sourceResult,
         { "web-framework-react": "eject" },
       );
@@ -478,16 +457,11 @@ describe("skill-copier", () => {
         ...SKILLS.zustand,
         path: remoteSkillRelPath,
       });
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       const result = await copySkillsToLocalFlattened(
         ["web-state-zustand"],
         localSkillsDir,
-        matrix,
         sourceResult,
       );
 
@@ -519,16 +493,11 @@ describe("skill-copier", () => {
         ...SKILLS.hono,
         path: remoteSkillRelPath,
       });
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       const result = await copySkillsToLocalFlattened(
         ["api-framework-hono"],
         localSkillsDir,
-        matrix,
         sourceResult,
       );
 
@@ -560,18 +529,13 @@ describe("skill-copier", () => {
         local: true,
         localPath: localSkillPath,
       });
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       process.chdir(projectDir);
 
       const result = await copySkillsToLocalFlattened(
         ["web-framework-vue-composition-api"],
         localSkillsDir,
-        matrix,
         sourceResult,
       );
 
@@ -616,18 +580,13 @@ describe("skill-copier", () => {
           path: remoteSkillRelPath,
         },
       );
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       process.chdir(projectDir);
 
       const result = await copySkillsToLocalFlattened(
         ["web-styling-tailwind", "web-framework-react"],
         localSkillsDir,
-        matrix,
         sourceResult,
       );
 
@@ -670,12 +629,7 @@ describe("skill-copier", () => {
         sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
       });
 
-      const result = await copySkillsToLocalFlattened(
-        [],
-        localSkillsDir,
-        EMPTY_MATRIX,
-        sourceResult,
-      );
+      const result = await copySkillsToLocalFlattened([], localSkillsDir, sourceResult);
 
       expect(result).toStrictEqual([]);
     });
@@ -697,16 +651,11 @@ describe("skill-copier", () => {
         ...SKILLS.react,
         path: deeplyNestedPath,
       });
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       const result = await copySkillsToLocalFlattened(
         ["web-framework-react"],
         localSkillsDir,
-        matrix,
         sourceResult,
       );
 
@@ -770,16 +719,11 @@ describe("skill-copier", () => {
           path: vitestPath,
         },
       );
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       const result = await copySkillsToLocalFlattened(
         ["web-framework-react", "api-framework-hono", "web-testing-vitest"],
         localSkillsDir,
-        matrix,
         sourceResult,
       );
 
@@ -825,16 +769,11 @@ describe("skill-copier", () => {
         ...SKILLS.drizzle,
         path: nestedPath,
       });
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       const result = await copySkillsToLocalFlattened(
         ["api-database-drizzle"],
         localSkillsDir,
-        matrix,
         sourceResult,
       );
 
@@ -869,18 +808,13 @@ describe("skill-copier", () => {
         local: true,
         localPath: localSkillPath,
       });
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       process.chdir(projectDir);
 
       const result = await copySkillsToLocalFlattened(
         ["web-framework-react"],
         localSkillsDir,
-        matrix,
         sourceResult,
         { "web-framework-react": "public" },
       );
@@ -909,18 +843,13 @@ describe("skill-copier", () => {
         local: true,
         localPath: localSkillPath,
       });
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       process.chdir(projectDir);
 
       const result = await copySkillsToLocalFlattened(
         ["web-framework-react"],
         localSkillsDir,
-        matrix,
         sourceResult,
         { "web-framework-react": "eject" },
       );
@@ -949,11 +878,7 @@ describe("skill-copier", () => {
         local: true,
         localPath: localSkillPath,
       });
-      initializeMatrix(matrix);
-
-      const sourceResult = buildSourceResult(matrix, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(matrix, projectDir);
 
       process.chdir(projectDir);
 
@@ -961,7 +886,6 @@ describe("skill-copier", () => {
       const result = await copySkillsToLocalFlattened(
         ["web-framework-react"],
         localSkillsDir,
-        matrix,
         sourceResult,
       );
 

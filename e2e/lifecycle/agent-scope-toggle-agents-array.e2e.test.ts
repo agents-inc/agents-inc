@@ -2,19 +2,16 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import {
-  cleanupTempDir,
-  ensureBinaryExists,
-  fileExists,
-  readTestFile,
-} from "../helpers/test-utils.js";
+import { cleanupTempDir, ensureBinaryExists, fileExists } from "../helpers/test-utils.js";
 import {
   createDualScopeEnv,
   createGlobalOnlyEnv,
+  readAgentEntries,
   type DualScopeEnv,
 } from "../fixtures/dual-scope-helpers.js";
+import type { AgentScopeConfig } from "../../src/cli/types/index.js";
 
 /**
  * D-221 — Agent scope toggle (project → global) corrupts `agents` array
@@ -42,71 +39,16 @@ import {
  * once `mergeConfigs` composes scope into the identity key.
  */
 
-type AgentRow = {
-  name: string;
-  scope: "project" | "global";
-  excluded?: boolean;
-};
-
-const AGENT_ARRAY_REGEX = /const agents:\s*AgentScopeConfig\[\]\s*=\s*\[([\s\S]*?)\];/;
-const AGENT_ENTRY_REGEX =
-  /\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"scope"\s*:\s*"(project|global)"(?:\s*,\s*"excluded"\s*:\s*(true|false))?\s*\}/g;
-
 /**
- * Parses the `const agents: AgentScopeConfig[] = [...]` block out of a
- * CLI-written `config.ts` and returns the entries as typed rows.
- *
- * Throws via expect() when the block is missing (fails the test cleanly
- * rather than silently returning []).
+ * Returns the list of `(name, scope)` pairs that appear more than once in the
+ * agents array. Per D-221 acceptance criteria, every pair MUST appear exactly
+ * once — duplicates (regardless of `excluded`) indicate corruption. Used to
+ * build explicit failure messages pointing directly at the corrupted rows.
  */
-function extractAgentsArray(configContent: string): AgentRow[] {
-  const blockMatch = configContent.match(AGENT_ARRAY_REGEX);
-  expect(
-    blockMatch,
-    "Expected config.ts to contain a `const agents: AgentScopeConfig[] = [...]` declaration",
-  ).not.toBeNull();
-
-  const rows: AgentRow[] = [];
-  const body = blockMatch![1];
-  for (const m of body.matchAll(AGENT_ENTRY_REGEX)) {
-    const [, name, scope, excludedRaw] = m;
-    rows.push({
-      name,
-      scope: scope as "project" | "global",
-      ...(excludedRaw === "true" ? { excluded: true } : {}),
-    });
-  }
-  return rows;
-}
-
-/**
- * Counts occurrences of each `(name, scope)` pair across the agents array.
- * Returned Map keys are `${name}:${scope}`; values are counts.
- *
- * Per D-221 acceptance criteria, every key MUST have a count of 1 — duplicate
- * pairs (regardless of `excluded`) indicate corruption.
- */
-function countByNameScope(rows: AgentRow[]): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    const key = `${row.name}:${row.scope}`;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return counts;
-}
-
-/**
- * Returns the list of `(name, scope)` pairs that appear more than once.
- * Used to build explicit failure messages so the assertion output points
- * directly at the corrupted rows.
- */
-function findDuplicateNameScopePairs(rows: AgentRow[]): string[] {
-  const counts = countByNameScope(rows);
-  const duplicates: string[] = [];
-  for (const [key, count] of counts) {
-    if (count > 1) duplicates.push(`${key} × ${count}`);
-  }
-  return duplicates;
+function findDuplicateNameScopePairs(rows: AgentScopeConfig[]): string[] {
+  const keys = rows.map((row) => `${row.name}:${row.scope}`);
+  const duplicateKeys = [...new Set(keys.filter((key, idx) => keys.indexOf(key) !== idx))];
+  return duplicateKeys.map((key) => `${key} × ${keys.filter((k) => k === key).length}`);
 }
 
 describe("agent scope toggle keeps agents array duplicate-free", () => {
@@ -137,7 +79,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
 
     it(
       "P→G on api-developer removes project row, keeps exactly one global row, no dup (name, scope) pairs",
-      { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+      { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
         // ================================================================
         // Phase 1: Build mixed-scope project via the CLI.
@@ -148,7 +90,6 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         env = await createDualScopeEnv(sourceDir, sourceTempDir);
         const { fakeHome, projectDir } = env;
 
-        const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
         const projectAgentFile = path.join(
           projectDir,
           DIRS.CLAUDE,
@@ -192,8 +133,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // ================================================================
         // Phase 3: Parse config.ts::agents and assert duplicate-free shape.
         // ================================================================
-        const projectConfigAfter = await readTestFile(projectConfigPath);
-        const rows = extractAgentsArray(projectConfigAfter);
+        const rows = await readAgentEntries(projectDir);
 
         // No (name, scope) pair appears more than once, anywhere.
         const duplicates = findDuplicateNameScopePairs(rows);
@@ -258,14 +198,13 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
 
     it(
       "P→G then second edit with a skill addition: agents array still has exactly one entry per (name, scope)",
-      { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+      { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
         // ================================================================
         // Phase 1: mixed-scope project (same as Scenario A baseline).
         // ================================================================
         env = await createDualScopeEnv(sourceDir, sourceTempDir);
         const { fakeHome, projectDir } = env;
-        const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
 
         // ================================================================
         // Phase 2: First edit — P→G on api-developer.
@@ -289,7 +228,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         expect(await result1.exitCode).toBe(EXIT_CODES.SUCCESS);
         await result1.destroy();
 
-        const rowsAfterFirstEdit = extractAgentsArray(await readTestFile(projectConfigPath));
+        const rowsAfterFirstEdit = await readAgentEntries(projectDir);
         const duplicatesAfterFirst = findDuplicateNameScopePairs(rowsAfterFirstEdit);
         expect(
           duplicatesAfterFirst,
@@ -323,7 +262,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // contain exactly one entry per (name, scope) pair — corruption
         // must NOT self-amplify across edit cycles.
         // ================================================================
-        const rowsAfterSecondEdit = extractAgentsArray(await readTestFile(projectConfigPath));
+        const rowsAfterSecondEdit = await readAgentEntries(projectDir);
         const duplicatesAfterSecond = findDuplicateNameScopePairs(rowsAfterSecondEdit);
         expect(
           duplicatesAfterSecond,
@@ -356,7 +295,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
 
     it(
       "G→P on api-developer produces one project row + one global tombstone, other agents unchanged, no dup pairs",
-      { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+      { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
         // ================================================================
         // Phase 1: All agents at global scope in both global and project.
@@ -364,7 +303,6 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
         const { fakeHome, projectDir } = env;
 
-        const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
         const projectAgentFile = path.join(
           projectDir,
           DIRS.CLAUDE,
@@ -402,8 +340,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // ================================================================
         // Phase 3: Config assertions.
         // ================================================================
-        const projectConfigAfter = await readTestFile(projectConfigPath);
-        const rows = extractAgentsArray(projectConfigAfter);
+        const rows = await readAgentEntries(projectDir);
 
         const duplicates = findDuplicateNameScopePairs(rows);
         expect(

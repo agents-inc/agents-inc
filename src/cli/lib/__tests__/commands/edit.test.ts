@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
 import type { ReactElement } from "react";
 import os from "os";
 import path from "path";
@@ -21,12 +21,9 @@ import { EXIT_CODES } from "../../exit-codes";
 import * as wizardStore from "../../../stores/wizard-store";
 import { useWizardStore } from "../../../stores/wizard-store";
 import { initializeMatrix } from "../../matrix/matrix-provider";
+import * as execModule from "../../../utils/exec.js";
 import type { AgentName, CategoryPath, SkillId } from "../../../types";
-import Edit, {
-  migratePluginSkillScopes,
-  detectConfigChanges,
-  type ConfigChanges,
-} from "../../../commands/edit.js";
+import Edit, { migratePluginSkillScopes, detectConfigChanges } from "../../../commands/edit.js";
 
 // --- Module mocks (hoisted by vitest) ---
 
@@ -121,6 +118,40 @@ vi.mock("../../../utils/fs.js", async (importOriginal) => {
     ensureDir: (...args: unknown[]) => mockEnsureDir(...(args as [])),
   };
 });
+
+/** Mocks loadProjectConfig with the standard `{ config, configPath }` wrapper. */
+function mockProjectConfig(projectDir: string, config: Record<string, unknown>): void {
+  mockLoadProjectConfig.mockResolvedValue({
+    config,
+    configPath: path.join(projectDir, ".claude-src/config.ts"),
+  });
+}
+
+/** A detected project-scope eject installation rooted at `projectDir`. */
+function buildEjectInstallation(projectDir: string) {
+  return {
+    mode: "eject" as const,
+    scope: "project" as const,
+    configPath: path.join(projectDir, ".claude-src/config.ts"),
+    agentsDir: path.join(projectDir, ".claude/agents"),
+    skillsDir: path.join(projectDir, ".claude/skills"),
+    projectDir,
+  };
+}
+
+/**
+ * Mocks the Ink render call so the edit wizard immediately completes with the
+ * given wizard result (generalizes the removal-wizard mock).
+ */
+function mockWizardCompletion(wizardResult: unknown): void {
+  mockRender.mockImplementation((element: ReactElement) => {
+    const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
+    if (onComplete) {
+      onComplete(wizardResult);
+    }
+    return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
+  });
+}
 
 describe("edit command", () => {
   let tempDir: string;
@@ -539,14 +570,7 @@ describe("edit command eject-mode skill fallback", () => {
       unmount: vi.fn(),
     });
 
-    mockDetectInstallation.mockResolvedValue({
-      mode: "eject",
-      scope: "project",
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
-      agentsDir: path.join(projectDir, ".claude/agents"),
-      skillsDir: path.join(projectDir, ".claude/skills"),
-      projectDir,
-    });
+    mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
 
     mockLoadSkillsMatrixFromSource.mockResolvedValue(testSourceResult);
     initializeMatrix(testSourceResult.matrix);
@@ -560,13 +584,10 @@ describe("edit command eject-mode skill fallback", () => {
 
   it("should use project config skills as installedSkillIds when plugin discovery returns empty", async () => {
     mockDiscoverAllPluginSkills.mockResolvedValue({});
-    mockLoadProjectConfig.mockResolvedValue({
-      config: {
-        name: "test-project",
-        agents: [],
-        skills: CONFIG_SKILLS,
-      },
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
+    mockProjectConfig(projectDir, {
+      name: "test-project",
+      agents: [],
+      skills: CONFIG_SKILLS,
     });
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
@@ -580,13 +601,10 @@ describe("edit command eject-mode skill fallback", () => {
     mockDiscoverAllPluginSkills.mockResolvedValue({
       "web-framework-react": { id: "web-framework-react", path: "skills/web-framework-react/" },
     });
-    mockLoadProjectConfig.mockResolvedValue({
-      config: {
-        name: "test-project",
-        agents: [],
-        skills: CONFIG_SKILLS,
-      },
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
+    mockProjectConfig(projectDir, {
+      name: "test-project",
+      agents: [],
+      skills: CONFIG_SKILLS,
     });
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
@@ -624,14 +642,7 @@ describe("edit command detects added agents", () => {
     process.chdir(projectDir);
 
     mockRender.mockClear();
-    mockDetectInstallation.mockResolvedValue({
-      mode: "eject",
-      scope: "project",
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
-      agentsDir: path.join(projectDir, ".claude/agents"),
-      skillsDir: path.join(projectDir, ".claude/skills"),
-      projectDir,
-    });
+    mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
 
     mockLoadSkillsMatrixFromSource.mockResolvedValue(testSourceResult);
     initializeMatrix(testSourceResult.matrix);
@@ -645,27 +656,19 @@ describe("edit command detects added agents", () => {
 
   it("should NOT report 'No changes made' when only agents are added", async () => {
     // Old config has one agent: web-developer
-    mockLoadProjectConfig.mockResolvedValue({
-      config: {
-        name: "test-project",
-        agents: buildAgentConfigs(["web-developer"]),
-        skills: EXISTING_SKILLS,
-      },
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
+    mockProjectConfig(projectDir, {
+      name: "test-project",
+      agents: buildAgentConfigs(["web-developer"]),
+      skills: EXISTING_SKILLS,
     });
 
     // Mock render to invoke onComplete with a wizard result that adds web-tester
     // (same skills, but a new agent)
-    mockRender.mockImplementation((element: ReactElement) => {
-      const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
-      if (onComplete) {
-        const wizardResult = buildWizardResult(EXISTING_SKILLS, {
-          agentConfigs: buildAgentConfigs(["web-developer", "web-tester"]),
-        });
-        onComplete(wizardResult);
-      }
-      return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
-    });
+    mockWizardCompletion(
+      buildWizardResult(EXISTING_SKILLS, {
+        agentConfigs: buildAgentConfigs(["web-developer", "web-tester"]),
+      }),
+    );
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
@@ -698,14 +701,7 @@ describe("edit command copies newly added local skills", () => {
     mockRender.mockClear();
     mockCopySkillsToLocalFlattened.mockClear();
     mockEnsureDir.mockClear();
-    mockDetectInstallation.mockResolvedValue({
-      mode: "eject",
-      scope: "project",
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
-      agentsDir: path.join(projectDir, ".claude/agents"),
-      skillsDir: path.join(projectDir, ".claude/skills"),
-      projectDir,
-    });
+    mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
 
     mockLoadSkillsMatrixFromSource.mockResolvedValue(testSourceResult);
     initializeMatrix(testSourceResult.matrix);
@@ -719,13 +715,10 @@ describe("edit command copies newly added local skills", () => {
 
   it("should call copySkillsToLocalFlattened when a local skill is added", async () => {
     // Old config has no skills
-    mockLoadProjectConfig.mockResolvedValue({
-      config: {
-        name: "test-project",
-        agents: buildAgentConfigs(["web-developer"]),
-        skills: [],
-      },
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
+    mockProjectConfig(projectDir, {
+      name: "test-project",
+      agents: buildAgentConfigs(["web-developer"]),
+      skills: [],
     });
 
     const newLocalSkills = buildSkillConfigs(["web-framework-react"], {
@@ -734,16 +727,11 @@ describe("edit command copies newly added local skills", () => {
     });
 
     // Mock render to invoke onComplete with a wizard result that adds a local skill
-    mockRender.mockImplementation((element: ReactElement) => {
-      const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
-      if (onComplete) {
-        const wizardResult = buildWizardResult(newLocalSkills, {
-          agentConfigs: buildAgentConfigs(["web-developer"]),
-        });
-        onComplete(wizardResult);
-      }
-      return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
-    });
+    mockWizardCompletion(
+      buildWizardResult(newLocalSkills, {
+        agentConfigs: buildAgentConfigs(["web-developer"]),
+      }),
+    );
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
@@ -752,7 +740,6 @@ describe("edit command copies newly added local skills", () => {
     expect(mockCopySkillsToLocalFlattened).toHaveBeenCalledWith(
       ["web-framework-react"],
       expect.stringContaining(".claude/skills"),
-      testSourceResult.matrix,
       testSourceResult,
     );
   });
@@ -775,14 +762,7 @@ describe("edit command removes deselected local skills", () => {
 
     mockRender.mockClear();
     mockDeleteLocalSkill.mockClear();
-    mockDetectInstallation.mockResolvedValue({
-      mode: "eject",
-      scope: "project",
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
-      agentsDir: path.join(projectDir, ".claude/agents"),
-      skillsDir: path.join(projectDir, ".claude/skills"),
-      projectDir,
-    });
+    mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
     mockLoadSkillsMatrixFromSource.mockResolvedValue(testSourceResult);
     initializeMatrix(testSourceResult.matrix);
     mockDiscoverAllPluginSkills.mockResolvedValue({});
@@ -794,23 +774,16 @@ describe("edit command removes deselected local skills", () => {
   });
 
   function mockRemovalWizard(): void {
-    mockRender.mockImplementation((element: ReactElement) => {
-      const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
-      if (onComplete) {
-        onComplete(buildWizardResult([], { agentConfigs: buildAgentConfigs(["web-developer"]) }));
-      }
-      return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
-    });
+    mockWizardCompletion(
+      buildWizardResult([], { agentConfigs: buildAgentConfigs(["web-developer"]) }),
+    );
   }
 
   it("deletes a deselected PROJECT-scope eject skill's directory from the project dir", async () => {
-    mockLoadProjectConfig.mockResolvedValue({
-      config: {
-        name: "test-project",
-        agents: buildAgentConfigs(["web-developer"]),
-        skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
-      },
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
+    mockProjectConfig(projectDir, {
+      name: "test-project",
+      agents: buildAgentConfigs(["web-developer"]),
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
     });
     mockRemovalWizard();
 
@@ -821,13 +794,10 @@ describe("edit command removes deselected local skills", () => {
   });
 
   it("deletes a deselected GLOBAL-scope eject skill's directory from the home dir", async () => {
-    mockLoadProjectConfig.mockResolvedValue({
-      config: {
-        name: "test-project",
-        agents: buildAgentConfigs(["web-developer"]),
-        skills: buildSkillConfigs(["web-framework-react"], { scope: "global", source: "eject" }),
-      },
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
+    mockProjectConfig(projectDir, {
+      name: "test-project",
+      agents: buildAgentConfigs(["web-developer"]),
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "global", source: "eject" }),
     });
     mockRemovalWizard();
 
@@ -838,16 +808,13 @@ describe("edit command removes deselected local skills", () => {
   });
 
   it("does NOT delete a directory for a deselected plugin-mode skill (handled by plugin uninstall)", async () => {
-    mockLoadProjectConfig.mockResolvedValue({
-      config: {
-        name: "test-project",
-        agents: buildAgentConfigs(["web-developer"]),
-        skills: buildSkillConfigs(["web-framework-react"], {
-          scope: "project",
-          source: "agents-inc",
-        }),
-      },
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
+    mockProjectConfig(projectDir, {
+      name: "test-project",
+      agents: buildAgentConfigs(["web-developer"]),
+      skills: buildSkillConfigs(["web-framework-react"], {
+        scope: "project",
+        source: "agents-inc",
+      }),
     });
     mockRemovalWizard();
 
@@ -862,11 +829,17 @@ describe("edit command removes deselected local skills", () => {
 // across projects and must remain intact. Only project→global should uninstall.
 
 describe("migratePluginSkillScopes", () => {
-  it("should not uninstall global plugin when re-scoping from global to project", async () => {
-    const execModule = await import("../../../utils/exec.js");
-    const installSpy = vi.spyOn(execModule, "claudePluginInstall").mockResolvedValue();
-    const uninstallSpy = vi.spyOn(execModule, "claudePluginUninstall").mockResolvedValue();
+  const installSpy = vi.spyOn(execModule, "claudePluginInstall");
+  const uninstallSpy = vi.spyOn(execModule, "claudePluginUninstall");
 
+  beforeEach(() => {
+    installSpy.mockReset().mockResolvedValue();
+    uninstallSpy.mockReset().mockResolvedValue();
+  });
+
+  afterAll(() => {});
+
+  it("should not uninstall global plugin when re-scoping from global to project", async () => {
     const scopeChanges = new Map([
       ["web-framework-react" as SkillId, { from: "global" as const, to: "project" as const }],
     ]);
@@ -884,16 +857,9 @@ describe("migratePluginSkillScopes", () => {
       "project",
       "/project",
     );
-
-    installSpy.mockRestore();
-    uninstallSpy.mockRestore();
   });
 
   it("should uninstall project plugin when re-scoping from project to global", async () => {
-    const execModule = await import("../../../utils/exec.js");
-    const installSpy = vi.spyOn(execModule, "claudePluginInstall").mockResolvedValue();
-    const uninstallSpy = vi.spyOn(execModule, "claudePluginUninstall").mockResolvedValue();
-
     const scopeChanges = new Map([
       ["web-framework-react" as SkillId, { from: "project" as const, to: "global" as const }],
     ]);
@@ -907,16 +873,9 @@ describe("migratePluginSkillScopes", () => {
       "/project",
     );
     expect(installSpy).toHaveBeenCalledWith("web-framework-react@agents-inc", "user", "/project");
-
-    installSpy.mockRestore();
-    uninstallSpy.mockRestore();
   });
 
   it("should skip eject-source skills during scope migration", async () => {
-    const execModule = await import("../../../utils/exec.js");
-    const installSpy = vi.spyOn(execModule, "claudePluginInstall").mockResolvedValue();
-    const uninstallSpy = vi.spyOn(execModule, "claudePluginUninstall").mockResolvedValue();
-
     const scopeChanges = new Map([
       ["web-framework-react" as SkillId, { from: "global" as const, to: "project" as const }],
     ]);
@@ -926,16 +885,9 @@ describe("migratePluginSkillScopes", () => {
 
     expect(uninstallSpy).not.toHaveBeenCalled();
     expect(installSpy).not.toHaveBeenCalled();
-
-    installSpy.mockRestore();
-    uninstallSpy.mockRestore();
   });
 
   it("should handle mixed scope changes correctly", async () => {
-    const execModule = await import("../../../utils/exec.js");
-    const installSpy = vi.spyOn(execModule, "claudePluginInstall").mockResolvedValue();
-    const uninstallSpy = vi.spyOn(execModule, "claudePluginUninstall").mockResolvedValue();
-
     const scopeChanges = new Map([
       ["web-framework-react" as SkillId, { from: "global" as const, to: "project" as const }],
       ["web-state-zustand" as SkillId, { from: "project" as const, to: "global" as const }],
@@ -968,17 +920,10 @@ describe("migratePluginSkillScopes", () => {
       "/project",
     );
     expect(installSpy).toHaveBeenCalledWith("web-state-zustand@agents-inc", "user", "/project");
-
-    installSpy.mockRestore();
-    uninstallSpy.mockRestore();
   });
 
   it("should report install failure without affecting global registration", async () => {
-    const execModule = await import("../../../utils/exec.js");
-    const installSpy = vi
-      .spyOn(execModule, "claudePluginInstall")
-      .mockRejectedValue(new Error("install failed"));
-    const uninstallSpy = vi.spyOn(execModule, "claudePluginUninstall").mockResolvedValue();
+    installSpy.mockRejectedValue(new Error("install failed"));
 
     const scopeChanges = new Map([
       ["web-framework-react" as SkillId, { from: "global" as const, to: "project" as const }],
@@ -997,17 +942,10 @@ describe("migratePluginSkillScopes", () => {
     expect(result.migrated).toHaveLength(0);
     expect(result.failed).toHaveLength(1);
     expect(result.failed[0].id).toBe("web-framework-react");
-
-    installSpy.mockRestore();
-    uninstallSpy.mockRestore();
   });
 
   it("should not install at global scope when project uninstall fails", async () => {
-    const execModule = await import("../../../utils/exec.js");
-    const installSpy = vi.spyOn(execModule, "claudePluginInstall").mockResolvedValue();
-    const uninstallSpy = vi
-      .spyOn(execModule, "claudePluginUninstall")
-      .mockRejectedValue(new Error("uninstall failed"));
+    uninstallSpy.mockRejectedValue(new Error("uninstall failed"));
 
     const scopeChanges = new Map([
       ["web-framework-react" as SkillId, { from: "project" as const, to: "global" as const }],
@@ -1031,16 +969,9 @@ describe("migratePluginSkillScopes", () => {
     // Should report failure
     expect(result.migrated).toHaveLength(0);
     expect(result.failed).toHaveLength(1);
-
-    installSpy.mockRestore();
-    uninstallSpy.mockRestore();
   });
 
   it("should skip skills not found in the skills array", async () => {
-    const execModule = await import("../../../utils/exec.js");
-    const installSpy = vi.spyOn(execModule, "claudePluginInstall").mockResolvedValue();
-    const uninstallSpy = vi.spyOn(execModule, "claudePluginUninstall").mockResolvedValue();
-
     const scopeChanges = new Map([
       ["web-framework-react" as SkillId, { from: "global" as const, to: "project" as const }],
     ]);
@@ -1053,18 +984,10 @@ describe("migratePluginSkillScopes", () => {
     expect(installSpy).not.toHaveBeenCalled();
     expect(result.migrated).toHaveLength(0);
     expect(result.failed).toHaveLength(0);
-
-    installSpy.mockRestore();
-    uninstallSpy.mockRestore();
   });
 
   it("should continue processing after individual skill failure", async () => {
-    const execModule = await import("../../../utils/exec.js");
-    const installSpy = vi
-      .spyOn(execModule, "claudePluginInstall")
-      .mockRejectedValueOnce(new Error("first fails"))
-      .mockResolvedValueOnce();
-    const uninstallSpy = vi.spyOn(execModule, "claudePluginUninstall").mockResolvedValue();
+    installSpy.mockRejectedValueOnce(new Error("first fails")).mockResolvedValueOnce();
 
     const scopeChanges = new Map([
       ["web-framework-react" as SkillId, { from: "global" as const, to: "project" as const }],
@@ -1081,9 +1004,6 @@ describe("migratePluginSkillScopes", () => {
     expect(result.migrated).toStrictEqual(["web-state-zustand"]);
     expect(result.failed).toHaveLength(1);
     expect(result.failed[0].id).toBe("web-framework-react");
-
-    installSpy.mockRestore();
-    uninstallSpy.mockRestore();
   });
 });
 
@@ -1424,14 +1344,7 @@ describe("edit change summary display", () => {
     } as typeof process.stdout.write;
 
     mockRender.mockClear();
-    mockDetectInstallation.mockResolvedValue({
-      mode: "eject",
-      scope: "project",
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
-      agentsDir: path.join(projectDir, ".claude/agents"),
-      skillsDir: path.join(projectDir, ".claude/skills"),
-      projectDir,
-    });
+    mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
 
     mockLoadSkillsMatrixFromSource.mockResolvedValue(testSourceResult);
     initializeMatrix(testSourceResult.matrix);
@@ -1445,22 +1358,16 @@ describe("edit change summary display", () => {
   });
 
   it("should show display names instead of raw skill IDs for added skills", async () => {
-    mockLoadProjectConfig.mockResolvedValue({
-      config: buildProjectConfig({ skills: [], agents: buildAgentConfigs(["web-developer"]) }),
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
-    });
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({ skills: [], agents: buildAgentConfigs(["web-developer"]) }),
+    );
 
-    mockRender.mockImplementation((element: ReactElement) => {
-      const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
-      if (onComplete) {
-        onComplete(
-          buildWizardResult(buildSkillConfigs(["web-framework-react"], { scope: "project" }), {
-            agentConfigs: buildAgentConfigs(["web-developer"]),
-          }),
-        );
-      }
-      return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
-    });
+    mockWizardCompletion(
+      buildWizardResult(buildSkillConfigs(["web-framework-react"], { scope: "project" }), {
+        agentConfigs: buildAgentConfigs(["web-developer"]),
+      }),
+    );
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
@@ -1472,22 +1379,16 @@ describe("edit change summary display", () => {
   });
 
   it("should show scope labels [G]/[P] on added skill lines", async () => {
-    mockLoadProjectConfig.mockResolvedValue({
-      config: buildProjectConfig({ skills: [], agents: buildAgentConfigs(["web-developer"]) }),
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
-    });
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({ skills: [], agents: buildAgentConfigs(["web-developer"]) }),
+    );
 
-    mockRender.mockImplementation((element: ReactElement) => {
-      const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
-      if (onComplete) {
-        onComplete(
-          buildWizardResult(buildSkillConfigs(["web-framework-react"], { scope: "global" }), {
-            agentConfigs: buildAgentConfigs(["web-developer"]),
-          }),
-        );
-      }
-      return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
-    });
+    mockWizardCompletion(
+      buildWizardResult(buildSkillConfigs(["web-framework-react"], { scope: "global" }), {
+        agentConfigs: buildAgentConfigs(["web-developer"]),
+      }),
+    );
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
@@ -1498,25 +1399,19 @@ describe("edit change summary display", () => {
   });
 
   it("should show + prefix for G-to-P scope changes instead of ~", async () => {
-    mockLoadProjectConfig.mockResolvedValue({
-      config: buildProjectConfig({
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
         agents: buildAgentConfigs(["web-developer"]),
       }),
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
-    });
+    );
 
-    mockRender.mockImplementation((element: ReactElement) => {
-      const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
-      if (onComplete) {
-        onComplete(
-          buildWizardResult(buildSkillConfigs(["web-framework-react"], { scope: "project" }), {
-            agentConfigs: buildAgentConfigs(["web-developer"]),
-          }),
-        );
-      }
-      return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
-    });
+    mockWizardCompletion(
+      buildWizardResult(buildSkillConfigs(["web-framework-react"], { scope: "project" }), {
+        agentConfigs: buildAgentConfigs(["web-developer"]),
+      }),
+    );
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
@@ -1532,13 +1427,13 @@ describe("edit change summary display", () => {
   });
 
   it("should report a dual-scope addition as a project-scope add, not a G→P migration", async () => {
-    mockLoadProjectConfig.mockResolvedValue({
-      config: buildProjectConfig({
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
         agents: buildAgentConfigs(["web-developer"]),
       }),
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
-    });
+    );
 
     mockRender.mockImplementation((element: ReactElement) => {
       const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
@@ -1574,25 +1469,19 @@ describe("edit change summary display", () => {
   });
 
   it("should show ~ prefix for P-to-G scope changes", async () => {
-    mockLoadProjectConfig.mockResolvedValue({
-      config: buildProjectConfig({
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
         agents: buildAgentConfigs(["web-developer"]),
       }),
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
-    });
+    );
 
-    mockRender.mockImplementation((element: ReactElement) => {
-      const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
-      if (onComplete) {
-        onComplete(
-          buildWizardResult(buildSkillConfigs(["web-framework-react"], { scope: "global" }), {
-            agentConfigs: buildAgentConfigs(["web-developer"]),
-          }),
-        );
-      }
-      return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
-    });
+    mockWizardCompletion(
+      buildWizardResult(buildSkillConfigs(["web-framework-react"], { scope: "global" }), {
+        agentConfigs: buildAgentConfigs(["web-developer"]),
+      }),
+    );
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
@@ -1607,13 +1496,13 @@ describe("edit change summary display", () => {
   });
 
   it("should show display names for removed skills", async () => {
-    mockLoadProjectConfig.mockResolvedValue({
-      config: buildProjectConfig({
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
         agents: buildAgentConfigs(["web-developer"]),
       }),
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
-    });
+    );
 
     mockRender.mockImplementation((element: ReactElement) => {
       const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
@@ -1640,25 +1529,19 @@ describe("edit change summary display", () => {
   });
 
   it("should show display names and formatted source labels for source changes", async () => {
-    mockLoadProjectConfig.mockResolvedValue({
-      config: buildProjectConfig({
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], { source: "eject" }),
         agents: buildAgentConfigs(["web-developer"]),
       }),
-      configPath: path.join(projectDir, ".claude-src/config.ts"),
-    });
+    );
 
-    mockRender.mockImplementation((element: ReactElement) => {
-      const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
-      if (onComplete) {
-        onComplete(
-          buildWizardResult(buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }), {
-            agentConfigs: buildAgentConfigs(["web-developer"]),
-          }),
-        );
-      }
-      return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
-    });
+    mockWizardCompletion(
+      buildWizardResult(buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }), {
+        agentConfigs: buildAgentConfigs(["web-developer"]),
+      }),
+    );
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 

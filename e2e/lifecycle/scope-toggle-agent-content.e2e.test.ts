@@ -58,7 +58,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
 
   it(
     "G->P skill scope toggle should preserve skill in global agent via mergeGlobalConfigs",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // BEFORE: Verify global web-developer contains web-framework-react
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
@@ -135,7 +135,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
 
   it(
     "scope toggle (s) is inert on a persisted dual-scope skill locked to a selected agent, leaving the agent untouched",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // BEFORE: Verify project api-developer contains api-framework-hono
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
@@ -201,7 +201,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
 
   it(
     "Agent scope toggle should recompile agent at new scope with correct skills",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // BEFORE: Verify project api-developer contains api-framework-hono
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {

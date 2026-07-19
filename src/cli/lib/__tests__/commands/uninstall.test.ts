@@ -190,6 +190,13 @@ async function createUserClaudeMd(claudeDir: string): Promise<string> {
   return claudeMdPath;
 }
 
+/** Creates `<projectDir>/.claude/skills/` (and .claude/) and returns the skills dir. */
+async function createProjectSkillsDir(projectDir: string): Promise<string> {
+  const skillsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+  await mkdir(skillsDir, { recursive: true });
+  return skillsDir;
+}
+
 describe("uninstall command", () => {
   let tempDir: string;
   let projectDir: string;
@@ -268,10 +275,7 @@ describe("uninstall command", () => {
   describe("config-based skill removal", () => {
     it("should remove skills with forkedFrom.source matching configured source", async () => {
       await createProjectConfig(projectDir);
-      const claudeDir = path.join(projectDir, CLAUDE_DIR);
-      await mkdir(claudeDir, { recursive: true });
-      const skillsDir = path.join(claudeDir, STANDARD_DIRS.SKILLS);
-      await mkdir(skillsDir, { recursive: true });
+      const skillsDir = await createProjectSkillsDir(projectDir);
 
       const cliSkillDir = await createCLISkill(skillsDir, "web-framework-react");
 
@@ -283,10 +287,7 @@ describe("uninstall command", () => {
 
     it("should preserve skills without forkedFrom (user-created)", async () => {
       await createProjectConfig(projectDir);
-      const claudeDir = path.join(projectDir, CLAUDE_DIR);
-      await mkdir(claudeDir, { recursive: true });
-      const skillsDir = path.join(claudeDir, STANDARD_DIRS.SKILLS);
-      await mkdir(skillsDir, { recursive: true });
+      const skillsDir = await createProjectSkillsDir(projectDir);
 
       const userSkillDir = await createUserSkill(skillsDir, "web-tooling-custom" as SkillId);
 
@@ -300,10 +301,7 @@ describe("uninstall command", () => {
 
     it("should preserve skills without metadata.yaml", async () => {
       await createProjectConfig(projectDir);
-      const claudeDir = path.join(projectDir, CLAUDE_DIR);
-      await mkdir(claudeDir, { recursive: true });
-      const skillsDir = path.join(claudeDir, STANDARD_DIRS.SKILLS);
-      await mkdir(skillsDir, { recursive: true });
+      const skillsDir = await createProjectSkillsDir(projectDir);
 
       const noMetaSkillDir = await createSkillWithoutMetadata(
         skillsDir,
@@ -319,10 +317,7 @@ describe("uninstall command", () => {
 
     it("should remove CLI skills and skip user skills in mixed scenario", async () => {
       await createProjectConfig(projectDir);
-      const claudeDir = path.join(projectDir, CLAUDE_DIR);
-      await mkdir(claudeDir, { recursive: true });
-      const skillsDir = path.join(claudeDir, STANDARD_DIRS.SKILLS);
-      await mkdir(skillsDir, { recursive: true });
+      const skillsDir = await createProjectSkillsDir(projectDir);
 
       const cliSkillDir = await createCLISkill(skillsDir, "web-framework-react");
       const userSkillDir = await createUserSkill(skillsDir, "web-tooling-custom" as SkillId);
@@ -342,10 +337,7 @@ describe("uninstall command", () => {
 
     it("should remove multiple CLI skills", async () => {
       await createProjectConfig(projectDir);
-      const claudeDir = path.join(projectDir, CLAUDE_DIR);
-      await mkdir(claudeDir, { recursive: true });
-      const skillsDir = path.join(claudeDir, STANDARD_DIRS.SKILLS);
-      await mkdir(skillsDir, { recursive: true });
+      const skillsDir = await createProjectSkillsDir(projectDir);
 
       await createCLISkill(skillsDir, "web-framework-react");
       await createCLISkill(skillsDir, "web-state-zustand");
@@ -360,10 +352,7 @@ describe("uninstall command", () => {
       await createProjectConfig(projectDir, {
         extraSources: [{ name: "acme", url: TEST_EXTRA_SOURCE }],
       });
-      const claudeDir = path.join(projectDir, CLAUDE_DIR);
-      await mkdir(claudeDir, { recursive: true });
-      const skillsDir = path.join(claudeDir, STANDARD_DIRS.SKILLS);
-      await mkdir(skillsDir, { recursive: true });
+      const skillsDir = await createProjectSkillsDir(projectDir);
 
       // Skill from primary source
       const primarySkillDir = await createCLISkill(skillsDir, "web-framework-react", TEST_SOURCE);
@@ -389,10 +378,7 @@ describe("uninstall command", () => {
     it("should handle legacy skills without source field in forkedFrom when config exists", async () => {
       // Legacy skill: has forkedFrom but no source field
       await createProjectConfig(projectDir);
-      const claudeDir = path.join(projectDir, CLAUDE_DIR);
-      await mkdir(claudeDir, { recursive: true });
-      const skillsDir = path.join(claudeDir, STANDARD_DIRS.SKILLS);
-      await mkdir(skillsDir, { recursive: true });
+      const skillsDir = await createProjectSkillsDir(projectDir);
 
       // Create a legacy skill with forkedFrom but no source
       const legacySkillDir = await writeTestSkill(skillsDir, "web-framework-vue-composition-api", {

@@ -182,7 +182,7 @@ describe("scope toggle config snapshot", () => {
 
   it(
     "scope toggle (s) is inert on a persisted dual-scope skill locked to a selected agent — configs unchanged",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // api-framework-hono is a persisted dual-scope [P][G] pair AND locked to the
       // selected api-developer agent, so neither `s` (dual-scope guard) nor space
@@ -260,7 +260,7 @@ describe("scope toggle config snapshot", () => {
 
   it(
     "G->P agent scope toggle should compile agent at project scope and preserve global",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // BEFORE: Snapshot both configs
       const globalConfigBefore = await readTestFile(

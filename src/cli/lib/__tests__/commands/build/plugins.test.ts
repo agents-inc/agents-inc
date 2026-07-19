@@ -8,6 +8,13 @@ import { renderSkillMd } from "../../content-generators";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE, STANDARD_FILES } from "../../../../consts";
 import type { PluginManifest } from "../../../../types";
 
+/** Writes a minimal source skill (SKILL.md only) into the given skills dir. */
+async function writeSkill(skillsDir: string, name: string, description?: string): Promise<void> {
+  const skillDir = path.join(skillsDir, name);
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), renderSkillMd(name, description));
+}
+
 describe("build:plugins command", () => {
   let tempDir: string;
   let projectDir: string;
@@ -161,12 +168,7 @@ describe("build:plugins command", () => {
 
     it("should produce plugin directory with plugin.json for a single skill", async () => {
       // Create a valid skill with frontmatter
-      const skillDir = path.join(skillsDir, "web-framework-react");
-      await mkdir(skillDir, { recursive: true });
-      await writeFile(
-        path.join(skillDir, STANDARD_FILES.SKILL_MD),
-        renderSkillMd("web-framework-react", "React framework"),
-      );
+      await writeSkill(skillsDir, "web-framework-react", "React framework");
 
       const { stdout, error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
 
@@ -189,12 +191,7 @@ describe("build:plugins command", () => {
     });
 
     it("should copy SKILL.md into the plugin skills subdirectory", async () => {
-      const skillDir = path.join(skillsDir, "web-framework-react");
-      await mkdir(skillDir, { recursive: true });
-      await writeFile(
-        path.join(skillDir, STANDARD_FILES.SKILL_MD),
-        renderSkillMd("web-framework-react", "React framework"),
-      );
+      await writeSkill(skillsDir, "web-framework-react", "React framework");
 
       await runCliCommand(["build:plugins", "--output-dir", outputDir]);
 
@@ -214,12 +211,7 @@ describe("build:plugins command", () => {
     });
 
     it("should generate README.md in plugin directory", async () => {
-      const skillDir = path.join(skillsDir, "web-framework-react");
-      await mkdir(skillDir, { recursive: true });
-      await writeFile(
-        path.join(skillDir, STANDARD_FILES.SKILL_MD),
-        renderSkillMd("web-framework-react", "React framework"),
-      );
+      await writeSkill(skillsDir, "web-framework-react", "React framework");
 
       await runCliCommand(["build:plugins", "--output-dir", outputDir]);
 
@@ -234,9 +226,7 @@ describe("build:plugins command", () => {
     it("should compile multiple skills and report count in stdout", async () => {
       // Create two skills
       for (const name of ["web-framework-react", "api-framework-hono"]) {
-        const skillDir = path.join(skillsDir, name);
-        await mkdir(skillDir, { recursive: true });
-        await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), renderSkillMd(name));
+        await writeSkill(skillsDir, name);
       }
 
       const { stdout, error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
@@ -252,9 +242,7 @@ describe("build:plugins command", () => {
     it("should compile a specific skill with --skill flag", async () => {
       // Create two skills but only compile one
       for (const name of ["web-framework-react", "api-framework-hono"]) {
-        const skillDir = path.join(skillsDir, name);
-        await mkdir(skillDir, { recursive: true });
-        await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), renderSkillMd(name));
+        await writeSkill(skillsDir, name);
       }
 
       const { stdout, error } = await runCliCommand([
@@ -274,12 +262,7 @@ describe("build:plugins command", () => {
     });
 
     it("should report plugin compilation complete in stdout", async () => {
-      const skillDir = path.join(skillsDir, "web-framework-react");
-      await mkdir(skillDir, { recursive: true });
-      await writeFile(
-        path.join(skillDir, STANDARD_FILES.SKILL_MD),
-        renderSkillMd("web-framework-react"),
-      );
+      await writeSkill(skillsDir, "web-framework-react");
 
       const { stdout, error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
 
@@ -297,12 +280,6 @@ describe("build:plugins command", () => {
       outputDir = path.join(projectDir, "dist", "plugins");
     });
 
-    async function writeSkill(name: string): Promise<void> {
-      const skillDir = path.join(skillsDir, name);
-      await mkdir(skillDir, { recursive: true });
-      await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), renderSkillMd(name));
-    }
-
     async function writePluginDir(name: string, manifest: PluginManifest): Promise<string> {
       const pluginDir = path.join(outputDir, name);
       await mkdir(path.join(pluginDir, PLUGIN_MANIFEST_DIR), { recursive: true });
@@ -314,7 +291,7 @@ describe("build:plugins command", () => {
     }
 
     it("should prune a stale skill plugin whose source was removed", async () => {
-      await writeSkill("web-framework-react");
+      await writeSkill(skillsDir, "web-framework-react");
       const orphanDir = await writePluginDir("old-removed-skill", {
         name: "old-removed-skill",
         skills: "./skills/",
@@ -329,8 +306,8 @@ describe("build:plugins command", () => {
     });
 
     it("should NOT prune in single-skill mode", async () => {
-      await writeSkill("web-framework-react");
-      await writeSkill("api-framework-hono");
+      await writeSkill(skillsDir, "web-framework-react");
+      await writeSkill(skillsDir, "api-framework-hono");
       const orphanDir = await writePluginDir("old-removed-skill", {
         name: "old-removed-skill",
         skills: "./skills/",
@@ -351,7 +328,7 @@ describe("build:plugins command", () => {
     });
 
     it("should NOT prune when a skill fails to compile (partial-failure safety)", async () => {
-      await writeSkill("web-framework-react");
+      await writeSkill(skillsDir, "web-framework-react");
       const orphanDir = await writePluginDir("old-removed-skill", {
         name: "old-removed-skill",
         skills: "./skills/",
@@ -371,7 +348,7 @@ describe("build:plugins command", () => {
     });
 
     it("should not delete directories that are not plugin dirs", async () => {
-      await writeSkill("web-framework-react");
+      await writeSkill(skillsDir, "web-framework-react");
       const nonPluginDir = path.join(outputDir, "not-a-plugin");
       await mkdir(nonPluginDir, { recursive: true });
       await writeFile(path.join(nonPluginDir, "notes.txt"), "unrelated file");
@@ -385,7 +362,7 @@ describe("build:plugins command", () => {
     });
 
     it("should preserve agent plugins when pruning skill orphans", async () => {
-      await writeSkill("web-framework-react");
+      await writeSkill(skillsDir, "web-framework-react");
       const agentDir = await writePluginDir("agent-cli-developer", {
         name: "agent-cli-developer",
         agents: "./agents/",

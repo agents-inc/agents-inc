@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { fileURLToPath } from "url";
-import { readFile as fsReadFile, stat } from "fs/promises";
+import { chmod, mkdir, readFile as fsReadFile, stat, writeFile as fsWrite } from "fs/promises";
 import type { AgentConfig, Skill, SkillId } from "../types";
 import { DEFAULT_PLUGIN_NAME, STANDARD_FILES } from "../consts";
+import { printOutputValidationResult } from "./output-validator";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 import { createMockSkillEntry } from "./__tests__/factories/skill-factories";
 import {
@@ -73,7 +74,6 @@ import type { AgentName, CompiledAgentData } from "../types";
  */
 async function createProjectFromFixtures(): Promise<string> {
   const tempDir = await createTempDir("compiler-test-");
-  const { writeFile: fsWrite, mkdir } = await import("fs/promises");
 
   // Agent fixtures
   const WEB_DEV_FILES = [
@@ -156,9 +156,7 @@ function contextForProject(projectRoot: string) {
   });
 }
 
-// ---------------------------------------------------------------------------
 // Error-path / test-specific skill entries (not shared)
-// ---------------------------------------------------------------------------
 
 const MISSING_SKILL: Skill = {
   // Boundary cast: fictional skill ID for testing missing-skill error paths
@@ -166,9 +164,7 @@ const MISSING_SKILL: Skill = {
   path: "skills/missing.md",
 };
 
-// ---------------------------------------------------------------------------
 // Error-path / test-specific agent maps (not shared)
-// ---------------------------------------------------------------------------
 
 const WEB_DEV_NONEXISTENT_PATH: Record<string, AgentConfig> = {
   "web-developer": createMockAgentConfig("web-developer", [], {
@@ -186,10 +182,6 @@ const WEB_DEV_LIQUID_INJECTION: Record<string, AgentConfig> = {
     title: "{% assign x = 1 %}Injected",
   }),
 };
-
-// ---------------------------------------------------------------------------
-// Engine mock values
-// ---------------------------------------------------------------------------
 
 const COMPILED_OUTPUT = "---\nname: test\n---\n# Compiled output";
 const STUB_OUTPUT = "---\nname: test\n---\n# output";
@@ -300,7 +292,6 @@ describe("compiler", () => {
 
         await compileAllAgents(WEB_DEV_NO_SKILLS, contextForProject(projectDir), engine as never);
 
-        const { printOutputValidationResult } = await import("./output-validator");
         expect(printOutputValidationResult).toHaveBeenCalledWith(
           "web-developer",
           expect.objectContaining({ warnings: ["Missing <role> section"] }),
@@ -383,7 +374,6 @@ describe("compiler", () => {
 
     it("skips when no command files found", async () => {
       const emptyProject = await createTempDir("compiler-empty-cmds-");
-      const { mkdir } = await import("fs/promises");
       await mkdir(path.join(emptyProject, "src/commands"), { recursive: true });
 
       const ctx = contextForProject(emptyProject);
@@ -396,7 +386,6 @@ describe("compiler", () => {
 
     it("throws descriptive error when command file read fails", async () => {
       const brokenProject = await createTempDir("compiler-bad-cmd-");
-      const { mkdir, writeFile: fsWrite, chmod } = await import("fs/promises");
       const cmdDir = path.join(brokenProject, "src/commands");
       await mkdir(cmdDir, { recursive: true });
       await fsWrite(path.join(cmdDir, "deploy.md"), "content");
@@ -413,7 +402,6 @@ describe("compiler", () => {
 
   describe("removeCompiledOutputDirs", () => {
     it("removes agents, skills, and commands directories", async () => {
-      const { mkdir } = await import("fs/promises");
       const outputDir = path.join(projectDir, "output-test");
       await mkdir(path.join(outputDir, "agents"), { recursive: true });
       await mkdir(path.join(outputDir, "skills"), { recursive: true });

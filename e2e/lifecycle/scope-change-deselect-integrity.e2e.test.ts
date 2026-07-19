@@ -3,7 +3,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { cleanupTempDir, ensureBinaryExists, readTestFile } from "../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  ensureBinaryExists,
+  normalizeGlobalConfig,
+  readTestFile,
+} from "../helpers/test-utils.js";
 import {
   createGlobalOnlyEnv,
   createTestEnvironment,
@@ -53,7 +58,7 @@ describe("scope change deselect integrity", () => {
 
   it(
     "deselecting a project-scoped skill should not remove it from global config",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Setup: dual-scope env (global web skills + project hono)
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
@@ -109,7 +114,7 @@ describe("scope change deselect integrity", () => {
 
   it(
     "no-op edit from project scope should not remove globally installed skills",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Setup: global-only env (all skills at global scope)
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
@@ -144,13 +149,9 @@ describe("scope change deselect integrity", () => {
 
       // Normalize both configs (strip projects tracking line) and compare
       const globalConfigAfter = await readTestFile(globalConfigPath);
-      const normalize = (s: string) =>
-        s
-          .split("\n")
-          .filter((line) => !line.includes('"projects"'))
-          .sort()
-          .join("\n");
-      expect(normalize(globalConfigAfter)).toStrictEqual(normalize(globalConfigBefore));
+      expect(normalizeGlobalConfig(globalConfigAfter)).toStrictEqual(
+        normalizeGlobalConfig(globalConfigBefore),
+      );
 
       // Assert: global agent files still exist on disk
       await expect({ dir: env.fakeHome }).toHaveCompiledAgent("web-developer");
@@ -167,7 +168,7 @@ describe("scope change deselect integrity", () => {
 
   it(
     "deselecting project skill should preserve global config skills array",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Setup: dual-scope env (global web skills + project hono)
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();

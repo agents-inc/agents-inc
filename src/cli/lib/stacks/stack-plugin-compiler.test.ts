@@ -2,14 +2,12 @@
  * Unit tests for stack-plugin-compiler. Includes coverage for D-217 (per-skill
  * source-based skill reference formats in compiled agent output).
  */
+import { compileAgentForPlugin } from "../compiler";
+import { Liquid } from "liquidjs";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import { mkdir, readFile, stat } from "fs/promises";
-import {
-  compileAgentForPlugin,
-  compileStackPlugin,
-  printStackCompilationSummary,
-} from "./stack-plugin-compiler";
+import { compileStackPlugin, printStackCompilationSummary } from "./stack-plugin-compiler";
 import {
   createTestSource,
   cleanupTestSource,
@@ -34,6 +32,11 @@ describe("stack-plugin-compiler", () => {
   let dirs: TestDirs;
   let projectRoot: string;
   let outputDir: string;
+
+  /** Compiles the given stack from the shared projectRoot into the shared outputDir. */
+  function compileStack(stackId: string, stack: Stack) {
+    return compileStackPlugin({ stackId, outputDir, projectRoot, stack });
+  }
   let testCounter = 0;
 
   // Generate unique stack ID to avoid cache collisions between tests
@@ -151,12 +154,7 @@ describe("stack-plugin-compiler", () => {
         },
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       // Verify directory exists
       const stats = await stat(result.pluginPath);
@@ -181,12 +179,7 @@ describe("stack-plugin-compiler", () => {
         agents: ["web-developer"],
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       const manifestPath = path.join(result.pluginPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
       const manifestContent = await readFile(manifestPath, "utf-8");
@@ -216,12 +209,7 @@ describe("stack-plugin-compiler", () => {
         agents: ["web-developer"],
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       const agentMdPath = path.join(result.pluginPath, "agents", "web-developer.md");
       const agentContent = await readFile(agentMdPath, "utf-8");
@@ -244,12 +232,7 @@ describe("stack-plugin-compiler", () => {
         agents: ["web-developer"],
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       const readmePath = path.join(result.pluginPath, "README.md");
       const readmeContent = await readFile(readmePath, "utf-8");
@@ -276,12 +259,7 @@ describe("stack-plugin-compiler", () => {
         agents: ["web-developer", "api-developer"],
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       const readmePath = path.join(result.pluginPath, "README.md");
       const readmeContent = await readFile(readmePath, "utf-8");
@@ -307,12 +285,7 @@ describe("stack-plugin-compiler", () => {
         agents: ["web-developer", "web-tester"],
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       expect(result.agents).toStrictEqual(["web-developer", "web-tester"]);
     });
@@ -353,12 +326,7 @@ describe("stack-plugin-compiler", () => {
         },
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       // Skill plugins use canonical frontmatter names
       expect(result.skillPlugins).toStrictEqual([
@@ -380,12 +348,7 @@ describe("stack-plugin-compiler", () => {
         agents: ["web-developer"],
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       expect(result.manifest.name).toBe(stackId);
       expect(result.manifest.description).toBe("A versioned stack");
@@ -405,12 +368,7 @@ describe("stack-plugin-compiler", () => {
         agents: ["web-developer"],
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       expect(result.stackName).toBe("Modern React Stack");
     });
@@ -438,14 +396,7 @@ describe("stack-plugin-compiler", () => {
         agents: ["missing-agent"],
       });
 
-      await expect(
-        compileStackPlugin({
-          stackId,
-          outputDir,
-          projectRoot,
-          stack,
-        }),
-      ).rejects.toThrow();
+      await expect(compileStack(stackId, stack)).rejects.toThrow();
     });
   });
 
@@ -462,12 +413,7 @@ describe("stack-plugin-compiler", () => {
         agents: ["web-developer"],
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       expect(result.skillPlugins).toHaveLength(0);
     });
@@ -488,12 +434,7 @@ describe("stack-plugin-compiler", () => {
         agents: ["web-developer"],
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       const readmePath = path.join(result.pluginPath, "README.md");
       const readmeContent = await readFile(readmePath, "utf-8");
@@ -512,12 +453,7 @@ describe("stack-plugin-compiler", () => {
         agents: ["web-developer"],
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       const readmePath = path.join(result.pluginPath, "README.md");
       const readmeContent = await readFile(readmePath, "utf-8");
@@ -539,12 +475,7 @@ describe("stack-plugin-compiler", () => {
 
       // Don't create CLAUDE.md
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       // Plugin should still be created successfully
       expect(result.pluginPath).toContain(stackId);
@@ -574,12 +505,7 @@ describe("stack-plugin-compiler", () => {
         agents: ["web-developer", "api-developer", "web-tester"],
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       // All agents should be compiled
       expect(result.agents).toHaveLength(3);
@@ -630,12 +556,7 @@ describe("stack-plugin-compiler", () => {
         },
       });
 
-      const result = await compileStackPlugin({
-        stackId,
-        outputDir,
-        projectRoot,
-        stack,
-      });
+      const result = await compileStack(stackId, stack);
 
       const readmePath = path.join(result.pluginPath, "README.md");
       const readmeContent = await readFile(readmePath, "utf-8");
@@ -863,7 +784,7 @@ describe("stack-plugin-compiler", () => {
 
     // Shared Liquid engine — created per test via beforeEach
     // Boundary cast: dynamic import type not available at declaration
-    let engine: import("liquidjs").Liquid;
+    let engine: Liquid;
 
     beforeEach(async () => {
       await createAgent("web-developer", {
@@ -873,7 +794,6 @@ describe("stack-plugin-compiler", () => {
         playbook: "## Workflow\n\n1. Build",
       });
 
-      const { Liquid } = await import("liquidjs");
       engine = new Liquid({
         root: [realTemplateDir],
         extname: ".liquid",

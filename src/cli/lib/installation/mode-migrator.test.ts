@@ -29,6 +29,16 @@ import {
   claudePluginUninstallBestEffort,
 } from "../../utils/exec";
 
+/** The copied-skill record copySkillsToLocalFlattened reports for react. */
+function reactCopiedSkill(tempDir: string) {
+  return {
+    skillId: "web-framework-react" as const,
+    contentHash: "abc123",
+    sourcePath: "/source/skills/web/framework/react",
+    destPath: `${tempDir}/.claude/skills/web-framework-react`,
+  };
+}
+
 describe("mode-migrator", () => {
   describe("detectMigrations", () => {
     it("should detect skills moving from plugin to eject", () => {
@@ -160,14 +170,7 @@ describe("mode-migrator", () => {
     });
 
     it("should copy skills to local and uninstall plugins for toEject skills", async () => {
-      vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
-        {
-          skillId: "web-framework-react",
-          contentHash: "abc123",
-          sourcePath: "/source/skills/web/framework/react",
-          destPath: `${tempDir}/.claude/skills/web-framework-react`,
-        },
-      ]);
+      vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([reactCopiedSkill(tempDir)]);
 
       const plan: MigrationPlan = {
         toEject: [
@@ -188,7 +191,6 @@ describe("mode-migrator", () => {
       expect(copySkillsToLocalFlattened).toHaveBeenCalledWith(
         ["web-framework-react"],
         expect.stringContaining(".claude/skills"),
-        sourceResult.matrix,
         sourceResult,
       );
       expect(claudePluginUninstallBestEffort).toHaveBeenCalledWith(
@@ -298,14 +300,7 @@ describe("mode-migrator", () => {
 
     describe("global→project scope migration", () => {
       it("should NOT uninstall global plugin when ejecting to project scope", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
-          {
-            skillId: "web-framework-react",
-            contentHash: "abc123",
-            sourcePath: "/source/skills/web/framework/react",
-            destPath: `${tempDir}/.claude/skills/web-framework-react`,
-          },
-        ]);
+        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([reactCopiedSkill(tempDir)]);
 
         const plan: MigrationPlan = {
           toEject: [
@@ -362,14 +357,7 @@ describe("mode-migrator", () => {
 
     describe("same-scope migrations", () => {
       it("should uninstall project plugin when ejecting to project scope", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
-          {
-            skillId: "web-framework-react",
-            contentHash: "abc123",
-            sourcePath: "/source/skills/web/framework/react",
-            destPath: `${tempDir}/.claude/skills/web-framework-react`,
-          },
-        ]);
+        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([reactCopiedSkill(tempDir)]);
 
         const plan: MigrationPlan = {
           toEject: [
@@ -396,14 +384,7 @@ describe("mode-migrator", () => {
       });
 
       it("should uninstall global plugin when ejecting to global scope", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
-          {
-            skillId: "web-framework-react",
-            contentHash: "abc123",
-            sourcePath: "/source/skills/web/framework/react",
-            destPath: `${tempDir}/.claude/skills/web-framework-react`,
-          },
-        ]);
+        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([reactCopiedSkill(tempDir)]);
 
         const plan: MigrationPlan = {
           toEject: [

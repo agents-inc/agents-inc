@@ -32,36 +32,25 @@ export function createMockMatrix(
     const allArgs = [skillsOrFirstSkill, ...rest];
     const lastArg = allArgs[allArgs.length - 1];
 
-    // Detect if last arg is overrides (has no 'id' + 'slug' properties)
-    if (lastArg && !("id" in lastArg && "slug" in lastArg)) {
-      overrides = lastArg as Partial<MergedSkillsMatrix>;
-      const skills = allArgs.slice(0, -1) as ResolvedSkill[];
-      skillsRecord = {};
-      for (const skill of skills) {
-        skillsRecord[skill.id] = skill;
-      }
-    } else {
-      const skills = allArgs as ResolvedSkill[];
-      skillsRecord = {};
-      for (const skill of skills) {
-        skillsRecord[skill.id] = skill;
-      }
-    }
+    // The last arg is overrides when it lacks the 'id' + 'slug' skill shape
+    const hasOverrides = lastArg !== undefined && !("id" in lastArg && "slug" in lastArg);
+    overrides = hasOverrides ? (lastArg as Partial<MergedSkillsMatrix>) : undefined;
+    const skills = (hasOverrides ? allArgs.slice(0, -1) : allArgs) as ResolvedSkill[];
+    skillsRecord = Object.fromEntries(skills.map((skill) => [skill.id, skill]));
   } else {
     // Old record syntax: createMockMatrix({ "id": skill }, overrides?)
     skillsRecord = skillsOrFirstSkill as Record<string, ResolvedSkill>;
     overrides = rest[0] as Partial<MergedSkillsMatrix> | undefined;
   }
 
-  // Boundary cast: empty objects are populated in the loop below
-  const autoSlugToId = {} as Record<SkillSlug, SkillId>;
-  const autoIdToSlug = {} as Record<SkillId, SkillSlug>;
-  for (const [, skill] of typedEntries(skillsRecord)) {
-    if (skill.slug) {
-      autoSlugToId[skill.slug] = skill.id;
-      autoIdToSlug[skill.id] = skill.slug;
-    }
-  }
+  const skillsWithSlugs = Object.values(skillsRecord).filter((skill) => skill.slug);
+  // Boundary casts: Object.fromEntries widens keys to string
+  const autoSlugToId = Object.fromEntries(
+    skillsWithSlugs.map((skill) => [skill.slug, skill.id]),
+  ) as Record<SkillSlug, SkillId>;
+  const autoIdToSlug = Object.fromEntries(
+    skillsWithSlugs.map((skill) => [skill.id, skill.slug]),
+  ) as Record<SkillId, SkillSlug>;
 
   return {
     version: "1.0.0",
@@ -171,7 +160,7 @@ export function createComprehensiveMatrix(
     drizzle: "api-database-drizzle",
     vitest: "web-testing-vitest",
     reviewing: "meta-reviewing-reviewing",
-  } as unknown as Record<SkillSlug, SkillId>;
+  } as Record<SkillSlug, SkillId>;
 
   // Boundary cast: Object.fromEntries returns { [k: string]: string }
   const idToSlug = Object.fromEntries(

@@ -2,8 +2,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { AgentName } from "../../../types";
 import { buildAgentConfigs } from "../../__tests__/factories/config-factories.js";
 
-// --- Module-level mocks ---
-
 vi.mock("../../agents/index.js", () => ({
   recompileAgents: vi.fn(),
 }));
@@ -15,8 +13,6 @@ vi.mock("../../configuration/index.js", () => ({
 vi.mock("../../installation/index.js", () => ({
   buildAgentScopeMap: vi.fn(),
 }));
-
-// --- Imports after mocks ---
 
 import { compileAgents } from "./compile-agents";
 import { recompileAgents } from "../../agents/index.js";
@@ -47,7 +43,6 @@ describe("compile-agents", () => {
       sourcePath,
       pluginDir: "/test/plugin",
       outputDir: "/test/output",
-      installMode: "eject",
     });
 
     expect(mockRecompileAgents).toHaveBeenCalledWith({
@@ -57,7 +52,6 @@ describe("compile-agents", () => {
       skills: undefined,
       projectDir,
       outputDir: "/test/output",
-      installMode: "eject",
       agentScopeMap: undefined,
     });
     expect(result.compiled).toStrictEqual(["web-developer"]);
@@ -76,7 +70,6 @@ describe("compile-agents", () => {
       skills: undefined,
       projectDir,
       outputDir: undefined,
-      installMode: undefined,
       agentScopeMap: undefined,
     });
   });
@@ -122,7 +115,6 @@ describe("compile-agents", () => {
       skills: undefined,
       projectDir,
       outputDir: undefined,
-      installMode: undefined,
       agentScopeMap: scopeMap,
     });
     expect(result.compiled).toStrictEqual(["web-developer"]);
@@ -165,7 +157,6 @@ describe("compile-agents", () => {
       skills: undefined,
       projectDir,
       outputDir: undefined,
-      installMode: undefined,
       agentScopeMap: scopeMap,
     });
   });
@@ -201,7 +192,6 @@ describe("compile-agents", () => {
       skills: undefined,
       projectDir,
       outputDir: undefined,
-      installMode: undefined,
       agentScopeMap: scopeMap,
     });
   });

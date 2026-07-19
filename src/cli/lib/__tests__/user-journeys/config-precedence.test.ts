@@ -19,15 +19,13 @@ import {
 import { readTestTsConfig } from "../helpers/config-io.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { renderConfigTs } from "../content-generators";
-import { STANDARD_FILES } from "../../../consts";
-
-const PROJECT_CONFIG_DIR = ".claude-src";
+import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
 
 async function createProjectConfig(
   projectDir: string,
   config: Partial<ProjectConfig>,
 ): Promise<string> {
-  const configDir = path.join(projectDir, PROJECT_CONFIG_DIR);
+  const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
   await mkdir(configDir, { recursive: true });
   const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
   await writeFile(configPath, renderConfigTs(config));
@@ -182,7 +180,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
     });
 
     it("should return null for invalid TypeScript in project config", async () => {
-      const configDir = path.join(projectDir, PROJECT_CONFIG_DIR);
+      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
       await mkdir(configDir, { recursive: true });
       await writeFile(
         path.join(configDir, STANDARD_FILES.CONFIG_TS),
@@ -297,7 +295,7 @@ describe("User Journey: Project Config Save and Load", () => {
 
   describe("loadProjectSourceConfig", () => {
     it("should load saved config correctly", async () => {
-      const configDir = path.join(projectDir, PROJECT_CONFIG_DIR);
+      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
       await mkdir(configDir, { recursive: true });
       await writeFile(
         path.join(configDir, STANDARD_FILES.CONFIG_TS),
@@ -315,7 +313,7 @@ describe("User Journey: Project Config Save and Load", () => {
 
     it("should return config path from getProjectConfigPath", () => {
       const configPath = getProjectConfigPath(projectDir);
-      expect(configPath).toBe(path.join(projectDir, PROJECT_CONFIG_DIR, STANDARD_FILES.CONFIG_TS));
+      expect(configPath).toBe(path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS));
     });
   });
 });
@@ -417,7 +415,7 @@ describe("User Journey: Config Edge Cases", () => {
 
   it("should handle empty config file gracefully", async () => {
     const projectDir = path.join(tempDir, "project");
-    const configDir = path.join(projectDir, PROJECT_CONFIG_DIR);
+    const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
     await mkdir(configDir, { recursive: true });
     await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), "export default {};");
 
@@ -432,7 +430,7 @@ describe("User Journey: Config Edge Cases", () => {
     // rather than rejected. This enables forward compatibility — older CLI versions
     // can load configs written by newer versions without breaking.
     const projectDir = path.join(tempDir, "project");
-    const configDir = path.join(projectDir, PROJECT_CONFIG_DIR);
+    const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
     await mkdir(configDir, { recursive: true });
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),

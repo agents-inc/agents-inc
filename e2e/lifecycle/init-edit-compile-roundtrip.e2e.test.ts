@@ -54,7 +54,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
 
   it(
     "full lifecycle: init with eject, edit to change scope, compile to verify",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Setup
       const env = await createTestEnvironment();
@@ -62,9 +62,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       fakeHome = env.fakeHome;
       projectDir = env.projectDir;
 
-      // ---------------------------------------------------------------
       // Phase A: Global init with eject
-      // ---------------------------------------------------------------
       const phaseA = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
 
       expect(phaseA.exitCode, `Phase A failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
@@ -83,9 +81,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       const globalAgentsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS);
       expect(await directoryExists(globalAgentsDir), "Global agents dir must exist").toBe(true);
 
-      // ---------------------------------------------------------------
       // Phase B: Project init with scope toggle
-      // ---------------------------------------------------------------
       const phaseB = await initProject(sourceDir, sourceTempDir, fakeHome, projectDir);
 
       expect(phaseB.exitCode, `Phase B failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
@@ -120,9 +116,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
         "config-types.ts must exist after project init",
       ).toBe(true);
 
-      // ---------------------------------------------------------------
       // Phase C: Edit wizard -- toggle web-framework-react scope to project
-      // ---------------------------------------------------------------
       wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
@@ -175,9 +169,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
         "config-types.ts must exist after scope change",
       ).toBe(true);
 
-      // ---------------------------------------------------------------
       // Phase D: Compile from project dir
-      // ---------------------------------------------------------------
       const compileResult = await runCLI(["compile", "--verbose"], projectDir, {
         env: { HOME: fakeHome },
       });

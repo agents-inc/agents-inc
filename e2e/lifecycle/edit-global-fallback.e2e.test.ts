@@ -49,7 +49,7 @@ describe("edit with global-only installation (no project config)", () => {
 
   it(
     "edit launches from project dir with global-only installation",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Setup: global install only -- NO initProject
       const env = await createTestEnvironment();
@@ -108,7 +108,7 @@ describe("edit with global-only installation (no project config)", () => {
 
   it(
     "edit with global fallback preserves global skills",
-    { timeout: TIMEOUTS.LIFECYCLE, retry: 0 },
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Setup: global install only -- NO initProject
       const env = await createTestEnvironment();

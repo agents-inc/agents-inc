@@ -171,23 +171,24 @@ describe("project-config", () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(
-        result.errors.some((e) => e.includes("must contain objects with name and scope")),
-      ).toBe(true);
+      expect(result.errors).toStrictEqual([
+        "agents.0: Invalid input: expected object, received string",
+        "agents.1: Invalid input: expected object, received number",
+      ]);
     });
 
     it("should fail for non-object config", () => {
       const result = validateProjectConfig("not an object");
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain("Config must be an object");
+      expect(result.errors).toContain("Invalid input: expected object, received string");
     });
 
     it("should fail for null config", () => {
       const result = validateProjectConfig(null);
 
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain("Config must be an object");
+      expect(result.errors).toContain("Invalid input: expected object, received null");
     });
   });
 });

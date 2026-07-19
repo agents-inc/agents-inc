@@ -1,6 +1,6 @@
 import path from "path";
 import { chmod, mkdir, writeFile } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
 import {
   createTempDir,
@@ -18,10 +18,19 @@ import "../matchers/setup.js";
 
 describe("eject command", () => {
   let tempDir: string;
-  let e2eSourceTempDir: string | undefined;
   let readOnlyDir: string | undefined;
+  // Created once for the whole file — eject only reads from the source
+  let sourceDir: string;
+  let e2eSourceTempDir: string;
 
-  beforeAll(ensureBinaryExists);
+  beforeAll(async () => {
+    await ensureBinaryExists();
+    ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
+  });
+
+  afterAll(async () => {
+    await cleanupTempDir(e2eSourceTempDir);
+  });
 
   afterEach(async () => {
     if (readOnlyDir) {
@@ -30,10 +39,6 @@ describe("eject command", () => {
     }
     if (tempDir) {
       await cleanupTempDir(tempDir);
-    }
-    if (e2eSourceTempDir) {
-      await cleanupTempDir(e2eSourceTempDir);
-      e2eSourceTempDir = undefined;
     }
   });
 
@@ -170,8 +175,6 @@ describe("eject command", () => {
 
   it("should eject skills from a local source", async () => {
     tempDir = await createTempDir();
-    const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-    e2eSourceTempDir = srcTempDir;
 
     const { exitCode, stdout } = await CLI.run(["eject", "skills", "--source", sourceDir], {
       dir: tempDir,
@@ -210,8 +213,6 @@ describe("eject command", () => {
 
   it("should eject all phases from a local source", async () => {
     tempDir = await createTempDir();
-    const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-    e2eSourceTempDir = srcTempDir;
 
     const { exitCode, stdout } = await CLI.run(["eject", "all", "--source", sourceDir], {
       dir: tempDir,
@@ -243,8 +244,6 @@ describe("eject command", () => {
 
   it("should save source to config when --source flag is provided", async () => {
     tempDir = await createTempDir();
-    const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-    e2eSourceTempDir = srcTempDir;
 
     const { exitCode, stdout } = await CLI.run(["eject", "skills", "--source", sourceDir], {
       dir: tempDir,
@@ -337,8 +336,6 @@ describe("eject command", () => {
 
   it("should eject skills without ejecting agent partials or templates", async () => {
     tempDir = await createTempDir();
-    const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-    e2eSourceTempDir = srcTempDir;
 
     const { exitCode, stdout } = await CLI.run(["eject", "skills", "--source", sourceDir], {
       dir: tempDir,
@@ -369,8 +366,6 @@ describe("eject command", () => {
 
   it("should warn when ejecting skills twice without --force", async () => {
     tempDir = await createTempDir();
-    const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-    e2eSourceTempDir = srcTempDir;
 
     const { exitCode: setupExitCode } = await CLI.run(["eject", "skills", "--source", sourceDir], {
       dir: tempDir,
@@ -391,8 +386,6 @@ describe("eject command", () => {
   // returns an empty result on re-eject, so "skills ejected" is missing.
   it.fails("should overwrite existing skills with --force", async () => {
     tempDir = await createTempDir();
-    const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-    e2eSourceTempDir = srcTempDir;
 
     const { exitCode: setupExitCode } = await CLI.run(["eject", "skills", "--source", sourceDir], {
       dir: tempDir,
@@ -435,8 +428,6 @@ describe("eject command", () => {
   it("should eject skills to custom output directory", async () => {
     tempDir = await createTempDir();
     const outputDir = path.join(tempDir, "custom-skills");
-    const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-    e2eSourceTempDir = srcTempDir;
 
     const { exitCode, stdout } = await CLI.run(
       ["eject", "skills", "--source", sourceDir, "-o", outputDir],

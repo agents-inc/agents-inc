@@ -119,48 +119,17 @@ describe("template ejection + custom compilation", () => {
       const ejectedAgentsDir = path.join(projectDir, DIRS.CLAUDE_SRC, "agents");
       expect(await directoryExists(ejectedAgentsDir)).toBe(true);
 
-      // Step 3: Find a specific agent's identity.md and modify it
-      // The eject copies from PROJECT_ROOT/src/agents/ which has developer/web-developer/
+      // Step 3: Modify web-developer's identity.md at its deterministic ejected
+      // path — eject copies from PROJECT_ROOT/src/agents/, which nests agents
+      // as developer/web-developer/.
       const webDevIntroPath = path.join(
         ejectedAgentsDir,
         "developer",
         "web-developer",
         FILES.IDENTITY_MD,
       );
-
-      // If the direct path doesn't exist, try finding the identity.md
-      if (await fileExists(webDevIntroPath)) {
-        await writeFile(webDevIntroPath, `# Custom Web Developer\n\n${CUSTOM_INTRO_MARKER}\n`);
-      } else {
-        // List what was actually ejected to understand the structure
-        const ejectedContents = await listFiles(ejectedAgentsDir);
-
-        // Find any agent directory that has identity.md
-        let foundIntroPath: string | undefined;
-        for (const entry of ejectedContents) {
-          const possibleIntro = path.join(ejectedAgentsDir, entry, FILES.IDENTITY_MD);
-          if (await fileExists(possibleIntro)) {
-            foundIntroPath = possibleIntro;
-            break;
-          }
-          // Check nested structure
-          const nestedDir = path.join(ejectedAgentsDir, entry);
-          if (await directoryExists(nestedDir)) {
-            const subEntries = await listFiles(nestedDir);
-            for (const sub of subEntries) {
-              const nestedIntro = path.join(nestedDir, sub, FILES.IDENTITY_MD);
-              if (await fileExists(nestedIntro)) {
-                foundIntroPath = nestedIntro;
-                break;
-              }
-            }
-          }
-          if (foundIntroPath) break;
-        }
-
-        if (!foundIntroPath) throw new Error("No identity.md found in ejected agents");
-        await writeFile(foundIntroPath, `# Custom Web Developer\n\n${CUSTOM_INTRO_MARKER}\n`);
-      }
+      expect(await fileExists(webDevIntroPath)).toBe(true);
+      await writeFile(webDevIntroPath, `# Custom Web Developer\n\n${CUSTOM_INTRO_MARKER}\n`);
 
       // Step 4: Compile — the ejected agent-partials should take precedence
       // because loadProjectAgents() reads .claude-src/agents/ and overrides built-in agents
@@ -171,16 +140,10 @@ describe("template ejection + custom compilation", () => {
       const outputFiles = await listFiles(agentsDir);
       expect(outputFiles).toContain("web-developer.md");
 
-      let foundMarker = false;
-      for (const file of outputFiles) {
-        const content = await readTestFile(path.join(agentsDir, file));
-        if (content.includes(CUSTOM_INTRO_MARKER)) {
-          foundMarker = true;
-          break;
-        }
-      }
-
-      expect(foundMarker).toBe(true);
+      const contents = await Promise.all(
+        outputFiles.map((file) => readTestFile(path.join(agentsDir, file))),
+      );
+      expect(contents.some((content) => content.includes(CUSTOM_INTRO_MARKER))).toBe(true);
     });
   });
 

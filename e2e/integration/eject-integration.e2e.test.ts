@@ -77,36 +77,34 @@ describe("eject command integration", () => {
     const agentGroupDirs = topDirs.filter((d) => !d.startsWith("_"));
     expect(agentGroupDirs).toContain("developer");
 
-    // Find a concrete agent directory (e.g., developer/web-developer)
-    let foundAgent = false;
-    for (const groupDir of agentGroupDirs) {
-      const groupPath = path.join(agentsDir, groupDir);
-      const subdirs = await listFiles(groupPath);
+    // Collect concrete agent directories (e.g., developer/web-developer)
+    const candidateAgentDirs = (
+      await Promise.all(
+        agentGroupDirs.map(async (groupDir) => {
+          const groupPath = path.join(agentsDir, groupDir);
+          const subdirs = await listFiles(groupPath);
+          return subdirs.map((subdir) => path.join(groupPath, subdir));
+        }),
+      )
+    ).flat();
 
-      for (const subdir of subdirs) {
-        const agentPath = path.join(groupPath, subdir);
+    const hasAllPartials = async (agentPath: string): Promise<boolean> =>
+      (await fileExists(path.join(agentPath, FILES.IDENTITY_MD))) &&
+      (await fileExists(path.join(agentPath, FILES.PLAYBOOK_MD))) &&
+      (await fileExists(path.join(agentPath, FILES.METADATA_YAML)));
 
-        const hasIdentity = await fileExists(path.join(agentPath, FILES.IDENTITY_MD));
-        const hasPlaybook = await fileExists(path.join(agentPath, FILES.PLAYBOOK_MD));
-        const hasMetadata = await fileExists(path.join(agentPath, FILES.METADATA_YAML));
-
-        if (hasIdentity && hasPlaybook && hasMetadata) {
-          foundAgent = true;
-
-          // Verify the files contain meaningful prose content (readAgentFiles expects content)
-          const identity = await readTestFile(path.join(agentPath, FILES.IDENTITY_MD));
-          expect(identity).toMatch(/\w+ \w+/);
-
-          const playbook = await readTestFile(path.join(agentPath, FILES.PLAYBOOK_MD));
-          expect(playbook).toContain("##");
-          break;
-        }
-      }
-
-      if (foundAgent) break;
+    const partialFlags = await Promise.all(candidateAgentDirs.map(hasAllPartials));
+    const completeAgentDir = candidateAgentDirs.find((_, index) => partialFlags[index]);
+    if (completeAgentDir === undefined) {
+      throw new Error("No ejected agent dir has identity + playbook + metadata");
     }
 
-    expect(foundAgent).toBe(true);
+    // Verify the files contain meaningful prose content (readAgentFiles expects content)
+    const identity = await readTestFile(path.join(completeAgentDir, FILES.IDENTITY_MD));
+    expect(identity).toMatch(/\w+ \w+/);
+
+    const playbook = await readTestFile(path.join(completeAgentDir, FILES.PLAYBOOK_MD));
+    expect(playbook).toContain("##");
   });
 
   it("eject templates -> modify -> compile picks up modified template", async () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
-import { mkdir, readFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 
 // Override GLOBAL_INSTALL_ROOT to a non-existent path so getGlobalConfigTypesPath
 // returns null. This prevents the dev machine's real ~/.claude-src/ from affecting tests.
@@ -34,6 +34,7 @@ import {
   HONO_REACT_MATRIX,
 } from "../../__tests__/mock-data/mock-matrices";
 import { CLAUDE_SRC_DIR, CLI_INVOKE_COMMAND, STANDARD_FILES } from "../../../consts";
+import { generateConfigSource } from "../config-writer";
 
 import type {
   AgentName,
@@ -841,7 +842,6 @@ describe("regenerateConfigTypes with global install", () => {
     const globalClaudeSrc = path.join(globalDir, CLAUDE_SRC_DIR);
     await mkdir(globalClaudeSrc, { recursive: true });
     const globalTypesPath = path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS);
-    const { writeFile } = await import("fs/promises");
     await writeFile(globalTypesPath, "// global types");
 
     // Create project .claude-src/
@@ -868,7 +868,6 @@ describe("regenerateConfigTypes with global install", () => {
   it("includes project-only extras when global exists", async () => {
     const globalClaudeSrc = path.join(globalDir, CLAUDE_SRC_DIR);
     await mkdir(globalClaudeSrc, { recursive: true });
-    const { writeFile } = await import("fs/promises");
     await writeFile(path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS), "// global types");
 
     const projectClaudeSrc = path.join(tempDir, CLAUDE_SRC_DIR);
@@ -893,23 +892,18 @@ describe("regenerateConfigTypes with global install", () => {
     // Create global config-types.ts
     const globalClaudeSrc = path.join(globalDir, CLAUDE_SRC_DIR);
     await mkdir(globalClaudeSrc, { recursive: true });
-    const { writeFile: fsWriteFile } = await import("fs/promises");
-    await fsWriteFile(
-      path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
-      "// global types",
-    );
+    await writeFile(path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS), "// global types");
 
     // Create project .claude-src/ with a config that has selectedAgents
     const projectClaudeSrc = path.join(tempDir, CLAUDE_SRC_DIR);
     await mkdir(projectClaudeSrc, { recursive: true });
 
-    const { generateConfigSource } = await import("../config-writer");
     const configContent = generateConfigSource(
       buildProjectConfig({
         selectedAgents: ["web-developer", "api-developer"],
       }),
     );
-    await fsWriteFile(path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TS), configContent);
+    await writeFile(path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TS), configContent);
 
     const data = makeBackgroundData({});
     await regenerateConfigTypes(tempDir, data);
@@ -926,17 +920,12 @@ describe("regenerateConfigTypes with global install", () => {
   it("narrows ProjectAgentName to project-scoped agents from loaded config", async () => {
     const globalClaudeSrc = path.join(globalDir, CLAUDE_SRC_DIR);
     await mkdir(globalClaudeSrc, { recursive: true });
-    const { writeFile: fsWriteFile } = await import("fs/promises");
-    await fsWriteFile(
-      path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
-      "// global types",
-    );
+    await writeFile(path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS), "// global types");
 
     const projectClaudeSrc = path.join(tempDir, CLAUDE_SRC_DIR);
     await mkdir(projectClaudeSrc, { recursive: true });
 
     // Config with mixed scopes: web-developer global, api-developer project
-    const { generateConfigSource } = await import("../config-writer");
     const configContent = generateConfigSource(
       buildProjectConfig({
         agents: [
@@ -946,7 +935,7 @@ describe("regenerateConfigTypes with global install", () => {
         selectedAgents: ["web-developer", "api-developer"],
       }),
     );
-    await fsWriteFile(path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TS), configContent);
+    await writeFile(path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TS), configContent);
 
     const data = makeBackgroundData({});
     await regenerateConfigTypes(tempDir, data);
@@ -965,24 +954,19 @@ describe("regenerateConfigTypes with global install", () => {
   it("falls back ProjectAgentName to SelectedAgentName when all agents are global", async () => {
     const globalClaudeSrc = path.join(globalDir, CLAUDE_SRC_DIR);
     await mkdir(globalClaudeSrc, { recursive: true });
-    const { writeFile: fsWriteFile } = await import("fs/promises");
-    await fsWriteFile(
-      path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
-      "// global types",
-    );
+    await writeFile(path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS), "// global types");
 
     const projectClaudeSrc = path.join(tempDir, CLAUDE_SRC_DIR);
     await mkdir(projectClaudeSrc, { recursive: true });
 
     // Config with all global-scoped agents (simulates global init)
-    const { generateConfigSource } = await import("../config-writer");
     const configContent = generateConfigSource(
       buildProjectConfig({
         agents: buildAgentConfigs(["web-developer", "web-reviewer"], { scope: "global" }),
         selectedAgents: ["web-developer", "web-reviewer"],
       }),
     );
-    await fsWriteFile(path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TS), configContent);
+    await writeFile(path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TS), configContent);
 
     const data = makeBackgroundData({});
     await regenerateConfigTypes(tempDir, data);
