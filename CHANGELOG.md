@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.142.4] - 2026-07-19
+
+**Expressive-TypeScript refactor (production + full test suite) and type-safety hardening**
+
+- Production refactor across ~165 files: orchestrators, guard clauses, named transforms, extracted modules; type-safety pass adds `isRecord`/`typedValues` guards and schema-level Zod typing
+- Fixed: plugin.json manifests that aren't JSON objects are now rejected instead of silently accepted
+- Test suite (~250 files): structural config loads replace hand-rolled parsers; shared E2E drivers; deterministic E2E config (16 workers, suite-level retry)
+
+See [changelogs/0.142.4.md](./changelogs/0.142.4.md) for full details.
+
 ## [0.142.3] - 2026-07-18
 
 **Test-only fix: a test never actually exercised project scope, and asserted the wrong behavior (D-241)**
