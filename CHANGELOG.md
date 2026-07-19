@@ -7,6 +7,15 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.142.5] - 2026-07-19
+
+**Wizard scope-hotkey reliability fix + E2E stability**
+
+- Fixed: the build-step `s` hotkey could act on stale focus state right after a frame painted — `focusedSkillId` is now seeded synchronously at hydrate and every domain transition
+- E2E suite capped at 16 workers; dual-scope flake investigation recorded in agent findings
+
+See [changelogs/0.142.5.md](./changelogs/0.142.5.md) for full details.
+
 ## [0.142.4] - 2026-07-19
 
 **Expressive-TypeScript refactor (production + full test suite) and type-safety hardening**
