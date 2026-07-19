@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useCallback } from "react";
 
 import { Box, Text } from "ink";
 
@@ -55,26 +55,10 @@ export type CategoryGridProps = {
 
 const SYMBOL_REQUIRED = "*";
 
-const findNextValidOption = (
-  options: CategoryOption[],
-  currentIndex: number,
-  direction: 1 | -1,
-  wrap = true,
-): number => {
-  const length = options.length;
+/** Next option index stepping cyclically from `currentIndex`; empty rows stay put. */
+const wrapOptionIndex = (length: number, currentIndex: number, direction: 1 | -1): number => {
   if (length === 0) return currentIndex;
-
-  let index = currentIndex + direction;
-
-  if (wrap) {
-    if (index < 0) index = length - 1;
-    if (index >= length) index = 0;
-  } else {
-    if (index < 0) index = 0;
-    if (index >= length) index = length - 1;
-  }
-
-  return index;
+  return (currentIndex + direction + length) % length;
 };
 
 type SkillTagProps = {
@@ -95,39 +79,30 @@ const getCompatibilityLabel = (option: CategoryOption): string | null => {
   return null;
 };
 
+const STATUS_COLORS: Partial<Record<OptionState["status"], string>> = {
+  incompatible: CLI_COLORS.ERROR,
+  recommended: CLI_COLORS.GRAY_1,
+  discouraged: CLI_COLORS.WARNING,
+};
+
+/** Selected wins, then advisory status; `fallback` covers the plain "normal" state. */
+function resolveTagColor(option: CategoryOption, fallback: string): string {
+  if (option.selected) return CLI_COLORS.PRIMARY;
+  return STATUS_COLORS[option.state.status] ?? fallback;
+}
+
 const SkillTag: React.FC<SkillTagProps> = ({ option, isFocused, showLabels }) => {
-  const getTextColor = (): string => {
-    if (option.selected) return CLI_COLORS.PRIMARY;
-    if (option.state.status === "incompatible") return CLI_COLORS.ERROR;
-    if (option.state.status === "recommended") return CLI_COLORS.GRAY_1;
-    if (option.state.status === "discouraged") return CLI_COLORS.WARNING;
-
-    return CLI_COLORS.DIM;
-  };
-
-  const getStateBorderColor = (): string => {
-    if (option.selected) return CLI_COLORS.PRIMARY;
-    if (option.state.status === "incompatible") return CLI_COLORS.ERROR;
-    if (option.state.status === "recommended") return CLI_COLORS.GRAY_1;
-    if (option.state.status === "discouraged") return CLI_COLORS.WARNING;
-    return CLI_COLORS.UNFOCUSED;
-  };
-
-  const textColor = getTextColor();
+  const textColor = resolveTagColor(option, CLI_COLORS.DIM);
   const hasRequiredBy = option.selected && !!option.requiredBy;
   const hasUnmetDeps = option.selected && !!option.hasUnmetRequirements;
-  const compatibilityLabel = hasRequiredBy
-    ? getCompatibilityLabel(option)
-    : hasUnmetDeps
-      ? getCompatibilityLabel(option)
-      : showLabels && isFocused
-        ? getCompatibilityLabel(option)
-        : null;
+  const isDimmed = hasUnmetDeps || hasRequiredBy;
+  const showCompatibility = hasRequiredBy || hasUnmetDeps || (showLabels && isFocused);
+  const compatibilityLabel = showCompatibility ? getCompatibilityLabel(option) : null;
 
   return (
     <Box
       marginRight={1}
-      borderColor={isFocused ? getStateBorderColor() : getTextColor()}
+      borderColor={isFocused ? resolveTagColor(option, CLI_COLORS.UNFOCUSED) : textColor}
       borderDimColor={!isFocused}
       borderStyle="single"
       flexShrink={0}
@@ -148,14 +123,7 @@ const SkillTag: React.FC<SkillTagProps> = ({ option, isFocused, showLabels }) =>
             <Text> </Text>
           </>
         )}
-        <Text
-          color={textColor}
-          bold
-          dimColor={
-            (option.selected && !!option.hasUnmetRequirements) ||
-            (option.selected && !!option.requiredBy)
-          }
-        >
+        <Text color={textColor} bold dimColor={isDimmed}>
           {getSkillById(option.id).displayName}{" "}
         </Text>
         {compatibilityLabel && (
@@ -171,7 +139,6 @@ const SkillTag: React.FC<SkillTagProps> = ({ option, isFocused, showLabels }) =>
 type CategorySectionProps = {
   isFirst: boolean;
   category: CategoryRow;
-  options: CategoryOption[];
   isFocused: boolean;
   focusedOptionIndex: number;
   showLabels: boolean;
@@ -180,11 +147,11 @@ type CategorySectionProps = {
 const CategorySection: React.FC<CategorySectionProps> = ({
   isFirst,
   category,
-  options,
   isFocused,
   focusedOptionIndex,
   showLabels,
 }) => {
+  const { options } = category;
   const selectedCount = options.filter((o) => o.selected).length;
 
   const selectionCounter = category.exclusive ? `(${selectedCount} of 1)` : null;
@@ -219,8 +186,6 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   );
 };
 
-type ProcessedCategory = CategoryRow & { sortedOptions: CategoryOption[] };
-
 export const CategoryGrid: React.FC<CategoryGridProps> = ({
   categories,
   availableHeight = 0,
@@ -233,36 +198,29 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
   onFocusChange,
   onFocusedSkillChange,
 }) => {
-  const processedCategories = useMemo(
-    () => categories.map((category) => ({ ...category, sortedOptions: category.options })),
+  const getColCount = useCallback(
+    (row: number): number => categories[row]?.options.length ?? 0,
     [categories],
   );
 
-  const getColCount = useCallback(
-    (row: number): number => processedCategories[row]?.sortedOptions.length ?? 0,
-    [processedCategories],
-  );
-
   const findValidCol = useCallback(
-    (row: number, currentCol: number, direction: 1 | -1): number => {
-      const options = processedCategories[row]?.sortedOptions || [];
-      return findNextValidOption(options, currentCol, direction, true);
-    },
-    [processedCategories],
+    (row: number, currentCol: number, direction: 1 | -1): number =>
+      wrapOptionIndex(categories[row]?.options.length ?? 0, currentCol, direction),
+    [categories],
   );
 
   const handleFocusChange = useCallback(
     (row: number, col: number) => {
       if (showLabels) onToggleLabels();
       onFocusChange?.(row, col);
-      const skill = processedCategories[row]?.sortedOptions[col];
+      const skill = categories[row]?.options[col];
       onFocusedSkillChange?.(skill?.id ?? null);
     },
-    [showLabels, onToggleLabels, onFocusChange, processedCategories, onFocusedSkillChange],
+    [showLabels, onToggleLabels, onFocusChange, categories, onFocusedSkillChange],
   );
 
   const { focusedRow, focusedCol, setFocused, moveFocus } = useFocusedListItem(
-    processedCategories.length,
+    categories.length,
     getColCount,
     {
       wrap: true,
@@ -273,17 +231,8 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
     },
   );
 
-  const mountedRef = useRef(false);
-  useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      const skill = processedCategories[defaultFocusedRow]?.sortedOptions[defaultFocusedCol];
-      onFocusedSkillChange?.(skill?.id ?? null);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- fire once on mount to notify parent of initial focus
-
   useCategoryGridInput({
-    processedCategories,
+    categories,
     focusedRow,
     focusedCol,
     setFocused,
@@ -294,7 +243,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
   });
 
   const { setSectionRef, scrollEnabled, scrollTopPx } = useSectionScroll({
-    sectionCount: processedCategories.length,
+    sectionCount: categories.length,
     focusedIndex: focusedRow,
     availableHeight,
   });
@@ -309,11 +258,10 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
 
   const noShrink = scrollEnabled ? { flexShrink: 0 } : {};
 
-  const sectionElements = processedCategories.map((category, index) => (
+  const sectionElements = categories.map((category, index) => (
     <Box key={category.id} ref={(el) => setSectionRef(index, el)} {...noShrink}>
       <CategorySection
         category={category}
-        options={category.sortedOptions}
         isFocused={index === focusedRow}
         focusedOptionIndex={focusedCol}
         showLabels={showLabels}

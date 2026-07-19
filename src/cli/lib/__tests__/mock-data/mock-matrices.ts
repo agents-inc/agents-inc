@@ -133,6 +133,16 @@ export const REACT_HONO_FRAMEWORK_API_MATRIX = createMockMatrix(SKILLS.react, SK
   } as Record<Category, CategoryDefinition>,
 });
 
+// Like REACT_HONO_FRAMEWORK_API_MATRIX but with api-api on the "api" domain, so the
+// two skills split across distinct domains (react → web, hono → api). Category defs
+// are complete (carry `id`), so buildCategoriesForDomain resolves options per domain.
+export const REACT_HONO_WEB_API_DOMAINS_MATRIX = createMockMatrix(SKILLS.react, SKILLS.hono, {
+  categories: {
+    "web-framework": TEST_CATEGORIES.framework,
+    "api-api": { ...TEST_CATEGORIES.api, domain: "api" },
+  } as Record<Category, CategoryDefinition>,
+});
+
 // ---------------------------------------------------------------------------
 // Matrix configs from matrix-loader.test.ts
 // ---------------------------------------------------------------------------

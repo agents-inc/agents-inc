@@ -16,6 +16,7 @@ import {
   ALL_SKILLS_METHODOLOGY_BARE_MATRIX,
   ALL_SKILLS_MULTI_DOMAIN_MATRIX,
   REACT_HONO_FRAMEWORK_API_MATRIX,
+  REACT_HONO_WEB_API_DOMAINS_MATRIX,
 } from "../lib/__tests__/mock-data/mock-matrices";
 import type { AgentScopeConfig, SkillConfig, SkillId, SkillSource } from "../types";
 import { createMockSkillAssignment as sa } from "../lib/__tests__/factories/skill-factories";
@@ -625,6 +626,53 @@ describe("WizardStore", () => {
       const store = useWizardStore.getState();
       const domain = store.getCurrentDomain();
       expect(domain).toBeNull();
+    });
+  });
+
+  describe("seedFocusedSkillForActiveDomain", () => {
+    beforeEach(() => {
+      initializeMatrix(REACT_HONO_WEB_API_DOMAINS_MATRIX);
+    });
+
+    it("seeds focusedSkillId to the active domain's first grid option on build-step entry", () => {
+      const store = useWizardStore.getState();
+      store.toggleDomain("web");
+      store.toggleDomain("api");
+
+      store.setStep("build");
+
+      expect(useWizardStore.getState().focusedSkillId).toBe("web-framework-react");
+    });
+
+    it("re-seeds focusedSkillId to the new domain's first grid option on domain advance", () => {
+      const store = useWizardStore.getState();
+      store.toggleDomain("web");
+      store.toggleDomain("api");
+      store.setStep("build");
+
+      store.nextDomain();
+
+      expect(useWizardStore.getState().focusedSkillId).toBe("api-framework-hono");
+    });
+
+    it("re-seeds focusedSkillId back to the previous domain's first grid option on domain retreat", () => {
+      const store = useWizardStore.getState();
+      store.toggleDomain("web");
+      store.toggleDomain("api");
+      store.setStep("build");
+      store.nextDomain();
+
+      store.prevDomain();
+
+      expect(useWizardStore.getState().focusedSkillId).toBe("web-framework-react");
+    });
+
+    it("seeds null when the active domain has no focusable skills", () => {
+      const store = useWizardStore.getState();
+
+      store.seedFocusedSkillForActiveDomain();
+
+      expect(useWizardStore.getState().focusedSkillId).toBeNull();
     });
   });
 
@@ -3352,6 +3400,28 @@ describe("WizardStore", () => {
       const state = useWizardStore.getState();
       expect(state.isInitMode).toBe(true);
       expect(state.globalPreselections).toStrictEqual(skillConfigs);
+    });
+
+    it("seeds focusedSkillId to the active domain's first grid option (edit flow)", () => {
+      hydrateWizardStore({
+        initialStep: "build",
+        initialDomains: ["web"],
+        installedSkillIds: ["web-framework-react"],
+      });
+
+      expect(useWizardStore.getState().focusedSkillId).toBe("web-framework-react");
+    });
+
+    it("seeds focusedSkillId to the active domain's first grid option (init flow)", () => {
+      hydrateWizardStore({ initialDomains: ["web"] });
+
+      expect(useWizardStore.getState().focusedSkillId).toBe("web-framework-react");
+    });
+
+    it("seeds focusedSkillId to null when no domains are selected", () => {
+      hydrateWizardStore({});
+
+      expect(useWizardStore.getState().focusedSkillId).toBeNull();
     });
   });
 });
