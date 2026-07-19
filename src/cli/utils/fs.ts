@@ -2,6 +2,16 @@ import fs from "fs-extra";
 import fg from "fast-glob";
 import path from "path";
 
+/**
+ * True when `child` resolves to `parent` or inside it. Purely lexical
+ * (no symlink resolution) — the caller decides throw-vs-warn policy.
+ */
+export function isPathWithin(child: string, parent: string): boolean {
+  const resolvedChild = path.resolve(child);
+  const resolvedParent = path.resolve(parent);
+  return resolvedChild === resolvedParent || resolvedChild.startsWith(resolvedParent + path.sep);
+}
+
 export async function readFile(filePath: string): Promise<string> {
   return fs.readFile(filePath, "utf-8");
 }

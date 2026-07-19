@@ -26,18 +26,24 @@ export async function discoverAllPluginSkills(projectDir: string): Promise<Skill
       return allSkills;
     }
 
-    for (const { pluginKey, installPath } of pluginPaths) {
-      verbose(`Discovering skills from plugin: '${pluginKey}'`);
-      try {
-        const pluginSkills = await loadPluginSkills(installPath);
-        // Boundary cast: loadPluginSkills returns Record<string, ...> — keys are skill IDs from parsed frontmatter
-        for (const [id, skill] of typedEntries<SkillId, SkillDefinition>(pluginSkills)) {
-          if (skill) {
-            allSkills[id] = skill;
-          }
+    const perPluginSkills = await Promise.all(
+      pluginPaths.map(async ({ pluginKey, installPath }) => {
+        verbose(`Discovering skills from plugin: '${pluginKey}'`);
+        try {
+          return await loadPluginSkills(installPath);
+        } catch (error) {
+          verbose(`Failed to load skills from '${pluginKey}': ${getErrorMessage(error)}`);
+          return {};
         }
-      } catch (error) {
-        verbose(`Failed to load skills from '${pluginKey}': ${getErrorMessage(error)}`);
+      }),
+    );
+    // Later plugins override earlier (merge follows pluginPaths order); skip absent entries
+    for (const pluginSkills of perPluginSkills) {
+      // Boundary cast: loadPluginSkills returns Record<string, ...> — keys are skill IDs from parsed frontmatter
+      for (const [id, skill] of typedEntries<SkillId, SkillDefinition>(pluginSkills)) {
+        if (skill) {
+          allSkills[id] = skill;
+        }
       }
     }
   } catch (error) {

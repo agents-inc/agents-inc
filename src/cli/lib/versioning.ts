@@ -86,10 +86,9 @@ async function readExistingPluginManifest(
     const manifest = pluginManifestSchema.parse(JSON.parse(content));
 
     const hashFilePath = manifestPath.replace(STANDARD_FILES.PLUGIN_JSON, CONTENT_HASH_FILE);
-    let contentHash: string | undefined;
-    if (await fileExists(hashFilePath)) {
-      contentHash = (await readFile(hashFilePath)).trim();
-    }
+    const contentHash = (await fileExists(hashFilePath))
+      ? (await readFile(hashFilePath)).trim()
+      : undefined;
 
     return {
       version: manifest.version ?? DEFAULT_VERSION,

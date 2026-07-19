@@ -2,7 +2,6 @@ import React from "react";
 
 import { Flags, Args } from "@oclif/core";
 import { printTable } from "@oclif/table";
-import { render } from "ink";
 import os from "os";
 import path from "path";
 
@@ -26,6 +25,7 @@ import {
   INFO_MESSAGES,
 } from "../utils/messages.js";
 import { Confirm } from "../components/common/confirm.js";
+import { promptConfirm } from "../components/common/prompt-confirm.js";
 import { injectForkedFromMetadata, type SkillComparisonResult } from "../lib/skills/index.js";
 import type { SourceLoadResult } from "../lib/loading/source-loader.js";
 
@@ -141,11 +141,11 @@ export default class Update extends BaseCommand {
       sourceResult.matrix,
     );
 
-    const skillBaseDir = new Map<string, string>();
-    for (const r of comparison.projectResults) skillBaseDir.set(r.id, projectDir);
-    for (const r of comparison.globalResults) {
-      if (!skillBaseDir.has(r.id)) skillBaseDir.set(r.id, homeDir);
-    }
+    // Later entries overwrite earlier ones, so project wins on duplicate ids.
+    const skillBaseDir = new Map<string, string>([
+      ...comparison.globalResults.map((r) => [r.id, homeDir] as const),
+      ...comparison.projectResults.map((r) => [r.id, projectDir] as const),
+    ]);
 
     return {
       projectDir,
@@ -160,8 +160,6 @@ export default class Update extends BaseCommand {
     skillArg: string | undefined,
     context: UpdateContext,
   ): SkillComparisonResult[] | null {
-    let outdatedSkills = context.allResults.filter((r) => r.status === "outdated");
-
     if (skillArg) {
       const { match: foundSkill, similar } = findSkillMatch(skillArg, context.allResults);
 
@@ -201,9 +199,10 @@ export default class Update extends BaseCommand {
         return null;
       }
 
-      outdatedSkills = [foundSkill];
+      return [foundSkill];
     }
 
+    const outdatedSkills = context.allResults.filter((r) => r.status === "outdated");
     if (outdatedSkills.length === 0) {
       this.log("");
       this.logSuccess(SUCCESS_MESSAGES.ALL_SKILLS_UP_TO_DATE);
@@ -239,30 +238,13 @@ export default class Update extends BaseCommand {
   }
 
   private async confirmUpdate(): Promise<boolean> {
-    let confirmed = false;
-    let cancelled = false;
+    const outcome = await promptConfirm(({ onConfirm, onCancel }) => (
+      <UpdateConfirm onConfirm={onConfirm} onCancel={onCancel} />
+    ));
 
-    const { waitUntilExit } = render(
-      <UpdateConfirm
-        onConfirm={() => {
-          confirmed = true;
-        }}
-        onCancel={() => {
-          cancelled = true;
-        }}
-      />,
-    );
-
-    await waitUntilExit();
-
-    if (cancelled) {
+    if (outcome === "cancelled") {
       this.log("Update cancelled");
       this.exit(EXIT_CODES.CANCELLED);
-    }
-
-    if (!confirmed) {
-      this.log(INFO_MESSAGES.NO_CHANGES_MADE);
-      return false;
     }
 
     return true;
@@ -293,7 +275,7 @@ export default class Update extends BaseCommand {
     updateResult: UpdateLocalSkillsResult,
     context: UpdateContext,
   ): Promise<string[]> {
-    if (updateResult.totalUpdated === 0) return [];
+    if (updateResult.updated.length === 0) return [];
 
     this.log("");
     this.log(STATUS_MESSAGES.RECOMPILING_AGENTS);
@@ -336,18 +318,20 @@ export default class Update extends BaseCommand {
     recompiledAgents: string[],
   ): void {
     this.log("");
-    if (updateResult.totalFailed === 0) {
+    if (updateResult.failed.length === 0) {
       const agentMsg =
         recompiledAgents.length > 0 ? `, ${recompiledAgents.length} agent(s) recompiled` : "";
-      this.logSuccess(`Update complete! ${updateResult.totalUpdated} skill(s) updated${agentMsg}.`);
+      this.logSuccess(
+        `Update complete! ${updateResult.updated.length} skill(s) updated${agentMsg}.`,
+      );
     } else {
       this.warn(
-        `Update finished with errors: ${updateResult.totalUpdated} updated, ${updateResult.totalFailed} failed.`,
+        `Update finished with errors: ${updateResult.updated.length} updated, ${updateResult.failed.length} failed.`,
       );
     }
     this.log("");
 
-    if (updateResult.totalFailed > 0) {
+    if (updateResult.failed.length > 0) {
       this.error("Some updates failed", { exit: EXIT_CODES.ERROR });
     }
   }
@@ -363,8 +347,6 @@ type SkillUpdateResult = {
 type UpdateLocalSkillsResult = {
   updated: SkillUpdateResult[];
   failed: SkillUpdateResult[];
-  totalUpdated: number;
-  totalFailed: number;
 };
 
 type UpdateLocalSkillsOptions = {
@@ -414,10 +396,5 @@ async function updateLocalSkills(
     }
   }
 
-  return {
-    updated,
-    failed,
-    totalUpdated: updated.length,
-    totalFailed: failed.length,
-  };
+  return { updated, failed };
 }

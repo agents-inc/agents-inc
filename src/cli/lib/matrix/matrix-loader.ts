@@ -182,9 +182,11 @@ export async function loadAndMergeSkillsMatrix(
   rulesPath: string,
   projectRoot: string,
 ): Promise<MergedSkillsMatrix> {
-  const categories = await loadSkillCategories(categoriesPath);
-  const rules = await loadSkillRules(rulesPath);
   const skillsDir = path.join(projectRoot, DIRS.skills);
-  const skills = await extractAllSkills(skillsDir);
+  const [categories, rules, skills] = await Promise.all([
+    loadSkillCategories(categoriesPath),
+    loadSkillRules(rulesPath),
+    extractAllSkills(skillsDir),
+  ]);
   return mergeMatrixWithSkills(categories, rules.relationships, skills);
 }

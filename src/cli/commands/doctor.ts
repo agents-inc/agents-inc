@@ -9,6 +9,7 @@ import { matrix } from "../lib/matrix/matrix-provider";
 import { discoverLocalSkills } from "../lib/skills";
 import { getStackSkillIds } from "../lib/stacks";
 import { filterExcludedEntries } from "../lib/agents";
+import { isHomeDirectory, installBaseDir } from "../lib/installation";
 import type { MergedSkillsMatrix, ProjectConfig, SkillConfig } from "../types";
 import { fileExists, glob, directoryExists } from "../utils/fs";
 import {
@@ -16,6 +17,7 @@ import {
   CLAUDE_SRC_DIR,
   CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
+  EJECT_SOURCE,
   LOCAL_SKILLS_PATH,
   STANDARD_FILES,
   UI_SYMBOLS,
@@ -108,8 +110,10 @@ async function checkSkillsResolved(
     };
   }
 
-  const localResult = await discoverLocalSkills(projectDir);
-  const globalResult = projectDir !== os.homedir() ? await discoverLocalSkills(os.homedir()) : null;
+  const [localResult, globalResult] = await Promise.all([
+    discoverLocalSkills(projectDir),
+    !isHomeDirectory(projectDir) ? discoverLocalSkills(os.homedir()) : null,
+  ]);
   const localSkillIds = new Set([
     ...(localResult?.skills.map((s) => s.id) ?? []),
     ...(globalResult?.skills.map((s) => s.id) ?? []),
@@ -156,16 +160,15 @@ async function checkAgentsCompiled(
 
   const projectAgentsDir = path.join(projectDir, CLAUDE_DIR, "agents");
   const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, "agents");
-  const missingAgents: string[] = [];
-
-  for (const agent of agents) {
-    // Check scope-appropriate directory for the agent
-    const agentsDir = agent.scope === "global" ? globalAgentsDir : projectAgentsDir;
-    const agentPath = path.join(agentsDir, `${agent.name}.md`);
-    if (!(await fileExists(agentPath))) {
-      missingAgents.push(agent.name);
-    }
-  }
+  const agentChecks = await Promise.all(
+    agents.map(async (agent) => {
+      // Check scope-appropriate directory for the agent
+      const agentsDir = agent.scope === "global" ? globalAgentsDir : projectAgentsDir;
+      const agentPath = path.join(agentsDir, `${agent.name}.md`);
+      return { name: agent.name, compiled: await fileExists(agentPath) };
+    }),
+  );
+  const missingAgents = agentChecks.filter((c) => !c.compiled).map((c) => c.name);
 
   if (missingAgents.length > 0) {
     return {
@@ -187,8 +190,10 @@ async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promis
   const projectAgentsDir = path.join(projectDir, CLAUDE_DIR, "agents");
   const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, "agents");
 
-  const projectExists = await directoryExists(projectAgentsDir);
-  const globalExists = projectDir !== os.homedir() && (await directoryExists(globalAgentsDir));
+  const [projectExists, globalExists] = await Promise.all([
+    directoryExists(projectAgentsDir),
+    !isHomeDirectory(projectDir) ? directoryExists(globalAgentsDir) : false,
+  ]);
 
   if (!projectExists && !globalExists) {
     return {
@@ -245,7 +250,7 @@ async function checkSkillsInstalled(
   projectDir: string,
 ): Promise<CheckResult> {
   const skills: SkillConfig[] = config.skills ?? [];
-  const ejectSkills = skills.filter((s) => s.source === "eject");
+  const ejectSkills = skills.filter((s) => s.source === EJECT_SOURCE);
 
   if (ejectSkills.length === 0) {
     return {
@@ -255,17 +260,14 @@ async function checkSkillsInstalled(
     };
   }
 
-  const missingSkills: string[] = [];
-
-  for (const skill of ejectSkills) {
-    const baseDir = skill.scope === "global" ? os.homedir() : projectDir;
-    const skillDir = path.join(baseDir, LOCAL_SKILLS_PATH, skill.id);
-    const skillMdPath = path.join(skillDir, STANDARD_FILES.SKILL_MD);
-
-    if (!(await fileExists(skillMdPath))) {
-      missingSkills.push(skill.id);
-    }
-  }
+  const skillChecks = await Promise.all(
+    ejectSkills.map(async (skill) => {
+      const baseDir = installBaseDir(projectDir, skill.scope);
+      const skillMdPath = path.join(baseDir, LOCAL_SKILLS_PATH, skill.id, STANDARD_FILES.SKILL_MD);
+      return { id: skill.id, installed: await fileExists(skillMdPath) };
+    }),
+  );
+  const missingSkills = skillChecks.filter((c) => !c.installed).map((c) => c.id);
 
   if (missingSkills.length > 0) {
     return {
@@ -325,26 +327,19 @@ function formatStatus(status: CheckResult["status"]): string {
       return "!";
     case "skip":
       return "-";
-    default:
-      return "?";
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
   }
 }
 
 function formatCheckLine(name: string, result: CheckResult): string[] {
-  const statusIcon = formatStatus(result.status);
-  const nameFormatted = formatCheckName(name);
-  const lines: string[] = [];
-
-  lines.push(`  ${nameFormatted}${statusIcon}  ${result.message}`);
-
-  const { details } = result;
-  if (details && details.length > 0) {
-    for (const detail of details) {
-      lines.push(`  ${" ".repeat(CHECK_WIDTH)}   ${detail}`);
-    }
-  }
-
-  return lines;
+  const headerLine = `  ${formatCheckName(name)}${formatStatus(result.status)}  ${result.message}`;
+  const detailLines = (result.details ?? []).map(
+    (detail) => `  ${" ".repeat(CHECK_WIDTH)}   ${detail}`,
+  );
+  return [headerLine, ...detailLines];
 }
 
 function formatSummary(results: CheckResult[]): string {
@@ -360,28 +355,33 @@ function formatSummary(results: CheckResult[]): string {
   return `  Summary: ${parts.join(", ")}`;
 }
 
+const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string }> = [
+  {
+    kind: "agents",
+    status: "warn",
+    tip: `  Tip: Run '${CLI_INVOKE_COMMAND} compile' to generate missing agent files`,
+  },
+  {
+    kind: "config",
+    status: "fail",
+    tip: `  Tip: Run '${CLI_INVOKE_COMMAND} init' to create or fix configuration`,
+  },
+  {
+    kind: "skills",
+    status: "fail",
+    tip: "  Tip: Check skill IDs in config match available skills",
+  },
+  {
+    kind: "installed",
+    status: "warn",
+    tip: `  Tip: Run '${CLI_INVOKE_COMMAND} compile' to reinstall missing skill files`,
+  },
+];
+
 function formatTips(results: CheckResult[]): string[] {
-  const hasAgentWarning = results.some((r) => r.kind === "agents" && r.status === "warn");
-  const hasConfigError = results.some((r) => r.kind === "config" && r.status === "fail");
-  const hasSkillError = results.some((r) => r.kind === "skills" && r.status === "fail");
-  const hasMissingSkills = results.some((r) => r.kind === "installed" && r.status === "warn");
-
-  const tips: string[] = [];
-
-  if (hasAgentWarning) {
-    tips.push(`  Tip: Run '${CLI_INVOKE_COMMAND} compile' to generate missing agent files`);
-  }
-  if (hasConfigError) {
-    tips.push(`  Tip: Run '${CLI_INVOKE_COMMAND} init' to create or fix configuration`);
-  }
-  if (hasSkillError) {
-    tips.push("  Tip: Check skill IDs in config match available skills");
-  }
-  if (hasMissingSkills) {
-    tips.push(`  Tip: Run '${CLI_INVOKE_COMMAND} compile' to reinstall missing skill files`);
-  }
-
-  return tips;
+  return TIPS.filter((t) => results.some((r) => r.kind === t.kind && r.status === t.status)).map(
+    (t) => t.tip,
+  );
 }
 
 function skippedResult(kind: CheckKind): CheckResult {

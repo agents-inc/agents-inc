@@ -7,6 +7,8 @@ export {
   type LoadedSource,
   ensureMarketplace,
   type MarketplaceResult,
+  requireMarketplace,
+  type MarketplaceRequirement,
 } from "./source/index.js";
 
 export {
@@ -27,6 +29,7 @@ export {
   type SkillMatchResult,
   installPluginSkills,
   type PluginInstallResult,
+  pluginInstallFailureError,
   uninstallPluginSkills,
   type PluginUninstallResult,
 } from "./skills/index.js";
@@ -42,6 +45,8 @@ export {
   compileAgents,
   type CompileAgentsOptions,
   type CompilationResult,
+  compileAgentsAllScopes,
+  type CompileAllScopesOptions,
   loadAgentDefs,
   type AgentDefs,
 } from "./project/index.js";

@@ -1,6 +1,14 @@
 import { extendTheme, defaultTheme } from "@inkjs/ui";
 import { CLI_COLORS } from "../../consts.js";
 
+/** Variant → color mapping shared by StatusMessage, Alert, and Badge; unknown variants fall back per-site. */
+const VARIANT_COLORS: Partial<Record<string, string>> = {
+  error: CLI_COLORS.ERROR,
+  warning: CLI_COLORS.WARNING,
+  success: CLI_COLORS.SUCCESS,
+  info: CLI_COLORS.INFO,
+};
+
 /**
  * CLI theme matching existing picocolors styling
  *
@@ -40,38 +48,17 @@ export const cliTheme = extendTheme(defaultTheme, {
       styles: {
         container: ({ variant }) => ({
           borderStyle: "round",
-          borderColor:
-            variant === "error"
-              ? CLI_COLORS.ERROR
-              : variant === "warning"
-                ? CLI_COLORS.WARNING
-                : variant === "success"
-                  ? CLI_COLORS.SUCCESS
-                  : CLI_COLORS.INFO,
+          borderColor: VARIANT_COLORS[variant] ?? CLI_COLORS.INFO,
         }),
       },
     },
     Alert: {
       styles: {
         container: ({ variant }) => ({
-          borderColor:
-            variant === "error"
-              ? CLI_COLORS.ERROR
-              : variant === "warning"
-                ? CLI_COLORS.WARNING
-                : variant === "success"
-                  ? CLI_COLORS.SUCCESS
-                  : CLI_COLORS.INFO,
+          borderColor: VARIANT_COLORS[variant] ?? CLI_COLORS.INFO,
         }),
         icon: ({ variant }) => ({
-          color:
-            variant === "error"
-              ? CLI_COLORS.ERROR
-              : variant === "warning"
-                ? CLI_COLORS.WARNING
-                : variant === "success"
-                  ? CLI_COLORS.SUCCESS
-                  : CLI_COLORS.INFO,
+          color: VARIANT_COLORS[variant] ?? CLI_COLORS.INFO,
         }),
       },
     },
@@ -91,16 +78,7 @@ export const cliTheme = extendTheme(defaultTheme, {
     Badge: {
       styles: {
         container: ({ variant }) => ({
-          color:
-            variant === "error"
-              ? CLI_COLORS.ERROR
-              : variant === "warning"
-                ? CLI_COLORS.WARNING
-                : variant === "success"
-                  ? CLI_COLORS.SUCCESS
-                  : variant === "info"
-                    ? CLI_COLORS.INFO
-                    : CLI_COLORS.PRIMARY,
+          color: VARIANT_COLORS[variant] ?? CLI_COLORS.PRIMARY,
         }),
       },
     },

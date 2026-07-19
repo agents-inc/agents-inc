@@ -6,15 +6,19 @@ import { getErrorMessage } from "../../utils/errors.js";
 import {
   CLAUDE_SRC_DIR,
   CLI_INVOKE_COMMAND,
-  KEBAB_CASE_PATTERN,
   PLUGIN_MANIFEST_DIR,
+  marketplaceManifestPath,
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
   SKILLS_DIR_PATH,
   STACKS_FILE_PATH,
   STANDARD_FILES,
+  EJECT_SOURCE,
+  PLUGINS_DIST_PATH,
 } from "../../consts.js";
 import { EXIT_CODES } from "../../lib/exit-codes.js";
+import { assertDirOverwritable } from "../../lib/assert-dir-overwritable.js";
+import { validateKebabCaseName } from "../../lib/validate-kebab-name.js";
 import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
 import { LOCAL_DEFAULTS } from "../../lib/metadata-keys.js";
 import { compileAllSkillPlugins } from "../../lib/skills/skill-plugin-compiler.js";
@@ -27,18 +31,6 @@ import { generateMarketplace, writeMarketplace } from "../../lib/marketplace-gen
 import { generateSkillCategoriesTs, generateSkillRulesTs } from "../../lib/skills/generators.js";
 import type { Category, SkillId } from "../../types/index.js";
 import { resolveAuthorOrDefault, scaffoldSkillFiles } from "./skill.js";
-
-export function validateMarketplaceName(name: string): string | null {
-  if (!name || name.trim() === "") {
-    return "Marketplace name is required";
-  }
-
-  if (!KEBAB_CASE_PATTERN.test(name)) {
-    return "Marketplace name must be kebab-case (lowercase letters, numbers, and hyphens, starting with a letter)";
-  }
-
-  return null;
-}
 
 export function generateStacksTs(name: string): string {
   const data = {
@@ -180,7 +172,7 @@ export default class NewMarketplace extends BaseCommand {
   }
 
   private validateName(name: string, useCurrentDir: boolean): void {
-    const validationError = validateMarketplaceName(name);
+    const validationError = validateKebabCaseName(name, "Marketplace");
     if (validationError) {
       if (useCurrentDir) {
         this.error(
@@ -197,14 +189,15 @@ export default class NewMarketplace extends BaseCommand {
     useCurrentDir: boolean,
     force: boolean,
   ): Promise<void> {
-    if (!useCurrentDir && (await directoryExists(dir))) {
-      if (!force) {
-        this.error(`Directory already exists: ${dir}\nUse --force to overwrite.`, {
-          exit: EXIT_CODES.ERROR,
-        });
-      }
-      this.warn(`Overwriting existing directory at ${dir}`);
+    if (useCurrentDir) return;
+    const result = await assertDirOverwritable(dir);
+    if (result.ok) return;
+    if (!force) {
+      this.error(`Directory already exists: ${dir}\nUse --force to overwrite.`, {
+        exit: EXIT_CODES.ERROR,
+      });
     }
+    this.warn(`Overwriting existing directory at ${dir}`);
   }
 
   private async createMarketplaceFiles(
@@ -250,7 +243,7 @@ export default class NewMarketplace extends BaseCommand {
     // Boundary cast: custom marketplace dummy skill/category not in standard unions
     const configContent = generateConfigSource({
       name: marketplaceName,
-      skills: [{ id: skillName as SkillId, scope: "project", source: "eject" }],
+      skills: [{ id: skillName as SkillId, scope: "project", source: EJECT_SOURCE }],
       agents: [],
       source: ".",
       marketplace: marketplaceName,
@@ -278,41 +271,40 @@ export default class NewMarketplace extends BaseCommand {
   }
 
   private printNextSteps(marketplaceName: string, useCurrentDir: boolean): void {
+    const steps = [
+      ...(useCurrentDir ? [] : [`cd ${marketplaceName}`]),
+      `${CLI_INVOKE_COMMAND} new skill <name> --category <category-name>`,
+      "Push to a git repository",
+      `${CLI_INVOKE_COMMAND} init --source github:your-org/${marketplaceName}`,
+    ];
+
     this.log("Marketplace created successfully!");
     this.log("");
     this.log("Next steps:");
-    if (!useCurrentDir) {
-      this.log(`  1. cd ${marketplaceName}`);
+    for (const [index, step] of steps.entries()) {
+      this.log(`  ${index + 1}. ${step}`);
     }
-    this.log(
-      `  ${useCurrentDir ? "1" : "2"}. ${CLI_INVOKE_COMMAND} new skill <name> --category <category-name>`,
-    );
-    this.log(`  ${useCurrentDir ? "2" : "3"}. Push to a git repository`);
-    this.log(
-      `  ${useCurrentDir ? "3" : "4"}. ${CLI_INVOKE_COMMAND} init --source github:your-org/${marketplaceName}`,
-    );
     this.log("");
   }
 
   private async buildMarketplace(marketplaceDir: string, marketplaceName: string): Promise<void> {
     const skillsDir = path.resolve(marketplaceDir, SKILLS_DIR_PATH);
-    const pluginsOutputDir = path.resolve(marketplaceDir, "dist/plugins");
-    const marketplaceOutputPath = path.resolve(
-      marketplaceDir,
-      PLUGIN_MANIFEST_DIR,
-      "marketplace.json",
-    );
+    const pluginsOutputDir = path.resolve(marketplaceDir, PLUGINS_DIST_PATH);
+    const marketplaceOutputPath = marketplaceManifestPath(marketplaceDir);
 
     try {
       this.log("Building plugins...");
-      const { compiled } = await compileAllSkillPlugins(skillsDir, pluginsOutputDir);
+      const { compiled, failed } = await compileAllSkillPlugins(skillsDir, pluginsOutputDir);
       this.logSuccess(`Built ${compiled.length} skill plugins.`);
+      if (failed.length > 0) {
+        this.warn(`${failed.length} skill(s) failed to compile: ${failed.join(", ")}`);
+      }
 
       this.log("Generating marketplace.json...");
       const marketplace = await generateMarketplace(pluginsOutputDir, {
         name: marketplaceName,
         ownerName: marketplaceName,
-        pluginRoot: "./dist/plugins",
+        pluginRoot: `./${PLUGINS_DIST_PATH}`,
       });
       await writeMarketplace(marketplaceOutputPath, marketplace);
       this.logSuccess(

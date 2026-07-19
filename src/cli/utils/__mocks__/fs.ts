@@ -2,6 +2,10 @@
 // All functions return undefined by default; configure with vi.mocked() in beforeEach.
 import { vi } from "vitest";
 
+// Real implementation — pure lexical path predicate; mocking it to undefined
+// would silently invert every boundary check in consumers under test.
+export { isPathWithin } from "../fs";
+
 export const readFile = vi.fn();
 export const readFileOptional = vi.fn();
 export const writeFile = vi.fn();

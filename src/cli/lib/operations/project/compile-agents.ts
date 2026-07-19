@@ -2,7 +2,6 @@ import { recompileAgents } from "../../agents/index.js";
 import { loadProjectConfigFromDir } from "../../configuration/index.js";
 import { buildAgentScopeMap } from "../../installation/index.js";
 import type { AgentName, SkillDefinitionMap } from "../../../types/index.js";
-import type { InstallMode } from "../../installation/index.js";
 
 export type CompileAgentsOptions = {
   projectDir: string;
@@ -14,7 +13,6 @@ export type CompileAgentsOptions = {
   /** When set, loads config and filters agents to only those matching this scope. */
   scopeFilter?: "project" | "global";
   outputDir?: string;
-  installMode?: InstallMode;
 };
 
 export type CompilationResult = {
@@ -60,7 +58,6 @@ export async function compileAgents(options: CompileAgentsOptions): Promise<Comp
     skills: options.skills,
     projectDir: options.projectDir,
     outputDir: options.outputDir,
-    installMode: options.installMode,
     agentScopeMap: resolvedAgentScopeMap,
   });
 

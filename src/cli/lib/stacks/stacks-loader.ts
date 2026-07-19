@@ -15,6 +15,7 @@ import type {
 } from "../../types";
 import { stacksConfigSchema } from "../schemas";
 import { typedEntries, typedKeys } from "../../utils/typed-object";
+import { isSkillAssignment } from "../../utils/type-guards";
 import { STACKS_FILE_PATH } from "../../consts";
 import { loadConfig } from "../configuration/config-loader";
 import { defaultStacks } from "../configuration/default-stacks";
@@ -34,12 +35,12 @@ export function normalizeAgentConfig(agentConfig: Record<string, unknown>): Stac
   // that are normalized to typed SkillAssignment[] values
   return mapValues(agentConfig, (value) => {
     const items = Array.isArray(value) ? value : [value];
-    return items.map(
-      (item): SkillAssignment =>
-        typeof item === "string"
-          ? { id: item as SkillId, preloaded: false }
-          : (item as SkillAssignment),
-    );
+    return items.map((item): SkillAssignment => {
+      if (typeof item === "string") return { id: item as SkillId, preloaded: false };
+      if (isSkillAssignment(item)) return item;
+      warn(`Malformed skill assignment in stack data: ${JSON.stringify(item)}`);
+      return item as SkillAssignment;
+    });
   }) as StackAgentConfig;
 }
 

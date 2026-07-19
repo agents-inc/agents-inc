@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isRecord } from "../../utils/type-guards.js";
 import path from "path";
 import fg from "fast-glob";
 import { getErrorMessage } from "../../utils/errors";
@@ -10,7 +11,6 @@ import {
   listDirectories,
 } from "../../utils/fs";
 import type { ValidationResult } from "../../types";
-import { countBy } from "remeda";
 import { extractFrontmatter } from "../../utils/frontmatter";
 import { log } from "../../utils/logger";
 import { formatZodErrors } from "../schema-validator";
@@ -21,7 +21,6 @@ import {
   agentFrontmatterValidationSchema,
 } from "../schemas";
 import { MAX_PLUGIN_FILE_SIZE, PLUGIN_MANIFEST_DIR, STANDARD_FILES } from "../../consts";
-import { CATEGORIES } from "../../types/generated/source-types";
 
 const PLUGIN_DIR = PLUGIN_MANIFEST_DIR;
 const PLUGIN_MANIFEST = STANDARD_FILES.PLUGIN_JSON;
@@ -66,11 +65,7 @@ export async function validatePluginStructure(pluginPath: string): Promise<Valid
   const warnings: string[] = [];
 
   if (!(await directoryExists(pluginPath))) {
-    return {
-      valid: false,
-      errors: [`Plugin directory does not exist: ${pluginPath}`],
-      warnings: [],
-    };
+    return invalid(`Plugin directory does not exist: ${pluginPath}`);
   }
 
   const pluginDir = path.join(pluginPath, PLUGIN_DIR);
@@ -116,11 +111,7 @@ export async function validatePluginManifest(manifestPath: string): Promise<Vali
   const warnings: string[] = [];
 
   if (!(await fileExists(manifestPath))) {
-    return {
-      valid: false,
-      errors: [`Manifest file not found: ${manifestPath}`],
-      warnings: [],
-    };
+    return invalid(`Manifest file not found: ${manifestPath}`);
   }
 
   let manifest: Record<string, unknown>;
@@ -128,11 +119,7 @@ export async function validatePluginManifest(manifestPath: string): Promise<Vali
     const content = await readFileSafe(manifestPath, MAX_PLUGIN_FILE_SIZE);
     manifest = JSON.parse(content);
   } catch (err) {
-    return {
-      valid: false,
-      errors: [`Invalid JSON in ${PLUGIN_MANIFEST}: ${getErrorMessage(err)}`],
-      warnings: [],
-    };
+    return invalid(`Invalid JSON in ${PLUGIN_MANIFEST}: ${getErrorMessage(err)}`);
   }
 
   const result = pluginManifestValidationSchema.safeParse(manifest);
@@ -187,22 +174,14 @@ export async function validateSkillFrontmatter(skillPath: string): Promise<Valid
   const warnings: string[] = [];
 
   if (!(await fileExists(skillPath))) {
-    return {
-      valid: false,
-      errors: [`Skill file not found: ${skillPath}`],
-      warnings: [],
-    };
+    return invalid(`Skill file not found: ${skillPath}`);
   }
 
   const content = await readFile(skillPath);
   const frontmatter = extractFrontmatter(content);
 
   if (frontmatter === null) {
-    return {
-      valid: false,
-      errors: ["Missing or invalid YAML frontmatter"],
-      warnings: [],
-    };
+    return invalid("Missing or invalid YAML frontmatter");
   }
 
   const result = skillFrontmatterValidationSchema.safeParse(frontmatter);
@@ -223,22 +202,14 @@ export async function validateAgentFrontmatter(agentPath: string): Promise<Valid
   const warnings: string[] = [];
 
   if (!(await fileExists(agentPath))) {
-    return {
-      valid: false,
-      errors: [`Agent file not found: ${agentPath}`],
-      warnings: [],
-    };
+    return invalid(`Agent file not found: ${agentPath}`);
   }
 
   const content = await readFile(agentPath);
   const frontmatter = extractFrontmatter(content);
 
   if (frontmatter === null) {
-    return {
-      valid: false,
-      errors: ["Missing or invalid YAML frontmatter"],
-      warnings: [],
-    };
+    return invalid("Missing or invalid YAML frontmatter");
   }
 
   const result = agentFrontmatterValidationSchema.safeParse(frontmatter);
@@ -270,6 +241,10 @@ function mergeResults(results: ValidationResult[]): ValidationResult {
 }
 
 const EMPTY_RESULT: ValidationResult = { valid: true, errors: [], warnings: [] };
+
+function invalid(message: string): ValidationResult {
+  return { valid: false, errors: [message], warnings: [] };
+}
 
 function prefixResult(result: ValidationResult, prefix: string): ValidationResult {
   return {
@@ -332,7 +307,8 @@ async function loadManifestForValidation(
 ): Promise<Record<string, unknown> | null> {
   try {
     const content = await readFileSafe(manifestPath, MAX_PLUGIN_FILE_SIZE);
-    return JSON.parse(content) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(content);
+    return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -396,11 +372,7 @@ export async function validateAllPlugins(pluginsDir: string): Promise<{
       results: [
         {
           name: pluginsDir,
-          result: {
-            valid: false,
-            errors: [`Directory does not exist: ${pluginsDir}`],
-            warnings: [],
-          },
+          result: invalid(`Directory does not exist: ${pluginsDir}`),
         },
       ],
       summary: { total: 0, valid: 0, invalid: 1, withWarnings: 0 },
@@ -408,14 +380,13 @@ export async function validateAllPlugins(pluginsDir: string): Promise<{
   }
 
   const allDirs = await listDirectories(pluginsDir);
-  const pluginDirs: string[] = [];
-
-  for (const dirName of allDirs) {
-    const potentialPluginDir = path.join(pluginsDir, dirName, PLUGIN_DIR);
-    if (await directoryExists(potentialPluginDir)) {
-      pluginDirs.push(dirName);
-    }
-  }
+  const dirChecks = await Promise.all(
+    allDirs.map(async (dirName) => ({
+      dirName,
+      isPlugin: await directoryExists(path.join(pluginsDir, dirName, PLUGIN_DIR)),
+    })),
+  );
+  const pluginDirs = dirChecks.filter((c) => c.isPlugin).map((c) => c.dirName);
 
   if (pluginDirs.length === 0) {
     return {
@@ -423,13 +394,9 @@ export async function validateAllPlugins(pluginsDir: string): Promise<{
       results: [
         {
           name: pluginsDir,
-          result: {
-            valid: false,
-            errors: [
-              `No plugins found in directory: ${pluginsDir}. Plugins must contain a ${PLUGIN_DIR}/ directory.`,
-            ],
-            warnings: [],
-          },
+          result: invalid(
+            `No plugins found in directory: ${pluginsDir}. Plugins must contain a ${PLUGIN_DIR}/ directory.`,
+          ),
         },
       ],
       summary: { total: 0, valid: 0, invalid: 1, withWarnings: 0 },
@@ -442,11 +409,12 @@ export async function validateAllPlugins(pluginsDir: string): Promise<{
     results.push({ name: pluginName, result });
   }
 
+  const validCount = results.filter((r) => r.result.valid).length;
   const summary = {
     total: results.length,
-    valid: countBy(results, (r) => String(r.result.valid))["true"] ?? 0,
-    invalid: countBy(results, (r) => String(r.result.valid))["false"] ?? 0,
-    withWarnings: countBy(results, (r) => String(r.result.warnings.length > 0))["true"] ?? 0,
+    valid: validCount,
+    invalid: results.length - validCount,
+    withWarnings: results.filter((r) => r.result.warnings.length > 0).length,
   };
 
   return {

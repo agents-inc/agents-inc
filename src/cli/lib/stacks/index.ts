@@ -16,7 +16,6 @@ export {
 export {
   type StackPluginOptions,
   type CompiledStackPlugin,
-  compileAgentForPlugin,
   compileStackPlugin,
   printStackCompilationSummary,
 } from "./stack-plugin-compiler";

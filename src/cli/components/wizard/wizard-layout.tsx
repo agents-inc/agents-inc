@@ -28,6 +28,8 @@ import {
 import { getDomainDisplayName, getStackName, orderDomains } from "./utils.js";
 import type { Domain } from "../../types/index.js";
 
+const FALLBACK_DOMAIN: Domain = "web";
+
 type KeyHintProps = {
   isVisible?: boolean;
   isActive?: boolean;
@@ -96,6 +98,24 @@ type WizardLayoutProps = {
   children: React.ReactNode;
 };
 
+const STEP_DROPDOWN_LABEL: Partial<Record<WizardStep, string>> = {
+  stack: "Choose a stack",
+  domains: "Select domains",
+  sources: "Customize skill sources",
+  agents: "Select agents",
+};
+
+function resolveDropdownLabel(
+  step: WizardStep,
+  selectedStackId: string | null,
+): string | undefined {
+  if (step === "confirm") {
+    const stackName = getStackName(selectedStackId);
+    return stackName ? `Ready to install ${stackName}` : "Ready to install your custom stack";
+  }
+  return STEP_DROPDOWN_LABEL[step];
+}
+
 export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, children }) => {
   const store = useWizardStore();
   const { completedSteps, skippedSteps } = store.getStepProgress();
@@ -112,42 +132,16 @@ export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, child
     store.step === "build" && store.selectedDomains.length > 0
       ? {
           domains: orderDomains(store.selectedDomains),
-          activeDomain: (store.getCurrentDomain() || store.selectedDomains[0] || "web") as Domain,
+          activeDomain: store.getCurrentDomain() || store.selectedDomains[0] || FALLBACK_DOMAIN,
           getDomainLabel: getDomainDisplayName,
           onSelectDomain: handleSelectDomain,
         }
       : undefined;
 
-  // TODO: dropdowns should be in a map
-  const dropdowns: Partial<Record<WizardStep, TabDropdownProps>> = {};
-
-  if (store.step === "stack") {
-    const label = "Choose a stack";
-    dropdowns.stack = { items: [{ id: label, label }] };
-  }
-
-  if (store.step === "domains") {
-    const label = "Select domains";
-    dropdowns.domains = { items: [{ id: label, label }] };
-  }
-
-  if (store.step === "sources") {
-    const label = "Customize skill sources";
-    dropdowns.sources = { items: [{ id: label, label }] };
-  }
-
-  if (store.step === "agents") {
-    const label = "Select agents";
-    dropdowns.agents = { items: [{ id: label, label }] };
-  }
-
-  if (store.step === "confirm") {
-    const stackName = getStackName(store.selectedStackId);
-    const label = stackName
-      ? `Ready to install ${stackName}`
-      : "Ready to install your custom stack";
-    dropdowns.confirm = { items: [{ id: label, label }] };
-  }
+  const dropdownLabel = resolveDropdownLabel(store.step, store.selectedStackId);
+  const dropdowns: Partial<Record<WizardStep, TabDropdownProps>> = dropdownLabel
+    ? { [store.step]: { items: [{ id: dropdownLabel, label: dropdownLabel }] } }
+    : {};
 
   return (
     <Box flexDirection="column" paddingX={1} height={terminalHeight}>

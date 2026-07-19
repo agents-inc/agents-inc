@@ -60,8 +60,9 @@ export default class Search extends BaseCommand {
       const projectDir = process.cwd();
       const allSkills = await loadSkillsFromAllSources(projectDir);
 
-      const results = sortBy(filterSkillsByQuery(allSkills, query), (r) =>
-        r.displayName.toLowerCase(),
+      const results = sortBy(
+        allSkills.filter((skill) => matchesQuery(skill, query)),
+        (r) => r.displayName.toLowerCase(),
       );
 
       this.log("");
@@ -122,55 +123,52 @@ async function fetchSkillsFromExternalSource(source: SourceEntry): Promise<Searc
     }
 
     const skillDirs = await listDirectories(skillsDir);
-    const skills: SearchableSkill[] = [];
-
-    for (const skillDir of skillDirs) {
-      const skillMdPath = path.join(skillsDir, skillDir, STANDARD_FILES.SKILL_MD);
-      if (!(await fileExists(skillMdPath))) continue;
-
-      const content = await readFile(skillMdPath);
-      const frontmatter = parseFrontmatter(content, skillMdPath);
-      if (!frontmatter) continue;
-
-      skills.push({
-        id: frontmatter.name,
-        description: frontmatter.description,
-        // Boundary cast: directory name used as slug for third-party source skill
-        slug: skillDir as SkillSlug,
-        displayName: skillDir,
-        // Boundary cast: external source skills have no real category; "imported" is a display-only placeholder
-        category: "imported" as CategoryPath,
-        author: `@${source.name}`,
-        conflictsWith: [],
-        isRecommended: false,
-        requires: [],
-        alternatives: [],
-        discourages: [],
-        compatibleWith: [],
-        path: path.join(skillsDir, skillDir),
-        sourceName: source.name,
-      });
-    }
-
-    return skills;
+    const loaded = await Promise.all(
+      skillDirs.map((skillDir) => loadExternalSkill(skillsDir, skillDir, source.name)),
+    );
+    return loaded.filter((skill) => skill !== null);
   } catch {
     // Source unavailable, return empty
     return [];
   }
 }
 
-function matchesQuery(skill: ResolvedSkill, query: string): boolean {
-  const lowerQuery = query.toLowerCase();
+/** Loads one external skill dir as a SearchableSkill, or null when it has no valid SKILL.md. */
+async function loadExternalSkill(
+  skillsDir: string,
+  skillDir: string,
+  sourceName: string,
+): Promise<SearchableSkill | null> {
+  const skillMdPath = path.join(skillsDir, skillDir, STANDARD_FILES.SKILL_MD);
+  if (!(await fileExists(skillMdPath))) return null;
 
-  if (skill.id.toLowerCase().includes(lowerQuery)) return true;
-  if (skill.displayName.toLowerCase().includes(lowerQuery)) return true;
-  if (skill.slug.toLowerCase().includes(lowerQuery)) return true;
-  if (skill.description.toLowerCase().includes(lowerQuery)) return true;
-  if (skill.category.toLowerCase().includes(lowerQuery)) return true;
+  const content = await readFile(skillMdPath);
+  const frontmatter = parseFrontmatter(content, skillMdPath);
+  if (!frontmatter) return null;
 
-  return false;
+  return {
+    id: frontmatter.name,
+    description: frontmatter.description,
+    // Boundary cast: directory name used as slug for third-party source skill
+    slug: skillDir as SkillSlug,
+    displayName: skillDir,
+    // Boundary cast: external source skills have no real category; "imported" is a display-only placeholder
+    category: "imported" as CategoryPath,
+    author: `@${sourceName}`,
+    conflictsWith: [],
+    isRecommended: false,
+    requires: [],
+    alternatives: [],
+    discourages: [],
+    compatibleWith: [],
+    path: path.join(skillsDir, skillDir),
+    sourceName,
+  };
 }
 
-function filterSkillsByQuery(skills: SearchableSkill[], query: string): SearchableSkill[] {
-  return skills.filter((skill) => matchesQuery(skill, query));
+function matchesQuery(skill: ResolvedSkill, query: string): boolean {
+  const lowerQuery = query.toLowerCase();
+  return [skill.id, skill.displayName, skill.slug, skill.description, skill.category].some(
+    (field) => field.toLowerCase().includes(lowerQuery),
+  );
 }

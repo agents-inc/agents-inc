@@ -3,21 +3,22 @@ import React from "react";
 
 import { Flags } from "@oclif/core";
 import { render, Box, Text, useApp } from "ink";
-import fs from "fs";
 
 import { BaseCommand } from "../base-command.js";
-import { Wizard, type WizardResultV2 } from "../components/wizard/wizard.js";
-import { hydrateWizardStore } from "../stores/wizard-store.js";
+import { type WizardResultV2 } from "../components/wizard/wizard.js";
+import { runWizardSession } from "../components/wizard/run-wizard-session.js";
 import { useTerminalDimensions } from "../components/hooks/use-terminal-dimensions.js";
 import { type SourceLoadResult } from "../lib/loading/index.js";
 import {
   loadSource,
   loadAgentDefs,
   copyLocalSkills,
-  ensureMarketplace,
+  requireMarketplace,
   installPluginSkills,
+  pluginInstallFailureError,
   writeProjectConfig,
-  compileAgents,
+  compileAgentsAllScopes,
+  type CompilationResult,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
 import { getInstallationInfo } from "../lib/plugins/plugin-info.js";
@@ -32,6 +33,8 @@ import {
   deriveInstallMode,
   resolveInstallPaths,
   buildAgentScopeMap,
+  isHomeDirectory,
+  INSTALL_MODE_LABELS,
 } from "../lib/installation/index.js";
 import { checkPermissions } from "../lib/permission-checker.js";
 import {
@@ -39,7 +42,7 @@ import {
   CLAUDE_SRC_DIR,
   CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
-  GLOBAL_INSTALL_ROOT,
+  EJECT_SOURCE,
 } from "../consts.js";
 import { SelectList, type SelectListItem } from "../components/common/select-list.js";
 import { Spinner } from "../components/common/spinner.js";
@@ -89,7 +92,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onSelect, onCancel }) => {
 
 /** Formats the dashboard summary as plain text lines (for non-interactive/test output). */
 export function formatDashboardText(data: DashboardData): string {
-  const modeLabel = data.mode === "plugin" ? "Plugin" : data.mode === "mixed" ? "Mixed" : "Eject";
+  const modeLabel = INSTALL_MODE_LABELS[data.mode];
   const lines = [
     DEFAULT_BRANDING.NAME,
     "",
@@ -122,21 +125,32 @@ export async function showDashboard(
     return null;
   }
 
-  let selectedCommand: string | null = null;
+  // First-wins resolution from the component callbacks, unmounting at the
+  // resolution site (promptConfirm model) — never read closure-mutated flags
+  // after waitUntilExit.
+  const selectedCommand = await new Promise<string | null>((resolve) => {
+    const instance = render(
+      <Dashboard
+        onSelect={(command) => {
+          instance.clear();
+          instance.unmount();
+          resolve(command);
+        }}
+        onCancel={() => {
+          instance.clear();
+          instance.unmount();
+          resolve(null);
+        }}
+      />,
+    );
+    // App exit without a callback (e.g. Ctrl+C) or a render failure counts as
+    // a cancel; resolve is first-wins, so a prior selection is unaffected.
+    instance.waitUntilExit().then(
+      () => resolve(null),
+      () => resolve(null),
+    );
+  });
 
-  const { waitUntilExit, clear } = render(
-    <Dashboard
-      onSelect={(command) => {
-        selectedCommand = command;
-      }}
-      onCancel={() => {
-        selectedCommand = null;
-      }}
-    />,
-  );
-
-  await waitUntilExit();
-  clear();
   process.stdout.write("\x1b[H\x1b[2J\x1b[3J");
 
   return selectedCommand;
@@ -176,7 +190,7 @@ export default class Init extends BaseCommand {
 
     if (await this.showDashboardIfInitialized(projectDir)) return;
 
-    const isGlobalRoot = fs.realpathSync(projectDir) === fs.realpathSync(GLOBAL_INSTALL_ROOT);
+    const isGlobalRoot = isHomeDirectory(projectDir);
     await this.ensureGlobalConfig(isGlobalRoot);
 
     const { unmount, clear: clearSpinner } = render(<Spinner label="Loading skills..." />);
@@ -258,41 +272,25 @@ export default class Init extends BaseCommand {
     globalConfig: ProjectConfig | null,
     isGlobalRoot: boolean,
   ): Promise<WizardResultV2 | null> {
-    let wizardResult: WizardResultV2 | null = null;
-
-    hydrateWizardStore({
-      initialAgents: globalConfig?.selectedAgents,
-      installedSkillIds: globalConfig?.skills?.map((s) => s.id),
-      installedSkillConfigs: globalConfig?.skills,
-      installedAgentConfigs: globalConfig?.agents,
-      isEditingFromGlobalScope: isGlobalRoot,
+    return runWizardSession({
+      hydrate: {
+        initialAgents: globalConfig?.selectedAgents,
+        installedSkillIds: globalConfig?.skills?.map((s) => s.id),
+        installedSkillConfigs: globalConfig?.skills,
+        installedAgentConfigs: globalConfig?.agents,
+        isEditingFromGlobalScope: isGlobalRoot,
+      },
+      props: {
+        version: this.config.version,
+        logo: ASCII_LOGO,
+        initialAgents: globalConfig?.selectedAgents,
+        installedSkillIds: globalConfig?.skills?.map((s) => s.id),
+        projectDir,
+        startupMessages,
+      },
+      onCancel: () => this.log("Setup cancelled"),
+      clearTerminal: () => this.clearTerminal(),
     });
-
-    const { waitUntilExit, clear } = render(
-      <Wizard
-        version={this.config.version}
-        logo={ASCII_LOGO}
-        initialAgents={globalConfig?.selectedAgents}
-        installedSkillIds={globalConfig?.skills?.map((s) => s.id)}
-        projectDir={projectDir}
-        startupMessages={startupMessages}
-        onComplete={(result) => {
-          wizardResult = result;
-        }}
-        onCancel={() => {
-          this.log("Setup cancelled");
-        }}
-      />,
-    );
-
-    await waitUntilExit();
-    clear();
-    this.clearTerminal();
-
-    // TypeScript can't track that onComplete callback mutates wizardResult before waitUntilExit resolves
-    const result = wizardResult as WizardResultV2 | null;
-    if (result?.cancelled) return null;
-    return result;
   }
 
   private async handleInstallation(
@@ -303,8 +301,8 @@ export default class Init extends BaseCommand {
     const projectDir = process.cwd();
     const activeSkills = result.skills.filter((s) => !s.excluded);
     const installMode = deriveInstallMode(activeSkills);
-    const ejectedSkills = activeSkills.filter((s) => s.source === "eject");
-    const pluginSkills = activeSkills.filter((s) => s.source !== "eject");
+    const ejectedSkills = activeSkills.filter((s) => s.source === EJECT_SOURCE);
+    const pluginSkills = activeSkills.filter((s) => s.source !== EJECT_SOURCE);
 
     this.logInstallPlan(installMode, ejectedSkills, pluginSkills);
 
@@ -314,11 +312,8 @@ export default class Init extends BaseCommand {
     // we leave an orphaned half-install with no config.ts to recognise it.
     const resolvedMarketplace =
       pluginSkills.length > 0
-        ? await this.requireMarketplace(sourceResult, "install plugin skills")
+        ? await this.requireMarketplaceOrExit(sourceResult, "install plugin skills")
         : null;
-
-    const copiedSkills = [...ejectedSkills];
-    let pluginModeSucceeded = false;
 
     if (installMode === "eject" || installMode === "mixed") {
       await this.copyEjectSkillsStep(ejectedSkills, projectDir, sourceResult, installMode);
@@ -326,8 +321,10 @@ export default class Init extends BaseCommand {
 
     if (resolvedMarketplace !== null) {
       await this.installPluginsStep(pluginSkills, resolvedMarketplace, projectDir);
-      pluginModeSucceeded = true;
     }
+    // installPluginsStep hard-errors on any failure, so reaching here with a
+    // resolved marketplace means plugin mode fully succeeded.
+    const pluginModeSucceeded = resolvedMarketplace !== null;
 
     try {
       const { configResult, compileResult, projectPaths } = await this.writeConfigAndCompile(
@@ -342,7 +339,7 @@ export default class Init extends BaseCommand {
         projectPaths,
         installMode,
         pluginModeSucceeded,
-        copiedSkills,
+        ejectedSkills,
       );
 
       const permissionWarning = await checkPermissions(projectDir);
@@ -365,10 +362,10 @@ export default class Init extends BaseCommand {
     this.log(
       `Install mode: ${
         installMode === "plugin"
-          ? "Plugin (native install)"
+          ? `${INSTALL_MODE_LABELS.plugin} (native install)`
           : installMode === "mixed"
-            ? `Mixed (${ejectedSkills.length} eject, ${pluginSkills.length} plugin)`
-            : "Eject (copy to .claude/skills/)"
+            ? `${INSTALL_MODE_LABELS.mixed} (${ejectedSkills.length} eject, ${pluginSkills.length} plugin)`
+            : `${INSTALL_MODE_LABELS.eject} (copy to .claude/skills/)`
       }`,
     );
   }
@@ -416,10 +413,9 @@ export default class Init extends BaseCommand {
     // BEFORE `writeConfigAndCompile` writes config.ts with orphan entries claiming
     // the skill is installed. Matches the no-plugin-to-eject-fallback rule.
     if (pluginResult.failed.length > 0) {
-      this.error(
-        `Failed to install ${pluginResult.failed.length} plugin skill(s). Plugin install intent could not be honored. Verify the skill id matches the marketplace, re-run with --refresh to update the marketplace, or switch affected skills to eject mode.`,
-        { exit: EXIT_CODES.ERROR },
-      );
+      this.error(pluginInstallFailureError(pluginResult.failed.length), {
+        exit: EXIT_CODES.ERROR,
+      });
     }
 
     this.log(`Installed ${pluginResult.installed.length} skill plugins\n`);
@@ -431,22 +427,18 @@ export default class Init extends BaseCommand {
    * fall back to eject or skip. Call BEFORE any filesystem mutation so that a
    * failure leaves no partial state on disk.
    */
-  private async requireMarketplace(
+  private async requireMarketplaceOrExit(
     sourceResult: SourceLoadResult,
     purpose: string,
   ): Promise<string> {
-    const mpResult = await ensureMarketplace(sourceResult);
-    if (!mpResult.marketplace) {
-      this.error(
-        `Cannot ${purpose}: marketplace could not be resolved from source '${sourceResult.sourceConfig.source}'. ` +
-          `Plugin install mode requires a marketplace — fix the source or re-run with all skills in eject mode.`,
-        { exit: EXIT_CODES.ERROR },
-      );
+    const required = await requireMarketplace(sourceResult, purpose);
+    if (!required.ok) {
+      this.error(required.error, { exit: EXIT_CODES.ERROR });
     }
-    if (mpResult.registered) {
-      this.log(`Registering marketplace "${mpResult.marketplace}"...`);
+    if (required.registered) {
+      this.log(`Registering marketplace "${required.marketplace}"...`);
     }
-    return mpResult.marketplace;
+    return required.marketplace;
   }
 
   private async writeConfigAndCompile(
@@ -456,7 +448,7 @@ export default class Init extends BaseCommand {
     installMode: InstallMode,
   ): Promise<{
     configResult: Awaited<ReturnType<typeof writeProjectConfig>>;
-    compileResult: Awaited<ReturnType<typeof compileAgents>>;
+    compileResult: CompilationResult;
     projectPaths: ReturnType<typeof resolveInstallPaths>;
   }> {
     this.log("Generating configuration...");
@@ -479,45 +471,12 @@ export default class Init extends BaseCommand {
     const agentDefs = await loadAgentDefs();
     const { allSkills } = await discoverInstalledSkills(cwd);
     const agentScopeMap = buildAgentScopeMap(configResult.config);
-    const isProjectContext = fs.realpathSync(cwd) !== fs.realpathSync(os.homedir());
-
-    let compileResult: Awaited<ReturnType<typeof compileAgents>>;
-    if (isProjectContext) {
-      // Dual-pass: compile global agents from home dir, project agents from cwd
-      const globalPaths = resolveInstallPaths(os.homedir(), "global");
-      const globalResult = await compileAgents({
-        projectDir: os.homedir(),
-        sourcePath: agentDefs.sourcePath,
-        skills: allSkills,
-        installMode,
-        agentScopeMap,
-        outputDir: globalPaths.agentsDir,
-        scopeFilter: "global",
-      });
-      const projectResult = await compileAgents({
-        projectDir: cwd,
-        sourcePath: agentDefs.sourcePath,
-        skills: allSkills,
-        installMode,
-        agentScopeMap,
-        outputDir: projectPaths.agentsDir,
-        scopeFilter: "project",
-      });
-      compileResult = {
-        compiled: [...globalResult.compiled, ...projectResult.compiled],
-        failed: [...globalResult.failed, ...projectResult.failed],
-        warnings: [...globalResult.warnings, ...projectResult.warnings],
-      };
-    } else {
-      compileResult = await compileAgents({
-        projectDir: cwd,
-        sourcePath: agentDefs.sourcePath,
-        skills: allSkills,
-        installMode,
-        agentScopeMap,
-        outputDir: projectPaths.agentsDir,
-      });
-    }
+    const compileResult = await compileAgentsAllScopes({
+      projectDir: cwd,
+      sourcePath: agentDefs.sourcePath,
+      skills: allSkills,
+      agentScopeMap,
+    });
     this.log(`Compiled ${compileResult.compiled.length} agents\n`);
 
     return { configResult, compileResult, projectPaths };
@@ -525,7 +484,7 @@ export default class Init extends BaseCommand {
 
   private reportSuccess(
     configResult: Awaited<ReturnType<typeof writeProjectConfig>>,
-    compileResult: Awaited<ReturnType<typeof compileAgents>>,
+    compileResult: CompilationResult,
     projectPaths: ReturnType<typeof resolveInstallPaths>,
     installMode: InstallMode,
     pluginModeSucceeded: boolean,
@@ -563,7 +522,7 @@ export default class Init extends BaseCommand {
 export type DashboardData = {
   skillCount: number;
   agentCount: number;
-  mode: string;
+  mode: InstallMode;
   source?: string;
 };
 

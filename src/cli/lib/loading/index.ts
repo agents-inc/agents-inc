@@ -1,6 +1,7 @@
 export {
   parseFrontmatter,
   loadAllAgents,
+  loadMergedAgents,
   loadProjectAgents,
   loadSkillsByIds,
   loadPluginSkills,

@@ -18,13 +18,21 @@ import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
   DIRS,
+  EJECT_SOURCE,
   PROJECT_ROOT,
   STANDARD_FILES,
   STANDARD_DIRS,
 } from "../consts";
 import { resolveClaudeMd } from "./resolver";
 import { validateCompiledAgent, printOutputValidationResult } from "./output-validator";
-import type { AgentConfig, AgentName, CompiledAgentData, CompileContext, Skill } from "../types";
+import type {
+  AgentConfig,
+  AgentName,
+  CompiledAgentData,
+  CompileContext,
+  PluginSkillRef,
+  Skill,
+} from "../types";
 import { typedEntries } from "../utils/typed-object";
 
 /** Pattern matching Liquid template delimiters that could enable template injection */
@@ -43,6 +51,7 @@ export function sanitizeLiquidSyntax<T extends string>(value: T, fieldName: stri
   LIQUID_SYNTAX_PATTERN.lastIndex = 0;
   const sanitized = value.replace(LIQUID_SYNTAX_PATTERN, "");
   warn(`Stripped Liquid template syntax from '${fieldName}' — possible template injection attempt`);
+  // Boundary cast: .replace() widens the branded string T; stripping characters keeps it in T's domain
   return sanitized as T;
 }
 
@@ -425,4 +434,80 @@ export async function removeCompiledOutputDirs(outputDir: string): Promise<void>
   await remove(path.join(outputDir, "agents"));
   await remove(path.join(outputDir, "skills"));
   await remove(path.join(outputDir, "commands"));
+}
+
+/**
+ * D-217: per-skill pluginRef decision. A skill renders as `${id}:${id}` only
+ * when it has an explicit non-eject source on its SkillReference — i.e. it was
+ * installed from a marketplace. `undefined` source (user-authored local skills
+ * with no SkillConfig entry) and `"eject"` both fall through to bare id.
+ */
+function derivePluginRef(skill: Skill): PluginSkillRef | undefined {
+  if (skill.source === undefined || skill.source === EJECT_SOURCE) return undefined;
+  return `${skill.id}:${skill.id}` as const;
+}
+
+export async function compileAgentForPlugin(
+  name: AgentName,
+  agent: AgentConfig,
+  fallbackRoot: string,
+  engine: Liquid,
+): Promise<string> {
+  verbose(`Compiling agent: ${name}`);
+
+  // Use agent's sourceRoot if available (for multi-source loading), otherwise fallback
+  const agentSourceRoot = agent.sourceRoot || fallbackRoot;
+  // Use agent's agentBaseDir if available (for project agents in .claude-src/agents/)
+  const agentBaseDir = agent.agentBaseDir || DIRS.agents;
+  const agentDir = path.join(agentSourceRoot, agentBaseDir, agent.path || name);
+
+  const identity = await readFile(path.join(agentDir, STANDARD_FILES.IDENTITY_MD));
+  const playbook = await readFile(path.join(agentDir, STANDARD_FILES.PLAYBOOK_MD));
+  const criticalRequirementsTop = await readFileOptional(
+    path.join(agentDir, STANDARD_FILES.CRITICAL_REQUIREMENTS_MD),
+    "",
+  );
+  const criticalReminders = await readFileOptional(
+    path.join(agentDir, STANDARD_FILES.CRITICAL_REMINDERS_MD),
+    "",
+  );
+
+  const agentPath = agent.path || name;
+  const category = agentPath.split("/")[0];
+  const categoryDir = path.join(agentSourceRoot, agentBaseDir, category);
+
+  const output =
+    (await readFileOptional(path.join(agentDir, STANDARD_FILES.OUTPUT_MD), "")) ||
+    (await readFileOptional(path.join(categoryDir, STANDARD_FILES.OUTPUT_MD), ""));
+
+  // D-217: per-skill pluginRef attachment. Each skill's own `source` decides
+  // whether it renders as `${id}:${id}` (plugin-installed) or bare id (ejected).
+  // This correctly handles mixed-mode agents where some skills are plugin and
+  // others are ejected. Missing `source` (user-authored local skills with no
+  // SkillConfig entry) falls through to bare id — the expected case, not a
+  // silent fallback.
+  const skills = agent.skills.map((s) => ({ ...s, pluginRef: derivePluginRef(s) }));
+
+  const preloadedSkills = skills.filter((s) => s.preloaded);
+  const dynamicSkills = skills.filter((s) => !s.preloaded);
+  const preloadedSkillIds = preloadedSkills.map((s) => s.pluginRef ?? s.id);
+
+  verbose(
+    `Skills for ${name}: ${preloadedSkills.length} preloaded, ${dynamicSkills.length} dynamic`,
+  );
+
+  const data: CompiledAgentData = {
+    agent,
+    identity,
+    playbook,
+    output,
+    criticalRequirementsTop,
+    criticalReminders,
+    skills,
+    preloadedSkills,
+    dynamicSkills,
+    preloadedSkillIds,
+  };
+
+  return engine.renderFile("agent", sanitizeCompiledAgentData(data));
 }

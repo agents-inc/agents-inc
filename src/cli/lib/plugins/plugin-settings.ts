@@ -97,6 +97,19 @@ export async function getEnabledPluginKeys(projectDir: string): Promise<PluginKe
   }
 }
 
+type RegisteredInstallation = { scope: string; projectPath?: string; installPath: string };
+
+/** This project's own project-scoped installation wins; otherwise the user-scoped one. */
+function pickInstallation(
+  installations: RegisteredInstallation[],
+  projectDir: string,
+): RegisteredInstallation | undefined {
+  return (
+    installations.find((i) => i.scope === "project" && i.projectPath === projectDir) ??
+    installations.find((i) => i.scope === "user")
+  );
+}
+
 /**
  * Resolve install paths for the given plugin keys from global registry
  */
@@ -126,46 +139,24 @@ export async function resolvePluginInstallPaths(
     }
 
     const registry = result.data;
-    const resolvedPaths: ResolvedPlugin[] = [];
 
-    for (const pluginKey of pluginKeys) {
+    return pluginKeys.flatMap((pluginKey) => {
       const installations = registry.plugins[pluginKey];
-
       if (!installations || installations.length === 0) {
         verbose(`Plugin '${pluginKey}' not found in registry`);
-        continue;
+        return [];
       }
 
-      // Find project-scoped installation matching this project
-      const projectInstall = installations.find(
-        (install) => install.scope === "project" && install.projectPath === projectDir,
-      );
-
-      if (projectInstall) {
-        resolvedPaths.push({
-          pluginKey,
-          installPath: projectInstall.installPath,
-        });
-        verbose(`Resolved '${pluginKey}' to '${projectInstall.installPath}'`);
-        continue;
+      const picked = pickInstallation(installations, projectDir);
+      if (!picked) {
+        verbose(`No matching installation found for '${pluginKey}'`);
+        return [];
       }
 
-      // Fallback to user-scoped installation
-      const userInstall = installations.find((install) => install.scope === "user");
-
-      if (userInstall) {
-        resolvedPaths.push({
-          pluginKey,
-          installPath: userInstall.installPath,
-        });
-        verbose(`Resolved '${pluginKey}' to '${userInstall.installPath}' (user scope)`);
-        continue;
-      }
-
-      verbose(`No matching installation found for '${pluginKey}'`);
-    }
-
-    return resolvedPaths;
+      const scopeSuffix = picked.scope === "user" ? " (user scope)" : "";
+      verbose(`Resolved '${pluginKey}' to '${picked.installPath}'${scopeSuffix}`);
+      return [{ pluginKey, installPath: picked.installPath }];
+    });
   } catch (error) {
     verbose(`Failed to read plugin registry: ${getErrorMessage(error)}`);
     return [];
@@ -181,17 +172,19 @@ export async function getVerifiedPluginInstallPaths(projectDir: string): Promise
   const resolvedPaths = await resolvePluginInstallPaths(enabledKeys, projectDir);
 
   // Filter out paths that don't exist on disk
-  const verified: ResolvedPlugin[] = [];
-
-  for (const { pluginKey, installPath } of resolvedPaths) {
-    const pluginJsonPath = path.join(installPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
-
-    if (await fileExists(pluginJsonPath)) {
-      verified.push({ pluginKey, installPath });
-    } else {
-      verbose(`Plugin '${pluginKey}' manifest does not exist at: '${pluginJsonPath}'`);
-    }
-  }
+  const checks = await Promise.all(
+    resolvedPaths.map(async ({ pluginKey, installPath }) => {
+      const pluginJsonPath = path.join(installPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
+      const manifestExists = await fileExists(pluginJsonPath);
+      if (!manifestExists) {
+        verbose(`Plugin '${pluginKey}' manifest does not exist at: '${pluginJsonPath}'`);
+      }
+      return { pluginKey, installPath, manifestExists };
+    }),
+  );
+  const verified: ResolvedPlugin[] = checks
+    .filter((c) => c.manifestExists)
+    .map(({ pluginKey, installPath }) => ({ pluginKey, installPath }));
 
   verbose(`Verified ${verified.length} plugin install paths`);
   return verified;

@@ -1,7 +1,7 @@
 import { readdir } from "fs/promises";
+import type { Dirent } from "fs";
 
 import { DEFAULT_DISPLAY_VERSION, DEFAULT_PLUGIN_NAME } from "../../consts";
-import { directoryExists } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { loadProjectConfig } from "../configuration";
 import { detectInstallation, type InstallMode } from "../installation";
@@ -57,51 +57,24 @@ export function formatPluginDisplay(info: PluginInfo): string {
 
 export async function getInstallationInfo(): Promise<InstallationInfo | null> {
   const installation = await detectInstallation();
+  if (!installation) return null;
 
-  if (!installation) {
-    return null;
-  }
-
-  let skillCount = 0;
-  let agentCount = 0;
-  let name = DEFAULT_PLUGIN_NAME;
-  let version = DEFAULT_DISPLAY_VERSION;
-
-  if (installation.mode === "plugin") {
-    // Plugin mode: discover skills via settings.json and global cache
-    try {
-      const pluginSkills = await discoverAllPluginSkills(installation.projectDir);
-      skillCount = Object.keys(pluginSkills).length;
-    } catch {
-      // Ignore errors
-    }
-  } else if (await directoryExists(installation.skillsDir)) {
-    try {
-      const skills = await readdir(installation.skillsDir, {
-        withFileTypes: true,
-      });
-      skillCount = skills.filter((s) => s.isDirectory()).length;
-    } catch {
-      // Ignore errors
-    }
-  }
-
-  if (await directoryExists(installation.agentsDir)) {
-    try {
-      const agents = await readdir(installation.agentsDir, {
-        withFileTypes: true,
-      });
-      agentCount = agents.filter((a) => a.isFile() && a.name.endsWith(".md")).length;
-    } catch {
-      // Ignore errors
-    }
-  }
+  const skillCount =
+    installation.mode === "plugin"
+      ? await countPluginSkills(installation.projectDir)
+      : await countDirEntries(installation.skillsDir, (entry) => entry.isDirectory());
+  const agentCount = await countDirEntries(
+    installation.agentsDir,
+    (entry) => entry.isFile() && entry.name.endsWith(".md"),
+  );
 
   const loaded = await loadProjectConfig(installation.projectDir);
-  if (loaded?.config) {
-    name = loaded.config.name || DEFAULT_PLUGIN_NAME;
-    version = installation.mode === "eject" ? "eject" : "plugin";
-  }
+  const name = loaded?.config?.name || DEFAULT_PLUGIN_NAME;
+  const version = loaded?.config
+    ? installation.mode === "eject"
+      ? "eject"
+      : "plugin"
+    : DEFAULT_DISPLAY_VERSION;
 
   return {
     mode: installation.mode,
@@ -113,6 +86,25 @@ export async function getInstallationInfo(): Promise<InstallationInfo | null> {
     agentsDir: installation.agentsDir,
     skillsDir: installation.skillsDir,
   };
+}
+
+/** Counts entries in `dir` matching `pred`; 0 when the directory is missing or unreadable. */
+async function countDirEntries(dir: string, pred: (entry: Dirent) => boolean): Promise<number> {
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    return entries.filter(pred).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Counts skills discoverable via settings.json and the global plugin cache; 0 on failure. */
+async function countPluginSkills(projectDir: string): Promise<number> {
+  try {
+    return Object.keys(await discoverAllPluginSkills(projectDir)).length;
+  } catch {
+    return 0;
+  }
 }
 
 export function formatInstallationDisplay(info: InstallationInfo): string {

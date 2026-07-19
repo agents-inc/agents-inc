@@ -2,6 +2,7 @@ export {
   type InstallMode,
   type Installation,
   detectGlobalInstallation,
+  INSTALL_MODE_LABELS,
   detectInstallation,
   detectProjectInstallation,
   getInstallationOrThrow,
@@ -17,13 +18,15 @@ export {
   writeConfigFile,
   writeScopedConfigs,
   setConfigMetadata,
-  resolveInstallPaths,
   buildEjectSkillsMap,
   buildCompileAgents,
   buildAgentScopeMap,
   deregisterProjectPath,
   propagateGlobalChangesToProjects,
 } from "./local-installer";
+
+export { isHomeDirectory } from "./is-home-directory";
+export { installBaseDir, resolveInstallPaths, type InstallPaths } from "./install-base-dir";
 
 export {
   type SkillMigration,

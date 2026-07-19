@@ -38,8 +38,7 @@ export async function addSource(
     throw new Error(`Source "${name}" already exists`);
   }
 
-  sources.push({ name, url });
-  const updated: Partial<ProjectConfig> = { ...config, sources };
+  const updated: Partial<ProjectConfig> = { ...config, sources: [...sources, { name, url }] };
   await writeConfigFromPartial(projectDir, updated);
 
   verbose(`Added source "${name}" with ${skillCount} skills`);
@@ -75,38 +74,36 @@ export async function getSourceSummary(projectDir: string): Promise<SourceSummar
   const config = (await loadProjectSourceConfig(projectDir)) ?? {};
 
   const sources: Array<SourceEntry & { enabled: boolean }> = [
-    {
-      name: DEFAULT_SOURCE_NAME,
-      url: config.source ?? DEFAULT_SOURCE,
-      enabled: true,
-    },
+    { name: DEFAULT_SOURCE_NAME, url: config.source ?? DEFAULT_SOURCE, enabled: true },
+    ...(config.sources ?? []).map((source) => ({ ...source, enabled: true })),
   ];
 
-  if (config.sources) {
-    for (const source of config.sources) {
-      sources.push({ ...source, enabled: true });
-    }
-  }
-
-  let localSkillCount = 0;
-  try {
-    const localResult = await discoverLocalSkills(projectDir);
-    if (localResult) {
-      localSkillCount = localResult.skills.length;
-    }
-  } catch {
-    verbose("Failed to discover local skills for source summary");
-  }
-
-  let pluginSkillCount = 0;
-  try {
-    const discoveredSkills = await discoverAllPluginSkills(projectDir);
-    pluginSkillCount = Object.keys(discoveredSkills).length;
-  } catch {
-    verbose("Failed to discover plugin skills for source summary");
-  }
+  const [localSkillCount, pluginSkillCount] = await Promise.all([
+    countLocalSkills(projectDir),
+    countPluginSkills(projectDir),
+  ]);
 
   return { sources, localSkillCount, pluginSkillCount };
+}
+
+async function countLocalSkills(projectDir: string): Promise<number> {
+  try {
+    const localResult = await discoverLocalSkills(projectDir);
+    return localResult ? localResult.skills.length : 0;
+  } catch {
+    verbose("Failed to discover local skills for source summary");
+    return 0;
+  }
+}
+
+async function countPluginSkills(projectDir: string): Promise<number> {
+  try {
+    const discoveredSkills = await discoverAllPluginSkills(projectDir);
+    return Object.keys(discoveredSkills).length;
+  } catch {
+    verbose("Failed to discover plugin skills for source summary");
+    return 0;
+  }
 }
 
 /** Write a partial config to disk. Requires `name` to be present (config must already exist). */

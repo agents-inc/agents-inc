@@ -1,4 +1,5 @@
 import os from "os";
+import { unique } from "remeda";
 import path from "path";
 import {
   DEFAULT_BRANDING,
@@ -6,6 +7,7 @@ import {
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
   SKILLS_DIR_PATH,
+  LOCAL_PSEUDO_CATEGORY,
 } from "../../consts";
 import { defaultCategories } from "../configuration/default-categories";
 import { defaultRules } from "../configuration/default-rules";
@@ -27,7 +29,7 @@ import type {
 } from "../../types";
 import { fileExists } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
-import { typedEntries, typedKeys } from "../../utils/typed-object";
+import { typedEntries, typedFromEntries, typedKeys } from "../../utils/typed-object";
 import {
   DEFAULT_SOURCE,
   isLocalSource,
@@ -78,58 +80,16 @@ export async function loadSkillsMatrixFromSource(
 
   verbose(`Loading skills from source: ${source}`);
 
-  let result: SourceLoadResult;
-
-  if (source === DEFAULT_SOURCE && !devMode) {
-    // Default source: use pre-computed BUILT_IN_MATRIX instead of loading from disk.
-    // Still resolve sourcePath via fetchFromSource so skill files can be read
-    // (e.g. for eject-mode copy). The fetch is cached, so no network call if
-    // the clone already exists.
-    const fetchResult = await fetchFromSource(source, { forceRefresh });
-    result = {
-      matrix: {
-        ...BUILT_IN_MATRIX,
-        skills: { ...BUILT_IN_MATRIX.skills },
-        categories: { ...BUILT_IN_MATRIX.categories },
-        suggestedStacks: [...BUILT_IN_MATRIX.suggestedStacks],
-      },
-      sourceConfig,
-      sourcePath: fetchResult.path,
-      isLocal: false,
-      marketplace: sourceConfig.marketplace,
-      marketplaceDisplayName: DEFAULT_BRANDING.NAME,
-    };
-  } else {
-    const isLocal = isLocalSource(source) || devMode === true;
-
-    if (isLocal) {
-      result = await loadFromLocal(source, sourceConfig);
-    } else {
-      result = await loadFromRemote(source, sourceConfig, forceRefresh);
-    }
-  }
+  const result = await resolveBaseResult(source, sourceConfig, devMode, forceRefresh);
 
   const resolvedProjectDir = projectDir || process.cwd();
 
   // Load global local skills first, then project local skills — project wins on conflict
   const homeDir = os.homedir();
   if (resolvedProjectDir !== homeDir) {
-    const globalLocalSkillsResult = await discoverLocalSkills(homeDir);
-    if (globalLocalSkillsResult && globalLocalSkillsResult.skills.length > 0) {
-      verbose(
-        `Found ${globalLocalSkillsResult.skills.length} global local skill(s) in ${globalLocalSkillsResult.localSkillsPath}`,
-      );
-      result.matrix = mergeLocalSkillsIntoMatrix(result.matrix, globalLocalSkillsResult);
-    }
+    result.matrix = await mergeDiscoveredLocalSkills(result.matrix, homeDir, "global");
   }
-
-  const projectLocalSkillsResult = await discoverLocalSkills(resolvedProjectDir);
-  if (projectLocalSkillsResult && projectLocalSkillsResult.skills.length > 0) {
-    verbose(
-      `Found ${projectLocalSkillsResult.skills.length} project local skill(s) in ${projectLocalSkillsResult.localSkillsPath}`,
-    );
-    result.matrix = mergeLocalSkillsIntoMatrix(result.matrix, projectLocalSkillsResult);
-  }
+  result.matrix = await mergeDiscoveredLocalSkills(result.matrix, resolvedProjectDir, "project");
 
   if (!options.skipExtraSources) {
     await loadSkillsFromAllSources(
@@ -148,17 +108,81 @@ export async function loadSkillsMatrixFromSource(
   return result;
 }
 
+/**
+ * Resolves the base matrix for the configured source: the pre-computed
+ * BUILT_IN_MATRIX for the default source, otherwise a local or remote load.
+ */
+async function resolveBaseResult(
+  source: string,
+  sourceConfig: SourceLoadResult["sourceConfig"],
+  devMode: boolean,
+  forceRefresh: boolean,
+): Promise<SourceLoadResult> {
+  if (source === DEFAULT_SOURCE && !devMode) {
+    // Default source: use pre-computed BUILT_IN_MATRIX instead of loading from disk.
+    // Still resolve sourcePath via fetchFromSource so skill files can be read
+    // (e.g. for eject-mode copy). The fetch is cached, so no network call if
+    // the clone already exists.
+    const fetchResult = await fetchFromSource(source, { forceRefresh });
+    return {
+      matrix: {
+        ...BUILT_IN_MATRIX,
+        skills: { ...BUILT_IN_MATRIX.skills },
+        categories: { ...BUILT_IN_MATRIX.categories },
+        suggestedStacks: [...BUILT_IN_MATRIX.suggestedStacks],
+      },
+      sourceConfig,
+      sourcePath: fetchResult.path,
+      isLocal: false,
+      marketplace: sourceConfig.marketplace,
+      marketplaceDisplayName: DEFAULT_BRANDING.NAME,
+    };
+  }
+
+  const isLocal = isLocalSource(source) || devMode === true;
+  return isLocal
+    ? loadFromLocal(source, sourceConfig)
+    : loadFromRemote(source, sourceConfig, forceRefresh);
+}
+
+/** Merges relationship rule sets: source rules first, so they win first-match lookups. */
+function mergeRelationships(
+  source: RelationshipDefinitions,
+  defaults: RelationshipDefinitions,
+): RelationshipDefinitions {
+  return {
+    conflicts: [...source.conflicts, ...defaults.conflicts],
+    discourages: [...source.discourages, ...defaults.discourages],
+    recommends: [...source.recommends, ...defaults.recommends],
+    requires: [...source.requires, ...defaults.requires],
+    alternatives: [...source.alternatives, ...defaults.alternatives],
+    compatibleWith: [...(source.compatibleWith ?? []), ...(defaults.compatibleWith ?? [])],
+  };
+}
+
+/** Merges any discovered local skills for `dir` into the matrix, logging the find. */
+async function mergeDiscoveredLocalSkills(
+  matrix: MergedSkillsMatrix,
+  dir: string,
+  label: "global" | "project",
+): Promise<MergedSkillsMatrix> {
+  const discovered = await discoverLocalSkills(dir);
+  if (!discovered || discovered.skills.length === 0) return matrix;
+  verbose(
+    `Found ${discovered.skills.length} ${label} local skill(s) in ${discovered.localSkillsPath}`,
+  );
+  return mergeLocalSkillsIntoMatrix(matrix, discovered);
+}
+
 async function loadFromLocal(
   source: string,
   sourceConfig: ResolvedConfig,
 ): Promise<SourceLoadResult> {
-  let skillsPath: string;
-
-  if (isLocalSource(source)) {
-    skillsPath = path.isAbsolute(source) ? source : path.resolve(process.cwd(), source);
-  } else {
-    skillsPath = PROJECT_ROOT;
-  }
+  const skillsPath = !isLocalSource(source)
+    ? PROJECT_ROOT
+    : path.isAbsolute(source)
+      ? source
+      : path.resolve(process.cwd(), source);
 
   verbose(`Loading skills from local path: ${skillsPath}`);
 
@@ -216,55 +240,33 @@ async function loadAndMergeFromBasePath(basePath: string): Promise<MergedSkillsM
   const skillsDirRelPath = sourceProjectConfig?.skillsDir ?? SKILLS_DIR_PATH;
   const stacksRelFile = sourceProjectConfig?.stacksFile;
 
-  let categories: CategoryMap = defaultCategories;
-  let relationships: RelationshipDefinitions = defaultRules.relationships;
-
   // Load source categories and rules (if they exist)
   const sourceCategoriesPath = path.join(basePath, SKILL_CATEGORIES_PATH);
   const sourceRulesPath = path.join(basePath, SKILL_RULES_PATH);
   const hasSourceCategories = await fileExists(sourceCategoriesPath);
   const hasSourceRules = await fileExists(sourceRulesPath);
 
+  const sourceCategories = hasSourceCategories
+    ? await loadSkillCategories(sourceCategoriesPath)
+    : undefined;
+  if (sourceCategories) {
+    verbose(
+      `Loaded source categories: ${sourceCategoriesPath} (${typedKeys(sourceCategories).length} categories)`,
+    );
+  }
+  const categories: CategoryMap = sourceCategories
+    ? { ...defaultCategories, ...sourceCategories }
+    : defaultCategories;
+
+  const sourceRules = hasSourceRules ? await loadSkillRules(sourceRulesPath) : undefined;
+  if (sourceRules) {
+    verbose(`Loaded source rules: ${sourceRulesPath}`);
+  }
+  const relationships: RelationshipDefinitions = sourceRules
+    ? mergeRelationships(sourceRules.relationships, defaultRules.relationships)
+    : defaultRules.relationships;
+
   if (hasSourceCategories || hasSourceRules) {
-    if (hasSourceCategories) {
-      const sourceCategories = await loadSkillCategories(sourceCategoriesPath);
-      categories = { ...defaultCategories, ...sourceCategories };
-      verbose(
-        `Loaded source categories: ${sourceCategoriesPath} (${typedKeys(sourceCategories).length} categories)`,
-      );
-    }
-
-    if (hasSourceRules) {
-      const sourceRules = await loadSkillRules(sourceRulesPath);
-
-      // Merge relationships: source rules first (override defaults for first-match lookups)
-      relationships = {
-        conflicts: [
-          ...sourceRules.relationships.conflicts,
-          ...defaultRules.relationships.conflicts,
-        ],
-        discourages: [
-          ...sourceRules.relationships.discourages,
-          ...defaultRules.relationships.discourages,
-        ],
-        recommends: [
-          ...sourceRules.relationships.recommends,
-          ...defaultRules.relationships.recommends,
-        ],
-        requires: [...sourceRules.relationships.requires, ...defaultRules.relationships.requires],
-        alternatives: [
-          ...sourceRules.relationships.alternatives,
-          ...defaultRules.relationships.alternatives,
-        ],
-        compatibleWith: [
-          ...(sourceRules.relationships.compatibleWith ?? []),
-          ...(defaultRules.relationships.compatibleWith ?? []),
-        ],
-      };
-
-      verbose(`Loaded source rules: ${sourceRulesPath}`);
-    }
-
     verbose(`Matrix merged: CLI (${typedKeys(defaultCategories).length} categories) + source`);
   } else {
     verbose(`Matrix from CLI only (source has no categories/rules files)`);
@@ -288,15 +290,15 @@ async function loadAndMergeFromBasePath(basePath: string): Promise<MergedSkillsM
 
   // Collect explicit domain definitions from agent metadata.yaml files
   const agents = await loadAllAgents(basePath);
-  const agentDefinedDomains: Partial<Record<AgentName, Domain>> = {};
-  for (const [agentId, agentDef] of typedEntries<AgentName, AgentDefinition>(agents)) {
-    if (agentDef.domain) {
-      agentDefinedDomains[agentId] = agentDef.domain;
-    }
-  }
-  if (typedKeys(agentDefinedDomains).length > 0) {
+  const agentDefinedDomains = typedFromEntries(
+    typedEntries<AgentName, AgentDefinition>(agents).flatMap(([agentId, agentDef]) =>
+      agentDef.domain ? [[agentId, agentDef.domain] as const] : [],
+    ),
+  );
+  const domainCount = typedKeys(agentDefinedDomains).length;
+  if (domainCount > 0) {
     mergedMatrix.agentDefinedDomains = agentDefinedDomains;
-    verbose(`Loaded ${typedKeys(agentDefinedDomains).length} agent domain definition(s)`);
+    verbose(`Loaded ${domainCount} agent domain definition(s)`);
   }
 
   return mergedMatrix;
@@ -304,34 +306,23 @@ async function loadAndMergeFromBasePath(basePath: string): Promise<MergedSkillsM
 
 // Stack values are already skill IDs — no alias resolution needed
 export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
-  const allSkillIds: SkillId[] = [];
-  const seenSkillIds = new Set<SkillId>();
-  const skills: Partial<Record<AgentName, Partial<Record<Category, SkillId[]>>>> = {};
-
-  for (const agentId of typedKeys<AgentName>(stack.agents)) {
+  const agentConfigs = typedKeys<AgentName>(stack.agents).flatMap((agentId) => {
     const agentConfig = stack.agents[agentId];
-    if (!agentConfig) continue;
+    return agentConfig ? [{ agentId, agentConfig }] : [];
+  });
 
-    const skillRefs = resolveAgentConfigToSkills(agentConfig);
-    const agentSkills: Partial<Record<Category, SkillId[]>> = {};
+  const skills = typedFromEntries(
+    agentConfigs.map(
+      ({ agentId, agentConfig }) => [agentId, resolveStackAgentSkills(agentConfig)] as const,
+    ),
+  );
 
-    for (const [category, assignments] of typedEntries<Category, SkillAssignment[]>(agentConfig)) {
-      if (!assignments || assignments.length === 0) continue;
-      const validIds = assignments.filter((a) => a.id in currentMatrix.skills).map((a) => a.id);
-      if (validIds.length > 0) {
-        agentSkills[category] = validIds;
-      }
-    }
-
-    skills[agentId] = agentSkills;
-
-    for (const ref of skillRefs) {
-      if (!seenSkillIds.has(ref.id)) {
-        seenSkillIds.add(ref.id);
-        allSkillIds.push(ref.id);
-      }
-    }
-  }
+  // First-seen order across agents, matching the historical seen-Set accumulation
+  const allSkillIds = unique(
+    agentConfigs.flatMap(({ agentConfig }) =>
+      resolveAgentConfigToSkills(agentConfig).map((ref) => ref.id),
+    ),
+  );
 
   const agentCount = typedKeys<AgentName>(stack.agents).length;
   verbose(`Stack '${stack.id}' has ${allSkillIds.length} skills from ${agentCount} agents`);
@@ -344,6 +335,21 @@ export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
     allSkillIds,
     philosophy: stack.philosophy || "",
   };
+}
+
+/** Per-category skill ids for one stack agent, keeping only ids present in the current matrix. */
+function resolveStackAgentSkills(
+  agentConfig: Partial<Record<Category, SkillAssignment[]>>,
+): Partial<Record<Category, SkillId[]>> {
+  const byCategory = typedEntries<Category, SkillAssignment[]>(agentConfig)
+    .map(([category, assignments]) => ({
+      category,
+      validIds: (assignments ?? []).filter((a) => a.id in currentMatrix.skills).map((a) => a.id),
+    }))
+    .filter(({ validIds }) => validIds.length > 0);
+  return typedFromEntries(
+    byCategory.map(({ category, validIds }) => [category, validIds] as const),
+  );
 }
 
 /**
@@ -405,7 +411,7 @@ export function mergeLocalSkillsIntoMatrix(
     // Ensure the skill's category exists in matrix.categories so that
     // config-types generation can discover its domain and category.
     // Skip "local" — it is a pseudo-category, not a real Category union member.
-    if (category !== "local" && !matrix.categories[category] && metadata.domain) {
+    if (category !== LOCAL_PSEUDO_CATEGORY && !matrix.categories[category] && metadata.domain) {
       matrix.categories[category] = {
         id: category,
         displayName: category,

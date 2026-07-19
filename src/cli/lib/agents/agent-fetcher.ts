@@ -24,7 +24,6 @@ export async function getLocalAgentDefinitions(
   options: AgentDefinitionOptions = {},
 ): Promise<AgentSourcePaths> {
   const agentsDir = path.join(PROJECT_ROOT, DIRS.agents);
-  let templatesDir = path.join(PROJECT_ROOT, DIRS.templates);
 
   if (!(await directoryExists(agentsDir))) {
     throw new Error(
@@ -32,13 +31,17 @@ export async function getLocalAgentDefinitions(
     );
   }
 
-  if (options.projectDir) {
-    const localTemplatesDir = path.join(options.projectDir, CLAUDE_DIR, "templates");
-    if (await directoryExists(localTemplatesDir)) {
-      verbose(`Using local templates from: ${localTemplatesDir}`);
-      templatesDir = localTemplatesDir;
-    }
+  const localTemplatesDir = options.projectDir
+    ? path.join(options.projectDir, CLAUDE_DIR, "templates")
+    : undefined;
+  const useLocalTemplates =
+    localTemplatesDir !== undefined && (await directoryExists(localTemplatesDir));
+  if (useLocalTemplates) {
+    verbose(`Using local templates from: ${localTemplatesDir}`);
   }
+  const templatesDir = useLocalTemplates
+    ? localTemplatesDir
+    : path.join(PROJECT_ROOT, DIRS.templates);
 
   if (!(await directoryExists(templatesDir))) {
     verbose(`Templates directory not found: ${templatesDir}`);
@@ -65,14 +68,13 @@ export async function fetchAgentDefinitionsFromRemote(
     subdir: "",
   });
 
-  let agentsDirRelPath = options.agentsDir;
-  if (!agentsDirRelPath) {
-    const sourceProjectConfig = await loadProjectSourceConfig(result.path);
-    agentsDirRelPath = sourceProjectConfig?.agentsDir ?? DIRS.agents;
-    if (sourceProjectConfig?.agentsDir) {
-      verbose(`Using agentsDir from source config: ${sourceProjectConfig.agentsDir}`);
-    }
+  const sourceProjectConfig = options.agentsDir
+    ? undefined
+    : await loadProjectSourceConfig(result.path);
+  if (sourceProjectConfig?.agentsDir) {
+    verbose(`Using agentsDir from source config: ${sourceProjectConfig.agentsDir}`);
   }
+  const agentsDirRelPath = options.agentsDir ?? sourceProjectConfig?.agentsDir ?? DIRS.agents;
 
   const agentsDir = path.join(result.path, agentsDirRelPath);
   const templatesDir = path.join(agentsDir, "_templates");

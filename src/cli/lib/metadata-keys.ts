@@ -18,6 +18,8 @@ export const METADATA_KEYS = {
  * Default values used when importing third-party skills (no existing metadata).
  */
 export const IMPORT_DEFAULTS = {
+  // Boundary cast: deliberately outside the generated Category union — external
+  // skills have no marketplace category; "imported" is a display-only placeholder
   CATEGORY: "imported" as CategoryPath,
   AUTHOR: "@imported",
   DOMAIN: "shared" as const,
@@ -27,6 +29,8 @@ export const IMPORT_DEFAULTS = {
  * Default values used for local skills (created via `agentsinc new skill` or discovered locally).
  */
 export const LOCAL_DEFAULTS = {
+  // Boundary cast: deliberately outside the generated Category union — scaffold
+  // placeholder written into starter files for the user to replace
   CATEGORY: "dummy-category" as CategoryPath,
   AUTHOR: "@dummy-author",
   DOMAIN: "dummy" as const,

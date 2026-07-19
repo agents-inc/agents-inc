@@ -1,10 +1,9 @@
-import type { Liquid } from "liquidjs";
-import os from "os";
+import { partition } from "remeda";
+import { writeCompiledAgentsByScope, type AgentWriteOutcome } from "./write-compiled-agents";
 import path from "path";
 
 import { getErrorMessage } from "../../utils/errors";
 import type {
-  AgentConfig,
   AgentDefinition,
   AgentName,
   CompileAgentConfig,
@@ -12,10 +11,9 @@ import type {
   ProjectConfig,
   SkillDefinitionMap,
 } from "../../types";
-import { type InstallMode, deriveInstallMode } from "../installation/installation";
+
 import { buildCompileAgents } from "../installation/local-installer";
-import { CLAUDE_DIR } from "../../consts";
-import { glob, writeFile, ensureDir } from "../../utils/fs";
+import { glob, ensureDir } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { typedEntries, typedKeys } from "../../utils/typed-object";
 import { createLiquidEngine } from "../compiler";
@@ -24,7 +22,6 @@ import { loadAllAgents, loadProjectAgents } from "../loading";
 import { getPluginAgentsDir } from "../plugins";
 import { discoverAllPluginSkills } from "../plugins/plugin-discovery";
 import { resolveAgents } from "../resolver";
-import { compileAgentForPlugin } from "../stacks";
 
 export type RecompileAgentsOptions = {
   pluginDir: string;
@@ -33,7 +30,6 @@ export type RecompileAgentsOptions = {
   skills?: SkillDefinitionMap;
   projectDir?: string;
   outputDir?: string;
-  installMode?: InstallMode;
   /** When provided, routes agents by scope: global agents to ~/.claude/agents/, project agents to outputDir */
   agentScopeMap?: Map<AgentName, "project" | "global">;
 };
@@ -81,46 +77,28 @@ async function resolveAgentNames(params: ResolveAgentNamesParams): Promise<Agent
   return getExistingAgentNames(pluginDir);
 }
 
-type CompileAndWriteParams = {
-  resolvedAgents: Record<AgentName, AgentConfig>;
-  agentsDir: string;
-  sourcePath: string;
-  engine: Liquid;
-  installMode?: InstallMode;
-  agentScopeMap?: Map<AgentName, "project" | "global">;
-};
-
-async function compileAndWriteAgents(
-  params: CompileAndWriteParams,
-  result: RecompileAgentsResult,
-): Promise<void> {
-  const { resolvedAgents, agentsDir, sourcePath, engine, agentScopeMap } = params;
-
-  const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, "agents");
-
-  // Ensure both directories exist before writing agents.
-  // ensureDir is idempotent (mkdir -p), so calling it when dirs already exist is safe.
-  await ensureDir(globalAgentsDir);
-
-  for (const [agentName, agent] of typedEntries<AgentName, AgentConfig>(resolvedAgents)) {
-    try {
-      // D-217: `installMode` is no longer passed — per-skill `source` on each
-      // SkillReference drives pluginRef attachment inside compileAgentForPlugin.
-      // `installMode` plumbing retained on RecompileAgentsOptions/CompileAndWriteParams
-      // to preserve caller contracts (consolidation is a separate follow-up).
-      const output = await compileAgentForPlugin(agentName, agent, sourcePath, engine);
-
-      // Route agent output by scope: global agents go to ~/.claude/agents/, project agents to agentsDir
-      const scope = agentScopeMap?.get(agentName) ?? "project";
-      const targetDir = scope === "global" ? globalAgentsDir : agentsDir;
-      await writeFile(path.join(targetDir, `${agentName}.md`), output);
-      result.compiled.push(agentName);
-      verbose(`  Recompiled: ${agentName} (${scope} -> ${targetDir})`);
-    } catch (error) {
-      result.failed.push(agentName);
-      result.warnings.push(`Failed to compile ${agentName}: ${getErrorMessage(error)}`);
-    }
-  }
+/** Splits write outcomes into the recompile result; logs each success at verbose level. */
+function buildRecompileResult(
+  outcomes: AgentWriteOutcome[],
+  priorWarnings: string[],
+): RecompileAgentsResult {
+  const [succeeded, failedOutcomes] = partition(
+    outcomes,
+    (outcome): outcome is Extract<AgentWriteOutcome, { ok: true }> => outcome.ok,
+  );
+  succeeded.forEach((outcome) =>
+    verbose(`  Recompiled: ${outcome.name} (${outcome.scope} -> ${outcome.targetDir})`),
+  );
+  return {
+    compiled: succeeded.map((outcome) => outcome.name),
+    failed: failedOutcomes.map((outcome) => outcome.name),
+    warnings: [
+      ...priorWarnings,
+      ...failedOutcomes.map(
+        (outcome) => `Failed to compile ${outcome.name}: ${getErrorMessage(outcome.error)}`,
+      ),
+    ],
+  };
 }
 
 export function filterExcludedEntries(config: ProjectConfig): ProjectConfig {
@@ -154,12 +132,6 @@ export async function recompileAgents(
 ): Promise<RecompileAgentsResult> {
   const { pluginDir, sourcePath, skills: providedSkills, projectDir, outputDir } = options;
 
-  const result: RecompileAgentsResult = {
-    compiled: [],
-    failed: [],
-    warnings: [],
-  };
-
   const configDir = projectDir ?? pluginDir;
   const loadedConfig = await loadProjectConfig(configDir);
   const projectConfig = loadedConfig?.config ?? null;
@@ -185,19 +157,14 @@ export async function recompileAgents(
   });
 
   if (agentNames.length === 0) {
-    result.warnings.push("No agents found to recompile");
-    return result;
+    return { compiled: [], failed: [], warnings: ["No agents found to recompile"] };
   }
 
   verbose(`Recompiling ${agentNames.length} agents in ${outputDir ?? pluginDir}`);
 
   // When skills are not provided, discover from all plugin directories.
-  let pluginSkills: SkillDefinitionMap;
-  if (providedSkills) {
-    pluginSkills = providedSkills;
-  } else {
-    pluginSkills = await discoverAllPluginSkills(projectDir ?? pluginDir);
-  }
+  const pluginSkills: SkillDefinitionMap =
+    providedSkills ?? (await discoverAllPluginSkills(projectDir ?? pluginDir));
 
   const allConfigAgents = filteredConfig ? buildCompileAgents(filteredConfig, allAgents) : {};
 
@@ -207,16 +174,15 @@ export async function recompileAgents(
   // Without this filter, a project pass would compile global agents without
   // their stack (since the project config omits global agent stack entries)
   // and overwrite correctly compiled global agent files.
-  const configAgents: Record<string, CompileAgentConfig> = {};
-  for (const name of agentNames) {
-    if (allConfigAgents[name]) {
-      configAgents[name] = allConfigAgents[name];
-    } else if (allAgents[name]) {
-      configAgents[name] = {};
-    } else {
-      result.warnings.push(`Agent "${name}" not found in source definitions`);
-    }
-  }
+  const [knownAgents, missingAgents] = partition(agentNames, (name) =>
+    Boolean(allConfigAgents[name] || allAgents[name]),
+  );
+  const missingWarnings = missingAgents.map(
+    (name) => `Agent "${name}" not found in source definitions`,
+  );
+  const configAgents: Record<string, CompileAgentConfig> = Object.fromEntries(
+    knownAgents.map((name) => [name, allConfigAgents[name] ?? {}]),
+  );
 
   const compileConfig: CompileConfig = {
     name: filteredConfig?.name || path.basename(pluginDir),
@@ -230,17 +196,12 @@ export async function recompileAgents(
   const agentsDir = outputDir ?? getPluginAgentsDir(pluginDir);
   await ensureDir(agentsDir);
 
-  await compileAndWriteAgents(
-    {
-      resolvedAgents,
-      agentsDir,
-      sourcePath,
-      engine,
-      installMode: options.installMode ?? deriveInstallMode(filteredConfig?.skills ?? []),
-      agentScopeMap: options.agentScopeMap,
-    },
-    result,
-  );
-
-  return result;
+  const outcomes = await writeCompiledAgentsByScope({
+    resolvedAgents,
+    sourcePath,
+    engine,
+    projectAgentsDir: agentsDir,
+    agentScopeMap: options.agentScopeMap,
+  });
+  return buildRecompileResult(outcomes, missingWarnings);
 }

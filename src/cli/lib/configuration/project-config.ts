@@ -7,6 +7,7 @@ import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../consts";
 import type { ProjectConfig, ValidationResult } from "../../types";
 import { normalizeStackRecord } from "../stacks/stacks-loader";
 import { projectConfigLoaderSchema } from "../schemas";
+import { formatZodErrors } from "../schema-validator";
 import { loadConfig } from "./config-loader";
 
 export type LoadedProjectConfig = {
@@ -36,18 +37,19 @@ export async function loadProjectConfigFromDir(
       verbose(`Config validation failed at ${configPath}: ${JSON.stringify(result.error)}`);
       return null;
     }
-    config = result.data as ProjectConfig;
+    // Normalize the loose stack values (bare strings, objects, arrays) BEFORE claiming
+    // ProjectConfig, so the boundary cast below is the only one on this path.
+    const parsed = result.data;
+    const normalizedStack = parsed.stack ? normalizeStackRecord(parsed.stack) : undefined;
+    // Boundary cast: loader schema is lenient (optional name, loose strings);
+    // validateProjectConfig enforces the strict shape after load
+    config = {
+      ...parsed,
+      ...(normalizedStack && { stack: normalizedStack }),
+    } as ProjectConfig;
   } catch (error) {
     verbose(`Failed to load project config at ${configPath}: ${getErrorMessage(error)}`);
     return null;
-  }
-
-  // Boundary cast: Zod-parsed stack has unnormalized values (bare strings, objects, arrays)
-  // that normalizeStackRecord converts to typed SkillAssignment[] values
-  if (config.stack) {
-    config.stack = normalizeStackRecord(
-      config.stack as unknown as Record<string, Record<string, unknown>>,
-    );
   }
 
   if (!config.name) {
@@ -85,38 +87,21 @@ export async function loadProjectConfig(projectDir: string): Promise<LoadedProje
   return null;
 }
 
+/**
+ * Validates a loaded config value. Shape validity is defined by
+ * `projectConfigLoaderSchema` (the single definition); on top of the schema's
+ * lenient shape, a usable project config additionally requires `name` and
+ * `agents` to be present.
+ */
 export function validateProjectConfig(config: unknown): ValidationResult {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  if (!config || typeof config !== "object") {
-    return { valid: false, errors: ["Config must be an object"], warnings: [] };
+  const result = projectConfigLoaderSchema.safeParse(config);
+  if (!result.success) {
+    return { valid: false, errors: formatZodErrors(result.error), warnings: [] };
   }
 
-  // Boundary cast: config validated as object above, narrow to record for field access
-  const c = config as Record<string, unknown>;
-
-  if (!c.name || typeof c.name !== "string") {
-    errors.push("name is required and must be a string");
-  }
-
-  if (!c.agents || !Array.isArray(c.agents)) {
-    errors.push("agents is required and must be an array");
-  } else {
-    for (const agent of c.agents) {
-      if (
-        typeof agent !== "object" ||
-        agent === null ||
-        typeof (agent as Record<string, unknown>).name !== "string"
-      ) {
-        errors.push(`agents must contain objects with name and scope, found: ${typeof agent}`);
-      }
-    }
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings,
-  };
+  const errors = [
+    ...(result.data.name ? [] : ["name is required and must be a string"]),
+    ...(result.data.agents ? [] : ["agents is required and must be an array"]),
+  ];
+  return { valid: errors.length === 0, errors, warnings: [] };
 }

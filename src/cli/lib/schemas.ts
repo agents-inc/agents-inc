@@ -1,5 +1,9 @@
 import { z } from "zod";
+import { isSkillId } from "../utils/type-guards";
+import type { LocalSkillMetadata } from "./skills/skill-metadata";
+import type { LocalRawMetadata } from "./skills/local-skill-loader";
 import { KEBAB_CASE_PATTERN } from "../consts";
+import { formatZodIssue } from "./schema-validator";
 import { warn } from "../utils/logger";
 import {
   SKILL_IDS,
@@ -85,7 +89,7 @@ export const skillSlugSchema = z.enum(SKILL_SLUGS) as z.ZodType<SkillSlug>;
 export const skillIdSchema = z
   .string()
   .refine(
-    (val): val is SkillId => (SKILL_IDS as readonly string[]).includes(val),
+    (val): val is SkillId => isSkillId(val),
     "Must be a known skill ID (e.g., 'web-framework-react')",
   ) as z.ZodType<SkillId>;
 
@@ -163,7 +167,8 @@ export const skillAssignmentSchema: z.ZodType<SkillAssignment> = z.object({
 
 // Lenient: accepts any string for `name` since local/custom skills may not follow strict SkillId pattern
 export const skillFrontmatterLoaderSchema = z.object({
-  name: z.string(),
+  /** Lenient (any string): local/custom skills have non-builtin IDs */
+  name: z.string() as z.ZodType<SkillId>,
   description: z.string(),
   model: modelNameSchema.optional(),
 });
@@ -196,21 +201,6 @@ export const pluginManifestSchema: z.ZodType<PluginManifest> = z.object({
   skills: z.union([z.string(), z.array(z.string())]).optional(),
   hooks: z.union([z.string(), hooksRecordSchema]).optional(),
 });
-
-/** Strict schema for plugin.json validation (IDE, agentsinc validate). Rejects unknown fields. */
-export const pluginManifestValidationSchema = z
-  .object({
-    name: z.string().min(1),
-    version: z.string().optional(),
-    description: z.string().optional(),
-    author: pluginAuthorSchema.optional(),
-    keywords: z.array(z.string()).optional(),
-    commands: z.union([z.string(), z.array(z.string())]).optional(),
-    agents: z.union([z.string(), z.array(z.string())]).optional(),
-    skills: z.union([z.string(), z.array(z.string())]).optional(),
-    hooks: z.union([z.string(), strictHooksRecordSchema]).optional(),
-  })
-  .strict();
 
 export const agentYamlConfigSchema: z.ZodType<AgentYamlConfig> = z.object({
   id: z.string() as z.ZodType<AgentName>,
@@ -390,7 +380,9 @@ export const localRawMetadataSchema = z
     custom: z.boolean().optional(),
   })
   .passthrough()
-  .superRefine(validateCategoryField);
+  // Passthrough widens the output with an index signature; LocalRawMetadata is the
+  // honest declared shape consumers read (same round-1 pattern as localSkillMetadataSchema).
+  .superRefine(validateCategoryField) as z.ZodType<LocalRawMetadata>;
 
 /** Metadata for local skills that were forked/copied from a marketplace skill */
 export const localSkillMetadataSchema = z
@@ -408,7 +400,9 @@ export const localSkillMetadataSchema = z
       })
       .optional(),
   })
-  .passthrough();
+  // Passthrough widens the output with an index signature; LocalSkillMetadata carries the
+  // same index signature, so this is the honest declared shape for parse results.
+  .passthrough() as z.ZodType<LocalSkillMetadata>;
 
 const stackSchema = z.object({
   id: z.string().min(1),
@@ -480,6 +474,17 @@ export const settingsFileSchema = z
   })
   .passthrough();
 
+/** Parse result of importedSkillMetadataSchema — forkedFrom plus arbitrary passthrough keys */
+export type ImportedSkillMetadata = {
+  forkedFrom?: {
+    source: string;
+    skillName: string;
+    contentHash: string;
+    date: string;
+  };
+  [key: string]: unknown;
+};
+
 /** Metadata for skills imported via `agentsinc import skill` (tracks original source for updates) */
 export const importedSkillMetadataSchema = z
   .object({
@@ -496,7 +501,9 @@ export const importedSkillMetadataSchema = z
       })
       .optional(),
   })
-  .passthrough();
+  // Passthrough widens the output with an index signature; ImportedSkillMetadata
+  // carries the same index signature, so this is the honest declared parse shape.
+  .passthrough() as z.ZodType<ImportedSkillMetadata>;
 
 /** Branding overrides for white-labeling the CLI */
 const brandingConfigSchema = z.object({
@@ -777,7 +784,19 @@ export const stackConfigValidationSchema = z
 
 /** Format Zod validation issues into a human-readable string (e.g., "path.to.field: Expected string; other: Required") */
 export function formatZodIssues(issues: z.ZodIssue[]): string {
-  return issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+  return issues.map(formatZodIssue).join("; ");
+}
+
+/**
+ * Validates raw skill metadata using the relaxed schema for custom skills and
+ * the strict schema for built-ins — the one place the custom-vs-strict
+ * selection policy lives.
+ */
+export function validateSkillMetadata(rawMetadata: unknown) {
+  const schema = isCustomMetadata(rawMetadata)
+    ? customMetadataValidationSchema
+    : metadataValidationSchema;
+  return schema.safeParse(rawMetadata);
 }
 
 /**

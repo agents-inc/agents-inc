@@ -47,18 +47,9 @@ export const WIZARD_STEPS: WizardTabStep[] = [
   { id: "confirm", label: "Confirm" },
 ];
 
-type FormattedStepLabel = {
-  /** The step label text, e.g. "Stack" */
-  label: string;
-  /** The complete formatted string, e.g. "Stack" */
-  full: string;
-};
-
-/** Format a wizard step as its tab label */
-export function formatStepLabel(stepId: WizardStep): FormattedStepLabel {
-  const step = WIZARD_STEPS.find((s) => s.id === stepId);
-  if (!step) return { label: stepId, full: stepId };
-  return { label: step.label, full: step.label };
+/** Tab label for a wizard step; falls back to the raw id for unknown steps. */
+export function formatStepLabel(stepId: WizardStep): string {
+  return WIZARD_STEPS.find((s) => s.id === stepId)?.label ?? stepId;
 }
 
 type StepState = "completed" | "current" | "pending" | "skipped";
@@ -96,8 +87,11 @@ const Tab: React.FC<TabProps> = ({ step, state }) => {
     case "skipped":
       return <Text dimColor>{label}</Text>;
     case "pending":
-    default:
       return <Text color={CLI_COLORS.UNFOCUSED}>{label}</Text>;
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
   }
 };
 

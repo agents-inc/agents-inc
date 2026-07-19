@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import { z } from "zod";
 import os from "os";
 import { getErrorMessage } from "./errors";
 import { warn } from "./logger";
@@ -167,6 +168,15 @@ export type MarketplaceInfo = {
   path?: string;
 };
 
+const marketplaceInfoListSchema: z.ZodType<MarketplaceInfo[]> = z.array(
+  z.object({
+    name: z.string(),
+    source: z.string(),
+    repo: z.string().optional(),
+    path: z.string().optional(),
+  }),
+);
+
 export async function claudePluginMarketplaceList(): Promise<MarketplaceInfo[]> {
   try {
     const result = await execCommand("claude", ["plugin", "marketplace", "list", "--json"], {});
@@ -183,12 +193,13 @@ export async function claudePluginMarketplaceList(): Promise<MarketplaceInfo[]> 
       return [];
     }
 
-    if (!Array.isArray(parsed)) {
-      warn("Unexpected marketplace list format — expected an array");
+    const listResult = marketplaceInfoListSchema.safeParse(parsed);
+    if (!listResult.success) {
+      warn("Unexpected marketplace list format — expected an array of marketplace entries");
       return [];
     }
 
-    return parsed as MarketplaceInfo[];
+    return listResult.data;
   } catch {
     return [];
   }

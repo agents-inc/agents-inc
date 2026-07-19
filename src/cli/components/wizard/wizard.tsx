@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect } from "react";
+import { EJECT_SOURCE } from "../../consts.js";
 import { useApp, useInput } from "ink";
 import { ThemeProvider } from "@inkjs/ui";
-import { useWizardStore } from "../../stores/wizard-store.js";
+import { useWizardStore, type WizardState } from "../../stores/wizard-store.js";
 import { cliTheme } from "../themes/default.js";
 import { WizardLayout } from "./wizard-layout.js";
 import { StepStack } from "./step-stack.js";
@@ -11,7 +12,8 @@ import { StepSources } from "./step-sources.js";
 import { StepSettings } from "./step-settings.js";
 import { StepAgents } from "./step-agents.js";
 import { DomainSelection } from "./domain-selection.js";
-import { resolveAlias, validateSelection } from "../../lib/matrix/index.js";
+import { validateSelection } from "../../lib/matrix/index.js";
+import { getSkillById } from "../../lib/matrix/matrix-provider.js";
 import { findStack } from "../../lib/matrix/matrix-provider.js";
 import {
   HOTKEY_ACCEPT_DEFAULTS,
@@ -50,7 +52,7 @@ export type WizardResultV2 = {
   };
 };
 
-type WizardProps = {
+export type WizardProps = {
   onComplete: (result: WizardResultV2) => void;
   onCancel: () => void;
   version?: string;
@@ -60,6 +62,33 @@ type WizardProps = {
   initialAgents?: AgentName[];
   installedSkillIds?: SkillId[];
 };
+
+/** S-key scope toggle: blocked (with a toast) in global context; no-op without a focused row. */
+function toggleFocusedScope<Id>(
+  isEditingFromGlobalScope: boolean,
+  focusedId: Id | null,
+  actions: { toggle: (id: Id) => void; setToastMessage: (message: string) => void },
+): void {
+  if (isEditingFromGlobalScope) {
+    actions.setToastMessage("Scope toggle unavailable in global context");
+    return;
+  }
+  if (focusedId) {
+    actions.toggle(focusedId);
+  }
+}
+
+/** Selected skill ids: the chosen stack's full list under stack-defaults, else the wizard selections. */
+export function resolveSelectedSkillIds(store: WizardState): SkillId[] {
+  if (store.selectedStackId && store.stackAction === "defaults") {
+    const stack = findStack(store.selectedStackId);
+    if (!stack) {
+      throw new Error(`Stack not found: ${store.selectedStackId}`);
+    }
+    return [...stack.allSkillIds];
+  }
+  return store.getAllSelectedTechnologies().map((tech) => getSkillById(tech).id);
+}
 
 export const Wizard: React.FC<WizardProps> = ({
   onComplete,
@@ -132,26 +161,18 @@ export const Wizard: React.FC<WizardProps> = ({
     }
 
     if (isHotkey(input, HOTKEY_SCOPE) && store.step === "build") {
-      if (store.isEditingFromGlobalScope) {
-        store.setToastMessage("Scope toggle unavailable in global context");
-        return;
-      }
-      const focused = store.focusedSkillId;
-      if (focused) {
-        store.toggleSkillScope(focused);
-      }
+      toggleFocusedScope(store.isEditingFromGlobalScope, store.focusedSkillId, {
+        toggle: store.toggleSkillScope,
+        setToastMessage: store.setToastMessage,
+      });
       return;
     }
 
     if (isHotkey(input, HOTKEY_SCOPE) && store.step === "agents") {
-      if (store.isEditingFromGlobalScope) {
-        store.setToastMessage("Scope toggle unavailable in global context");
-        return;
-      }
-      const focused = store.focusedAgentId;
-      if (focused) {
-        store.toggleAgentScope(focused);
-      }
+      toggleFocusedScope(store.isEditingFromGlobalScope, store.focusedAgentId, {
+        toggle: store.toggleAgentScope,
+        setToastMessage: store.setToastMessage,
+      });
       return;
     }
 
@@ -162,22 +183,11 @@ export const Wizard: React.FC<WizardProps> = ({
   });
 
   const handleComplete = useCallback(() => {
-    let allSkills: SkillId[];
-
-    if (store.selectedStackId && store.stackAction === "defaults") {
-      const stack = findStack(store.selectedStackId);
-      if (!stack) {
-        throw new Error(`Stack not found: ${store.selectedStackId}`);
-      }
-      allSkills = [...stack.allSkillIds];
-    } else {
-      const techNames = store.getAllSelectedTechnologies();
-      allSkills = techNames.map((tech) => resolveAlias(tech));
-    }
+    const allSkills = resolveSelectedSkillIds(store);
 
     const skillConfigs: SkillConfig[] = allSkills.map((id) => {
       const existing = store.skillConfigs.find((sc) => sc.id === id && !sc.excluded);
-      return existing ?? { id, scope: "global" as const, source: "eject" };
+      return existing ?? { id, scope: "global" as const, source: EJECT_SOURCE };
     });
 
     // Append excluded entries so they flow through to config generation
@@ -255,8 +265,10 @@ export const Wizard: React.FC<WizardProps> = ({
         );
       }
 
-      default:
-        return null;
+      default: {
+        const _exhaustive: never = store.step;
+        return _exhaustive;
+      }
     }
   };
 

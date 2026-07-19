@@ -1,4 +1,3 @@
-import fs from "fs";
 import os from "os";
 import path from "path";
 import { parse as parseYaml } from "yaml";
@@ -16,13 +15,9 @@ import {
 } from "../lib/plugins/index.js";
 import { validateSource } from "../lib/source-validator.js";
 import { isLocalSource, resolveAllSources, type SourceEntry } from "../lib/configuration/index.js";
-import { resolveInstallPaths } from "../lib/installation/index.js";
+import { resolveInstallPaths, isHomeDirectory } from "../lib/installation/index.js";
 import { formatZodErrors } from "../lib/schema-validator.js";
-import {
-  isCustomMetadata,
-  metadataValidationSchema,
-  customMetadataValidationSchema,
-} from "../lib/schemas.js";
+import { validateSkillMetadata } from "../lib/schemas.js";
 import { PLUGIN_MANIFEST_DIR, STANDARD_FILES } from "../consts.js";
 import type { ValidationResult } from "../types/index.js";
 import { directoryExists, fileExists, glob, listDirectories, readFile } from "../utils/fs.js";
@@ -42,6 +37,30 @@ type AggregateCounts = {
   errors: number;
   warnings: number;
 };
+
+const NO_ISSUES: AggregateCounts = { errors: 0, warnings: 0 };
+
+function sumCounts(counts: AggregateCounts[]): AggregateCounts {
+  return counts.reduce(
+    (acc, c) => ({ errors: acc.errors + c.errors, warnings: acc.warnings + c.warnings }),
+    NO_ISSUES,
+  );
+}
+
+/** Prints each named validation result and sums its error/warning counts. */
+function printAndSumResults(
+  results: Array<{ name: string; result: ValidationResult }>,
+): AggregateCounts {
+  return sumCounts(
+    results.map(({ name, result }) => {
+      printPluginValidationResult(name, result);
+      return {
+        errors: result.valid ? 0 : result.errors.length,
+        warnings: result.warnings.length,
+      };
+    }),
+  );
+}
 
 export default class Validate extends BaseCommand {
   static summary =
@@ -63,10 +82,10 @@ export default class Validate extends BaseCommand {
   async run(): Promise<void> {
     await this.parse(Validate);
 
-    const totals: AggregateCounts = { errors: 0, warnings: 0 };
+    let totals: AggregateCounts = NO_ISSUES;
 
     try {
-      await this.validateAllRegistered(totals);
+      totals = await this.validateAllRegistered();
     } catch (error) {
       const message = getErrorMessage(error);
       this.error(`${ERROR_MESSAGES.VALIDATION_FAILED}: ${message}`, { exit: EXIT_CODES.ERROR });
@@ -81,16 +100,12 @@ export default class Validate extends BaseCommand {
     }
   }
 
-  private async validateAllRegistered(totals: AggregateCounts): Promise<void> {
+  private async validateAllRegistered(): Promise<AggregateCounts> {
     const projectDir = process.cwd();
     const globalPaths = resolveInstallPaths(projectDir, "global");
     const projectPaths = resolveInstallPaths(projectDir, "project");
 
-    // Use realpath to compare project vs home — string comparison fails on macOS
-    // where $HOME may be a symlink.
-    const projectReal = fs.realpathSync(projectDir);
-    const homeReal = fs.realpathSync(os.homedir());
-    const inHome = projectReal === homeReal;
+    const inHome = isHomeDirectory(projectDir);
 
     this.log("");
     this.log("Validating sources");
@@ -98,44 +113,44 @@ export default class Validate extends BaseCommand {
     const { primary, extras } = await resolveAllSources(projectDir);
     const sources: SourceEntry[] = [primary, ...extras];
 
+    const counts: AggregateCounts[] = [];
     for (const source of sources) {
-      await this.validateRegisteredSource(source, totals);
+      counts.push(await this.validateRegisteredSource(source));
     }
 
     this.log("");
     this.log("Validating plugins");
 
-    await this.validatePluginsDirectory(getUserPluginsDir(), totals);
+    counts.push(await this.validatePluginsDirectory(getUserPluginsDir()));
     if (!inHome) {
-      await this.validatePluginsDirectory(getProjectPluginsDir(projectDir), totals);
+      counts.push(await this.validatePluginsDirectory(getProjectPluginsDir(projectDir)));
     }
 
     this.log("");
     this.log("Validating skills");
 
-    await this.validateInstalledSkillsDirectory(globalPaths.skillsDir, totals);
+    counts.push(await this.validateInstalledSkillsDirectory(globalPaths.skillsDir));
     if (!inHome) {
-      await this.validateInstalledSkillsDirectory(projectPaths.skillsDir, totals);
+      counts.push(await this.validateInstalledSkillsDirectory(projectPaths.skillsDir));
     }
 
     this.log("");
     this.log("Validating agents");
 
-    await this.validateInstalledAgentsDirectory(globalPaths.agentsDir, totals);
+    counts.push(await this.validateInstalledAgentsDirectory(globalPaths.agentsDir));
     if (!inHome) {
-      await this.validateInstalledAgentsDirectory(projectPaths.agentsDir, totals);
+      counts.push(await this.validateInstalledAgentsDirectory(projectPaths.agentsDir));
     }
+
+    return sumCounts(counts);
   }
 
-  private async validateRegisteredSource(
-    source: SourceEntry,
-    totals: AggregateCounts,
-  ): Promise<void> {
+  private async validateRegisteredSource(source: SourceEntry): Promise<AggregateCounts> {
     if (!isLocalSource(source.url)) {
       this.log(
         `  ${source.name.padEnd(COL_NAME_WIDTH)} ${source.url.padEnd(COL_URL_WIDTH)} ${VALIDATE_STATUS.SKIPPED_REMOTE}`,
       );
-      return;
+      return NO_ISSUES;
     }
 
     try {
@@ -149,32 +164,28 @@ export default class Validate extends BaseCommand {
         this.log(`    [${prefix}] ${issue.file}: ${issue.message}`);
       }
 
-      totals.errors += result.errorCount;
-      totals.warnings += result.warningCount;
+      return { errors: result.errorCount, warnings: result.warningCount };
     } catch (error) {
       const message = getErrorMessage(error);
       this.log(
         `  ${source.name.padEnd(COL_NAME_WIDTH)} ${source.url.padEnd(COL_URL_WIDTH)} failed: ${message}`,
       );
-      totals.errors += 1;
+      return { errors: 1, warnings: 0 };
     }
   }
 
-  private async validatePluginsDirectory(
-    pluginsDir: string,
-    totals: AggregateCounts,
-  ): Promise<void> {
+  private async validatePluginsDirectory(pluginsDir: string): Promise<AggregateCounts> {
     const displayPath = displayDir(pluginsDir);
 
     if (!(await directoryExists(pluginsDir))) {
       this.log(`  ${displayPath.padEnd(COL_PATH_WIDTH)} ${VALIDATE_STATUS.NOT_PRESENT}`);
-      return;
+      return NO_ISSUES;
     }
 
     const pluginDirs = await findPluginDirectories(pluginsDir);
     if (pluginDirs.length === 0) {
       this.log(`  ${displayPath.padEnd(COL_PATH_WIDTH)} ${VALIDATE_STATUS.NO_PLUGINS}`);
-      return;
+      return NO_ISSUES;
     }
 
     const result = await validateAllPlugins(pluginsDir);
@@ -183,28 +194,21 @@ export default class Validate extends BaseCommand {
       `  ${displayPath.padEnd(COL_PATH_WIDTH)} ${result.summary.total} plugin(s), ${result.summary.invalid} invalid, ${result.summary.withWarnings} with warnings`,
     );
 
-    for (const { name, result: pluginResult } of result.results) {
-      printPluginValidationResult(name, pluginResult);
-      if (!pluginResult.valid) totals.errors += pluginResult.errors.length;
-      totals.warnings += pluginResult.warnings.length;
-    }
+    return printAndSumResults(result.results);
   }
 
-  private async validateInstalledSkillsDirectory(
-    skillsDir: string,
-    totals: AggregateCounts,
-  ): Promise<void> {
+  private async validateInstalledSkillsDirectory(skillsDir: string): Promise<AggregateCounts> {
     const displayPath = displayDir(skillsDir);
 
     if (!(await directoryExists(skillsDir))) {
       this.log(`  ${displayPath.padEnd(COL_PATH_WIDTH)} ${VALIDATE_STATUS.NOT_PRESENT}`);
-      return;
+      return NO_ISSUES;
     }
 
     const skillDirs = await listDirectories(skillsDir);
     if (skillDirs.length === 0) {
       this.log(`  ${displayPath.padEnd(COL_PATH_WIDTH)} ${VALIDATE_STATUS.EMPTY}`);
-      return;
+      return NO_ISSUES;
     }
 
     const results = await Promise.all(
@@ -221,28 +225,21 @@ export default class Validate extends BaseCommand {
       `  ${displayPath.padEnd(COL_PATH_WIDTH)} ${skillDirs.length} skill(s), ${invalidCount} invalid, ${warnCount} with warnings`,
     );
 
-    for (const { name, result } of results) {
-      printPluginValidationResult(name, result);
-      if (!result.valid) totals.errors += result.errors.length;
-      totals.warnings += result.warnings.length;
-    }
+    return printAndSumResults(results);
   }
 
-  private async validateInstalledAgentsDirectory(
-    agentsDir: string,
-    totals: AggregateCounts,
-  ): Promise<void> {
+  private async validateInstalledAgentsDirectory(agentsDir: string): Promise<AggregateCounts> {
     const displayPath = displayDir(agentsDir);
 
     if (!(await directoryExists(agentsDir))) {
       this.log(`  ${displayPath.padEnd(COL_PATH_WIDTH)} ${VALIDATE_STATUS.NOT_PRESENT}`);
-      return;
+      return NO_ISSUES;
     }
 
     const agentFiles = await findAgentFiles(agentsDir);
     if (agentFiles.length === 0) {
       this.log(`  ${displayPath.padEnd(COL_PATH_WIDTH)} ${VALIDATE_STATUS.EMPTY}`);
-      return;
+      return NO_ISSUES;
     }
 
     const results = await Promise.all(
@@ -259,11 +256,7 @@ export default class Validate extends BaseCommand {
       `  ${displayPath.padEnd(COL_PATH_WIDTH)} ${agentFiles.length} agent(s), ${invalidCount} invalid, ${warnCount} with warnings`,
     );
 
-    for (const { name, result } of results) {
-      printPluginValidationResult(name, result);
-      if (!result.valid) totals.errors += result.errors.length;
-      totals.warnings += result.warnings.length;
-    }
+    return printAndSumResults(results);
   }
 }
 
@@ -319,10 +312,7 @@ async function validateInstalledSkillMetadata(metadataPath: string): Promise<Val
     };
   }
 
-  const isCustom = isCustomMetadata(rawMetadata);
-  const schema = isCustom ? customMetadataValidationSchema : metadataValidationSchema;
-
-  const result = schema.safeParse(rawMetadata);
+  const result = validateSkillMetadata(rawMetadata);
   if (result.success) {
     return { valid: true, errors: [], warnings: [] };
   }
@@ -336,10 +326,11 @@ async function validateInstalledSkillMetadata(metadataPath: string): Promise<Val
 
 async function findPluginDirectories(pluginsDir: string): Promise<string[]> {
   const entries = await listDirectories(pluginsDir);
-  const pluginDirs: string[] = [];
-  for (const name of entries) {
-    const manifestDir = path.join(pluginsDir, name, PLUGIN_MANIFEST_DIR);
-    if (await directoryExists(manifestDir)) pluginDirs.push(name);
-  }
-  return pluginDirs;
+  const checks = await Promise.all(
+    entries.map(async (name) => ({
+      name,
+      isPlugin: await directoryExists(path.join(pluginsDir, name, PLUGIN_MANIFEST_DIR)),
+    })),
+  );
+  return checks.filter((check) => check.isPlugin).map((check) => check.name);
 }

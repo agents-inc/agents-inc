@@ -40,83 +40,43 @@ function buildAuthor(name?: string, email?: string): PluginAuthor | undefined {
   if (!name) {
     return undefined;
   }
-  const author: PluginAuthor = { name };
-  if (email) {
-    author.email = email;
-  }
-  return author;
+  return { name, ...(email ? { email } : {}) };
 }
 
 export function generateSkillPluginManifest(options: SkillManifestOptions): PluginManifest {
-  const name = `${SKILL_PLUGIN_PREFIX}${options.skillName}`;
-  const manifest: PluginManifest = {
-    name,
+  const author = buildAuthor(options.author, options.authorEmail);
+  return {
+    name: `${SKILL_PLUGIN_PREFIX}${options.skillName}`,
     version: options.version ?? DEFAULT_VERSION,
     skills: "./skills/",
+    ...(options.description ? { description: options.description } : {}),
+    ...(author ? { author } : {}),
+    ...(options.keywords?.length ? { keywords: options.keywords } : {}),
   };
-
-  if (options.description) {
-    manifest.description = options.description;
-  }
-
-  const author = buildAuthor(options.author, options.authorEmail);
-  if (author) {
-    manifest.author = author;
-  }
-
-  if (options.keywords && options.keywords.length > 0) {
-    manifest.keywords = options.keywords;
-  }
-
-  return manifest;
 }
 
 export function generateAgentPluginManifest(options: AgentManifestOptions): PluginManifest {
-  const name = `${AGENT_PLUGIN_PREFIX}${options.agentName}`;
-  const manifest: PluginManifest = {
-    name,
+  return {
+    name: `${AGENT_PLUGIN_PREFIX}${options.agentName}`,
     version: options.version ?? DEFAULT_VERSION,
     agents: "./agents/",
+    ...(options.description ? { description: options.description } : {}),
   };
-
-  if (options.description) {
-    manifest.description = options.description;
-  }
-
-  return manifest;
 }
 
+// Note: Claude Code plugins don't support an agents field in the stack manifest —
+// agents are discovered from the ./agents/ directory automatically.
 export function generateStackPluginManifest(options: StackManifestOptions): PluginManifest {
-  const manifest: PluginManifest = {
+  const author = buildAuthor(options.author, options.authorEmail);
+  return {
     name: options.stackName,
     version: options.version ?? DEFAULT_VERSION,
+    ...(options.hasSkills ? { skills: "./skills/" } : {}),
+    ...(options.description ? { description: options.description } : {}),
+    ...(author ? { author } : {}),
+    ...(options.keywords?.length ? { keywords: options.keywords } : {}),
+    ...(options.hasHooks ? { hooks: "./hooks/hooks.json" } : {}),
   };
-
-  if (options.hasSkills) {
-    manifest.skills = "./skills/";
-  }
-
-  if (options.description) {
-    manifest.description = options.description;
-  }
-
-  const author = buildAuthor(options.author, options.authorEmail);
-  if (author) {
-    manifest.author = author;
-  }
-
-  if (options.keywords && options.keywords.length > 0) {
-    manifest.keywords = options.keywords;
-  }
-
-  // Note: Claude Code plugins don't support agents field in manifest
-  // Agents are discovered from ./agents/ directory automatically
-
-  if (options.hasHooks) {
-    manifest.hooks = "./hooks/hooks.json";
-  }
-
-  return manifest;
 }
 
 export async function writePluginManifest(

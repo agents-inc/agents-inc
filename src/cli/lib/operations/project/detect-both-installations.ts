@@ -1,8 +1,7 @@
-import fs from "fs";
-import os from "os";
 import {
   detectGlobalInstallation,
   detectProjectInstallation,
+  isHomeDirectory,
   type Installation,
 } from "../../installation/index.js";
 
@@ -22,13 +21,6 @@ export type BothInstallations = {
 export async function detectBothInstallations(projectDir: string): Promise<BothInstallations> {
   const global = await detectGlobalInstallation();
 
-  let isSameAsHome: boolean;
-  try {
-    isSameAsHome = fs.realpathSync(projectDir) === fs.realpathSync(os.homedir());
-  } catch {
-    isSameAsHome = projectDir === os.homedir();
-  }
-
-  const project = isSameAsHome ? null : await detectProjectInstallation(projectDir);
+  const project = isHomeDirectory(projectDir) ? null : await detectProjectInstallation(projectDir);
   return { global, project, hasBoth: !!global && !!project };
 }

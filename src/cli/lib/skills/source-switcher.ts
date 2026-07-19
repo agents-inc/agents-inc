@@ -1,6 +1,6 @@
 import path from "path";
 
-import { copy, directoryExists, ensureDir, remove } from "../../utils/fs";
+import { copy, directoryExists, ensureDir, isPathWithin, remove } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { GLOBAL_INSTALL_ROOT, LOCAL_SKILLS_PATH } from "../../consts";
 import type { SkillId } from "../../types";
@@ -12,21 +12,12 @@ import type { SkillId } from "../../types";
  */
 function validateSkillId(skillId: SkillId): boolean {
   return !(
+    skillId.length === 0 ||
     skillId.includes("\0") ||
     skillId.includes("..") ||
     skillId.includes("/") ||
     skillId.includes("\\")
   );
-}
-
-/**
- * Validates a resolved path stays within the expected parent directory.
- * Prevents path traversal attacks where crafted input escapes the skills directory.
- */
-function validatePathBoundary(resolvedPath: string, expectedParent: string): boolean {
-  const normalizedPath = path.resolve(resolvedPath);
-  const normalizedParent = path.resolve(expectedParent);
-  return normalizedPath.startsWith(normalizedParent + path.sep);
 }
 
 /**
@@ -41,7 +32,7 @@ export async function deleteLocalSkill(projectDir: string, skillId: SkillId): Pr
   const skillPath = path.resolve(path.join(projectDir, LOCAL_SKILLS_PATH, skillId));
   const skillsDir = path.resolve(path.join(projectDir, LOCAL_SKILLS_PATH));
 
-  if (!validatePathBoundary(skillPath, skillsDir)) {
+  if (!isPathWithin(skillPath, skillsDir)) {
     warn(`Skill ID '${skillId}' resolves outside the skills directory.`);
     return;
   }
@@ -82,11 +73,11 @@ export async function migrateLocalSkillScope(
   const fromSkillsDir = path.resolve(path.join(fromBaseDir, LOCAL_SKILLS_PATH));
   const toSkillsDir = path.resolve(path.join(toBaseDir, LOCAL_SKILLS_PATH));
 
-  if (!validatePathBoundary(fromPath, fromSkillsDir)) {
+  if (!isPathWithin(fromPath, fromSkillsDir)) {
     warn(`Skill ID '${skillId}' resolves outside the source skills directory.`);
     return;
   }
-  if (!validatePathBoundary(toPath, toSkillsDir)) {
+  if (!isPathWithin(toPath, toSkillsDir)) {
     warn(`Skill ID '${skillId}' resolves outside the destination skills directory.`);
     return;
   }

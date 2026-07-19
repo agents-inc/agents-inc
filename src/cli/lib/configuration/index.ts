@@ -34,6 +34,13 @@ export {
 export { saveSourceToProjectConfig } from "./config-saver";
 
 export {
+  isActiveAt,
+  isGlobalTombstone,
+  isProjectOwned,
+  activeProjectAgentNames,
+} from "./scope-predicates";
+
+export {
   type LoadedProjectConfig,
   loadProjectConfig,
   loadProjectConfigFromDir,

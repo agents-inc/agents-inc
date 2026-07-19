@@ -25,7 +25,7 @@ export function buildCategoryEntry(
   const categoryPart = category.includes("-")
     ? category.slice(category.indexOf("-") + 1)
     : category;
-  const entry: Record<string, unknown> = {
+  return {
     id: category,
     displayName: toTitleCase(categoryPart),
     description: `Skills for ${toTitleCase(categoryPart)}`,
@@ -33,9 +33,8 @@ export function buildCategoryEntry(
     required: false,
     order: DEFAULT_CATEGORY_ORDER,
     custom: true,
+    domain,
   };
-  entry.domain = domain;
-  return entry;
 }
 
 export function generateSkillCategoriesTs(category: CategoryPath, domain: string): string {

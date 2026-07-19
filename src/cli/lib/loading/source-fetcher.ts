@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { isRecord } from "../../utils/type-guards.js";
 import { downloadTemplate } from "giget";
 import os from "os";
 import path from "path";
@@ -10,7 +11,8 @@ import {
   MAX_MARKETPLACE_FILE_SIZE,
   MAX_JSON_NESTING_DEPTH,
   MAX_MARKETPLACE_PLUGINS,
-  PLUGIN_MANIFEST_DIR,
+  MARKETPLACE_JSON,
+  marketplaceManifestPath,
 } from "../../consts";
 import { getErrorMessage } from "../../utils/errors";
 import { ensureDir, directoryExists, readFileSafe, remove } from "../../utils/fs";
@@ -105,18 +107,15 @@ async function fetchFromLocalSource(source: string, subdir?: string): Promise<Fe
  * Returns undefined if the source format doesn't match giget's git URI pattern.
  */
 export function getGigetCacheDir(source: string): string | undefined {
-  let providerName = "github";
-  let rawSource = source;
-
   const protoMatch = source.match(SOURCE_PROTO_RE);
-  if (protoMatch) {
-    providerName = protoMatch[1];
-    rawSource = source.slice(protoMatch[0].length);
-    // http/https providers use the full URL, not parseable as git URI
-    if (providerName === "http" || providerName === "https") {
-      return undefined;
-    }
+
+  // http/https providers use the full URL, not parseable as git URI
+  if (protoMatch && (protoMatch[1] === "http" || protoMatch[1] === "https")) {
+    return undefined;
   }
+
+  const providerName = protoMatch?.[1] ?? "github";
+  const rawSource = protoMatch ? source.slice(protoMatch[0].length) : source;
 
   const uriMatch = rawSource.match(GIT_URI_RE);
   if (!uriMatch?.groups?.repo) {
@@ -250,7 +249,7 @@ export async function fetchMarketplace(
     subdir: "", // Root of repo
   });
 
-  const marketplacePath = path.join(result.path, PLUGIN_MANIFEST_DIR, "marketplace.json");
+  const marketplacePath = marketplaceManifestPath(result.path);
 
   if (!(await directoryExists(path.dirname(marketplacePath)))) {
     throw new Error(
@@ -293,12 +292,8 @@ export async function fetchMarketplace(
     "metadata",
     "plugins",
   ] as const;
-  if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-    warnUnknownFields(
-      parsed as Record<string, unknown>,
-      EXPECTED_MARKETPLACE_KEYS,
-      "marketplace.json",
-    );
+  if (isRecord(parsed)) {
+    warnUnknownFields(parsed, EXPECTED_MARKETPLACE_KEYS, MARKETPLACE_JSON);
   }
 
   if (marketplace.plugins.length > MAX_MARKETPLACE_PLUGINS) {

@@ -56,11 +56,12 @@ export const StepBuild: React.FC<StepBuildProps> = ({
   const { initialRow, initialCol } = useMemo(() => {
     const skillId = useWizardStore.getState().focusedSkillId;
     if (!skillId) return { initialRow: 0, initialCol: 0 };
-    for (let r = 0; r < categories.length; r++) {
-      const c = categories[r].options.findIndex((o) => o.id === skillId);
-      if (c >= 0) return { initialRow: r, initialCol: c };
-    }
-    return { initialRow: 0, initialCol: 0 };
+    const row = categories.findIndex((cat) => cat.options.some((o) => o.id === skillId));
+    if (row < 0) return { initialRow: 0, initialCol: 0 };
+    return {
+      initialRow: row,
+      initialCol: categories[row].options.findIndex((o) => o.id === skillId),
+    };
   }, [categories]);
 
   useInput((_input, key) => {

@@ -33,7 +33,6 @@ export async function copyLocalSkills(
     projectCopied = await copySkillsToLocalFlattened(
       projectLocalSkills.map((s) => s.id),
       projectPaths.skillsDir,
-      sourceResult.matrix,
       sourceResult,
     );
   }
@@ -44,7 +43,6 @@ export async function copyLocalSkills(
     globalCopied = await copySkillsToLocalFlattened(
       globalLocalSkills.map((s) => s.id),
       globalPaths.skillsDir,
-      sourceResult.matrix,
       sourceResult,
     );
   }

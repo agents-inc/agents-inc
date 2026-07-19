@@ -1,4 +1,5 @@
 import fs from "fs";
+import { getErrorMessage } from "../../utils/errors.js";
 import os from "os";
 import path from "path";
 import { isDeepEqual, unique } from "remeda";
@@ -19,6 +20,8 @@ import type {
 } from "../../types";
 import type { InstallMode } from "./installation";
 import { deriveInstallMode } from "./installation";
+import { isHomeDirectory } from "./is-home-directory";
+import { installBaseDir, resolveInstallPaths, type InstallPaths } from "./install-base-dir";
 import { matrix } from "../matrix/matrix-provider";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
 import type { WizardResultV2 } from "../../components/wizard/wizard";
@@ -30,15 +33,28 @@ import {
   loadProjectConfig,
   loadProjectConfigFromDir,
 } from "../configuration";
-import { loadAllAgents, loadSkillsByIds, type SourceLoadResult } from "../loading";
-import { loadStackById, compileAgentForPlugin, getStackSkillIds } from "../stacks";
+import { loadMergedAgents, loadSkillsByIds, type SourceLoadResult } from "../loading";
+import { loadStackById, getStackSkillIds } from "../stacks";
 import { resolveAgents, buildSkillRefsFromConfig } from "../resolver";
 import { createLiquidEngine } from "../compiler";
+import { writeCompiledAgentsByScope } from "../agents/write-compiled-agents";
 import { generateProjectConfigFromSkills, buildStackProperty } from "../configuration";
-import { scopeEligibilityKey, splitConfigByScope } from "../configuration/config-generator";
+import {
+  scopeEligibilityKey,
+  splitConfigByScope,
+  isScopePairCompatible,
+} from "../configuration/config-generator";
+import {
+  isActiveAt,
+  isGlobalTombstone,
+  activeSkillScopeMap,
+  activeAgentScopeMap,
+} from "../configuration/scope-predicates";
 import { generateConfigSource, type ConfigSourceOptions } from "../configuration/config-writer";
 import {
   type ConfigTypesBackgroundData,
+  deriveCategories,
+  deriveDomains,
   generateConfigTypesSource,
   regenerateConfigTypes,
 } from "../configuration/config-types-writer";
@@ -49,6 +65,7 @@ import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
   DEFAULT_PLUGIN_NAME,
+  EJECT_SOURCE,
   LOCAL_SKILLS_PATH,
   PROJECT_ROOT,
   STANDARD_FILES,
@@ -101,26 +118,6 @@ export type EjectInstallResult = {
   agentsDir: string;
 };
 
-type InstallPaths = {
-  skillsDir: string;
-  agentsDir: string;
-  configPath: string;
-};
-
-export function resolveInstallPaths(
-  projectDir: string,
-  scope: "project" | "global" = "project",
-): InstallPaths {
-  // Use os.homedir() at runtime for global scope so the path agrees with mocked
-  // home directories in tests (GLOBAL_INSTALL_ROOT is evaluated at import time)
-  const baseDir = scope === "global" ? os.homedir() : projectDir;
-  return {
-    skillsDir: path.join(baseDir, LOCAL_SKILLS_PATH),
-    agentsDir: path.join(baseDir, CLAUDE_DIR, "agents"),
-    configPath: path.join(baseDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-  };
-}
-
 async function prepareDirectories(paths: InstallPaths): Promise<void> {
   await ensureDir(paths.skillsDir);
   await ensureDir(paths.agentsDir);
@@ -134,14 +131,14 @@ async function deleteAndCopySkills(
   skillsDir: string,
 ): Promise<CopiedSkill[]> {
   for (const skill of skills) {
-    if (skill.source && skill.source !== "eject") {
+    if (skill.source && skill.source !== EJECT_SOURCE) {
       verbose(`Using alternate source '${skill.source}' for ${skill.id}`);
       await deleteLocalSkill(baseDir, skill.id);
     }
   }
 
   const skillIds = skills.map((s) => s.id);
-  return copySkillsToLocalFlattened(skillIds, skillsDir, sourceResult.matrix, sourceResult);
+  return copySkillsToLocalFlattened(skillIds, skillsDir, sourceResult);
 }
 
 export function buildEjectSkillsMap(
@@ -149,24 +146,22 @@ export function buildEjectSkillsMap(
 ): Partial<Record<SkillId, LocalResolvedSkill>> {
   // Boundary cast: Object.fromEntries returns { [k: string]: V }
   return Object.fromEntries(
-    copiedSkills
-      .filter((cs) => matrix.skills[cs.skillId])
-      .map((cs) => [
-        cs.skillId,
-        {
-          id: cs.skillId,
-          description: matrix.skills[cs.skillId]!.description,
-          path: cs.destPath,
-          content: "", // Content not needed for skill references
-        },
-      ]),
+    copiedSkills.flatMap((cs) => {
+      const skill = matrix.skills[cs.skillId];
+      if (!skill) return [];
+      return [
+        [
+          cs.skillId,
+          {
+            id: cs.skillId,
+            description: skill.description,
+            path: cs.destPath,
+            content: "", // Content not needed for skill references
+          },
+        ],
+      ];
+    }),
   );
-}
-
-async function loadMergedAgents(sourcePath: string): Promise<Record<AgentName, AgentDefinition>> {
-  const cliAgents = await loadAllAgents(PROJECT_ROOT);
-  const sourceAgents = await loadAllAgents(sourcePath);
-  return { ...cliAgents, ...sourceAgents };
 }
 
 /**
@@ -195,8 +190,8 @@ function computeNewlyAddedSkillIds(
  * was absent entirely) in the persisted config. Admits pure scope-flip cases
  * that `computeNewlyAddedSkillIds` (keyed by id only) cannot express.
  *
- * Scope rule (mirrors `isScopeCompatible`): a project-scoped skill is never
- * compatible with a global-scoped agent; every other combination is compatible.
+ * Scope rule: `isScopePairCompatible` from config-generator — the single
+ * definition shared with the generator's own compatibility filter.
  *
  * Keys are produced by `scopeEligibilityKey` so lookup membership matches the
  * generator's internal set-membership check.
@@ -207,8 +202,8 @@ function computeScopeEligibilityGained(
   priorSkills: readonly SkillConfig[] | undefined,
   priorAgents: readonly AgentScopeConfig[] | undefined,
 ): ReadonlySet<string> {
-  const priorSkillScope = buildScopeLookup(priorSkills);
-  const priorAgentScope = buildAgentScopeLookup(priorAgents);
+  const priorSkillScope = activeSkillScopeMap(priorSkills);
+  const priorAgentScope = activeAgentScopeMap(priorAgents);
 
   const gained = new Set<string>();
   const activeCurrentSkills = currentSkills.filter((s) => !s.excluded);
@@ -216,15 +211,14 @@ function computeScopeEligibilityGained(
 
   for (const agent of activeCurrentAgents) {
     for (const skill of activeCurrentSkills) {
-      const nowCompatible = !(skill.scope === "project" && agent.scope === "global");
-      if (!nowCompatible) continue;
+      if (!isScopePairCompatible(skill.scope, agent.scope)) continue;
 
       const priorSkillScopeValue = priorSkillScope.get(skill.id);
       const priorAgentScopeValue = priorAgentScope.get(agent.name);
       const wasCompatiblePreviously =
         priorSkillScopeValue !== undefined &&
         priorAgentScopeValue !== undefined &&
-        !(priorSkillScopeValue === "project" && priorAgentScopeValue === "global");
+        isScopePairCompatible(priorSkillScopeValue, priorAgentScopeValue);
 
       if (!wasCompatiblePreviously) {
         gained.add(scopeEligibilityKey(agent.name, skill.id));
@@ -232,26 +226,6 @@ function computeScopeEligibilityGained(
     }
   }
   return gained;
-}
-
-function buildScopeLookup(
-  entries: readonly SkillConfig[] | undefined,
-): Map<SkillId, "project" | "global"> {
-  const map = new Map<SkillId, "project" | "global">();
-  for (const s of entries ?? []) {
-    if (!s.excluded) map.set(s.id, s.scope);
-  }
-  return map;
-}
-
-function buildAgentScopeLookup(
-  entries: readonly AgentScopeConfig[] | undefined,
-): Map<AgentName, "project" | "global"> {
-  const map = new Map<AgentName, "project" | "global">();
-  for (const a of entries ?? []) {
-    if (!a.excluded) map.set(a.name, a.scope);
-  }
-  return map;
 }
 
 async function buildEjectConfig(
@@ -266,12 +240,19 @@ async function buildEjectConfig(
       `selectedAgents=[${wizardResult.selectedAgents.join(", ")}]`,
   );
 
-  let loadedStack: Stack | null = null;
+  const loadedStack = wizardResult.selectedStackId
+    ? await loadStackById(wizardResult.selectedStackId, sourceResult.sourcePath)
+    : null;
   if (wizardResult.selectedStackId) {
-    loadedStack = await loadStackById(wizardResult.selectedStackId, sourceResult.sourcePath);
     verbose(
       `buildEjectConfig: loadedStack=${loadedStack ? `found (id='${loadedStack.id}')` : "NOT FOUND"}`,
     );
+    if (!loadedStack) {
+      throw new Error(
+        `Stack '${wizardResult.selectedStackId}' not found in config/stacks.ts. ` +
+          `Available stacks are defined in the CLI's config/stacks.ts file.`,
+      );
+    }
   }
 
   const existing = await loadProjectConfig(projectDir);
@@ -305,8 +286,6 @@ async function buildEjectConfig(
     existing?.config.agents,
   );
 
-  let localConfig: ProjectConfig;
-
   // Pass user's agent selection and skill configs to config generator.
   // Both skillConfigs and agentConfigs are always passed when selectedAgents is
   // set — the config generator enforces that invariant to prevent silent
@@ -329,33 +308,18 @@ async function buildEjectConfig(
     }),
   };
 
-  if (wizardResult.selectedStackId) {
-    if (loadedStack) {
-      // Overlay the YAML stack as `existingStack` so the ownership-based builder
-      // inherits preloaded flags for (agent, category, skill) triples the stack
-      // author marked. Ownership rules still govern which agents and categories
-      // land in the final stack, so Phase A (init) and Phase B (edit) produce
-      // equivalent stacks for the same selection.
-      const yamlStack = buildStackProperty(loadedStack);
-      const mergedExistingStack: Partial<Record<AgentName, StackAgentConfig>> = {
-        ...yamlStack,
-        ...existingStack,
-      };
-      localConfig = generateProjectConfigFromSkills(DEFAULT_PLUGIN_NAME, skillIds, {
-        ...agentOptions,
-        existingStack: mergedExistingStack,
-      });
-
-      localConfig.description = loadedStack.description;
-    } else {
-      throw new Error(
-        `Stack '${wizardResult.selectedStackId}' not found in config/stacks.ts. ` +
-          `Available stacks are defined in the CLI's config/stacks.ts file.`,
-      );
-    }
-  } else {
-    localConfig = generateProjectConfigFromSkills(DEFAULT_PLUGIN_NAME, skillIds, agentOptions);
-  }
+  // With a stack: overlay the YAML stack as `existingStack` so the ownership-based
+  // builder inherits preloaded flags for (agent, category, skill) triples the stack
+  // author marked. Ownership rules still govern which agents and categories land in
+  // the final stack, so Phase A (init) and Phase B (edit) produce equivalent stacks
+  // for the same selection.
+  const effectiveOptions = loadedStack
+    ? { ...agentOptions, existingStack: { ...buildStackProperty(loadedStack), ...existingStack } }
+    : agentOptions;
+  const localConfig: ProjectConfig = {
+    ...generateProjectConfigFromSkills(DEFAULT_PLUGIN_NAME, skillIds, effectiveOptions),
+    ...(loadedStack ? { description: loadedStack.description } : {}),
+  };
 
   verbose(
     `buildEjectConfig result: stack=${localConfig.stack ? Object.keys(localConfig.stack).length + " agents" : "UNDEFINED"}, ` +
@@ -443,7 +407,7 @@ export function buildCompileAgents(
 
   // D7 cross-scope safety net: build set of global skill IDs so global agents only see global skills
   const globalSkillIds = new Set(
-    config.skills.filter((s) => s.scope === "global" && !s.excluded).map((s) => s.id),
+    config.skills.filter((s) => isActiveAt(s, "global")).map((s) => s.id),
   );
 
   // D-217: attach per-skill `source` to each SkillReference so the compiler can
@@ -452,35 +416,29 @@ export function buildCompileAgents(
   // SkillConfig and legitimately carry no source.
   const sourceById = new Map<SkillId, string>(config.skills.map((s) => [s.id, s.source]));
 
-  const compileAgents: Record<string, CompileAgentConfig> = {};
-  for (const agentConfig of activeAgents) {
-    if (agents[agentConfig.name]) {
-      const agentStack = config.stack?.[agentConfig.name];
-      if (agentStack) {
-        const refs = buildSkillRefsFromConfig(agentStack);
-        // Filter out excluded skills; global agents only see global skills (cross-scope safety net)
-        const filteredRefs = refs
-          .filter(
-            (ref) =>
-              !excludedSkillIds.has(ref.id) &&
-              (agentConfig.scope !== "global" || globalSkillIds.has(ref.id)),
-          )
-          .map((ref) => ({ ...ref, source: sourceById.get(ref.id) }));
-        compileAgents[agentConfig.name] = { skills: filteredRefs };
-      } else {
-        compileAgents[agentConfig.name] = {};
-      }
-    }
-  }
-  return compileAgents;
+  const buildAgentCompileEntry = (agentConfig: AgentScopeConfig): CompileAgentConfig => {
+    const agentStack = config.stack?.[agentConfig.name];
+    if (!agentStack) return {};
+    // Filter out excluded skills; global agents only see global skills (cross-scope safety net)
+    const filteredRefs = buildSkillRefsFromConfig(agentStack)
+      .filter(
+        (ref) =>
+          !excludedSkillIds.has(ref.id) &&
+          (agentConfig.scope !== "global" || globalSkillIds.has(ref.id)),
+      )
+      .map((ref) => ({ ...ref, source: sourceById.get(ref.id) }));
+    return { skills: filteredRefs };
+  };
+
+  return Object.fromEntries(
+    activeAgents
+      .filter((agentConfig) => agents[agentConfig.name])
+      .map((agentConfig) => [agentConfig.name, buildAgentCompileEntry(agentConfig)]),
+  );
 }
 
 export function buildAgentScopeMap(config: ProjectConfig): Map<AgentName, "project" | "global"> {
-  const map = new Map<AgentName, "project" | "global">();
-  for (const agent of config.agents.filter((a) => !a.excluded)) {
-    map.set(agent.name, agent.scope);
-  }
-  return map;
+  return activeAgentScopeMap(config.agents);
 }
 
 /**
@@ -632,13 +590,13 @@ async function registerProjectPath(
   const existing = globalConfig.projects ?? [];
 
   // Filter stale entries
-  const valid: string[] = [];
-  for (const p of existing) {
-    const configPath = path.join(p, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-    if (await fileExists(configPath)) {
-      valid.push(p);
-    }
-  }
+  const staleChecks = await Promise.all(
+    existing.map(async (p) => ({
+      path: p,
+      hasConfig: await fileExists(path.join(p, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS)),
+    })),
+  );
+  const valid = staleChecks.filter((c) => c.hasConfig).map((c) => c.path);
 
   if (valid.includes(normalizedPath)) {
     const changed = valid.length !== existing.length;
@@ -672,18 +630,14 @@ function isProjectScopedEntry(entry: { scope?: string; excluded?: boolean }): bo
   return entry.scope === "project";
 }
 
-function isGlobalTombstone(entry: { scope?: string; excluded?: boolean }): boolean {
-  return entry.scope === "global" && !!entry.excluded;
-}
-
 /** True when the global config still has an active (non-excluded) skill for this id. */
 function globalHasActiveSkill(globalConfig: ProjectConfig, id: SkillId): boolean {
-  return globalConfig.skills.some((s) => s.id === id && s.scope === "global" && !s.excluded);
+  return globalConfig.skills.some((s) => s.id === id && isActiveAt(s, "global"));
 }
 
 /** True when the global config still has an active (non-excluded) agent for this name. */
 function globalHasActiveAgent(globalConfig: ProjectConfig, name: AgentName): boolean {
-  return globalConfig.agents.some((a) => a.name === name && a.scope === "global" && !a.excluded);
+  return globalConfig.agents.some((a) => a.name === name && isActiveAt(a, "global"));
 }
 
 /**
@@ -734,7 +688,7 @@ function retainReconciledSelectedAgents(
 ): AgentName[] | undefined {
   if (!selectedAgents) return selectedAgents;
   const projectOwnedNames = new Set(
-    reconciledAgents.filter((a) => a.scope === "project" && !a.excluded).map((a) => a.name),
+    reconciledAgents.filter((a) => isActiveAt(a, "project")).map((a) => a.name),
   );
   return selectedAgents.filter(
     (name) => projectOwnedNames.has(name) || globalHasActiveAgent(globalConfig, name),
@@ -760,10 +714,10 @@ function computeRemovedGlobalSkillIds(
   globalConfig: ProjectConfig,
 ): Set<SkillId> {
   const activeGlobalIds = new Set(
-    globalConfig.skills.filter((s) => s.scope === "global" && !s.excluded).map((s) => s.id),
+    globalConfig.skills.filter((s) => isActiveAt(s, "global")).map((s) => s.id),
   );
   const projectOwnedIds = new Set(
-    priorProjectSkills.filter((s) => s.scope === "project" && !s.excluded).map((s) => s.id),
+    priorProjectSkills.filter((s) => isActiveAt(s, "project")).map((s) => s.id),
   );
   return new Set(
     priorProjectSkills
@@ -891,9 +845,7 @@ export async function propagateGlobalChangesToProjects(
       verbose(`Propagated global changes to ${projectPath}`);
     } catch (error) {
       skipped.push(projectPath);
-      verbose(
-        `Failed to propagate to ${projectPath}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      verbose(`Failed to propagate to ${projectPath}: ${getErrorMessage(error)}`);
     }
   }
 
@@ -925,6 +877,33 @@ async function writeStandaloneConfigTypes(
  * - Project config/types go to {projectDir}/.claude-src/ (with import from global)
  * When installing from home directory, writes a single standalone config.
  */
+/**
+ * Resolves the global config a project install should write: merges new
+ * global-scoped items into the existing global config (existing items are
+ * never removed during project init) and registers this project's path.
+ * `globalDataChanged` gates propagation; `changed` gates the write itself.
+ */
+async function resolveEffectiveGlobalConfig(
+  globalSplit: ProjectConfig,
+  existingGlobalConfig: ProjectConfig | undefined,
+  projectDir: string,
+): Promise<{ config: ProjectConfig; globalDataChanged: boolean; changed: boolean }> {
+  const hasGlobalItems = globalSplit.skills.length > 0 || globalSplit.agents.length > 0;
+
+  const merged = !hasGlobalItems
+    ? { config: existingGlobalConfig ?? { name: "global", skills: [], agents: [] }, changed: false }
+    : existingGlobalConfig
+      ? mergeGlobalConfigs(existingGlobalConfig, globalSplit)
+      : { config: globalSplit, changed: true };
+
+  const registration = await registerProjectPath(merged.config, projectDir);
+  return {
+    config: registration.config,
+    globalDataChanged: merged.changed,
+    changed: merged.changed || registration.changed,
+  };
+}
+
 export async function writeScopedConfigs(
   finalConfig: ProjectConfig,
   matrix: MergedSkillsMatrix,
@@ -936,7 +915,7 @@ export async function writeScopedConfigs(
   // Use os.homedir() at runtime (not GLOBAL_INSTALL_ROOT constant) so the path
   // agrees with getGlobalConfigImportPath() which also calls os.homedir() at runtime
   const homeDir = os.homedir();
-  const isProjectContext = fs.realpathSync(projectDir) !== fs.realpathSync(homeDir);
+  const isProjectContext = !isHomeDirectory(projectDir);
   if (!isProjectContext) {
     // Installing from ~/ — write directly to global config (no import preamble)
     await writeConfigFile(finalConfig, projectConfigPath);
@@ -960,30 +939,14 @@ export async function writeScopedConfigs(
   // - New global items are added
   // - If no existing global config, write the full global split
   const existingGlobal = await loadProjectConfigFromDir(homeDir);
-  const existingGlobalConfig = existingGlobal?.config;
-  const hasGlobalItems = globalConfig.skills.length > 0 || globalConfig.agents.length > 0;
-
-  // Start with existing global config or the new global split
-  let effectiveGlobalConfig: ProjectConfig;
-  let globalDataChanged = false;
-
-  if (hasGlobalItems) {
-    if (existingGlobalConfig) {
-      const mergeResult = mergeGlobalConfigs(existingGlobalConfig, globalConfig);
-      effectiveGlobalConfig = mergeResult.config;
-      globalDataChanged = mergeResult.changed;
-    } else {
-      effectiveGlobalConfig = globalConfig;
-      globalDataChanged = true;
-    }
-  } else {
-    effectiveGlobalConfig = existingGlobalConfig ?? { name: "global", skills: [], agents: [] };
-  }
-
-  // Register this project in global config's projects list
-  const regResult = await registerProjectPath(effectiveGlobalConfig, projectDir);
-  effectiveGlobalConfig = regResult.config;
-  const needsGlobalWrite = globalDataChanged || regResult.changed;
+  const effective = await resolveEffectiveGlobalConfig(
+    globalConfig,
+    existingGlobal?.config,
+    projectDir,
+  );
+  const effectiveGlobalConfig = effective.config;
+  const globalDataChanged = effective.globalDataChanged;
+  const needsGlobalWrite = effective.changed;
 
   if (needsGlobalWrite) {
     await ensureDir(path.dirname(globalConfigPath));
@@ -1067,22 +1030,17 @@ function buildProjectTypesExtras(
   extraDomains: string[];
   extraCategories: string[];
 } {
-  const projectSkills = finalConfig.skills.filter((s) => s.scope === "project" && !s.excluded);
-  const projectAgents = finalConfig.agents.filter((a) => a.scope === "project" && !a.excluded);
+  const projectSkills = finalConfig.skills.filter((s) => isActiveAt(s, "project"));
+  const projectAgents = finalConfig.agents.filter((a) => isActiveAt(a, "project"));
 
   const extraSkillIds = unique(projectSkills.map((s) => s.id));
   const extraAgentNames = unique(projectAgents.map((a) => a.name));
 
-  const projectCategories = unique(
-    projectSkills
-      .map((s) => matrix.skills[s.id]?.category)
-      .filter((c): c is Category => c !== undefined && c !== "local"),
+  const projectCategories = deriveCategories(
+    projectSkills.map((s) => s.id),
+    matrix,
   );
-  const projectDomains = unique(
-    projectCategories
-      .map((c) => matrix.categories[c]?.domain)
-      .filter((d): d is NonNullable<typeof d> => d !== undefined),
-  );
+  const projectDomains = deriveDomains(projectCategories, matrix);
 
   return {
     extraSkillIds,
@@ -1092,6 +1050,49 @@ function buildProjectTypesExtras(
   };
 }
 
+/**
+ * Shared install tail: writes scoped configs, then compiles and writes agents.
+ * Both install modes call this after building their merged config — only the
+ * skills used for compilation and the plugin description differ.
+ */
+async function writeConfigAndCompileAgents(params: {
+  finalConfig: ProjectConfig;
+  agents: Record<AgentName, AgentDefinition>;
+  localSkills: Partial<Record<SkillId, LocalResolvedSkill>>;
+  sourceResult: SourceLoadResult;
+  projectDir: string;
+  paths: InstallPaths;
+  isProjectInstall: boolean;
+  description: string;
+}): Promise<AgentName[]> {
+  const { finalConfig, agents, localSkills, sourceResult, projectDir, paths } = params;
+
+  await writeScopedConfigs(
+    finalConfig,
+    sourceResult.matrix,
+    agents,
+    projectDir,
+    paths.configPath,
+    // During init, the project installation is being created — it exists if we're in a project context
+    params.isProjectInstall,
+  );
+
+  const compileConfig: CompileConfig = {
+    name: DEFAULT_PLUGIN_NAME,
+    description: params.description,
+    agents: buildCompileAgents(finalConfig, agents),
+  };
+  return compileAndWriteAgents(
+    compileConfig,
+    agents,
+    localSkills,
+    sourceResult,
+    projectDir,
+    paths.agentsDir,
+    buildAgentScopeMap(finalConfig),
+  );
+}
+
 async function compileAndWriteAgents(
   compileConfig: CompileConfig,
   agents: Record<AgentName, AgentDefinition>,
@@ -1099,7 +1100,6 @@ async function compileAndWriteAgents(
   sourceResult: SourceLoadResult,
   projectDir: string,
   agentsDir: string,
-  installMode?: InstallMode,
   agentScopeMap?: Map<AgentName, "project" | "global">,
 ): Promise<AgentName[]> {
   const engine = await createLiquidEngine(projectDir);
@@ -1110,28 +1110,19 @@ async function compileAndWriteAgents(
     sourceResult.sourcePath,
   );
 
-  const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, "agents");
+  const outcomes = await writeCompiledAgentsByScope({
+    resolvedAgents,
+    sourcePath: sourceResult.sourcePath,
+    engine,
+    projectAgentsDir: agentsDir,
+    agentScopeMap,
+  });
 
-  // Ensure both directories exist before writing agents.
-  // ensureDir is idempotent (mkdir -p), so calling it when dirs already exist is safe.
-  await ensureDir(globalAgentsDir);
+  // Install treats any compile failure as fatal — surface the first one.
+  const failure = outcomes.find((outcome) => !outcome.ok);
+  if (failure && !failure.ok) throw failure.error;
 
-  const compiledAgentNames: AgentName[] = [];
-  for (const [name, agent] of typedEntries<AgentName, AgentConfig>(resolvedAgents)) {
-    // D-217: `installMode` is no longer passed — per-skill `source` on each
-    // SkillReference drives pluginRef attachment inside compileAgentForPlugin.
-    // Parameter retained in this wrapper's signature to preserve caller contracts
-    // (consolidation is a separate follow-up).
-    const output = await compileAgentForPlugin(name, agent, sourceResult.sourcePath, engine);
-
-    // Route agent output by scope: global agents go to ~/. project agents to projectDir
-    const scope = agentScopeMap?.get(name) ?? "project";
-    const targetDir = scope === "global" ? globalAgentsDir : agentsDir;
-    await writeFile(path.join(targetDir, `${name}.md`), output);
-    compiledAgentNames.push(name);
-  }
-
-  return compiledAgentNames;
+  return outcomes.map((outcome) => outcome.name);
 }
 
 /** Result of plugin-mode config installation — same as EjectInstallResult without copied skills or skillsDir */
@@ -1164,7 +1155,7 @@ export async function installPluginConfig(
 
   // Create directories based on installation context, not data content.
   // ensureDir is idempotent (mkdir -p), so calling it when dirs already exist is safe.
-  const isProjectInstall = fs.realpathSync(projectDir) !== fs.realpathSync(os.homedir());
+  const isProjectInstall = !isHomeDirectory(projectDir);
   if (isProjectInstall) {
     await ensureDir(projectPaths.agentsDir);
   }
@@ -1174,25 +1165,6 @@ export async function installPluginConfig(
   const mergeResult = await buildAndMergeConfig(wizardResult, sourceResult, projectDir, sourceFlag);
   const finalConfig = mergeResult.config;
 
-  // During init, the project installation is being created — it exists if we're in a project context
-  const projectInstallationExists = fs.realpathSync(projectDir) !== fs.realpathSync(os.homedir());
-
-  await writeScopedConfigs(
-    finalConfig,
-    sourceResult.matrix,
-    agents,
-    projectDir,
-    projectPaths.configPath,
-    projectInstallationExists,
-  );
-
-  const compileAgentsConfig = buildCompileAgents(finalConfig, agents);
-  const compileConfig: CompileConfig = {
-    name: DEFAULT_PLUGIN_NAME,
-    description:
-      finalConfig.description || `Plugin setup with ${wizardResult.skills.length} skills`,
-    agents: compileAgentsConfig,
-  };
   // Load skill metadata from source for compilation
   // (actual skill content will be loaded from plugins at runtime)
   const stackSkillIds = finalConfig.stack ? getStackSkillIds(finalConfig.stack) : [];
@@ -1202,16 +1174,17 @@ export async function installPluginConfig(
     sourceResult.sourcePath,
   )) as Partial<Record<SkillId, LocalResolvedSkill>>;
 
-  const compiledAgentNames = await compileAndWriteAgents(
-    compileConfig,
+  const compiledAgentNames = await writeConfigAndCompileAgents({
+    finalConfig,
     agents,
-    skillsForCompilation,
+    localSkills: skillsForCompilation,
     sourceResult,
     projectDir,
-    projectPaths.agentsDir,
-    deriveInstallMode(finalConfig.skills),
-    buildAgentScopeMap(finalConfig),
-  );
+    paths: projectPaths,
+    isProjectInstall,
+    description:
+      finalConfig.description || `Plugin setup with ${wizardResult.skills.length} skills`,
+  });
 
   return {
     config: finalConfig,
@@ -1259,8 +1232,7 @@ export async function installEject(options: EjectInstallOptions): Promise<EjectI
 
   // Create directories based on installation context, not data content.
   // ensureDir is idempotent (mkdir -p), so calling it when dirs already exist is safe.
-  const homeDir = os.homedir();
-  const isProjectInstall = fs.realpathSync(projectDir) !== fs.realpathSync(homeDir);
+  const isProjectInstall = !isHomeDirectory(projectDir);
   if (isProjectInstall) {
     await prepareDirectories(projectPaths);
   } else {
@@ -1287,34 +1259,16 @@ export async function installEject(options: EjectInstallOptions): Promise<EjectI
   const mergeResult = await buildAndMergeConfig(wizardResult, sourceResult, projectDir, sourceFlag);
   const finalConfig = mergeResult.config;
 
-  // During init, the project installation is being created — it exists if we're in a project context
-  const isProjectContext = fs.realpathSync(projectDir) !== fs.realpathSync(os.homedir());
-
-  await writeScopedConfigs(
+  const compiledAgentNames = await writeConfigAndCompileAgents({
     finalConfig,
-    sourceResult.matrix,
     agents,
-    projectDir,
-    projectPaths.configPath,
-    isProjectContext,
-  );
-
-  const compileAgentsConfig = buildCompileAgents(finalConfig, agents);
-  const compileConfig: CompileConfig = {
-    name: DEFAULT_PLUGIN_NAME,
-    description: finalConfig.description || `Eject setup with ${wizardResult.skills.length} skills`,
-    agents: compileAgentsConfig,
-  };
-  const compiledAgentNames = await compileAndWriteAgents(
-    compileConfig,
-    agents,
-    ejectSkillsForResolution,
+    localSkills: ejectSkillsForResolution,
     sourceResult,
     projectDir,
-    projectPaths.agentsDir,
-    deriveInstallMode(finalConfig.skills),
-    buildAgentScopeMap(finalConfig),
-  );
+    paths: projectPaths,
+    isProjectInstall,
+    description: finalConfig.description || `Eject setup with ${wizardResult.skills.length} skills`,
+  });
 
   return {
     copiedSkills,

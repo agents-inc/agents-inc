@@ -5,9 +5,11 @@ import type { SkillConfig } from "../../types/config";
 import type { SourceLoadResult } from "../loading";
 import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
 import { claudePluginInstall, claudePluginUninstallBestEffort } from "../../utils/exec";
+import { buildMarketplacePluginRef, toClaudePluginScope } from "../plugins/plugin-ref";
+import { installBaseDir, resolveInstallPaths } from "./install-base-dir";
 import { verbose, warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
-import { LOCAL_SKILLS_PATH } from "../../consts";
+import { LOCAL_SKILLS_PATH, EJECT_SOURCE } from "../../consts";
 
 export type SkillMigration = {
   id: SkillId;
@@ -55,8 +57,8 @@ export function detectMigrations(
       newScope: newSkill.scope,
     };
 
-    const wasEject = oldSkill.source === "eject";
-    const isEject = newSkill.source === "eject";
+    const wasEject = oldSkill.source === EJECT_SOURCE;
+    const isEject = newSkill.source === EJECT_SOURCE;
 
     if (wasEject && !isEject) {
       toPlugin.push(migration);
@@ -90,43 +92,27 @@ export async function executeMigration(
   // Migrate skills from plugin to eject, split by scope
   if (plan.toEject.length > 0) {
     try {
-      const projectMigrations = plan.toEject.filter((m) => m.newScope !== "global");
-      const globalMigrations = plan.toEject.filter((m) => m.newScope === "global");
-
-      if (projectMigrations.length > 0) {
-        const projectSkillsDir = path.join(projectDir, LOCAL_SKILLS_PATH);
+      const scopes = ["project", "global"] as const;
+      for (const scope of scopes) {
+        const migrations = plan.toEject.filter((m) =>
+          scope === "global" ? m.newScope === "global" : m.newScope !== "global",
+        );
+        if (migrations.length === 0) continue;
         const copied = await copySkillsToLocalFlattened(
-          projectMigrations.map((m) => m.id),
-          projectSkillsDir,
-          sourceResult.matrix,
+          migrations.map((m) => m.id),
+          resolveInstallPaths(projectDir, scope).skillsDir,
           sourceResult,
         );
-        for (const skill of copied) {
-          ejectedSkills.push(skill.skillId);
-        }
-      }
-
-      if (globalMigrations.length > 0) {
-        const globalSkillsDir = path.join(os.homedir(), LOCAL_SKILLS_PATH);
-        const copied = await copySkillsToLocalFlattened(
-          globalMigrations.map((m) => m.id),
-          globalSkillsDir,
-          sourceResult.matrix,
-          sourceResult,
-        );
-        for (const skill of copied) {
-          ejectedSkills.push(skill.skillId);
-        }
+        ejectedSkills.push(...copied.map((skill) => skill.skillId));
       }
 
       // Uninstall plugin references using per-skill scope
       if (!sourceResult.marketplace) {
-        for (const migration of plan.toEject) {
-          if (migration.oldScope === "global" && migration.newScope === "project") continue;
-          warnings.push(
-            `Could not uninstall plugin for ${migration.id}: no marketplace configured`,
-          );
-        }
+        warnings.push(
+          ...plan.toEject
+            .filter((m) => !(m.oldScope === "global" && m.newScope === "project"))
+            .map((m) => `Could not uninstall plugin for ${m.id}: no marketplace configured`),
+        );
       } else {
         for (const migration of plan.toEject) {
           // Don't uninstall global plugins when migrating to project scope —
@@ -136,8 +122,8 @@ export async function executeMigration(
             verbose(`Keeping global plugin for ${migration.id} (migrated to project-eject)`);
             continue;
           }
-          const pluginScope = migration.oldScope === "global" ? "user" : "project";
-          const pluginRef = `${migration.id}@${sourceResult.marketplace}`;
+          const pluginScope = toClaudePluginScope(migration.oldScope);
+          const pluginRef = buildMarketplacePluginRef(migration.id, sourceResult.marketplace);
           await claudePluginUninstallBestEffort(pluginRef, pluginScope, projectDir);
           verbose(`Uninstalled plugin for ${migration.id}`);
         }
@@ -157,7 +143,7 @@ export async function executeMigration(
         verbose(`Keeping global local skill for ${migration.id} (migrated to project-plugin)`);
         continue;
       }
-      const baseDir = migration.oldScope === "global" ? os.homedir() : projectDir;
+      const baseDir = installBaseDir(projectDir, migration.oldScope);
       await deleteLocalSkill(baseDir, migration.id);
     }
 
@@ -165,8 +151,8 @@ export async function executeMigration(
     if (sourceResult.marketplace) {
       for (const migration of plan.toPlugin) {
         try {
-          const pluginScope = migration.newScope === "global" ? "user" : "project";
-          const pluginRef = `${migration.id}@${sourceResult.marketplace}`;
+          const pluginScope = toClaudePluginScope(migration.newScope);
+          const pluginRef = buildMarketplacePluginRef(migration.id, sourceResult.marketplace);
           await claudePluginInstall(pluginRef, pluginScope, projectDir);
           pluginizedSkills.push(migration.id);
           verbose(`Installed plugin for ${migration.id}`);

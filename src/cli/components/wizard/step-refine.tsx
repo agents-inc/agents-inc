@@ -3,6 +3,7 @@ import React from "react";
 import { CLI_COLORS, DEFAULT_BRANDING } from "../../consts.js";
 import { KEY_LABEL_ENTER, KEY_LABEL_ESC, KEY_LABEL_ARROWS_VERT } from "./hotkeys.js";
 import { Toast } from "./toast.js";
+import { SelectionCard } from "./selection-card.js";
 
 export type RefineAction = "all-recommended" | "customize" | null;
 
@@ -47,47 +48,18 @@ export const StepRefine: React.FC<StepRefineProps> = ({
       </Text>
       <Text> </Text>
 
-      <Box
-        borderStyle="round"
-        borderColor={isRecommendedSelected ? CLI_COLORS.SUCCESS : CLI_COLORS.NEUTRAL}
-        paddingX={2}
-        paddingY={1}
+      <SelectionCard
+        label="Use all recommended skills (verified)"
+        description={`This is the fastest option. All skills are verified and maintained by ${DEFAULT_BRANDING.NAME}`}
+        isFocused={isRecommendedSelected}
         marginBottom={1}
-      >
-        <Box flexDirection="column">
-          <Text
-            color={isRecommendedSelected ? CLI_COLORS.SUCCESS : undefined}
-            bold={isRecommendedSelected}
-          >
-            {isRecommendedSelected ? ">" : "○"} Use all recommended skills (verified){" "}
-            <Text dimColor>{isRecommendedSelected ? "(Selected)" : "(Not selected)"}</Text>
-          </Text>
-          <Text> </Text>
-          <Text dimColor>
-            This is the fastest option. All skills are verified and maintained by{" "}
-            {DEFAULT_BRANDING.NAME}
-          </Text>
-        </Box>
-      </Box>
+      />
 
-      <Box
-        borderStyle="round"
-        borderColor={!isRecommendedSelected ? CLI_COLORS.SUCCESS : CLI_COLORS.NEUTRAL}
-        paddingX={2}
-        paddingY={1}
-      >
-        <Box flexDirection="column">
-          <Text
-            color={!isRecommendedSelected ? CLI_COLORS.SUCCESS : undefined}
-            bold={!isRecommendedSelected}
-          >
-            {!isRecommendedSelected ? ">" : "○"} Customize skill sources{" "}
-            <Text dimColor>{!isRecommendedSelected ? "(Selected)" : "(Not selected)"}</Text>
-          </Text>
-          <Text> </Text>
-          <Text dimColor>Choose alternative skills for each technology</Text>
-        </Box>
-      </Box>
+      <SelectionCard
+        label="Customize skill sources"
+        description="Choose alternative skills for each technology"
+        isFocused={!isRecommendedSelected}
+      />
 
       <Box marginTop={1}>
         <Text dimColor>

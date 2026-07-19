@@ -1,7 +1,7 @@
 import os from "os";
 import path from "path";
 
-import { DEFAULT_PUBLIC_SOURCE_NAME, SKILLS_DIR_PATH } from "../../consts";
+import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, SKILLS_DIR_PATH } from "../../consts";
 import type {
   BoundSkillCandidate,
   MergedSkillsMatrix,
@@ -22,6 +22,24 @@ import {
 import { extractAllSkills } from "../matrix";
 import { discoverAllPluginSkills } from "../plugins";
 import { fetchFromSource, fetchMarketplace } from "./source-fetcher";
+
+/**
+ * Appends a source to the skill's availableSources, initializing the array on
+ * first tag. In-place mutation is this module's documented tagging contract.
+ */
+function addAvailableSource(
+  skill: { availableSources?: SkillSource[] },
+  source: SkillSource,
+): void {
+  skill.availableSources = skill.availableSources ?? [];
+  skill.availableSources.push(source);
+}
+
+/** Fetches a source (cached unless forceRefresh) and extracts its skills. */
+async function fetchSourceSkills(url: string, forceRefresh: boolean) {
+  const fetchResult = await fetchFromSource(url, { forceRefresh });
+  return extractAllSkills(path.join(fetchResult.path, SKILLS_DIR_PATH));
+}
 
 /**
  * Annotates every skill in the matrix with multi-source availability metadata.
@@ -103,8 +121,7 @@ function tagPrimarySourceSkills(
       primary: true,
     };
 
-    skill.availableSources = skill.availableSources ?? [];
-    skill.availableSources.push(source);
+    addAvailableSource(skill, source);
   }
 }
 
@@ -115,14 +132,13 @@ function tagLocalSkills(matrix: MergedSkillsMatrix): void {
     if (!skill.local) continue;
 
     const source: SkillSource = {
-      name: "eject",
+      name: EJECT_SOURCE,
       type: "local",
       installed: true,
       installMode: "eject",
     };
 
-    skill.availableSources = skill.availableSources ?? [];
-    skill.availableSources.push(source);
+    addAvailableSource(skill, source);
     count++;
   }
 
@@ -135,7 +151,7 @@ async function tagPluginSkills(
   primarySourceName: string,
   primarySourceType: SkillSourceType,
 ): Promise<void> {
-  const allPluginSkillIds = await collectPluginSkillIds(matrix, projectDir);
+  const allPluginSkillIds = await collectPluginSkillIds(projectDir);
 
   if (allPluginSkillIds.length === 0) {
     return;
@@ -169,10 +185,7 @@ async function tagPluginSkills(
  * Collects skill IDs from all enabled plugins via settings.json and global cache.
  * Uses {@link discoverAllPluginSkills} to find skills from the plugin registry.
  */
-async function collectPluginSkillIds(
-  _matrix: MergedSkillsMatrix,
-  projectDir: string,
-): Promise<SkillId[]> {
+async function collectPluginSkillIds(projectDir: string): Promise<SkillId[]> {
   const pluginSkills = await discoverAllPluginSkills(projectDir);
   const skillIds = typedKeys<SkillId>(pluginSkills);
 
@@ -216,28 +229,17 @@ async function tagPublicSourceSkills(
   }
 
   try {
-    const fetchResult = await fetchFromSource(DEFAULT_SOURCE, { forceRefresh });
-    const skillsDir = path.join(fetchResult.path, SKILLS_DIR_PATH);
-    const publicSkills = await extractAllSkills(skillsDir);
+    const publicSkills = await fetchSourceSkills(DEFAULT_SOURCE, forceRefresh);
 
-    let matchCount = 0;
-    for (const publicSkill of publicSkills) {
-      const matrixSkill = matrix.skills[publicSkill.id];
-      if (!matrixSkill) continue;
-
-      const source: SkillSource = {
-        name: publicSourceName,
-        type: "public",
-        installed: false,
-      };
-
-      matrixSkill.availableSources = matrixSkill.availableSources ?? [];
-      matrixSkill.availableSources.push(source);
-      matchCount++;
+    const matched = publicSkills
+      .map((publicSkill) => matrix.skills[publicSkill.id])
+      .filter((matrixSkill) => matrixSkill !== undefined);
+    for (const matrixSkill of matched) {
+      addAvailableSource(matrixSkill, { name: publicSourceName, type: "public", installed: false });
     }
 
     verbose(
-      `Public source: ${publicSkills.length} skills found, ${matchCount} matching primary matrix`,
+      `Public source: ${publicSkills.length} skills found, ${matched.length} matching primary matrix`,
     );
   } catch (error) {
     warn(`Failed to load public source for alternative tagging: ${getErrorMessage(error)}`);
@@ -266,29 +268,22 @@ async function tagExtraSources(
     verbose(`Loading extra source: ${extraSource.name} (${extraSource.url})`);
 
     try {
-      const fetchResult = await fetchFromSource(extraSource.url, { forceRefresh });
-      const skillsDir = path.join(fetchResult.path, SKILLS_DIR_PATH);
-      const skills = await extractAllSkills(skillsDir);
+      const skills = await fetchSourceSkills(extraSource.url, forceRefresh);
 
-      let matchCount = 0;
-      for (const extractedSkill of skills) {
-        const matrixSkill = matrix.skills[extractedSkill.id];
-        if (!matrixSkill) continue;
-
-        const source: SkillSource = {
+      const matched = skills
+        .map((extractedSkill) => matrix.skills[extractedSkill.id])
+        .filter((matrixSkill) => matrixSkill !== undefined);
+      for (const matrixSkill of matched) {
+        addAvailableSource(matrixSkill, {
           name: extraSource.name,
           type: "private",
           url: extraSource.url,
           installed: false,
-        };
-
-        matrixSkill.availableSources = matrixSkill.availableSources ?? [];
-        matrixSkill.availableSources.push(source);
-        matchCount++;
+        });
       }
 
       verbose(
-        `Extra source '${extraSource.name}': ${skills.length} skills found, ${matchCount} matching`,
+        `Extra source '${extraSource.name}': ${skills.length} skills found, ${matched.length} matching`,
       );
     } catch (error) {
       warn(
@@ -346,25 +341,20 @@ export async function searchExtraSources(
 
   for (const source of configuredSources) {
     try {
-      const fetchResult = await fetchFromSource(source.url, { forceRefresh: false });
-      const skillsDir = path.join(fetchResult.path, SKILLS_DIR_PATH);
-      const skills = await extractAllSkills(skillsDir);
+      const skills = await fetchSourceSkills(source.url, false);
 
-      for (const skill of skills) {
-        // Match by last segment of directory path (the alias/display-name convention)
-        const segments = skill.directoryPath.split("/");
-        const lastSegment = segments[segments.length - 1]?.toLowerCase();
-
-        if (lastSegment === lowerAlias) {
-          candidates.push({
+      // Match by last segment of directory path (the alias/display-name convention)
+      candidates.push(
+        ...skills
+          .filter((skill) => path.basename(skill.directoryPath).toLowerCase() === lowerAlias)
+          .map((skill) => ({
             id: skill.id,
             sourceUrl: source.url,
             sourceName: source.name,
             alias,
             description: skill.description,
-          });
-        }
-      }
+          })),
+      );
     } catch (error) {
       warn(
         `Failed to search extra source '${source.name}' ('${source.url}'): ${getErrorMessage(error)}`,

@@ -1,6 +1,5 @@
 import { getAgentDefinitions } from "../../agents/index.js";
-import { loadAllAgents } from "../../loading/index.js";
-import { PROJECT_ROOT } from "../../../consts.js";
+import { loadMergedAgents } from "../../loading/index.js";
 import type { AgentDefinition, AgentName, AgentSourcePaths } from "../../../types/index.js";
 
 export type AgentDefs = {
@@ -23,9 +22,7 @@ export async function loadAgentDefs(options?: {
   forceRefresh?: boolean;
 }): Promise<AgentDefs> {
   const agentSourcePaths = await getAgentDefinitions(undefined, options);
-  const cliAgents = await loadAllAgents(PROJECT_ROOT);
-  const sourceAgents = await loadAllAgents(agentSourcePaths.sourcePath);
-  const agents: Record<AgentName, AgentDefinition> = { ...cliAgents, ...sourceAgents };
+  const agents = await loadMergedAgents(agentSourcePaths.sourcePath);
 
   return {
     agents,

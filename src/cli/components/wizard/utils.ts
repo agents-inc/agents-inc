@@ -3,20 +3,21 @@ import { findStack } from "../../lib/matrix/matrix-provider.js";
 import type { Domain } from "../../types/index.js";
 import { isDomain } from "../../utils/type-guards.js";
 
+const DOMAIN_DISPLAY_NAMES: Record<Domain, string> = {
+  web: "Web",
+  api: "API",
+  ai: "AI",
+  cli: "CLI",
+  mobile: "Mobile",
+  desktop: "Desktop",
+  infra: "Infrastructure",
+  meta: "Meta",
+  shared: "Shared",
+};
+
 export function getDomainDisplayName(domain: string): string {
-  const displayNames: Record<Domain, string> = {
-    web: "Web",
-    api: "API",
-    ai: "AI",
-    cli: "CLI",
-    mobile: "Mobile",
-    desktop: "Desktop",
-    infra: "Infrastructure",
-    meta: "Meta",
-    shared: "Shared",
-  };
   return (
-    (isDomain(domain) ? displayNames[domain] : null) ??
+    (isDomain(domain) ? DOMAIN_DISPLAY_NAMES[domain] : null) ??
     domain.charAt(0).toUpperCase() + domain.slice(1)
   );
 }

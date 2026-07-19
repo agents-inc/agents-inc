@@ -17,5 +17,9 @@ export {
   type SkillComparisonResults,
 } from "./compare-skills.js";
 export { findSkillMatch, type SkillMatchResult } from "./find-skill-match.js";
-export { installPluginSkills, type PluginInstallResult } from "./install-plugin-skills.js";
+export {
+  installPluginSkills,
+  pluginInstallFailureError,
+  type PluginInstallResult,
+} from "./install-plugin-skills.js";
 export { uninstallPluginSkills, type PluginUninstallResult } from "./uninstall-plugin-skills.js";

@@ -16,6 +16,7 @@ import {
   regenerateConfigTypes,
 } from "../../lib/configuration/config-types-writer.js";
 import { EXIT_CODES } from "../../lib/exit-codes.js";
+import { assertDirOverwritable } from "../../lib/assert-dir-overwritable.js";
 import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
 import { getAgentDefinitions } from "../../lib/agents/index.js";
 import { getErrorMessage } from "../../utils/errors.js";
@@ -28,6 +29,8 @@ type PurposeInputProps = {
   onSubmit: (purpose: string) => void;
   onCancel: () => void;
 };
+
+type PurposeOutcome = { status: "submitted"; purpose: string } | { status: "cancelled" };
 
 const PurposeInput: React.FC<PurposeInputProps> = ({ onSubmit, onCancel }) => {
   const { exit } = useApp();
@@ -134,14 +137,14 @@ export default class NewAgent extends BaseCommand {
   }
 
   private async checkExistingDir(agentDir: string, force: boolean): Promise<void> {
-    if (await directoryExists(agentDir)) {
-      if (!force) {
-        this.error(`Agent directory already exists: ${agentDir}\nUse --force to overwrite.`, {
-          exit: EXIT_CODES.ERROR,
-        });
-      }
-      this.warn(`Overwriting existing agent at ${agentDir}`);
+    const result = await assertDirOverwritable(agentDir);
+    if (result.ok) return;
+    if (!force) {
+      this.error(`Agent directory already exists: ${agentDir}\nUse --force to overwrite.`, {
+        exit: EXIT_CODES.ERROR,
+      });
     }
+    this.warn(`Overwriting existing agent at ${agentDir}`);
   }
 
   private async ensureClaudeCliAvailable(): Promise<void> {
@@ -156,29 +159,28 @@ export default class NewAgent extends BaseCommand {
   }
 
   private async promptForPurpose(): Promise<string> {
-    let inputResult: string | null = null;
-    let cancelled = false;
+    const outcome = await new Promise<PurposeOutcome>((resolve) => {
+      const { waitUntilExit } = render(
+        <PurposeInput
+          onSubmit={(value) => resolve({ status: "submitted", purpose: value })}
+          onCancel={() => resolve({ status: "cancelled" })}
+        />,
+      );
+      // App exit without a callback (or a render failure) counts as a cancel;
+      // resolve is first-wins, so a prior submit is unaffected.
+      waitUntilExit().then(
+        () => resolve({ status: "cancelled" }),
+        () => resolve({ status: "cancelled" }),
+      );
+    });
 
-    const { waitUntilExit } = render(
-      <PurposeInput
-        onSubmit={(value) => {
-          inputResult = value;
-        }}
-        onCancel={() => {
-          cancelled = true;
-        }}
-      />,
-    );
-
-    await waitUntilExit();
-
-    if (cancelled || !inputResult) {
+    if (outcome.status === "cancelled") {
       this.log("Cancelled");
       this.exit(EXIT_CODES.CANCELLED);
       throw new Error("unreachable");
     }
 
-    return inputResult;
+    return outcome.purpose;
   }
 
   private logAgentPlan(name: string, purpose: string, outputDir: string): void {

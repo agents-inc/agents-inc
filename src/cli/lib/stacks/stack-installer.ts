@@ -3,6 +3,7 @@ import path from "path";
 
 import { compileStackPlugin } from "./stack-plugin-compiler";
 import { claudePluginInstall, isClaudeCLIAvailable } from "../../utils/exec";
+import { buildMarketplacePluginRef } from "../plugins";
 import { remove, ensureDir } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import type { CompiledStackPlugin } from "./stack-plugin-compiler";
@@ -61,8 +62,8 @@ export async function installStackAsPlugin(
   }
 
   if (marketplace) {
-    verbose(`Installing from marketplace: ${stackId}@${marketplace}`);
-    const pluginRef = `${stackId}@${marketplace}`;
+    const pluginRef = buildMarketplacePluginRef(stackId, marketplace);
+    verbose(`Installing from marketplace: ${pluginRef}`);
 
     await claudePluginInstall(pluginRef, "project", projectDir);
 

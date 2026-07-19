@@ -37,17 +37,8 @@ export async function fetchSkills(
   const skillsOutputDir = path.join(outputDir, "skills");
   await ensureDir(skillsOutputDir);
 
-  const copiedSkills: SkillId[] = [];
-
   for (const skillId of skillIds) {
-    const pluginName = skillId;
-    const plugin = marketplace.plugins.find((p) => p.name === pluginName);
-
-    if (plugin) {
-      verbose(`Found skill plugin in marketplace: ${pluginName}`);
-      const pluginSource = resolvePluginSource(plugin, marketplace);
-      verbose(`Plugin source: ${pluginSource}`);
-    }
+    logMarketplacePluginMatch(skillId, marketplace);
 
     const skillSourceDir = path.join(sourcePath, "src", "skills");
 
@@ -66,11 +57,19 @@ export async function fetchSkills(
 
     await ensureDir(path.dirname(destPath));
     await copy(skillPath, destPath);
-    copiedSkills.push(skillId);
     verbose(`Copied skill: ${skillId} -> ${destPath}`);
   }
 
-  return copiedSkills;
+  // Every failure path above throws, so all requested skills were copied.
+  return skillIds;
+}
+
+/** Diagnostic only: notes when a requested skill also exists as a marketplace plugin. */
+function logMarketplacePluginMatch(skillId: SkillId, marketplace: Marketplace): void {
+  const plugin = marketplace.plugins.find((p) => p.name === skillId);
+  if (!plugin) return;
+  verbose(`Found skill plugin in marketplace: ${skillId}`);
+  verbose(`Plugin source: ${resolvePluginSource(plugin, marketplace)}`);
 }
 
 async function findSkillPath(baseDir: string, skillId: SkillId): Promise<string | null> {

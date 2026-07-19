@@ -159,6 +159,12 @@ type ScopeGroup = {
   rows: { row: SourceRow; originalIndex: number }[];
 };
 
+/** First row index at or cyclically after `startRow` that is not readOnly; `startRow` when all are. */
+function firstNonReadOnlyRow(rows: SourceRow[], startRow: number): number {
+  const cyclicRowOrder = rows.map((_, offset) => (startRow + offset) % rows.length);
+  return cyclicRowOrder.find((row) => !rows[row]?.readOnly) ?? startRow;
+}
+
 /** Groups rows by scope for rendering with section labels. Returns empty array when all rows share the same scope (renders flat). */
 function groupRowsByScope(rows: SourceRow[]): ScopeGroup[] {
   const indexed = rows.map((row, i) => ({ row, originalIndex: i }));
@@ -205,14 +211,7 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
 
   const skipRow = useCallback((row: number): boolean => !!rows[row]?.readOnly, [rows]);
 
-  const effectiveDefaultRow = (() => {
-    let row = defaultFocusedRow;
-    for (let i = 0; i < rows.length; i++) {
-      if (!rows[row]?.readOnly) return row;
-      row = (row + 1) % rows.length;
-    }
-    return defaultFocusedRow;
-  })();
+  const effectiveDefaultRow = firstNonReadOnlyRow(rows, defaultFocusedRow);
 
   const { focusedRow, focusedCol, moveFocus } = useFocusedListItem(rows.length, getColCount, {
     wrap: true,
@@ -256,18 +255,13 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
           return;
         }
 
-        const isLeft = key.leftArrow;
-        const isRight = key.rightArrow;
-        const isUp = key.upArrow;
-        const isDown = key.downArrow;
-
-        if (isLeft) {
+        if (key.leftArrow) {
           moveFocus("left");
-        } else if (isRight) {
+        } else if (key.rightArrow) {
           moveFocus("right");
-        } else if (isUp) {
+        } else if (key.upArrow) {
           moveFocus("up");
-        } else if (isDown) {
+        } else if (key.downArrow) {
           moveFocus("down");
         }
       },

@@ -1,5 +1,6 @@
 import os from "os";
 import path from "path";
+import { uniqueBy } from "remeda";
 import { fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
@@ -110,7 +111,7 @@ export async function resolveSource(
         verbose(`Source from ${SOURCE_ENV_VAR} env var: ${trimmed}`);
         return { source: trimmed, sourceOrigin: "env", marketplace };
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = getErrorMessage(error);
         warn(
           `${SOURCE_ENV_VAR} has an invalid value — ignoring and falling back to next source.\n${message}`,
         );
@@ -163,17 +164,7 @@ export async function resolveAllSources(
     description: "Primary skills marketplace",
   };
 
-  const extras: SourceEntry[] = [];
-  const seenNames = new Set<string>();
-
-  if (effectiveConfig?.sources) {
-    for (const source of effectiveConfig.sources) {
-      if (!seenNames.has(source.name)) {
-        seenNames.add(source.name);
-        extras.push(source);
-      }
-    }
-  }
+  const extras = uniqueBy(effectiveConfig?.sources ?? [], (s) => s.name);
 
   return { primary, extras };
 }

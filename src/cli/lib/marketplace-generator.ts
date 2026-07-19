@@ -1,5 +1,5 @@
 import path from "path";
-import { sortBy } from "remeda";
+import { countBy, sortBy } from "remeda";
 
 import { MAX_PLUGIN_FILE_SIZE } from "../consts";
 import { getErrorMessage } from "../utils/errors";
@@ -79,28 +79,22 @@ export async function generateMarketplace(
 
   const sortedPlugins = sortBy(plugins, (p) => p.name);
 
-  const marketplace: Marketplace = {
+  // Field order matters: the object is serialized verbatim into marketplace.json,
+  // so conditional fields keep the same positions the previous emissions used.
+  return {
     $schema: MARKETPLACE_SCHEMA_URL,
     name: options.name,
     version: options.version ?? "1.0.0",
     owner: {
       name: options.ownerName,
+      ...(options.ownerEmail ? { email: options.ownerEmail } : {}),
     },
     metadata: {
       pluginRoot: options.pluginRoot,
     },
     plugins: sortedPlugins,
+    ...(options.description ? { description: options.description } : {}),
   };
-
-  if (options.description) {
-    marketplace.description = options.description;
-  }
-
-  if (options.ownerEmail) {
-    marketplace.owner.email = options.ownerEmail;
-  }
-
-  return marketplace;
 }
 
 export async function writeMarketplace(
@@ -116,15 +110,8 @@ export function getMarketplaceStats(marketplace: Marketplace): {
   total: number;
   byCategory: Record<string, number>;
 } {
-  const byCategory: Record<string, number> = {};
-
-  for (const plugin of marketplace.plugins) {
-    const cat = plugin.category ?? "uncategorized";
-    byCategory[cat] = (byCategory[cat] ?? 0) + 1;
-  }
-
   return {
     total: marketplace.plugins.length,
-    byCategory,
+    byCategory: countBy(marketplace.plugins, (p) => p.category ?? "uncategorized"),
   };
 }

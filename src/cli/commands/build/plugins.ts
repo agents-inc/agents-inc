@@ -5,7 +5,7 @@ import { BaseCommand } from "../../base-command";
 import { setVerbose } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
 import { fileExists, listDirectories, readFile, remove } from "../../utils/fs";
-import { DIRS, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
+import { DIRS, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE, PLUGINS_DIST_PATH } from "../../consts";
 import {
   compileAllSkillPlugins,
   compileSkillPlugin,
@@ -14,8 +14,6 @@ import {
 import { compileAllAgentPlugins, printAgentCompilationSummary } from "../../lib/agents";
 import { pluginManifestSchema } from "../../lib/schemas";
 import type { PluginManifest } from "../../types";
-
-const DEFAULT_OUTPUT_DIR = "dist/plugins";
 
 export default class BuildPlugins extends BaseCommand {
   static summary = "Build skills and agents into standalone plugins";
@@ -57,7 +55,7 @@ export default class BuildPlugins extends BaseCommand {
     "output-dir": Flags.string({
       char: "o",
       description: "Output directory",
-      default: DEFAULT_OUTPUT_DIR,
+      default: PLUGINS_DIST_PATH,
     }),
     skill: Flags.string({
       description: "Compile only a specific skill (path to skill directory)",

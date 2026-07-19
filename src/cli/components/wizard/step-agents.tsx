@@ -1,4 +1,6 @@
+import { groupBy, unique } from "remeda";
 import { Box, Text, useInput } from "ink";
+import { deriveScopeBadges } from "../../lib/wizard/index.js";
 import React, { useMemo, useState } from "react";
 import { CLI_COLORS, UI_SYMBOLS } from "../../consts.js";
 import { matrix } from "../../lib/matrix/matrix-provider.js";
@@ -114,38 +116,29 @@ type ListRow =
   | { type: "agent"; agent: AgentItem };
 
 function buildAgentGroups(matrix: MergedSkillsMatrix): AgentGroup[] {
-  const customAgentIds: string[] = [];
-  for (const stack of matrix.suggestedStacks) {
-    for (const agentName of typedKeys(stack.skills)) {
-      if (!BUILT_IN_AGENT_IDS.has(agentName) && !customAgentIds.includes(agentName)) {
-        customAgentIds.push(agentName);
-      }
-    }
-  }
+  const customAgentIds: string[] = unique(
+    matrix.suggestedStacks.flatMap((stack) => typedKeys(stack.skills)),
+  ).filter((agentName) => !BUILT_IN_AGENT_IDS.has(agentName));
 
   if (customAgentIds.length === 0) return BUILT_IN_AGENT_GROUPS;
 
   // Group custom agents by explicit domain (from metadata.yaml) or kebab prefix fallback
-  const customGroupMap = new Map<string, AgentItem[]>();
-  for (const agentId of customAgentIds) {
+  const customItems = customAgentIds.map((agentId) => {
     const explicitDomain = isAgentName(agentId) ? matrix.agentDefinedDomains?.[agentId] : undefined;
     const domainKey = explicitDomain ?? (agentId.split("-")[0] || "custom");
-    const groupLabel = getDomainDisplayName(domainKey);
-    if (!customGroupMap.has(groupLabel)) {
-      customGroupMap.set(groupLabel, []);
-    }
-    // Boundary cast: custom agent names from marketplace stacks are not in the AgentName union
-    customGroupMap.get(groupLabel)!.push({
-      id: agentId as AgentName,
-      label: agentIdToLabel(agentId),
-      description: "Custom agent",
-    });
-  }
-
-  const customGroups: AgentGroup[] = [];
-  for (const [label, items] of customGroupMap) {
-    customGroups.push({ label, items });
-  }
+    return {
+      groupLabel: getDomainDisplayName(domainKey),
+      item: {
+        // Boundary cast: custom agent names from marketplace stacks are not in the AgentName union
+        id: agentId as AgentName,
+        label: agentIdToLabel(agentId),
+        description: "Custom agent",
+      },
+    };
+  });
+  const customGroups: AgentGroup[] = Object.entries(groupBy(customItems, (c) => c.groupLabel)).map(
+    ([label, entries]) => ({ label, items: entries.map((entry) => entry.item) }),
+  );
 
   return [...BUILT_IN_AGENT_GROUPS, ...customGroups];
 }
@@ -260,12 +253,10 @@ export const StepAgents: React.FC = () => {
         const checkbox = isSelected ? "[\u2713]" : "[ ]";
         const pointer = isFocused ? UI_SYMBOLS.CHEVRON : UI_SYMBOLS.CHEVRON_SPACER;
         const agentConfig = agentConfigs.find((ac) => ac.name === row.agent.id && !ac.excluded);
-        const scope = agentConfig?.scope ?? "global";
         const excludedConfig = agentConfigs.find((ac) => ac.name === row.agent.id && ac.excluded);
-        const secondaryScope =
-          excludedConfig && agentConfig && excludedConfig.scope !== agentConfig.scope
-            ? excludedConfig.scope
-            : undefined;
+        const badges = deriveScopeBadges(agentConfig, excludedConfig);
+        const scope = badges.scope ?? "global";
+        const secondaryScope = badges.secondaryScope;
         return (
           <Box key={row.agent.id} flexShrink={0}>
             <Text>
@@ -298,6 +289,10 @@ export const StepAgents: React.FC = () => {
             </Text>
           </Box>
         );
+      }
+      default: {
+        const _exhaustive: never = row;
+        return _exhaustive;
       }
     }
   });

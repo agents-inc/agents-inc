@@ -11,6 +11,8 @@ export {
 
 export { findPluginManifest } from "./plugin-manifest-finder";
 
+export { buildMarketplacePluginRef, toClaudePluginScope } from "./plugin-ref";
+
 export {
   getUserPluginsDir,
   getCollectivePluginDir,

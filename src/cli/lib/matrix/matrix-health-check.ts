@@ -1,4 +1,5 @@
 import { warn } from "../../utils/logger";
+import { LOCAL_PSEUDO_CATEGORY } from "../../consts";
 import type {
   CategoryDefinition,
   MergedSkillsMatrix,
@@ -15,11 +16,11 @@ export type MatrixHealthIssue = {
 };
 
 export function checkMatrixHealth(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
-  const issues: MatrixHealthIssue[] = [];
-
-  checkCategoryDomains(matrix, issues);
-  checkSkillCategories(matrix, issues);
-  checkSkillRelationRefs(matrix, issues);
+  const issues = [
+    ...checkCategoryDomains(matrix),
+    ...checkSkillCategories(matrix),
+    ...checkSkillRelationRefs(matrix),
+  ];
 
   for (const issue of issues) {
     warn(`[matrix] ${issue.details}`);
@@ -29,73 +30,53 @@ export function checkMatrixHealth(matrix: MergedSkillsMatrix): MatrixHealthIssue
 }
 
 // Categories without a domain won't appear in any wizard domain view
-function checkCategoryDomains(matrix: MergedSkillsMatrix, issues: MatrixHealthIssue[]): void {
-  for (const [catId, cat] of typedEntries<Category, CategoryDefinition>(matrix.categories)) {
-    if (!cat) continue;
-    if (!cat.domain) {
-      issues.push({
-        severity: "warning",
-        finding: "category-missing-domain",
-        details: `Category '${catId}' has no domain — it won't appear in any wizard domain view`,
-      });
-    }
-  }
+function checkCategoryDomains(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
+  return typedEntries<Category, CategoryDefinition>(matrix.categories)
+    .filter(([, cat]) => cat !== undefined && !cat.domain)
+    .map(([catId]) => ({
+      severity: "warning" as const,
+      finding: "category-missing-domain",
+      details: `Category '${catId}' has no domain — it won't appear in any wizard domain view`,
+    }));
 }
 
-function checkSkillCategories(matrix: MergedSkillsMatrix, issues: MatrixHealthIssue[]): void {
-  for (const [skillId, skill] of typedEntries<SkillId, ResolvedSkill>(matrix.skills)) {
-    if (!skill) continue;
-    // "local" is a pseudo-category that won't exist in matrix.categories — skip it
-    if (skill.category === "local") continue;
-    const category = matrix.categories[skill.category];
-    if (!category) {
-      issues.push({
-        severity: "warning",
-        finding: "skill-unknown-category",
-        details: `Skill '${skillId}' references category '${skill.category}' which does not exist in the matrix`,
-      });
-    }
-  }
+function checkSkillCategories(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
+  return typedEntries<SkillId, ResolvedSkill>(matrix.skills)
+    .filter(
+      ([, skill]) =>
+        skill !== undefined &&
+        // "local" is a pseudo-category that won't exist in matrix.categories — skip it
+        skill.category !== LOCAL_PSEUDO_CATEGORY &&
+        !matrix.categories[skill.category],
+    )
+    .map(([skillId, skill]) => ({
+      severity: "warning" as const,
+      finding: "skill-unknown-category",
+      details: `Skill '${skillId}' references category '${skill.category}' which does not exist in the matrix`,
+    }));
 }
 
-const RELATION_FIELDS_SKILL_ID_ARRAY = ["compatibleWith"] as const;
+/** Every outgoing relation reference on a skill, tagged with the field it came from. */
+function relationRefs(skill: ResolvedSkill): Array<{ field: string; ref: SkillId }> {
+  return [
+    ...skill.compatibleWith.map((ref) => ({ field: "compatibleWith", ref })),
+    ...skill.conflictsWith.map((relation) => ({ field: "conflictsWith", ref: relation.skillId })),
+    ...skill.requires.flatMap((requirement) =>
+      requirement.skillIds.map((ref) => ({ field: "requires", ref })),
+    ),
+  ];
+}
 
-function checkSkillRelationRefs(matrix: MergedSkillsMatrix, issues: MatrixHealthIssue[]): void {
-  for (const [skillId, skill] of typedEntries<SkillId, ResolvedSkill>(matrix.skills)) {
-    if (!skill) continue;
-
-    for (const field of RELATION_FIELDS_SKILL_ID_ARRAY) {
-      for (const ref of skill[field]) {
-        if (!matrix.skills[ref]) {
-          issues.push({
-            severity: "warning",
+function checkSkillRelationRefs(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
+  return typedEntries<SkillId, ResolvedSkill>(matrix.skills).flatMap(([skillId, skill]) =>
+    skill === undefined
+      ? []
+      : relationRefs(skill)
+          .filter(({ ref }) => !matrix.skills[ref])
+          .map(({ field, ref }) => ({
+            severity: "warning" as const,
             finding: "skill-unresolved-relation-ref",
             details: `Skill '${skillId}' has unresolved reference '${ref}' in '${field}'`,
-          });
-        }
-      }
-    }
-
-    for (const relation of skill.conflictsWith) {
-      if (!matrix.skills[relation.skillId]) {
-        issues.push({
-          severity: "warning",
-          finding: "skill-unresolved-relation-ref",
-          details: `Skill '${skillId}' has unresolved reference '${relation.skillId}' in 'conflictsWith'`,
-        });
-      }
-    }
-
-    for (const requirement of skill.requires) {
-      for (const ref of requirement.skillIds) {
-        if (!matrix.skills[ref]) {
-          issues.push({
-            severity: "warning",
-            finding: "skill-unresolved-relation-ref",
-            details: `Skill '${skillId}' has unresolved reference '${ref}' in 'requires'`,
-          });
-        }
-      }
-    }
-  }
+          })),
+  );
 }

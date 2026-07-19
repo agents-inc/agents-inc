@@ -7,18 +7,16 @@ import { HOTKEY_FILTER_INCOMPATIBLE, HOTKEY_TOGGLE_LABELS, isHotkey } from "../w
 
 /** Find next section index (wrapping forward) */
 export const findNextIndex = (
-  processed: { id: Category; sortedOptions: CategoryOption[] }[],
+  categories: { id: Category; options: CategoryOption[] }[],
   currentIndex: number,
 ): number => {
-  const length = processed.length;
+  const length = categories.length;
   if (length === 0) return currentIndex;
   return (currentIndex + 1) % length;
 };
 
-type ProcessedCategory = CategoryRow & { sortedOptions: CategoryOption[] };
-
 type UseCategoryGridInputOptions = {
-  processedCategories: ProcessedCategory[];
+  categories: CategoryRow[];
   focusedRow: number;
   focusedCol: number;
   setFocused: (row: number, col: number) => void;
@@ -29,7 +27,7 @@ type UseCategoryGridInputOptions = {
 };
 
 export function useCategoryGridInput({
-  processedCategories,
+  categories,
   focusedRow,
   focusedCol,
   setFocused,
@@ -38,8 +36,8 @@ export function useCategoryGridInput({
   onToggleLabels,
   onToggleFilterIncompatible,
 }: UseCategoryGridInputOptions): void {
-  const currentRow = processedCategories[focusedRow];
-  const currentOptions = currentRow?.sortedOptions || [];
+  const currentRow = categories[focusedRow];
+  const currentOptions = currentRow?.options || [];
 
   // Adjust column when current row's options change externally (e.g. option becomes disabled)
   useEffect(() => {
@@ -74,7 +72,7 @@ export function useCategoryGridInput({
     }
 
     if (key.tab && !key.shift) {
-      const nextSection = findNextIndex(processedCategories, focusedRow);
+      const nextSection = findNextIndex(categories, focusedRow);
       if (nextSection !== focusedRow) {
         setFocused(nextSection, 0);
       }

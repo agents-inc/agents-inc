@@ -1,4 +1,5 @@
 import path from "path";
+import { isRecord } from "../utils/type-guards.js";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import { glob, readFile, fileExists, directoryExists } from "../utils/fs";
@@ -12,9 +13,8 @@ import {
 } from "../consts";
 import {
   agentYamlGenerationSchema,
-  customMetadataValidationSchema,
-  isCustomMetadata,
   metadataValidationSchema,
+  validateSkillMetadata,
   skillCategoriesFileSchema,
   skillRulesFileSchema,
   stackConfigValidationSchema,
@@ -25,6 +25,7 @@ import { checkMatrixHealth } from "./matrix";
 import { loadSkillsMatrixFromSource } from "./loading/source-loader";
 import { matrix } from "./matrix/matrix-provider";
 import { getErrorMessage } from "../utils/errors";
+import { formatZodErrors } from "./schema-validator";
 
 export type SourceValidationIssue = {
   severity: "error" | "warning";
@@ -49,19 +50,15 @@ export function isSnakeCase(key: string): boolean {
  * Non-object input yields no issues.
  */
 export function checkSnakeCaseKeys(rawMetadata: unknown, relPath: string): SourceValidationIssue[] {
-  const issues: SourceValidationIssue[] = [];
-  if (rawMetadata && typeof rawMetadata === "object" && !Array.isArray(rawMetadata)) {
-    for (const key of Object.keys(rawMetadata as Record<string, unknown>)) {
-      if (isSnakeCase(key)) {
-        issues.push({
-          severity: "error",
-          file: relPath,
-          message: `Key '${key}' uses snake_case — use camelCase instead`,
-        });
-      }
-    }
-  }
-  return issues;
+  if (!isRecord(rawMetadata)) return [];
+
+  return Object.keys(rawMetadata)
+    .filter(isSnakeCase)
+    .map((key) => ({
+      severity: "error" as const,
+      file: relPath,
+      message: `Key '${key}' uses snake_case — use camelCase instead`,
+    }));
 }
 
 /**
@@ -94,31 +91,23 @@ export function validateSkillFilePairs(
   metadataDirs: Set<string>,
   skillsDir: string,
 ): SourceValidationIssue[] {
-  const issues: SourceValidationIssue[] = [];
+  const missingMetadata = [...skillMdDirs]
+    .filter((dir) => !metadataDirs.has(dir))
+    .map((dir) => ({
+      severity: "error" as const,
+      file: path.join(skillsDir, dir),
+      message: `Missing ${STANDARD_FILES.METADATA_YAML} — skill directory has ${STANDARD_FILES.SKILL_MD} but no metadata`,
+    }));
 
-  // Dirs with SKILL.md but no metadata.yaml
-  for (const dir of skillMdDirs) {
-    if (!metadataDirs.has(dir)) {
-      issues.push({
-        severity: "error",
-        file: path.join(skillsDir, dir),
-        message: `Missing ${STANDARD_FILES.METADATA_YAML} — skill directory has ${STANDARD_FILES.SKILL_MD} but no metadata`,
-      });
-    }
-  }
+  const missingSkillMd = [...metadataDirs]
+    .filter((dir) => !skillMdDirs.has(dir))
+    .map((dir) => ({
+      severity: "error" as const,
+      file: path.join(skillsDir, dir),
+      message: `Missing ${STANDARD_FILES.SKILL_MD} — skill directory has ${STANDARD_FILES.METADATA_YAML} but no SKILL.md`,
+    }));
 
-  // Dirs with metadata.yaml but no SKILL.md
-  for (const dir of metadataDirs) {
-    if (!skillMdDirs.has(dir)) {
-      issues.push({
-        severity: "error",
-        file: path.join(skillsDir, dir),
-        message: `Missing ${STANDARD_FILES.SKILL_MD} — skill directory has ${STANDARD_FILES.METADATA_YAML} but no SKILL.md`,
-      });
-    }
-  }
-
-  return issues;
+  return [...missingMetadata, ...missingSkillMd];
 }
 
 /**
@@ -167,19 +156,12 @@ export async function validateSource(sourcePath: string): Promise<SourceValidati
 
   issues.push(...validateSkillFilePairs(skillMdDirs, metadataDirs, skillsDir));
 
-  // Phase 2: Validate each metadata.yaml against strict schema and conventions
-  let skillCount = 0;
-  for (const metadataFile of metadataFiles) {
+  // Phase 2: Validate each metadata.yaml against strict schema and conventions.
+  // Pair violations were already reported by phase 1 — validate only complete pairs.
+  const validMetadataFiles = metadataFiles.filter((f) => skillMdDirs.has(path.dirname(f)));
+  for (const metadataFile of validMetadataFiles) {
     const metadataPath = path.join(skillsDir, metadataFile);
     const skillDir = path.dirname(metadataFile);
-    const skillMdPath = path.join(skillsDir, skillDir, STANDARD_FILES.SKILL_MD);
-
-    if (!(await fileExists(skillMdPath))) {
-      // Already reported above
-      continue;
-    }
-
-    skillCount++;
     const relPath = path.join(skillsDirRelPath, metadataFile);
 
     // Read and parse metadata.yaml
@@ -196,22 +178,18 @@ export async function validateSource(sourcePath: string): Promise<SourceValidati
       continue;
     }
 
-    // Use relaxed schema for custom skills (any category/slug), strict schema for built-in skills
-    const isCustom = isCustomMetadata(rawMetadata);
-    const schema = isCustom ? customMetadataValidationSchema : metadataValidationSchema;
-    const result = schema.safeParse(rawMetadata);
+    const result = validateSkillMetadata(rawMetadata);
     if (!result.success) {
       // Check for snake_case keys even on schema failure (useful diagnostics)
       issues.push(...checkSnakeCaseKeys(rawMetadata, relPath));
 
-      for (const issue of result.error.issues) {
-        const fieldPath = issue.path.join(".");
-        issues.push({
-          severity: "error",
+      issues.push(
+        ...formatZodErrors(result.error).map((message) => ({
+          severity: "error" as const,
           file: relPath,
-          message: `${fieldPath}: ${issue.message}`,
-        });
-      }
+          message,
+        })),
+      );
       continue;
     }
 
@@ -225,15 +203,13 @@ export async function validateSource(sourcePath: string): Promise<SourceValidati
   // Phase 3: Cross-reference validation via matrix health check
   try {
     await loadSkillsMatrixFromSource({ sourceFlag: resolvedPath, skipExtraSources: true });
-    const healthIssues = checkMatrixHealth(matrix);
-
-    for (const healthIssue of healthIssues) {
-      issues.push({
+    issues.push(
+      ...checkMatrixHealth(matrix).map((healthIssue) => ({
         severity: healthIssue.severity,
         file: SKILL_CATEGORIES_PATH,
         message: healthIssue.details,
-      });
-    }
+      })),
+    );
   } catch (error) {
     issues.push({
       severity: "warning",
@@ -253,7 +229,7 @@ export async function validateSource(sourcePath: string): Promise<SourceValidati
   ]);
   issues.push(...extraIssues.flat());
 
-  return buildResult(issues, skillCount);
+  return buildResult(issues, validMetadataFiles.length);
 }
 
 /**
@@ -340,14 +316,13 @@ async function validateYamlFiles(opts: {
     const result = opts.schema.safeParse(parsed);
     if (result.success) continue;
 
-    for (const issue of result.error.issues) {
-      const fieldPath = issue.path.join(".");
-      issues.push({
-        severity: "error",
+    issues.push(
+      ...formatZodErrors(result.error).map((message) => ({
+        severity: "error" as const,
         file: displayPath,
-        message: fieldPath ? `${fieldPath}: ${issue.message}` : issue.message,
-      });
-    }
+        message,
+      })),
+    );
   }
   return issues;
 }

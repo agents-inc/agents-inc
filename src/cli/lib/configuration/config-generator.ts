@@ -8,12 +8,14 @@ import type {
   StackAgentConfig,
   Category,
 } from "../../types";
-import { indexBy } from "remeda";
+import { groupBy, indexBy, partition } from "remeda";
 
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
 import { matrix } from "../matrix/matrix-provider";
+import { EJECT_SOURCE } from "../../consts";
+import { isActiveAt, activeAgentScopeMap } from "./scope-predicates";
 import { verbose, warn } from "../../utils/logger";
-import { typedEntries, typedKeys } from "../../utils/typed-object";
+import { typedEntries, typedFromEntries, typedKeys } from "../../utils/typed-object";
 
 export type SplitConfigResult = {
   global: ProjectConfig;
@@ -94,6 +96,14 @@ function getScopeOrThrow<K>(
   return scope;
 }
 
+/** Project skills never reach global agents; global skills reach any agent. */
+export function isScopePairCompatible(
+  skillScope: "project" | "global",
+  agentScope: "project" | "global",
+): boolean {
+  return !(skillScope === "project" && agentScope === "global");
+}
+
 function isScopeCompatible(
   skillId: SkillId,
   agent: AgentName,
@@ -102,9 +112,7 @@ function isScopeCompatible(
 ): boolean {
   const sScope = getScopeOrThrow(skillScope, skillId, "skill");
   const aScope = getScopeOrThrow(agentScope, agent, "agent");
-  // Project skills never reach global agents; global skills reach any agent.
-  if (sScope === "project" && aScope === "global") return false;
-  return true;
+  return isScopePairCompatible(sScope, aScope);
 }
 
 /**
@@ -215,6 +223,94 @@ function buildStackForSelection(
  *                  otherwise SkillConfig entries are synthesized with defaults.
  * @returns Complete ProjectConfig ready to be saved to config.ts
  */
+type ResolvedSkillEntry = { skillId: SkillId; category: Category };
+
+/**
+ * Resolves selected ids against the matrix: warns and drops unknown ids, extracts
+ * each skill's category, and drops ids whose every config entry is excluded.
+ * A skill with an excluded global entry AND an active project entry is KEPT —
+ * the active entry still needs to reach the stack builder.
+ */
+function resolveValidSkills(
+  selectedSkillIds: SkillId[],
+  skillConfigs: SkillConfig[],
+): { validSkills: ResolvedSkillEntry[]; foundCount: number; skippedCount: number } {
+  const looked = selectedSkillIds.map((skillId) => {
+    const skill = matrix.skills[skillId];
+    if (!skill) warn(`Skill '${skillId}' NOT FOUND in matrix`, { suppressInTest: true });
+    return { skillId, skill };
+  });
+  const found = looked.filter(
+    (entry): entry is typeof entry & { skill: NonNullable<typeof entry.skill> } =>
+      entry.skill != null,
+  );
+  const skippedCount = looked.length - found.length;
+
+  if (skippedCount > 0) {
+    const matrixSample = typedKeys<SkillId>(matrix.skills).slice(0, 5).join(", ");
+    warn(
+      `${skippedCount}/${selectedSkillIds.length} skills not found in matrix. ` +
+        `Matrix keys sample: [${matrixSample}]`,
+      { suppressInTest: true },
+    );
+  }
+
+  const activeSkillIds = new Set(skillConfigs.filter((s) => !s.excluded).map((s) => s.id));
+  const excludedSkillIds = new Set(
+    skillConfigs.filter((s) => s.excluded && !activeSkillIds.has(s.id)).map((s) => s.id),
+  );
+
+  const validSkills = found
+    .map(({ skillId, skill }) => ({
+      skillId,
+      category: extractCategoryFromPath(skill.category),
+    }))
+    .filter((entry): entry is typeof entry & { category: Category } => entry.category != null)
+    .filter((entry) => !excludedSkillIds.has(entry.skillId));
+
+  return { validSkills, foundCount: found.length, skippedCount };
+}
+
+/**
+ * Per-skill scope, active-entry-authoritative: when a skill has both an excluded
+ * and an active entry (excluded global + active project), excluded entries spread
+ * first so active entries overwrite them.
+ */
+function buildSkillScopeMap(skillConfigs: SkillConfig[]): Map<SkillId, "project" | "global"> {
+  const [excludedConfigs, activeConfigs] = partition(skillConfigs, (s) => Boolean(s.excluded));
+  return new Map([...excludedConfigs, ...activeConfigs].map((s) => [s.id, s.scope]));
+}
+
+/**
+ * One active AgentScopeConfig per selected agent. When the caller provided
+ * agentConfigs, every selected agent MUST have a non-excluded entry (invariant
+ * throw); otherwise agents default to project scope.
+ */
+function resolveActiveAgentConfigs(
+  agentList: AgentName[],
+  providedConfigs: AgentScopeConfig[] | undefined,
+): AgentScopeConfig[] {
+  const providedByName = providedConfigs
+    ? indexBy(
+        providedConfigs.filter((a) => !a.excluded),
+        (a) => a.name,
+      )
+    : {};
+  return agentList.map((agentName) => {
+    if (providedConfigs) {
+      const provided = providedByName[agentName];
+      if (!provided) {
+        throw new Error(
+          `generateProjectConfigFromSkills: selected agent '${agentName}' has no ` +
+            `non-excluded AgentScopeConfig in agentConfigs.`,
+        );
+      }
+      return provided;
+    }
+    return { name: agentName, scope: "project" as const };
+  });
+}
+
 export function generateProjectConfigFromSkills(
   name: string,
   selectedSkillIds: SkillId[],
@@ -273,68 +369,25 @@ export function generateProjectConfigFromSkills(
       `agents=[${agentList.join(", ")}]`,
   );
 
-  const looked = selectedSkillIds.map((skillId) => {
-    const skill = matrix.skills[skillId];
-    if (!skill) warn(`Skill '${skillId}' NOT FOUND in matrix`, { suppressInTest: true });
-    return { skillId, skill };
-  });
-
-  const found = looked.filter(
-    (entry): entry is typeof entry & { skill: NonNullable<typeof entry.skill> } =>
-      entry.skill != null,
+  const { validSkills, foundCount, skippedCount } = resolveValidSkills(
+    selectedSkillIds,
+    skillConfigs,
   );
-  const skippedCount = looked.length - found.length;
-
-  // Exclude an ID only when every entry for it is excluded. A skill with an
-  // excluded global entry AND an active project entry must NOT be filtered —
-  // the active entry still needs to reach the stack builder.
-  const activeSkillIds = new Set(skillConfigs.filter((s) => !s.excluded).map((s) => s.id));
-  const excludedSkillIds = new Set(
-    skillConfigs.filter((s) => s.excluded && !activeSkillIds.has(s.id)).map((s) => s.id),
-  );
-
-  const validSkills = found
-    .map(({ skillId, skill }) => ({
-      skillId,
-      category: extractCategoryFromPath(skill.category),
-    }))
-    .filter((entry): entry is typeof entry & { category: Category } => entry.category != null)
-    .filter((entry) => !excludedSkillIds.has(entry.skillId));
 
   verbose(
-    `generateProjectConfigFromSkills: ${found.length} found, ${skippedCount} not found, ` +
+    `generateProjectConfigFromSkills: ${foundCount} found, ${skippedCount} not found, ` +
       `${agentList.length} agents in stack`,
   );
 
-  if (skippedCount > 0) {
-    const matrixSample = typedKeys<SkillId>(matrix.skills).slice(0, 5).join(", ");
-    warn(
-      `${skippedCount}/${selectedSkillIds.length} skills not found in matrix. ` +
-        `Matrix keys sample: [${matrixSample}]`,
-      { suppressInTest: true },
-    );
-  }
-
-  const activeSkillsByCategory = new Map<Category, SkillId[]>();
-  for (const { skillId, category } of validSkills) {
-    const arr = activeSkillsByCategory.get(category) ?? [];
-    arr.push(skillId);
-    activeSkillsByCategory.set(category, arr);
-  }
-
-  // When a skill has both an excluded and an active entry (excluded global +
-  // active project), the active entry's scope is authoritative. Build the
-  // Map from active entries first so later excluded entries can't overwrite.
-  const skillScope = new Map<SkillId, "project" | "global">();
-  for (const s of skillConfigs) {
-    if (!s.excluded) skillScope.set(s.id, s.scope);
-  }
-  for (const s of skillConfigs) {
-    if (s.excluded && !skillScope.has(s.id)) skillScope.set(s.id, s.scope);
-  }
-  const agentScope = new Map<AgentName, "project" | "global">(
-    agentConfigs.filter((a) => !a.excluded).map((a) => [a.name, a.scope]),
+  const activeSkillsByCategory = new Map(
+    typedEntries(groupBy(validSkills, (entry) => entry.category)).map(([category, entries]) => [
+      category,
+      entries.map((entry) => entry.skillId),
+    ]),
   );
+
+  const skillScope = buildSkillScopeMap(skillConfigs);
+  const agentScope = activeAgentScopeMap(agentConfigs);
 
   // Opt-in D-220 preservation: only when the caller provides the delta set.
   // `newlyAddedSkillIds === undefined` triggers legacy seed-everything behavior
@@ -357,27 +410,9 @@ export function generateProjectConfigFromSkills(
 
   const skills: SkillConfig[] =
     options?.skillConfigs ??
-    selectedSkillIds.map((id) => ({ id, scope: "project" as const, source: "eject" }));
+    selectedSkillIds.map((id) => ({ id, scope: "project" as const, source: EJECT_SOURCE }));
 
-  const providedAgentsByName = options?.agentConfigs
-    ? indexBy(
-        options.agentConfigs.filter((a) => !a.excluded),
-        (a) => a.name,
-      )
-    : {};
-  const activeAgentConfigs: AgentScopeConfig[] = agentList.map((agentName) => {
-    if (options?.agentConfigs) {
-      const provided = providedAgentsByName[agentName];
-      if (!provided) {
-        throw new Error(
-          `generateProjectConfigFromSkills: selected agent '${agentName}' has no ` +
-            `non-excluded AgentScopeConfig in agentConfigs.`,
-        );
-      }
-      return provided;
-    }
-    return { name: agentName, scope: "project" as const };
-  });
+  const activeAgentConfigs = resolveActiveAgentConfigs(agentList, options?.agentConfigs);
   // Excluded agents aren't in selectedAgents but must be preserved in config
   const excludedAgentConfigs = agentConfigs.filter((ac) => ac.excluded);
   const finalAgentConfigs: AgentScopeConfig[] = [...activeAgentConfigs, ...excludedAgentConfigs];
@@ -402,20 +437,40 @@ export function generateProjectConfigFromSkills(
  * @returns Partial mapping of agent names to category-skill assignment mappings
  */
 export function buildStackProperty(stack: Stack): Partial<Record<AgentName, StackAgentConfig>> {
-  // Structural casts: Object.fromEntries returns Record<string, V>, narrowing to typed keys
-  return Object.fromEntries(
+  return typedFromEntries(
     typedEntries<AgentName, StackAgentConfig>(stack.agents)
       .filter(([, agentConfig]) => agentConfig && typedKeys<Category>(agentConfig).length > 0)
       .map(([agentId, agentConfig]) => {
-        const resolvedMappings = Object.fromEntries(
+        const resolvedMappings: StackAgentConfig = typedFromEntries(
           typedEntries<Category, SkillAssignment[]>(agentConfig).filter(
             ([, assignments]) => assignments && assignments.length > 0,
           ),
-        ) as StackAgentConfig;
+        );
         return [agentId, resolvedMappings] as const;
       })
       .filter(([, mappings]) => typedKeys<Category>(mappings).length > 0),
-  ) as Partial<Record<AgentName, StackAgentConfig>>;
+  );
+}
+
+/** Splits one agent's stack per category: global skills → global config, project skills → project config. */
+function splitAgentStack(
+  agentStack: StackAgentConfig,
+  globalSkillIds: ReadonlySet<SkillId>,
+): { global: StackAgentConfig; project: StackAgentConfig } {
+  const perCategory = typedEntries<Category, SkillAssignment[]>(agentStack)
+    .filter(([, assignments]) => assignments !== undefined)
+    .map(([category, assignments]) => {
+      const [globalOnly, projectOnly] = partition(assignments, (a) => globalSkillIds.has(a.id));
+      return { category, globalOnly, projectOnly };
+    });
+  return {
+    global: Object.fromEntries(
+      perCategory.filter((c) => c.globalOnly.length > 0).map((c) => [c.category, c.globalOnly]),
+    ),
+    project: Object.fromEntries(
+      perCategory.filter((c) => c.projectOnly.length > 0).map((c) => [c.category, c.projectOnly]),
+    ),
+  };
 }
 
 /**
@@ -425,17 +480,10 @@ export function buildStackProperty(stack: Stack): Partial<Record<AgentName, Stac
  * Domains are preserved in both configs as-is (the project config extends global at runtime).
  */
 export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
-  const globalSkills = config.skills.filter((s) => s.scope === "global" && !s.excluded);
-  const projectSkills = config.skills.filter(
-    (s) => s.scope === "project" || (s.scope === "global" && s.excluded),
-  );
-
-  // Split agents by their explicit scope (mirrors skill scope pattern)
-  // Excluded global agents route to project partition (they're project-level overrides)
-  const globalAgents = config.agents.filter((a) => a.scope === "global" && !a.excluded);
-  const projectAgents = config.agents.filter(
-    (a) => a.scope === "project" || (a.scope === "global" && a.excluded),
-  );
+  // Every entry is either active-global or project-owned (project-scoped, or an
+  // excluded-global tombstone routed to the project partition as an override).
+  const [globalSkills, projectSkills] = partition(config.skills, (s) => isActiveAt(s, "global"));
+  const [globalAgents, projectAgents] = partition(config.agents, (a) => isActiveAt(a, "global"));
 
   // Split stack by agent partition, filtering global agents' stacks to only reference global skills.
   // Project agents keep ALL skill references (both project and global) since global skills are available everywhere.
@@ -446,29 +494,13 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
   if (config.stack) {
     for (const agent of globalAgents) {
       const agentStack = config.stack[agent.name];
-      if (agentStack) {
-        // Split each category's assignments: global skills -> global config, project skills -> project config
-        const globalFiltered: StackAgentConfig = {};
-        const projectFiltered: StackAgentConfig = {};
-        for (const [category, assignments] of typedEntries<Category, SkillAssignment[]>(
-          agentStack,
-        )) {
-          if (!assignments) continue;
-          const globalOnly = assignments.filter((a) => globalSkillIds.has(a.id));
-          const projectOnly = assignments.filter((a) => !globalSkillIds.has(a.id));
-          if (globalOnly.length > 0) {
-            globalFiltered[category] = globalOnly;
-          }
-          if (projectOnly.length > 0) {
-            projectFiltered[category] = projectOnly;
-          }
-        }
-        if (typedKeys<Category>(globalFiltered).length > 0) {
-          globalStack[agent.name] = globalFiltered;
-        }
-        if (typedKeys<Category>(projectFiltered).length > 0) {
-          projectStack[agent.name] = projectFiltered;
-        }
+      if (!agentStack) continue;
+      const split = splitAgentStack(agentStack, globalSkillIds);
+      if (typedKeys<Category>(split.global).length > 0) {
+        globalStack[agent.name] = split.global;
+      }
+      if (typedKeys<Category>(split.project).length > 0) {
+        projectStack[agent.name] = split.project;
       }
     }
     for (const agent of projectAgents) {
@@ -480,9 +512,10 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
 
   // Split selectedAgents by scope: global agents go to global config, project agents to project config
   const globalAgentNames = new Set(globalAgents.map((a) => a.name));
-  const globalSelectedAgents = config.selectedAgents?.filter((a) => globalAgentNames.has(a)) ?? [];
-  const projectSelectedAgents =
-    config.selectedAgents?.filter((a) => !globalAgentNames.has(a)) ?? [];
+  const [globalSelectedAgents, projectSelectedAgents] = partition(
+    config.selectedAgents ?? [],
+    (a) => globalAgentNames.has(a),
+  );
 
   // Domains are a UI/preference concept — all selected domains go in global config.
   // Project config inherits domains from global at runtime, so it gets none.

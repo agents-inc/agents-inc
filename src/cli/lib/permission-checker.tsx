@@ -1,4 +1,5 @@
 import React from "react";
+import { isRecord } from "../utils/type-guards.js";
 
 import { Text, Box } from "ink";
 import path from "path";
@@ -17,44 +18,48 @@ type SettingsFile = {
   permissions?: PermissionConfig;
 };
 
-export async function checkPermissions(projectRoot: string): Promise<React.ReactElement | null> {
+// Known Claude CLI settings.json fields (permissions is ours; the rest are managed by Claude CLI)
+const EXPECTED_SETTINGS_KEYS = [
+  "permissions",
+  "enabledPlugins",
+  "env",
+  "allowedTools",
+  "customInstructions",
+  "defaultModel",
+] as const;
+
+/** Reads one settings file's permissions block; undefined when absent, malformed, or empty. */
+async function readSettingsPermissions(filePath: string): Promise<PermissionConfig | undefined> {
+  if (!(await fileExists(filePath))) return undefined;
+  try {
+    const content = await readFileSafe(filePath, MAX_CONFIG_FILE_SIZE);
+    const raw = JSON.parse(content);
+    if (isRecord(raw)) {
+      warnUnknownFields(raw, EXPECTED_SETTINGS_KEYS, `settings file '${filePath}'`);
+    }
+    const result = settingsFileSchema.safeParse(raw);
+    const parsed: SettingsFile = result.success ? result.data : {};
+    return parsed.permissions;
+  } catch {
+    warn(`Malformed settings file at '${filePath}' — skipping`);
+    return undefined;
+  }
+}
+
+/** Permissions from the first settings file that defines them — settings.local.json wins. */
+async function loadPermissions(projectRoot: string): Promise<PermissionConfig | undefined> {
   const settingsPath = path.join(projectRoot, CLAUDE_DIR, "settings.json");
   const localSettingsPath = path.join(projectRoot, CLAUDE_DIR, "settings.local.json");
 
-  let permissions: PermissionConfig | undefined;
-
   for (const filePath of [localSettingsPath, settingsPath]) {
-    if (await fileExists(filePath)) {
-      try {
-        const content = await readFileSafe(filePath, MAX_CONFIG_FILE_SIZE);
-        const raw = JSON.parse(content);
-        if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
-          // Known Claude CLI settings.json fields (permissions is ours; the rest are managed by Claude CLI)
-          const EXPECTED_SETTINGS_KEYS = [
-            "permissions",
-            "enabledPlugins",
-            "env",
-            "allowedTools",
-            "customInstructions",
-            "defaultModel",
-          ] as const;
-          warnUnknownFields(
-            raw as Record<string, unknown>,
-            EXPECTED_SETTINGS_KEYS,
-            `settings file '${filePath}'`,
-          );
-        }
-        const result = settingsFileSchema.safeParse(raw);
-        const parsed: SettingsFile = result.success ? (result.data as SettingsFile) : {};
-        if (parsed.permissions) {
-          permissions = parsed.permissions;
-          break;
-        }
-      } catch {
-        warn(`Malformed settings file at '${filePath}' — skipping`);
-      }
-    }
+    const permissions = await readSettingsPermissions(filePath);
+    if (permissions) return permissions;
   }
+  return undefined;
+}
+
+export async function checkPermissions(projectRoot: string): Promise<React.ReactElement | null> {
+  const permissions = await loadPermissions(projectRoot);
 
   if (!permissions) {
     return (

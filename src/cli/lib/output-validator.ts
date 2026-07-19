@@ -7,8 +7,7 @@ export function checkXmlTagBalance(content: string): string[] {
   const tagRegex = /<\/?([a-z_][a-z0-9_-]*)\s*>/gi;
   const tagCounts = new Map<string, number>();
 
-  let match;
-  while ((match = tagRegex.exec(content)) !== null) {
+  for (const match of content.matchAll(tagRegex)) {
     const fullTag = match[0];
     const tagName = match[1].toLowerCase();
 
@@ -106,9 +105,6 @@ export function validateFrontmatter(content: string): {
 }
 
 export function validateCompiledAgent(content: string): ValidationResult {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
   if (!content || content.trim().length === 0) {
     return {
       valid: false,
@@ -118,17 +114,12 @@ export function validateCompiledAgent(content: string): ValidationResult {
   }
 
   const fmResult = validateFrontmatter(content);
-  errors.push(...fmResult.errors);
-  warnings.push(...fmResult.warnings);
-
-  const xmlErrors = checkXmlTagBalance(content);
-  errors.push(...xmlErrors);
-
-  const artifactWarnings = checkTemplateArtifacts(content);
-  warnings.push(...artifactWarnings);
-
-  const patternWarnings = checkRequiredPatterns(content);
-  warnings.push(...patternWarnings);
+  const errors = [...fmResult.errors, ...checkXmlTagBalance(content)];
+  const warnings = [
+    ...fmResult.warnings,
+    ...checkTemplateArtifacts(content),
+    ...checkRequiredPatterns(content),
+  ];
 
   return {
     valid: errors.length === 0,

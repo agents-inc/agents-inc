@@ -6,6 +6,7 @@ import { getErrorMessage } from "../../utils/errors.js";
 import { EXIT_CODES } from "../../lib/exit-codes.js";
 import { fetchFromSource } from "../../lib/loading/index.js";
 import { importedSkillMetadataSchema } from "../../lib/schemas.js";
+import { writeMetadataYaml } from "../../lib/skills/skill-metadata.js";
 import { toTitleCase } from "../../lib/skills/generators.js";
 import { getCurrentDate, computeFileHash } from "../../lib/versioning.js";
 import {
@@ -24,6 +25,7 @@ import {
   LOCAL_SKILLS_PATH,
   STANDARD_FILES,
   YAML_FORMATTING,
+  stripYamlSchemaComment,
 } from "../../consts.js";
 import { IMPORT_DEFAULTS } from "../../lib/metadata-keys.js";
 import { STATUS_MESSAGES, INFO_MESSAGES } from "../../utils/messages.js";
@@ -338,16 +340,16 @@ async function fetchSkillSource(options: FetchSourceOptions): Promise<FetchedSou
  */
 async function discoverValidSkills(skillsDir: string): Promise<string[]> {
   const skillDirs = await listDirectories(skillsDir);
-  const validSkills: string[] = [];
-
-  for (const skillDir of skillDirs) {
-    const skillMdPath = path.join(skillsDir, skillDir, STANDARD_FILES.SKILL_MD);
-    if (await fileExists(skillMdPath)) {
-      validSkills.push(skillDir);
-    }
-  }
-
-  return validSkills.sort();
+  const checks = await Promise.all(
+    skillDirs.map(async (skillDir) => ({
+      skillDir,
+      hasSkillMd: await fileExists(path.join(skillsDir, skillDir, STANDARD_FILES.SKILL_MD)),
+    })),
+  );
+  return checks
+    .filter((c) => c.hasSkillMd)
+    .map((c) => c.skillDir)
+    .sort();
 }
 
 /**
@@ -421,14 +423,7 @@ async function mergeForkedFromIntoYaml(
   forkedFrom: ImportedForkedFromMetadata,
 ): Promise<void> {
   const rawContent = await readFile(yamlPath);
-  const lines = rawContent.split("\n");
-  let yamlContent = rawContent;
-  let schemaComment = "";
-
-  if (lines[0]?.startsWith("# yaml-language-server:")) {
-    schemaComment = `${lines[0]}\n`;
-    yamlContent = lines.slice(1).join("\n");
-  }
+  const { schemaComment, yamlContent } = stripYamlSchemaComment(rawContent);
 
   const raw = parseYaml(yamlContent);
   const parseResult = importedSkillMetadataSchema.safeParse(raw);
@@ -440,16 +435,12 @@ async function mergeForkedFromIntoYaml(
         `  Validate your YAML syntax at https://yamllint.com`,
     );
   }
-  // Boundary cast: .passthrough() widens Zod output; narrow back to consumer shape.
-  const metadata = parseResult.success
-    ? (parseResult.data as SkillMetadata)
-    : { forkedFrom: undefined };
-  metadata.forkedFrom = forkedFrom;
+  const metadata: SkillMetadata = {
+    ...(parseResult.success ? parseResult.data : {}),
+    forkedFrom,
+  };
 
-  const newYamlContent = stringifyYaml(metadata, {
-    lineWidth: YAML_FORMATTING.LINE_WIDTH_NONE,
-  });
-  await writeFile(yamlPath, schemaComment + newYamlContent);
+  await writeMetadataYaml(yamlPath, metadata, schemaComment);
 }
 
 async function convertJsonToYamlWithForkedFrom(
@@ -470,14 +461,12 @@ async function convertJsonToYamlWithForkedFrom(
     return;
   }
   const jsonResult = importedSkillMetadataSchema.safeParse(jsonParsed);
-  // Boundary cast: .passthrough() widens Zod output; narrow back to consumer shape.
-  const metadata = jsonResult.success
-    ? (jsonResult.data as SkillMetadata)
-    : { forkedFrom: undefined };
-  metadata.forkedFrom = forkedFrom;
+  const metadata: SkillMetadata = {
+    ...(jsonResult.success ? jsonResult.data : {}),
+    forkedFrom,
+  };
 
-  const yamlContent = stringifyYaml(metadata, { lineWidth: YAML_FORMATTING.LINE_WIDTH_NONE });
-  await writeFile(yamlPath, yamlContent);
+  await writeMetadataYaml(yamlPath, metadata);
 }
 
 async function createMinimalMetadata(
@@ -493,8 +482,5 @@ async function createMinimalMetadata(
     forkedFrom,
   };
 
-  const yamlContent = stringifyYaml(minimalMetadata, {
-    lineWidth: YAML_FORMATTING.LINE_WIDTH_NONE,
-  });
-  await writeFile(yamlPath, yamlContent);
+  await writeMetadataYaml(yamlPath, minimalMetadata);
 }

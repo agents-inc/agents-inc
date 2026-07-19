@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useState } from "react";
-import { CLI_COLORS, DEFAULT_BRANDING } from "../../consts.js";
+import { CLI_COLORS, DEFAULT_BRANDING, EJECT_SOURCE } from "../../consts.js";
 import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
 import { resolveAllSources } from "../../lib/configuration/index.js";
 import { searchExtraSources } from "../../lib/loading/multi-source-loader.js";
@@ -125,7 +125,7 @@ export const StepSources: React.FC<StepSourcesProps> = ({ projectDir, onContinue
   const rows = store.buildSourceRows();
   const isRecommendedSelected = choiceIndex === 0;
   const hasLocalSkills = rows.some((row) =>
-    row.options.some((o) => o.installed && o.id === "eject"),
+    row.options.some((o) => o.installed && o.id === EJECT_SOURCE),
   );
 
   return (

@@ -17,6 +17,15 @@ export const CLAUDE_SRC_DIR = ".claude-src";
 export const PLUGINS_SUBDIR = "plugins";
 export const PLUGIN_MANIFEST_DIR = ".claude-plugin";
 export const PLUGIN_MANIFEST_FILE = "plugin.json";
+export const MARKETPLACE_JSON = "marketplace.json";
+
+/** Compiled plugin output directory, relative to a marketplace root */
+export const PLUGINS_DIST_PATH = "dist/plugins";
+
+/** Path to the marketplace manifest inside a marketplace/source root. */
+export function marketplaceManifestPath(dir: string): string {
+  return path.join(dir, PLUGIN_MANIFEST_DIR, MARKETPLACE_JSON);
+}
 export const DEFAULT_PLUGIN_NAME = "agents-inc";
 
 /** Home directory used as the root for global installations */
@@ -36,6 +45,12 @@ export const SKILL_RULES_PATH = "config/skill-rules.ts";
 export const STACKS_FILE_PATH = "config/stacks.ts";
 export const SKILLS_DIR_PATH = "src/skills";
 export const LOCAL_SKILLS_PATH = ".claude/skills";
+
+/** Synthetic source name for skills copied into the project (ejected) rather than installed as plugins. */
+export const EJECT_SOURCE = "eject";
+
+/** Pseudo-category assigned to local skills — not a `Category` union member; category traversals skip it. */
+export const LOCAL_PSEUDO_CATEGORY = "local";
 
 export const DIRS = {
   agents: "src/agents",
@@ -92,6 +107,22 @@ export const SCHEMA_PATHS = {
 /** Generates a yaml-language-server schema comment for the top of YAML files. */
 export function yamlSchemaComment(schemaPath: string): string {
   return `# yaml-language-server: $schema=${schemaPath}`;
+}
+
+/**
+ * Splits YAML file content into its leading yaml-language-server schema
+ * comment (empty string when absent, trailing newline included when present)
+ * and the parseable YAML body.
+ */
+export function stripYamlSchemaComment(content: string): {
+  schemaComment: string;
+  yamlContent: string;
+} {
+  const lines = content.split("\n");
+  if (lines[0]?.startsWith("# yaml-language-server:")) {
+    return { schemaComment: `${lines[0]}\n`, yamlContent: lines.slice(1).join("\n") };
+  }
+  return { schemaComment: "", yamlContent: content };
 }
 
 export const YAML_FORMATTING = {

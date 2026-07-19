@@ -12,11 +12,12 @@ import { directoryExists, fileExists, writeFile, ensureDir } from "../../utils/f
 import { getErrorMessage } from "../../utils/errors.js";
 import { verbose } from "../../utils/logger.js";
 import { computeSkillFolderHash } from "../../lib/versioning.js";
+import { validateKebabCaseName } from "../../lib/validate-kebab-name.js";
+import { assertDirOverwritable } from "../../lib/assert-dir-overwritable.js";
 import {
   CLI_INVOKE_COMMAND,
-  KEBAB_CASE_PATTERN,
   LOCAL_SKILLS_PATH,
-  PLUGIN_MANIFEST_DIR,
+  marketplaceManifestPath,
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
   SKILLS_DIR_PATH,
@@ -103,7 +104,7 @@ export default class NewSkill extends BaseCommand {
     this.printHeader();
     this.validateName(args.name);
 
-    const author = await this.resolveAuthorOrDefault(flags.author, projectDir);
+    const author = await resolveAuthorOrDefault(flags.author, projectDir);
     // Boundary cast: CLI flag accepts custom category values not in the generated union
     const category = flags.category as CategoryPath;
     const domain = flags.domain ?? LOCAL_DEFAULTS.DOMAIN;
@@ -139,21 +140,14 @@ export default class NewSkill extends BaseCommand {
   }
 
   private validateName(name: string): void {
-    const validationError = validateSkillName(name);
+    const validationError = validateKebabCaseName(name, "Skill");
     if (validationError) {
       this.error(validationError, { exit: EXIT_CODES.INVALID_ARGS });
     }
   }
 
-  private async resolveAuthorOrDefault(
-    authorFlag: string | undefined,
-    projectDir: string,
-  ): Promise<string> {
-    return resolveAuthorOrDefault(authorFlag, projectDir);
-  }
-
   private async resolveSkillsBasePath(projectDir: string): Promise<string> {
-    const marketplacePath = path.join(projectDir, PLUGIN_MANIFEST_DIR, "marketplace.json");
+    const marketplacePath = marketplaceManifestPath(projectDir);
     if (await fileExists(marketplacePath)) {
       this.log(`Detected marketplace context, creating skill in ${SKILLS_DIR_PATH}/`);
       return path.join(projectDir, SKILLS_DIR_PATH);
@@ -162,14 +156,14 @@ export default class NewSkill extends BaseCommand {
   }
 
   private async checkExistingDir(skillDir: string, force: boolean): Promise<void> {
-    if (await directoryExists(skillDir)) {
-      if (!force) {
-        this.error(`Skill directory already exists: ${skillDir}\nUse --force to overwrite.`, {
-          exit: EXIT_CODES.ERROR,
-        });
-      }
-      this.warn(`Overwriting existing skill at ${skillDir}`);
+    const result = await assertDirOverwritable(skillDir);
+    if (result.ok) return;
+    if (!force) {
+      this.error(`Skill directory already exists: ${skillDir}\nUse --force to overwrite.`, {
+        exit: EXIT_CODES.ERROR,
+      });
     }
+    this.warn(`Overwriting existing skill at ${skillDir}`);
   }
 
   private logSkillInfo(
@@ -209,7 +203,7 @@ export default class NewSkill extends BaseCommand {
       this.logSuccess(`Created ${STANDARD_FILES.SKILL_MD} at ${result.skillMdPath}`);
       this.logSuccess(`Created ${STANDARD_FILES.METADATA_YAML} at ${result.metadataPath}`);
 
-      const marketplacePath = path.join(projectDir, PLUGIN_MANIFEST_DIR, "marketplace.json");
+      const marketplacePath = marketplaceManifestPath(projectDir);
       if (await fileExists(marketplacePath)) {
         try {
           await updateSkillRegistryConfig({ projectRoot: projectDir, category, domain });
@@ -258,18 +252,6 @@ type RegistryUpdateOptions = {
   category: CategoryPath;
   domain: string;
 };
-
-export function validateSkillName(name: string): string | null {
-  if (!name || name.trim() === "") {
-    return "Skill name is required";
-  }
-
-  if (!KEBAB_CASE_PATTERN.test(name)) {
-    return "Skill name must be kebab-case (lowercase letters, numbers, and hyphens, starting with a letter)";
-  }
-
-  return null;
-}
 
 export async function resolveAuthorOrDefault(
   authorFlag: string | undefined,
@@ -394,8 +376,11 @@ async function updateSkillRegistryConfig(options: RegistryUpdateOptions): Promis
     // Boundary cast: CategoryMap keys are strict Category; CLI flag may introduce custom category IDs
     const categories = parsed.categories as Record<string, CategoryDefinition>;
     if (!categories[category]) {
-      categories[category] = buildCategoryEntry(category, domain) as CategoryDefinition;
-      await writeFile(categoriesPath, formatTsExport(CATEGORIES_TS_COMMENT, parsed));
+      const updated = {
+        ...parsed,
+        categories: { ...categories, [category]: buildCategoryEntry(category, domain) },
+      };
+      await writeFile(categoriesPath, formatTsExport(CATEGORIES_TS_COMMENT, updated));
       verbose(`Added category '${category}' to ${SKILL_CATEGORIES_PATH}`);
     }
   } else {

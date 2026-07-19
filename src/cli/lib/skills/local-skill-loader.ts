@@ -8,7 +8,7 @@ import type { CategoryPath, Domain, ExtractedSkillMetadata, SkillSlug } from "..
 import { formatZodIssues, localRawMetadataSchema } from "../schemas";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
 
-type LocalRawMetadata = {
+export type LocalRawMetadata = {
   displayName: string;
   /** Kebab-case short key for alias resolution */
   slug: SkillSlug;
@@ -38,15 +38,11 @@ export async function discoverLocalSkills(
     return null;
   }
 
-  const skills: ExtractedSkillMetadata[] = [];
   const skillDirs = await listDirectories(localSkillsPath);
-
-  for (const skillDirName of skillDirs) {
-    const skill = await extractLocalSkill(localSkillsPath, skillDirName);
-    if (skill) {
-      skills.push(skill);
-    }
-  }
+  const extracted = await Promise.all(
+    skillDirs.map((skillDirName) => extractLocalSkill(localSkillsPath, skillDirName)),
+  );
+  const skills = extracted.filter((skill) => skill !== null);
 
   verbose(`Discovered ${skills.length} local skills from ${localSkillsPath}`);
 
@@ -84,7 +80,7 @@ async function extractLocalSkill(
     return null;
   }
 
-  const metadata = parsed.data as LocalRawMetadata;
+  const metadata = parsed.data;
 
   const skillMdContent = await readFile(skillMdPath);
   const frontmatter = parseFrontmatter(skillMdContent, skillMdPath);

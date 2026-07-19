@@ -1,8 +1,8 @@
 import path from "path";
 
-import { copy, ensureDir } from "../../utils/fs";
+import { copy, ensureDir, isPathWithin } from "../../utils/fs";
 import { computeFileHash } from "../versioning";
-import { STANDARD_FILES } from "../../consts";
+import { EJECT_SOURCE, STANDARD_FILES } from "../../consts";
 import type { MergedSkillsMatrix, ResolvedSkill, SkillId } from "../../types";
 import type { SourceLoadResult } from "../loading";
 import { getSkillById } from "../matrix/matrix-provider";
@@ -31,15 +31,9 @@ export function validateSkillPath(
     throw new Error(`Invalid skill path: '${skillPath}' contains null bytes`);
   }
 
-  const normalizedResolved = path.resolve(resolvedPath);
-  const normalizedParent = path.resolve(expectedParent);
-
-  if (
-    !normalizedResolved.startsWith(normalizedParent + path.sep) &&
-    normalizedResolved !== normalizedParent
-  ) {
+  if (!isPathWithin(resolvedPath, expectedParent)) {
     throw new Error(
-      `Invalid skill path: '${skillPath}' escapes expected directory '${normalizedParent}'`,
+      `Invalid skill path: '${skillPath}' escapes expected directory '${path.resolve(expectedParent)}'`,
     );
   }
 }
@@ -71,15 +65,13 @@ async function generateSkillHash(skillSourcePath: string): Promise<string> {
   return computeFileHash(skillMdPath);
 }
 
-export async function copySkill(
+/** Core copy: hash the source SKILL.md, copy the directory, stamp forkedFrom provenance. */
+async function copySkillTo(
   skill: ResolvedSkill,
-  stackDir: string,
-  registryRoot: string,
+  sourcePath: string,
+  destPath: string,
   source?: string,
 ): Promise<CopiedSkill> {
-  const sourcePath = getSkillSourcePath(skill, registryRoot);
-  const destPath = getSkillDestPath(skill, stackDir);
-
   const contentHash = await generateSkillHash(sourcePath);
 
   await ensureDir(path.dirname(destPath));
@@ -87,12 +79,21 @@ export async function copySkill(
 
   await injectForkedFromMetadata(destPath, skill.id, contentHash, source);
 
-  return {
-    skillId: skill.id,
-    contentHash,
-    sourcePath,
-    destPath,
-  };
+  return { skillId: skill.id, contentHash, sourcePath, destPath };
+}
+
+export async function copySkill(
+  skill: ResolvedSkill,
+  stackDir: string,
+  registryRoot: string,
+  source?: string,
+): Promise<CopiedSkill> {
+  return copySkillTo(
+    skill,
+    getSkillSourcePath(skill, registryRoot),
+    getSkillDestPath(skill, stackDir),
+    source,
+  );
 }
 
 function getSkillSourcePathFromSource(
@@ -108,22 +109,12 @@ export async function copySkillFromSource(
   stackDir: string,
   sourceResult: SourceLoadResult,
 ): Promise<CopiedSkill> {
-  const sourcePath = getSkillSourcePathFromSource(skill, sourceResult);
-  const destPath = getSkillDestPath(skill, stackDir);
-
-  const contentHash = await generateSkillHash(sourcePath);
-
-  await ensureDir(path.dirname(destPath));
-  await copy(sourcePath, destPath);
-
-  await injectForkedFromMetadata(destPath, skill.id, contentHash, sourceResult.sourceConfig.source);
-
-  return {
-    skillId: skill.id,
-    contentHash,
-    sourcePath,
-    destPath,
-  };
+  return copySkillTo(
+    skill,
+    getSkillSourcePathFromSource(skill, sourceResult),
+    getSkillDestPath(skill, stackDir),
+    sourceResult.sourceConfig.source,
+  );
 }
 
 export type CopyProgressCallback = (completed: number, total: number) => void;
@@ -131,7 +122,6 @@ export type CopyProgressCallback = (completed: number, total: number) => void;
 export async function copySkillsToPluginFromSource(
   selectedSkillIds: SkillId[],
   pluginDir: string,
-  matrix: MergedSkillsMatrix,
   sourceResult: SourceLoadResult,
   sourceSelections?: Partial<Record<SkillId, string>>,
   onProgress?: CopyProgressCallback,
@@ -143,7 +133,7 @@ export async function copySkillsToPluginFromSource(
       const skill = getSkillById(skillId);
 
       const selectedSource = sourceSelections?.[skillId];
-      const userSelectedRemote = selectedSource && selectedSource !== "eject";
+      const userSelectedRemote = selectedSource && selectedSource !== EJECT_SOURCE;
 
       let result: CopiedSkill;
       if (skill.local && skill.localPath && !userSelectedRemote) {
@@ -178,28 +168,17 @@ async function copySkillToLocalFlattened(
   localSkillsDir: string,
   sourceResult: SourceLoadResult,
 ): Promise<CopiedSkill> {
-  const sourcePath = getSkillSourcePathFromSource(skill, sourceResult);
-  const destPath = getFlattenedSkillDestPath(skill, localSkillsDir);
-
-  const contentHash = await generateSkillHash(sourcePath);
-
-  await ensureDir(path.dirname(destPath));
-  await copy(sourcePath, destPath);
-
-  await injectForkedFromMetadata(destPath, skill.id, contentHash, sourceResult.sourceConfig.source);
-
-  return {
-    skillId: skill.id,
-    contentHash,
-    sourcePath,
-    destPath,
-  };
+  return copySkillTo(
+    skill,
+    getSkillSourcePathFromSource(skill, sourceResult),
+    getFlattenedSkillDestPath(skill, localSkillsDir),
+    sourceResult.sourceConfig.source,
+  );
 }
 
 export async function copySkillsToLocalFlattened(
   selectedSkillIds: SkillId[],
   localSkillsDir: string,
-  matrix: MergedSkillsMatrix,
   sourceResult: SourceLoadResult,
   sourceSelections?: Partial<Record<SkillId, string>>,
 ): Promise<CopiedSkill[]> {
@@ -208,7 +187,7 @@ export async function copySkillsToLocalFlattened(
       const skill = getSkillById(skillId);
 
       const selectedSource = sourceSelections?.[skillId];
-      const userSelectedRemote = selectedSource && selectedSource !== "eject";
+      const userSelectedRemote = selectedSource && selectedSource !== EJECT_SOURCE;
 
       if (skill.local && skill.localPath && !userSelectedRemote) {
         const destPath = getFlattenedSkillDestPath(skill, localSkillsDir);

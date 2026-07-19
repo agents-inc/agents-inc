@@ -1,4 +1,5 @@
 import { claudePluginUninstall } from "../../../utils/exec.js";
+import { buildMarketplacePluginRef, toClaudePluginScope } from "../../plugins/index.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import type { SkillId } from "../../../types/index.js";
 import type { SkillConfig } from "../../../types/config.js";
@@ -25,8 +26,8 @@ export async function uninstallPluginSkills(
 
   for (const skillId of skillIds) {
     const oldSkill = oldSkills.find((s) => s.id === skillId);
-    const pluginScope = oldSkill?.scope === "global" ? "user" : "project";
-    const pluginRef = `${skillId}@${marketplace}`;
+    const pluginScope = toClaudePluginScope(oldSkill?.scope);
+    const pluginRef = buildMarketplacePluginRef(skillId, marketplace);
     try {
       await claudePluginUninstall(pluginRef, pluginScope, projectDir);
       uninstalled.push(skillId);

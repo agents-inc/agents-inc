@@ -1,8 +1,14 @@
 import { sortBy } from "remeda";
+import { typedValues } from "../../utils/typed-object.js";
 import type { CategoryDefinition, Domain, SkillId, CategorySelections } from "../../types/index.js";
 import type { SkillConfig } from "../../types/config.js";
-import { getAvailableSkills, getUnmetRequiredBy, resolveAlias } from "../matrix/index.js";
+import {
+  getAvailableSkills,
+  getUnmetRequiredBy,
+  isCompatibleWithSelections,
+} from "../matrix/index.js";
 import { matrix, getSkillById } from "../matrix/matrix-provider.js";
+import { deriveScopeBadges } from "./scope-diff.js";
 import type { CategoryRow, CategoryOption } from "../../components/wizard/category-grid.js";
 
 const FRAMEWORK_CATEGORY_ID = "web-framework";
@@ -17,31 +23,26 @@ export function validateBuildStep(
   categories: CategoryRow[],
   selections: CategorySelections,
 ): BuildStepValidation {
-  for (const category of categories) {
-    if (category.required) {
-      const categorySelections = selections[category.id] || [];
-      if (categorySelections.length === 0) {
-        return {
-          valid: true,
-          message: `No skills selected in ${category.displayName} (required category)`,
-        };
+  const emptyRequired = categories.find(
+    (category) => category.required && !selections[category.id]?.length,
+  );
+  return emptyRequired
+    ? {
+        valid: true,
+        message: `No skills selected in ${emptyRequired.displayName} (required category)`,
       }
-    }
-  }
-  return { valid: true };
+    : { valid: true };
 }
 
 function getSelectedFrameworks(selections: CategorySelections): SkillId[] {
-  return (selections[FRAMEWORK_CATEGORY_ID] ?? []).map((alias) => resolveAlias(alias));
+  return (selections[FRAMEWORK_CATEGORY_ID] ?? []).map((alias) => getSkillById(alias).id);
 }
 
 export function isCompatibleWithSelectedFrameworks(
   skillId: SkillId,
   selectedFrameworkIds: SkillId[],
 ): boolean {
-  const skill = getSkillById(skillId);
-  if (skill.compatibleWith.length === 0) return true;
-  return selectedFrameworkIds.some((frameworkId) => skill.compatibleWith.includes(frameworkId));
+  return isCompatibleWithSelections(getSkillById(skillId), selectedFrameworkIds);
 }
 
 // Build CategoryRow[] from matrix for a domain
@@ -57,11 +58,8 @@ export function buildCategoriesForDomain(
   const shouldFilter =
     filterIncompatible && domain === WEB_DOMAIN_ID && selectedFrameworkIds.length > 0;
 
-  // Object.values() on a Partial record only yields values that exist — all are CategoryDefinition
   const categories = sortBy(
-    (Object.values(matrix.categories) as CategoryDefinition[]).filter(
-      (cat) => cat.domain === domain,
-    ),
+    typedValues(matrix.categories).filter((cat) => cat.domain === domain),
     (cat) => cat.order ?? 0,
   );
 
@@ -80,10 +78,7 @@ export function buildCategoriesForDomain(
     const options: CategoryOption[] = filteredOptions.map((skill) => {
       const activeConfig = skillConfigs?.find((sc) => sc.id === skill.id && !sc.excluded);
       const excludedConfig = skillConfigs?.find((sc) => sc.id === skill.id && sc.excluded);
-      const secondaryScope =
-        excludedConfig && activeConfig && excludedConfig.scope !== activeConfig.scope
-          ? excludedConfig.scope
-          : undefined;
+      const { secondaryScope } = deriveScopeBadges(activeConfig, excludedConfig);
       return {
         id: skill.id,
         state:

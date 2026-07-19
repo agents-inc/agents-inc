@@ -1,16 +1,14 @@
-import fs from "fs";
-import os from "os";
 import path from "path";
 import {
   buildAndMergeConfig,
   writeScopedConfigs,
   resolveInstallPaths,
+  isHomeDirectory,
 } from "../../installation/index.js";
-import { loadAllAgents, type SourceLoadResult } from "../../loading/index.js";
+import { loadMergedAgents, type SourceLoadResult } from "../../loading/index.js";
 import type { AuthoritativeScope } from "../../configuration/index.js";
 import { ensureBlankGlobalConfig } from "../../configuration/config-writer.js";
 import { ensureDir } from "../../../utils/fs.js";
-import { PROJECT_ROOT } from "../../../consts.js";
 import type { ProjectConfig, AgentDefinition, AgentName } from "../../../types/index.js";
 import type { WizardResultV2 } from "../../../components/wizard/wizard.js";
 
@@ -57,9 +55,7 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
   if (options.agents) {
     agents = options.agents;
   } else {
-    const cliAgents = await loadAllAgents(PROJECT_ROOT);
-    const sourceAgents = await loadAllAgents(sourceResult.sourcePath);
-    agents = { ...cliAgents, ...sourceAgents };
+    agents = await loadMergedAgents(sourceResult.sourcePath);
   }
 
   const mergeResult = await buildAndMergeConfig(
@@ -71,7 +67,7 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
   );
   const finalConfig = mergeResult.config;
 
-  const isProjectContext = fs.realpathSync(projectDir) !== fs.realpathSync(os.homedir());
+  const isProjectContext = !isHomeDirectory(projectDir);
 
   if (isProjectContext) {
     await ensureBlankGlobalConfig();

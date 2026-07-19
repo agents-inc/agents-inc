@@ -2,6 +2,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { discoverAllPluginSkills } from "../../plugins/index.js";
+import { isHomeDirectory } from "../../installation/is-home-directory.js";
 import { directoryExists, glob, readFile, fileExists } from "../../../utils/fs.js";
 import { parseFrontmatter } from "../../loading/index.js";
 import { verbose, warn } from "../../../utils/logger.js";
@@ -110,12 +111,7 @@ export function mergeSkills(...skillSources: SkillDefinitionMap[]): SkillDefinit
  * Uses verbose() for diagnostic output only.
  */
 export async function discoverInstalledSkills(projectDir: string): Promise<DiscoveredSkills> {
-  let isGlobalProject: boolean;
-  try {
-    isGlobalProject = fs.realpathSync(projectDir) === fs.realpathSync(os.homedir());
-  } catch {
-    isGlobalProject = projectDir === os.homedir();
-  }
+  const isGlobalProject = isHomeDirectory(projectDir);
 
   // 1. Global plugins
   const globalPluginSkills = isGlobalProject ? {} : await discoverAllPluginSkills(os.homedir());

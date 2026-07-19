@@ -26,9 +26,10 @@ import {
   saveSourceToProjectConfig,
   resolveSource,
   loadProjectSourceConfig,
+  generateConfigSource,
 } from "../lib/configuration/index.js";
 import { copySkillsToLocalFlattened, type CopiedSkill } from "../lib/skills/index.js";
-import type { MergedSkillsMatrix, SkillId } from "../types/index.js";
+import type { MergedSkillsMatrix, ProjectConfig, SkillId } from "../types/index.js";
 import { typedKeys } from "../utils/typed-object.js";
 
 const EJECT_TYPES = ["agent-partials", "templates", "skills", "all"] as const;
@@ -203,8 +204,10 @@ export default class Eject extends BaseCommand {
         await this.handleAgentPartials(outputBase, true, directOutput, true);
         await this.handleSkills(projectDir, flags.force, sourceResult, directOutput, outputBase);
         break;
-      default:
-        break;
+      default: {
+        const _exhaustive: never = ejectType;
+        return _exhaustive;
+      }
     }
   }
 
@@ -326,6 +329,17 @@ type EjectAgentPartialsResult =
  *
  * Returns structured data — the command decides what to log.
  */
+/** Direct output writes to the base itself; otherwise agents/ (plus templates/ in templates-only mode). */
+function resolveEjectDestDir(
+  outputBase: string,
+  directOutput: boolean,
+  templatesOnly: boolean,
+): string {
+  if (directOutput) return outputBase;
+  const agentsDir = path.join(outputBase, path.basename(DIRS.agents));
+  return templatesOnly ? path.join(agentsDir, path.basename(DIRS.templates)) : agentsDir;
+}
+
 async function ejectAgentPartials(
   options: EjectAgentPartialsOptions,
 ): Promise<EjectAgentPartialsResult> {
@@ -345,11 +359,7 @@ async function ejectAgentPartials(
     };
   }
 
-  const destDir = directOutput
-    ? outputBase
-    : templatesOnly
-      ? path.join(outputBase, path.basename(DIRS.agents), path.basename(DIRS.templates))
-      : path.join(outputBase, path.basename(DIRS.agents));
+  const destDir = resolveEjectDestDir(outputBase, directOutput, templatesOnly);
 
   const templatesBasename = path.basename(DIRS.templates);
 
@@ -463,7 +473,7 @@ async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResu
 
   await ensureDir(destDir);
 
-  const copiedSkills = await copySkillsToLocalFlattened(skillIds, destDir, matrix, sourceResult);
+  const copiedSkills = await copySkillsToLocalFlattened(skillIds, destDir, sourceResult);
 
   const sourceLabel = sourceResult.isLocal
     ? sourceResult.sourcePath
@@ -509,41 +519,25 @@ async function ensureMinimalConfig(
     return { configPath: tsConfigPath, created: false };
   }
 
-  const projectName = path.basename(projectDir);
-
-  const config: Record<string, unknown> = {
-    name: projectName,
-  };
-
   const resolvedConfig =
     sourceResult?.sourceConfig ?? (await resolveSource(sourceFlag, projectDir));
-
-  if (sourceFlag) {
-    config.source = sourceFlag;
-  } else if (resolvedConfig.source) {
-    config.source = resolvedConfig.source;
-  }
-
-  if (resolvedConfig.marketplace) {
-    config.marketplace = resolvedConfig.marketplace;
-  }
-
   const existingProjectConfig = await loadProjectSourceConfig(projectDir);
-  if (existingProjectConfig?.author) {
-    config.author = existingProjectConfig.author;
-  }
-  if (existingProjectConfig?.agentsSource) {
-    config.agentsSource = existingProjectConfig.agentsSource;
-  }
+
+  const source = sourceFlag || resolvedConfig.source || undefined;
+  const config: ProjectConfig = {
+    name: path.basename(projectDir),
+    skills: [],
+    agents: [],
+    ...(source ? { source } : {}),
+    ...(resolvedConfig.marketplace ? { marketplace: resolvedConfig.marketplace } : {}),
+    ...(existingProjectConfig?.author ? { author: existingProjectConfig.author } : {}),
+    ...(existingProjectConfig?.agentsSource
+      ? { agentsSource: existingProjectConfig.agentsSource }
+      : {}),
+  };
 
   await ensureDir(path.join(projectDir, CLAUDE_SRC_DIR));
-
-  // JSON.parse(JSON.stringify(x)) removes undefined values
-  const cleaned = JSON.parse(JSON.stringify(config));
-  const body = JSON.stringify(cleaned, null, 2);
-  const content = `export default ${body};\n`;
-
-  await writeFile(tsConfigPath, content);
+  await writeFile(tsConfigPath, generateConfigSource(config));
 
   return { configPath: tsConfigPath, created: true };
 }

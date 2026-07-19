@@ -9,10 +9,17 @@ import {
   DEFAULT_BRANDING,
   PLUGINS_SUBDIR,
   STANDARD_FILES,
+  EJECT_SOURCE,
 } from "../../consts";
 import type { SkillConfig } from "../../types/config";
 
 export type InstallMode = "eject" | "plugin" | "mixed";
+
+export const INSTALL_MODE_LABELS = {
+  plugin: "Plugin",
+  mixed: "Mixed",
+  eject: "Eject",
+} as const satisfies Record<InstallMode, string>;
 
 export type Installation = {
   mode: InstallMode;
@@ -25,8 +32,8 @@ export type Installation = {
 /** Derive install mode from skills array at runtime */
 export function deriveInstallMode(skills: SkillConfig[]): InstallMode {
   if (skills.length === 0) return "eject";
-  const hasEject = skills.some((s) => s.source === "eject");
-  const hasPlugin = skills.some((s) => s.source !== "eject");
+  const hasEject = skills.some((s) => s.source === EJECT_SOURCE);
+  const hasPlugin = skills.some((s) => s.source !== EJECT_SOURCE);
   if (hasEject && hasPlugin) return "mixed";
   return hasEject ? "eject" : "plugin";
 }

@@ -11,6 +11,7 @@ import {
   STANDARD_FILES,
   YAML_FORMATTING,
   yamlSchemaComment,
+  stripYamlSchemaComment,
 } from "../../consts";
 import type { SkillId } from "../../types";
 import { formatZodIssues, localSkillMetadataSchema } from "../schemas";
@@ -114,7 +115,7 @@ export async function readLocalSkillMetadata(skillDir: string): Promise<LocalSki
     return null;
   }
 
-  return result.data as LocalSkillMetadata;
+  return result.data;
 }
 
 /**
@@ -141,24 +142,22 @@ export async function getLocalSkillsWithMetadata(
   projectDir: string,
 ): Promise<Map<string, { dirName: string; forkedFrom: ForkedFromMetadata | null }>> {
   const localSkillsPath = path.join(projectDir, LOCAL_SKILLS_PATH);
-  const result = new Map<string, { dirName: string; forkedFrom: ForkedFromMetadata | null }>();
 
   if (!(await fileExists(localSkillsPath))) {
-    return result;
+    return new Map();
   }
 
   const skillDirs = await listDirectories(localSkillsPath);
-
-  for (const dirName of skillDirs) {
-    const skillDir = path.join(localSkillsPath, dirName);
-    const forkedFrom = await readForkedFromMetadata(skillDir);
-
-    const skillId = forkedFrom?.skillId ?? dirName;
-
-    result.set(skillId, { dirName, forkedFrom });
-  }
-
-  return result;
+  // Parallel reads; Map insertion order (and last-wins on duplicate ids) follows dir order
+  const entries = await Promise.all(
+    skillDirs.map(async (dirName) => {
+      const forkedFrom = await readForkedFromMetadata(path.join(localSkillsPath, dirName));
+      return { skillId: forkedFrom?.skillId ?? dirName, dirName, forkedFrom };
+    }),
+  );
+  return new Map(
+    entries.map(({ skillId, dirName, forkedFrom }) => [skillId, { dirName, forkedFrom }]),
+  );
 }
 
 /**
@@ -217,62 +216,54 @@ export async function compareLocalSkillsWithSource(
   sourcePath: string,
   sourceSkills: Record<string, { path: string }>,
 ): Promise<SkillComparisonResult[]> {
-  const results: SkillComparisonResult[] = [];
   const localSkills = await getLocalSkillsWithMetadata(projectDir);
 
-  for (const [skillId, { dirName, forkedFrom }] of localSkills) {
-    if (!forkedFrom) {
-      // Boundary cast: skillId comes from Map<string, ...> keys (directory names or forkedFrom.skillId)
-      results.push({
-        id: skillId as SkillId,
-        localHash: null,
-        sourceHash: null,
-        status: "local-only",
-        dirName,
-      });
-      continue;
-    }
+  const results = await Promise.all(
+    [...localSkills].map(([skillId, { dirName, forkedFrom }]) =>
+      classifyLocalSkill(skillId, dirName, forkedFrom, sourcePath, sourceSkills),
+    ),
+  );
+  return sortBy(results, (r) => r.id);
+}
 
-    const localHash = forkedFrom.contentHash;
-    const sourceSkill = sourceSkills[forkedFrom.skillId];
-
-    if (!sourceSkill) {
-      results.push({
-        id: forkedFrom.skillId,
-        localHash,
-        sourceHash: null,
-        status: "local-only",
-        dirName,
-      });
-      continue;
-    }
-
-    const sourceHash = await computeSourceHash(sourcePath, sourceSkill.path);
-
-    if (sourceHash === null) {
-      results.push({
-        id: forkedFrom.skillId,
-        localHash,
-        sourceHash: null,
-        status: "local-only",
-        dirName,
-      });
-      continue;
-    }
-
-    const status = localHash === sourceHash ? "current" : "outdated";
-
-    results.push({
-      id: forkedFrom.skillId,
-      localHash,
-      sourceHash,
-      status,
+/** Classifies one local skill against the source: local-only, current, or outdated. */
+async function classifyLocalSkill(
+  skillId: string,
+  dirName: string,
+  forkedFrom: ForkedFromMetadata | null,
+  sourcePath: string,
+  sourceSkills: Record<string, { path: string }>,
+): Promise<SkillComparisonResult> {
+  if (!forkedFrom) {
+    // Boundary cast: skillId comes from Map<string, ...> keys (directory names or forkedFrom.skillId)
+    return {
+      id: skillId as SkillId,
+      localHash: null,
+      sourceHash: null,
+      status: "local-only",
       dirName,
-      sourcePath: sourceSkill.path,
-    });
+    };
   }
 
-  return sortBy(results, (r) => r.id);
+  const localHash = forkedFrom.contentHash;
+  const sourceSkill = sourceSkills[forkedFrom.skillId];
+  if (!sourceSkill) {
+    return { id: forkedFrom.skillId, localHash, sourceHash: null, status: "local-only", dirName };
+  }
+
+  const sourceHash = await computeSourceHash(sourcePath, sourceSkill.path);
+  if (sourceHash === null) {
+    return { id: forkedFrom.skillId, localHash, sourceHash: null, status: "local-only", dirName };
+  }
+
+  return {
+    id: forkedFrom.skillId,
+    localHash,
+    sourceHash,
+    status: localHash === sourceHash ? "current" : "outdated",
+    dirName,
+    sourcePath: sourceSkill.path,
+  };
 }
 
 /**
@@ -304,30 +295,34 @@ export async function injectForkedFromMetadata(
 ): Promise<void> {
   const metadataPath = path.join(destPath, STANDARD_FILES.METADATA_YAML);
   const rawContent = await readFile(metadataPath);
-
-  const lines = rawContent.split("\n");
-  let yamlContent = rawContent;
-
-  if (lines[0]?.startsWith("# yaml-language-server:")) {
-    yamlContent = lines.slice(1).join("\n");
-  }
+  const { yamlContent } = stripYamlSchemaComment(rawContent);
 
   const parseResult = localSkillMetadataSchema.safeParse(parseYaml(yamlContent));
   if (!parseResult.success) {
     warn(`Malformed metadata.yaml at '${metadataPath}' — existing fields may be lost`);
   }
-  const metadata: LocalSkillMetadata = parseResult.success
-    ? (parseResult.data as LocalSkillMetadata)
-    : { forkedFrom: undefined };
-
-  metadata.forkedFrom = {
-    skillId: skillId,
-    contentHash: contentHash,
-    date: getCurrentDate(),
-    ...(source ? { source } : {}),
+  const metadata: LocalSkillMetadata = {
+    ...(parseResult.success ? parseResult.data : {}),
+    forkedFrom: {
+      skillId: skillId,
+      contentHash: contentHash,
+      date: getCurrentDate(),
+      ...(source ? { source } : {}),
+    },
   };
 
-  const schemaComment = `${yamlSchemaComment(SCHEMA_PATHS.metadata)}\n`;
-  const newYamlContent = stringifyYaml(metadata, { lineWidth: YAML_FORMATTING.LINE_WIDTH_NONE });
-  await writeFile(metadataPath, `${schemaComment}${newYamlContent}`);
+  await writeMetadataYaml(metadataPath, metadata, `${yamlSchemaComment(SCHEMA_PATHS.metadata)}\n`);
+}
+
+/**
+ * Serializes skill metadata with the standard line-width policy and writes it,
+ * optionally prefixed by a yaml-language-server schema comment.
+ */
+export async function writeMetadataYaml(
+  filePath: string,
+  metadata: unknown,
+  schemaComment = "",
+): Promise<void> {
+  const yamlContent = stringifyYaml(metadata, { lineWidth: YAML_FORMATTING.LINE_WIDTH_NONE });
+  await writeFile(filePath, schemaComment + yamlContent);
 }

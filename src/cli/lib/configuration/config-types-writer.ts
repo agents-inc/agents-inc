@@ -1,18 +1,29 @@
 import os from "os";
 import path from "path";
-import { unique } from "remeda";
-import type { AgentName, MergedSkillsMatrix, ProjectConfig, SkillId, Category } from "../../types";
+import { groupBy, unique } from "remeda";
+import type {
+  AgentName,
+  Domain,
+  MergedSkillsMatrix,
+  ProjectConfig,
+  ResolvedSkill,
+  SkillId,
+  Category,
+} from "../../types";
 import { loadProjectConfigFromDir } from "./project-config";
+import { isHomeDirectory } from "../installation/is-home-directory";
+import { activeProjectAgentNames } from "./scope-predicates";
 import {
   CLAUDE_SRC_DIR,
   CLI_INVOKE_COMMAND,
   GLOBAL_INSTALL_ROOT,
+  LOCAL_PSEUDO_CATEGORY,
   PROJECT_ROOT,
   STANDARD_FILES,
 } from "../../consts";
 import { directoryExists, fileExists, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
-import { typedKeys } from "../../utils/typed-object";
+import { typedEntries, typedKeys } from "../../utils/typed-object";
 
 const MULTI_LINE_THRESHOLD = 6;
 
@@ -148,19 +159,46 @@ function buildSkillsByCategory(
   matrix: MergedSkillsMatrix,
 ): Map<Category, SkillId[]> {
   const categorySet = new Set(categories);
-  const skillIdSet = new Set(skillIds);
-  const result = new Map<Category, SkillId[]>();
+  const eligible = [...new Set(skillIds)]
+    .map((id) => ({ id, category: matrix.skills[id]?.category }))
+    .filter(
+      (entry): entry is { id: SkillId; category: Category } =>
+        entry.category !== undefined &&
+        entry.category !== LOCAL_PSEUDO_CATEGORY &&
+        categorySet.has(entry.category),
+    );
 
-  for (const id of skillIdSet) {
-    const skill = matrix.skills[id];
-    if (!skill?.category || skill.category === "local") continue;
-    if (!categorySet.has(skill.category)) continue;
-    const existing = result.get(skill.category) ?? [];
-    existing.push(id);
-    result.set(skill.category, existing);
-  }
+  return new Map(
+    typedEntries(groupBy(eligible, (entry) => entry.category)).map(([category, entries]) => [
+      category,
+      entries.map((entry) => entry.id),
+    ]),
+  );
+}
 
-  return result;
+/**
+ * Domains that only ever appear on custom categories — the subtraction rule:
+ * a domain is custom only if it NEVER appears on a non-custom (marketplace)
+ * category. Explicitly-passed extra domains are always treated as custom.
+ */
+function collectCustomDomains(
+  matrix: MergedSkillsMatrix,
+  customCategorySet: Set<string>,
+  extraDomains: string[],
+): Set<string> {
+  const categories = typedKeys(matrix.categories)
+    .map((key) => ({ key, domain: matrix.categories[key]?.domain }))
+    .filter((c): c is { key: Category; domain: Domain } => c.domain !== undefined);
+
+  const marketplaceDomains = new Set(
+    categories.filter((c) => !customCategorySet.has(c.key)).map((c) => c.domain),
+  );
+  const customOnlyDomains = categories
+    .filter((c) => customCategorySet.has(c.key))
+    .map((c) => c.domain)
+    .filter((domain) => !marketplaceDomains.has(domain));
+
+  return new Set<string>([...customOnlyDomains, ...extraDomains]);
 }
 
 export type ConfigTypesBackgroundData = {
@@ -189,7 +227,7 @@ export function loadConfigTypesDataInBackground(
     }
 
     const { loadSkillsMatrixFromSource } = await import("../loading/source-loader");
-    const { loadAllAgents } = await import("../loading/loader");
+    const { loadMergedAgents } = await import("../loading/loader");
 
     const sourceResult = await loadSkillsMatrixFromSource({
       sourceFlag,
@@ -197,9 +235,7 @@ export function loadConfigTypesDataInBackground(
       skipExtraSources: true,
     });
 
-    const cliAgents = await loadAllAgents(PROJECT_ROOT);
-    const sourceAgents = await loadAllAgents(sourceResult.sourcePath);
-    const allAgents = { ...cliAgents, ...sourceAgents };
+    const allAgents = await loadMergedAgents(sourceResult.sourcePath);
     const agentNames = typedKeys<AgentName>(allAgents);
     const customAgentNames = agentNames.filter((name) => allAgents[name]?.custom === true);
 
@@ -236,16 +272,15 @@ export async function regenerateConfigTypes(
 
   // When a global installation exists and we're regenerating for a project,
   // generate a project config-types.ts that imports from the global one
-  const isProjectScope = path.resolve(projectDir) !== path.resolve(os.homedir());
+  const isProjectScope = !isHomeDirectory(projectDir);
   const globalConfigTypes = isProjectScope ? await getGlobalConfigTypesPath() : null;
 
   let source: string;
   if (globalConfigTypes) {
     const loadedConfig = await loadProjectConfigFromDir(projectDir);
     const selectedAgentNames = loadedConfig?.config?.selectedAgents as string[] | undefined;
-    const projectScopedAgentNames = loadedConfig?.config?.agents
-      ?.filter((a) => a.scope === "project" && !a.excluded)
-      ?.map((a) => a.name) as string[] | undefined;
+    const agents = loadedConfig?.config?.agents;
+    const projectScopedAgentNames = agents ? activeProjectAgentNames(agents) : undefined;
     source = generateProjectConfigTypesSource({
       globalTypesImportPath: computeGlobalTypesImportPath(projectDir),
       projectSkillIds: extras?.extraSkillIds ?? [],
@@ -323,46 +358,25 @@ export function generateConfigTypesSource(
   }
 
   // Determine which skills are custom
-  const customSkillSet = new Set<SkillId>(extraSkillIds);
-  for (const id of typedKeys(matrix.skills)) {
-    const skill = matrix.skills[id];
-    if (skill?.custom === true) {
-      customSkillSet.add(id);
-    }
-  }
+  const customSkillSet = new Set<SkillId>([
+    ...extraSkillIds,
+    ...typedKeys(matrix.skills).filter((id) => matrix.skills[id]?.custom === true),
+  ]);
 
   // Determine which agents are custom
   const customAgentSet = new Set<AgentName>([...customAgentNames, ...extraAgentNamesArr]);
 
   // Determine which categories are custom (referenced by custom skills or passed as extras)
-  const customCategorySet = new Set<Category>(extraCategoriesArr);
-  for (const id of typedKeys(matrix.skills)) {
-    const skill = matrix.skills[id];
-    if (skill?.custom === true && skill.category && skill.category !== "local") {
-      customCategorySet.add(skill.category);
-    }
-  }
+  const customCategorySet = new Set<Category>([
+    ...extraCategoriesArr,
+    ...typedKeys(matrix.skills)
+      .map((id) => matrix.skills[id])
+      .filter((skill): skill is ResolvedSkill => skill?.custom === true)
+      .map((skill) => skill.category)
+      .filter(isNonLocalCategory),
+  ]);
 
-  // Determine which domains are custom (only appear on custom categories)
-  const customDomainSet = new Set<string>();
-  const marketplaceDomainSet = new Set<string>();
-  for (const key of typedKeys(matrix.categories)) {
-    const cat = matrix.categories[key];
-    if (!cat?.domain) continue;
-    if (customCategorySet.has(key)) {
-      customDomainSet.add(cat.domain);
-    } else {
-      marketplaceDomainSet.add(cat.domain);
-    }
-  }
-  // A domain is only custom if it NEVER appears on a non-custom category
-  for (const domain of marketplaceDomainSet) {
-    customDomainSet.delete(domain);
-  }
-  // Explicitly-passed extra domains are always treated as custom
-  for (const domain of extraDomainsArr) {
-    customDomainSet.add(domain);
-  }
+  const customDomainSet = collectCustomDomains(matrix, customCategorySet, extraDomainsArr);
 
   const skillIdLine = formatMaybeSectionedUnion(skillIds, (id) => customSkillSet.has(id));
   const agentNameLine = formatMaybeSectionedUnion(sortedAgents, (name) => customAgentSet.has(name));
@@ -373,12 +387,9 @@ export function generateConfigTypesSource(
     ? formatUnion(config.selectedAgents as string[])
     : "AgentName";
 
-  const projectScopedAgents =
-    config?.agents?.filter((a) => a.scope === "project" && !a.excluded)?.map((a) => a.name) ?? [];
+  const projectScopedAgents = config?.agents ? activeProjectAgentNames(config.agents) : [];
   const projectAgentNameLine =
-    projectScopedAgents.length > 0
-      ? formatUnion(projectScopedAgents as string[])
-      : "SelectedAgentName";
+    projectScopedAgents.length > 0 ? formatUnion(projectScopedAgents) : "SelectedAgentName";
 
   const skillsByCategory = buildSkillsByCategory(skillIds, categories, matrix);
   const stackAgentConfigType = generateStackAgentConfig(skillsByCategory);
@@ -403,46 +414,39 @@ ${stackAgentConfigType}
 ${PROJECT_CONFIG_INTERFACE_AFTER}`;
 }
 
+// Sorted deriveDomains over every category — kept separate: this is the full-matrix domain
+// union for the standalone types file, not a per-selection derivation.
 function extractDomains(matrix: MergedSkillsMatrix): string[] {
-  const domainSet = new Set<string>();
-  for (const key of typedKeys(matrix.categories)) {
-    const category = matrix.categories[key];
-    if (category?.domain) {
-      domainSet.add(category.domain);
-    }
-  }
-  return [...domainSet].sort();
+  return deriveDomains(typedKeys(matrix.categories), matrix).sort();
 }
 
 /**
  * Derives the set of categories that the given skill IDs belong to,
  * by looking up each skill's category in the matrix.
  */
-function deriveCategories(skillIds: SkillId[], matrix: MergedSkillsMatrix): Category[] {
-  const categorySet = new Set<Category>();
-  for (const id of skillIds) {
-    const skill = matrix.skills[id];
-    if (skill?.category && skill.category !== "local") {
+/** Category present and not the "local" pseudo-category. */
+const isNonLocalCategory = (category: Category | "local" | undefined): category is Category =>
+  Boolean(category) && category !== "local";
+
+export function deriveCategories(skillIds: SkillId[], matrix: MergedSkillsMatrix): Category[] {
+  return unique(
+    skillIds
+      .map((id) => matrix.skills[id]?.category)
       // Boundary cast: CategoryPath to Category for matrix key lookup
-      categorySet.add(skill.category as Category);
-    }
-  }
-  return [...categorySet];
+      .filter(isNonLocalCategory),
+  );
 }
 
 /**
  * Derives the set of domains that the given categories belong to,
  * by looking up each category's domain in the matrix.
  */
-function deriveDomains(categories: Category[], matrix: MergedSkillsMatrix): string[] {
-  const domainSet = new Set<string>();
-  for (const cat of categories) {
-    const def = matrix.categories[cat];
-    if (def?.domain) {
-      domainSet.add(def.domain);
-    }
-  }
-  return [...domainSet];
+export function deriveDomains(categories: Category[], matrix: MergedSkillsMatrix): string[] {
+  return unique(
+    categories
+      .map((cat) => matrix.categories[cat]?.domain)
+      .filter((domain): domain is Domain => domain !== undefined),
+  );
 }
 
 /**

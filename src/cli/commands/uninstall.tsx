@@ -1,20 +1,27 @@
 import React from "react";
+import { partition } from "remeda";
 import path from "path";
 import { readdir } from "fs/promises";
 
 import { Flags } from "@oclif/core";
-import { render, Box, Text, useApp } from "ink";
+import { Box, Text, useApp } from "ink";
 
 import { BaseCommand } from "../base-command";
 import { Confirm } from "../components/common/confirm";
+import { promptConfirm } from "../components/common/prompt-confirm.js";
 import { getErrorMessage } from "../utils/errors";
 import { directoryExists, glob, listDirectories, remove } from "../utils/fs";
 import { claudePluginUninstallBestEffort, isClaudeCLIAvailable } from "../utils/exec";
-import { listPluginNames, getProjectPluginsDir } from "../lib/plugins/index";
+import {
+  listPluginNames,
+  getProjectPluginsDir,
+  buildMarketplacePluginRef,
+  toClaudePluginScope,
+} from "../lib/plugins/index";
 import { readForkedFromMetadata } from "../lib/skills/index";
 import { deregisterProjectPath } from "../lib/installation/index";
 import { loadProjectConfigFromDir } from "../lib/configuration/project-config";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, CLI_COLORS, DEFAULT_BRANDING } from "../consts";
+import { CLAUDE_DIR, CLAUDE_SRC_DIR, CLI_COLORS, DEFAULT_BRANDING, EJECT_SOURCE } from "../consts";
 import { EXIT_CODES } from "../lib/exit-codes";
 import { SUCCESS_MESSAGES, INFO_MESSAGES } from "../utils/messages";
 import type { ProjectConfig } from "../types/index";
@@ -177,18 +184,15 @@ export default class Uninstall extends BaseCommand {
   }
 
   private async confirmRemoval(target: UninstallTarget, removeAll: boolean): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-      const { waitUntilExit } = render(
-        <UninstallConfirm
-          target={target}
-          removeAll={removeAll}
-          onConfirm={() => resolve(true)}
-          onCancel={() => resolve(false)}
-        />,
-      );
-
-      waitUntilExit().catch(() => resolve(false));
-    });
+    const outcome = await promptConfirm(({ onConfirm, onCancel }) => (
+      <UninstallConfirm
+        target={target}
+        removeAll={removeAll}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    ));
+    return outcome === "confirmed";
   }
 
   private async executeUninstall(
@@ -345,17 +349,18 @@ function collectConfiguredAgents(config: Partial<ProjectConfig> | null): string[
 /** @internal Exported for testing */
 export function getCliInstalledPluginKeys(config: Partial<ProjectConfig> | null): Set<string> {
   if (!config?.skills) return new Set();
-  const keys = new Set<string>();
-  for (const skill of config.skills) {
-    // Primary key: skill.id@skill.source
-    keys.add(`${skill.id}@${skill.source}`);
-    // Also add marketplace variant for plugins installed via marketplace
-    // where skill.source may differ (e.g., "eject" vs the marketplace name)
-    if (config.marketplace && skill.source !== config.marketplace && skill.source !== "eject") {
-      keys.add(`${skill.id}@${config.marketplace}`);
-    }
-  }
-  return keys;
+  const { marketplace } = config;
+  return new Set(
+    config.skills.flatMap((skill) => [
+      // Primary key: skill.id@skill.source
+      buildMarketplacePluginRef(skill.id, skill.source),
+      // Marketplace variant for plugins installed via marketplace where
+      // skill.source may differ (e.g., "eject" vs the marketplace name)
+      ...(marketplace && skill.source !== marketplace && skill.source !== EJECT_SOURCE
+        ? [buildMarketplacePluginRef(skill.id, marketplace)]
+        : []),
+    ]),
+  );
 }
 
 /**
@@ -458,15 +463,14 @@ async function classifySkillDirs(
   skillsDir: string,
 ): Promise<{ toRemove: string[]; toSkip: string[] }> {
   const dirNames = await listDirectories(skillsDir);
-  const toRemove: string[] = [];
-  const toSkip: string[] = [];
-
-  for (const name of dirNames) {
-    const forkedFrom = await readForkedFromMetadata(path.join(skillsDir, name));
-    (shouldRemoveSkill(forkedFrom) ? toRemove : toSkip).push(name);
-  }
-
-  return { toRemove, toSkip };
+  const entries = await Promise.all(
+    dirNames.map(async (name) => ({
+      name,
+      forkedFrom: await readForkedFromMetadata(path.join(skillsDir, name)),
+    })),
+  );
+  const [removable, skippable] = partition(entries, (entry) => shouldRemoveSkill(entry.forkedFrom));
+  return { toRemove: removable.map((e) => e.name), toSkip: skippable.map((e) => e.name) };
 }
 
 async function removeClassifiedSkills(
@@ -482,7 +486,13 @@ async function removeClassifiedSkills(
 }
 
 async function cleanupSkillsDir(dir: string, allRemoved: boolean): Promise<boolean> {
-  if (!allRemoved || !(await directoryExists(dir))) return false;
+  if (!allRemoved) return false;
+  return removeDirIfEmpty(dir);
+}
+
+/** Removes `dir` when it exists and is empty; true when removed. */
+async function removeDirIfEmpty(dir: string): Promise<boolean> {
+  if (!(await directoryExists(dir))) return false;
   if (!(await isDirectoryEmpty(dir))) return false;
   await remove(dir);
   return true;
@@ -509,24 +519,16 @@ async function removeMatchingAgents(
   }
 
   const agentFiles = await listAgentFiles(target.agentsDir);
-  const removedNames: string[] = [];
+  const removedNames = agentFiles
+    .map((agentFile) => agentFile.replace(/\.md$/, ""))
+    .filter((agentName) => target.configuredAgents.includes(agentName));
 
-  for (const agentFile of agentFiles) {
-    const agentName = agentFile.replace(/\.md$/, "");
-    if (!target.configuredAgents.includes(agentName)) continue;
-
-    await remove(path.join(target.agentsDir, agentFile));
-    removedNames.push(agentName);
+  for (const agentName of removedNames) {
+    await remove(path.join(target.agentsDir, `${agentName}.md`));
     onRemoved?.(agentName);
   }
 
-  let dirCleaned = false;
-  if (await directoryExists(target.agentsDir)) {
-    if (await isDirectoryEmpty(target.agentsDir)) {
-      await remove(target.agentsDir);
-      dirCleaned = true;
-    }
-  }
+  const dirCleaned = await removeDirIfEmpty(target.agentsDir);
 
   return {
     removedCount: removedNames.length,
@@ -554,7 +556,6 @@ export async function uninstallPlugins(
   }
 
   const cliAvailable = await isClaudeCLIAvailable();
-  const uninstalledNames: string[] = [];
 
   for (const pluginName of target.cliPluginNames) {
     if (cliAvailable) {
@@ -563,19 +564,20 @@ export async function uninstallPlugins(
       // original scope rather than the currently-configured one.
       const skillId = pluginName.split("@")[0];
       const skillConfig = target.config?.skills?.find((s) => s.id === skillId);
-      const primaryScope = skillConfig?.scope === "global" ? "user" : "project";
+      const primaryScope = toClaudePluginScope(skillConfig?.scope);
       await claudePluginUninstallBestEffort(pluginName, primaryScope, projectDir);
     }
 
     const pluginPath = path.join(target.pluginsDir, pluginName);
     await remove(pluginPath);
-    uninstalledNames.push(pluginName);
     onUninstalled?.(pluginName);
   }
 
+  // Every iteration either completes or throws (aborting the whole uninstall),
+  // so reaching this return means every CLI-managed plugin was removed.
   return {
-    uninstalledNames,
-    totalUninstalled: uninstalledNames.length,
+    uninstalledNames: target.cliPluginNames,
+    totalUninstalled: target.cliPluginNames.length,
   };
 }
 
@@ -589,22 +591,15 @@ async function cleanupEmptyDirs(
   target: Pick<UninstallTarget, "hasClaudeDir" | "hasClaudeSrcDir" | "claudeDir" | "claudeSrcDir">,
   removeAll: boolean,
 ): Promise<CleanupResult> {
-  let claudeSrcDirRemoved = false;
-  if (removeAll && target.hasClaudeSrcDir) {
+  const claudeSrcDirRemoved = removeAll && target.hasClaudeSrcDir;
+  if (claudeSrcDirRemoved) {
     await remove(target.claudeSrcDir);
-    claudeSrcDirRemoved = true;
   }
 
-  let claudeDirRemoved = false;
-  let claudeDirKept = false;
-  if (target.hasClaudeDir && (await directoryExists(target.claudeDir))) {
-    if (await isDirectoryEmpty(target.claudeDir)) {
-      await remove(target.claudeDir);
-      claudeDirRemoved = true;
-    } else {
-      claudeDirKept = true;
-    }
-  }
+  const claudeDirRemoved = target.hasClaudeDir && (await removeDirIfEmpty(target.claudeDir));
+  // Nothing else removes .claude itself, so "kept" is exactly "present but not removed".
+  const claudeDirKept =
+    !claudeDirRemoved && target.hasClaudeDir && (await directoryExists(target.claudeDir));
 
   return { claudeDirRemoved, claudeSrcDirRemoved, claudeDirKept };
 }

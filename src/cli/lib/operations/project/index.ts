@@ -10,4 +10,8 @@ export {
   type CompileAgentsOptions,
   type CompilationResult,
 } from "./compile-agents.js";
+export {
+  type CompileAllScopesOptions,
+  compileAgentsAllScopes,
+} from "./compile-agents-all-scopes.js";
 export { loadAgentDefs, type AgentDefs } from "./load-agent-defs.js";

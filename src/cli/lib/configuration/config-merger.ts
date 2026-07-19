@@ -4,6 +4,7 @@ import type { ProjectConfig, SkillId } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
 import { loadProjectConfig } from "./project-config";
 import { loadProjectSourceConfig } from "./config";
+import { isGlobalTombstone, isProjectOwned } from "./scope-predicates";
 
 /**
  * How authoritative `newConfig` is over entries absent from it (D-233 Scenario C):
@@ -52,12 +53,12 @@ const skillKey = (s: SkillConfig): string => `${s.id}:${s.scope}${s.excluded ? "
 
 /** Names of agents carrying a global tombstone — i.e. dual-scope entries the project owns. */
 function agentTombstoneNames(agents: AgentScopeConfig[]): Set<string> {
-  return new Set(agents.filter((a) => a.scope === "global" && a.excluded).map((a) => a.name));
+  return new Set(agents.filter(isGlobalTombstone).map((a) => a.name));
 }
 
 /** Ids of skills carrying a global tombstone — i.e. dual-scope entries the project owns. */
 function skillTombstoneIds(skills: SkillConfig[]): Set<string> {
-  return new Set(skills.filter((s) => s.scope === "global" && s.excluded).map((s) => s.id));
+  return new Set(skills.filter(isGlobalTombstone).map((s) => s.id));
 }
 
 /**
@@ -73,7 +74,7 @@ function isWithinSessionAuthority(
   scope: AuthoritativeScope,
 ): boolean {
   if (scope === "all") return true;
-  return entry.scope === "project" || (entry.scope === "global" && !!entry.excluded);
+  return isProjectOwned(entry);
 }
 
 /**

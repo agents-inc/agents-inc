@@ -32,6 +32,11 @@ export function getSkillBySlug(slug: SkillSlug): ResolvedSkill {
   return getSkillById(id);
 }
 
+/** All resolved skills in the current matrix (skips sparse-record holes). */
+export function allSkills(): ResolvedSkill[] {
+  return Object.values(matrix.skills).filter((s): s is ResolvedSkill => s !== undefined);
+}
+
 /** Returns IDs of all custom skills in the current matrix. */
 export function getCustomSkillIds(): Set<SkillId> {
   return new Set(

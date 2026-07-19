@@ -1,5 +1,7 @@
-import { Box, Text, useInput } from "ink";
-import React, { useMemo, useState } from "react";
+import { groupBy } from "remeda";
+import { useKeyboardNavigation } from "../hooks/use-keyboard-navigation.js";
+import { Box, Text } from "ink";
+import React, { useMemo } from "react";
 import { CLI_COLORS, DEFAULT_SCRATCH_DOMAINS, UI_SYMBOLS } from "../../consts.js";
 import { matrix } from "../../lib/matrix/matrix-provider.js";
 import { useWizardStore } from "../../stores/wizard-store.js";
@@ -18,89 +20,104 @@ const GROUP_ORDER: string[] = ["React", "CLI"];
 const SCRATCH_LABEL = "Start from scratch";
 const SCRATCH_DESCRIPTION = "Select domains and skills manually";
 
-function groupStacks(
-  stacks: { id: string; name: string; description: string; group?: string }[],
-): StackGroup[] {
-  const grouped = new Map<string, StackItem[]>();
-  const ungrouped: StackItem[] = [];
+type GroupableStack = { id: string; name: string; description: string; group?: string };
 
-  for (const stack of stacks) {
-    const item: StackItem = { id: stack.id, name: stack.name, description: stack.description };
-    if (stack.group) {
-      const items = grouped.get(stack.group);
-      if (items) {
-        items.push(item);
-      } else {
-        grouped.set(stack.group, [item]);
-      }
-    } else {
-      ungrouped.push(item);
-    }
-  }
+function toStackItem(stack: GroupableStack): StackItem {
+  return { id: stack.id, name: stack.name, description: stack.description };
+}
+
+/** GROUP_ORDER labels first (in order), then unknown labels alphabetically. */
+function compareGroupLabels(a: string, b: string): number {
+  const ai = GROUP_ORDER.indexOf(a);
+  const bi = GROUP_ORDER.indexOf(b);
+  if (ai !== -1 && bi !== -1) return ai - bi;
+  if (ai !== -1) return -1;
+  if (bi !== -1) return 1;
+  return a.localeCompare(b);
+}
+
+function groupStacks(stacks: GroupableStack[]): StackGroup[] {
+  // `|| undefined` keeps an empty-string group ungrouped; groupBy drops undefined keys.
+  const byLabel = groupBy(stacks, (stack) => stack.group || undefined);
+  const ungrouped = stacks.filter((stack) => !stack.group).map(toStackItem);
 
   // No explicit groups — flat list, no headers
-  if (grouped.size === 0) {
+  const sortedLabels = Object.keys(byLabel).sort(compareGroupLabels);
+  if (sortedLabels.length === 0) {
     return [{ label: "", items: ungrouped }];
   }
 
-  const groups: StackGroup[] = [];
-  const sortedLabels = [...grouped.keys()].sort((a, b) => {
-    const ai = GROUP_ORDER.indexOf(a);
-    const bi = GROUP_ORDER.indexOf(b);
-    if (ai !== -1 && bi !== -1) return ai - bi;
-    if (ai !== -1) return -1;
-    if (bi !== -1) return 1;
-    return a.localeCompare(b);
-  });
-  for (const label of sortedLabels) {
-    groups.push({ label, items: grouped.get(label)! });
-  }
-  if (ungrouped.length > 0) {
-    groups.push({ label: OTHER_FRAMEWORKS_LABEL, items: ungrouped });
-  }
-  return groups;
+  const groups = sortedLabels.map((label) => ({
+    label,
+    items: byLabel[label].map(toStackItem),
+  }));
+  return ungrouped.length > 0
+    ? [...groups, { label: OTHER_FRAMEWORKS_LABEL, items: ungrouped }]
+    : groups;
 }
 
 function buildFocusableIds(groups: StackGroup[]): FocusId[] {
   return [...groups.flatMap((g) => g.items.map((i) => i.id)), "scratch"];
 }
 
-/** Renders a section header + stack items. Focus state is managed by the parent. */
-const StackSection: React.FC<{
-  title: string;
-  items: StackItem[];
-  focusedId: FocusId;
-}> = ({ title, items, focusedId }) => (
-  <Box flexDirection="column">
-    {title !== "" && (
-      <Box flexShrink={0}>
-        <Text dimColor bold>
-          {"  "}
-          {title}
+type StackListRow =
+  | { type: "header"; label: string }
+  | { type: "spacer" }
+  | { type: "stack"; item: StackItem }
+  | { type: "scratch" };
+
+/** One row per rendered line — headers, spacers, stack items, then the scratch row. */
+function buildStackRows(groups: StackGroup[]): StackListRow[] {
+  const groupRows = groups.flatMap((group, groupIndex): StackListRow[] => [
+    ...(groupIndex > 0 ? [{ type: "spacer" as const }] : []),
+    ...(group.label ? [{ type: "header" as const, label: group.label }] : []),
+    ...group.items.map((item): StackListRow => ({ type: "stack", item })),
+  ]);
+  return [...groupRows, { type: "spacer" }, { type: "scratch" }];
+}
+
+function isRowFocused(row: StackListRow, focusedId: FocusId): boolean {
+  if (row.type === "stack") return row.item.id === focusedId;
+  return row.type === "scratch" && focusedId === "scratch";
+}
+
+const StackRow: React.FC<{ item: StackItem; isFocused: boolean }> = ({ item, isFocused }) => {
+  const pointer = isFocused ? UI_SYMBOLS.CHEVRON : UI_SYMBOLS.CHEVRON_SPACER;
+  return (
+    <Box flexShrink={0}>
+      <Text>
+        <Text color={isFocused ? CLI_COLORS.PRIMARY : undefined}>{pointer}</Text>
+        <Text color={isFocused ? CLI_COLORS.PRIMARY : undefined} bold={isFocused}>
+          {" "}
+          {item.name}
         </Text>
-      </Box>
-    )}
-    {items.map((item) => {
-      const isFocused = item.id === focusedId;
-      const pointer = isFocused ? UI_SYMBOLS.CHEVRON : UI_SYMBOLS.CHEVRON_SPACER;
-      return (
-        <Box key={item.id} flexShrink={0}>
-          <Text>
-            <Text color={isFocused ? CLI_COLORS.PRIMARY : undefined}>{pointer}</Text>
-            <Text color={isFocused ? CLI_COLORS.PRIMARY : undefined} bold={isFocused}>
-              {" "}
-              {item.name}
-            </Text>
-            <Text dimColor>
-              {"  "}
-              {item.description}
-            </Text>
-          </Text>
-        </Box>
-      );
-    })}
-  </Box>
-);
+        <Text dimColor>
+          {"  "}
+          {item.description}
+        </Text>
+      </Text>
+    </Box>
+  );
+};
+
+const ScratchRow: React.FC<{ isFocused: boolean }> = ({ isFocused }) => {
+  const pointer = isFocused ? UI_SYMBOLS.CHEVRON : UI_SYMBOLS.CHEVRON_SPACER;
+  return (
+    <Box flexShrink={0}>
+      <Text>
+        <Text color={isFocused ? CLI_COLORS.PRIMARY : undefined}>{pointer}</Text>
+        <Text color={isFocused ? CLI_COLORS.PRIMARY : undefined} bold={isFocused}>
+          {" "}
+          {SCRATCH_LABEL}
+        </Text>
+        <Text dimColor>
+          {"  "}
+          {SCRATCH_DESCRIPTION}
+        </Text>
+      </Text>
+    </Box>
+  );
+};
 
 export type StackSelectionProps = {
   /** Available height in terminal lines for the scrollable viewport. 0 = no constraint. */
@@ -121,122 +138,79 @@ export const StackSelection: React.FC<StackSelectionProps> = ({ onCancel }) => {
 
   const stacks = matrix.suggestedStacks;
   const groups = useMemo(() => groupStacks(stacks), [stacks]);
+  const rows = useMemo(() => buildStackRows(groups), [groups]);
   const focusableIds = useMemo(() => buildFocusableIds(groups), [groups]);
 
-  const [focusedId, setFocusedId] = useState<FocusId>(focusableIds[0] ?? "scratch");
+  const { focusedIndex } = useKeyboardNavigation(focusableIds.length, {
+    onEscape: onCancel,
+    onEnter: (index) => handleSelect(focusableIds[index] ?? "scratch"),
+  });
+  const focusedId: FocusId = focusableIds[focusedIndex] ?? "scratch";
   const { ref: listRef, measuredHeight: listHeight } = useMeasuredHeight();
 
-  // Compute visual row counts for scroll: header + items per group, spacers between groups, spacer + scratch row
-  const totalRowCount = useMemo(() => {
-    const groupRows = groups.reduce(
-      (sum, g, i) =>
-        sum +
-        (g.label ? 1 : 0) /* header (skip when unlabelled) */ +
-        g.items.length +
-        (i > 0 ? 1 : 0) /* spacer between groups */,
-      0,
-    );
-    return groupRows + 1 /* spacer before scratch */ + 1 /* scratch row */;
-  }, [groups]);
-
-  // Map focusedId to a visual row index for scrolling
-  const focusedVisualRow = useMemo(() => {
-    let row = 0;
-    for (let gi = 0; gi < groups.length; gi++) {
-      if (gi > 0) row++; // spacer between groups
-      if (groups[gi].label) row++; // header (skip when unlabelled)
-      for (const item of groups[gi].items) {
-        if (item.id === focusedId) return row;
-        row++;
-      }
-    }
-    row++; // spacer before scratch
-    return row; // scratch row
-  }, [groups, focusedId]);
+  const focusedVisualRow = useMemo(
+    () => rows.findIndex((row) => isRowFocused(row, focusedId)),
+    [rows, focusedId],
+  );
 
   const { scrollEnabled, scrollTop } = useRowScroll({
     focusedIndex: focusedVisualRow,
-    itemCount: totalRowCount,
+    itemCount: rows.length,
     availableHeight: listHeight,
   });
 
-  useInput((input, key) => {
-    if (key.escape) {
-      if (onCancel) {
-        onCancel();
+  function handleSelect(selectedId: FocusId): void {
+    if (selectedId === "scratch") {
+      selectStack(null);
+      setApproach("scratch");
+
+      // Restore global agent preselections (selectStack wipes selectedAgents/agentConfigs)
+      const globalAgentPre = useWizardStore.getState().globalAgentPreselections;
+      if (globalAgentPre) {
+        useWizardStore.setState({
+          selectedAgents: globalAgentPre.agents,
+          agentConfigs: globalAgentPre.configs,
+        });
       }
+
+      // Pre-select global skills first (sets selectedDomains to global skill domains)
+      const globalPreselections = useWizardStore.getState().globalPreselections;
+      if (globalPreselections?.length) {
+        populateFromSkillIds(
+          globalPreselections.map((s) => s.id),
+          globalPreselections,
+        );
+      }
+
+      // Then toggle scratch domains (additive — adds any not already selected)
+      for (const domain of DEFAULT_SCRATCH_DOMAINS) {
+        if (!useWizardStore.getState().selectedDomains.includes(domain)) {
+          toggleDomain(domain);
+        }
+      }
+
+      setStep("domains");
       return;
     }
+    const focusedStack = stacks.find((s) => s.id === selectedId);
+    if (focusedStack) {
+      selectStack(focusedStack.id);
+      setStackAction("customize");
 
-    const currentIdx = focusableIds.indexOf(focusedId);
+      // Derive agent preselection from stack agent keys, merged with global agent preselections
+      const stackAgents = typedKeys<AgentName>(focusedStack.skills);
+      preselectAgentsFromStack(stackAgents);
 
-    if (key.upArrow || input === "k") {
-      const nextIdx = currentIdx <= 0 ? focusableIds.length - 1 : currentIdx - 1;
-      setFocusedId(focusableIds[nextIdx]!);
-      return;
+      // Merge global preselections with stack skills
+      const globalPreselections = useWizardStore.getState().globalPreselections;
+      const globalIds = globalPreselections?.map((s) => s.id) ?? [];
+      const mergedIds = [...new Set([...focusedStack.allSkillIds, ...globalIds])];
+      populateFromSkillIds(mergedIds, globalPreselections ?? undefined);
+
+      setApproach("stack");
+      setStep("domains");
     }
-    if (key.downArrow || input === "j") {
-      const nextIdx = currentIdx >= focusableIds.length - 1 ? 0 : currentIdx + 1;
-      setFocusedId(focusableIds[nextIdx]!);
-      return;
-    }
-
-    if (key.return) {
-      if (focusedId === "scratch") {
-        selectStack(null);
-        setApproach("scratch");
-
-        // Restore global agent preselections (selectStack wipes selectedAgents/agentConfigs)
-        const globalAgentPre = useWizardStore.getState().globalAgentPreselections;
-        if (globalAgentPre) {
-          useWizardStore.setState({
-            selectedAgents: globalAgentPre.agents,
-            agentConfigs: globalAgentPre.configs,
-          });
-        }
-
-        // Pre-select global skills first (sets selectedDomains to global skill domains)
-        const globalPreselections = useWizardStore.getState().globalPreselections;
-        if (globalPreselections?.length) {
-          populateFromSkillIds(
-            globalPreselections.map((s) => s.id),
-            globalPreselections,
-          );
-        }
-
-        // Then toggle scratch domains (additive — adds any not already selected)
-        for (const domain of DEFAULT_SCRATCH_DOMAINS) {
-          if (!useWizardStore.getState().selectedDomains.includes(domain)) {
-            toggleDomain(domain);
-          }
-        }
-
-        setStep("domains");
-        return;
-      }
-      const focusedStack = stacks.find((s) => s.id === focusedId);
-      if (focusedStack) {
-        selectStack(focusedStack.id);
-        setStackAction("customize");
-
-        // Derive agent preselection from stack agent keys, merged with global agent preselections
-        const stackAgents = typedKeys<AgentName>(focusedStack.skills);
-        preselectAgentsFromStack(stackAgents);
-
-        // Merge global preselections with stack skills
-        const globalPreselections = useWizardStore.getState().globalPreselections;
-        const globalIds = globalPreselections?.map((s) => s.id) ?? [];
-        const mergedIds = [...new Set([...focusedStack.allSkillIds, ...globalIds])];
-        populateFromSkillIds(mergedIds, globalPreselections ?? undefined);
-
-        setApproach("stack");
-        setStep("domains");
-      }
-    }
-  });
-
-  const isScratchFocused = focusedId === "scratch";
-  const scratchPointer = isScratchFocused ? UI_SYMBOLS.CHEVRON : UI_SYMBOLS.CHEVRON_SPACER;
+  }
 
   return (
     <Box ref={listRef} flexDirection="column" flexGrow={1} flexBasis={0}>
@@ -250,38 +224,39 @@ export const StackSelection: React.FC<StackSelectionProps> = ({ onCancel }) => {
           marginTop={scrollTop > 0 ? -scrollTop : 0}
           {...(scrollEnabled && { flexShrink: 0 })}
         >
-          {groups.map((group, gi) => (
-            <React.Fragment key={group.label}>
-              {gi > 0 && (
-                <Box flexShrink={0}>
-                  <Text> </Text>
-                </Box>
-              )}
-              <StackSection title={group.label} items={group.items} focusedId={focusedId} />
-            </React.Fragment>
-          ))}
-
-          <Box key="scratch-spacer" flexShrink={0}>
-            <Text> </Text>
-          </Box>
-          <Box key="scratch" flexShrink={0}>
-            <Text>
-              <Text color={isScratchFocused ? CLI_COLORS.PRIMARY : undefined}>
-                {scratchPointer}
-              </Text>
-              <Text
-                color={isScratchFocused ? CLI_COLORS.PRIMARY : undefined}
-                bold={isScratchFocused}
-              >
-                {" "}
-                {SCRATCH_LABEL}
-              </Text>
-              <Text dimColor>
-                {"  "}
-                {SCRATCH_DESCRIPTION}
-              </Text>
-            </Text>
-          </Box>
+          {rows.map((row, index) => {
+            switch (row.type) {
+              case "spacer":
+                return (
+                  <Box key={`spacer-${index}`} flexShrink={0}>
+                    <Text> </Text>
+                  </Box>
+                );
+              case "header":
+                return (
+                  <Box key={`header-${row.label}`} flexShrink={0}>
+                    <Text dimColor bold>
+                      {"  "}
+                      {row.label}
+                    </Text>
+                  </Box>
+                );
+              case "stack":
+                return (
+                  <StackRow
+                    key={row.item.id}
+                    item={row.item}
+                    isFocused={row.item.id === focusedId}
+                  />
+                );
+              case "scratch":
+                return <ScratchRow key="scratch" isFocused={focusedId === "scratch"} />;
+              default: {
+                const _exhaustive: never = row;
+                return _exhaustive;
+              }
+            }
+          })}
         </Box>
       </Box>
     </Box>

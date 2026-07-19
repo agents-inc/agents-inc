@@ -4,7 +4,7 @@ import { unique } from "remeda";
 import { getErrorMessage } from "../../utils/errors";
 import { glob, readFile, directoryExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
-import { CLAUDE_SRC_DIR, DIRS, STANDARD_FILES } from "../../consts";
+import { CLAUDE_SRC_DIR, DIRS, STANDARD_FILES, PROJECT_ROOT } from "../../consts";
 import type {
   AgentDefinition,
   AgentName,
@@ -29,39 +29,47 @@ export function parseFrontmatter(content: string, filePath?: string): SkillFront
     warn(`Invalid SKILL.md frontmatter in '${location}': ${formatZodIssues(parsed.error.issues)}`);
     return null;
   }
-  // Boundary cast: YAML name field may not match strict SkillId pattern (e.g., local skills)
-  return parsed.data as SkillFrontmatter;
+  return parsed.data;
 }
+
+type LoadAgentsFromDirOptions = {
+  /** Relative base recorded on each definition (project agents live under .claude-src/agents). */
+  agentBaseDir?: string;
+  /** Propagate the `custom: true` metadata flag (source/CLI agents only). */
+  includeCustomFlag?: boolean;
+  /** Label for the per-agent verbose line. */
+  verboseLabel: string;
+};
 
 // Boundary cast: agent keys come from agentYamlConfigSchema which types config.id as AgentName;
 // custom agents (not in the union) are accepted by the schema's z.string() base
-export async function loadAllAgents(
-  projectRoot: string,
+async function loadAgentsFromDir(
+  agentsDir: string,
+  sourceRoot: string,
+  options: LoadAgentsFromDirOptions,
 ): Promise<Record<AgentName, AgentDefinition>> {
   const agents: Record<string, AgentDefinition> = {};
-  const agentSourcesDir = path.join(projectRoot, DIRS.agents);
-
-  const files = await glob(`**/${STANDARD_FILES.AGENT_METADATA_YAML}`, agentSourcesDir);
+  const files = await glob(`**/${STANDARD_FILES.AGENT_METADATA_YAML}`, agentsDir);
 
   for (const file of files) {
-    const fullPath = path.join(agentSourcesDir, file);
+    const fullPath = path.join(agentsDir, file);
     try {
       const content = await readFile(fullPath);
       const config = agentYamlConfigSchema.parse(parseYaml(content));
-      const agentPath = path.dirname(file);
 
       agents[config.id] = {
         title: config.title,
         description: config.description,
         model: config.model,
         tools: config.tools,
-        path: agentPath,
-        sourceRoot: projectRoot,
+        path: path.dirname(file),
+        sourceRoot,
+        ...(options.agentBaseDir ? { agentBaseDir: options.agentBaseDir } : {}),
         ...(config.domain ? { domain: config.domain } : {}),
-        ...(config.custom === true ? { custom: true } : {}),
+        ...(options.includeCustomFlag && config.custom === true ? { custom: true } : {}),
       };
 
-      verbose(`Loaded agent: ${config.id} from ${file}`);
+      verbose(`Loaded ${options.verboseLabel}: ${config.id} from ${file}`);
     } catch (error) {
       warn(`Skipping invalid metadata.yaml at '${fullPath}': ${getErrorMessage(error)}`);
     }
@@ -70,64 +78,70 @@ export async function loadAllAgents(
   return agents;
 }
 
-// Boundary cast: agent keys come from agentYamlConfigSchema which types config.id as AgentName
+export async function loadAllAgents(
+  projectRoot: string,
+): Promise<Record<AgentName, AgentDefinition>> {
+  return loadAgentsFromDir(path.join(projectRoot, DIRS.agents), projectRoot, {
+    includeCustomFlag: true,
+    verboseLabel: "agent",
+  });
+}
+
+/**
+ * Loads agent definitions from the CLI repo and a skills source in parallel,
+ * merged so source definitions take precedence on name collisions.
+ */
+export async function loadMergedAgents(
+  sourcePath: string,
+): Promise<Record<AgentName, AgentDefinition>> {
+  const [cliAgents, sourceAgents] = await Promise.all([
+    loadAllAgents(PROJECT_ROOT),
+    loadAllAgents(sourcePath),
+  ]);
+  return { ...cliAgents, ...sourceAgents };
+}
+
 export async function loadProjectAgents(
   projectRoot: string,
 ): Promise<Record<AgentName, AgentDefinition>> {
-  const agents: Record<string, AgentDefinition> = {};
   const projectAgentsDir = path.join(projectRoot, CLAUDE_SRC_DIR, "agents");
 
   if (!(await directoryExists(projectAgentsDir))) {
     verbose(`No project agents directory at ${projectAgentsDir}`);
-    return agents;
+    const noAgents: Record<string, AgentDefinition> = {};
+    return noAgents;
   }
 
-  const files = await glob(`**/${STANDARD_FILES.AGENT_METADATA_YAML}`, projectAgentsDir);
-
-  for (const file of files) {
-    const fullPath = path.join(projectAgentsDir, file);
-    try {
-      const content = await readFile(fullPath);
-      const config = agentYamlConfigSchema.parse(parseYaml(content));
-      const agentPath = path.dirname(file);
-
-      agents[config.id] = {
-        title: config.title,
-        description: config.description,
-        model: config.model,
-        tools: config.tools,
-        path: agentPath,
-        sourceRoot: projectRoot,
-        agentBaseDir: `${CLAUDE_SRC_DIR}/agents`, // Project agents are in .claude-src/agents/
-        ...(config.domain ? { domain: config.domain } : {}),
-      };
-
-      verbose(`Loaded project agent: ${config.id} from ${file}`);
-    } catch (error) {
-      warn(`Skipping invalid metadata.yaml at '${fullPath}': ${getErrorMessage(error)}`);
-    }
-  }
-
-  return agents;
+  return loadAgentsFromDir(projectAgentsDir, projectRoot, {
+    // Project agents are in .claude-src/agents/
+    agentBaseDir: `${CLAUDE_SRC_DIR}/agents`,
+    verboseLabel: "project agent",
+  });
 }
 
 async function buildIdToDirectoryPathMap(skillsDir: string): Promise<Record<string, string>> {
-  const map: Record<string, string> = {};
   const files = await glob("**/SKILL.md", skillsDir);
+  const parsed = await Promise.all(
+    files.map(async (file) => {
+      const fullPath = path.join(skillsDir, file);
+      return { file, frontmatter: parseFrontmatter(await readFile(fullPath), fullPath) };
+    }),
+  );
 
-  for (const file of files) {
-    const fullPath = path.join(skillsDir, file);
-    const content = await readFile(fullPath);
-    const frontmatter = parseFrontmatter(content, fullPath);
-
-    if (frontmatter?.name) {
-      const directoryPath = file.replace("/SKILL.md", "");
-      map[frontmatter.name] = directoryPath;
-      map[directoryPath] = directoryPath;
-    }
-  }
-
-  return map;
+  // Each skill is reachable by its frontmatter name AND its directory path
+  return Object.fromEntries(
+    parsed
+      .filter((entry): entry is { file: string; frontmatter: SkillFrontmatter } =>
+        Boolean(entry.frontmatter?.name),
+      )
+      .flatMap(({ file, frontmatter }) => {
+        const directoryPath = file.replace("/SKILL.md", "");
+        return [
+          [frontmatter.name, directoryPath],
+          [directoryPath, directoryPath],
+        ];
+      }),
+  );
 }
 
 export async function loadSkillsByIds(
@@ -138,29 +152,24 @@ export async function loadSkillsByIds(
   const skillsDir = path.join(projectRoot, DIRS.skills);
 
   const idToDirectoryPath = await buildIdToDirectoryPathMap(skillsDir);
-  const allSkillIds = Object.keys(idToDirectoryPath);
-  const expandedSkillIds: SkillId[] = [];
 
-  for (const { id: skillId } of skillIds) {
-    if (idToDirectoryPath[skillId]) {
-      expandedSkillIds.push(skillId);
-    } else {
-      const childSkills = allSkillIds.filter((id) => {
-        const dirPath = idToDirectoryPath[id];
-        return dirPath.startsWith(`${skillId}/`);
-      });
-
-      if (childSkills.length > 0) {
-        // Boundary cast: keys from buildIdToDirectoryPathMap are SkillId values from frontmatter
-        expandedSkillIds.push(...(childSkills as SkillId[]));
-        verbose(`Expanded directory '${skillId}' to ${childSkills.length} skills`);
-      } else {
-        warn(`Unknown skill reference '${skillId}'`);
-      }
+  /** A directory reference expands to every skill under it; warns when nothing matches. */
+  const expandDirectoryRef = (skillId: SkillId): SkillId[] => {
+    const childSkills = Object.keys(idToDirectoryPath).filter((id) =>
+      idToDirectoryPath[id].startsWith(`${skillId}/`),
+    );
+    if (childSkills.length === 0) {
+      warn(`Unknown skill reference '${skillId}'`);
+      return [];
     }
-  }
+    verbose(`Expanded directory '${skillId}' to ${childSkills.length} skills`);
+    // Boundary cast: keys from buildIdToDirectoryPathMap are SkillId values from frontmatter
+    return childSkills as SkillId[];
+  };
 
-  const uniqueSkillIds = unique(expandedSkillIds);
+  const uniqueSkillIds = unique(
+    skillIds.flatMap(({ id }) => (idToDirectoryPath[id] ? [id] : expandDirectoryRef(id))),
+  );
 
   for (const skillId of uniqueSkillIds) {
     const directoryPath = idToDirectoryPath[skillId];

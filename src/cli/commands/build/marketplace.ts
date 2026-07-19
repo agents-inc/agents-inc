@@ -13,11 +13,10 @@ import {
   writeMarketplace,
   getMarketplaceStats,
 } from "../../lib/marketplace-generator";
-import { PLUGIN_MANIFEST_DIR } from "../../consts";
+import { PLUGIN_MANIFEST_DIR, PLUGINS_DIST_PATH } from "../../consts";
 import type { Marketplace } from "../../types/plugins";
-import { validateMarketplaceName } from "../new/marketplace";
+import { validateKebabCaseName } from "../../lib/validate-kebab-name.js";
 
-const DEFAULT_PLUGINS_DIR = "dist/plugins";
 const DEFAULT_OUTPUT_FILE = `${PLUGIN_MANIFEST_DIR}/marketplace.json`;
 
 const AUTHOR_STRING_PATTERN = /^(.*?)\s*<([^>]+)>\s*(?:\(([^)]+)\))?\s*$/;
@@ -80,7 +79,7 @@ export default class BuildMarketplace extends BaseCommand {
     "plugins-dir": Flags.string({
       char: "p",
       description: "Plugins directory",
-      default: DEFAULT_PLUGINS_DIR,
+      default: PLUGINS_DIST_PATH,
     }),
     output: Flags.string({
       char: "o",
@@ -165,7 +164,7 @@ export default class BuildMarketplace extends BaseCommand {
 
     let resolvedName = name;
     if (nameOverride !== undefined) {
-      const validationError = validateMarketplaceName(nameOverride);
+      const validationError = validateKebabCaseName(nameOverride, "Marketplace");
       if (validationError) {
         this.error(`Invalid --name '${nameOverride}': ${validationError}`, {
           exit: EXIT_CODES.INVALID_ARGS,

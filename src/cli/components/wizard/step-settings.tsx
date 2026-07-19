@@ -118,16 +118,13 @@ export const StepSettings: React.FC<StepSettingsProps> = ({
     }
 
     if (key.backspace || key.delete) {
-      if (summary?.sources[focusedIndex]) {
-        const source = summary.sources[focusedIndex];
-        if (source.name !== DEFAULT_SOURCE_NAME) {
-          void handleRemove(source.name).then((success) => {
-            if (success) {
-              setFocusedIndex((prev) => Math.max(0, prev - 1));
-            }
-          });
+      const source = summary?.sources[focusedIndex];
+      if (!source || source.name === DEFAULT_SOURCE_NAME) return;
+      void handleRemove(source.name).then((success) => {
+        if (success) {
+          setFocusedIndex((prev) => Math.max(0, prev - 1));
         }
-      }
+      });
       return;
     }
 

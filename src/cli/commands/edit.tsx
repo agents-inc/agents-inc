@@ -1,4 +1,3 @@
-import fs from "fs";
 import os from "os";
 import path from "path";
 
@@ -9,26 +8,27 @@ import { render } from "ink";
 import { difference, indexBy } from "remeda";
 
 import { BaseCommand } from "../base-command.js";
-import { Wizard, type WizardResultV2 } from "../components/wizard/wizard.js";
-import { hydrateWizardStore } from "../stores/wizard-store.js";
+import { type WizardResultV2 } from "../components/wizard/wizard.js";
+import { runWizardSession } from "../components/wizard/run-wizard-session.js";
 import {
   CLAUDE_DIR,
   CLI_INVOKE_COMMAND,
   CLI_COLORS,
-  GLOBAL_INSTALL_ROOT,
+  EJECT_SOURCE,
   SOURCE_DISPLAY_NAMES,
 } from "../consts.js";
 import {
   detectProject,
   loadSource,
   copyLocalSkills,
-  ensureMarketplace,
+  requireMarketplace,
   installPluginSkills,
+  pluginInstallFailureError,
   uninstallPluginSkills,
   loadAgentDefs,
   type AgentDefs,
   writeProjectConfig,
-  compileAgents,
+  compileAgentsAllScopes,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
 import { Spinner } from "../components/common/spinner.js";
@@ -37,11 +37,18 @@ import {
   type Installation,
   detectMigrations,
   executeMigration,
-  deriveInstallMode,
+  isHomeDirectory,
+  installBaseDir,
+  resolveInstallPaths,
 } from "../lib/installation/index.js";
 import { matrix, getSkillById } from "../lib/matrix/matrix-provider";
+import { activeAgentScopeMap } from "../lib/configuration/scope-predicates.js";
 import type { SourceLoadResult } from "../lib/loading/index.js";
-import { discoverAllPluginSkills } from "../lib/plugins/index.js";
+import {
+  discoverAllPluginSkills,
+  buildMarketplacePluginRef,
+  toClaudePluginScope,
+} from "../lib/plugins/index.js";
 import { deleteLocalSkill, migrateLocalSkillScope } from "../lib/skills/index.js";
 import type {
   SkillId,
@@ -58,6 +65,22 @@ import { ERROR_MESSAGES } from "../utils/messages.js";
 
 function formatSourceDisplayName(sourceName: string): string {
   return SOURCE_DISPLAY_NAMES[sourceName] ?? sourceName;
+}
+
+function formatScopeTag(scope: "project" | "global"): string {
+  return scope === "global" ? "[G]" : "[P]";
+}
+
+/**
+ * Dual-scope add/remove: the project half of a [P][G] pair was toggled while the
+ * global half persists. Reported as a project-scope addition/removal; a
+ * scope-change arrow line would falsely claim the global install moved.
+ */
+function formatDualScopeTransition(displayName: string, to: "project" | "global"): string {
+  const isAdd = to === "project";
+  const prefix = isAdd ? "+" : "-";
+  const color = isAdd ? CLI_COLORS.SUCCESS : CLI_COLORS.ERROR;
+  return chalk.hex(color)(`  ${prefix} ${displayName} [P]`);
 }
 
 type EditContext = {
@@ -229,45 +252,26 @@ export default class Edit extends BaseCommand {
   private async runEditWizard(context: EditContext, cwd: string): Promise<WizardResultV2 | null> {
     const { projectConfig, projectDir, currentSkillIds } = context;
 
-    let wizardResult: WizardResultV2 | null = null;
-
-    const isGlobalDir = cwd === GLOBAL_INSTALL_ROOT;
-
-    hydrateWizardStore({
-      initialStep: "build",
-      initialDomains: projectConfig?.domains,
-      initialAgents: projectConfig?.selectedAgents,
-      installedSkillIds: currentSkillIds,
-      installedSkillConfigs: projectConfig?.skills,
-      installedAgentConfigs: projectConfig?.agents,
-      isEditingFromGlobalScope: isGlobalDir,
+    return runWizardSession({
+      hydrate: {
+        initialStep: "build",
+        initialDomains: projectConfig?.domains,
+        initialAgents: projectConfig?.selectedAgents,
+        installedSkillIds: currentSkillIds,
+        installedSkillConfigs: projectConfig?.skills,
+        installedAgentConfigs: projectConfig?.agents,
+        isEditingFromGlobalScope: isHomeDirectory(cwd),
+      },
+      props: {
+        version: this.config.version,
+        initialAgents: projectConfig?.selectedAgents,
+        installedSkillIds: currentSkillIds,
+        projectDir,
+        startupMessages: context.startupMessages,
+      },
+      onCancel: () => this.log("\nEdit cancelled"),
+      clearTerminal: () => this.clearTerminal(),
     });
-
-    const { waitUntilExit, clear } = render(
-      <Wizard
-        version={this.config.version}
-        initialAgents={projectConfig?.selectedAgents}
-        installedSkillIds={currentSkillIds}
-        projectDir={projectDir}
-        startupMessages={context.startupMessages}
-        onComplete={(result) => {
-          wizardResult = result;
-        }}
-        onCancel={() => {
-          this.log("\nEdit cancelled");
-        }}
-      />,
-    );
-
-    await waitUntilExit();
-    clear();
-    this.clearTerminal();
-
-    // TypeScript can't track that onComplete callback mutates wizardResult before waitUntilExit resolves
-    const result = wizardResult as WizardResultV2 | null;
-
-    if (!result || result.cancelled) return null;
-    return result;
   }
 
   private reportValidationErrors(result: WizardResultV2): void {
@@ -298,7 +302,7 @@ export default class Edit extends BaseCommand {
     this.log(`\n${chalk.hex(CLI_COLORS.WHITE).bold("Changes:")}`);
     for (const skillId of addedSkills) {
       const scope = newSkills.find((s) => s.id === skillId)?.scope;
-      const scopeLabel = scope ? ` [${scope === "global" ? "G" : "P"}]` : "";
+      const scopeLabel = scope ? ` ${formatScopeTag(scope)}` : "";
       this.log(
         chalk.hex(CLI_COLORS.SUCCESS)(`  + ${getSkillById(skillId).displayName}${scopeLabel}`),
       );
@@ -306,7 +310,7 @@ export default class Edit extends BaseCommand {
     for (const skillId of removedSkills) {
       const skill = matrix.skills[skillId];
       const scope = oldSkills.find((s) => s.id === skillId)?.scope;
-      const scopeLabel = scope ? ` [${scope === "global" ? "G" : "P"}]` : "";
+      const scopeLabel = scope ? ` ${formatScopeTag(scope)}` : "";
       this.log(chalk.hex(CLI_COLORS.ERROR)(`  - ${skill?.displayName ?? skillId}${scopeLabel}`));
     }
     for (const agentName of addedAgents) {
@@ -332,19 +336,13 @@ export default class Edit extends BaseCommand {
     for (const [skillId, change] of scopeChanges) {
       const displayName = matrix.skills[skillId]?.displayName ?? skillId;
 
-      // Dual-scope add/remove: the project half of a [P][G] pair was toggled while
-      // the global half persists. Report it as a project-scope addition/removal \u2014
-      // "[G] \u2192 [P]" would falsely claim the global install moved.
       if (dualScopeSkillTransitions.has(skillId)) {
-        const isAdd = change.to === "project";
-        const prefix = isAdd ? "+" : "-";
-        const color = isAdd ? CLI_COLORS.SUCCESS : CLI_COLORS.ERROR;
-        this.log(chalk.hex(color)(`  ${prefix} ${displayName} [P]`));
+        this.log(formatDualScopeTransition(displayName, change.to));
         continue;
       }
 
-      const fromLabel = change.from === "global" ? "[G]" : "[P]";
-      const toLabel = change.to === "global" ? "[G]" : "[P]";
+      const fromLabel = formatScopeTag(change.from);
+      const toLabel = formatScopeTag(change.to);
       const isGlobalToProject = change.from === "global" && change.to === "project";
       const prefix = isGlobalToProject ? "+" : "~";
       const color = isGlobalToProject ? CLI_COLORS.SUCCESS : CLI_COLORS.WARNING;
@@ -356,18 +354,15 @@ export default class Edit extends BaseCommand {
     for (const [agentName, change] of agentScopeChanges) {
       // Dual-scope add/remove for agents \u2014 mirrors the skill path above.
       if (dualScopeAgentTransitions.has(agentName)) {
-        const isAdd = change.to === "project";
-        const prefix = isAdd ? "+" : "-";
-        const color = isAdd ? CLI_COLORS.SUCCESS : CLI_COLORS.ERROR;
         this.log(
-          chalk.hex(color)(`  ${prefix} ${agentName} [P]`) +
+          formatDualScopeTransition(agentName, change.to) +
             chalk.hex(CLI_COLORS.NEUTRAL)(" (agent)"),
         );
         continue;
       }
 
-      const fromLabel = change.from === "global" ? "[G]" : "[P]";
-      const toLabel = change.to === "global" ? "[G]" : "[P]";
+      const fromLabel = formatScopeTag(change.from);
+      const toLabel = formatScopeTag(change.to);
       this.log(
         chalk.hex(CLI_COLORS.WARNING)(`  ~ ${agentName}`) +
           chalk.hex(CLI_COLORS.NEUTRAL)(` (${fromLabel} \u2192 ${toLabel})`),
@@ -426,7 +421,7 @@ export default class Edit extends BaseCommand {
     // Handle scope migrations (P->G or G->P) for eject-mode skills
     for (const [skillId, change] of scopeChanges) {
       const skillConfig = filteredResult.skills.find((s) => s.id === skillId);
-      if (skillConfig?.source === "eject") {
+      if (skillConfig?.source === EJECT_SOURCE) {
         await migrateLocalSkillScope(skillId, change.from, cwd);
       }
     }
@@ -435,11 +430,11 @@ export default class Edit extends BaseCommand {
     // Compute eligible migrations first; only resolve/demand marketplace when there are any.
     const hasPluginScopeChanges = [...scopeChanges.keys()].some((skillId) => {
       const skillConfig = filteredResult.skills.find((s) => s.id === skillId);
-      return skillConfig && skillConfig.source !== "eject";
+      return skillConfig && skillConfig.source !== EJECT_SOURCE;
     });
     if (!hasPluginScopeChanges) return;
 
-    const marketplace = await this.requireMarketplace(
+    const marketplace = await this.requireMarketplaceOrExit(
       context.sourceResult,
       "migrate plugin skill scopes",
     );
@@ -470,9 +465,9 @@ export default class Edit extends BaseCommand {
       if (migratedSkillIds.has(skillId)) {
         continue;
       }
-      if (change.from === "eject") {
+      if (change.from === EJECT_SOURCE) {
         const oldSkill = activeOldSkills.find((s) => s.id === skillId);
-        const deleteDir = oldSkill?.scope === "global" ? os.homedir() : cwd;
+        const deleteDir = installBaseDir(cwd, oldSkill?.scope);
         await deleteLocalSkill(deleteDir, skillId);
       }
     }
@@ -489,15 +484,15 @@ export default class Edit extends BaseCommand {
 
     // Compute plugin-intent lists per-skill (ungated) — per-skill `source` drives install mode.
     const addedPluginSkills = filteredResult.skills.filter(
-      (s) => addedSkills.includes(s.id) && s.source !== "eject",
+      (s) => addedSkills.includes(s.id) && s.source !== EJECT_SOURCE,
     );
     const removedPluginSkills = removedSkills.filter(
-      (id) => activeOldSkills.find((s) => s.id === id)?.source !== "eject",
+      (id) => activeOldSkills.find((s) => s.id === id)?.source !== EJECT_SOURCE,
     );
 
     if (addedPluginSkills.length === 0 && removedPluginSkills.length === 0) return;
 
-    const marketplace = await this.requireMarketplace(
+    const marketplace = await this.requireMarketplaceOrExit(
       context.sourceResult,
       "install or uninstall plugin skills",
     );
@@ -518,10 +513,9 @@ export default class Edit extends BaseCommand {
       // entries claiming the skill is installed. Matches the
       // no-plugin-to-eject-fallback rule.
       if (pluginResult.failed.length > 0) {
-        this.error(
-          `Failed to install ${pluginResult.failed.length} plugin skill(s). Plugin install intent could not be honored. Verify the skill id matches the marketplace, re-run with --refresh to update the marketplace, or switch affected skills to eject mode.`,
-          { exit: EXIT_CODES.ERROR },
-        );
+        this.error(pluginInstallFailureError(pluginResult.failed.length), {
+          exit: EXIT_CODES.ERROR,
+        });
       }
     }
 
@@ -548,19 +542,15 @@ export default class Edit extends BaseCommand {
    * resolution fails. Plugin install intent is inviolable — we never silently
    * fall back to eject or skip.
    */
-  private async requireMarketplace(
+  private async requireMarketplaceOrExit(
     sourceResult: SourceLoadResult,
     purpose: string,
   ): Promise<string> {
-    const mpResult = await ensureMarketplace(sourceResult);
-    if (!mpResult.marketplace) {
-      this.error(
-        `Cannot ${purpose}: marketplace could not be resolved from source '${sourceResult.sourceConfig.source}'. ` +
-          `Plugin install mode requires a marketplace — fix the source or switch affected skills to eject mode.`,
-        { exit: EXIT_CODES.ERROR },
-      );
+    const required = await requireMarketplace(sourceResult, purpose);
+    if (!required.ok) {
+      this.error(required.error, { exit: EXIT_CODES.ERROR });
     }
-    return mpResult.marketplace;
+    return required.marketplace;
   }
 
   private async copyNewLocalSkills(
@@ -573,7 +563,7 @@ export default class Edit extends BaseCommand {
 
     // Copy newly added local-source skills to .claude/skills/ (split by scope)
     const addedLocalSkills = filteredResult.skills.filter(
-      (s) => addedSkills.includes(s.id) && s.source === "eject",
+      (s) => addedSkills.includes(s.id) && s.source === EJECT_SOURCE,
     );
 
     if (addedLocalSkills.length > 0) {
@@ -595,9 +585,9 @@ export default class Edit extends BaseCommand {
     // applySourceChanges. deleteLocalSkill is a no-op when the directory is absent.
     for (const skillId of removedSkills) {
       const oldSkill = activeOldSkills.find((s) => s.id === skillId);
-      if (oldSkill?.source !== "eject") continue;
+      if (oldSkill?.source !== EJECT_SOURCE) continue;
 
-      const deleteDir = oldSkill.scope === "global" ? os.homedir() : cwd;
+      const deleteDir = installBaseDir(cwd, oldSkill.scope);
       await deleteLocalSkill(deleteDir, skillId);
     }
   }
@@ -631,58 +621,21 @@ export default class Edit extends BaseCommand {
         // are removed rather than union-preserved (D-233 Scenario C). Global-context edit owns
         // the entire config ("all"); a project edit owns only project-scoped entries and its own
         // tombstones ("owned"), never inherited global-active entries.
-        authoritativeScope: cwd === GLOBAL_INSTALL_ROOT ? "all" : "owned",
+        authoritativeScope: isHomeDirectory(cwd) ? "all" : "owned",
       });
     } catch (error) {
       this.warn(`Could not update config: ${getErrorMessage(error)}`);
     }
 
     try {
-      const agentScopeMap = new Map(
-        result.agentConfigs.filter((a) => !a.excluded).map((a) => [a.name, a.scope] as const),
-      );
+      const agentScopeMap = activeAgentScopeMap(result.agentConfigs);
       const { allSkills } = await discoverInstalledSkills(cwd);
-      const installMode = deriveInstallMode(activeNewSkills);
-      const isProjectContext = fs.realpathSync(cwd) !== fs.realpathSync(os.homedir());
-
-      let compilationResult: Awaited<ReturnType<typeof compileAgents>>;
-      if (isProjectContext) {
-        const globalResult = await compileAgents({
-          projectDir: os.homedir(),
-          sourcePath: agentDefsResult.sourcePath,
-          skills: allSkills,
-          pluginDir: os.homedir(),
-          outputDir: path.join(os.homedir(), CLAUDE_DIR, "agents"),
-          installMode,
-          agentScopeMap,
-          scopeFilter: "global",
-        });
-        const projectResult = await compileAgents({
-          projectDir: cwd,
-          sourcePath: agentDefsResult.sourcePath,
-          skills: allSkills,
-          pluginDir: cwd,
-          outputDir: path.join(cwd, CLAUDE_DIR, "agents"),
-          installMode,
-          agentScopeMap,
-          scopeFilter: "project",
-        });
-        compilationResult = {
-          compiled: [...globalResult.compiled, ...projectResult.compiled],
-          failed: [...globalResult.failed, ...projectResult.failed],
-          warnings: [...globalResult.warnings, ...projectResult.warnings],
-        };
-      } else {
-        compilationResult = await compileAgents({
-          projectDir: cwd,
-          sourcePath: agentDefsResult.sourcePath,
-          skills: allSkills,
-          pluginDir: cwd,
-          outputDir: path.join(cwd, CLAUDE_DIR, "agents"),
-          installMode,
-          agentScopeMap,
-        });
-      }
+      const compilationResult = await compileAgentsAllScopes({
+        projectDir: cwd,
+        sourcePath: agentDefsResult.sourcePath,
+        skills: allSkills,
+        agentScopeMap,
+      });
 
       if (compilationResult.failed.length > 0) {
         this.log(
@@ -720,7 +673,10 @@ export default class Edit extends BaseCommand {
     for (const [agentName, change] of agentScopeChanges) {
       if (change.from === "global") continue;
 
-      const oldAgentPath = path.join(cwd, CLAUDE_DIR, "agents", `${agentName}.md`);
+      const oldAgentPath = path.join(
+        resolveInstallPaths(cwd, "project").agentsDir,
+        `${agentName}.md`,
+      );
       try {
         await remove(oldAgentPath);
       } catch (error) {
@@ -733,8 +689,7 @@ export default class Edit extends BaseCommand {
     // when the file is absent.
     for (const agentName of removedAgents) {
       const oldScope = oldAgents.find((a) => a.name === agentName)?.scope ?? "project";
-      const baseDir = oldScope === "global" ? os.homedir() : cwd;
-      const agentPath = path.join(baseDir, CLAUDE_DIR, "agents", `${agentName}.md`);
+      const agentPath = path.join(resolveInstallPaths(cwd, oldScope).agentsDir, `${agentName}.md`);
       try {
         await remove(agentPath);
       } catch (error) {
@@ -923,12 +878,12 @@ export async function migratePluginSkillScopes(
 
   for (const [skillId, change] of scopeChanges) {
     const skillConfig = skills.find((s) => s.id === skillId);
-    if (!skillConfig || skillConfig.source === "eject") {
+    if (!skillConfig || skillConfig.source === EJECT_SOURCE) {
       continue;
     }
 
-    const newPluginScope = change.to === "global" ? "user" : "project";
-    const pluginRef = `${skillId}@${marketplace}`;
+    const newPluginScope = toClaudePluginScope(change.to);
+    const pluginRef = buildMarketplacePluginRef(skillId, marketplace);
 
     try {
       // global→project: keep the global registration, just add project scope.

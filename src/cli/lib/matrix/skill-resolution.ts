@@ -1,4 +1,6 @@
 import { verbose, warn } from "../../utils/logger";
+import { uniqueBy } from "remeda";
+import { LOCAL_PSEUDO_CATEGORY } from "../../consts";
 import type {
   CategoryDefinition,
   CategoryMap,
@@ -114,7 +116,7 @@ export function mergeMatrixWithSkills(
   const synthesizedCategories = { ...categories };
   for (const skill of skills) {
     // Skip "local" pseudo-category — it's not a real Category union member
-    if (skill.category === "local") continue;
+    if (skill.category === LOCAL_PSEUDO_CATEGORY) continue;
     if (!synthesizedCategories[skill.category]) {
       const synthesized = synthesizeCategory(skill.category, skill.domain);
       synthesizedCategories[skill.category] = synthesized;
@@ -143,6 +145,30 @@ type ResolvedRelationships = {
   alternatives: SkillAlternative[];
 };
 
+/** Resolves a rule's slugs to canonical ids, warning and skipping any that don't resolve. */
+function resolveSlugsOrSkip(slugs: SkillSlug[], resolve: ResolveId, context: string): SkillId[] {
+  return slugs.map((slug) => resolve(slug, context)).filter((id): id is SkillId => id !== null);
+}
+
+/**
+ * Members of the symmetric groups containing `skillId` (excluding itself),
+ * deduplicated on first occurrence, each paired with its group's rule so the
+ * caller can lift the annotation (reason/purpose).
+ */
+function collectSymmetricGroupMembers<Rule extends { skills: SkillSlug[] }>(
+  rules: readonly Rule[],
+  skillId: SkillId,
+  resolve: ResolveId,
+  context: string,
+): Array<{ memberId: SkillId; rule: Rule }> {
+  const members = rules.flatMap((rule) => {
+    const resolved = resolveSlugsOrSkip(rule.skills, resolve, context);
+    if (!resolved.includes(skillId)) return [];
+    return resolved.filter((id) => id !== skillId).map((memberId) => ({ memberId, rule }));
+  });
+  return uniqueBy(members, (m) => m.memberId);
+}
+
 /**
  * Resolves all relationship data for a single skill in one pass across all
  * relationship rule types (conflicts, discourages, compatibility, requirements, alternatives).
@@ -152,60 +178,41 @@ function resolveRelationships(
   relationships: RelationshipDefinitions,
   resolve: ResolveId,
 ): ResolvedRelationships {
-  const conflictsWith: SkillRelation[] = [];
-  const discourages: SkillRelation[] = [];
-  const compatible = new Set<SkillId>();
-  const requires: SkillRequirement[] = [];
-  const alternatives: SkillAlternative[] = [];
+  // Symmetric groups: members of every group containing this skill, first-occurrence deduped
+  const conflictsWith: SkillRelation[] = collectSymmetricGroupMembers(
+    relationships.conflicts,
+    skillId,
+    resolve,
+    "conflicts",
+  ).map(({ memberId, rule }) => ({ skillId: memberId, reason: rule.reason }));
 
-  // Conflicts — symmetric group, collect other members with dedup
-  for (const rule of relationships.conflicts) {
-    const resolved = rule.skills
-      .map((slug) => resolve(slug, "conflicts"))
-      .filter((id): id is SkillId => id !== null);
-    if (!resolved.includes(skillId)) continue;
-    for (const other of resolved) {
-      if (other !== skillId && !conflictsWith.some((c) => c.skillId === other)) {
-        conflictsWith.push({ skillId: other, reason: rule.reason });
-      }
-    }
-  }
+  const discourages: SkillRelation[] = collectSymmetricGroupMembers(
+    relationships.discourages ?? [],
+    skillId,
+    resolve,
+    "discourages",
+  ).map(({ memberId, rule }) => ({ skillId: memberId, reason: rule.reason }));
 
-  // Discourages — symmetric group, collect other members with dedup
-  if (relationships.discourages) {
-    for (const rule of relationships.discourages) {
-      const resolved = rule.skills
-        .map((slug) => resolve(slug, "discourages"))
-        .filter((id): id is SkillId => id !== null);
-      if (!resolved.includes(skillId)) continue;
-      for (const other of resolved) {
-        if (other !== skillId && !discourages.some((d) => d.skillId === other)) {
-          discourages.push({ skillId: other, reason: rule.reason });
-        }
-      }
-    }
-  }
+  const compatibleWith: SkillId[] = collectSymmetricGroupMembers(
+    relationships.compatibleWith ?? [],
+    skillId,
+    resolve,
+    "compatibleWith",
+  ).map(({ memberId }) => memberId);
 
-  // Compatibility — symmetric group, collect all co-members
-  for (const group of relationships.compatibleWith ?? []) {
-    const resolved = group.skills
-      .map((slug) => resolve(slug, "compatibleWith"))
-      .filter((id): id is SkillId => id !== null);
-    if (!resolved.includes(skillId)) continue;
-    for (const other of resolved) {
-      if (other !== skillId) {
-        compatible.add(other);
-      }
-    }
-  }
+  const alternatives: SkillAlternative[] = collectSymmetricGroupMembers(
+    relationships.alternatives,
+    skillId,
+    resolve,
+    "alternatives",
+  ).map(({ memberId, rule }) => ({ skillId: memberId, purpose: rule.purpose }));
 
   // Requirements — directional, skill field identifies the dependent
+  const requires: SkillRequirement[] = [];
   for (const rule of relationships.requires) {
     const ruleSkillId = resolve(rule.skill, "requires.skill");
     if (ruleSkillId !== skillId) continue;
-    const resolvedNeeds = rule.needs
-      .map((slug) => resolve(slug, "requires.needs"))
-      .filter((id): id is SkillId => id !== null);
+    const resolvedNeeds = resolveSlugsOrSkip(rule.needs, resolve, "requires.needs");
     if (resolvedNeeds.length === 0) continue;
     requires.push({
       skillIds: resolvedNeeds,
@@ -214,23 +221,10 @@ function resolveRelationships(
     });
   }
 
-  // Alternatives — symmetric group, collect other members with purpose
-  for (const group of relationships.alternatives) {
-    const resolved = group.skills
-      .map((slug) => resolve(slug, "alternatives"))
-      .filter((id): id is SkillId => id !== null);
-    if (!resolved.includes(skillId)) continue;
-    for (const alt of resolved) {
-      if (alt !== skillId) {
-        alternatives.push({ skillId: alt, purpose: group.purpose });
-      }
-    }
-  }
-
   return {
     conflictsWith,
     discourages,
-    compatibleWith: [...compatible],
+    compatibleWith,
     requires,
     alternatives,
   };
