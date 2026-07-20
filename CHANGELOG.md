@@ -7,6 +7,15 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.144.0] - 2026-07-20
+
+**`doctor` stops certifying broken installs; `compile` stops dropping skills silently**
+
+- Fixed four `doctor` blind spots: uninstalled plugin skills went entirely undetected (output was byte-identical to healthy), healthy global agents were reported as orphans at home scope, "Skills Resolved" read the stack instead of the configured skills, and the remediation tip named a command that made the problem worse (D-253)
+- Fixed `compile` dropping a configured-but-missing skill from the recompiled agent with only a verbose log, so the default output claimed a clean recompile (D-254)
+
+See [changelogs/0.144.0.md](./changelogs/0.144.0.md) for full details.
+
 ## [0.143.0] - 2026-07-20
 
 **Data-integrity and correctness pass across install, config generation and the wizard**
