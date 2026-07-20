@@ -4,10 +4,11 @@ import { mkdir, writeFile } from "fs/promises";
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { EXIT_CODES } from "../../exit-codes";
-import { renderConfigTs, renderSkillMd } from "../content-generators";
+import { renderSkillMd } from "../content-generators";
+import { writeTestTsConfig } from "../helpers/config-io.js";
 import { buildAgentConfigs } from "../factories/config-factories.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
-import { CLAUDE_DIR, LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_DIR, LOCAL_SKILLS_PATH, STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
 
 describe("doctor command", () => {
   let projectDir: string;
@@ -42,15 +43,10 @@ describe("doctor command", () => {
 
     it("should pass when valid config exists", async () => {
       // Create valid project config
-      const claudeSrcDir = path.join(projectDir, ".claude-src");
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          agents: [],
-        }),
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        agents: [],
+      });
 
       const { error } = await runCliCommand(["doctor"]);
 
@@ -77,14 +73,9 @@ describe("doctor command", () => {
     });
 
     it("should pass with minimal valid config", async () => {
-      const claudeSrcDir = path.join(projectDir, ".claude-src");
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-        }),
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+      });
 
       const { error } = await runCliCommand(["doctor"]);
 
@@ -97,20 +88,15 @@ describe("doctor command", () => {
 
   describe("agents check", () => {
     it("should pass when agents are compiled", async () => {
-      const claudeSrcDir = path.join(projectDir, ".claude-src");
-      await mkdir(claudeSrcDir, { recursive: true });
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
-      const agentsDir = path.join(claudeDir, "agents");
+      const agentsDir = path.join(claudeDir, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
 
       // Create config with one agent
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          agents: ["web-developer"],
-        }),
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        agents: ["web-developer"],
+      });
 
       // Create the compiled agent file
       await writeFile(
@@ -126,17 +112,11 @@ describe("doctor command", () => {
     });
 
     it("should warn when agents need recompilation", async () => {
-      const claudeSrcDir = path.join(projectDir, ".claude-src");
-      await mkdir(claudeSrcDir, { recursive: true });
-
       // Create config with agent but no compiled .md file
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          agents: ["web-developer"],
-        }),
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        agents: ["web-developer"],
+      });
 
       const { error } = await runCliCommand(["doctor"]);
 
@@ -149,20 +129,15 @@ describe("doctor command", () => {
 
   describe("orphans check", () => {
     it("should detect orphaned agent files", async () => {
-      const claudeSrcDir = path.join(projectDir, ".claude-src");
-      await mkdir(claudeSrcDir, { recursive: true });
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
-      const agentsDir = path.join(claudeDir, "agents");
+      const agentsDir = path.join(claudeDir, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
 
       // Create config with no agents
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          agents: [],
-        }),
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        agents: [],
+      });
 
       // Create an orphaned agent file not in config
       await writeFile(
@@ -178,20 +153,15 @@ describe("doctor command", () => {
     });
 
     it("should flag excluded project agent .md file as orphan", async () => {
-      const claudeSrcDir = path.join(projectDir, ".claude-src");
-      await mkdir(claudeSrcDir, { recursive: true });
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
-      const agentsDir = path.join(claudeDir, "agents");
+      const agentsDir = path.join(claudeDir, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
 
       // Excluded project agent — its .md file is stale
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          agents: buildAgentConfigs(["web-developer"], { excluded: true }),
-        }),
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        agents: buildAgentConfigs(["web-developer"], { excluded: true }),
+      });
 
       // Stale .md file from before exclusion
       await writeFile(
@@ -210,18 +180,12 @@ describe("doctor command", () => {
 
   describe("skills installed check", () => {
     it("should warn when eject-mode skill is missing from disk", async () => {
-      const claudeSrcDir = path.join(projectDir, ".claude-src");
-      await mkdir(claudeSrcDir, { recursive: true });
-
       // Config lists an eject-mode skill, but no skill directory exists on disk
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          agents: [],
-          skills: buildSkillConfigs(["web-framework-react"]),
-        }),
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        agents: [],
+        skills: buildSkillConfigs(["web-framework-react"]),
+      });
 
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
@@ -232,18 +196,12 @@ describe("doctor command", () => {
     });
 
     it("should pass when eject-mode skill files exist on disk", async () => {
-      const claudeSrcDir = path.join(projectDir, ".claude-src");
-      await mkdir(claudeSrcDir, { recursive: true });
-
       // Create config listing an eject-mode skill
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          agents: [],
-          skills: buildSkillConfigs(["web-framework-react"]),
-        }),
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        agents: [],
+        skills: buildSkillConfigs(["web-framework-react"]),
+      });
 
       // Create the skill file on disk
       const skillDir = path.join(projectDir, LOCAL_SKILLS_PATH, "web-framework-react");
@@ -262,18 +220,12 @@ describe("doctor command", () => {
     });
 
     it("should not check plugin-mode skills for disk presence", async () => {
-      const claudeSrcDir = path.join(projectDir, ".claude-src");
-      await mkdir(claudeSrcDir, { recursive: true });
-
       // Config lists a plugin-mode skill (no files needed on disk)
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          agents: [],
-          skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
-        }),
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        agents: [],
+        skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+      });
 
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
@@ -286,24 +238,18 @@ describe("doctor command", () => {
 
   describe("broken agent references", () => {
     it("should report skills in stack that cannot be resolved", async () => {
-      const claudeSrcDir = path.join(projectDir, ".claude-src");
-      await mkdir(claudeSrcDir, { recursive: true });
-
       // Config has a stack referencing a skill that doesn't exist
       // anywhere (not in matrix, not in local skills)
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          agents: buildAgentConfigs(["web-developer"]),
-          skills: [],
-          stack: {
-            "web-developer": {
-              "web-framework": [{ id: "web-framework-nonexistent" }],
-            },
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        agents: buildAgentConfigs(["web-developer"]),
+        skills: [],
+        stack: {
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-nonexistent" }],
           },
-        }),
-      );
+        },
+      });
 
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
@@ -314,23 +260,17 @@ describe("doctor command", () => {
     });
 
     it("should pass when stack skills exist as local skills", async () => {
-      const claudeSrcDir = path.join(projectDir, ".claude-src");
-      await mkdir(claudeSrcDir, { recursive: true });
-
       // Config has a stack referencing a skill
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          agents: buildAgentConfigs(["web-developer"]),
-          skills: buildSkillConfigs(["web-framework-react"]),
-          stack: {
-            "web-developer": {
-              "web-framework": [{ id: "web-framework-react" }],
-            },
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        agents: buildAgentConfigs(["web-developer"]),
+        skills: buildSkillConfigs(["web-framework-react"]),
+        stack: {
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react" }],
           },
-        }),
-      );
+        },
+      });
 
       // Create the local skill so it resolves
       const skillDir = path.join(projectDir, LOCAL_SKILLS_PATH, "web-framework-react");

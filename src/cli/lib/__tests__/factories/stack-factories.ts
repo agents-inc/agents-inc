@@ -1,4 +1,4 @@
-import type { RawStacksConfig, ResolvedStack, Stack, StackAgentConfig } from "../../../types";
+import type { ResolvedStack, Stack, StackAgentConfig } from "../../../types";
 
 export function createMockResolvedStack(
   id: string,
@@ -35,7 +35,7 @@ export function createMockStack(
   };
 }
 
-export function createMockRawStacksConfig(): RawStacksConfig {
+export function createMockRawStacksConfig() {
   return {
     stacks: [
       {
@@ -68,7 +68,7 @@ export function createMockRawStacksConfig(): RawStacksConfig {
   };
 }
 
-export function createMockRawStacksConfigWithArrays(): RawStacksConfig {
+export function createMockRawStacksConfigWithArrays() {
   return {
     stacks: [
       {
@@ -93,7 +93,7 @@ export function createMockRawStacksConfigWithArrays(): RawStacksConfig {
   };
 }
 
-export function createMockRawStacksConfigWithObjects(): RawStacksConfig {
+export function createMockRawStacksConfigWithObjects() {
   return {
     stacks: [
       {

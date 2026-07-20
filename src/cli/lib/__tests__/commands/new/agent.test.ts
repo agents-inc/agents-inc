@@ -7,8 +7,7 @@ import { writeTestTsConfig } from "../../helpers/config-io.js";
 import { setupIsolatedHome } from "../../helpers/isolated-home.js";
 import { buildSourceConfig, buildAgentConfigs } from "../../factories/config-factories.js";
 import { buildAgentPrompt } from "../../../../commands/new/agent";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../../consts";
-import { renderConfigTs } from "../../content-generators";
+import { CLAUDE_DIR, STANDARD_FILES } from "../../../../consts";
 import { EXIT_CODES } from "../../../exit-codes";
 import type { AgentName } from "../../../../types";
 
@@ -176,15 +175,10 @@ async function setupProjectWithAgents(
   await mkdir(agentsDir, { recursive: true });
   await mkdir(path.join(claudeDir, "skills"), { recursive: true });
 
-  const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-  await mkdir(claudeSrcDir, { recursive: true });
-  await writeFile(
-    path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-    renderConfigTs({
-      name: "test-project",
-      agents: buildAgentConfigs(agentNames),
-    }),
-  );
+  await writeTestTsConfig(projectDir, {
+    name: "test-project",
+    agents: buildAgentConfigs(agentNames),
+  });
   return agentsDir;
 }
 

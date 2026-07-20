@@ -3,8 +3,9 @@ import type { ReactElement } from "react";
 import os from "os";
 import path from "path";
 import { mkdir } from "fs/promises";
+import type { Errors } from "@oclif/core";
 import { runCliCommand, CLI_ROOT } from "../helpers/cli-runner.js";
-import { createTempDir, cleanupTempDir } from "../test-fs-utils";
+import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { createMockSkill } from "../factories/skill-factories.js";
 import { createMockMatrix } from "../factories/matrix-factories.js";
@@ -22,8 +23,12 @@ import * as wizardStore from "../../../stores/wizard-store";
 import { useWizardStore } from "../../../stores/wizard-store";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import * as execModule from "../../../utils/exec.js";
-import type { AgentName, CategoryPath, SkillId } from "../../../types";
-import Edit, { migratePluginSkillScopes, detectConfigChanges } from "../../../commands/edit.js";
+import type { AgentName, CategoryPath, SkillConfig, SkillId, SkillScope } from "../../../types";
+import Edit, {
+  applyMigratedGlobalSources,
+  migratePluginSkillScopes,
+  detectConfigChanges,
+} from "../../../commands/edit.js";
 
 // --- Module mocks (hoisted by vitest) ---
 
@@ -824,6 +829,237 @@ describe("edit command removes deselected local skills", () => {
   });
 });
 
+// A project-context edit performs install-mode migrations for GLOBAL-scoped skills on disk
+// under $HOME and in the user-scope plugin registry. The global config must record exactly
+// those migrations — and nothing else — so the recorded source never contradicts the
+// filesystem.
+
+const GLOBAL_PLUGIN_REACT = buildSkillConfigs(["web-framework-react"], {
+  scope: "global",
+  source: "agents-inc",
+});
+const GLOBAL_EJECT_REACT = buildSkillConfigs(["web-framework-react"], {
+  scope: "global",
+  source: "eject",
+});
+const PROJECT_PLUGIN_HONO = buildSkillConfigs(["api-framework-hono"], {
+  scope: "project",
+  source: "agents-inc",
+});
+const PROJECT_EJECT_HONO = buildSkillConfigs(["api-framework-hono"], {
+  scope: "project",
+  source: "eject",
+});
+
+const REACT_MIGRATED_TO_EJECT = new Map<SkillId, string>([["web-framework-react", "eject"]]);
+
+describe("applyMigratedGlobalSources", () => {
+  it("rewrites the source of an active-global skill whose migration ran this session", () => {
+    const result = applyMigratedGlobalSources(GLOBAL_PLUGIN_REACT, REACT_MIGRATED_TO_EJECT);
+
+    expect(result.skills).toStrictEqual(GLOBAL_EJECT_REACT);
+    expect(result.changed).toBe(true);
+  });
+
+  it("leaves a global skill absent from the migration set untouched", () => {
+    const otherGlobal = buildSkillConfigs(["web-state-zustand"], {
+      scope: "global",
+      source: "agents-inc",
+    });
+
+    const result = applyMigratedGlobalSources(otherGlobal, REACT_MIGRATED_TO_EJECT);
+
+    expect(result.skills).toStrictEqual(otherGlobal);
+    expect(result.changed).toBe(false);
+  });
+
+  it("leaves a global tombstone untouched even when its id migrated", () => {
+    const tombstone = buildSkillConfigs(["web-framework-react"], {
+      scope: "global",
+      source: "agents-inc",
+      excluded: true,
+    });
+
+    const result = applyMigratedGlobalSources(tombstone, REACT_MIGRATED_TO_EJECT);
+
+    expect(result.skills).toStrictEqual(tombstone);
+    expect(result.changed).toBe(false);
+  });
+
+  it("leaves a project-scoped entry untouched even when its id migrated", () => {
+    const projectReact = buildSkillConfigs(["web-framework-react"], {
+      scope: "project",
+      source: "agents-inc",
+    });
+
+    const result = applyMigratedGlobalSources(projectReact, REACT_MIGRATED_TO_EJECT);
+
+    expect(result.skills).toStrictEqual(projectReact);
+    expect(result.changed).toBe(false);
+  });
+
+  it("reports no change when the recorded source already matches the migration", () => {
+    const result = applyMigratedGlobalSources(GLOBAL_EJECT_REACT, REACT_MIGRATED_TO_EJECT);
+
+    expect(result.skills).toStrictEqual(GLOBAL_EJECT_REACT);
+    expect(result.changed).toBe(false);
+  });
+
+  it("rewrites only the migrated entry in a mixed global config", () => {
+    const otherGlobal = buildSkillConfigs(["web-state-zustand"], {
+      scope: "global",
+      source: "agents-inc",
+    });
+
+    const result = applyMigratedGlobalSources(
+      [...GLOBAL_PLUGIN_REACT, ...otherGlobal],
+      REACT_MIGRATED_TO_EJECT,
+    );
+
+    expect(result.skills).toStrictEqual([...GLOBAL_EJECT_REACT, ...otherGlobal]);
+    expect(result.changed).toBe(true);
+  });
+});
+
+describe("edit command source switches on inherited global-active skills", () => {
+  let tempDir: string;
+  let projectDir: string;
+  let originalCwd: string;
+
+  const AGENTS = buildAgentConfigs(["web-developer"]);
+
+  const testMatrix = FULLSTACK_PAIR_MATRIX;
+  const testSourceResult = buildSourceResult(testMatrix, "/test/source");
+
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    tempDir = await createTempDir("cc-edit-global-authority-");
+    projectDir = path.join(tempDir, "project");
+    await mkdir(projectDir, { recursive: true });
+    process.chdir(projectDir);
+
+    mockRender.mockClear();
+    mockCopySkillsToLocalFlattened.mockClear();
+    mockGetAgentDefinitions.mockClear();
+    mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
+    mockLoadSkillsMatrixFromSource.mockResolvedValue(testSourceResult);
+    initializeMatrix(testSourceResult.matrix);
+    mockDiscoverAllPluginSkills.mockResolvedValue({});
+  });
+
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    await cleanupTempDir(tempDir);
+  });
+
+  it("applies a source switch on an inherited global-active skill rather than discarding it", async () => {
+    mockProjectConfig(projectDir, {
+      name: "test-project",
+      agents: AGENTS,
+      skills: [...GLOBAL_PLUGIN_REACT, ...PROJECT_PLUGIN_HONO],
+    });
+    mockWizardCompletion(
+      buildWizardResult([...GLOBAL_EJECT_REACT, ...PROJECT_PLUGIN_HONO], { agentConfigs: AGENTS }),
+    );
+
+    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+
+    // The switch is a real change: the command runs the migration + config write path
+    // instead of returning early at "No changes made.".
+    expect(mockGetAgentDefinitions).toHaveBeenCalled();
+  });
+});
+
+// An eject→plugin mode migration whose `claude plugin install` fails is the twin of the
+// newly-added-skill failure already guarded in applyPluginChanges: the run must hard-error
+// before any config records a marketplace source for a skill with no plugin registration.
+
+describe("edit command mode migration with a failing plugin install", () => {
+  let tempDir: string;
+  let projectDir: string;
+  let originalCwd: string;
+  let stderrChunks: string[] = [];
+  let origStderrWrite: typeof process.stderr.write;
+
+  const AGENTS = buildAgentConfigs(["web-developer"]);
+  const MARKETPLACE = "agents-inc";
+  const testSourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, "/test/source", {
+    marketplace: MARKETPLACE,
+  });
+  const installSpy = vi.spyOn(execModule, "claudePluginInstall");
+  const marketplaceExistsSpy = vi.spyOn(execModule, "claudePluginMarketplaceExists");
+  const marketplaceUpdateSpy = vi.spyOn(execModule, "claudePluginMarketplaceUpdate");
+
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    tempDir = await createTempDir("cc-edit-migration-install-fail-");
+    projectDir = path.join(tempDir, "project");
+    await mkdir(projectDir, { recursive: true });
+    process.chdir(projectDir);
+
+    stderrChunks = [];
+    origStderrWrite = process.stderr.write;
+    process.stderr.write = function (str: unknown): boolean {
+      stderrChunks.push(String(str));
+      return true;
+    } as typeof process.stderr.write;
+
+    mockRender.mockClear();
+    mockDeleteLocalSkill.mockClear();
+    mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
+    mockLoadSkillsMatrixFromSource.mockResolvedValue(testSourceResult);
+    initializeMatrix(testSourceResult.matrix);
+    mockDiscoverAllPluginSkills.mockResolvedValue({});
+    installSpy.mockReset().mockRejectedValue(new Error("plugin ref not found"));
+    // The marketplace precondition is already satisfied — this test isolates the
+    // per-skill install failure, not marketplace resolution.
+    marketplaceExistsSpy.mockReset().mockResolvedValue(true);
+    marketplaceUpdateSpy.mockReset().mockResolvedValue(undefined);
+  });
+
+  afterEach(async () => {
+    process.stderr.write = origStderrWrite;
+    process.chdir(originalCwd);
+    await cleanupTempDir(tempDir);
+  });
+
+  it("exits with ERROR, writes no config.ts and keeps the ejected copy on disk", async () => {
+    mockProjectConfig(projectDir, {
+      name: "test-project",
+      agents: AGENTS,
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+    });
+    mockWizardCompletion(
+      buildWizardResult(
+        buildSkillConfigs(["web-framework-react"], { scope: "project", source: MARKETPLACE }),
+        { agentConfigs: AGENTS },
+      ),
+    );
+
+    // `this.error()` throws a CLIError carrying the exit code; `Errors.CLIError` is the
+    // oclif type for it, partial because only `oclif.exit` and `message` are asserted.
+    let thrown: (Error & Partial<Errors.CLIError>) | undefined;
+    try {
+      await Edit.run([], { root: CLI_ROOT });
+    } catch (error) {
+      if (error instanceof Error) thrown = error;
+    }
+
+    expect(thrown?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(thrown?.message).toContain("Plugin install intent could not be honored");
+    expect(stderrChunks.join("")).toContain("Failed to install plugin web-framework-react");
+
+    expect(
+      await fileExists(path.join(projectDir, ".claude-src/config.ts")),
+      "config.ts must not record a marketplace source for a skill that was never plugin-installed",
+    ).toBe(false);
+    expect(
+      mockDeleteLocalSkill,
+      "the ejected working copy must survive a migration whose plugin install failed",
+    ).not.toHaveBeenCalled();
+  });
+});
+
 // Bug regression: migratePluginSkillScopes must NOT uninstall the global ("user")
 // plugin when re-scoping from global to project. The global registration is shared
 // across projects and must remain intact. Only project→global should uninstall.
@@ -840,10 +1076,12 @@ describe("migratePluginSkillScopes", () => {
   afterAll(() => {});
 
   it("should not uninstall global plugin when re-scoping from global to project", async () => {
-    const scopeChanges = new Map([
-      ["web-framework-react" as SkillId, { from: "global" as const, to: "project" as const }],
+    const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
+      ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
-    const skills = [{ id: "web-framework-react" as SkillId, source: "agents-inc" }];
+    const skills: Pick<SkillConfig, "id" | "source">[] = [
+      { id: "web-framework-react", source: "agents-inc" },
+    ];
 
     await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
@@ -860,10 +1098,12 @@ describe("migratePluginSkillScopes", () => {
   });
 
   it("should uninstall project plugin when re-scoping from project to global", async () => {
-    const scopeChanges = new Map([
-      ["web-framework-react" as SkillId, { from: "project" as const, to: "global" as const }],
+    const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
+      ["web-framework-react", { from: "project" as const, to: "global" as const }],
     ]);
-    const skills = [{ id: "web-framework-react" as SkillId, source: "agents-inc" }];
+    const skills: Pick<SkillConfig, "id" | "source">[] = [
+      { id: "web-framework-react", source: "agents-inc" },
+    ];
 
     await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
@@ -876,10 +1116,12 @@ describe("migratePluginSkillScopes", () => {
   });
 
   it("should skip eject-source skills during scope migration", async () => {
-    const scopeChanges = new Map([
-      ["web-framework-react" as SkillId, { from: "global" as const, to: "project" as const }],
+    const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
+      ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
-    const skills = [{ id: "web-framework-react" as SkillId, source: "eject" }];
+    const skills: Pick<SkillConfig, "id" | "source">[] = [
+      { id: "web-framework-react", source: "eject" },
+    ];
 
     await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
@@ -888,13 +1130,13 @@ describe("migratePluginSkillScopes", () => {
   });
 
   it("should handle mixed scope changes correctly", async () => {
-    const scopeChanges = new Map([
-      ["web-framework-react" as SkillId, { from: "global" as const, to: "project" as const }],
-      ["web-state-zustand" as SkillId, { from: "project" as const, to: "global" as const }],
+    const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
+      ["web-framework-react", { from: "global" as const, to: "project" as const }],
+      ["web-state-zustand", { from: "project" as const, to: "global" as const }],
     ]);
-    const skills = [
-      { id: "web-framework-react" as SkillId, source: "agents-inc" },
-      { id: "web-state-zustand" as SkillId, source: "agents-inc" },
+    const skills: Pick<SkillConfig, "id" | "source">[] = [
+      { id: "web-framework-react", source: "agents-inc" },
+      { id: "web-state-zustand", source: "agents-inc" },
     ];
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
@@ -925,10 +1167,12 @@ describe("migratePluginSkillScopes", () => {
   it("should report install failure without affecting global registration", async () => {
     installSpy.mockRejectedValue(new Error("install failed"));
 
-    const scopeChanges = new Map([
-      ["web-framework-react" as SkillId, { from: "global" as const, to: "project" as const }],
+    const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
+      ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
-    const skills = [{ id: "web-framework-react" as SkillId, source: "agents-inc" }];
+    const skills: Pick<SkillConfig, "id" | "source">[] = [
+      { id: "web-framework-react", source: "agents-inc" },
+    ];
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
@@ -947,10 +1191,12 @@ describe("migratePluginSkillScopes", () => {
   it("should not install at global scope when project uninstall fails", async () => {
     uninstallSpy.mockRejectedValue(new Error("uninstall failed"));
 
-    const scopeChanges = new Map([
-      ["web-framework-react" as SkillId, { from: "project" as const, to: "global" as const }],
+    const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
+      ["web-framework-react", { from: "project" as const, to: "global" as const }],
     ]);
-    const skills = [{ id: "web-framework-react" as SkillId, source: "agents-inc" }];
+    const skills: Pick<SkillConfig, "id" | "source">[] = [
+      { id: "web-framework-react", source: "agents-inc" },
+    ];
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
@@ -972,8 +1218,8 @@ describe("migratePluginSkillScopes", () => {
   });
 
   it("should skip skills not found in the skills array", async () => {
-    const scopeChanges = new Map([
-      ["web-framework-react" as SkillId, { from: "global" as const, to: "project" as const }],
+    const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
+      ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
     // Empty skills array — skill not found
     const skills: Array<{ id: SkillId; source: string }> = [];
@@ -989,13 +1235,13 @@ describe("migratePluginSkillScopes", () => {
   it("should continue processing after individual skill failure", async () => {
     installSpy.mockRejectedValueOnce(new Error("first fails")).mockResolvedValueOnce();
 
-    const scopeChanges = new Map([
-      ["web-framework-react" as SkillId, { from: "global" as const, to: "project" as const }],
-      ["web-state-zustand" as SkillId, { from: "global" as const, to: "project" as const }],
+    const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
+      ["web-framework-react", { from: "global" as const, to: "project" as const }],
+      ["web-state-zustand", { from: "global" as const, to: "project" as const }],
     ]);
-    const skills = [
-      { id: "web-framework-react" as SkillId, source: "agents-inc" },
-      { id: "web-state-zustand" as SkillId, source: "agents-inc" },
+    const skills: Pick<SkillConfig, "id" | "source">[] = [
+      { id: "web-framework-react", source: "agents-inc" },
+      { id: "web-state-zustand", source: "agents-inc" },
     ];
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
@@ -1106,7 +1352,7 @@ describe("detectConfigChanges", () => {
     const changes = detectConfigChanges(oldConfig, wizardResult);
 
     // Boundary cast: buildAgentConfigs uses AgentName cast for test names
-    expect(changes.agentScopeChanges.get("web-developer" as AgentName)).toStrictEqual({
+    expect(changes.agentScopeChanges.get("web-developer")).toStrictEqual({
       from: "project",
       to: "global",
     });
@@ -1291,11 +1537,11 @@ describe("detectConfigChanges", () => {
     const changes = detectConfigChanges(oldConfig, wizardResult, fullEntries);
 
     // Boundary cast: buildAgentConfigs uses AgentName cast for test names
-    expect(changes.agentScopeChanges.get("web-developer" as AgentName)).toStrictEqual({
+    expect(changes.agentScopeChanges.get("web-developer")).toStrictEqual({
       from: "global",
       to: "project",
     });
-    expect(changes.dualScopeAgentTransitions.has("web-developer" as AgentName)).toBe(true);
+    expect(changes.dualScopeAgentTransitions.has("web-developer")).toBe(true);
   });
 
   it("treats every scope change as a migration when fullEntries is omitted", () => {

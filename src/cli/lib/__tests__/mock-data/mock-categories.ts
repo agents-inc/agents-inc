@@ -2,7 +2,7 @@
 // Spreads from TEST_CATEGORIES in test-fixtures.ts.
 
 import { TEST_CATEGORIES } from "../test-fixtures.js";
-import type { Category, CategoryDefinition } from "../../../types";
+import { buildCategoryMap } from "../factories/matrix-factories.js";
 
 // ---------------------------------------------------------------------------
 // Categories from step-build.test.tsx (with domain overrides)
@@ -60,7 +60,7 @@ export const FRAMEWORK_CATEGORY = {
 // Categories from skill-resolution.integration.test.ts (multi-source)
 // ---------------------------------------------------------------------------
 
-export const MULTI_SOURCE_CATEGORIES = {
+export const MULTI_SOURCE_CATEGORIES = buildCategoryMap({
   "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true, required: true },
   "web-client-state": {
     ...TEST_CATEGORIES.clientState,
@@ -77,4 +77,4 @@ export const MULTI_SOURCE_CATEGORIES = {
   "meta-reviewing": { ...TEST_CATEGORIES.methodology, order: 8 },
   "web-accessibility": { ...TEST_CATEGORIES.accessibility, order: 9 },
   "api-observability": { ...TEST_CATEGORIES.observability, order: 10 },
-} as Partial<Record<Category, CategoryDefinition>> as Record<Category, CategoryDefinition>;
+});

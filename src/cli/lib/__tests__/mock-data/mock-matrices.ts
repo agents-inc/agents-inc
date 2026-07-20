@@ -4,7 +4,11 @@ import { groupBy, mapValues } from "remeda";
 
 import { createMockMultiSourceSkill, createMockSkill } from "../factories/skill-factories.js";
 import { createMockCategory } from "../factories/category-factories.js";
-import { createMockMatrix, createMockMatrixConfig } from "../factories/matrix-factories.js";
+import {
+  buildCategoryMap,
+  createMockMatrix,
+  createMockMatrixConfig,
+} from "../factories/matrix-factories.js";
 import { createMockCompileConfig } from "../factories/plugin-factories.js";
 import { SKILLS, TEST_CATEGORIES } from "../test-fixtures.js";
 import { FRAMEWORK_CATEGORY, MULTI_SOURCE_CATEGORIES } from "./mock-categories.js";
@@ -75,72 +79,75 @@ export const CATEGORY_GRID_MATRIX = createMockMatrix(
 // ---------------------------------------------------------------------------
 
 export const ALL_SKILLS_TEST_CATEGORIES_MATRIX = createMockMatrix(...Object.values(SKILLS), {
+  // Owner-decision cast (NOT buildCategoryMap): TEST_CATEGORIES is keyed by fixture
+  // names (framework/clientState/…), NOT Category ids — a genuine key-shape mismatch
+  // that these tests rely on. Documented; behavior-reviewed follow-up only.
   categories: TEST_CATEGORIES as unknown as Record<Category, CategoryDefinition>,
 });
 
 export const ALL_SKILLS_WEB_FRAMEWORK_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": { domain: "web" },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 export const ALL_SKILLS_WEB_PAIR_CATEGORIES_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": { domain: "web" },
     "web-client-state": { domain: "web" },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 export const ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": { domain: "web" },
     "web-client-state": { domain: "web" },
     "api-api": { domain: "api" },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 export const ALL_SKILLS_WEB_AND_API_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": { domain: "web" },
     "api-api": { domain: "api" },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 export const ALL_SKILLS_METHODOLOGY_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  categories: {
+  categories: buildCategoryMap({
     "meta-reviewing": { domain: "meta" },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 export const ALL_SKILLS_METHODOLOGY_BARE_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  categories: {
+  categories: buildCategoryMap({
     "meta-reviewing": {},
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 export const ALL_SKILLS_MULTI_DOMAIN_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": { domain: "web" },
     "meta-reviewing": { domain: "meta" },
     "api-api": { domain: "api" },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 export const REACT_HONO_FRAMEWORK_API_MATRIX = createMockMatrix(SKILLS.react, SKILLS.hono, {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": TEST_CATEGORIES.framework,
     "api-api": TEST_CATEGORIES.api,
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 // Like REACT_HONO_FRAMEWORK_API_MATRIX but with api-api on the "api" domain, so the
 // two skills split across distinct domains (react → web, hono → api). Category defs
 // are complete (carry `id`), so buildCategoriesForDomain resolves options per domain.
 export const REACT_HONO_WEB_API_DOMAINS_MATRIX = createMockMatrix(SKILLS.react, SKILLS.hono, {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": TEST_CATEGORIES.framework,
     "api-api": { ...TEST_CATEGORIES.api, domain: "api" },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 // ---------------------------------------------------------------------------
@@ -365,10 +372,10 @@ const HEALTH_MISSING_DOMAIN_STYLING_CATEGORY = {
 };
 
 export const HEALTH_HEALTHY_MATRIX = createMockMatrix(SKILLS.react, HEALTH_ZUSTAND_RECOMMENDED, {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": TEST_CATEGORIES.framework,
     "web-client-state": TEST_CATEGORIES.clientState,
-  },
+  }),
 });
 
 export const HEALTH_SINGLE_SKILL_MATRIX = createMockMatrix(SKILLS.react, {
@@ -503,14 +510,14 @@ export function buildMultiSourceMatrix(
 // ---------------------------------------------------------------------------
 
 /** Shared category overrides for framework (required) + state management */
-const BUILD_STEP_CATEGORIES = {
+const BUILD_STEP_CATEGORIES = buildCategoryMap({
   "web-framework": { ...TEST_CATEGORIES.framework, required: true },
   "web-client-state": {
     ...TEST_CATEGORIES.clientState,
     displayName: "State Management",
     order: 1,
   },
-} as Record<Category, CategoryDefinition>;
+});
 
 /** Base matrix: React + Vue frameworks, Zustand + Pinia state — with required framework category */
 export const BUILD_STEP_WEB_MATRIX = createMockMatrix(
@@ -530,53 +537,53 @@ export const BUILD_STEP_REQUIRES_MATRIX = createMockMatrix(REACT_REQUIRES_ZUSTAN
 export const BUILD_STEP_EMPTY_FRAMEWORK_MATRIX = createMockMatrix(
   {},
   {
-    categories: {
+    categories: buildCategoryMap({
       "web-framework": { ...TEST_CATEGORIES.framework, required: true },
-    } as Record<Category, CategoryDefinition>,
+    }),
   },
 );
 
 /** React with required: true, exclusive: false on framework — tests flag propagation */
 export const BUILD_STEP_FRAMEWORK_NON_EXCLUSIVE_MATRIX = createMockMatrix(SKILLS.react, {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": {
       ...TEST_CATEGORIES.framework,
       required: true,
       exclusive: false,
     },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 /** React with required/exclusive omitted from framework — tests ?? defaults */
 const { required: _r, exclusive: _e, ...FRAMEWORK_WITHOUT_FLAGS } = TEST_CATEGORIES.framework;
 export const BUILD_STEP_FRAMEWORK_NO_FLAGS_MATRIX = createMockMatrix(SKILLS.react, {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": FRAMEWORK_WITHOUT_FLAGS,
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 /** React + Hono with framework (required) + api categories — tests domain filtering */
 export const BUILD_STEP_FRAMEWORK_API_MATRIX = createMockMatrix(SKILLS.react, SKILLS.hono, {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": { ...TEST_CATEGORIES.framework, required: true },
     "api-api": {
       ...TEST_CATEGORIES.api,
       domain: "api" as const,
       displayName: "API Framework",
     },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 /** React with just framework category — tests no-match domain (returns empty for "api") */
 export const BUILD_STEP_FRAMEWORK_ONLY_MATRIX = createMockMatrix(SKILLS.react, {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": { ...TEST_CATEGORIES.framework },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 /** Hono + Drizzle with api + database categories — tests non-web domain filtering */
 export const BUILD_STEP_API_DB_MATRIX = createMockMatrix(SKILLS.hono, SKILLS.drizzle, {
-  categories: {
+  categories: buildCategoryMap({
     "api-api": {
       ...TEST_CATEGORIES.api,
       domain: "api" as const,
@@ -587,7 +594,7 @@ export const BUILD_STEP_API_DB_MATRIX = createMockMatrix(SKILLS.hono, SKILLS.dri
       domain: "api" as const,
       order: 1,
     },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 /** React + universal Zustand + Pinia — tests empty compatibleWith pass-through */
@@ -596,39 +603,39 @@ export const BUILD_STEP_UNIVERSAL_COMPAT_MATRIX = createMockMatrix(
   ZUSTAND_UNIVERSAL,
   SKILLS.pinia,
   {
-    categories: {
+    categories: buildCategoryMap({
       "web-framework": { ...TEST_CATEGORIES.framework, required: true },
       "web-client-state": {
         ...TEST_CATEGORIES.clientState,
         displayName: "State Management",
         order: 1,
       },
-    } as Record<Category, CategoryDefinition>,
+    }),
   },
 );
 
 /** Local React skill with framework category — tests local flag propagation */
 export const BUILD_STEP_LOCAL_SKILL_MATRIX = createMockMatrix(REACT_LOCAL, {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": { ...TEST_CATEGORIES.framework },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 /** React (non-local) with framework category — tests non-local skills have local undefined */
 export const BUILD_STEP_NON_LOCAL_MATRIX = createMockMatrix(SKILLS.react, {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": { ...TEST_CATEGORIES.framework },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 /** React with custom displayName on framework category — tests displayName propagation */
 export const BUILD_STEP_DISPLAY_NAME_MATRIX = createMockMatrix(SKILLS.react, {
-  categories: {
+  categories: buildCategoryMap({
     "web-framework": {
       ...TEST_CATEGORIES.framework,
       displayName: "Web Framework",
     },
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 /** React + Zustand + SCSS with 3 categories and custom order values — tests sorting */
@@ -637,7 +644,7 @@ export const BUILD_STEP_SORTING_MATRIX = createMockMatrix(
   SKILLS.zustand,
   SKILLS.scss,
   {
-    categories: {
+    categories: buildCategoryMap({
       "web-client-state": {
         ...TEST_CATEGORIES.clientState,
         displayName: "State Management",
@@ -645,21 +652,21 @@ export const BUILD_STEP_SORTING_MATRIX = createMockMatrix(
       },
       "web-framework": { ...TEST_CATEGORIES.framework, order: 5 },
       "web-styling": { ...TEST_CATEGORIES.styling, order: 1 },
-    } as Record<Category, CategoryDefinition>,
+    }),
   },
 );
 
 /** React + Zustand with one category missing order — tests undefined order defaults to 0 */
 const { order: _o, ...FRAMEWORK_WITHOUT_ORDER } = TEST_CATEGORIES.framework;
 export const BUILD_STEP_UNDEFINED_ORDER_MATRIX = createMockMatrix(SKILLS.react, SKILLS.zustand, {
-  categories: {
+  categories: buildCategoryMap({
     "web-client-state": {
       ...TEST_CATEGORIES.clientState,
       displayName: "State Management",
       order: 1,
     },
     "web-framework": FRAMEWORK_WITHOUT_ORDER,
-  } as Record<Category, CategoryDefinition>,
+  }),
 });
 
 /** React/Vue conflicts in exclusive framework category — tests incompatible suppression */
@@ -667,9 +674,9 @@ export const BUILD_STEP_CONFLICTS_EXCLUSIVE_MATRIX = createMockMatrix(
   REACT_CONFLICTS_VUE,
   VUE_CONFLICTS_REACT,
   {
-    categories: {
+    categories: buildCategoryMap({
       "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true },
-    } as Record<Category, CategoryDefinition>,
+    }),
   },
 );
 
@@ -678,13 +685,13 @@ export const BUILD_STEP_CONFLICTS_NON_EXCLUSIVE_MATRIX = createMockMatrix(
   ZUSTAND_CONFLICTS_PINIA,
   PINIA_CONFLICTS_ZUSTAND,
   {
-    categories: {
+    categories: buildCategoryMap({
       "web-client-state": {
         ...TEST_CATEGORIES.clientState,
         displayName: "State Management",
         exclusive: false,
       },
-    } as Record<Category, CategoryDefinition>,
+    }),
   },
 );
 
@@ -694,9 +701,9 @@ export const BUILD_STEP_ADVISORY_STATES_MATRIX = createMockMatrix(
   VUE_DISCOURAGES_SCSS,
   SKILLS.scss,
   {
-    categories: {
+    categories: buildCategoryMap({
       "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true },
       "web-styling": { ...TEST_CATEGORIES.styling },
-    } as Record<Category, CategoryDefinition>,
+    }),
   },
 );

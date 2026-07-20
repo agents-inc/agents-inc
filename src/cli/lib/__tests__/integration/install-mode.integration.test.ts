@@ -8,11 +8,10 @@ import {
   writeConfigFile,
 } from "../../installation/local-installer";
 import { deriveInstallMode } from "../../installation/installation";
-import { initializeMatrix } from "../../matrix/matrix-provider";
 import {
   buildProjectConfig,
   buildWizardResult,
-  buildSourceResult,
+  initMatrixAndSource,
 } from "../factories/config-factories.js";
 import { readTestTsConfig, writeTestTsConfig } from "../helpers/config-io.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
@@ -44,8 +43,7 @@ let sourceResult: SourceLoadResult;
 
 beforeEach(async () => {
   dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
-  sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-  initializeMatrix(INIT_TEST_MATRIX);
+  sourceResult = initMatrixAndSource(INIT_TEST_MATRIX, dirs.sourceDir);
 });
 
 afterEach(async () => {

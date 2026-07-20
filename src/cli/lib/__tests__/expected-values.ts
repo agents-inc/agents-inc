@@ -1,3 +1,5 @@
+import type { SkillId } from "../../types";
+
 /** Canonical agent name lists per domain, sorted alphabetically */
 export const EXPECTED_AGENTS = {
   WEB: [
@@ -29,4 +31,4 @@ export const EXPECTED_SKILLS = {
     "web-state-zustand",
     "web-testing-vitest",
   ],
-} as const;
+} as const satisfies Record<string, readonly SkillId[]>;

@@ -6,8 +6,6 @@ import {
   CLAUDE_SRC_DIR,
   DEFAULT_PLUGIN_NAME,
   PLUGINS_SUBDIR,
-  PLUGIN_MANIFEST_DIR,
-  PLUGIN_MANIFEST_FILE,
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../../../consts";
@@ -15,6 +13,7 @@ import type { ExtractedSkillMetadata, SkillId, SkillSlug } from "../../../types"
 import { computeSkillFolderHash } from "../../versioning";
 import { fileExists, directoryExists, createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { readTestYaml } from "../helpers/config-io.js";
+import { writeSourceAgent, writeTestPluginManifest } from "../helpers/disk-writers.js";
 import { renderSkillMd, renderConfigTs } from "../content-generators";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { DEFAULT_TEST_AGENTS } from "../mock-data/mock-agents";
@@ -74,7 +73,7 @@ export type TestProjectConfig = {
 
 export type TestPluginManifest = {
   name: string;
-  version: string;
+  version?: string;
   description?: string;
   category?: string;
 };
@@ -120,7 +119,7 @@ export { fileExists, directoryExists };
  * 3. `diskRules` — a skill-rules.ts-compatible structure (empty relationships)
  *
  * The disk format requires `categories` as CategoryDefinition objects
- * keyed by valid categorySchema values. Skill data is loaded separately
+ * keyed by valid Category values. Skill data is loaded separately
  * via `extractAllSkills`.
  */
 /** Display-friendly category part after the domain prefix: "web-framework" -> "framework". */
@@ -280,31 +279,7 @@ permissionMode: {{ agent.permissionMode }}
   await writeFile(path.join(templatesDir, "agent.liquid"), agentTemplate);
 
   for (const agent of agents) {
-    const agentDir = path.join(agentsDir, agent.name);
-    await mkdir(agentDir, { recursive: true });
-
-    const agentYaml = {
-      id: agent.name,
-      title: agent.title,
-      description: agent.description,
-      tools: agent.tools ?? ["Read", "Write", "Edit"],
-      model: agent.model ?? "opus",
-      permissionMode: agent.permissionMode ?? "default",
-    };
-    await writeFile(
-      path.join(agentDir, STANDARD_FILES.AGENT_METADATA_YAML),
-      stringifyYaml(agentYaml),
-    );
-
-    await writeFile(
-      path.join(agentDir, "identity.md"),
-      agent.identityContent ?? `# ${agent.title}\n\n${agent.description}`,
-    );
-
-    await writeFile(
-      path.join(agentDir, "playbook.md"),
-      agent.playbookContent ?? "## Workflow\n\n1. Analyze\n2. Implement",
-    );
+    await writeSourceAgent(agentsDir, agent);
   }
 
   const dirs: TestDirs = {
@@ -319,7 +294,6 @@ permissionMode: {{ agent.permissionMode }}
   if (options.asPlugin) {
     const pluginDir = path.join(projectDir, CLAUDE_DIR, PLUGINS_SUBDIR, DEFAULT_PLUGIN_NAME);
     await mkdir(pluginDir, { recursive: true });
-    await mkdir(path.join(pluginDir, PLUGIN_MANIFEST_DIR), { recursive: true });
     await mkdir(path.join(pluginDir, "agents"), { recursive: true });
     await mkdir(path.join(pluginDir, STANDARD_DIRS.SKILLS), { recursive: true });
 
@@ -328,10 +302,7 @@ permissionMode: {{ agent.permissionMode }}
       version: "1.0.0",
       description: "Test plugin",
     };
-    await writeFile(
-      path.join(pluginDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE),
-      JSON.stringify(manifest, null, 2),
-    );
+    await writeTestPluginManifest(pluginDir, manifest);
 
     for (const skill of skills) {
       const categoryPath = skill.category;

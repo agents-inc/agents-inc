@@ -19,13 +19,14 @@ import type { Marketplace, PluginManifest } from "../../../types";
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { createTempDir, cleanupTempDir, directoryExists, fileExists } from "../test-fs-utils";
+import { readTestJson } from "../helpers/config-io.js";
+import { silenceConsole } from "../helpers/silence-console.js";
 import { COMPILATION_TEST_STACK } from "../mock-data/mock-stacks.js";
 
 async function readPluginManifest(pluginDir: string): Promise<PluginManifest | null> {
   const manifestPath = path.join(pluginDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
-  return readFile(manifestPath, "utf-8")
-    .then((content) => JSON.parse(content) as PluginManifest)
-    .catch(() => null);
+  if (!(await fileExists(manifestPath))) return null;
+  return readTestJson<PluginManifest>(manifestPath);
 }
 
 /** Compiles COMPILATION_TEST_STACK from the test source into `outputDir`. */
@@ -51,9 +52,9 @@ describe("Integration: Full Skill Pipeline", () => {
   let tempDir: string;
   let outputDir: string;
 
+  silenceConsole(["log", "warn"]);
+
   beforeEach(async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
     dirs = await createTestSource();
     tempDir = await createTempDir("skill-pipeline-test-");
     outputDir = path.join(tempDir, "plugins");
@@ -215,9 +216,9 @@ describe("Integration: Marketplace Integrity", () => {
   let pluginsDir: string;
   let marketplacePath: string;
 
+  silenceConsole(["log", "warn"]);
+
   beforeEach(async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
     dirs = await createTestSource();
     tempDir = await createTempDir("marketplace-test-");
     pluginsDir = path.join(tempDir, "plugins");
@@ -314,9 +315,9 @@ describe("Integration: End-to-End Pipeline", () => {
   let pluginsDir: string;
   let stacksDir: string;
 
+  silenceConsole(["log", "warn"]);
+
   beforeEach(async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
     dirs = await createTestSource();
     tempDir = await createTempDir("e2e-pipeline-test-");
     pluginsDir = path.join(tempDir, "plugins");

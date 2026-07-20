@@ -13,7 +13,13 @@ import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { installEject, installPluginConfig } from "../../installation/local-installer";
 import { copySkillsToLocalFlattened } from "../../skills/skill-copier";
-import { CLAUDE_SRC_DIR, DIRS, LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../../consts";
+import {
+  CLAUDE_SRC_DIR,
+  DIRS,
+  LOCAL_SKILLS_PATH,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+} from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
 import { typedKeys } from "../../../utils/typed-object";
 import { initializeMatrix } from "../../matrix/matrix-provider";
@@ -141,7 +147,7 @@ describe("eject command", () => {
       const output = error?.message || "";
       expect(output.toLowerCase()).not.toContain("unexpected argument");
 
-      const partialsDir = path.join(projectDir, CLAUDE_SRC_DIR, "agents");
+      const partialsDir = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
       expect(await directoryExists(partialsDir)).toBe(true);
     });
 
@@ -590,7 +596,7 @@ describe("eject skills from initialized project", () => {
 
     expect(stdout).toContain("Agent partials ejected");
 
-    const partialsDir = path.join(dirs.projectDir, CLAUDE_SRC_DIR, "agents");
+    const partialsDir = path.join(dirs.projectDir, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
     expect(await directoryExists(partialsDir)).toBe(true);
   });
 
@@ -599,7 +605,7 @@ describe("eject skills from initialized project", () => {
 
     expect(stdout).toContain("Agent partials ejected");
 
-    const partialsDir = path.join(dirs.projectDir, CLAUDE_SRC_DIR, "agents");
+    const partialsDir = path.join(dirs.projectDir, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
     const entries = await readdir(partialsDir);
     expect(entries).toHaveLength(8);
   });
@@ -722,7 +728,7 @@ describe("eject in plugin mode", () => {
     // Partials eject from CLI source, not project source
     expect(stdout).toContain("Agent partials ejected");
 
-    const partialsDir = path.join(dirs.projectDir, CLAUDE_SRC_DIR, "agents");
+    const partialsDir = path.join(dirs.projectDir, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
     expect(await directoryExists(partialsDir)).toBe(true);
 
     const entries = await readdir(partialsDir);

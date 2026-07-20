@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdir } from "fs/promises";
 import { recompileAgents, type RecompileAgentsOptions } from "../../agents";
 import {
@@ -15,6 +15,7 @@ import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { buildTestProjectConfig } from "../factories/config-factories.js";
 import { createMockSkillDefinition } from "../factories/skill-factories.js";
 import { writeTestSkill } from "../helpers/disk-writers.js";
+import { silenceConsole } from "../helpers/silence-console.js";
 import { STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
 import type { AgentName, SkillDefinitionMap } from "../../../types";
 import { expectValidAgentMarkdown } from "../assertions";
@@ -40,14 +41,10 @@ function buildRecompileOptions(
 describe("User Journey: Edit -> Recompile -> Verify", () => {
   let dirs: TestDirs;
   let outputDir: string;
-  let consoleSpy: ReturnType<typeof vi.spyOn>;
-  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  silenceConsole(["log", "warn"]);
 
   beforeEach(async () => {
-    // Suppress console output during tests
-    consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
     // Create test source with plugin structure containing default skills and agents
     dirs = await createTestSource({
       skills: DEFAULT_TEST_SKILLS,
@@ -65,8 +62,6 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
   });
 
   afterEach(async () => {
-    consoleSpy.mockRestore();
-    warnSpy.mockRestore();
     await cleanupTestSource(dirs);
   });
 

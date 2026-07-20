@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { TEST_SOURCE_URL } from "../test-constants.js";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
+import { writeTestPluginManifest } from "../helpers/disk-writers.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { validateSource } from "../../source-validator";
@@ -259,11 +261,10 @@ describe("validate command", () => {
 
       // Create a plugin in the project's .claude/plugins/ directory
       const pluginDir = path.join(projectDir, CLAUDE_DIR, PLUGINS_SUBDIR, "my-plugin");
-      const manifestDir = path.join(pluginDir, PLUGIN_MANIFEST_DIR);
-      await mkdir(manifestDir, { recursive: true });
-      await writeFile(
-        path.join(manifestDir, PLUGIN_MANIFEST_FILE),
-        JSON.stringify({ name: "my-plugin", version: "1.0.0" }),
+      await writeTestPluginManifest(
+        pluginDir,
+        { name: "my-plugin", version: "1.0.0" },
+        { pretty: false },
       );
 
       const { stdout, error } = await runCliCommand(["validate"]);
@@ -294,7 +295,7 @@ describe("validate command", () => {
         name: "test-project",
         skills: [],
         agents: [],
-        source: "github:agents-inc/skills",
+        source: TEST_SOURCE_URL,
       });
 
       const { stdout, error } = await runCliCommand(["validate"]);

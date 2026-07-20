@@ -10,8 +10,45 @@ import type {
   SkillSlug,
   SkillSlugMap,
 } from "../../../types";
+import type { TestSkill } from "../fixtures/create-test-source";
 import { SKILLS, TEST_CATEGORIES } from "../test-fixtures";
+import { testSkillToResolvedSkill } from "./skill-factories.js";
 import { createMockResolvedStack } from "./stack-factories.js";
+
+/**
+ * Builds a matrix from disk-oriented TestSkills by resolving each to a
+ * ResolvedSkill. Pass `toResolvedOverrides` to carry per-skill fields (e.g.
+ * `author`) that the default derivation would otherwise replace with defaults.
+ */
+export function createMatrixFromTestSkills(
+  skills: TestSkill[],
+  toResolvedOverrides?: (skill: TestSkill) => Partial<ResolvedSkill>,
+): MergedSkillsMatrix {
+  return createMockMatrix(
+    Object.fromEntries(
+      skills.map((skill) => [
+        skill.id,
+        testSkillToResolvedSkill(skill, toResolvedOverrides?.(skill)),
+      ]),
+    ),
+  );
+}
+
+/**
+ * Holds THE one documented boundary cast for test category maps. Test fixtures
+ * supply a subset of the Category union and often partial CategoryDefinition
+ * values (e.g. just `{ domain }`), but the matrix consumes a complete
+ * Record<Category, CategoryDefinition>.
+ *
+ * NOTE: param is `Partial<Record<Category, Partial<CategoryDefinition>>>` (values
+ * are also partial at call sites) — wider than the ledger's `Partial<Record<Category,
+ * CategoryDefinition>>`, which would reject the `{ domain: "web" }` shorthand.
+ */
+export function buildCategoryMap(
+  defs: Partial<Record<Category, Partial<CategoryDefinition>>>,
+): Record<Category, CategoryDefinition> {
+  return defs as Record<Category, CategoryDefinition>;
+}
 
 export function createMockMatrix(
   skillsOrFirstSkill?: Record<string, ResolvedSkill> | ResolvedSkill,

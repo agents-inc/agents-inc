@@ -76,7 +76,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -125,7 +125,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -154,7 +154,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -192,7 +192,7 @@ describe("Wizard integration", () => {
       });
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -223,7 +223,7 @@ describe("Wizard integration", () => {
       });
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -249,7 +249,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -282,7 +282,7 @@ describe("Wizard integration", () => {
       });
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -313,7 +313,9 @@ describe("Wizard integration", () => {
         domainSelections: {},
       });
 
-      const { lastFrame, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { lastFrame, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -340,7 +342,9 @@ describe("Wizard integration", () => {
         },
       });
 
-      const { stdin, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { stdin, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -371,7 +375,9 @@ describe("Wizard integration", () => {
         history: ["stack", "domains"],
       });
 
-      const { stdin, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { stdin, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -395,7 +401,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -429,7 +435,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -457,7 +463,9 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { stdin, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { stdin, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -476,7 +484,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -511,7 +519,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -537,7 +545,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -569,7 +577,9 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { stdin, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { stdin, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -587,7 +597,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -615,7 +625,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -644,7 +654,9 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { stdin, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { stdin, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -674,7 +686,9 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { lastFrame, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { lastFrame, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -689,7 +703,9 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { lastFrame, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { lastFrame, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -704,7 +720,9 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { stdin, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { stdin, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -727,7 +745,9 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { lastFrame, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { lastFrame, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -748,7 +768,9 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { stdin, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { stdin, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -775,7 +797,9 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { stdin, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { stdin, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -795,7 +819,9 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { lastFrame, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { lastFrame, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -810,7 +836,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -837,7 +863,9 @@ describe("Wizard integration", () => {
         history: ["stack"],
       });
 
-      const { lastFrame, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { lastFrame, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -852,7 +880,7 @@ describe("Wizard integration", () => {
       const onCancel = vi.fn();
 
       const { stdin, lastFrame, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} />,
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
 
@@ -889,7 +917,9 @@ describe("Wizard integration", () => {
         installedSkillIds: ["web-framework-react", "api-framework-hono"],
       });
 
-      const { lastFrame, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { lastFrame, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -920,7 +950,9 @@ describe("Wizard integration", () => {
         installedSkillIds: [],
       });
 
-      const { lastFrame, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { lastFrame, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -944,7 +976,9 @@ describe("Wizard integration", () => {
         installedSkillIds: ["web-framework-react", "api-framework-hono"],
       });
 
-      const { stdin, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { stdin, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -974,7 +1008,9 @@ describe("Wizard integration", () => {
         installedSkillIds: ["web-framework-react"],
       });
 
-      const { unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -994,7 +1030,9 @@ describe("Wizard integration", () => {
         installedSkillIds: ["web-framework-react"],
       });
 
-      const { frames, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { frames, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       // First frame must not show stack-selection chrome
@@ -1032,6 +1070,7 @@ describe("Wizard integration", () => {
           onComplete={onComplete}
           onCancel={onCancel}
           installedSkillIds={PROP_INSTALLED_IDS}
+          version="0.0.0"
         />,
       );
       cleanup = unmount;
@@ -1062,7 +1101,12 @@ describe("Wizard integration", () => {
       });
 
       const { stdin, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} initialAgents={INITIAL_AGENTS} />,
+        <Wizard
+          onComplete={onComplete}
+          onCancel={onCancel}
+          initialAgents={INITIAL_AGENTS}
+          version="0.0.0"
+        />,
       );
       cleanup = unmount;
 
@@ -1095,7 +1139,9 @@ describe("Wizard integration", () => {
       // Seed selectedDomains so preselectAgentsFromDomains has something to pull from.
       useWizardStore.setState({ selectedDomains: ["web"], selectedAgents: [] });
 
-      const { stdin, unmount } = render(<Wizard onComplete={onComplete} onCancel={onCancel} />);
+      const { stdin, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);

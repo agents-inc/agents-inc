@@ -9,18 +9,27 @@ import type {
 import { resolveSelectedSkillIds, type WizardResultV2 } from "../../../components/wizard/wizard";
 import { useWizardStore } from "../../../stores/wizard-store";
 import { validateSelection } from "../../matrix";
+import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../../consts";
+
+/** Build a single SkillConfig from an id with default scope and source */
+export function buildSkillConfig(
+  id: SkillId,
+  overrides?: Partial<Omit<SkillConfig, "id">>,
+): SkillConfig {
+  return {
+    id,
+    scope: overrides?.scope ?? "project",
+    source: overrides?.source ?? "eject",
+    ...(overrides?.excluded !== undefined && { excluded: overrides.excluded }),
+  };
+}
 
 /** Build a SkillConfig array from skill IDs with default scope and source */
 export function buildSkillConfigs(
   skillIds: SkillId[],
   overrides?: Partial<Omit<SkillConfig, "id">>,
 ): SkillConfig[] {
-  return skillIds.map((id) => ({
-    id,
-    scope: overrides?.scope ?? "project",
-    source: overrides?.source ?? "eject",
-    ...(overrides?.excluded !== undefined && { excluded: overrides.excluded }),
-  }));
+  return skillIds.map((id) => buildSkillConfig(id, overrides));
 }
 
 /**
@@ -83,7 +92,7 @@ export function buildWizardResultFromStore(overrides?: Partial<WizardResultV2>):
   const allAgentsGlobal =
     store.agentConfigs.length > 0 && store.agentConfigs.every((ac) => ac.scope === "global");
   const synthesizedSkills = allAgentsGlobal
-    ? buildSkillConfigs(allSkills, { scope: "global", source: "agents-inc" })
+    ? buildSkillConfigs(allSkills, { scope: "global", source: DEFAULT_PUBLIC_SOURCE_NAME })
     : buildSkillConfigs(allSkills);
 
   return {

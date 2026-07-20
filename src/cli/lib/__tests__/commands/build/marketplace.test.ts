@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { mkdir, writeFile, readFile } from "fs/promises";
 import { runCliCommand } from "../../helpers/cli-runner.js";
-import { writeTestPackageJson } from "../../helpers/config-io.js";
+import { readTestJson, writeTestPackageJson } from "../../helpers/config-io.js";
+import { writeTestPluginManifest } from "../../helpers/disk-writers.js";
 import { setupIsolatedHome } from "../../helpers/isolated-home.js";
 import { fileExists } from "../../test-fs-utils";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../../../consts";
@@ -19,17 +20,14 @@ async function createPluginDir(
   overrides?: Partial<PluginManifest>,
 ): Promise<string> {
   const pluginDir = path.join(pluginsDir, name);
-  const manifestDir = path.join(pluginDir, PLUGIN_MANIFEST_DIR);
-  await mkdir(manifestDir, { recursive: true });
   const manifest: PluginManifest = { name, description, version: "1.0.0", ...overrides };
-  await writeFile(path.join(manifestDir, PLUGIN_MANIFEST_FILE), JSON.stringify(manifest, null, 2));
+  await writeTestPluginManifest(pluginDir, manifest);
   return pluginDir;
 }
 
 /** Reads and parses the generated marketplace.json */
 async function readMarketplaceJson(outputPath: string): Promise<Marketplace> {
-  const content = await readFile(outputPath, "utf-8");
-  return JSON.parse(content) as Marketplace;
+  return readTestJson<Marketplace>(outputPath);
 }
 
 /** Runs `build:marketplace` against the given plugins dir and output path. */

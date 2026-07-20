@@ -14,14 +14,12 @@ import { buildProjectConfig } from "../factories/config-factories.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { detectInstallation, getInstallationOrThrow } from "../../installation";
-import { renderConfigTs } from "../content-generators";
+import { writeTestTsConfig } from "../helpers/config-io.js";
 import type { ProjectConfig } from "../../../types";
 
 /** Writes a `.claude-src/config.ts` with the given config into the temp dir. */
 async function writeInstallationConfig(tempDir: string, config: ProjectConfig): Promise<void> {
-  const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
-  await mkdir(claudeSrcDir, { recursive: true });
-  await writeFile(path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS), renderConfigTs(config));
+  await writeTestTsConfig(tempDir, config);
 }
 
 describe("installation", () => {

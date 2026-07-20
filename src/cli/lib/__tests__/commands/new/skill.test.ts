@@ -7,11 +7,8 @@ import { writeTestTsConfig } from "../../helpers/config-io.js";
 import { setupIsolatedHome } from "../../helpers/isolated-home.js";
 import { buildSourceConfig } from "../../factories/config-factories.js";
 import { EXIT_CODES } from "../../../exit-codes";
-import {
-  toTitleCase,
-  generateSkillCategoriesTs,
-  generateSkillRulesTs,
-} from "../../../skills/generators";
+import { generateSkillCategoriesTs, generateSkillRulesTs } from "../../../skills/generators";
+import { toTitleCase } from "../../../../utils/string";
 import { generateSkillMd, generateMetadataYaml } from "../../../../commands/new/skill";
 import { validateKebabCaseName } from "../../../validate-kebab-name";
 import {

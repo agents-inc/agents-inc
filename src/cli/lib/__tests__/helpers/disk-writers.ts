@@ -1,12 +1,18 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
-import { STANDARD_FILES } from "../../../consts";
+import {
+  PLUGIN_MANIFEST_DIR,
+  PLUGIN_MANIFEST_FILE,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+} from "../../../consts";
 import { matrix } from "../../matrix/matrix-provider";
 import { computeSkillFolderHash } from "../../versioning";
 import { renderSkillMd, renderAgentYaml } from "../content-generators";
 import type { SkillId } from "../../../types";
-import type { TestSkill } from "../fixtures/create-test-source";
+import type { TestAgent, TestPluginManifest, TestSkill } from "../fixtures/create-test-source";
+import type { ImportSourceSkill } from "../mock-data/mock-skills";
 
 export async function writeTestSkill(
   skillsDir: string,
@@ -106,4 +112,83 @@ export async function writeTestAgent(
   );
 
   return agentDir;
+}
+
+/**
+ * Writes a source-agent layout (metadata.yaml + identity.md + playbook.md) for
+ * one TestAgent under a source `agents/` directory. Extracted verbatim from
+ * createTestSource's agent loop — output is byte-identical.
+ */
+export async function writeSourceAgent(agentsDir: string, agent: TestAgent): Promise<string> {
+  const agentDir = path.join(agentsDir, agent.name);
+  await mkdir(agentDir, { recursive: true });
+
+  const agentYaml = {
+    id: agent.name,
+    title: agent.title,
+    description: agent.description,
+    tools: agent.tools ?? ["Read", "Write", "Edit"],
+    model: agent.model ?? "opus",
+    permissionMode: agent.permissionMode ?? "default",
+  };
+  await writeFile(
+    path.join(agentDir, STANDARD_FILES.AGENT_METADATA_YAML),
+    stringifyYaml(agentYaml),
+  );
+
+  await writeFile(
+    path.join(agentDir, STANDARD_FILES.IDENTITY_MD),
+    agent.identityContent ?? `# ${agent.title}\n\n${agent.description}`,
+  );
+
+  await writeFile(
+    path.join(agentDir, STANDARD_FILES.PLAYBOOK_MD),
+    agent.playbookContent ?? "## Workflow\n\n1. Analyze\n2. Implement",
+  );
+
+  return agentDir;
+}
+
+/**
+ * Writes each skill of a local import source under `<projectDir>/<sourceName>/skills/`.
+ * SKILL.md comes from `skill.content`; metadata.yaml is written only when present.
+ */
+export async function createImportSource(
+  projectDir: string,
+  sourceName: string,
+  skills: ImportSourceSkill[],
+): Promise<void> {
+  const skillsDir = path.join(projectDir, sourceName, STANDARD_DIRS.SKILLS);
+
+  for (const skill of skills) {
+    const skillDir = path.join(skillsDir, skill.name);
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), skill.content);
+
+    if (skill.metadata) {
+      await writeFile(
+        path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+        stringifyYaml(skill.metadata),
+      );
+    }
+  }
+}
+
+/**
+ * Writes a plugin manifest (`.claude-plugin/plugin.json`) under pluginDir.
+ * Defaults to pretty (2-space) JSON — matching createTestSource and the build
+ * command tests; pass `{ pretty: false }` for the compact-form call sites.
+ */
+export async function writeTestPluginManifest(
+  pluginDir: string,
+  manifest: TestPluginManifest,
+  options?: { pretty?: boolean },
+): Promise<string> {
+  const manifestDir = path.join(pluginDir, PLUGIN_MANIFEST_DIR);
+  await mkdir(manifestDir, { recursive: true });
+  const manifestPath = path.join(manifestDir, PLUGIN_MANIFEST_FILE);
+  const json =
+    options?.pretty === false ? JSON.stringify(manifest) : JSON.stringify(manifest, null, 2);
+  await writeFile(manifestPath, json);
+  return manifestPath;
 }

@@ -19,6 +19,13 @@ export async function readTestYaml<T>(filePath: string): Promise<T> {
   return parseYaml(content) as T;
 }
 
+/** Reads and JSON-parses a file. Throws on missing file; caller provides the type. */
+export async function readTestJson<T>(filePath: string): Promise<T> {
+  const content = await readFile(filePath, "utf-8");
+  // Boundary cast: JSON.parse returns `any`, caller provides expected type
+  return JSON.parse(content) as T;
+}
+
 /**
  * Load a config file using jiti. Handles defineConfig(), satisfies, and plain exports.
  */
@@ -33,15 +40,20 @@ export async function readTestTsConfig<T>(filePath: string): Promise<T> {
   return result as T;
 }
 
-/** Writes a config file with the given object into the given subdirectory (defaults to CLAUDE_SRC_DIR) */
+/**
+ * Writes a config file with the given object into the given subdirectory
+ * (defaults to CLAUDE_SRC_DIR). Returns the absolute path of the written config.ts.
+ */
 export async function writeTestTsConfig(
   projectDir: string,
   config: Record<string, unknown>,
   configSubdir: string = CLAUDE_SRC_DIR,
-): Promise<void> {
+): Promise<string> {
   const configDir = path.join(projectDir, configSubdir);
   await mkdir(configDir, { recursive: true });
-  await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), renderConfigTs(config));
+  const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+  await writeFile(configPath, renderConfigTs(config));
+  return configPath;
 }
 
 /**

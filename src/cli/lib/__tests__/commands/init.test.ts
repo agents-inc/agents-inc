@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { TEST_SOURCE_URL } from "../test-constants.js";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { getDashboardData, formatDashboardText } from "../../../commands/init";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
 import { renderConfigTs } from "../content-generators";
 import { EXPECTED_SKILLS } from "../expected-values";
 
@@ -62,8 +63,15 @@ describe("init command", () => {
         }),
       );
 
+      // Install the declared skills — the dashboard reports what is on disk
+      for (const skillId of EXPECTED_SKILLS.WEB_DEFAULT) {
+        await mkdir(path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, skillId), {
+          recursive: true,
+        });
+      }
+
       // Create compiled agents
-      const agentsDir = path.join(projectDir, CLAUDE_DIR, "agents");
+      const agentsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
       await writeFile(path.join(agentsDir, "web-developer.md"), "# Web Developer");
       await writeFile(path.join(agentsDir, "api-developer.md"), "# API Developer");
@@ -86,7 +94,7 @@ describe("init command", () => {
         renderConfigTs({
           name: "test-project",
           skills: [],
-          source: "github:agents-inc/skills",
+          source: TEST_SOURCE_URL,
         }),
       );
 
@@ -149,7 +157,7 @@ describe("init command", () => {
         skillCount: 12,
         agentCount: 3,
         mode: "plugin",
-        source: "github:agents-inc/skills",
+        source: TEST_SOURCE_URL,
       });
 
       expect(text).toContain("Agents Inc.");

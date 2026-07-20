@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { TEST_SOURCE_URL } from "../test-constants.js";
 import path from "path";
 import fs from "fs";
 import { mkdir, writeFile, readFile } from "fs/promises";
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { fileExists, directoryExists } from "../test-fs-utils";
-import { writeTestSkill } from "../helpers/disk-writers.js";
+import { writeTestSkill, writeTestPluginManifest } from "../helpers/disk-writers.js";
 import { createMockSkill } from "../factories/skill-factories.js";
 import { createMockMatrix } from "../factories/matrix-factories.js";
-import { buildAgentConfigs } from "../factories/config-factories.js";
+import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { SKILLS } from "../test-fixtures";
 import { initializeMatrix } from "../../matrix/matrix-provider";
@@ -18,12 +19,10 @@ import {
   STANDARD_DIRS,
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
-  PLUGIN_MANIFEST_DIR,
-  PLUGIN_MANIFEST_FILE,
 } from "../../../consts";
-import type { ProjectConfig, SkillId } from "../../../types";
+import type { AgentScopeConfig, ProjectConfig, SkillConfig, SkillId } from "../../../types";
 import { getCliInstalledPluginKeys } from "../../../commands/uninstall";
-import { renderConfigTs } from "../content-generators";
+import { writeTestTsConfig } from "../helpers/config-io.js";
 
 vi.mock("../../../utils/exec.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../utils/exec.js")>()),
@@ -33,7 +32,7 @@ vi.mock("../../../utils/exec.js", async (importOriginal) => ({
 
 const TEST_PLUGIN_NAME = "test-plugin@marketplace";
 const PLUGIN_SUBPATH = path.join(CLAUDE_DIR, "plugins", TEST_PLUGIN_NAME);
-const TEST_SOURCE = "github:agents-inc/skills";
+const TEST_SOURCE = TEST_SOURCE_URL;
 const TEST_EXTRA_SOURCE = "github:acme-corp/skills";
 
 /**
@@ -45,13 +44,10 @@ async function createProjectConfig(
     source?: string;
     marketplace?: string;
     extraSources?: Array<{ name: string; url: string }>;
-    agents?: Array<{ name: string; scope: string }>;
-    skills?: Array<{ id: string; scope: string; source: string }>;
+    agents?: AgentScopeConfig[];
+    skills?: SkillConfig[];
   },
 ): Promise<string> {
-  const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-  await mkdir(configDir, { recursive: true });
-
   const config: Record<string, unknown> = {
     source: options?.source ?? TEST_SOURCE,
   };
@@ -72,9 +68,7 @@ async function createProjectConfig(
     config.skills = options.skills;
   }
 
-  const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
-  await writeFile(configPath, renderConfigTs(config));
-  return configPath;
+  return writeTestTsConfig(projectDir, config);
 }
 
 /**
@@ -88,11 +82,10 @@ async function createPluginDir(projectDir: string, fakeHome: string): Promise<st
   await mkdir(pluginDir, { recursive: true });
 
   // Create plugin manifest so getVerifiedPluginInstallPaths can verify the path
-  const manifestDir = path.join(pluginDir, PLUGIN_MANIFEST_DIR);
-  await mkdir(manifestDir, { recursive: true });
-  await writeFile(
-    path.join(manifestDir, PLUGIN_MANIFEST_FILE),
-    JSON.stringify({ name: TEST_PLUGIN_NAME, version: "1.0.0" }),
+  await writeTestPluginManifest(
+    pluginDir,
+    { name: TEST_PLUGIN_NAME, version: "1.0.0" },
+    { pretty: false },
   );
 
   // Create .claude/settings.json with enabled plugin
@@ -408,7 +401,7 @@ describe("uninstall command", () => {
       });
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
 
-      const agentsDir = path.join(claudeDir, "agents");
+      const agentsDir = path.join(claudeDir, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
       await writeFile(path.join(agentsDir, "web-developer.md"), "# Web Developer Agent");
 
@@ -421,7 +414,7 @@ describe("uninstall command", () => {
     it("should not remove agents directory when no config exists", async () => {
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
 
-      const agentsDir = path.join(claudeDir, "agents");
+      const agentsDir = path.join(claudeDir, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
       await writeFile(path.join(agentsDir, "my-custom-agent.md"), "# Custom Agent");
 
@@ -436,7 +429,7 @@ describe("uninstall command", () => {
       });
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
 
-      const agentsDir = path.join(claudeDir, "agents");
+      const agentsDir = path.join(claudeDir, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
       await writeFile(path.join(agentsDir, "web-developer.md"), "# Web Developer Agent");
       await writeFile(path.join(agentsDir, "my-custom-agent.md"), "# Custom Agent");
@@ -508,7 +501,7 @@ describe("uninstall command", () => {
   describe("plugin removal", () => {
     it("should remove plugin directory", async () => {
       await createProjectConfig(projectDir, {
-        skills: [{ id: "test-plugin", scope: "project", source: "marketplace" }],
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "marketplace" }],
       });
       const pluginDir = await createPluginDir(projectDir, fakeHome);
 
@@ -522,7 +515,7 @@ describe("uninstall command", () => {
 
     it("should show what will be removed", async () => {
       await createProjectConfig(projectDir, {
-        skills: [{ id: "test-plugin", scope: "project", source: "marketplace" }],
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "marketplace" }],
       });
       await createPluginDir(projectDir, fakeHome);
 
@@ -534,7 +527,7 @@ describe("uninstall command", () => {
 
     it("should show uninstall complete message", async () => {
       await createProjectConfig(projectDir, {
-        skills: [{ id: "test-plugin", scope: "project", source: "marketplace" }],
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "marketplace" }],
       });
       await createPluginDir(projectDir, fakeHome);
 
@@ -552,7 +545,7 @@ describe("uninstall command", () => {
       // Without the marketplace fallback, the key won't match
       await createProjectConfig(projectDir, {
         marketplace: "marketplace",
-        skills: [{ id: "test-plugin", scope: "project", source: "re-scoped-source" }],
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "re-scoped-source" }],
       });
       const pluginDir = await createPluginDir(projectDir, fakeHome);
 
@@ -609,11 +602,9 @@ describe("uninstall command", () => {
         hasPlugins: true,
         cliPluginNames: ["test-plugin@marketplace"],
         pluginsDir,
-        config: {
-          skills: [
-            { id: "test-plugin" as SkillId, scope: "project" as const, source: "marketplace" },
-          ],
-        },
+        config: buildProjectConfig({
+          skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "marketplace" }],
+        }),
       };
 
       const result = await uninstallPluginsFn(target, projectDir);
@@ -633,7 +624,7 @@ describe("uninstall command", () => {
       // The marketplace name in config differs from the skill source
       await createProjectConfig(projectDir, {
         marketplace: "marketplace",
-        skills: [{ id: "test-plugin", scope: "project", source: "custom-source" }],
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "custom-source" }],
       });
       const pluginDir = await createPluginDir(projectDir, fakeHome);
 
@@ -664,11 +655,9 @@ describe("uninstall command", () => {
         hasPlugins: true,
         cliPluginNames: ["test-plugin@marketplace"],
         pluginsDir,
-        config: {
-          skills: [
-            { id: "test-plugin" as SkillId, scope: "global" as const, source: "marketplace" },
-          ],
-        },
+        config: buildProjectConfig({
+          skills: [{ id: "test-plugin" as SkillId, scope: "global", source: "marketplace" }],
+        }),
       };
 
       const result = await uninstallPluginsFn(target, projectDir);
@@ -762,7 +751,7 @@ describe("uninstall command", () => {
   describe("combined plugin and local removal", () => {
     it("should remove both plugins and CLI-managed local artifacts", async () => {
       await createProjectConfig(projectDir, {
-        skills: [{ id: "test-plugin", scope: "project", source: "marketplace" }],
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "marketplace" }],
       });
       const pluginDir = await createPluginDir(projectDir, fakeHome);
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
@@ -790,7 +779,7 @@ describe("uninstall command", () => {
       await mkdir(skillsDir, { recursive: true });
       await createCLISkill(skillsDir, "web-framework-react");
 
-      const agentsDir = path.join(claudeDir, "agents");
+      const agentsDir = path.join(claudeDir, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
       await writeFile(path.join(agentsDir, "web-developer.md"), "# Agent");
 

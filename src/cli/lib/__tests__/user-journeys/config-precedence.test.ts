@@ -16,7 +16,7 @@ import {
   fileExists,
   type TestDirs,
 } from "../fixtures/create-test-source";
-import { readTestTsConfig } from "../helpers/config-io.js";
+import { readTestTsConfig, writeTestTsConfig } from "../helpers/config-io.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { renderConfigTs } from "../content-generators";
 import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
@@ -25,11 +25,7 @@ async function createProjectConfig(
   projectDir: string,
   config: Partial<ProjectConfig>,
 ): Promise<string> {
-  const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-  await mkdir(configDir, { recursive: true });
-  const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
-  await writeFile(configPath, renderConfigTs(config));
-  return configPath;
+  return writeTestTsConfig(projectDir, config);
 }
 
 describe("User Journey: Config Precedence - Source Resolution", () => {

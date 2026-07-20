@@ -13,6 +13,7 @@ import { DEFAULT_TEST_AGENTS } from "../mock-data/mock-agents";
 import { buildTestProjectConfig } from "../factories/config-factories.js";
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { parseTestFrontmatter } from "../helpers/index.js";
+import { silenceConsole } from "../helpers/silence-console.js";
 import { recompileAgents } from "../../agents";
 import { CLAUDE_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
 import { expectValidAgentMarkdown } from "../assertions";
@@ -23,10 +24,9 @@ describe("User Journey: Compile Flow", () => {
   let dirs: TestDirs;
   let outputDir: string;
 
-  beforeEach(async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+  silenceConsole(["log", "warn"]);
 
+  beforeEach(async () => {
     dirs = await createTestSource({
       skills: DEFAULT_TEST_SKILLS,
       agents: DEFAULT_TEST_AGENTS,
@@ -125,10 +125,9 @@ describe("User Journey: Compile with Local Skills", () => {
   let agentsDir: string;
   let originalCwd: string;
 
-  beforeEach(async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+  silenceConsole(["log", "warn"]);
 
+  beforeEach(async () => {
     originalCwd = process.cwd();
 
     dirs = await createTestSource({
@@ -198,9 +197,9 @@ describe("User Journey: Compile Error Handling", () => {
   let dirs: TestDirs;
   let originalCwd: string;
 
+  silenceConsole(["log", "warn"]);
+
   beforeEach(async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
     originalCwd = process.cwd();
   });
 

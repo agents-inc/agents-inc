@@ -1,5 +1,6 @@
 import path from "path";
 import { mkdir } from "fs/promises";
+import { afterEach, beforeEach } from "vitest";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils";
 
 export type IsolatedHome = {
@@ -16,9 +17,13 @@ export type IsolatedHome = {
  * The returned `cleanup` restores the original cwd and HOME (or unsets HOME
  * when it was originally undefined) and removes the temp directory.
  *
- * Call in `beforeEach` and invoke `cleanup` in `afterEach`. Required for any
- * command test that hits `os.homedir()` or `~/.claude*` paths — without it,
- * tests silently depend on the developer's real home.
+ * Call in `beforeEach` and invoke `cleanup` in `afterEach`.
+ *
+ * Isolation mechanism: this and {@link useFakeHome} isolate production code that
+ * reads the home directory via `process.env.HOME`. They do NOT isolate code that
+ * calls `os.homedir()` — that path reads the OS-level home and ignores
+ * `process.env.HOME`, so it requires a `vi.spyOn(os, "homedir")` spy instead
+ * (see the homedir-spy test files). The two mechanisms are NOT interchangeable.
  */
 export async function setupIsolatedHome(prefix: string): Promise<IsolatedHome> {
   const tempDir = await createTempDir(prefix);
@@ -40,4 +45,47 @@ export async function setupIsolatedHome(prefix: string): Promise<IsolatedHome> {
   };
 
   return { tempDir, projectDir, fakeHome, cleanup };
+}
+
+/**
+ * Hook-registering sibling of {@link setupIsolatedHome}: registers a `beforeEach`
+ * that points `process.env.HOME` at `<tempDir>/fake-home` (created fresh per test)
+ * and an `afterEach` that restores the original HOME. Pass `setHome: false` when
+ * the test itself decides when to point HOME at the fake home. Returns a live
+ * view of the fake home dir.
+ *
+ * Isolation mechanism: like {@link setupIsolatedHome}, this isolates production
+ * code that reads the home directory via `process.env.HOME` — NOT code that calls
+ * `os.homedir()` (which requires a `vi.spyOn(os, "homedir")` spy). The two are
+ * NOT interchangeable.
+ */
+export function useFakeHome(
+  getTempDir: () => string,
+  options?: { setHome?: boolean },
+): { readonly dir: string } {
+  let savedHome: string | undefined;
+  let fakeHome: string;
+
+  beforeEach(async () => {
+    savedHome = process.env.HOME;
+    fakeHome = path.join(getTempDir(), "fake-home");
+    await mkdir(fakeHome, { recursive: true });
+    if (options?.setHome !== false) {
+      process.env.HOME = fakeHome;
+    }
+  });
+
+  afterEach(() => {
+    if (savedHome !== undefined) {
+      process.env.HOME = savedHome;
+    } else {
+      delete process.env.HOME;
+    }
+  });
+
+  return {
+    get dir() {
+      return fakeHome;
+    },
+  };
 }

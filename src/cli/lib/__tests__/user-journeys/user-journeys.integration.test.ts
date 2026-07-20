@@ -27,7 +27,7 @@ import { createBasicMatrix, createComprehensiveMatrix } from "../factories/matri
 import {
   buildProjectConfig,
   buildAgentConfigs,
-  buildSourceResult,
+  initMatrixAndSource,
 } from "../factories/config-factories.js";
 import {
   buildSkillConfigs,
@@ -82,8 +82,7 @@ beforeEach(async () => {
   vi.spyOn(os, "homedir").mockReturnValue(dirs.projectDir);
 
   matrix = createComprehensiveMatrix();
-  initializeMatrix(matrix);
-  sourceResult = buildSourceResult(matrix, dirs.sourceDir);
+  sourceResult = initMatrixAndSource(matrix, dirs.sourceDir);
 });
 
 afterEach(async () => {

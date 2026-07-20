@@ -10,9 +10,13 @@ import type { WizardResultV2 } from "../../../components/wizard/wizard";
 import type { SourceLoadResult } from "../../loading/source-loader";
 import type { ResolvedConfig } from "../../configuration/config";
 import type { TestProjectConfig } from "../fixtures/create-test-source";
+import { initializeMatrix } from "../../matrix/matrix-provider";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 
-export function buildSourceConfig(overrides?: Record<string, unknown>): Record<string, unknown> {
+export function buildSourceConfig(
+  overrides?: Partial<ResolvedConfig> & Record<string, unknown>,
+): Record<string, unknown> {
+  // Record return kept: source config is parse-boundary data callers vary with arbitrary fields.
   return {
     source: "github:test-org/skills",
     ...overrides,
@@ -54,12 +58,11 @@ export function buildWizardResult(
 }
 
 export function buildAgentConfigs(
-  agentNames: string[],
+  agentNames: AgentName[],
   overrides?: Partial<Omit<AgentScopeConfig, "name">>,
 ): AgentScopeConfig[] {
   return agentNames.map((name) => ({
-    // Boundary cast: test factory accepts arbitrary agent names for test isolation
-    name: name as AgentName,
+    name,
     scope: overrides?.scope ?? "project",
     ...(overrides?.excluded !== undefined && { excluded: overrides.excluded }),
   }));
@@ -81,6 +84,21 @@ export function buildSourceResult(
     isLocal: true,
     ...overrides,
   };
+}
+
+/**
+ * Registers the matrix with the provider and returns a SourceLoadResult for it.
+ * Composes initializeMatrix + buildSourceResult — the common per-test arrange
+ * step for integration tests that both set the active matrix and pass a source
+ * result into an install/copy operation.
+ */
+export function initMatrixAndSource(
+  matrix: MergedSkillsMatrix,
+  sourcePath: string,
+  overrides?: Partial<SourceLoadResult>,
+): SourceLoadResult {
+  initializeMatrix(matrix);
+  return buildSourceResult(matrix, sourcePath, overrides);
 }
 
 export function buildTestProjectConfig(

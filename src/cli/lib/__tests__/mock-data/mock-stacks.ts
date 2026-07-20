@@ -1,13 +1,9 @@
 // Shared stack constants for test files.
 // TestStack arrays are used with createTestSource() for integration tests.
 
-import type { SkillId } from "../../../types";
 import type { TestStack } from "../fixtures/create-test-source.js";
-import { createMockSkillAssignment } from "../factories/skill-factories.js";
+import { sa } from "../factories/skill-factories.js";
 import { createMockStack } from "../factories/stack-factories.js";
-
-/** Shorthand alias for createMockSkillAssignment */
-const sa = (id: SkillId, preloaded = false) => createMockSkillAssignment(id, preloaded);
 
 // ---------------------------------------------------------------------------
 // Stacks from resolver.test.ts

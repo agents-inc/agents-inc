@@ -5,12 +5,11 @@ import { readFile } from "fs/promises";
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
 import { installEject, installPluginConfig } from "../../installation/local-installer";
 import { useWizardStore } from "../../../stores/wizard-store";
-import { initializeMatrix } from "../../matrix/matrix-provider";
 import { STANDARD_FILES } from "../../../consts";
 import type { MergedSkillsMatrix, ProjectConfig, SkillId } from "../../../types";
 import type { SourceLoadResult } from "../../loading/source-loader";
 import { createComprehensiveMatrix } from "../factories/matrix-factories.js";
-import { buildSourceResult } from "../factories/config-factories.js";
+import { initMatrixAndSource } from "../factories/config-factories.js";
 import {
   buildSkillConfigs,
   buildWizardResultFromStore,
@@ -55,8 +54,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
     vi.spyOn(os, "homedir").mockReturnValue(dirs.projectDir);
 
     matrix = createComprehensiveMatrix();
-    initializeMatrix(matrix);
-    sourceResult = buildSourceResult(matrix, dirs.sourceDir);
+    sourceResult = initMatrixAndSource(matrix, dirs.sourceDir);
   });
 
   afterEach(async () => {

@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import { mkdir, writeFile, readFile, rm } from "fs/promises";
-import { stringify as stringifyYaml, parse as parseYaml } from "yaml";
+import { parse as parseYaml } from "yaml";
 import { runCliCommand } from "../helpers/cli-runner.js";
+import { createImportSource } from "../helpers/disk-writers.js";
+import { silenceConsole } from "../helpers/silence-console.js";
 import { fileExists, directoryExists, createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { compileSkillPlugin, compileAllSkillPlugins } from "../../skills";
 import { validatePlugin } from "../../plugins";
@@ -28,20 +30,7 @@ const LOCAL_SKILLS_DIR = LOCAL_SKILLS_PATH;
 const LOCAL_SOURCE_NAME = "test-import-source";
 
 async function createLocalSource(projectDir: string, skills: ImportSourceSkill[]): Promise<void> {
-  const skillsDir = path.join(projectDir, LOCAL_SOURCE_NAME, STANDARD_DIRS.SKILLS);
-
-  for (const skill of skills) {
-    const skillDir = path.join(skillsDir, skill.name);
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), skill.content);
-
-    if (skill.metadata) {
-      await writeFile(
-        path.join(skillDir, STANDARD_FILES.METADATA_YAML),
-        stringifyYaml(skill.metadata),
-      );
-    }
-  }
+  await createImportSource(projectDir, LOCAL_SOURCE_NAME, skills);
 }
 
 /**
@@ -58,10 +47,9 @@ function setupImportProject(prefix: string): {
   let projectDir: string;
   let originalCwd: string;
 
-  beforeEach(async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+  silenceConsole(["log", "warn"]);
 
+  beforeEach(async () => {
     originalCwd = process.cwd();
     tempDir = await createTempDir(prefix);
     projectDir = path.join(tempDir, "project");

@@ -6,6 +6,8 @@ export {
   testSkillToResolvedSkill,
   createMockSkillDefinition,
   createMockSkillAssignment,
+  sa,
+  createMockCopiedSkill,
   createMockMultiSourceSkill,
   createMockSkillSource,
 } from "./skill-factories.js";
@@ -18,6 +20,8 @@ export {
 
 export {
   createMockMatrix,
+  createMatrixFromTestSkills,
+  buildCategoryMap,
   createComprehensiveMatrix,
   createBasicMatrix,
   createMockMatrixConfig,
@@ -30,6 +34,7 @@ export {
   buildWizardResult,
   buildAgentConfigs,
   buildSourceResult,
+  initMatrixAndSource,
   buildTestProjectConfig,
 } from "./config-factories.js";
 

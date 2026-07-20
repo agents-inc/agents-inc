@@ -9,7 +9,7 @@ import { installEject } from "../../installation/local-installer";
 import { recompileAgents } from "../../agents/agent-recompiler";
 import type { AgentName, ProjectConfig, SkillId } from "../../../types";
 import type { SourceLoadResult } from "../../loading/source-loader";
-import { buildWizardResult, buildSourceResult } from "../factories/config-factories.js";
+import { buildWizardResult, initMatrixAndSource } from "../factories/config-factories.js";
 import { readTestYaml, readTestTsConfig } from "../helpers/config-io.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { fileExists, directoryExists, createTempDir, cleanupTempDir } from "../test-fs-utils";
@@ -22,10 +22,14 @@ import {
 } from "../assertions/index.js";
 import { FULLSTACK_TRIO_MATRIX } from "../mock-data/mock-matrices";
 import { deriveInstallMode } from "../../installation/installation";
-import { initializeMatrix } from "../../matrix/matrix-provider";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, DEFAULT_SKILLS_SUBDIR, STANDARD_FILES } from "../../../consts";
+import {
+  CLAUDE_DIR,
+  CLAUDE_SRC_DIR,
+  DEFAULT_SKILLS_SUBDIR,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+} from "../../../consts";
 
-const AGENTS_SUBDIR = "agents";
 let fakeHomeDir: string;
 
 // Matrix whose skill.path values match the file system layout from createTestSource.
@@ -67,8 +71,7 @@ beforeEach(async () => {
   originalCwd = process.cwd();
   dirs = await createTestSource({ skills: INIT_TEST_SKILLS });
   process.chdir(dirs.projectDir);
-  sourceResult = buildSourceResult(INIT_TEST_MATRIX, dirs.sourceDir);
-  initializeMatrix(INIT_TEST_MATRIX);
+  sourceResult = initMatrixAndSource(INIT_TEST_MATRIX, dirs.sourceDir);
 });
 
 afterEach(async () => {
@@ -135,7 +138,7 @@ describe("Init Flow Integration: Eject Mode", () => {
     });
 
     // Agents directory should exist
-    const agentsDir = path.join(dirs.projectDir, CLAUDE_DIR, AGENTS_SUBDIR);
+    const agentsDir = path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
     expect(result.agentsDir).toBe(agentsDir);
     expect(await directoryExists(agentsDir)).toBe(true);
 
@@ -287,7 +290,9 @@ describe("Init Flow Integration: Directory Structure Verification", () => {
     ).toBe(true);
 
     // .claude/agents/ should exist
-    expect(await directoryExists(path.join(dirs.projectDir, CLAUDE_DIR, AGENTS_SUBDIR))).toBe(true);
+    expect(
+      await directoryExists(path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS)),
+    ).toBe(true);
   });
 
   it("should create skill directories with SKILL.md files", async () => {
@@ -502,14 +507,19 @@ describe("Init Flow Integration: Recompile Round-Trip", () => {
       pluginDir: dirs.projectDir,
       sourcePath: dirs.sourceDir,
       projectDir: dirs.projectDir,
-      outputDir: path.join(dirs.projectDir, CLAUDE_DIR, AGENTS_SUBDIR),
+      outputDir: path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS),
     });
 
     expect(recompileResult.failed).toHaveLength(0);
     expectCompiledAgents({ compiledAgents: recompileResult.compiled }, SELECTED_AGENTS_WEB_API);
 
     for (const agentName of recompileResult.compiled) {
-      const agentPath = path.join(dirs.projectDir, CLAUDE_DIR, AGENTS_SUBDIR, `${agentName}.md`);
+      const agentPath = path.join(
+        dirs.projectDir,
+        CLAUDE_DIR,
+        STANDARD_DIRS.AGENTS,
+        `${agentName}.md`,
+      );
       expect(await fileExists(agentPath)).toBe(true);
 
       const recompiledContent = await readFile(agentPath, "utf-8");
@@ -530,7 +540,10 @@ describe("Init Flow Integration: Recompile Round-Trip", () => {
 
     const agentContents = await Promise.all(
       installResult.compiledAgents.map((agentName) =>
-        readFile(path.join(dirs.projectDir, CLAUDE_DIR, AGENTS_SUBDIR, `${agentName}.md`), "utf-8"),
+        readFile(
+          path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS, `${agentName}.md`),
+          "utf-8",
+        ),
       ),
     );
 

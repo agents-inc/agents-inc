@@ -22,3 +22,6 @@ export const STEP_TRANSITION_DELAY_MS = 150;
 
 export const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+/** The canonical public source URL used across arrange-side test setup. */
+export const TEST_SOURCE_URL = "github:agents-inc/skills";

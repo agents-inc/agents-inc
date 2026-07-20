@@ -5,6 +5,8 @@ import { parse as parseYaml } from "yaml";
 import { runCliCommand } from "../../helpers/cli-runner.js";
 import { fileExists, directoryExists } from "../../test-fs-utils";
 import { setupIsolatedHome } from "../../helpers/isolated-home.js";
+import { createImportSource } from "../../helpers/disk-writers.js";
+import type { ImportSourceSkill } from "../../mock-data/mock-skills.js";
 import { EXIT_CODES } from "../../../exit-codes";
 import { LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../../../consts";
 
@@ -12,25 +14,27 @@ import { LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../../../consts";
 // through as-is and fetchFromSource treats it as a local path relative to cwd
 const LOCAL_SOURCE_NAME = "testrepo";
 
+function toImportSourceSkill(
+  name: string,
+  options?: { withMetadata?: boolean },
+): ImportSourceSkill {
+  return {
+    name,
+    content: `# ${name}\n\nThis is the ${name} skill.\n`,
+    ...(options?.withMetadata && { metadata: { author: "@external" } }),
+  };
+}
+
 async function createLocalSource(
   projectDir: string,
   skills: string[],
   options?: { withMetadata?: boolean },
 ): Promise<void> {
-  const skillsDir = path.join(projectDir, LOCAL_SOURCE_NAME, "skills");
-
-  for (const skillName of skills) {
-    const skillDir = path.join(skillsDir, skillName);
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(
-      path.join(skillDir, STANDARD_FILES.SKILL_MD),
-      `# ${skillName}\n\nThis is the ${skillName} skill.\n`,
-    );
-
-    if (options?.withMetadata) {
-      await writeFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), `author: "@external"\n`);
-    }
-  }
+  await createImportSource(
+    projectDir,
+    LOCAL_SOURCE_NAME,
+    skills.map((name) => toImportSourceSkill(name, options)),
+  );
 }
 
 describe("import:skill command", () => {

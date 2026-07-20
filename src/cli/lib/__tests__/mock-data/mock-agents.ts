@@ -1,6 +1,6 @@
 // Shared agent configs and definitions for test files.
 
-import type { AgentConfig, AgentDefinition } from "../../../types";
+import type { AgentConfig, AgentDefinition, AgentName } from "../../../types";
 import type { TestAgent } from "../fixtures/create-test-source";
 import { createMockAgent, createMockAgentConfig } from "../factories/agent-factories.js";
 import { REACT_SKILL, REACT_SKILL_PRELOADED, VITEST_SINGLE_FILE_SKILL } from "./mock-skills.js";
@@ -35,7 +35,12 @@ export const AGENT_DEFS = {
     description: "A code review agent",
     tools: ["Read", "Grep", "Glob"],
   },
-};
+  // satisfies (not `as const satisfies`): `as const` would make tools readonly and
+  // break the `string[]` constraint; this still validates each name is a valid AgentName.
+} satisfies Record<
+  string,
+  { name: AgentName; title: string; description: string; tools: string[] }
+>;
 
 // ---------------------------------------------------------------------------
 // Agent definitions from resolver.test.ts

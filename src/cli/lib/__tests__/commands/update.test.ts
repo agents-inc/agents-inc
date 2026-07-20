@@ -10,7 +10,7 @@ import {
   DEFAULT_TEST_SKILLS,
 } from "../mock-data/mock-skills";
 import { EXIT_CODES } from "../../exit-codes";
-import { STANDARD_FILES } from "../../../consts";
+import { LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../../consts";
 import { computeFileHash } from "../../versioning";
 import { renderSkillMd } from "../content-generators";
 import { stringify as stringifyYaml } from "yaml";
@@ -29,7 +29,7 @@ async function writeForkedLocalSkill(
   contentHash: string,
   description: string,
 ): Promise<void> {
-  const localSkillDir = path.join(localDirs.projectDir, ".claude", "skills", skillId);
+  const localSkillDir = path.join(localDirs.projectDir, LOCAL_SKILLS_PATH, skillId);
   await mkdir(localSkillDir, { recursive: true });
   await writeFile(
     path.join(localSkillDir, STANDARD_FILES.SKILL_MD),

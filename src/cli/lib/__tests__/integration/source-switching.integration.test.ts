@@ -10,12 +10,10 @@ import {
   type TestDirs,
   type TestSkill,
 } from "../fixtures/create-test-source";
-import { initializeMatrix } from "../../matrix/matrix-provider";
 import type { ProjectConfig, SkillId } from "../../../types";
 import { LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../../consts";
-import { createMockMatrix } from "../factories/matrix-factories.js";
-import { testSkillToResolvedSkill } from "../factories/skill-factories.js";
-import { buildWizardResult, buildSourceResult } from "../factories/config-factories.js";
+import { createMatrixFromTestSkills } from "../factories/matrix-factories.js";
+import { buildWizardResult, initMatrixAndSource } from "../factories/config-factories.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { readTestTsConfig } from "../helpers/config-io.js";
 import { fileExists, directoryExists } from "../test-fs-utils";
@@ -23,25 +21,17 @@ import { expectConfigSkills, expectInstallResult } from "../assertions/index.js"
 import { SWITCHABLE_SKILLS, LOCAL_SKILL_VARIANTS } from "../mock-data/mock-skills.js";
 import type { SkillConfig } from "../../../types/config";
 
-function buildMatrixFromTestSkills(skills: TestSkill[]) {
-  const matrixSkills = Object.fromEntries(
-    skills.map((skill) => [skill.id, testSkillToResolvedSkill(skill)]),
-  );
-  return createMockMatrix(matrixSkills);
-}
-
 const REACT_SKILL_ID: SkillId = "web-framework-react";
 // Boundary cast: TestSkill.id is string, but SWITCHABLE_SKILLS contains valid SkillIds
 const ALL_SKILL_NAMES = SWITCHABLE_SKILLS.map((s) => s.id) as SkillId[];
 
 /** Re-runs the eject install for every switchable skill (the re-copy path). */
 async function reinstallAllSkills(dirs: TestDirs) {
-  const matrix = buildMatrixFromTestSkills(SWITCHABLE_SKILLS);
-  initializeMatrix(matrix);
+  const matrix = createMatrixFromTestSkills(SWITCHABLE_SKILLS);
   const wizardResult = buildWizardResult(buildSkillConfigs(ALL_SKILL_NAMES, { source: "eject" }), {
     selectedAgents: ["web-developer"],
   });
-  const sourceResult = buildSourceResult(matrix, dirs.sourceDir);
+  const sourceResult = initMatrixAndSource(matrix, dirs.sourceDir);
   return installEject({ wizardResult, sourceResult, projectDir: dirs.projectDir });
 }
 

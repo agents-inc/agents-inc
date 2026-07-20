@@ -7,9 +7,8 @@ import { STANDARD_FILES } from "../../../consts";
 
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
 import { installEject } from "../../installation/local-installer";
-import { initializeMatrix } from "../../matrix/matrix-provider";
 import type { ProjectConfig, ResolvedSkill, SkillId } from "../../../types";
-import { buildWizardResult, buildSourceResult } from "../factories/config-factories.js";
+import { buildWizardResult, initMatrixAndSource } from "../factories/config-factories.js";
 import { createMockMatrix } from "../factories/matrix-factories.js";
 import { readTestTsConfig } from "../helpers/config-io.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
@@ -88,8 +87,7 @@ describe("Integration: Consumer-Defined Stacks", () => {
 
   it("should install with custom stack skills reflected in config.ts", async () => {
     const consumerMatrix = buildConsumerMatrix();
-    initializeMatrix(consumerMatrix);
-    const sourceResult = buildSourceResult(consumerMatrix, dirs.sourceDir);
+    const sourceResult = initMatrixAndSource(consumerMatrix, dirs.sourceDir);
 
     const result = await installEject({
       wizardResult: buildWizardResult(
@@ -254,8 +252,7 @@ describe("Integration: Consumer-Defined Skills Matrix", () => {
 
   it("should install all skills from source and compile agents", async () => {
     const consumerMatrix = buildConsumerMatrix();
-    initializeMatrix(consumerMatrix);
-    const sourceResult = buildSourceResult(consumerMatrix, dirs.sourceDir);
+    const sourceResult = initMatrixAndSource(consumerMatrix, dirs.sourceDir);
 
     const result = await installEject({
       wizardResult: buildWizardResult(
@@ -486,8 +483,7 @@ describe("Integration: Custom Matrix + Stacks Full Pipeline", () => {
 
     // 4. Install with the custom stack skills
     const consumerMatrix = buildConsumerMatrix();
-    initializeMatrix(consumerMatrix);
-    const sourceResult = buildSourceResult(consumerMatrix, dirs.sourceDir);
+    const sourceResult = initMatrixAndSource(consumerMatrix, dirs.sourceDir);
     const result = await installEject({
       wizardResult: buildWizardResult(
         buildSkillConfigs(["web-framework-react", "web-testing-vitest", "api-framework-hono"]),

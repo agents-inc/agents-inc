@@ -11,6 +11,7 @@ import type {
   SkillSource,
   SkillSourceType,
 } from "../../../types";
+import type { CopiedSkill } from "../../skills";
 import type { TestSkill } from "../fixtures/create-test-source";
 
 /**
@@ -262,6 +263,21 @@ export function createMockSkillDefinition(
 
 export function createMockSkillAssignment(id: SkillId, preloaded = false): SkillAssignment {
   return { id, preloaded };
+}
+
+/** Terse alias of createMockSkillAssignment for stack/assignment fixtures. */
+export const sa = (id: SkillId, preloaded = false): SkillAssignment =>
+  createMockSkillAssignment(id, preloaded);
+
+/** Creates a CopiedSkill mock (the record copySkillsToLocalFlattened reports). */
+export function createMockCopiedSkill(id: SkillId, overrides?: Partial<CopiedSkill>): CopiedSkill {
+  return {
+    skillId: id,
+    contentHash: "abc123",
+    sourcePath: `/source/skills/${id}`,
+    destPath: `/project/.claude/skills/${id}`,
+    ...overrides,
+  };
 }
 
 /**
