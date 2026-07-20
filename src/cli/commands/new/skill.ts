@@ -13,28 +13,29 @@ import { getErrorMessage } from "../../utils/errors.js";
 import { verbose } from "../../utils/logger.js";
 import { computeSkillFolderHash } from "../../lib/versioning.js";
 import { validateKebabCaseName } from "../../lib/validate-kebab-name.js";
-import { assertDirOverwritable } from "../../lib/assert-dir-overwritable.js";
 import {
   CLI_INVOKE_COMMAND,
   LOCAL_SKILLS_PATH,
   marketplaceManifestPath,
+  SCHEMA_PATHS,
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
   SKILLS_DIR_PATH,
   STANDARD_FILES,
 } from "../../consts.js";
 import { EXIT_CODES } from "../../lib/exit-codes.js";
-import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
+import { FEATURE_FLAGS, featureDisabledError } from "../../lib/feature-flags.js";
+import { yamlSchemaComment } from "../../utils/yaml-schema.js";
 import { detectInstallation } from "../../lib/installation/index.js";
 import { LOCAL_DEFAULTS } from "../../lib/metadata-keys.js";
-import type { CategoryDefinition, CategoryMap, CategoryPath } from "../../types/index.js";
+import type { CategoryDefinition, CategoryPath } from "../../types/index.js";
 import {
-  toTitleCase,
   generateSkillCategoriesTs,
   generateSkillRulesTs,
   buildCategoryEntry,
   formatTsExport,
 } from "../../lib/skills/generators.js";
+import { toTitleCase } from "../../utils/string.js";
 
 export default class NewSkill extends BaseCommand {
   static summary = "Create a new local skill with proper structure";
@@ -90,7 +91,7 @@ export default class NewSkill extends BaseCommand {
 
   async run(): Promise<void> {
     if (!FEATURE_FLAGS.NEW_SKILL_COMMAND) {
-      this.error("The `new skill` command is currently disabled while being improved", {
+      this.error(featureDisabledError("new skill"), {
         exit: EXIT_CODES.ERROR,
       });
     }
@@ -156,14 +157,10 @@ export default class NewSkill extends BaseCommand {
   }
 
   private async checkExistingDir(skillDir: string, force: boolean): Promise<void> {
-    const result = await assertDirOverwritable(skillDir);
-    if (result.ok) return;
-    if (!force) {
-      this.error(`Skill directory already exists: ${skillDir}\nUse --force to overwrite.`, {
-        exit: EXIT_CODES.ERROR,
-      });
-    }
-    this.warn(`Overwriting existing skill at ${skillDir}`);
+    await this.ensureDirOverwritable(skillDir, force, {
+      exists: `Skill directory already exists: ${skillDir}`,
+      overwriting: `Overwriting existing skill at ${skillDir}`,
+    });
   }
 
   private logSkillInfo(
@@ -326,7 +323,7 @@ export function generateMetadataYaml(
 ): string {
   const titleName = toTitleCase(name);
 
-  return `# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/cli/main/src/schemas/custom-metadata.schema.json
+  return `${yamlSchemaComment(SCHEMA_PATHS.customMetadata)}
 custom: true
 domain: ${domain}
 category: ${category}
@@ -364,10 +361,7 @@ async function updateSkillRegistryConfig(options: RegistryUpdateOptions): Promis
   const rulesPath = path.join(projectRoot, SKILL_RULES_PATH);
 
   if (await fileExists(categoriesPath)) {
-    const parsed = await loadConfig<{ version: string; categories: CategoryMap }>(
-      categoriesPath,
-      skillCategoriesFileSchema,
-    );
+    const parsed = await loadConfig(categoriesPath, skillCategoriesFileSchema);
     if (!parsed) {
       throw new Error(
         `Config at ${categoriesPath} has no default export — delete the file or add \`export default { version, categories: {} }\``,

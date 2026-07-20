@@ -7,7 +7,7 @@ import { EXIT_CODES } from "../../lib/exit-codes.js";
 import { fetchFromSource } from "../../lib/loading/index.js";
 import { importedSkillMetadataSchema } from "../../lib/schemas.js";
 import { writeMetadataYaml } from "../../lib/skills/skill-metadata.js";
-import { toTitleCase } from "../../lib/skills/generators.js";
+import { toTitleCase } from "../../utils/string.js";
 import { getCurrentDate, computeFileHash } from "../../lib/versioning.js";
 import {
   copy,
@@ -25,8 +25,8 @@ import {
   LOCAL_SKILLS_PATH,
   STANDARD_FILES,
   YAML_FORMATTING,
-  stripYamlSchemaComment,
 } from "../../consts.js";
+import { stripYamlSchemaComment } from "../../utils/yaml-schema.js";
 import { IMPORT_DEFAULTS } from "../../lib/metadata-keys.js";
 import { STATUS_MESSAGES, INFO_MESSAGES } from "../../utils/messages.js";
 

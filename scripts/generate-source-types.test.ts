@@ -207,7 +207,6 @@ describe("extractSkills", () => {
     expect(result[0].displayName).toBe("React");
     expect(result[0].description).toBe("React framework skill");
     expect(result[0].author).toBe("@test");
-    expect(result[0].tags).toStrictEqual(["ui", "frontend"]);
     expect(result[0].directoryPath).toBe("react");
     expect(result[0].path).toBe("skills/react");
   });
@@ -326,25 +325,6 @@ describe("extractSkills", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].usageGuidance).toBe("Use when building React apps");
-  });
-
-  it("defaults tags to empty array when missing", () => {
-    createSkillDir(
-      "no-tags",
-      {
-        slug: "notags",
-        category: "web-framework",
-        domain: "web",
-        displayName: "No Tags",
-        cliDescription: "No tags skill",
-      },
-      renderSkillMd("web-framework-notags", "No tags"),
-    );
-
-    const result = extractSkills(tempDir);
-
-    expect(result).toHaveLength(1);
-    expect(result[0].tags).toStrictEqual([]);
   });
 });
 
@@ -473,7 +453,7 @@ describe("generatePhase1", () => {
   it("throws on duplicate slugs", () => {
     const skills = [
       createMockExtractedSkill("web-framework-react", { slug: "react" as any }),
-      createMockExtractedSkill("web-framework-react-v2", { slug: "react" as any }),
+      createMockExtractedSkill("web-state-zustand", { slug: "react" as any }),
     ];
     const agents: AgentEntry[] = [];
 

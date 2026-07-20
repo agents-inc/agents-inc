@@ -4,13 +4,20 @@ import chalk from "chalk";
 
 import { CLI_COLORS } from "./consts.js";
 import { getErrorMessage } from "./utils/errors.js";
+import { clearTerminalScreen } from "./utils/terminal.js";
 import { EXIT_CODES } from "./lib/exit-codes.js";
 import type { ResolvedConfig } from "./lib/configuration/index.js";
+import { requireMarketplace } from "./lib/operations/source/require-marketplace.js";
+import type { SourceLoadResult } from "./lib/loading/source-loader.js";
+import { assertDirOverwritable } from "./lib/assert-dir-overwritable.js";
 
 /** Narrow interface for the sourceConfig we attach to oclif's Config in the init hook. */
 export interface ConfigWithSource {
   sourceConfig?: ResolvedConfig;
 }
+
+/** Shared source/refresh flag shape for commands that load a skills source. */
+export type SourceRefreshFlags = { source?: string; refresh: boolean };
 
 export abstract class BaseCommand extends Command {
   static baseFlags = {
@@ -82,6 +89,45 @@ export abstract class BaseCommand extends Command {
   }
 
   protected clearTerminal(): void {
-    process.stdout.write("\x1b[H\x1b[2J\x1b[3J");
+    clearTerminalScreen();
+  }
+
+  /**
+   * Resolves the marketplace required for a plugin operation, or hard-exits with
+   * an actionable error when it cannot be resolved. `onRegistered` is invoked
+   * (when provided) if the marketplace had to be registered — init uses it to log.
+   */
+  protected async requireMarketplaceOrExit(
+    sourceResult: SourceLoadResult,
+    purpose: string,
+    onRegistered?: (marketplace: string) => void,
+  ): Promise<string> {
+    const required = await requireMarketplace(sourceResult, purpose);
+    if (!required.ok) {
+      this.error(required.error, { exit: EXIT_CODES.ERROR });
+    }
+    if (required.registered) {
+      onRegistered?.(required.marketplace);
+    }
+    return required.marketplace;
+  }
+
+  /**
+   * Guards a fresh-write target directory. When `dir` already exists, hard-exits
+   * with `${messages.exists}\nUse --force to overwrite.` unless `force` is set —
+   * in which case it warns with `messages.overwriting` and proceeds. Callers own
+   * the wording because it differs per entity (skill / agent / directory).
+   */
+  protected async ensureDirOverwritable(
+    dir: string,
+    force: boolean,
+    messages: { exists: string; overwriting: string },
+  ): Promise<void> {
+    const result = await assertDirOverwritable(dir);
+    if (result.ok) return;
+    if (!force) {
+      this.error(`${messages.exists}\nUse --force to overwrite.`, { exit: EXIT_CODES.ERROR });
+    }
+    this.warn(messages.overwriting);
   }
 }

@@ -22,6 +22,7 @@ import type {
   MergedSkillsMatrix,
   ResolvedSkill,
   ResolvedStack,
+  SkillId,
 } from "../src/cli/types";
 
 // Accept skills source path as CLI arg (default: sibling skills repo)
@@ -83,7 +84,6 @@ export function extractSkills(skillsSourcePath: string): ExtractedSkillMetadata[
       displayName: metadata.displayName,
       description: metadata.cliDescription,
       usageGuidance: metadata.usageGuidance,
-      tags: Array.isArray(metadata.tags) ? metadata.tags : [],
       author: metadata.author || "",
       directoryPath: dir.name,
       path: `skills/${dir.name}`,
@@ -390,10 +390,12 @@ export function resolveStack(
     id: stack.id,
     name: stack.name,
     description: stack.description,
-    skills,
-    allSkillIds,
+    // Boundary casts: agent/category keys come from source stack data and skill IDs
+    // are validated against skillIdSet above — narrowed to the generated unions here.
+    skills: skills as ResolvedStack["skills"],
+    allSkillIds: allSkillIds as SkillId[],
     philosophy: stack.philosophy || "",
-  } as ResolvedStack;
+  };
 }
 
 // -- Main --------------------------------------------------------------------

@@ -1,10 +1,10 @@
 import os from "os";
 import React from "react";
 
-import { Flags } from "@oclif/core";
+import { Flags, type Interfaces } from "@oclif/core";
 import { render, Box, Text, useApp } from "ink";
 
-import { BaseCommand } from "../base-command.js";
+import { BaseCommand, type SourceRefreshFlags } from "../base-command.js";
 import { type WizardResultV2 } from "../components/wizard/wizard.js";
 import { runWizardSession } from "../components/wizard/run-wizard-session.js";
 import { useTerminalDimensions } from "../components/hooks/use-terminal-dimensions.js";
@@ -13,12 +13,12 @@ import {
   loadSource,
   loadAgentDefs,
   copyLocalSkills,
-  requireMarketplace,
   installPluginSkills,
   pluginInstallFailureError,
   writeProjectConfig,
   compileAgentsAllScopes,
   type CompilationResult,
+  type SkillCopyResult,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
 import { getInstallationInfo } from "../lib/plugins/plugin-info.js";
@@ -42,27 +42,32 @@ import {
   CLAUDE_SRC_DIR,
   CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
+  EDIT_PROJECT_SETUP_FLAG,
   EJECT_SOURCE,
+  STANDARD_FILES,
 } from "../consts.js";
+import { clearTerminalScreen } from "../utils/terminal.js";
 import { SelectList, type SelectListItem } from "../components/common/select-list.js";
+import { promptValue } from "../components/common/prompt-confirm.js";
 import { Spinner } from "../components/common/spinner.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
-import { getSkillById } from "../lib/matrix/matrix-provider";
-import type { ProjectConfig } from "../types/index.js";
+import type { AgentName, ProjectConfig, SkillScope } from "../types/index.js";
 import { type StartupMessage } from "../utils/logger.js";
 import { SUCCESS_MESSAGES, STATUS_MESSAGES } from "../utils/messages.js";
-import { ensureBlankGlobalConfig } from "../lib/configuration/config-writer.js";
 
-const DASHBOARD_OPTIONS: SelectListItem<string>[] = [
+const DASHBOARD_OPTIONS = [
   { label: "Edit", value: "edit" },
   { label: "Compile", value: "compile" },
   { label: "Doctor", value: "doctor" },
   { label: "List", value: "list" },
-];
+] as const satisfies readonly SelectListItem<string>[];
+
+/** The commands offered by the project dashboard (single source: DASHBOARD_OPTIONS). */
+export type DashboardCommand = (typeof DASHBOARD_OPTIONS)[number]["value"];
 
 type DashboardProps = {
-  onSelect: (command: string) => void;
+  onSelect: (command: DashboardCommand) => void;
   onCancel: () => void;
 };
 
@@ -115,7 +120,7 @@ export function formatDashboardText(data: DashboardData): string {
 export async function showDashboard(
   projectDir: string,
   log?: (message: string) => void,
-): Promise<string | null> {
+): Promise<DashboardCommand | null> {
   const data = await getDashboardData(projectDir);
 
   // Non-interactive: print text summary and exit (CI, piped, tests)
@@ -125,35 +130,58 @@ export async function showDashboard(
     return null;
   }
 
-  // First-wins resolution from the component callbacks, unmounting at the
-  // resolution site (promptConfirm model) — never read closure-mutated flags
-  // after waitUntilExit.
-  const selectedCommand = await new Promise<string | null>((resolve) => {
-    const instance = render(
-      <Dashboard
-        onSelect={(command) => {
-          instance.clear();
-          instance.unmount();
-          resolve(command);
-        }}
-        onCancel={() => {
-          instance.clear();
-          instance.unmount();
-          resolve(null);
-        }}
-      />,
-    );
-    // App exit without a callback (e.g. Ctrl+C) or a render failure counts as
-    // a cancel; resolve is first-wins, so a prior selection is unaffected.
-    instance.waitUntilExit().then(
-      () => resolve(null),
-      () => resolve(null),
-    );
-  });
+  // First-wins resolution via promptValue; clearOnResolve repaints a clean
+  // terminal before unmount (dashboard occupies the full height).
+  const selectedCommand = await promptValue<DashboardCommand | null>(
+    (resolve) => (
+      <Dashboard onSelect={(command) => resolve(command)} onCancel={() => resolve(null)} />
+    ),
+    { onExit: null, clearOnResolve: true },
+  );
 
-  process.stdout.write("\x1b[H\x1b[2J\x1b[3J");
+  clearTerminalScreen();
 
   return selectedCommand;
+}
+
+/**
+ * Why the dashboard is on screen.
+ *
+ * `"init"` — the user ran `cc init` in an already-installed directory. That is a request
+ * to set this project up, so choosing Edit continues the setup: it must materialise the
+ * project even if the wizard changes nothing.
+ *
+ * `"standalone"` — the bare `cc` dashboard. Edit is just an editor there; a pass with no
+ * changes is an inspection and must leave the filesystem untouched.
+ */
+export type DashboardOrigin = "init" | "standalone";
+
+/** The extra argv a dashboard selection needs to carry its origin into the command. */
+function dashboardCommandArgv(command: DashboardCommand, origin: DashboardOrigin): string[] {
+  if (command !== "edit" || origin !== "init") return [];
+  return [`--${EDIT_PROJECT_SETUP_FLAG}`];
+}
+
+/**
+ * Shared dashboard entry: when the project is already initialized, shows the
+ * dashboard and runs the chosen command. Returns true when the project was
+ * initialized (dashboard shown), false otherwise. Never exits the process —
+ * callers decide (the init hook exits SUCCESS at its own call site).
+ */
+export async function runDashboardFlow(
+  projectDir: string,
+  config: Interfaces.Config,
+  origin: DashboardOrigin,
+  log?: (message: string) => void,
+): Promise<boolean> {
+  const installation = await detectInstallation(projectDir);
+  if (!installation) return false;
+
+  const selectedCommand = await showDashboard(projectDir, log);
+  if (selectedCommand) {
+    await config.runCommand(selectedCommand, dashboardCommandArgv(selectedCommand, origin));
+  }
+  return true;
 }
 
 export default class Init extends BaseCommand {
@@ -190,10 +218,14 @@ export default class Init extends BaseCommand {
 
     if (await this.showDashboardIfInitialized(projectDir)) return;
 
+    // The blank global config is created by writeProjectConfig() once the
+    // wizard succeeds, never before it renders: a cancelled init must leave no
+    // artifact that the next run could mistake for an existing installation.
     const isGlobalRoot = isHomeDirectory(projectDir);
-    await this.ensureGlobalConfig(isGlobalRoot);
 
-    const { unmount, clear: clearSpinner } = render(<Spinner label="Loading skills..." />);
+    const { unmount, clear: clearSpinner } = render(
+      <Spinner label={STATUS_MESSAGES.LOADING_SKILLS} />,
+    );
     const [{ sourceResult, startupMessages }, globalConfig] = await Promise.all([
       this.loadSourceOrFail(flags),
       this.loadGlobalConfigIfExists(),
@@ -218,25 +250,7 @@ export default class Init extends BaseCommand {
   }
 
   private async showDashboardIfInitialized(projectDir: string): Promise<boolean> {
-    const existingInstallation = await detectInstallation(projectDir);
-    if (!existingInstallation) return false;
-
-    const selectedCommand = await showDashboard(projectDir, (msg) => this.log(msg));
-    if (selectedCommand) {
-      await this.config.runCommand(selectedCommand);
-    }
-    return true;
-  }
-
-  private async ensureGlobalConfig(isGlobalRoot: boolean): Promise<void> {
-    // Auto-create blank global config on first init from a project directory.
-    // This ensures the project config can always import from global.
-    if (!isGlobalRoot) {
-      const created = await ensureBlankGlobalConfig();
-      if (created) {
-        this.log("Created blank global config at ~/" + CLAUDE_SRC_DIR);
-      }
-    }
+    return runDashboardFlow(projectDir, this.config, "init", (msg) => this.log(msg));
   }
 
   private async loadGlobalConfigIfExists(): Promise<ProjectConfig | null> {
@@ -296,7 +310,7 @@ export default class Init extends BaseCommand {
   private async handleInstallation(
     result: WizardResultV2,
     sourceResult: SourceLoadResult,
-    flags: { source?: string; refresh: boolean },
+    flags: SourceRefreshFlags,
   ): Promise<void> {
     const projectDir = process.cwd();
     const activeSkills = result.skills.filter((s) => !s.excluded);
@@ -312,12 +326,17 @@ export default class Init extends BaseCommand {
     // we leave an orphaned half-install with no config.ts to recognise it.
     const resolvedMarketplace =
       pluginSkills.length > 0
-        ? await this.requireMarketplaceOrExit(sourceResult, "install plugin skills")
+        ? await this.requireMarketplaceOrExit(
+            sourceResult,
+            "install plugin skills",
+            (marketplace) => this.log(`Registering marketplace "${marketplace}"...`),
+          )
         : null;
 
-    if (installMode === "eject" || installMode === "mixed") {
-      await this.copyEjectSkillsStep(ejectedSkills, projectDir, sourceResult, installMode);
-    }
+    const copyResult =
+      installMode === "eject" || installMode === "mixed"
+        ? await this.copyEjectSkillsStep(ejectedSkills, projectDir, sourceResult, installMode)
+        : null;
 
     if (resolvedMarketplace !== null) {
       await this.installPluginsStep(pluginSkills, resolvedMarketplace, projectDir);
@@ -327,7 +346,7 @@ export default class Init extends BaseCommand {
     const pluginModeSucceeded = resolvedMarketplace !== null;
 
     try {
-      const { configResult, compileResult, projectPaths } = await this.writeConfigAndCompile(
+      const { configResult, compileResult, agentScopeMap } = await this.writeConfigAndCompile(
         result,
         sourceResult,
         flags,
@@ -336,10 +355,10 @@ export default class Init extends BaseCommand {
       this.reportSuccess(
         configResult,
         compileResult,
-        projectPaths,
+        agentScopeMap,
         installMode,
         pluginModeSucceeded,
-        ejectedSkills,
+        copyResult,
       );
 
       const permissionWarning = await checkPermissions(projectDir);
@@ -375,7 +394,7 @@ export default class Init extends BaseCommand {
     projectDir: string,
     sourceResult: SourceLoadResult,
     installMode: InstallMode,
-  ): Promise<void> {
+  ): Promise<SkillCopyResult> {
     this.log("Copying skills to local directory...");
     const copyResult = await copyLocalSkills(localSkills, projectDir, sourceResult);
 
@@ -392,6 +411,8 @@ export default class Init extends BaseCommand {
     } else {
       this.log(`Copied ${copyResult.totalCopied} skills to .claude/skills/\n`);
     }
+
+    return copyResult;
   }
 
   private async installPluginsStep(
@@ -421,35 +442,15 @@ export default class Init extends BaseCommand {
     this.log(`Installed ${pluginResult.installed.length} skill plugins\n`);
   }
 
-  /**
-   * Lazily resolves the marketplace for plugin operations and hard-errors when
-   * resolution fails. Plugin install intent is inviolable — we never silently
-   * fall back to eject or skip. Call BEFORE any filesystem mutation so that a
-   * failure leaves no partial state on disk.
-   */
-  private async requireMarketplaceOrExit(
-    sourceResult: SourceLoadResult,
-    purpose: string,
-  ): Promise<string> {
-    const required = await requireMarketplace(sourceResult, purpose);
-    if (!required.ok) {
-      this.error(required.error, { exit: EXIT_CODES.ERROR });
-    }
-    if (required.registered) {
-      this.log(`Registering marketplace "${required.marketplace}"...`);
-    }
-    return required.marketplace;
-  }
-
   private async writeConfigAndCompile(
     result: WizardResultV2,
     sourceResult: SourceLoadResult,
-    flags: { source?: string; refresh: boolean },
+    flags: SourceRefreshFlags,
     installMode: InstallMode,
   ): Promise<{
     configResult: Awaited<ReturnType<typeof writeProjectConfig>>;
     compileResult: CompilationResult;
-    projectPaths: ReturnType<typeof resolveInstallPaths>;
+    agentScopeMap: Map<AgentName, SkillScope>;
   }> {
     this.log("Generating configuration...");
     const configResult = await writeProjectConfig({
@@ -467,7 +468,6 @@ export default class Init extends BaseCommand {
 
     this.log(STATUS_MESSAGES.COMPILING_AGENTS);
     const cwd = process.cwd();
-    const projectPaths = resolveInstallPaths(cwd, "project");
     const agentDefs = await loadAgentDefs();
     const { allSkills } = await discoverInstalledSkills(cwd);
     const agentScopeMap = buildAgentScopeMap(configResult.config);
@@ -479,43 +479,100 @@ export default class Init extends BaseCommand {
     });
     this.log(`Compiled ${compileResult.compiled.length} agents\n`);
 
-    return { configResult, compileResult, projectPaths };
+    return { configResult, compileResult, agentScopeMap };
   }
 
   private reportSuccess(
     configResult: Awaited<ReturnType<typeof writeProjectConfig>>,
     compileResult: CompilationResult,
-    projectPaths: ReturnType<typeof resolveInstallPaths>,
+    agentScopeMap: Map<AgentName, SkillScope>,
     installMode: InstallMode,
     pluginModeSucceeded: boolean,
-    copiedSkills: WizardResultV2["skills"],
+    copyResult: SkillCopyResult | null,
   ): void {
     this.log(`${SUCCESS_MESSAGES.INIT_SUCCESS}\n`);
 
     const isEjectOutput =
       installMode === "eject" || (installMode === "mixed" && !pluginModeSucceeded);
-    if (isEjectOutput && copiedSkills.length > 0) {
-      this.log("Skills copied to:");
-      this.log(`  ${projectPaths.skillsDir}`);
-      for (const skill of copiedSkills) {
-        const displayName = getSkillById(skill.id).displayName;
-        this.log(`    ${displayName}/`);
-      }
-      this.log("");
+    if (isEjectOutput && copyResult && copyResult.totalCopied > 0) {
+      this.reportSkillsCopied(copyResult);
     }
-    this.log("Agents compiled to:");
-    this.log(`  ${projectPaths.agentsDir}`);
-    for (const agentName of compileResult.compiled) {
-      this.log(`    ${agentName}.md`);
-    }
-    this.log("");
+    this.reportAgentsCompiled(compileResult.compiled, agentScopeMap);
     this.log("Configuration:");
     this.log(`  ${configResult.configPath}`);
     this.log("");
     this.log("To customize agent-skill assignments:");
-    this.log(`  1. Edit .claude-src/config.ts`);
+    this.log(`  1. Edit ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
     this.log(`  2. Run '${CLI_INVOKE_COMMAND} compile' to regenerate agents`);
     this.log("");
+  }
+
+  /**
+   * Reports where the skills actually landed. `copyLocalSkills` splits by scope,
+   * so a default install driven from a project directory writes every skill
+   * under HOME — reporting the project path there names a directory that was
+   * never written.
+   *
+   * This block is a filesystem listing, so the entries are the on-disk directory
+   * names — skill ids, not display names. `copySkillsToLocalFlattened` names each
+   * destination directory after `skill.id`, so a user can copy any line and `cd`
+   * into it.
+   */
+  private reportSkillsCopied(copyResult: SkillCopyResult): void {
+    const cwd = process.cwd();
+    const groups = isHomeDirectory(cwd)
+      ? [
+          {
+            dir: resolveInstallPaths(cwd, "project").skillsDir,
+            copied: [...copyResult.globalCopied, ...copyResult.projectCopied],
+          },
+        ]
+      : [
+          { dir: resolveInstallPaths(cwd, "global").skillsDir, copied: copyResult.globalCopied },
+          { dir: resolveInstallPaths(cwd, "project").skillsDir, copied: copyResult.projectCopied },
+        ].filter((group) => group.copied.length > 0);
+
+    for (const group of groups) {
+      this.log("Skills copied to:");
+      this.log(`  ${group.dir}`);
+      for (const copied of group.copied) {
+        this.log(`    ${copied.skillId}/`);
+      }
+      this.log("");
+    }
+  }
+
+  /**
+   * Reports where the agents actually landed, mirroring the scope split
+   * `compileAgentsAllScopes` performs: one pass at the home root, otherwise a
+   * global pass under HOME and a project pass under the project directory.
+   */
+  private reportAgentsCompiled(
+    compiled: AgentName[],
+    agentScopeMap: Map<AgentName, SkillScope>,
+  ): void {
+    const cwd = process.cwd();
+    const groups = isHomeDirectory(cwd)
+      ? [{ dir: resolveInstallPaths(cwd, "project").agentsDir, agents: compiled }]
+      : [
+          {
+            dir: resolveInstallPaths(cwd, "global").agentsDir,
+            agents: compiled.filter((name) => agentScopeMap.get(name) === "global"),
+          },
+          {
+            dir: resolveInstallPaths(cwd, "project").agentsDir,
+            agents: compiled.filter((name) => agentScopeMap.get(name) !== "global"),
+          },
+        ].filter((group) => group.agents.length > 0);
+
+    for (const group of groups) {
+      this.log("Agents compiled to:");
+      this.log(`  ${group.dir}`);
+      for (const agentName of group.agents) {
+        this.log(`    ${agentName}.md`);
+      }
+      this.log("");
+    }
   }
 }
 
@@ -526,12 +583,18 @@ export type DashboardData = {
   source?: string;
 };
 
-/** Gathers dashboard data from the installation and project config. */
+/**
+ * Gathers dashboard data from the installation and project config.
+ *
+ * Both counts come from the same scope-aware installation so the summary cannot
+ * mix a project-only figure with a global one — a default install driven from a
+ * project directory puts every skill and agent under HOME.
+ */
 export async function getDashboardData(projectDir: string): Promise<DashboardData> {
   const [info, loaded] = await Promise.all([getInstallationInfo(), loadProjectConfig(projectDir)]);
 
   const activeSkills = loaded?.config?.skills?.filter((s) => !s.excluded);
-  const skillCount = activeSkills?.length ?? 0;
+  const skillCount = info?.skillCount ?? 0;
   const agentCount = info?.agentCount ?? 0;
   const mode = info?.mode ?? (activeSkills ? deriveInstallMode(activeSkills) : "eject");
   const source = loaded?.config?.source;

@@ -40,10 +40,20 @@ export const CACHE_DIR = path.join(os.homedir(), ".cache", DEFAULT_PLUGIN_NAME);
  */
 export const CLI_INVOKE_COMMAND = "npx @agents-inc/cli";
 
+/**
+ * Internal `edit` flag marking the invocation as the project-setup half of a `cc init`
+ * that routed through the dashboard. Not part of the documented CLI surface (declared
+ * `hidden`): `init` is the only caller, and it passes the flag so `edit` can tell
+ * "set this project up" apart from a bare inspection.
+ */
+export const EDIT_PROJECT_SETUP_FLAG = "project-setup";
+
 export const SKILL_CATEGORIES_PATH = "config/skill-categories.ts";
 export const SKILL_RULES_PATH = "config/skill-rules.ts";
 export const STACKS_FILE_PATH = "config/stacks.ts";
-export const SKILLS_DIR_PATH = "src/skills";
+/** Source root directory inside a marketplace/source repo (holds skills/, agents/, etc.). */
+export const SOURCE_SRC_DIR = "src";
+export const SKILLS_DIR_PATH = `${SOURCE_SRC_DIR}/skills`;
 export const LOCAL_SKILLS_PATH = ".claude/skills";
 
 /** Synthetic source name for skills copied into the project (ejected) rather than installed as plugins. */
@@ -54,36 +64,46 @@ export const LOCAL_PSEUDO_CATEGORY = "local";
 
 export const DIRS = {
   agents: "src/agents",
-  skills: "src/skills",
+  skills: SKILLS_DIR_PATH,
   stacks: "src/stacks",
   templates: "src/agents/_templates",
   commands: "src/commands",
 } as const;
 
+/** Single source for the metadata file name shared by skill and agent metadata. */
+const METADATA_YAML_FILE = "metadata.yaml";
+
 export const STANDARD_FILES = {
   SKILL_MD: "SKILL.md",
-  METADATA_YAML: "metadata.yaml",
+  METADATA_YAML: METADATA_YAML_FILE,
   METADATA_JSON: "metadata.json",
   CONFIG_YAML: "config.yaml",
   SKILL_CATEGORIES_TS: "skill-categories.ts",
   SKILL_RULES_TS: "skill-rules.ts",
-  AGENT_METADATA_YAML: "metadata.yaml",
-  PLUGIN_JSON: "plugin.json",
+  AGENT_METADATA_YAML: METADATA_YAML_FILE,
+  PLUGIN_JSON: PLUGIN_MANIFEST_FILE,
   CONFIG_TS: "config.ts",
   CONFIG_TYPES_TS: "config-types.ts",
   CLAUDE_MD: "CLAUDE.md",
+  README_MD: "README.md",
   REFERENCE_MD: "reference.md",
   IDENTITY_MD: "identity.md",
   PLAYBOOK_MD: "playbook.md",
   OUTPUT_MD: "output.md",
   CRITICAL_REQUIREMENTS_MD: "critical-requirements.md",
   CRITICAL_REMINDERS_MD: "critical-reminders.md",
+  SETTINGS_JSON: "settings.json",
+  SETTINGS_LOCAL_JSON: "settings.local.json",
 } as const;
 
 export const STANDARD_DIRS = {
   EXAMPLES: "examples",
   SCRIPTS: "scripts",
   SKILLS: "skills",
+  AGENTS: "agents",
+  COMMANDS: "commands",
+  /** Legacy per-project template override directory (`.claude/templates`). */
+  TEMPLATES: "templates",
 } as const;
 
 export const DEFAULT_VERSION = "1.0.0";
@@ -98,32 +118,12 @@ const SCHEMA_PKG_PREFIX = "https://raw.githubusercontent.com/agents-inc/cli/main
 export const SCHEMA_PATHS = {
   agent: `${SCHEMA_PKG_PREFIX}/agent.schema.json`,
   metadata: `${SCHEMA_PKG_PREFIX}/metadata.schema.json`,
+  customMetadata: `${SCHEMA_PKG_PREFIX}/custom-metadata.schema.json`,
   marketplace: `${SCHEMA_PKG_PREFIX}/marketplace.schema.json`,
   projectConfig: `${SCHEMA_PKG_PREFIX}/project-config.schema.json`,
   projectSourceConfig: `${SCHEMA_PKG_PREFIX}/project-source-config.schema.json`,
   stacks: `${SCHEMA_PKG_PREFIX}/stacks.schema.json`,
 } as const;
-
-/** Generates a yaml-language-server schema comment for the top of YAML files. */
-export function yamlSchemaComment(schemaPath: string): string {
-  return `# yaml-language-server: $schema=${schemaPath}`;
-}
-
-/**
- * Splits YAML file content into its leading yaml-language-server schema
- * comment (empty string when absent, trailing newline included when present)
- * and the parseable YAML body.
- */
-export function stripYamlSchemaComment(content: string): {
-  schemaComment: string;
-  yamlContent: string;
-} {
-  const lines = content.split("\n");
-  if (lines[0]?.startsWith("# yaml-language-server:")) {
-    return { schemaComment: `${lines[0]}\n`, yamlContent: lines.slice(1).join("\n") };
-  }
-  return { schemaComment: "", yamlContent: content };
-}
 
 export const YAML_FORMATTING = {
   INDENT: 2,
@@ -132,23 +132,29 @@ export const YAML_FORMATTING = {
   LINE_WIDTH_NONE: 0,
 } as const;
 
+// Shared glyphs: SELECTED/CHECK render the same checkmark; SKIPPED/DISABLED the
+// same en-dash. Both keys are kept so call sites express intent, but the value
+// has a single source.
+const CHECK_GLYPH = "\u2713";
+const EN_DASH_GLYPH = "\u2013";
+
 export const UI_SYMBOLS = {
   CHECKBOX_CHECKED: "[x]",
   CHECKBOX_UNCHECKED: "[ ]",
   CHEVRON: "\u276F",
   CHEVRON_SPACER: " ",
-  SELECTED: "\u2713",
+  SELECTED: CHECK_GLYPH,
   UNSELECTED: "\u25CB",
   CURRENT: "\u25CF",
-  SKIPPED: "\u2013",
+  SKIPPED: EN_DASH_GLYPH,
   DISCOURAGED: "!",
-  DISABLED: "\u2013",
+  DISABLED: EN_DASH_GLYPH,
   LOCK: "\uD83D\uDD12",
   EJECT: "\u23CF",
   BULLET: "\u2022",
   SCROLL_UP: "\u25B2",
   SCROLL_DOWN: "\u25BC",
-  CHECK: "\u2713",
+  CHECK: CHECK_GLYPH,
   CROSS: "\u2717",
 } as const;
 
@@ -158,10 +164,17 @@ export const GITHUB_SOURCE = {
   GH_PREFIX: "gh:",
 } as const;
 
-export const DEFAULT_SKILLS_SUBDIR = "skills";
+/** Conventional skills subdirectory name (same value as `STANDARD_DIRS.SKILLS`). */
+export const DEFAULT_SKILLS_SUBDIR = STANDARD_DIRS.SKILLS;
+
+/** Name written into a global-scope config's `name` field (`~/.claude-src/config.ts`). */
+export const GLOBAL_CONFIG_NAME = "global";
 
 /** Strict kebab-case: starts with letter, segments separated by single hyphens, no trailing hyphens */
 export const KEBAB_CASE_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+
+/** Author handle format: `@` followed by a lowercase-led alphanumeric-hyphen slug. */
+export const AUTHOR_HANDLE_PATTERN = /^@[a-z][a-z0-9-]*$/;
 
 export const HASH_PREFIX_LENGTH = 7;
 
@@ -198,8 +211,15 @@ export const DEFAULT_BRANDING = {
   TAGLINE: "AI-powered development tools",
 } as const;
 
-/** Fallback name for the default public marketplace when marketplace.json is unavailable */
-export const DEFAULT_PUBLIC_SOURCE_NAME = "agents-inc";
+/**
+ * Fallback name for the default public marketplace when marketplace.json is
+ * unavailable. Same value as `DEFAULT_PLUGIN_NAME` but a distinct concept: this
+ * is the resolved source/marketplace name, that is the plugin bundle name.
+ */
+export const DEFAULT_PUBLIC_SOURCE_NAME = DEFAULT_PLUGIN_NAME;
+
+/** Canonical name of the built-in public source. */
+export const PUBLIC_SOURCE_NAME = "public";
 
 /** Human-readable labels for skill source types shown in the wizard and edit command */
 export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
@@ -207,6 +227,22 @@ export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   eject: "Eject",
   "agents-inc": "Agents Inc",
 };
+
+/**
+ * Column-header labels for source types in the source grid. Distinct from
+ * `SOURCE_DISPLAY_NAMES` (inline labels): headers read "Local"/"Plugin" where
+ * the inline labels read "Eject"/"Agents Inc".
+ */
+export const SOURCE_HEADER_NAMES: Record<string, string> = {
+  eject: "Local",
+  "agents-inc": "Plugin",
+  public: "Public",
+};
+
+/** Resolves a source name to its human-readable display label. */
+export function formatSourceDisplayName(source: string): string {
+  return SOURCE_DISPLAY_NAMES[source] ?? source;
+}
 
 // TODO: update naming convention to GRAY_1,2, etc
 export const CLI_COLORS = {
@@ -243,6 +279,9 @@ export const BUILT_IN_DOMAIN_ORDER: readonly Domain[] = [
 
 /** Default domains pre-selected when "Start from scratch" is chosen (all except CLI) */
 export const DEFAULT_SCRATCH_DOMAINS: readonly Domain[] = ["web", "api", "mobile"];
+
+/** Domain used when no active domain can be resolved from wizard state. */
+export const FALLBACK_DOMAIN: Domain = "web";
 
 export const ASCII_LOGO = ` █████╗  ██████╗ ███████╗███╗   ██╗████████╗███████╗      ██╗███╗   ██╗ ██████╗
 ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝██╔════╝      ██║████╗  ██║██╔════╝

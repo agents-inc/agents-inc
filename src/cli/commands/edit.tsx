@@ -7,21 +7,20 @@ import { render } from "ink";
 
 import { difference, indexBy } from "remeda";
 
-import { BaseCommand } from "../base-command.js";
+import { BaseCommand, type SourceRefreshFlags } from "../base-command.js";
 import { type WizardResultV2 } from "../components/wizard/wizard.js";
 import { runWizardSession } from "../components/wizard/run-wizard-session.js";
 import {
-  CLAUDE_DIR,
   CLI_INVOKE_COMMAND,
   CLI_COLORS,
+  EDIT_PROJECT_SETUP_FLAG,
   EJECT_SOURCE,
-  SOURCE_DISPLAY_NAMES,
+  formatSourceDisplayName,
 } from "../consts.js";
 import {
   detectProject,
   loadSource,
   copyLocalSkills,
-  requireMarketplace,
   installPluginSkills,
   pluginInstallFailureError,
   uninstallPluginSkills,
@@ -40,9 +39,11 @@ import {
   isHomeDirectory,
   installBaseDir,
   resolveInstallPaths,
+  writeConfigFile,
 } from "../lib/installation/index.js";
-import { matrix, getSkillById } from "../lib/matrix/matrix-provider";
-import { activeAgentScopeMap } from "../lib/configuration/scope-predicates.js";
+import { matrix, getSkillById, getSkillDisplayName } from "../lib/matrix/matrix-provider";
+import { activeAgentScopeMap, isActiveAt } from "../lib/configuration/scope-predicates.js";
+import { loadProjectConfigFromDir } from "../lib/configuration/index.js";
 import type { SourceLoadResult } from "../lib/loading/index.js";
 import {
   discoverAllPluginSkills,
@@ -56,31 +57,56 @@ import type {
   AgentName,
   AgentScopeConfig,
   ProjectConfig,
+  SkillScope,
 } from "../types/index.js";
 import { claudePluginInstall, claudePluginUninstall } from "../utils/exec.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { remove } from "../utils/fs.js";
 import { type StartupMessage } from "../utils/logger.js";
-import { ERROR_MESSAGES } from "../utils/messages.js";
+import { ERROR_MESSAGES, STATUS_MESSAGES } from "../utils/messages.js";
+import { formatScopeTag } from "../lib/wizard/index.js";
+import { typedKeys } from "../utils/typed-object.js";
 
-function formatSourceDisplayName(sourceName: string): string {
-  return SOURCE_DISPLAY_NAMES[sourceName] ?? sourceName;
-}
-
-function formatScopeTag(scope: "project" | "global"): string {
-  return scope === "global" ? "[G]" : "[P]";
-}
+/** A scope transition (`from` → `to`) for a re-scoped skill or agent. */
+type ScopeChange = { from: SkillScope; to: SkillScope };
 
 /**
  * Dual-scope add/remove: the project half of a [P][G] pair was toggled while the
  * global half persists. Reported as a project-scope addition/removal; a
  * scope-change arrow line would falsely claim the global install moved.
  */
-function formatDualScopeTransition(displayName: string, to: "project" | "global"): string {
+function formatDualScopeTransition(displayName: string, to: SkillScope): string {
   const isAdd = to === "project";
   const prefix = isAdd ? "+" : "-";
   const color = isAdd ? CLI_COLORS.SUCCESS : CLI_COLORS.ERROR;
   return chalk.hex(color)(`  ${prefix} ${displayName} [P]`);
+}
+
+/** The migrated `source` for an active-global entry, or the entry unchanged. */
+function withMigratedSource(
+  skill: SkillConfig,
+  migratedSources: ReadonlyMap<SkillId, string>,
+): SkillConfig {
+  if (!isActiveAt(skill, "global")) return skill;
+  const source = migratedSources.get(skill.id);
+  if (source === undefined || source === skill.source) return skill;
+  return { ...skill, source };
+}
+
+/**
+ * @internal Exported for testing
+ *
+ * Rewrites `source` on exactly the active-global entries listed in `migratedSources`,
+ * returning every other entry — including global entries this session did not migrate —
+ * identical by reference. `changed` is false when nothing needed rewriting, so the caller
+ * can skip the global write entirely.
+ */
+export function applyMigratedGlobalSources(
+  globalSkills: SkillConfig[],
+  migratedSources: ReadonlyMap<SkillId, string>,
+): { skills: SkillConfig[]; changed: boolean } {
+  const skills = globalSkills.map((skill) => withMigratedSource(skill, migratedSources));
+  return { skills, changed: skills.some((skill, index) => skill !== globalSkills[index]) };
 }
 
 type EditContext = {
@@ -117,13 +143,20 @@ export default class Edit extends BaseCommand {
       description: "Force refresh from remote sources",
       default: false,
     }),
+    [EDIT_PROJECT_SETUP_FLAG]: Flags.boolean({
+      description: "Internal: this run continues an `init` project setup",
+      default: false,
+      hidden: true,
+    }),
   };
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Edit);
     const cwd = process.cwd();
 
-    const { unmount, clear: clearSpinner } = render(<Spinner label="Loading skills..." />);
+    const { unmount, clear: clearSpinner } = render(
+      <Spinner label={STATUS_MESSAGES.LOADING_SKILLS} />,
+    );
     const context = await this.loadContext(flags);
     clearSpinner();
     unmount();
@@ -154,8 +187,19 @@ export default class Edit extends BaseCommand {
       newAgents: result.agentConfigs,
       oldAgents: context.projectConfig?.agents ?? [],
     });
+    // `cc init` inside a project means "set this project up", so the project must be
+    // materialised — `<project>/.claude-src/config.ts` + `config-types.ts` written and the
+    // path registered in the global `projects[]` — even when the wizard produced no roster
+    // change. At the home root there is no project to set up: the global install is what the
+    // dashboard was shown for, so a no-change pass there stays an inspection, as does every
+    // bare `cc edit`.
+    const isProjectSetup = flags[EDIT_PROJECT_SETUP_FLAG] && !isHomeDirectory(cwd);
+
     if (!hasAnyChanges(changes)) {
       this.log(chalk.hex(CLI_COLORS.NEUTRAL)("No changes made."));
+      if (!isProjectSetup) return;
+      await this.writeConfigAndCompile(result, context, flags, cwd);
+      this.logCompletionSummary(changes);
       return;
     }
 
@@ -167,17 +211,18 @@ export default class Edit extends BaseCommand {
       context,
       cwd,
     );
+    await this.recordGlobalSourceMigrations(migratedSkillIds, filteredResult.skills, cwd);
     await this.applyScopeChanges(changes, filteredResult, context, cwd);
-    await this.applySourceChanges(changes, activeOldSkills, context, cwd, migratedSkillIds);
+    await this.applySourceChanges(changes, activeOldSkills, cwd, migratedSkillIds);
     await this.applyPluginChanges(changes, filteredResult, activeOldSkills, context, cwd);
     await this.copyNewLocalSkills(changes, filteredResult, context, cwd);
     await this.removeDeletedLocalSkills(changes, activeOldSkills, cwd);
-    await this.writeConfigAndCompile(result, activeNewSkills, context, flags, cwd);
+    await this.writeConfigAndCompile(result, context, flags, cwd);
     await this.cleanupStaleAgentFiles(changes, activeOldAgents, cwd);
     this.logCompletionSummary(changes);
   }
 
-  private async loadContext(flags: { source?: string; refresh: boolean }): Promise<EditContext> {
+  private async loadContext(flags: SourceRefreshFlags): Promise<EditContext> {
     const detected = await detectProject();
     if (!detected) {
       this.error(ERROR_MESSAGES.NO_INSTALLATION, {
@@ -215,8 +260,7 @@ export default class Edit extends BaseCommand {
     let currentSkillIds: SkillId[];
     try {
       const discoveredSkills = await discoverAllPluginSkills(projectDir);
-      // Boundary cast: discoverAllPluginSkills keys are skill IDs from frontmatter
-      const pluginSkillIds = Object.keys(discoveredSkills) as SkillId[];
+      const pluginSkillIds = typedKeys(discoveredSkills);
 
       // Merge plugin-discovered skills with config skills (catches local skills and
       // global-scoped plugins that discoverAllPluginSkills doesn't find).
@@ -274,6 +318,64 @@ export default class Edit extends BaseCommand {
     });
   }
 
+  /**
+   * Records, in the GLOBAL config, the install-mode migrations this run already performed
+   * under `$HOME`.
+   *
+   * A project-context edit otherwise never writes global config (commit 403df46, "never
+   * modify global config from project-level operations"), and `authoritativeScope: "owned"`
+   * enforces that for the roster — an inherited global-active entry is read-only, so
+   * `mergeGlobalConfigs` preserves it verbatim. That protection is correct for selection and
+   * scope, but `executeMigration` resolves each skill's paths from ITS OWN scope: switching a
+   * global-scoped skill's source has already copied it under `$HOME` (or deleted it) and
+   * added/removed its user-scope plugin registration by the time the config is written.
+   * Leaving the global config alone there protects nothing — it only makes the recorded
+   * source contradict the filesystem and the plugin registry.
+   *
+   * So authority follows the work actually performed, and no further: only ids
+   * `executeMigration` acted on this run are rewritten, and only their `source` field. Global
+   * entries this session merely displayed, re-scoped or deselected are untouched, as are
+   * `marketplace`, `stack`, `agents` and every other registered project's view of them.
+   * Refusing the switch instead is not an option — driving a global-scope migration from a
+   * project directory is a supported flow (`scope-aware-local-copy` lifecycle tests).
+   *
+   * Runs BEFORE `writeConfigAndCompile`, so the global config written here is the one
+   * `writeScopedConfigs` reloads, keeps (existing wins in `mergeGlobalConfigs`) and inlines
+   * into the project config — both files then tell the same story.
+   */
+  private async recordGlobalSourceMigrations(
+    migratedSkillIds: Set<SkillId>,
+    newSkills: SkillConfig[],
+    cwd: string,
+  ): Promise<void> {
+    // A global-context edit writes the whole global config from the wizard result already.
+    if (isHomeDirectory(cwd)) return;
+
+    const migratedSources = new Map(
+      newSkills
+        .filter((s) => migratedSkillIds.has(s.id) && isActiveAt(s, "global"))
+        .map((s) => [s.id, s.source] as const),
+    );
+    if (migratedSources.size === 0) return;
+
+    const existingGlobal = await loadProjectConfigFromDir(os.homedir());
+    // No global config yet — `writeScopedConfigs` writes the global split verbatim,
+    // migrated source included, so there is nothing to reconcile.
+    if (!existingGlobal) return;
+
+    const { skills, changed } = applyMigratedGlobalSources(
+      existingGlobal.config.skills,
+      migratedSources,
+    );
+    if (!changed) return;
+
+    try {
+      await writeConfigFile({ ...existingGlobal.config, skills }, existingGlobal.configPath);
+    } catch (error) {
+      this.warn(`Could not record global source change: ${getErrorMessage(error)}`);
+    }
+  }
+
   private reportValidationErrors(result: WizardResultV2): void {
     if (result.validation.errors.length > 0) {
       for (const err of result.validation.errors) {
@@ -308,10 +410,9 @@ export default class Edit extends BaseCommand {
       );
     }
     for (const skillId of removedSkills) {
-      const skill = matrix.skills[skillId];
       const scope = oldSkills.find((s) => s.id === skillId)?.scope;
       const scopeLabel = scope ? ` ${formatScopeTag(scope)}` : "";
-      this.log(chalk.hex(CLI_COLORS.ERROR)(`  - ${skill?.displayName ?? skillId}${scopeLabel}`));
+      this.log(chalk.hex(CLI_COLORS.ERROR)(`  - ${getSkillDisplayName(skillId)}${scopeLabel}`));
     }
     for (const agentName of addedAgents) {
       this.log(
@@ -325,7 +426,7 @@ export default class Edit extends BaseCommand {
       );
     }
     for (const [skillId, change] of sourceChanges) {
-      const displayName = matrix.skills[skillId]?.displayName ?? skillId;
+      const displayName = getSkillDisplayName(skillId);
       const fromLabel = formatSourceDisplayName(change.from);
       const toLabel = formatSourceDisplayName(change.to);
       this.log(
@@ -334,7 +435,7 @@ export default class Edit extends BaseCommand {
       );
     }
     for (const [skillId, change] of scopeChanges) {
-      const displayName = matrix.skills[skillId]?.displayName ?? skillId;
+      const displayName = getSkillDisplayName(skillId);
 
       if (dualScopeSkillTransitions.has(skillId)) {
         this.log(formatDualScopeTransition(displayName, change.to));
@@ -395,12 +496,33 @@ export default class Edit extends BaseCommand {
             `Switching ${migrationPlan.toPlugin.length} skill(s) to plugin`,
           ),
         );
+        // Installing a plugin needs the marketplace REGISTERED and up to date with the
+        // Claude CLI — the same precondition `applyPluginChanges` and `applyScopeChanges`
+        // establish. Without it `claude plugin install` rejects every ref against a stale
+        // local copy. Runs before `executeMigration` so an unresolvable marketplace exits
+        // while the ejected working copies are still intact. Eject-side plugin uninstalls
+        // are diagnostic-only, so only plugin-install work demands this.
+        await this.requireMarketplaceOrExit(context.sourceResult, "migrate skills to plugin mode");
       }
 
       const migrationResult = await executeMigration(migrationPlan, cwd, context.sourceResult);
 
       for (const warning of migrationResult.warnings) {
         this.warn(warning);
+      }
+      for (const item of migrationResult.failedPluginInstalls) {
+        this.warn(`Failed to install plugin ${item.id}: ${item.error}`);
+      }
+
+      // Plugin install intent is inviolable — a migration whose plugin could not be
+      // installed must not reach `recordGlobalSourceMigrations` or
+      // `writeConfigAndCompile`, either of which would persist a marketplace `source`
+      // for a skill with no plugin registration. Same guard as the newly-added-skill
+      // path in `applyPluginChanges`.
+      if (migrationResult.failedPluginInstalls.length > 0) {
+        this.error(pluginInstallFailureError(migrationResult.failedPluginInstalls.length), {
+          exit: EXIT_CODES.ERROR,
+        });
       }
     }
 
@@ -453,7 +575,6 @@ export default class Edit extends BaseCommand {
   private async applySourceChanges(
     changes: ConfigChanges,
     activeOldSkills: SkillConfig[],
-    context: EditContext,
     cwd: string,
     migratedSkillIds: Set<SkillId>,
   ): Promise<void> {
@@ -537,22 +658,6 @@ export default class Edit extends BaseCommand {
     }
   }
 
-  /**
-   * Lazily resolves the marketplace for plugin operations and hard-errors when
-   * resolution fails. Plugin install intent is inviolable — we never silently
-   * fall back to eject or skip.
-   */
-  private async requireMarketplaceOrExit(
-    sourceResult: SourceLoadResult,
-    purpose: string,
-  ): Promise<string> {
-    const required = await requireMarketplace(sourceResult, purpose);
-    if (!required.ok) {
-      this.error(required.error, { exit: EXIT_CODES.ERROR });
-    }
-    return required.marketplace;
-  }
-
   private async copyNewLocalSkills(
     changes: ConfigChanges,
     filteredResult: WizardResultV2,
@@ -594,9 +699,8 @@ export default class Edit extends BaseCommand {
 
   private async writeConfigAndCompile(
     result: WizardResultV2,
-    activeNewSkills: SkillConfig[],
     context: EditContext,
-    flags: { source?: string; refresh: boolean },
+    flags: SourceRefreshFlags,
     cwd: string,
   ): Promise<void> {
     // Load agent definitions — needed for both config-types.ts and recompilation
@@ -710,8 +814,8 @@ export type ConfigChanges = {
   addedAgents: AgentName[];
   removedAgents: AgentName[];
   sourceChanges: Map<SkillId, { from: string; to: string }>;
-  scopeChanges: Map<SkillId, { from: "project" | "global"; to: "project" | "global" }>;
-  agentScopeChanges: Map<AgentName, { from: "project" | "global"; to: "project" | "global" }>;
+  scopeChanges: Map<SkillId, ScopeChange>;
+  agentScopeChanges: Map<AgentName, ScopeChange>;
   /**
    * Skill ids whose `scopeChanges` entry is a dual-scope add/remove — the project
    * half of a `[P][G]` pair was toggled while the global half persists — NOT a true
@@ -823,13 +927,8 @@ function detectPropertyChanges<T, K extends string, V>(
  */
 function detectDualScopeTransitions<
   K extends string,
-  T extends { scope: "project" | "global"; excluded?: boolean },
->(
-  scopeChanges: Map<K, { from: "project" | "global"; to: "project" | "global" }>,
-  fullNew: T[],
-  fullOld: T[],
-  getKey: (item: T) => K,
-): Set<K> {
+  T extends { scope: SkillScope; excluded?: boolean },
+>(scopeChanges: Map<K, ScopeChange>, fullNew: T[], fullOld: T[], getKey: (item: T) => K): Set<K> {
   const hasGlobalTombstone = (items: T[], key: K): boolean =>
     items.some((item) => getKey(item) === key && item.scope === "global" && item.excluded === true);
 
@@ -868,8 +967,8 @@ export type PluginScopeMigrationResult = {
 
 /** @internal Exported for testing */
 export async function migratePluginSkillScopes(
-  scopeChanges: Map<SkillId, { from: "project" | "global"; to: "project" | "global" }>,
-  skills: Array<{ id: SkillId; source: string }>,
+  scopeChanges: Map<SkillId, ScopeChange>,
+  skills: Pick<SkillConfig, "id" | "source">[],
   marketplace: string,
   projectDir: string,
 ): Promise<PluginScopeMigrationResult> {
