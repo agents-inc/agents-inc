@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
 import { z } from "zod";
 import os from "os";
+import type { ClaudePluginScope } from "../types/config";
 import { getErrorMessage } from "./errors";
 import { warn } from "./logger";
 
@@ -131,13 +132,13 @@ export async function execCommand(
 }
 
 /** User-scoped plugins run from home dir so Claude CLI only writes to ~/.claude/settings.json */
-function resolvePluginCwd(scope: "project" | "user", projectDir: string): string {
+function resolvePluginCwd(scope: ClaudePluginScope, projectDir: string): string {
   return scope === "user" ? os.homedir() : projectDir;
 }
 
 export async function claudePluginInstall(
   pluginPath: string,
-  scope: "project" | "user",
+  scope: ClaudePluginScope,
   projectDir: string,
 ): Promise<void> {
   validatePluginPath(pluginPath);
@@ -269,7 +270,7 @@ export async function claudePluginMarketplaceUpdate(name: string): Promise<void>
 
 export async function claudePluginUninstall(
   pluginName: string,
-  scope: "project" | "user",
+  scope: ClaudePluginScope,
   projectDir: string,
 ): Promise<void> {
   validatePluginName(pluginName);
@@ -301,7 +302,7 @@ export async function claudePluginUninstall(
  */
 export async function claudePluginUninstallBestEffort(
   pluginRef: string,
-  primaryScope: "project" | "user",
+  primaryScope: ClaudePluginScope,
   projectDir: string,
 ): Promise<void> {
   const fallbackScope = primaryScope === "project" ? "user" : "project";

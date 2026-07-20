@@ -7,17 +7,20 @@ export { CATEGORIES, DOMAINS } from "./generated/source-types";
 // Import locally for use within this file
 import type { Category, Domain } from "./generated/source-types";
 
-/** Claude model selector for agent configuration */
-export type ModelName = "sonnet" | "opus" | "haiku" | "inherit";
+/** Claude model selectors for agent configuration */
+export const MODEL_NAMES = ["sonnet", "opus", "haiku", "inherit"] as const;
+export type ModelName = (typeof MODEL_NAMES)[number];
 
-/** Agent permission mode for Claude Code tool access */
-export type PermissionMode =
-  | "default"
-  | "acceptEdits"
-  | "dontAsk"
-  | "bypassPermissions"
-  | "plan"
-  | "delegate";
+/** Agent permission modes for Claude Code tool access */
+export const PERMISSION_MODES = [
+  "default",
+  "acceptEdits",
+  "dontAsk",
+  "bypassPermissions",
+  "plan",
+  "delegate",
+] as const;
+export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
 /**
  * Category definitions indexed by category ID.
@@ -25,9 +28,6 @@ export type PermissionMode =
  * may only define a subset of all possible categories).
  */
 export type CategoryMap = Partial<Record<Category, CategoryDefinition>>;
-
-/** Map from category to its domain — used by wizard store for domain lookups */
-export type CategoryDomainMap = Partial<Record<Category, { domain?: Domain }>>;
 
 /**
  * Full domain selections used throughout the wizard pipeline (store, components, result).
@@ -72,19 +72,18 @@ export type RelationshipDefinitions = {
   compatibleWith?: CompatibilityGroup[];
 };
 
-/** Mutual exclusion rule - selecting any one skill disables ALL others */
-export type ConflictRule = {
+/** Base shape for skill-group rules: a set of related slugs plus a reason */
+export type SkillGroupRule = {
   /** Skill slugs (resolved to canonical IDs by matrix-loader) */
   skills: SkillSlug[];
   reason: string;
 };
 
+/** Mutual exclusion rule - selecting any one skill disables ALL others */
+export type ConflictRule = SkillGroupRule;
+
 /** Soft conflict rule - selecting any one shows a warning for ALL others */
-export type DiscourageRule = {
-  /** Skill slugs (resolved to canonical IDs by matrix-loader) */
-  skills: SkillSlug[];
-  reason: string;
-};
+export type DiscourageRule = SkillGroupRule;
 
 /** Flat opinionated pick — skills we actively recommend */
 export type Recommendation = {
@@ -93,10 +92,7 @@ export type Recommendation = {
 };
 
 /** Symmetric compatibility group — all skills in the group work together */
-export type CompatibilityGroup = {
-  skills: SkillSlug[];
-  reason: string;
-};
+export type CompatibilityGroup = SkillGroupRule;
 
 /** Dependency rule - skill A requires skill B to be selected first */
 export type RequireRule = {
@@ -123,18 +119,6 @@ export type SkillRulesConfig = {
   version: string;
   /** Aggregate relationship rules between skills */
   relationships: RelationshipDefinitions;
-};
-
-/** Pre-configured stack of skills for a specific use case */
-export type SuggestedStack = {
-  id: string;
-  name: string;
-  description: string;
-  /** Structure: { agentName: { category: skillId } } */
-  skills: Record<string, Partial<Record<Category, SkillId>>>;
-  philosophy: string;
-  /** UI grouping label for the stack selection screen (e.g., "React", "CLI") */
-  group?: string;
 };
 
 /** Bidirectional slug <-> skill ID mapping. Partial because only extracted skills are present. */
@@ -165,10 +149,12 @@ export type MergedSkillsMatrix = {
 };
 
 /**
- * Single skill with all computed relationships resolved for CLI rendering.
- * Produced by mergeMatrixWithSkills() after resolving aliases, relationships, and sources.
+ * Identity/description fields shared by ExtractedSkillMetadata (pre-merge) and
+ * ResolvedSkill (post-merge). Both types are `SkillCore & { extras }`; extracting
+ * the common shape keeps the two skill surfaces in sync. Purely structural — no
+ * runtime change (the intersection is equivalent to the flattened object).
  */
-export type ResolvedSkill = {
+export type SkillCore = {
   id: SkillId;
   /** Kebab-case short key for alias resolution, search, and relationship rules (e.g., "react") */
   slug: SkillSlug;
@@ -181,6 +167,21 @@ export type ResolvedSkill = {
   category: CategoryPath;
   /** Author handle (e.g., "@vince") from metadata.yaml */
   author: string;
+  /** Relative path from src/ to the skill directory */
+  path: string;
+  /** True if from .claude/skills/ (user-defined local skill) */
+  local?: boolean;
+  /** Absolute path to local skill directory */
+  localPath?: string;
+  /** True if this skill was created outside the CLI's built-in vocabulary */
+  custom?: boolean;
+};
+
+/**
+ * Single skill with all computed relationships resolved for CLI rendering.
+ * Produced by mergeMatrixWithSkills() after resolving aliases, relationships, and sources.
+ */
+export type ResolvedSkill = SkillCore & {
   /** Selecting this skill disables these others (hard exclusion) */
   conflictsWith: SkillRelation[];
   /** True if this skill is in the flat recommends list (opinionated pick) */
@@ -199,14 +200,6 @@ export type ResolvedSkill = {
    * only skills listing that framework in compatibleWith (or with an empty list) are shown.
    */
   compatibleWith: SkillId[];
-  /** Relative path to skill directory from src/ */
-  path: string;
-  /** True if from .claude/skills/ (user-defined local skill) */
-  local?: boolean;
-  /** True if this skill was created outside the CLI's built-in vocabulary */
-  custom?: boolean;
-  /** Absolute path to local skill directory */
-  localPath?: string;
   /** All known sources that provide this skill (populated by multi-source-loader) */
   availableSources?: SkillSource[];
   /** Currently active/installed source (if any) */
@@ -255,21 +248,26 @@ export type ResolvedStack = {
 export type SkillAlias = string;
 
 /** Source type classification for skill provenance (where the skill comes from) */
-export type SkillSourceType = "public" | "private" | "local";
+export const SKILL_SOURCE_TYPES = ["public", "private", "local"] as const;
+export type SkillSourceType = (typeof SKILL_SOURCE_TYPES)[number];
+
+/**
+ * How a project's skills are installed: fully ejected, fully plugin-based, or a
+ * mix of both. Derived at runtime from SkillConfig.source (see deriveInstallMode).
+ */
+export type InstallMode = "eject" | "plugin" | "mixed";
 
 /** A single source from which a skill can be obtained */
 export type SkillSource = {
   /** Source identifier: "public", marketplace name, "local" */
   name: string;
-  /** Human-readable label from marketplace.json owner.name (e.g., "Agents Inc.") */
-  displayName?: string;
   type: SkillSourceType;
   /** Source URL for remote sources (e.g., "github:acme-corp/claude-skills") */
   url?: string;
   /** Whether this source's version is currently installed on disk */
   installed: boolean;
-  /** How the skill was installed on disk (separate from provenance) */
-  installMode?: "plugin" | "eject";
+  /** How the skill was installed on disk (separate from provenance) — a single skill is never "mixed" */
+  installMode?: Exclude<InstallMode, "mixed">;
   /** True for the primary marketplace source (scoped or default public). Set by multi-source-loader. */
   primary?: boolean;
 };
@@ -289,17 +287,9 @@ export type BoundSkill = {
 };
 
 /** Search result candidate before being bound to a category */
-export type BoundSkillCandidate = {
-  /** The foreign skill's actual ID */
-  id: SkillId;
-  /** Source URL (e.g., "github:awesome-dev/skills") */
-  sourceUrl: string;
-  /** Display name of the source (e.g., "awesome-dev") */
-  sourceName: string;
+export type BoundSkillCandidate = Omit<BoundSkill, "boundTo"> & {
   /** Skill alias / display name from the source */
   alias: SkillAlias;
-  /** Skill description from the source */
-  description?: string;
 };
 
 /** Advisory visual state for a skill option in the wizard UI */
@@ -354,28 +344,9 @@ export type ValidationWarning = {
  * Relationship fields (compatibleWith, conflictsWith, requires, etc.) are resolved from
  * centralized group-based declarations in skill-rules.ts — not from individual skill metadata.
  */
-export type ExtractedSkillMetadata = {
-  /** Normalized from frontmatter name, e.g. "web-framework-react" */
-  id: SkillId;
+export type ExtractedSkillMetadata = SkillCore & {
   /** Directory path for filesystem access, e.g. "web/framework/react" */
   directoryPath: string;
-  description: string;
-  /** When an AI agent should invoke this skill (decision criteria) */
-  usageGuidance?: string;
-  category: CategoryPath;
-  author: string;
-  /** Relative path from src/ to the skill directory */
-  path: string;
-  /** True if from .claude/skills/ (user-defined local skill) */
-  local?: boolean;
-  /** Absolute path to local skill directory */
-  localPath?: string;
   /** Domain this skill belongs to (e.g., "web", "api", "cli") */
   domain: Domain;
-  /** True if this skill was created outside the CLI's built-in vocabulary */
-  custom?: boolean;
-  /** Kebab-case short key for alias resolution */
-  slug: SkillSlug;
-  /** Title-cased label for UI display (e.g., "React", "Apollo Client") */
-  displayName: string;
 };

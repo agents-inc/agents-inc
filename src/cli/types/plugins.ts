@@ -43,11 +43,8 @@ export type MarketplacePlugin = {
   keywords?: string[];
 };
 
-/** Marketplace owner metadata */
-export type MarketplaceOwner = {
-  name: string;
-  email?: string;
-};
+/** Marketplace owner metadata — same shape as a plugin author */
+export type MarketplaceOwner = PluginAuthor;
 
 /** Marketplace-level metadata (e.g., plugin root directory) */
 export type MarketplaceMetadata = {

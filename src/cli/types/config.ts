@@ -3,6 +3,12 @@ import type { BoundSkill, Domain } from "./matrix";
 import type { SkillId, SkillReference } from "./skills";
 import type { StackAgentConfig } from "./stacks";
 
+/** Scope of a skill or agent install: project-local or user-global. */
+export type SkillScope = "project" | "global";
+
+/** Claude CLI plugin scope (`--project`/`--user` install target). */
+export type ClaudePluginScope = "project" | "user";
+
 /** An additional skills source (private marketplace, custom repo) */
 export type SourceEntry = {
   name: string;
@@ -22,7 +28,7 @@ export type BrandingConfig = {
 /** Per-skill configuration with scope and source */
 export type SkillConfig = {
   id: SkillId;
-  scope: "project" | "global";
+  scope: SkillScope;
   source: string; // "eject" | marketplace name (e.g., "agents-inc")
   excluded?: boolean;
 };
@@ -30,7 +36,7 @@ export type SkillConfig = {
 /** Per-agent configuration with scope (mirrors SkillConfig pattern) */
 export type AgentScopeConfig = {
   name: AgentName;
-  scope: "project" | "global";
+  scope: SkillScope;
   excluded?: boolean;
 };
 

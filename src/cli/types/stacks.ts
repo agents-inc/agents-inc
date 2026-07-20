@@ -19,17 +19,3 @@ export type Stack = {
 export type StacksConfig = {
   stacks: Stack[];
 };
-
-/**
- * Raw stacks config as returned by loadConfig (before normalizeAgentConfig).
- * Agent config values may be bare strings, arrays, or objects — not yet normalized to SkillAssignment[].
- */
-export type RawStacksConfig = {
-  stacks: Array<{
-    id: string;
-    name: string;
-    description: string;
-    agents: Record<string, Record<string, unknown>>;
-    philosophy?: string;
-  }>;
-};

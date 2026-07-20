@@ -13,6 +13,7 @@ import type {
   SkillSlug,
 } from "../types/generated/source-types";
 import type { CategoryPath, SkillAssignment } from "../types/skills";
+import { LOCAL_PSEUDO_CATEGORY } from "../consts";
 
 /** Narrows unknown parse output to a plain object record (rejects arrays and primitives). */
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -36,7 +37,7 @@ export function isAgentName(value: string): value is AgentName {
 
 /** Runtime check that a string is a valid CategoryPath (Category | "local") */
 export function isCategoryPath(value: string): value is CategoryPath {
-  return value === "local" || isCategory(value);
+  return value === LOCAL_PSEUDO_CATEGORY || isCategory(value);
 }
 
 /** Runtime check that a string is a valid SkillId from the generated union */
