@@ -1,6 +1,5 @@
 import { parse as parseYaml } from "yaml";
 import path from "path";
-import { z } from "zod";
 import { glob, readFile, fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { DIRS, STANDARD_FILES } from "../../consts";
@@ -11,29 +10,15 @@ import {
   skillCategoriesFileSchema,
   skillRulesFileSchema,
   formatZodIssues,
-  categoryPathSchema,
+  matrixRawMetadataSchema,
 } from "../schemas";
 import { mergeMatrixWithSkills } from "./skill-resolution";
 import type {
   CategoryMap,
-  Domain,
   ExtractedSkillMetadata,
   MergedSkillsMatrix,
   SkillRulesConfig,
-  SkillSlug,
 } from "../../types";
-
-const rawMetadataSchema = z.object({
-  category: categoryPathSchema,
-  author: z.string(),
-  displayName: z.string().optional(),
-  slug: z.string() as z.ZodType<SkillSlug>,
-  cliDescription: z.string().optional(),
-  usageGuidance: z.string().optional(),
-  // Boundary cast: domain is a string at the YAML parse boundary; narrowed to Domain type
-  domain: z.string() as z.ZodType<Domain>,
-  custom: z.boolean().optional(),
-});
 
 /**
  * Loads and validates a skill-categories.ts configuration file.
@@ -43,10 +28,7 @@ const rawMetadataSchema = z.object({
  * @throws When the file cannot be read or fails Zod schema validation
  */
 export async function loadSkillCategories(configPath: string): Promise<CategoryMap> {
-  const data = await loadConfig<{ version: string; categories: CategoryMap }>(
-    configPath,
-    skillCategoriesFileSchema,
-  );
+  const data = await loadConfig(configPath, skillCategoriesFileSchema);
 
   if (!data) {
     throw new Error(`Invalid skill categories at '${configPath}': failed to load or validate`);
@@ -64,10 +46,7 @@ export async function loadSkillCategories(configPath: string): Promise<CategoryM
  * @throws When the file cannot be read or fails Zod schema validation
  */
 export async function loadSkillRules(configPath: string): Promise<SkillRulesConfig> {
-  const data = await loadConfig<{
-    version: string;
-    relationships?: SkillRulesConfig["relationships"];
-  }>(configPath, skillRulesFileSchema);
+  const data = await loadConfig(configPath, skillRulesFileSchema);
 
   if (!data) {
     throw new Error(`Invalid skill rules at '${configPath}': failed to load or validate`);
@@ -120,7 +99,7 @@ export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkil
 
     const metadataContent = await readFile(metadataPath);
     const rawMetadata = parseYaml(metadataContent);
-    const metadataResult = rawMetadataSchema.safeParse(rawMetadata);
+    const metadataResult = matrixRawMetadataSchema.safeParse(rawMetadata);
 
     if (!metadataResult.success) {
       warn(

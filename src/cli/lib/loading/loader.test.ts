@@ -147,14 +147,13 @@ Content`;
     expect(result).toBeNull();
   });
 
-  it("should not handle frontmatter with Windows line endings (current limitation)", () => {
+  it("should handle frontmatter with Windows line endings", () => {
     const content = "---\r\nname: skill\r\ndescription: desc\r\n---\r\n\r\nContent";
 
     const result = parseFrontmatter(content);
 
-    // The current regex expects \n only, not \r\n
-    // This is a known limitation - SKILL.md files should use Unix line endings
-    expect(result).toBeNull();
+    // Delegates to extractFrontmatter, whose regex tolerates \r\n line endings
+    expect(result).toStrictEqual({ name: "skill", description: "desc" });
   });
 
   it("should return null for frontmatter with embedded --- in content", () => {
@@ -256,11 +255,14 @@ Content`;
     expect(result).toBeNull();
   });
 
-  it("should throw when frontmatter YAML uses tabs for indentation", () => {
+  it("should return null when frontmatter YAML uses tabs for indentation", () => {
     const content = "---\n\tname: skill\n\tdescription: desc\n---\n\nContent";
 
-    // YAML spec forbids tabs for indentation — the parser throws
-    expect(() => parseFrontmatter(content)).toThrow();
+    // YAML spec forbids tabs for indentation; extractFrontmatter catches the
+    // parser error and returns null rather than propagating the throw
+    const result = parseFrontmatter(content);
+
+    expect(result).toBeNull();
   });
 
   it("should return null when name is a non-string type (number)", () => {
@@ -301,9 +303,10 @@ description: [unclosed bracket
 
 Content`;
 
-    // The YAML parser should throw, and parseFrontmatter should return null or handle it
-    // The YAML parser actually throws, which propagates up
-    expect(() => parseFrontmatter(content)).toThrow();
+    // extractFrontmatter catches the YAML parser error and returns null
+    const result = parseFrontmatter(content);
+
+    expect(result).toBeNull();
   });
 
   it("should parse only the first frontmatter block when multiple exist", () => {

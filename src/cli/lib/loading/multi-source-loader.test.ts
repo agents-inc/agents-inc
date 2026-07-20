@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { TEST_SOURCE_URL } from "../__tests__/test-constants.js";
 import { loadSkillsFromAllSources, searchExtraSources } from "./multi-source-loader";
 import type { SkillDefinition, SkillId } from "../../types";
 import type { ResolvedConfig, SourceEntry } from "../configuration";
@@ -53,7 +54,7 @@ const mockExtractAllSkills = vi.mocked(extractAllSkills);
 const mockDiscoverAllPluginSkills = vi.mocked(discoverAllPluginSkills);
 
 const DEFAULT_SOURCE_CONFIG: ResolvedConfig = {
-  source: "github:agents-inc/skills",
+  source: TEST_SOURCE_URL,
   sourceOrigin: "default",
 };
 
@@ -67,7 +68,7 @@ describe("multi-source-loader", () => {
   describe("primary source tagging", () => {
     it("should tag non-local skills with public source", async () => {
       mockResolveAllSources.mockResolvedValue({
-        primary: { name: "marketplace", url: "github:agents-inc/skills" },
+        primary: { name: "marketplace", url: TEST_SOURCE_URL },
         extras: [],
       });
 
@@ -79,7 +80,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "agents-inc",
-          displayName: undefined,
           type: "public",
           installed: false,
           primary: true,
@@ -90,7 +90,6 @@ describe("multi-source-loader", () => {
       expect(vitest.availableSources).toStrictEqual([
         {
           name: "agents-inc",
-          displayName: undefined,
           type: "public",
           installed: false,
           primary: true,
@@ -118,7 +117,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "Acme Corp",
-          displayName: undefined,
           type: "private",
           installed: false,
           primary: true,
@@ -129,7 +127,6 @@ describe("multi-source-loader", () => {
       expect(vitest.availableSources).toStrictEqual([
         {
           name: "Acme Corp",
-          displayName: undefined,
           type: "private",
           installed: false,
           primary: true,
@@ -157,7 +154,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "Acme Corp",
-          displayName: undefined,
           type: "private",
           installed: false,
           primary: true,
@@ -167,13 +163,13 @@ describe("multi-source-loader", () => {
 
     it("should tag as public when default source has marketplace set", async () => {
       mockResolveAllSources.mockResolvedValue({
-        primary: { name: "marketplace", url: "github:agents-inc/skills" },
+        primary: { name: "marketplace", url: TEST_SOURCE_URL },
         extras: [],
       });
 
       // Edge case: default source with marketplace set should use marketplace name but remain public type
       const configWithMarketplace: ResolvedConfig = {
-        source: "github:agents-inc/skills",
+        source: TEST_SOURCE_URL,
         sourceOrigin: "default",
         marketplace: "SomeMarketplace",
       };
@@ -186,7 +182,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "SomeMarketplace",
-          displayName: undefined,
           type: "public",
           installed: false,
           primary: true,
@@ -196,7 +191,7 @@ describe("multi-source-loader", () => {
 
     it("should tag local skills with both public and local sources", async () => {
       mockResolveAllSources.mockResolvedValue({
-        primary: { name: "marketplace", url: "github:agents-inc/skills" },
+        primary: { name: "marketplace", url: TEST_SOURCE_URL },
         extras: [],
       });
 
@@ -212,7 +207,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "agents-inc",
-          displayName: undefined,
           type: "public",
           installed: false,
           primary: true,
@@ -233,7 +227,7 @@ describe("multi-source-loader", () => {
   describe("local skill tagging", () => {
     it("should tag local skills with local source and installed: true", async () => {
       mockResolveAllSources.mockResolvedValue({
-        primary: { name: "marketplace", url: "github:agents-inc/skills" },
+        primary: { name: "marketplace", url: TEST_SOURCE_URL },
         extras: [],
       });
 
@@ -249,7 +243,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "agents-inc",
-          displayName: undefined,
           type: "public",
           installed: false,
           primary: true,
@@ -262,7 +255,7 @@ describe("multi-source-loader", () => {
   describe("activeSource", () => {
     it("should set activeSource to installed variant when available", async () => {
       mockResolveAllSources.mockResolvedValue({
-        primary: { name: "marketplace", url: "github:agents-inc/skills" },
+        primary: { name: "marketplace", url: TEST_SOURCE_URL },
         extras: [],
       });
 
@@ -285,7 +278,7 @@ describe("multi-source-loader", () => {
 
     it("should set activeSource to public when no installed variant", async () => {
       mockResolveAllSources.mockResolvedValue({
-        primary: { name: "marketplace", url: "github:agents-inc/skills" },
+        primary: { name: "marketplace", url: TEST_SOURCE_URL },
         extras: [],
       });
 
@@ -296,7 +289,6 @@ describe("multi-source-loader", () => {
       const react = matrix.skills["web-framework-react"]!;
       expect(react.activeSource).toStrictEqual({
         name: "agents-inc",
-        displayName: undefined,
         type: "public",
         installed: false,
         primary: true,
@@ -307,7 +299,7 @@ describe("multi-source-loader", () => {
   describe("extra source failures", () => {
     it("should produce warnings for failed extra sources, not hard errors", async () => {
       mockResolveAllSources.mockResolvedValue({
-        primary: { name: "marketplace", url: "github:agents-inc/skills" },
+        primary: { name: "marketplace", url: TEST_SOURCE_URL },
         extras: [{ name: "acme-corp", url: "github:acme-corp/skills" }],
       });
       mockFetchFromSource.mockRejectedValue(new Error("Network timeout"));
@@ -327,7 +319,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "agents-inc",
-          displayName: undefined,
           type: "public",
           installed: false,
           primary: true,
@@ -339,7 +330,7 @@ describe("multi-source-loader", () => {
   describe("overlapping skill IDs", () => {
     it("should collect all source variants for the same skill", async () => {
       mockResolveAllSources.mockResolvedValue({
-        primary: { name: "marketplace", url: "github:agents-inc/skills" },
+        primary: { name: "marketplace", url: TEST_SOURCE_URL },
         extras: [{ name: "acme-corp", url: "github:acme-corp/skills" }],
       });
 
@@ -363,7 +354,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "agents-inc",
-          displayName: undefined,
           type: "public",
           installed: false,
           primary: true,
@@ -376,7 +366,7 @@ describe("multi-source-loader", () => {
   describe("plugin skill tagging", () => {
     it("should tag plugin-installed skills", async () => {
       mockResolveAllSources.mockResolvedValue({
-        primary: { name: "marketplace", url: "github:agents-inc/skills" },
+        primary: { name: "marketplace", url: TEST_SOURCE_URL },
         extras: [],
       });
 
@@ -399,7 +389,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "agents-inc",
-          displayName: undefined,
           type: "public",
           installed: true,
           installMode: "plugin",
@@ -410,7 +399,7 @@ describe("multi-source-loader", () => {
 
     it("should tag skills from multiple plugins discovered via settings.json", async () => {
       mockResolveAllSources.mockResolvedValue({
-        primary: { name: "marketplace", url: "github:agents-inc/skills" },
+        primary: { name: "marketplace", url: TEST_SOURCE_URL },
         extras: [],
       });
 
@@ -436,7 +425,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "agents-inc",
-          displayName: undefined,
           type: "public",
           installed: true,
           installMode: "plugin",
@@ -448,7 +436,6 @@ describe("multi-source-loader", () => {
       expect(zustand.availableSources).toStrictEqual([
         {
           name: "agents-inc",
-          displayName: undefined,
           type: "public",
           installed: true,
           installMode: "plugin",
@@ -482,7 +469,7 @@ describe("multi-source-loader", () => {
       mockFetchFromSource.mockResolvedValue({
         path: "/tmp/cached/agents-inc",
         fromCache: true,
-        source: "github:agents-inc/skills",
+        source: TEST_SOURCE_URL,
       });
 
       // extractAllSkills for public source -- react exists in public, vitest does not
@@ -507,7 +494,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "Acme Corp",
-          displayName: undefined,
           type: "private",
           installed: false,
           primary: true,
@@ -520,7 +506,6 @@ describe("multi-source-loader", () => {
       expect(vitest.availableSources).toStrictEqual([
         {
           name: "Acme Corp",
-          displayName: undefined,
           type: "private",
           installed: false,
           primary: true,
@@ -530,7 +515,7 @@ describe("multi-source-loader", () => {
 
     it("should not duplicate public source when primary IS the default source", async () => {
       mockResolveAllSources.mockResolvedValue({
-        primary: { name: "marketplace", url: "github:agents-inc/skills" },
+        primary: { name: "marketplace", url: TEST_SOURCE_URL },
         extras: [],
       });
 
@@ -543,7 +528,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "agents-inc",
-          displayName: undefined,
           type: "public",
           installed: false,
           primary: true,
@@ -566,7 +550,7 @@ describe("multi-source-loader", () => {
       mockFetchFromSource.mockResolvedValue({
         path: "/tmp/cached/agents-inc",
         fromCache: true,
-        source: "github:agents-inc/skills",
+        source: TEST_SOURCE_URL,
       });
 
       mockExtractAllSkills.mockResolvedValue([
@@ -590,13 +574,45 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "Acme Corp",
-          displayName: undefined,
           type: "private",
           installed: false,
           primary: true,
         },
         { name: "agents-inc", type: "public", installed: false },
       ]);
+    });
+
+    it("should not tag a second source when the public name matches the primary name", async () => {
+      mockResolveAllSources.mockResolvedValue({
+        primary: { name: "marketplace", url: "github:private-org/skills" },
+        extras: [],
+      });
+
+      // Neither source has a marketplace.json, so both fall back to the same
+      // default public name -- two identically named columns would result.
+      mockFetchMarketplace.mockRejectedValue(new Error("Not found"));
+
+      const noMarketplaceSourceConfig: ResolvedConfig = {
+        source: "github:private-org/skills",
+        sourceOrigin: "flag",
+      };
+
+      const matrix = createMockMatrix({ ...SKILLS.react });
+
+      await loadSkillsFromAllSources(matrix, noMarketplaceSourceConfig, "/tmp/test");
+
+      const react = matrix.skills["web-framework-react"]!;
+      expect(react.availableSources).toStrictEqual([
+        {
+          name: "agents-inc",
+          type: "private",
+          installed: false,
+          primary: true,
+        },
+      ]);
+
+      // The public skill listing must not even be fetched once the names match.
+      expect(fetchFromSource).not.toHaveBeenCalled();
     });
 
     it("should handle public source fetch failure gracefully", async () => {
@@ -627,7 +643,6 @@ describe("multi-source-loader", () => {
       expect(react.availableSources).toStrictEqual([
         {
           name: "Acme Corp",
-          displayName: undefined,
           type: "private",
           installed: false,
           primary: true,

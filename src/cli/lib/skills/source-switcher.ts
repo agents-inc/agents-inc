@@ -2,8 +2,9 @@ import path from "path";
 
 import { copy, directoryExists, ensureDir, isPathWithin, remove } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
-import { GLOBAL_INSTALL_ROOT, LOCAL_SKILLS_PATH } from "../../consts";
-import type { SkillId } from "../../types";
+import { LOCAL_SKILLS_PATH } from "../../consts";
+import { installBaseDir } from "../installation/install-base-dir";
+import type { SkillId, SkillScope } from "../../types";
 
 /**
  * Validates a skill ID is safe for use in filesystem paths.
@@ -56,7 +57,7 @@ export async function deleteLocalSkill(projectDir: string, skillId: SkillId): Pr
  */
 export async function migrateLocalSkillScope(
   skillId: SkillId,
-  fromScope: "project" | "global",
+  fromScope: SkillScope,
   projectDir: string,
 ): Promise<void> {
   if (!validateSkillId(skillId)) {
@@ -64,8 +65,11 @@ export async function migrateLocalSkillScope(
     return;
   }
 
-  const fromBaseDir = fromScope === "global" ? GLOBAL_INSTALL_ROOT : projectDir;
-  const toBaseDir = fromScope === "global" ? projectDir : GLOBAL_INSTALL_ROOT;
+  const toScope: SkillScope = fromScope === "global" ? "project" : "global";
+  // installBaseDir resolves os.homedir() at runtime so test home-dir mocks apply
+  // (GLOBAL_INSTALL_ROOT was captured once at module load — a latent test-mock bug).
+  const fromBaseDir = installBaseDir(projectDir, fromScope);
+  const toBaseDir = installBaseDir(projectDir, toScope);
 
   const fromPath = path.resolve(path.join(fromBaseDir, LOCAL_SKILLS_PATH, skillId));
   const toPath = path.resolve(path.join(toBaseDir, LOCAL_SKILLS_PATH, skillId));
@@ -81,8 +85,6 @@ export async function migrateLocalSkillScope(
     warn(`Skill ID '${skillId}' resolves outside the destination skills directory.`);
     return;
   }
-
-  const toScope = fromScope === "global" ? "project" : "global";
 
   if (!(await directoryExists(fromPath))) {
     if (await directoryExists(toPath)) {

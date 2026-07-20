@@ -2,9 +2,10 @@ import { parse as parseYaml } from "yaml";
 import path from "path";
 import { unique } from "remeda";
 import { getErrorMessage } from "../../utils/errors";
-import { glob, readFile, directoryExists } from "../../utils/fs";
+import { extractFrontmatter } from "../../utils/frontmatter";
+import { glob, readFile, directoryExists, fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
-import { CLAUDE_SRC_DIR, DIRS, STANDARD_FILES, PROJECT_ROOT } from "../../consts";
+import { CLAUDE_SRC_DIR, DIRS, STANDARD_DIRS, STANDARD_FILES, PROJECT_ROOT } from "../../consts";
 import type {
   AgentDefinition,
   AgentName,
@@ -14,15 +15,13 @@ import type {
   SkillId,
 } from "../../types";
 import { formatZodIssues, skillFrontmatterLoaderSchema, agentYamlConfigSchema } from "../schemas";
-
-const FRONTMATTER_REGEX = /^---\n([\s\S]*?)\n---/;
+import { typedKeys } from "../../utils/typed-object";
 
 export function parseFrontmatter(content: string, filePath?: string): SkillFrontmatter | null {
-  const match = content.match(FRONTMATTER_REGEX);
-  if (!match) return null;
+  const rawFrontmatter = extractFrontmatter(content);
+  if (rawFrontmatter === null) return null;
 
-  const yamlContent = match[1];
-  const parsed = skillFrontmatterLoaderSchema.safeParse(parseYaml(yamlContent));
+  const parsed = skillFrontmatterLoaderSchema.safeParse(rawFrontmatter);
 
   if (!parsed.success) {
     const location = filePath ?? "unknown file";
@@ -104,7 +103,7 @@ export async function loadMergedAgents(
 export async function loadProjectAgents(
   projectRoot: string,
 ): Promise<Record<AgentName, AgentDefinition>> {
-  const projectAgentsDir = path.join(projectRoot, CLAUDE_SRC_DIR, "agents");
+  const projectAgentsDir = path.join(projectRoot, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
 
   if (!(await directoryExists(projectAgentsDir))) {
     verbose(`No project agents directory at ${projectAgentsDir}`);
@@ -119,8 +118,10 @@ export async function loadProjectAgents(
   });
 }
 
-async function buildIdToDirectoryPathMap(skillsDir: string): Promise<Record<string, string>> {
-  const files = await glob("**/SKILL.md", skillsDir);
+async function buildIdToDirectoryPathMap(
+  skillsDir: string,
+): Promise<Partial<Record<SkillId, string>>> {
+  const files = await glob(`**/${STANDARD_FILES.SKILL_MD}`, skillsDir);
   const parsed = await Promise.all(
     files.map(async (file) => {
       const fullPath = path.join(skillsDir, file);
@@ -135,7 +136,7 @@ async function buildIdToDirectoryPathMap(skillsDir: string): Promise<Record<stri
         Boolean(entry.frontmatter?.name),
       )
       .flatMap(({ file, frontmatter }) => {
-        const directoryPath = file.replace("/SKILL.md", "");
+        const directoryPath = file.replace(`/${STANDARD_FILES.SKILL_MD}`, "");
         return [
           [frontmatter.name, directoryPath],
           [directoryPath, directoryPath],
@@ -155,16 +156,15 @@ export async function loadSkillsByIds(
 
   /** A directory reference expands to every skill under it; warns when nothing matches. */
   const expandDirectoryRef = (skillId: SkillId): SkillId[] => {
-    const childSkills = Object.keys(idToDirectoryPath).filter((id) =>
-      idToDirectoryPath[id].startsWith(`${skillId}/`),
+    const childSkills = typedKeys(idToDirectoryPath).filter((id) =>
+      idToDirectoryPath[id]?.startsWith(`${skillId}/`),
     );
     if (childSkills.length === 0) {
       warn(`Unknown skill reference '${skillId}'`);
       return [];
     }
     verbose(`Expanded directory '${skillId}' to ${childSkills.length} skills`);
-    // Boundary cast: keys from buildIdToDirectoryPathMap are SkillId values from frontmatter
-    return childSkills as SkillId[];
+    return childSkills;
   };
 
   const uniqueSkillIds = unique(
@@ -208,40 +208,84 @@ export async function loadSkillsByIds(
   return skills;
 }
 
-export async function loadPluginSkills(
-  pluginDir: string,
-): Promise<Record<string, SkillDefinition>> {
-  const skills: Record<string, SkillDefinition> = {};
-  const pluginSkillsDir = path.join(pluginDir, "skills");
+export type LoadSkillsFromDirOptions = {
+  /** Path prefix recorded on each skill's `path` (e.g. LOCAL_SKILLS_PATH or "skills"). */
+  pathPrefix?: string;
+  /**
+   * When true, a SKILL.md without a sibling metadata.yaml is skipped with a warning
+   * (local-skill registration rule). Plugin discovery passes false — plugin skills
+   * carry no metadata.yaml.
+   */
+  requireMetadata?: boolean;
+};
 
-  if (!(await directoryExists(pluginSkillsDir))) {
+/**
+ * Loads SKILL.md files from a directory, parsing frontmatter for skill metadata.
+ * Returns a map of skillId -> SkillDefinition. Missing/invalid frontmatter and
+ * per-file read errors are logged and skipped, never thrown.
+ */
+export async function loadSkillsFromDir(
+  skillsDir: string,
+  options: LoadSkillsFromDirOptions = {},
+): Promise<SkillDefinitionMap> {
+  const { pathPrefix = "", requireMetadata = false } = options;
+  const skills: SkillDefinitionMap = {};
+
+  if (!(await directoryExists(skillsDir))) {
     return skills;
   }
 
-  const files = await glob("**/SKILL.md", pluginSkillsDir);
+  const skillFiles = await glob(`**/${STANDARD_FILES.SKILL_MD}`, skillsDir);
 
-  for (const file of files) {
-    const fullPath = path.join(pluginSkillsDir, file);
-    const content = await readFile(fullPath);
+  for (const skillFile of skillFiles) {
+    const skillPath = path.join(skillsDir, skillFile);
+    const skillDir = path.dirname(skillPath);
+    const relativePath = path.relative(skillsDir, skillDir);
+    const skillDirName = path.basename(skillDir);
+    const displayPath = pathPrefix ? `${pathPrefix}/${relativePath}/` : `${relativePath}/`;
 
-    const frontmatter = parseFrontmatter(content, fullPath);
-    if (!frontmatter) {
-      warn(`Skipping '${file}': missing or invalid frontmatter`);
-      continue;
+    if (requireMetadata) {
+      const metadataPath = path.join(skillDir, STANDARD_FILES.METADATA_YAML);
+      if (!(await fileExists(metadataPath))) {
+        warn(
+          `Skill '${skillDirName}' in '${displayPath}' is missing ${STANDARD_FILES.METADATA_YAML} — skipped. Add ${STANDARD_FILES.METADATA_YAML} to register it with the CLI.`,
+        );
+        continue;
+      }
     }
 
-    const folderPath = file.replace("/SKILL.md", "");
-    const skillPath = `skills/${folderPath}/`;
-    const skillId = frontmatter.name;
+    try {
+      const content = await readFile(skillPath);
+      const frontmatter = parseFrontmatter(content, skillPath);
 
-    skills[skillId] = {
-      id: skillId,
-      path: skillPath,
-      description: frontmatter.description,
-    };
+      if (!frontmatter?.name) {
+        warn(`Skipping skill in '${skillDirName}': missing or invalid frontmatter name`);
+        continue;
+      }
 
-    verbose(`Loaded plugin skill: ${skillId} from ${file}`);
+      const canonicalId = frontmatter.name;
+      skills[canonicalId] = {
+        id: canonicalId,
+        path: displayPath,
+        description: frontmatter.description || "",
+      };
+
+      verbose(`  Loaded skill: ${canonicalId}`);
+    } catch (error) {
+      verbose(`  Failed to load skill: ${skillFile} - ${error}`);
+    }
   }
 
   return skills;
+}
+
+/**
+ * Loads skills from a plugin's `skills/` subdirectory. Plugin skills carry no
+ * metadata.yaml, so metadata is not required here.
+ */
+export async function loadPluginSkills(pluginDir: string): Promise<SkillDefinitionMap> {
+  return loadSkillsFromDir(path.join(pluginDir, "skills"), {
+    pathPrefix: "skills",
+    requireMetadata: false,
+  });
 }

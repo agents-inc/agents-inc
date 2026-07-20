@@ -1,10 +1,12 @@
 export {
+  type LoadSkillsFromDirOptions,
   parseFrontmatter,
   loadAllAgents,
   loadMergedAgents,
   loadProjectAgents,
   loadSkillsByIds,
   loadPluginSkills,
+  loadSkillsFromDir,
 } from "./loader";
 
 export {

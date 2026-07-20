@@ -1,12 +1,6 @@
 import { DEFAULT_VERSION } from "../../consts";
+import { toTitleCase } from "../../utils/string";
 import type { CategoryPath } from "../../types/index";
-
-export function toTitleCase(kebabCase: string): string {
-  return kebabCase
-    .split("-")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
 
 const DEFAULT_CATEGORY_ORDER = 99;
 

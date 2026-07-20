@@ -8,12 +8,12 @@ import { getCurrentDate } from "../versioning";
 import {
   LOCAL_SKILLS_PATH,
   SCHEMA_PATHS,
+  SOURCE_SRC_DIR,
   STANDARD_FILES,
   YAML_FORMATTING,
-  yamlSchemaComment,
-  stripYamlSchemaComment,
 } from "../../consts";
-import type { SkillId } from "../../types";
+import { yamlSchemaComment, stripYamlSchemaComment } from "../../utils/yaml-schema";
+import type { ResolvedSkill, SkillId } from "../../types";
 import { formatZodIssues, localSkillMetadataSchema } from "../schemas";
 import { warn } from "../../utils/logger";
 
@@ -174,7 +174,7 @@ export async function computeSourceHash(
   sourcePath: string,
   skillPath: string,
 ): Promise<string | null> {
-  const skillMdPath = path.join(sourcePath, "src", skillPath, STANDARD_FILES.SKILL_MD);
+  const skillMdPath = path.join(sourcePath, SOURCE_SRC_DIR, skillPath, STANDARD_FILES.SKILL_MD);
 
   if (!(await fileExists(skillMdPath))) {
     return null;
@@ -214,7 +214,7 @@ export async function computeSourceHash(
 export async function compareLocalSkillsWithSource(
   projectDir: string,
   sourcePath: string,
-  sourceSkills: Record<string, { path: string }>,
+  sourceSkills: Partial<Record<SkillId, Pick<ResolvedSkill, "path">>>,
 ): Promise<SkillComparisonResult[]> {
   const localSkills = await getLocalSkillsWithMetadata(projectDir);
 
@@ -232,7 +232,7 @@ async function classifyLocalSkill(
   dirName: string,
   forkedFrom: ForkedFromMetadata | null,
   sourcePath: string,
-  sourceSkills: Record<string, { path: string }>,
+  sourceSkills: Partial<Record<SkillId, Pick<ResolvedSkill, "path">>>,
 ): Promise<SkillComparisonResult> {
   if (!forkedFrom) {
     // Boundary cast: skillId comes from Map<string, ...> keys (directory names or forkedFrom.skillId)

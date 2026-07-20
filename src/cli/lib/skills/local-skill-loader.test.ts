@@ -1,15 +1,22 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { discoverLocalSkills } from "./local-skill-loader";
 import { CLAUDE_DIR, LOCAL_SKILLS_PATH, STANDARD_DIRS, STANDARD_FILES } from "../../consts";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { renderSkillMd } from "../__tests__/content-generators";
+import { warn } from "../../utils/logger";
+
+vi.mock("../../utils/logger", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../utils/logger")>()),
+  warn: vi.fn(),
+}));
 
 describe("local-skill-loader", () => {
   let tempDir: string;
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     tempDir = await createTempDir("cc-local-skill-test-");
   });
 
@@ -281,6 +288,29 @@ describe("local-skill-loader", () => {
 
       // Schema validation expects an object, so this should be skipped
       expect(result?.skills).toStrictEqual([]);
+    });
+
+    it("skips a skill whose metadata.yaml is not parseable YAML and keeps discovering", async () => {
+      await writeLocalSkill("unparseable-meta", {
+        metadata: `{{{ this is not: valid: yaml: "at all`,
+        skillMd: renderSkillMd("unparseable-meta (@local)", "Unparseable metadata", "Content"),
+      });
+      await writeLocalSkill("valid-skill", {
+        metadata:
+          "displayName: Valid Skill\nslug: valid-skill\ndomain: web\ncategory: web-framework",
+        skillMd: renderSkillMd("valid-skill (@local)", "A valid skill", "Content"),
+      });
+
+      const result = await discoverLocalSkills(tempDir);
+
+      expect(
+        result?.skills.map((skill) => skill.id),
+        "one unparseable metadata.yaml must not abort discovery",
+      ).toStrictEqual(["valid-skill (@local)"]);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("Skipping local skill 'unparseable-meta'"),
+      );
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(STANDARD_FILES.METADATA_YAML));
     });
 
     it("handles directory with only non-skill subdirectories", async () => {

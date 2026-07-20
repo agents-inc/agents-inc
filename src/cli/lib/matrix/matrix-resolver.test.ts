@@ -16,12 +16,16 @@ import {
   getSkillsByCategory,
   getAvailableSkills,
 } from "./matrix-resolver";
-import type { CategoryDefinition, CategoryPath, SkillId, Category } from "../../types";
+import type { CategoryPath, SkillId } from "../../types";
 import { SKILLS, TEST_CATEGORIES } from "../__tests__/test-fixtures";
 import { createMockSkill } from "../__tests__/factories/skill-factories.js";
-import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
+import { buildCategoryMap, createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { createMockCategory } from "../__tests__/factories/category-factories.js";
-import { EMPTY_MATRIX } from "../__tests__/mock-data/mock-matrices";
+import {
+  EMPTY_MATRIX,
+  SINGLE_REACT_MATRIX,
+  WEB_PAIR_MATRIX,
+} from "../__tests__/mock-data/mock-matrices";
 import { initializeMatrix } from "./matrix-provider";
 
 const REACT_ID: SkillId = "web-framework-react";
@@ -36,18 +40,18 @@ const UNKNOWN_SKILL_ID = "web-test-unknown-skill" as SkillId;
 const NONEXISTENT_SKILL_ID = "web-skill-nonexistent-item" as SkillId;
 
 // Boundary casts: test matrices only cover the web-framework category
-const NON_EXCLUSIVE_FRAMEWORK_CATEGORIES = {
+const NON_EXCLUSIVE_FRAMEWORK_CATEGORIES = buildCategoryMap({
   "web-framework": {
     ...TEST_CATEGORIES.framework,
     description: "Frameworks",
     exclusive: false,
     order: 1,
   },
-} as Record<Category, CategoryDefinition>;
+});
 
-const EXCLUSIVE_FRAMEWORK_CATEGORIES = {
+const EXCLUSIVE_FRAMEWORK_CATEGORIES = buildCategoryMap({
   "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true },
-} as Record<Category, CategoryDefinition>;
+});
 
 describe("unknown skill ids", () => {
   it("resolver entry points throw for ids not in the matrix", () => {
@@ -328,9 +332,9 @@ describe("validateSelection", () => {
       category: "web-framework",
     });
     const matrix = createMockMatrix(skillA, skillB, {
-      categories: {
+      categories: buildCategoryMap({
         "web-framework": { ...TEST_CATEGORIES.framework, description: "Frameworks", order: 1 },
-      } as Record<Category, CategoryDefinition>,
+      }),
     });
     initializeMatrix(matrix);
 
@@ -412,14 +416,14 @@ describe("Empty skill selection", () => {
       const matrix = createMockMatrix(
         {},
         {
-          categories: {
+          categories: buildCategoryMap({
             "web-framework": {
               ...TEST_CATEGORIES.framework,
               description: "Required framework",
               required: true,
               order: 1,
             },
-          } as Record<Category, CategoryDefinition>,
+          }),
         },
       );
       initializeMatrix(matrix);
@@ -585,14 +589,14 @@ describe("Conflicting skills", () => {
       category: "web-framework",
     });
     const matrix = createMockMatrix(skillA, skillB, {
-      categories: {
+      categories: buildCategoryMap({
         "web-framework": {
           ...TEST_CATEGORIES.framework,
           description: "Frameworks",
           exclusive: false,
           order: 1,
         },
-      },
+      }),
     });
 
     beforeEach(() => {
@@ -1190,14 +1194,14 @@ describe("getDependentSkills", () => {
 describe("getAvailableSkills edge cases", () => {
   it("should return empty array for category with no skills", () => {
     const matrix = createMockMatrix(createMockSkill(REACT_ID, { category: "web-framework" }), {
-      categories: {
+      categories: buildCategoryMap({
         "web-styling": {
           ...TEST_CATEGORIES.styling,
           description: "Styling options",
           exclusive: false,
           order: 1,
         },
-      } as Record<Category, CategoryDefinition>,
+      }),
     });
     initializeMatrix(matrix);
 
@@ -1214,13 +1218,13 @@ describe("getAvailableSkills edge cases", () => {
       }),
     );
     const matrix = createMockMatrix(skills, {
-      categories: {
+      categories: buildCategoryMap({
         "api-performance": createMockCategory("api-performance", "Performance", {
           description: "Performance tools",
           exclusive: false,
           order: 1,
         }),
-      } as Record<Category, CategoryDefinition>,
+      }),
     });
     initializeMatrix(matrix);
 
@@ -1377,9 +1381,9 @@ describe("validateSelection edge cases", () => {
       category: "web-framework",
     });
     const matrix = createMockMatrix(skillA, skillB, skillC, {
-      categories: {
+      categories: buildCategoryMap({
         "web-framework": { ...TEST_CATEGORIES.framework, description: "Frameworks", order: 1 },
-      } as Record<Category, CategoryDefinition>,
+      }),
     });
     initializeMatrix(matrix);
 
@@ -1417,14 +1421,14 @@ describe("validateConflicts", () => {
   });
 
   it("should return no errors for a single skill", () => {
-    initializeMatrix(createMockMatrix(SKILLS.react));
+    initializeMatrix(SINGLE_REACT_MATRIX);
 
     const result = validateConflicts([REACT_ID]);
     expect(result.errors).toStrictEqual([]);
   });
 
   it("should return no errors when skills do not conflict", () => {
-    initializeMatrix(createMockMatrix(SKILLS.react, SKILLS.zustand));
+    initializeMatrix(WEB_PAIR_MATRIX);
 
     const result = validateConflicts([REACT_ID, ZUSTAND_ID]);
     expect(result.errors).toStrictEqual([]);
@@ -1476,7 +1480,7 @@ describe("validateConflicts", () => {
   });
 
   it("should skip skills not found in the matrix gracefully", () => {
-    initializeMatrix(createMockMatrix(SKILLS.react));
+    initializeMatrix(SINGLE_REACT_MATRIX);
 
     // VUE_ID is not in the matrix — should not throw, just skip
     const result = validateConflicts([REACT_ID, VUE_ID]);
@@ -1517,7 +1521,7 @@ describe("validateRequirements", () => {
   });
 
   it("should return no errors for skill with no requirements", () => {
-    initializeMatrix(createMockMatrix(SKILLS.react));
+    initializeMatrix(SINGLE_REACT_MATRIX);
 
     const result = validateRequirements([REACT_ID], new Set([REACT_ID]));
     expect(result.errors).toStrictEqual([]);
@@ -1639,7 +1643,7 @@ describe("validateRequirements", () => {
   });
 
   it("should skip skills not found in the matrix", () => {
-    initializeMatrix(createMockMatrix(SKILLS.react));
+    initializeMatrix(SINGLE_REACT_MATRIX);
 
     // VUE_ID is not in the matrix — should not throw
     const result = validateRequirements([VUE_ID], new Set([VUE_ID]));
@@ -1696,9 +1700,9 @@ describe("validateExclusivity", () => {
     const skillA = createMockSkill(REACT_ID, { category: "web-testing" });
     const skillB = createMockSkill(VUE_ID, { category: "web-testing" });
     const matrix = createMockMatrix(skillA, skillB, {
-      categories: {
+      categories: buildCategoryMap({
         "web-testing": { ...TEST_CATEGORIES.testing, exclusive: false },
-      } as Record<Category, CategoryDefinition>,
+      }),
     });
     initializeMatrix(matrix);
 
@@ -1721,10 +1725,10 @@ describe("validateExclusivity", () => {
     const skillC = createMockSkill(ZUSTAND_ID, { category: "web-testing" });
     const skillD = createMockSkill(HONO_ID, { category: "web-testing" });
     const matrix = createMockMatrix(skillA, skillB, skillC, skillD, {
-      categories: {
+      categories: buildCategoryMap({
         "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true },
         "web-testing": { ...TEST_CATEGORIES.testing, exclusive: false },
-      } as Record<Category, CategoryDefinition>,
+      }),
     });
     initializeMatrix(matrix);
 
@@ -1736,7 +1740,7 @@ describe("validateExclusivity", () => {
   });
 
   it("should skip skills not found in the matrix", () => {
-    initializeMatrix(createMockMatrix(SKILLS.react));
+    initializeMatrix(SINGLE_REACT_MATRIX);
 
     // VUE_ID not in matrix — should not throw
     const result = validateExclusivity([REACT_ID, VUE_ID]);
@@ -1761,13 +1765,13 @@ describe("validateExclusivity", () => {
     const skillA = createMockSkill(REACT_ID, { category: "web-framework" });
     const skillB = createMockSkill(VUE_ID, { category: "web-framework" });
     const matrix = createMockMatrix(skillA, skillB, {
-      categories: {
+      categories: buildCategoryMap({
         "web-framework": {
           ...TEST_CATEGORIES.framework,
           displayName: "Framework",
           exclusive: true,
         },
-      } as Record<Category, CategoryDefinition>,
+      }),
     });
     initializeMatrix(matrix);
 
@@ -1798,7 +1802,7 @@ describe("validateRecommendations", () => {
   });
 
   it("should return no warnings when no skills are recommended", () => {
-    initializeMatrix(createMockMatrix(SKILLS.react, SKILLS.zustand));
+    initializeMatrix(WEB_PAIR_MATRIX);
 
     const selectedSet = new Set<SkillId>([REACT_ID]);
     const result = validateRecommendations([REACT_ID], selectedSet);

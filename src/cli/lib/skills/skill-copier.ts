@@ -2,7 +2,7 @@ import path from "path";
 
 import { copy, ensureDir, isPathWithin } from "../../utils/fs";
 import { computeFileHash } from "../versioning";
-import { EJECT_SOURCE, STANDARD_FILES } from "../../consts";
+import { EJECT_SOURCE, SOURCE_SRC_DIR, STANDARD_FILES } from "../../consts";
 import type { MergedSkillsMatrix, ResolvedSkill, SkillId } from "../../types";
 import type { SourceLoadResult } from "../loading";
 import { getSkillById } from "../matrix/matrix-provider";
@@ -49,8 +49,8 @@ function resolveSkillPath(basePath: string, skillPath: string): string {
   return resolved;
 }
 
-function getSkillSourcePath(skill: ResolvedSkill, registryRoot: string): string {
-  const srcDir = path.join(registryRoot, "src");
+function getSkillSourcePath(skill: ResolvedSkill, rootDir: string): string {
+  const srcDir = path.join(rootDir, SOURCE_SRC_DIR);
   return resolveSkillPath(srcDir, skill.path);
 }
 
@@ -96,14 +96,6 @@ export async function copySkill(
   );
 }
 
-function getSkillSourcePathFromSource(
-  skill: ResolvedSkill,
-  sourceResult: SourceLoadResult,
-): string {
-  const srcDir = path.join(sourceResult.sourcePath, "src");
-  return resolveSkillPath(srcDir, skill.path);
-}
-
 export async function copySkillFromSource(
   skill: ResolvedSkill,
   stackDir: string,
@@ -111,10 +103,28 @@ export async function copySkillFromSource(
 ): Promise<CopiedSkill> {
   return copySkillTo(
     skill,
-    getSkillSourcePathFromSource(skill, sourceResult),
+    getSkillSourcePath(skill, sourceResult.sourcePath),
     getSkillDestPath(skill, stackDir),
     sourceResult.sourceConfig.source,
   );
+}
+
+/**
+ * In-place CopiedSkill for a local skill left where it already lives (no copy):
+ * source and destination are the skill's own local path.
+ */
+async function resolveLocalCopiedSkill(
+  skill: ResolvedSkill,
+  localPath: string,
+): Promise<CopiedSkill> {
+  const contentHash = await generateSkillHash(localPath);
+  return {
+    skillId: skill.id,
+    sourcePath: localPath,
+    destPath: localPath,
+    contentHash,
+    local: true,
+  };
 }
 
 export type CopyProgressCallback = (completed: number, total: number) => void;
@@ -137,15 +147,7 @@ export async function copySkillsToPluginFromSource(
 
       let result: CopiedSkill;
       if (skill.local && skill.localPath && !userSelectedRemote) {
-        const contentHash = await generateSkillHash(skill.localPath);
-
-        result = {
-          skillId: skill.id,
-          sourcePath: skill.localPath,
-          destPath: skill.localPath,
-          contentHash,
-          local: true,
-        };
+        result = await resolveLocalCopiedSkill(skill, skill.localPath);
       } else {
         result = await copySkillFromSource(skill, pluginDir, sourceResult);
       }
@@ -170,7 +172,7 @@ async function copySkillToLocalFlattened(
 ): Promise<CopiedSkill> {
   return copySkillTo(
     skill,
-    getSkillSourcePathFromSource(skill, sourceResult),
+    getSkillSourcePath(skill, sourceResult.sourcePath),
     getFlattenedSkillDestPath(skill, localSkillsDir),
     sourceResult.sourceConfig.source,
   );
@@ -192,18 +194,12 @@ export async function copySkillsToLocalFlattened(
       if (skill.local && skill.localPath && !userSelectedRemote) {
         const destPath = getFlattenedSkillDestPath(skill, localSkillsDir);
         const alreadyInPlace = path.resolve(skill.localPath) === path.resolve(destPath);
-        const contentHash = await generateSkillHash(skill.localPath);
 
         if (alreadyInPlace) {
-          return {
-            skillId: skill.id,
-            sourcePath: skill.localPath,
-            destPath: skill.localPath,
-            contentHash,
-            local: true,
-          };
+          return resolveLocalCopiedSkill(skill, skill.localPath);
         }
 
+        const contentHash = await generateSkillHash(skill.localPath);
         await ensureDir(path.dirname(destPath));
         await copy(skill.localPath, destPath);
         return { skillId: skill.id, sourcePath: skill.localPath, destPath, contentHash };

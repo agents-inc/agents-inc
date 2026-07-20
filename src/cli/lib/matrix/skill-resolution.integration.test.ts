@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mapToObj } from "remeda";
 
 import {
   createTestSource,
@@ -17,11 +16,8 @@ import {
   hasUnmetRequirements,
   getUnmetRequirementsReason,
 } from ".";
-import {
-  createMockSkill,
-  testSkillToResolvedSkill,
-} from "../__tests__/factories/skill-factories.js";
-import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
+import { createMockSkill } from "../__tests__/factories/skill-factories.js";
+import { createMatrixFromTestSkills } from "../__tests__/factories/matrix-factories.js";
 import { buildWizardResult, buildSourceResult } from "../__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
 import { readTestTsConfig } from "../__tests__/helpers/config-io.js";
@@ -467,12 +463,9 @@ describe("Integration: Multi-Source Install Pipeline", () => {
   const PIPELINE_SKILL_COUNT = 5;
 
   function buildPipelineMatrix(): MergedSkillsMatrix {
-    return createMockMatrix(
-      mapToObj(RESOLUTION_PIPELINE_SKILLS, (skill) => [
-        skill.id,
-        testSkillToResolvedSkill(skill, { author: skill.author }),
-      ]),
-    );
+    return createMatrixFromTestSkills(RESOLUTION_PIPELINE_SKILLS, (skill) => ({
+      author: skill.author,
+    }));
   }
 
   beforeEach(async () => {

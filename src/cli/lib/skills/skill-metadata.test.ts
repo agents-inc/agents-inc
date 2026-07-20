@@ -294,7 +294,7 @@ describe("skill-metadata", () => {
 
       // Source skills does NOT include web-framework-react
       const sourceSkills = {
-        "web-framework-vue": { path: "web/framework/vue" },
+        "web-framework-vue-composition-api": { path: "web/framework/vue-composition-api" },
       };
 
       const result = await compareLocalSkillsWithSource("/project", "/source", sourceSkills);

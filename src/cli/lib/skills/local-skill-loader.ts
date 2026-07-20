@@ -1,7 +1,8 @@
 import { parse as parseYaml } from "yaml";
 import path from "path";
 import { directoryExists, listDirectories, fileExists, readFile } from "../../utils/fs";
-import { verbose } from "../../utils/logger";
+import { getErrorMessage } from "../../utils/errors";
+import { verbose, warn } from "../../utils/logger";
 import { LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../consts";
 import { parseFrontmatter } from "../loading";
 import type { CategoryPath, Domain, ExtractedSkillMetadata, SkillSlug } from "../../types";
@@ -71,7 +72,20 @@ async function extractLocalSkill(
   }
 
   const metadataContent = await readFile(metadataPath);
-  const parsed = localRawMetadataSchema.safeParse(parseYaml(metadataContent));
+
+  // parseYaml throws on syntactically invalid YAML. One corrupt file must skip
+  // its own skill, not abort discovery for every command that loads the catalog.
+  let rawMetadata: unknown;
+  try {
+    rawMetadata = parseYaml(metadataContent);
+  } catch (error) {
+    warn(
+      `Skipping local skill '${skillDirName}': unparseable ${STANDARD_FILES.METADATA_YAML} at ${metadataPath} — ${getErrorMessage(error)}`,
+    );
+    return null;
+  }
+
+  const parsed = localRawMetadataSchema.safeParse(rawMetadata);
 
   if (!parsed.success) {
     verbose(

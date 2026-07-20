@@ -13,7 +13,7 @@ import { initializeMatrix, matrix } from "../matrix/matrix-provider";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { SKILLS } from "../__tests__/test-fixtures";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
-import { buildSourceResult } from "../__tests__/factories/config-factories.js";
+import { buildSourceResult, initMatrixAndSource } from "../__tests__/factories/config-factories.js";
 import { writeTestSkill } from "../__tests__/helpers/disk-writers.js";
 import { EMPTY_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { renderSkillMd } from "../__tests__/content-generators";
@@ -68,8 +68,7 @@ async function writeRemoteSkillOnDisk(
 
 /** Registers the matrix with the provider and builds the standard PROJECT_ROOT-sourced result. */
 function initSourceResult(matrix: MergedSkillsMatrix, projectDir: string): SourceLoadResult {
-  initializeMatrix(matrix);
-  return buildSourceResult(matrix, projectDir, {
+  return initMatrixAndSource(matrix, projectDir, {
     sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
   });
 }
@@ -342,11 +341,7 @@ describe("skill-copier", () => {
     });
 
     it("throws for unknown skills", async () => {
-      initializeMatrix(EMPTY_MATRIX);
-
-      const sourceResult = buildSourceResult(EMPTY_MATRIX, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(EMPTY_MATRIX, projectDir);
 
       await expect(
         copySkillsToPluginFromSource(["web-unknown-skill" as SkillId], pluginDir, sourceResult),
@@ -354,11 +349,7 @@ describe("skill-copier", () => {
     });
 
     it("handles empty skill selection", async () => {
-      initializeMatrix(EMPTY_MATRIX);
-
-      const sourceResult = buildSourceResult(EMPTY_MATRIX, projectDir, {
-        sourceConfig: { source: PROJECT_ROOT, sourceOrigin: "flag" },
-      });
+      const sourceResult = initSourceResult(EMPTY_MATRIX, projectDir);
 
       const result = await copySkillsToPluginFromSource([], pluginDir, sourceResult);
 

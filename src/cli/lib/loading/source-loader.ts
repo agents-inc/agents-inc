@@ -2,7 +2,6 @@ import os from "os";
 import { unique } from "remeda";
 import path from "path";
 import {
-  DEFAULT_BRANDING,
   PROJECT_ROOT,
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
@@ -12,6 +11,7 @@ import {
 import { defaultCategories } from "../configuration/default-categories";
 import { defaultRules } from "../configuration/default-rules";
 import { defaultStacks } from "../configuration/default-stacks";
+import { isHomeDirectory } from "../installation/is-home-directory";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
 import type {
   AgentDefinition,
@@ -24,6 +24,7 @@ import type {
   ResolvedStack,
   SkillAssignment,
   SkillId,
+  SkillScope,
   Stack,
   Category,
 } from "../../types";
@@ -67,7 +68,6 @@ export type SourceLoadResult = {
   sourcePath: string;
   isLocal: boolean;
   marketplace?: string;
-  marketplaceDisplayName?: string;
 };
 
 export async function loadSkillsMatrixFromSource(
@@ -86,7 +86,7 @@ export async function loadSkillsMatrixFromSource(
 
   // Load global local skills first, then project local skills — project wins on conflict
   const homeDir = os.homedir();
-  if (resolvedProjectDir !== homeDir) {
+  if (!isHomeDirectory(resolvedProjectDir)) {
     result.matrix = await mergeDiscoveredLocalSkills(result.matrix, homeDir, "global");
   }
   result.matrix = await mergeDiscoveredLocalSkills(result.matrix, resolvedProjectDir, "project");
@@ -98,7 +98,6 @@ export async function loadSkillsMatrixFromSource(
       resolvedProjectDir,
       forceRefresh,
       result.marketplace,
-      result.marketplaceDisplayName,
     );
   }
 
@@ -135,14 +134,37 @@ async function resolveBaseResult(
       sourcePath: fetchResult.path,
       isLocal: false,
       marketplace: sourceConfig.marketplace,
-      marketplaceDisplayName: DEFAULT_BRANDING.NAME,
     };
   }
 
   const isLocal = isLocalSource(source) || devMode === true;
   return isLocal
-    ? loadFromLocal(source, sourceConfig)
+    ? loadFromLocal(source, sourceConfig, forceRefresh)
     : loadFromRemote(source, sourceConfig, forceRefresh);
+}
+
+type MarketplaceLabels = Pick<SourceLoadResult, "marketplace">;
+
+/**
+ * Resolves the marketplace name from the source's
+ * `.claude-plugin/marketplace.json`. A `marketplace` already recorded in the
+ * project config wins; sources without a marketplace.json keep whatever the
+ * config had (possibly nothing) and are labelled by their source name.
+ */
+async function resolveMarketplaceLabels(
+  source: string,
+  sourceConfig: ResolvedConfig,
+  forceRefresh: boolean,
+): Promise<MarketplaceLabels> {
+  try {
+    const marketplaceResult = await fetchMarketplace(source, { forceRefresh });
+    const marketplace = sourceConfig.marketplace ?? marketplaceResult.marketplace.name;
+    verbose(`Using marketplace name from marketplace.json: ${marketplace}`);
+    return { marketplace };
+  } catch {
+    verbose(`Source does not have a marketplace.json — using source name as label`);
+    return { marketplace: sourceConfig.marketplace };
+  }
 }
 
 /** Merges relationship rule sets: source rules first, so they win first-match lookups. */
@@ -164,7 +186,7 @@ function mergeRelationships(
 async function mergeDiscoveredLocalSkills(
   matrix: MergedSkillsMatrix,
   dir: string,
-  label: "global" | "project",
+  label: SkillScope,
 ): Promise<MergedSkillsMatrix> {
   const discovered = await discoverLocalSkills(dir);
   if (!discovered || discovered.skills.length === 0) return matrix;
@@ -177,6 +199,7 @@ async function mergeDiscoveredLocalSkills(
 async function loadFromLocal(
   source: string,
   sourceConfig: ResolvedConfig,
+  forceRefresh: boolean,
 ): Promise<SourceLoadResult> {
   const skillsPath = !isLocalSource(source)
     ? PROJECT_ROOT
@@ -187,13 +210,14 @@ async function loadFromLocal(
   verbose(`Loading skills from local path: ${skillsPath}`);
 
   const mergedMatrix = await loadAndMergeFromBasePath(skillsPath);
+  const labels = await resolveMarketplaceLabels(skillsPath, sourceConfig, forceRefresh);
 
   return {
     matrix: mergedMatrix,
     sourceConfig,
     sourcePath: skillsPath,
     isLocal: true,
-    marketplace: sourceConfig.marketplace,
+    ...labels,
   };
 }
 
@@ -209,28 +233,14 @@ async function loadFromRemote(
   verbose(`Fetched to: ${fetchResult.path}`);
 
   const mergedMatrix = await loadAndMergeFromBasePath(fetchResult.path);
-
-  // Try to read marketplace name from the source's .claude-plugin/marketplace.json.
-  // This handles the case where sourceConfig.marketplace is undefined (e.g. during
-  // `agentsinc init --source github:user/repo` before any project config exists).
-  let marketplace = sourceConfig.marketplace;
-  let marketplaceDisplayName: string | undefined;
-  try {
-    const marketplaceResult = await fetchMarketplace(source, { forceRefresh });
-    marketplace ??= marketplaceResult.marketplace.name;
-    marketplaceDisplayName = marketplaceResult.marketplace.owner.name;
-    verbose(`Using marketplace name from marketplace.json: ${marketplace}`);
-  } catch {
-    verbose(`Source does not have a marketplace.json — using source name as label`);
-  }
+  const labels = await resolveMarketplaceLabels(source, sourceConfig, forceRefresh);
 
   return {
     matrix: mergedMatrix,
     sourceConfig,
     sourcePath: fetchResult.path,
     isLocal: false,
-    marketplace,
-    marketplaceDisplayName,
+    ...labels,
   };
 }
 

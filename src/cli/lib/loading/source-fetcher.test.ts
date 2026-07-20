@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { TEST_SOURCE_URL } from "../__tests__/test-constants.js";
 import os from "os";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
@@ -274,7 +275,7 @@ describe("getGigetCacheDir", () => {
 
   it("should return cache path for github: protocol", () => {
     delete process.env.XDG_CACHE_HOME;
-    const result = getGigetCacheDir("github:agents-inc/skills");
+    const result = getGigetCacheDir(TEST_SOURCE_URL);
 
     const expectedBase = path.resolve(os.homedir(), ".cache", "giget");
     // giget sanitizes "agents-inc/skills" -> "agents-inc-skills"

@@ -8,7 +8,7 @@ import type {
   SkillId,
   SkillSlug,
 } from "../../types";
-import { typedEntries } from "../../utils/typed-object";
+import { typedEntries, typedValues } from "../../utils/typed-object";
 
 /** The current matrix — starts as BUILT_IN_MATRIX, replaced after local skill merge on startup */
 export let matrix: MergedSkillsMatrix = BUILT_IN_MATRIX;
@@ -25,6 +25,16 @@ export function getSkillById(id: SkillId): ResolvedSkill {
   return skill;
 }
 
+/**
+ * Display label for a skill ID, falling back to the raw ID. Optional chaining is
+ * sanctioned here (unlike getSkillById) because callers render IDs that may be
+ * absent from the current matrix — e.g. a removed skill, or a foreign/local id
+ * not present in this source — and want a graceful label rather than a throw.
+ */
+export function getSkillDisplayName(id: SkillId): string {
+  return matrix.skills[id]?.displayName ?? id;
+}
+
 /** Asserting skill lookup by slug — resolves slug to ID, throws if not found. */
 export function getSkillBySlug(slug: SkillSlug): ResolvedSkill {
   const id = matrix.slugMap.slugToId[slug];
@@ -34,7 +44,7 @@ export function getSkillBySlug(slug: SkillSlug): ResolvedSkill {
 
 /** All resolved skills in the current matrix (skips sparse-record holes). */
 export function allSkills(): ResolvedSkill[] {
-  return Object.values(matrix.skills).filter((s): s is ResolvedSkill => s !== undefined);
+  return typedValues(matrix.skills);
 }
 
 /** Returns IDs of all custom skills in the current matrix. */

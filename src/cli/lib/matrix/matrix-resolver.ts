@@ -12,22 +12,17 @@ import type {
   ValidationWarning,
 } from "../../types";
 import { typedEntries } from "../../utils/typed-object";
+import { mergeValidationResults } from "../validation-result";
 import { matrix, getSkillById, allSkills } from "./matrix-provider";
 
 function getLabel(skill: Pick<ResolvedSkill, "displayName">): string {
   return skill.displayName;
 }
 
-function joinWithOr(items: string[]): string {
+function joinWithConjunction(items: string[], conjunction: "or" | "and"): string {
   if (items.length <= 1) return items[0] ?? "";
-  if (items.length === 2) return `${items[0]} or ${items[1]}`;
-  return `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`;
-}
-
-function joinWithAnd(items: string[]): string {
-  if (items.length <= 1) return items[0] ?? "";
-  if (items.length === 2) return `${items[0]} and ${items[1]}`;
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+  if (items.length === 2) return `${items[0]} ${conjunction} ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")} ${conjunction} ${items[items.length - 1]}`;
 }
 
 type SelectionContext = {
@@ -301,7 +296,10 @@ function findUnsatisfiableRequiresReason(
     if (req.needsAny) {
       const allBlocked = req.skillIds.every((depId) => isDepBlockedByConflict(depId, selections));
       if (allBlocked) {
-        const labels = req.skillIds.map((id) => getLabel(getSkillById(id))).join(" or ");
+        const labels = joinWithConjunction(
+          req.skillIds.map((id) => getLabel(getSkillById(id))),
+          "or",
+        );
         return `requires ${labels} (all conflict with current selection)`;
       }
     } else {
@@ -333,8 +331,8 @@ export function getUnmetRequirementsReason(
       return s ? getLabel(s) : id;
     });
     return requirement.needsAny
-      ? `requires ${joinWithOr(names)}`
-      : `requires ${joinWithAnd(names)}`;
+      ? `requires ${joinWithConjunction(names, "or")}`
+      : `requires ${joinWithConjunction(names, "and")}`;
   }
 
   return undefined;
@@ -375,10 +373,7 @@ export function getRecommendReason(
   return skill.recommendedReason;
 }
 
-export type ValidationPartial = {
-  errors: ValidationError[];
-  warnings: ValidationWarning[];
-};
+export type ValidationPartial = Pick<SelectionValidation, "errors" | "warnings">;
 
 export function validateConflicts(resolvedSelections: SkillId[]): ValidationPartial {
   const errors: ValidationError[] = [];
@@ -495,13 +490,6 @@ export function validateRecommendations(
   }
 
   return { errors: [], warnings };
-}
-
-function mergeValidationResults(results: ValidationPartial[]): ValidationPartial {
-  return {
-    errors: results.flatMap((r) => r.errors),
-    warnings: results.flatMap((r) => r.warnings),
-  };
 }
 
 /**

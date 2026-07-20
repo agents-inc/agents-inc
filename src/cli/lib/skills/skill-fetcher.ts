@@ -1,7 +1,7 @@
 import path from "path";
 import { copy, ensureDir, directoryExists, glob } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
-import { CLI_INVOKE_COMMAND, GITHUB_SOURCE } from "../../consts";
+import { CLI_INVOKE_COMMAND, GITHUB_SOURCE, SKILLS_DIR_PATH } from "../../consts";
 import type { Marketplace, MarketplacePlugin, SkillId } from "../../types";
 
 export type FetchSkillsOptions = {
@@ -40,7 +40,7 @@ export async function fetchSkills(
   for (const skillId of skillIds) {
     logMarketplacePluginMatch(skillId, marketplace);
 
-    const skillSourceDir = path.join(sourcePath, "src", "skills");
+    const skillSourceDir = path.join(sourcePath, SKILLS_DIR_PATH);
 
     const skillPath = await findSkillPath(skillSourceDir, skillId);
 

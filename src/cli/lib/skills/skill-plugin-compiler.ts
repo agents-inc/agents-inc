@@ -15,7 +15,8 @@ import { formatZodIssues, skillMetadataLoaderSchema } from "../schemas";
 import type { z } from "zod";
 
 type SkillMetadata = z.infer<typeof skillMetadataLoaderSchema>;
-import { DEFAULT_BRANDING, STANDARD_FILES, stripYamlSchemaComment } from "../../consts";
+import { DEFAULT_BRANDING, STANDARD_FILES } from "../../consts";
+import { stripYamlSchemaComment } from "../../utils/yaml-schema";
 import { SKILL_CONTENT_FILES, SKILL_CONTENT_DIRS } from "../metadata-keys";
 
 export type SkillPluginOptions = {
@@ -168,7 +169,7 @@ export async function compileSkillPlugin(
   }
 
   const readme = generateReadme(skillName, frontmatter);
-  await writeFile(path.join(pluginDir, "README.md"), readme);
+  await writeFile(path.join(pluginDir, STANDARD_FILES.README_MD), readme);
   verbose("  Generated README.md");
 
   return {

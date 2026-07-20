@@ -1,6 +1,7 @@
 import os from "os";
 import path from "path";
 
+import { isHomeDirectory } from "../installation/is-home-directory";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, SKILLS_DIR_PATH } from "../../consts";
 import type {
   BoundSkillCandidate,
@@ -65,8 +66,6 @@ async function fetchSourceSkills(url: string, forceRefresh: boolean) {
  * @param forceRefresh - Whether to bypass cached source data
  * @param marketplace - Optional marketplace name resolved from the source's marketplace.json.
  *                      Takes precedence over `sourceConfig.marketplace` when provided.
- * @param marketplaceDisplayName - Optional human-readable label from marketplace.json owner.name
- *                                 (e.g., "Agents Inc."). Threaded to SkillSource.displayName.
  *
  * @remarks
  * **Side effects:** Mutates `primaryMatrix` in place. May perform network requests
@@ -79,7 +78,6 @@ export async function loadSkillsFromAllSources(
   projectDir: string,
   forceRefresh = false,
   marketplace?: string,
-  marketplaceDisplayName?: string,
 ): Promise<void> {
   const resolvedMarketplace = marketplace ?? sourceConfig.marketplace;
   const isDefaultPublicSource = sourceConfig.source === DEFAULT_SOURCE;
@@ -87,17 +85,12 @@ export async function loadSkillsFromAllSources(
   const primarySourceName = resolvedMarketplace ?? DEFAULT_PUBLIC_SOURCE_NAME;
   const primarySourceType: SkillSourceType = isDefaultPublicSource ? "public" : "private";
 
-  tagPrimarySourceSkills(
-    primaryMatrix,
-    primarySourceName,
-    primarySourceType,
-    marketplaceDisplayName,
-  );
+  tagPrimarySourceSkills(primaryMatrix, primarySourceName, primarySourceType);
   tagLocalSkills(primaryMatrix);
   await tagPluginSkills(primaryMatrix, projectDir, primarySourceName, primarySourceType);
 
   if (!isDefaultPublicSource) {
-    await tagPublicSourceSkills(primaryMatrix, forceRefresh);
+    await tagPublicSourceSkills(primaryMatrix, primarySourceName, forceRefresh);
   }
 
   await tagExtraSources(primaryMatrix, projectDir, forceRefresh);
@@ -108,14 +101,12 @@ function tagPrimarySourceSkills(
   matrix: MergedSkillsMatrix,
   sourceName: string,
   sourceType: SkillSourceType,
-  displayName?: string,
 ): void {
   for (const [, skill] of typedEntries(matrix.skills)) {
     if (!skill) continue;
 
     const source: SkillSource = {
       name: sourceName,
-      displayName,
       type: sourceType,
       installed: false,
       primary: true,
@@ -192,7 +183,7 @@ async function collectPluginSkillIds(projectDir: string): Promise<SkillId[]> {
   // D-160: Also discover global plugins when editing from a project directory.
   // Follows the same global+project merge pattern as local skills in source-loader.ts.
   const homeDir = os.homedir();
-  if (projectDir !== homeDir) {
+  if (!isHomeDirectory(projectDir)) {
     const globalPluginSkills = await discoverAllPluginSkills(homeDir);
     const globalSkillIds = typedKeys<SkillId>(globalPluginSkills);
     if (globalSkillIds.length > 0) {
@@ -213,9 +204,15 @@ async function collectPluginSkillIds(projectDir: string): Promise<SkillId[]> {
  * When the primary source is a private marketplace, fetch the default public source
  * and tag matching skills so the user can switch between private and public sources
  * in the Sources step.
+ *
+ * The URL check at the call site is not sufficient: a custom source that resolves
+ * to the same marketplace NAME as the public one (both fall back to
+ * {@link DEFAULT_PUBLIC_SOURCE_NAME}) would otherwise be tagged twice, offering the
+ * user two indistinguishable columns that write the same value.
  */
 async function tagPublicSourceSkills(
   matrix: MergedSkillsMatrix,
+  primarySourceName: string,
   forceRefresh: boolean,
 ): Promise<void> {
   let publicSourceName = DEFAULT_PUBLIC_SOURCE_NAME;
@@ -226,6 +223,13 @@ async function tagPublicSourceSkills(
     verbose(`Public marketplace name from marketplace.json: ${publicSourceName}`);
   } catch {
     verbose("Public source has no marketplace.json -- using default label");
+  }
+
+  if (publicSourceName === primarySourceName) {
+    verbose(
+      `Public source resolves to the same name as the primary source ('${primarySourceName}') -- skipping duplicate tagging`,
+    );
+    return;
   }
 
   try {

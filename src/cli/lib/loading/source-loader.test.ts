@@ -16,7 +16,11 @@ import {
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { createMockStack } from "../__tests__/factories/stack-factories.js";
 import { createMockCategory } from "../__tests__/factories/category-factories.js";
-import { CLAUDE_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../consts";
+import {
+  createMockMarketplace,
+  createMockMarketplacePlugin,
+} from "../__tests__/factories/plugin-factories.js";
+import { CLAUDE_DIR, STANDARD_DIRS, STANDARD_FILES, marketplaceManifestPath } from "../../consts";
 import {
   createTestSource,
   cleanupTestSource,
@@ -148,6 +152,37 @@ describe("source-loader", () => {
         });
 
         expect(result.isLocal).toBe(true);
+      });
+
+      it("should resolve marketplace name from the source's marketplace.json", async () => {
+        const sourceDir = path.join(tempDir, "local-marketplace-source");
+        await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
+        const manifestPath = marketplaceManifestPath(sourceDir);
+        await mkdir(path.dirname(manifestPath), { recursive: true });
+        await writeFile(
+          manifestPath,
+          JSON.stringify(
+            createMockMarketplace([createMockMarketplacePlugin("web-framework-react")]),
+          ),
+        );
+
+        const result = await loadSkillsMatrixFromSource({
+          sourceFlag: sourceDir,
+          projectDir: tempDir,
+          skipExtraSources: true,
+        });
+
+        expect(result.marketplace).toBe("test-marketplace");
+      });
+
+      it("should leave marketplace undefined when the local source has no marketplace.json", async () => {
+        const result = await loadSkillsMatrixFromSource({
+          sourceFlag: fixtureDirs.sourceDir,
+          projectDir: tempDir,
+          skipExtraSources: true,
+        });
+
+        expect(result.marketplace).toBeUndefined();
       });
     });
 

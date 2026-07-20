@@ -1,6 +1,7 @@
 import { verbose, warn } from "../../utils/logger";
 import { uniqueBy } from "remeda";
-import { LOCAL_PSEUDO_CATEGORY } from "../../consts";
+import { toTitleCase } from "../../utils/string";
+import { DEFAULT_VERSION, LOCAL_PSEUDO_CATEGORY } from "../../consts";
 import type {
   CategoryDefinition,
   CategoryMap,
@@ -32,10 +33,7 @@ export function synthesizeCategory(category: Category, domain: Domain): Category
   verbose(
     `Category '${category}' has no definition in skill-categories.ts — using auto-generated placeholder`,
   );
-  const displayName = category
-    .split("-")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+  const displayName = toTitleCase(category);
 
   return {
     id: category,
@@ -125,7 +123,7 @@ export function mergeMatrixWithSkills(
   }
 
   const merged: MergedSkillsMatrix = {
-    version: "1.0.0",
+    version: DEFAULT_VERSION,
     categories: synthesizedCategories,
     skills: resolvedSkills,
     suggestedStacks: [],
