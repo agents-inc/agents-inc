@@ -1,7 +1,7 @@
 import path from "path";
 import { directoryExists } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
-import { PROJECT_ROOT, DIRS, CLAUDE_DIR } from "../../consts";
+import { PROJECT_ROOT, DIRS, CLAUDE_DIR, STANDARD_DIRS } from "../../consts";
 import { fetchFromSource, type FetchOptions } from "../loading";
 import { loadProjectSourceConfig } from "../configuration";
 import type { AgentSourcePaths } from "../../types";
@@ -32,7 +32,7 @@ export async function getLocalAgentDefinitions(
   }
 
   const localTemplatesDir = options.projectDir
-    ? path.join(options.projectDir, CLAUDE_DIR, "templates")
+    ? path.join(options.projectDir, CLAUDE_DIR, STANDARD_DIRS.TEMPLATES)
     : undefined;
   const useLocalTemplates =
     localTemplatesDir !== undefined && (await directoryExists(localTemplatesDir));
@@ -77,7 +77,7 @@ export async function fetchAgentDefinitionsFromRemote(
   const agentsDirRelPath = options.agentsDir ?? sourceProjectConfig?.agentsDir ?? DIRS.agents;
 
   const agentsDir = path.join(result.path, agentsDirRelPath);
-  const templatesDir = path.join(agentsDir, "_templates");
+  const templatesDir = path.join(agentsDir, path.basename(DIRS.templates));
 
   if (!(await directoryExists(agentsDir))) {
     throw new Error(`Agent partials not found at '${agentsDir}'`);

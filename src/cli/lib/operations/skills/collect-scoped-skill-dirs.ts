@@ -1,12 +1,14 @@
 import os from "os";
 import path from "path";
+import type { SkillScope } from "../../../types/config.js";
 import { fileExists, listDirectories } from "../../../utils/fs.js";
+import { isHomeDirectory } from "../../installation/is-home-directory.js";
 import { LOCAL_SKILLS_PATH } from "../../../consts.js";
 
 export type ScopedSkillDir = {
   dirName: string;
   localSkillsPath: string;
-  scope: "project" | "global";
+  scope: SkillScope;
 };
 
 export type ScopedSkillDirsResult = {
@@ -28,7 +30,7 @@ export async function collectScopedSkillDirs(projectDir: string): Promise<Scoped
   const projectLocalPath = path.join(projectDir, LOCAL_SKILLS_PATH);
   const globalLocalPath = path.join(homeDir, LOCAL_SKILLS_PATH);
   const hasProject = await fileExists(projectLocalPath);
-  const hasGlobal = projectDir !== homeDir && (await fileExists(globalLocalPath));
+  const hasGlobal = !isHomeDirectory(projectDir) && (await fileExists(globalLocalPath));
 
   const dirs: ScopedSkillDir[] = [];
 

@@ -163,10 +163,12 @@ export function buildAgentTemplateContext(
   name: AgentName,
   agent: AgentConfig,
   files: AgentFiles,
+  mapSkill: (skill: Skill) => Skill = (skill) => skill,
 ): CompiledAgentData {
-  const preloadedSkills = agent.skills.filter((s) => s.preloaded);
-  const dynamicSkills = agent.skills.filter((s) => !s.preloaded);
-  const preloadedSkillIds = preloadedSkills.map((s) => s.id);
+  const skills = agent.skills.map(mapSkill);
+  const preloadedSkills = skills.filter((s) => s.preloaded);
+  const dynamicSkills = skills.filter((s) => !s.preloaded);
+  const preloadedSkillIds = preloadedSkills.map((s) => s.pluginRef ?? s.id);
 
   verbose(
     `Skills for ${name}: ${preloadedSkills.length} preloaded, ${dynamicSkills.length} dynamic`,
@@ -175,7 +177,7 @@ export function buildAgentTemplateContext(
   return {
     agent,
     ...files,
-    skills: agent.skills,
+    skills,
     preloadedSkills,
     dynamicSkills,
     preloadedSkillIds,
@@ -229,7 +231,7 @@ export async function compileAllAgents(
   ctx: CompileContext,
   engine: Liquid,
 ): Promise<void> {
-  const outDir = path.join(ctx.outputDir, "agents");
+  const outDir = path.join(ctx.outputDir, STANDARD_DIRS.AGENTS);
   await ensureDir(outDir);
 
   let hasValidationIssues = false;
@@ -360,7 +362,7 @@ export async function copyClaudeMdToOutput(ctx: CompileContext): Promise<void> {
  */
 export async function compileAllCommands(ctx: CompileContext): Promise<void> {
   const commandsDir = path.join(ctx.projectRoot, DIRS.commands);
-  const outDir = path.join(ctx.outputDir, "commands");
+  const outDir = path.join(ctx.outputDir, STANDARD_DIRS.COMMANDS);
 
   if (!(await fileExists(commandsDir))) {
     log("  - No commands directory found, skipping...");
@@ -406,13 +408,18 @@ export async function createLiquidEngine(projectDir?: string): Promise<Liquid> {
   const roots: string[] = [];
 
   if (projectDir) {
-    const srcTemplatesDir = path.join(projectDir, CLAUDE_SRC_DIR, "agents", "_templates");
+    const srcTemplatesDir = path.join(
+      projectDir,
+      CLAUDE_SRC_DIR,
+      STANDARD_DIRS.AGENTS,
+      path.basename(DIRS.templates),
+    );
     if (await directoryExists(srcTemplatesDir)) {
       roots.push(srcTemplatesDir);
       verbose(`Using local templates from: ${srcTemplatesDir}`);
     }
 
-    const legacyTemplatesDir = path.join(projectDir, CLAUDE_DIR, "templates");
+    const legacyTemplatesDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.TEMPLATES);
     if (await directoryExists(legacyTemplatesDir)) {
       roots.push(legacyTemplatesDir);
       verbose(`Using legacy templates from: ${legacyTemplatesDir}`);
@@ -431,9 +438,9 @@ export async function createLiquidEngine(projectDir?: string): Promise<Liquid> {
 
 /** Removes the agents/, skills/, and commands/ subdirectories from the output directory. */
 export async function removeCompiledOutputDirs(outputDir: string): Promise<void> {
-  await remove(path.join(outputDir, "agents"));
-  await remove(path.join(outputDir, "skills"));
-  await remove(path.join(outputDir, "commands"));
+  await remove(path.join(outputDir, STANDARD_DIRS.AGENTS));
+  await remove(path.join(outputDir, STANDARD_DIRS.SKILLS));
+  await remove(path.join(outputDir, STANDARD_DIRS.COMMANDS));
 }
 
 /**
@@ -455,30 +462,7 @@ export async function compileAgentForPlugin(
 ): Promise<string> {
   verbose(`Compiling agent: ${name}`);
 
-  // Use agent's sourceRoot if available (for multi-source loading), otherwise fallback
-  const agentSourceRoot = agent.sourceRoot || fallbackRoot;
-  // Use agent's agentBaseDir if available (for project agents in .claude-src/agents/)
-  const agentBaseDir = agent.agentBaseDir || DIRS.agents;
-  const agentDir = path.join(agentSourceRoot, agentBaseDir, agent.path || name);
-
-  const identity = await readFile(path.join(agentDir, STANDARD_FILES.IDENTITY_MD));
-  const playbook = await readFile(path.join(agentDir, STANDARD_FILES.PLAYBOOK_MD));
-  const criticalRequirementsTop = await readFileOptional(
-    path.join(agentDir, STANDARD_FILES.CRITICAL_REQUIREMENTS_MD),
-    "",
-  );
-  const criticalReminders = await readFileOptional(
-    path.join(agentDir, STANDARD_FILES.CRITICAL_REMINDERS_MD),
-    "",
-  );
-
-  const agentPath = agent.path || name;
-  const category = agentPath.split("/")[0];
-  const categoryDir = path.join(agentSourceRoot, agentBaseDir, category);
-
-  const output =
-    (await readFileOptional(path.join(agentDir, STANDARD_FILES.OUTPUT_MD), "")) ||
-    (await readFileOptional(path.join(categoryDir, STANDARD_FILES.OUTPUT_MD), ""));
+  const files = await readAgentFiles(name, agent, fallbackRoot);
 
   // D-217: per-skill pluginRef attachment. Each skill's own `source` decides
   // whether it renders as `${id}:${id}` (plugin-installed) or bare id (ejected).
@@ -486,28 +470,10 @@ export async function compileAgentForPlugin(
   // others are ejected. Missing `source` (user-authored local skills with no
   // SkillConfig entry) falls through to bare id — the expected case, not a
   // silent fallback.
-  const skills = agent.skills.map((s) => ({ ...s, pluginRef: derivePluginRef(s) }));
-
-  const preloadedSkills = skills.filter((s) => s.preloaded);
-  const dynamicSkills = skills.filter((s) => !s.preloaded);
-  const preloadedSkillIds = preloadedSkills.map((s) => s.pluginRef ?? s.id);
-
-  verbose(
-    `Skills for ${name}: ${preloadedSkills.length} preloaded, ${dynamicSkills.length} dynamic`,
-  );
-
-  const data: CompiledAgentData = {
-    agent,
-    identity,
-    playbook,
-    output,
-    criticalRequirementsTop,
-    criticalReminders,
-    skills,
-    preloadedSkills,
-    dynamicSkills,
-    preloadedSkillIds,
-  };
+  const data = buildAgentTemplateContext(name, agent, files, (skill) => ({
+    ...skill,
+    pluginRef: derivePluginRef(skill),
+  }));
 
   return engine.renderFile("agent", sanitizeCompiledAgentData(data));
 }

@@ -5,10 +5,10 @@ import { compileAgentForPlugin } from "../compiler.js";
 import { resolveInstallPaths } from "../installation/install-base-dir.js";
 import { writeFile, ensureDir } from "../../utils/fs.js";
 import { typedEntries } from "../../utils/typed-object.js";
-import type { AgentConfig, AgentName } from "../../types/index.js";
+import type { AgentConfig, AgentName, SkillScope } from "../../types/index.js";
 
 export type AgentWriteOutcome =
-  | { name: AgentName; ok: true; scope: "project" | "global"; targetDir: string }
+  | { name: AgentName; ok: true; scope: SkillScope; targetDir: string }
   | { name: AgentName; ok: false; error: unknown };
 
 /**
@@ -22,7 +22,7 @@ export async function writeCompiledAgentsByScope(params: {
   sourcePath: string;
   engine: Liquid;
   projectAgentsDir: string;
-  agentScopeMap?: Map<AgentName, "project" | "global">;
+  agentScopeMap?: Map<AgentName, SkillScope>;
 }): Promise<AgentWriteOutcome[]> {
   const globalAgentsDir = resolveInstallPaths(os.homedir(), "global").agentsDir;
 

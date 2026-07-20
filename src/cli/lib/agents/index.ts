@@ -19,3 +19,5 @@ export {
   compileAllAgentPlugins,
   printAgentCompilationSummary,
 } from "./agent-plugin-compiler";
+
+export { listAgentMdFiles, listCompiledAgentNames } from "./list-compiled-agents";

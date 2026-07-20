@@ -1,14 +1,13 @@
 import path from "path";
 import { countBy, sortBy } from "remeda";
 
-import { MAX_PLUGIN_FILE_SIZE } from "../consts";
-import { getErrorMessage } from "../utils/errors";
-import { readFileSafe, writeFile, glob, ensureDir } from "../utils/fs";
+import { DEFAULT_VERSION, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../consts";
+import { writeFile, glob, ensureDir } from "../utils/fs";
 import { verbose, warn } from "../utils/logger";
 import type { Marketplace, MarketplacePlugin, PluginManifest } from "../types";
-import { pluginManifestSchema } from "./schemas";
+import { readPluginManifest } from "./plugins";
 
-const PLUGIN_MANIFEST_PATH = ".claude-plugin/plugin.json";
+const PLUGIN_MANIFEST_PATH = `${PLUGIN_MANIFEST_DIR}/${PLUGIN_MANIFEST_FILE}`;
 const MARKETPLACE_SCHEMA_URL = "https://anthropic.com/claude-code/marketplace.schema.json";
 
 type MarketplaceOptions = {
@@ -19,18 +18,6 @@ type MarketplaceOptions = {
   ownerEmail?: string;
   pluginRoot: string;
 };
-
-async function readPluginManifest(pluginDir: string): Promise<PluginManifest | null> {
-  const manifestPath = path.join(pluginDir, PLUGIN_MANIFEST_PATH);
-
-  try {
-    const content = await readFileSafe(manifestPath, MAX_PLUGIN_FILE_SIZE);
-    return pluginManifestSchema.parse(JSON.parse(content));
-  } catch (error) {
-    verbose(`Failed to read plugin manifest at '${manifestPath}': ${getErrorMessage(error)}`);
-    return null;
-  }
-}
 
 function convertManifestToMarketplacePlugin(
   manifest: PluginManifest,
@@ -84,7 +71,7 @@ export async function generateMarketplace(
   return {
     $schema: MARKETPLACE_SCHEMA_URL,
     name: options.name,
-    version: options.version ?? "1.0.0",
+    version: options.version ?? DEFAULT_VERSION,
     owner: {
       name: options.ownerName,
       ...(options.ownerEmail ? { email: options.ownerEmail } : {}),

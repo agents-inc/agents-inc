@@ -5,13 +5,8 @@ import { fileExists, readFileSafe } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
 import { typedEntries } from "../../utils/typed-object";
-import {
-  CLAUDE_DIR,
-  PLUGINS_SUBDIR,
-  MAX_CONFIG_FILE_SIZE,
-  PLUGIN_MANIFEST_DIR,
-  PLUGIN_MANIFEST_FILE,
-} from "../../consts";
+import { CLAUDE_DIR, PLUGINS_SUBDIR, MAX_CONFIG_FILE_SIZE, STANDARD_FILES } from "../../consts";
+import { getPluginManifestPath } from "./plugin-finder";
 
 /**
  * Plugin key format: "plugin-name@marketplace"
@@ -54,7 +49,7 @@ const installedPluginsSchema = z
   })
   .passthrough();
 
-const SETTINGS_FILE = "settings.json";
+const SETTINGS_FILE = STANDARD_FILES.SETTINGS_JSON;
 const INSTALLED_PLUGINS_FILE = "installed_plugins.json";
 
 /**
@@ -97,7 +92,10 @@ export async function getEnabledPluginKeys(projectDir: string): Promise<PluginKe
   }
 }
 
-type RegisteredInstallation = { scope: string; projectPath?: string; installPath: string };
+type RegisteredInstallation = Pick<
+  z.infer<typeof pluginInstallationSchema>,
+  "scope" | "projectPath" | "installPath"
+>;
 
 /** This project's own project-scoped installation wins; otherwise the user-scoped one. */
 function pickInstallation(
@@ -174,7 +172,7 @@ export async function getVerifiedPluginInstallPaths(projectDir: string): Promise
   // Filter out paths that don't exist on disk
   const checks = await Promise.all(
     resolvedPaths.map(async ({ pluginKey, installPath }) => {
-      const pluginJsonPath = path.join(installPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
+      const pluginJsonPath = getPluginManifestPath(installPath);
       const manifestExists = await fileExists(pluginJsonPath);
       if (!manifestExists) {
         verbose(`Plugin '${pluginKey}' manifest does not exist at: '${pluginJsonPath}'`);

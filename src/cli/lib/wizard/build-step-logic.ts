@@ -11,7 +11,7 @@ import { matrix, getSkillById } from "../matrix/matrix-provider.js";
 import { deriveScopeBadges } from "./scope-diff.js";
 import type { CategoryRow, CategoryOption } from "../../components/wizard/category-grid.js";
 
-const FRAMEWORK_CATEGORY_ID = "web-framework";
+export const FRAMEWORK_CATEGORY_ID = "web-framework";
 const WEB_DOMAIN_ID = "web";
 
 export type BuildStepValidation = {

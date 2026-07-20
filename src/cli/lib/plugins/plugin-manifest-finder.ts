@@ -1,7 +1,7 @@
 import path from "path";
 
-import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import { fileExists } from "../../utils/fs";
+import { getPluginManifestPath } from "./plugin-finder";
 
 // Walks up from startDir looking for the plugin manifest file.
 export async function findPluginManifest(startDir: string): Promise<string | null> {
@@ -9,7 +9,7 @@ export async function findPluginManifest(startDir: string): Promise<string | nul
   const root = path.parse(currentDir).root;
 
   while (currentDir !== root) {
-    const manifestPath = path.join(currentDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
+    const manifestPath = getPluginManifestPath(currentDir);
     if (await fileExists(manifestPath)) {
       return manifestPath;
     }

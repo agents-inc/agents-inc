@@ -39,8 +39,7 @@ export async function discoverAllPluginSkills(projectDir: string): Promise<Skill
     );
     // Later plugins override earlier (merge follows pluginPaths order); skip absent entries
     for (const pluginSkills of perPluginSkills) {
-      // Boundary cast: loadPluginSkills returns Record<string, ...> — keys are skill IDs from parsed frontmatter
-      for (const [id, skill] of typedEntries<SkillId, SkillDefinition>(pluginSkills)) {
+      for (const [id, skill] of typedEntries(pluginSkills)) {
         if (skill) {
           allSkills[id] = skill;
         }

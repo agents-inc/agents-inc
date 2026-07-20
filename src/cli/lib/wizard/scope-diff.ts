@@ -1,4 +1,4 @@
-import type { AgentScopeConfig, SkillConfig } from "../../types/config";
+import type { AgentScopeConfig, SkillConfig, SkillScope } from "../../types/config";
 import type { AgentName, SkillId } from "../../types/index";
 
 export type ScopeDiffInput = {
@@ -165,9 +165,14 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
 }
 
 export type ScopeBadges = {
-  scope: "project" | "global" | undefined;
-  secondaryScope: "project" | "global" | undefined;
+  scope: SkillScope | undefined;
+  secondaryScope: SkillScope | undefined;
 };
+
+/** Bracketed scope badge: `[G]` for global, `[P]` for project. */
+export function formatScopeTag(scope: SkillScope): "[G]" | "[P]" {
+  return scope === "global" ? "[G]" : "[P]";
+}
 
 /**
  * D-223: derives the primary + secondary scope badges for a row from its active
@@ -175,8 +180,8 @@ export type ScopeBadges = {
  * secondary badge (`[P][G]`); a same-scope tombstone renders nothing extra.
  */
 export function deriveScopeBadges(
-  activeConfig: { scope: "project" | "global" } | undefined,
-  excludedConfig: { scope: "project" | "global" } | undefined,
+  activeConfig: { scope: SkillScope } | undefined,
+  excludedConfig: { scope: SkillScope } | undefined,
 ): ScopeBadges {
   const secondaryScope =
     excludedConfig && activeConfig && excludedConfig.scope !== activeConfig.scope

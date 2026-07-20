@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { isRecord } from "../../utils/type-guards.js";
 import path from "path";
 import fg from "fast-glob";
@@ -11,40 +10,30 @@ import {
   listDirectories,
 } from "../../utils/fs";
 import type { ValidationResult } from "../../types";
+import { validResult, invalidResult, mergeValidationResults } from "../validation-result";
 import { extractFrontmatter } from "../../utils/frontmatter";
 import { log } from "../../utils/logger";
 import { formatZodErrors } from "../schema-validator";
 import {
-  pluginAuthorSchema,
-  hooksRecordSchema,
+  pluginManifestValidationSchema,
   skillFrontmatterValidationSchema,
   agentFrontmatterValidationSchema,
 } from "../schemas";
-import { MAX_PLUGIN_FILE_SIZE, PLUGIN_MANIFEST_DIR, STANDARD_FILES } from "../../consts";
+import {
+  KEBAB_CASE_PATTERN,
+  MAX_PLUGIN_FILE_SIZE,
+  PLUGIN_MANIFEST_DIR,
+  STANDARD_FILES,
+} from "../../consts";
+import { getPluginManifestPath } from "./plugin-finder";
 
 const PLUGIN_DIR = PLUGIN_MANIFEST_DIR;
 const PLUGIN_MANIFEST = STANDARD_FILES.PLUGIN_JSON;
-const KEBAB_CASE_REGEX = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 const SEMVER_REGEX =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
-// Strict schema that rejects unrecognized keys (loader schema in schemas.ts uses .passthrough())
-const pluginManifestValidationSchema = z
-  .object({
-    name: z.string(),
-    version: z.string().optional(),
-    description: z.string().optional(),
-    author: pluginAuthorSchema.optional(),
-    keywords: z.array(z.string()).optional(),
-    commands: z.union([z.string(), z.array(z.string())]).optional(),
-    agents: z.union([z.string(), z.array(z.string())]).optional(),
-    skills: z.union([z.string(), z.array(z.string())]).optional(),
-    hooks: z.union([z.string(), hooksRecordSchema]).optional(),
-  })
-  .strict();
-
 function isKebabCase(str: string): boolean {
-  return KEBAB_CASE_REGEX.test(str);
+  return KEBAB_CASE_PATTERN.test(str);
 }
 
 function isValidSemver(str: string): boolean {
@@ -65,7 +54,7 @@ export async function validatePluginStructure(pluginPath: string): Promise<Valid
   const warnings: string[] = [];
 
   if (!(await directoryExists(pluginPath))) {
-    return invalid(`Plugin directory does not exist: ${pluginPath}`);
+    return invalidResult(`Plugin directory does not exist: ${pluginPath}`);
   }
 
   const pluginDir = path.join(pluginPath, PLUGIN_DIR);
@@ -78,7 +67,7 @@ export async function validatePluginStructure(pluginPath: string): Promise<Valid
     errors.push(`Missing ${PLUGIN_DIR}/${PLUGIN_MANIFEST}`);
   }
 
-  const readmePath = path.join(pluginPath, "README.md");
+  const readmePath = path.join(pluginPath, STANDARD_FILES.README_MD);
   if (!(await fileExists(readmePath))) {
     warnings.push("Missing README.md (recommended for documentation)");
   }
@@ -111,7 +100,7 @@ export async function validatePluginManifest(manifestPath: string): Promise<Vali
   const warnings: string[] = [];
 
   if (!(await fileExists(manifestPath))) {
-    return invalid(`Manifest file not found: ${manifestPath}`);
+    return invalidResult(`Manifest file not found: ${manifestPath}`);
   }
 
   let manifest: Record<string, unknown>;
@@ -119,7 +108,7 @@ export async function validatePluginManifest(manifestPath: string): Promise<Vali
     const content = await readFileSafe(manifestPath, MAX_PLUGIN_FILE_SIZE);
     manifest = JSON.parse(content);
   } catch (err) {
-    return invalid(`Invalid JSON in ${PLUGIN_MANIFEST}: ${getErrorMessage(err)}`);
+    return invalidResult(`Invalid JSON in ${PLUGIN_MANIFEST}: ${getErrorMessage(err)}`);
   }
 
   const result = pluginManifestValidationSchema.safeParse(manifest);
@@ -174,14 +163,14 @@ export async function validateSkillFrontmatter(skillPath: string): Promise<Valid
   const warnings: string[] = [];
 
   if (!(await fileExists(skillPath))) {
-    return invalid(`Skill file not found: ${skillPath}`);
+    return invalidResult(`Skill file not found: ${skillPath}`);
   }
 
   const content = await readFile(skillPath);
   const frontmatter = extractFrontmatter(content);
 
   if (frontmatter === null) {
-    return invalid("Missing or invalid YAML frontmatter");
+    return invalidResult("Missing or invalid YAML frontmatter");
   }
 
   const result = skillFrontmatterValidationSchema.safeParse(frontmatter);
@@ -202,14 +191,14 @@ export async function validateAgentFrontmatter(agentPath: string): Promise<Valid
   const warnings: string[] = [];
 
   if (!(await fileExists(agentPath))) {
-    return invalid(`Agent file not found: ${agentPath}`);
+    return invalidResult(`Agent file not found: ${agentPath}`);
   }
 
   const content = await readFile(agentPath);
   const frontmatter = extractFrontmatter(content);
 
   if (frontmatter === null) {
-    return invalid("Missing or invalid YAML frontmatter");
+    return invalidResult("Missing or invalid YAML frontmatter");
   }
 
   const result = agentFrontmatterValidationSchema.safeParse(frontmatter);
@@ -234,18 +223,6 @@ export async function validateAgentFrontmatter(agentPath: string): Promise<Valid
   };
 }
 
-function mergeResults(results: ValidationResult[]): ValidationResult {
-  const errors = results.flatMap((r) => r.errors);
-  const warnings = results.flatMap((r) => r.warnings);
-  return { valid: errors.length === 0, errors, warnings };
-}
-
-const EMPTY_RESULT: ValidationResult = { valid: true, errors: [], warnings: [] };
-
-function invalid(message: string): ValidationResult {
-  return { valid: false, errors: [message], warnings: [] };
-}
-
 function prefixResult(result: ValidationResult, prefix: string): ValidationResult {
   return {
     valid: result.valid,
@@ -259,9 +236,9 @@ async function validatePluginSkillFiles(
   skillsRelPath: string,
 ): Promise<ValidationResult> {
   const skillsDir = path.join(pluginPath, skillsRelPath);
-  if (!(await directoryExists(skillsDir))) return EMPTY_RESULT;
+  if (!(await directoryExists(skillsDir))) return validResult();
 
-  const files = await fg("**/SKILL.md", { cwd: skillsDir, absolute: true });
+  const files = await fg(`**/${STANDARD_FILES.SKILL_MD}`, { cwd: skillsDir, absolute: true });
   if (files.length === 0) {
     return {
       valid: true,
@@ -275,7 +252,7 @@ async function validatePluginSkillFiles(
       prefixResult(await validateSkillFrontmatter(f), path.relative(pluginPath, f)),
     ),
   );
-  return mergeResults(results);
+  return mergeValidationResults(results);
 }
 
 async function validatePluginAgentFiles(
@@ -283,7 +260,7 @@ async function validatePluginAgentFiles(
   agentsRelPath: string,
 ): Promise<ValidationResult> {
   const agentsDir = path.join(pluginPath, agentsRelPath);
-  if (!(await directoryExists(agentsDir))) return EMPTY_RESULT;
+  if (!(await directoryExists(agentsDir))) return validResult();
 
   const files = await fg("*.md", { cwd: agentsDir, absolute: true });
   if (files.length === 0) {
@@ -299,7 +276,7 @@ async function validatePluginAgentFiles(
       prefixResult(await validateAgentFrontmatter(f), path.relative(pluginPath, f)),
     ),
   );
-  return mergeResults(results);
+  return mergeValidationResults(results);
 }
 
 async function loadManifestForValidation(
@@ -328,21 +305,21 @@ export async function validatePlugin(pluginPath: string): Promise<ValidationResu
   const structureResult = await validatePluginStructure(pluginPath);
   if (!structureResult.valid) return structureResult;
 
-  const manifestPath = path.join(pluginPath, PLUGIN_DIR, PLUGIN_MANIFEST);
+  const manifestPath = getPluginManifestPath(pluginPath);
   const manifestResult = await validatePluginManifest(manifestPath);
   const manifest = await loadManifestForValidation(manifestPath);
 
   const skillsResult =
     manifest?.skills && typeof manifest.skills === "string"
       ? await validatePluginSkillFiles(pluginPath, manifest.skills)
-      : EMPTY_RESULT;
+      : validResult();
 
   const agentsResult =
     manifest?.agents && typeof manifest.agents === "string"
       ? await validatePluginAgentFiles(pluginPath, manifest.agents)
-      : EMPTY_RESULT;
+      : validResult();
 
-  return mergeResults([structureResult, manifestResult, skillsResult, agentsResult]);
+  return mergeValidationResults([structureResult, manifestResult, skillsResult, agentsResult]);
 }
 
 /**
@@ -372,7 +349,7 @@ export async function validateAllPlugins(pluginsDir: string): Promise<{
       results: [
         {
           name: pluginsDir,
-          result: invalid(`Directory does not exist: ${pluginsDir}`),
+          result: invalidResult(`Directory does not exist: ${pluginsDir}`),
         },
       ],
       summary: { total: 0, valid: 0, invalid: 1, withWarnings: 0 },
@@ -394,7 +371,7 @@ export async function validateAllPlugins(pluginsDir: string): Promise<{
       results: [
         {
           name: pluginsDir,
-          result: invalid(
+          result: invalidResult(
             `No plugins found in directory: ${pluginsDir}. Plugins must contain a ${PLUGIN_DIR}/ directory.`,
           ),
         },

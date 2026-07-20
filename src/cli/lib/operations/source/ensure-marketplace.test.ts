@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
 import { buildSourceResult } from "../../__tests__/factories/config-factories.js";
-import { createMockMatrix } from "../../__tests__/factories/matrix-factories.js";
+import { EMPTY_MATRIX } from "../../__tests__/mock-data/mock-matrices.js";
 
 vi.mock("../../../utils/exec.js", () => ({
   claudePluginMarketplaceExists: vi.fn(),
@@ -36,7 +36,7 @@ const mockFetchMarketplace = vi.mocked(fetchMarketplace);
 const mockWarn = vi.mocked(warn);
 
 function makeSourceResult(marketplace?: string): SourceLoadResult {
-  return buildSourceResult(createMockMatrix(), "/tmp/test-source", {
+  return buildSourceResult(EMPTY_MATRIX, "/tmp/test-source", {
     sourceConfig: { source: "github:test/source", sourceOrigin: "flag" },
     isLocal: false,
     marketplace,

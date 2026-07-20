@@ -1,17 +1,17 @@
 import { recompileAgents } from "../../agents/index.js";
 import { loadProjectConfigFromDir } from "../../configuration/index.js";
 import { buildAgentScopeMap } from "../../installation/index.js";
-import type { AgentName, SkillDefinitionMap } from "../../../types/index.js";
+import type { AgentName, SkillDefinitionMap, SkillScope } from "../../../types/index.js";
 
 export type CompileAgentsOptions = {
   projectDir: string;
   sourcePath: string;
   pluginDir?: string;
   skills?: SkillDefinitionMap;
-  agentScopeMap?: Map<AgentName, "project" | "global">;
+  agentScopeMap?: Map<AgentName, SkillScope>;
   agents?: AgentName[];
   /** When set, loads config and filters agents to only those matching this scope. */
-  scopeFilter?: "project" | "global";
+  scopeFilter?: SkillScope;
   outputDir?: string;
 };
 

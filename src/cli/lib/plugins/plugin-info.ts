@@ -4,9 +4,18 @@ import type { Dirent } from "fs";
 import { DEFAULT_DISPLAY_VERSION, DEFAULT_PLUGIN_NAME } from "../../consts";
 import { verbose } from "../../utils/logger";
 import { loadProjectConfig } from "../configuration";
-import { detectInstallation, type InstallMode } from "../installation";
+import {
+  detectInstallation,
+  isHomeDirectory,
+  resolveInstallPaths,
+  type Installation,
+  type InstallMode,
+} from "../installation";
+import type { SkillScope } from "../../types/config";
 import { getProjectPluginsDir } from "./plugin-finder";
 import { discoverAllPluginSkills, listPluginNames } from "./plugin-discovery";
+
+const AGENT_FILE_EXTENSION = ".md";
 
 export type PluginInfo = {
   name: string;
@@ -23,7 +32,8 @@ export type InstallationInfo = {
   skillCount: number;
   agentCount: number;
   configPath: string;
-  agentsDir: string;
+  /** Every directory that actually holds compiled agents; empty when no scope has any. */
+  agentDirs: string[];
   skillsDir: string;
 };
 
@@ -59,14 +69,9 @@ export async function getInstallationInfo(): Promise<InstallationInfo | null> {
   const installation = await detectInstallation();
   if (!installation) return null;
 
-  const skillCount =
-    installation.mode === "plugin"
-      ? await countPluginSkills(installation.projectDir)
-      : await countDirEntries(installation.skillsDir, (entry) => entry.isDirectory());
-  const agentCount = await countDirEntries(
-    installation.agentsDir,
-    (entry) => entry.isFile() && entry.name.endsWith(".md"),
-  );
+  const scopes = installedScopes(installation);
+  const skillCount = await countInstalledSkills(installation, scopes);
+  const agentDirCounts = await countCompiledAgentsPerScope(installation, scopes);
 
   const loaded = await loadProjectConfig(installation.projectDir);
   const name = loaded?.config?.name || DEFAULT_PLUGIN_NAME;
@@ -81,11 +86,80 @@ export async function getInstallationInfo(): Promise<InstallationInfo | null> {
     name,
     version,
     skillCount,
-    agentCount,
+    agentCount: sumCounts(agentDirCounts),
     configPath: installation.configPath,
-    agentsDir: installation.agentsDir,
+    agentDirs: agentDirCounts.filter(hasEntries).map((scopeCount) => scopeCount.dir),
     skillsDir: installation.skillsDir,
   };
+}
+
+/**
+ * Scopes whose artifacts belong to this installation, in report order (global
+ * first, mirroring the init success report). A project context also owns
+ * everything installed globally under HOME, so both roots are counted; at the
+ * home root the two resolve to the same directory and only one pass runs so
+ * nothing is counted twice.
+ */
+function installedScopes(installation: Installation): SkillScope[] {
+  return isHomeDirectory(installation.projectDir) ? ["project"] : ["global", "project"];
+}
+
+type ScopeCount = {
+  dir: string;
+  count: number;
+};
+
+function hasEntries(scopeCount: ScopeCount): boolean {
+  return scopeCount.count > 0;
+}
+
+function sumCounts(scopeCounts: ScopeCount[]): number {
+  return scopeCounts.reduce((total, scopeCount) => total + scopeCount.count, 0);
+}
+
+async function sumOverScopes(
+  scopes: SkillScope[],
+  count: (scope: SkillScope) => Promise<number>,
+): Promise<number> {
+  const counts = await Promise.all(scopes.map(count));
+  return counts.reduce((total, current) => total + current, 0);
+}
+
+/** Plugin-mode skills live in the plugin registry, not under a scope's skills dir. */
+async function countInstalledSkills(
+  installation: Installation,
+  scopes: SkillScope[],
+): Promise<number> {
+  if (installation.mode === "plugin") return countPluginSkills(installation.projectDir);
+
+  return sumOverScopes(scopes, (scope) =>
+    countDirEntries(resolveInstallPaths(installation.projectDir, scope).skillsDir, (entry) =>
+      entry.isDirectory(),
+    ),
+  );
+}
+
+/**
+ * Compiled-agent count per scope, keyed by the directory it was read from, so
+ * callers can both total the counts and name the directories the agents are
+ * actually in — a default install driven from a project directory compiles
+ * every agent under HOME, and naming the project directory there names a
+ * directory that was never written.
+ */
+async function countCompiledAgentsPerScope(
+  installation: Installation,
+  scopes: SkillScope[],
+): Promise<ScopeCount[]> {
+  return Promise.all(
+    scopes.map(async (scope) => {
+      const dir = resolveInstallPaths(installation.projectDir, scope).agentsDir;
+      return { dir, count: await countDirEntries(dir, isCompiledAgentFile) };
+    }),
+  );
+}
+
+function isCompiledAgentFile(entry: Dirent): boolean {
+  return entry.isFile() && entry.name.endsWith(AGENT_FILE_EXTENSION);
 }
 
 /** Counts entries in `dir` matching `pred`; 0 when the directory is missing or unreadable. */
@@ -110,11 +184,11 @@ async function countPluginSkills(projectDir: string): Promise<number> {
 export function formatInstallationDisplay(info: InstallationInfo): string {
   const modeLabel = info.mode === "eject" ? "Eject" : "Plugin";
   const versionDisplay = info.mode === "eject" ? "(eject mode)" : `v${info.version}`;
+  const agentDirLines = info.agentDirs.map((dir) => `\n  Agents:  ${dir}`).join("");
 
   return `Installation: ${info.name} ${versionDisplay}
   Mode:    ${modeLabel}
   Skills:  ${info.skillCount}
   Agents:  ${info.agentCount}
-  Config:  ${info.configPath}
-  Agents:  ${info.agentsDir}`;
+  Config:  ${info.configPath}${agentDirLines}`;
 }

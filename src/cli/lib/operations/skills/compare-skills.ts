@@ -2,7 +2,7 @@ import os from "os";
 import { compareLocalSkillsWithSource, type SkillComparisonResult } from "../../skills/index.js";
 import { typedEntries } from "../../../utils/typed-object.js";
 import { collectScopedSkillDirs } from "./collect-scoped-skill-dirs.js";
-import type { MergedSkillsMatrix } from "../../../types/index.js";
+import type { MergedSkillsMatrix, ResolvedSkill, SkillId } from "../../../types/index.js";
 
 export type SkillComparisonResults = {
   projectResults: SkillComparisonResult[];
@@ -15,8 +15,10 @@ export type SkillComparisonResults = {
  * Builds a map of source skill IDs to their paths, excluding local-only skills.
  * Used by both compareSkillsWithSource and diff command.
  */
-export function buildSourceSkillsMap(matrix: MergedSkillsMatrix): Record<string, { path: string }> {
-  const sourceSkills: Record<string, { path: string }> = {};
+export function buildSourceSkillsMap(
+  matrix: MergedSkillsMatrix,
+): Partial<Record<SkillId, Pick<ResolvedSkill, "path">>> {
+  const sourceSkills: Partial<Record<SkillId, Pick<ResolvedSkill, "path">>> = {};
   for (const [skillId, skill] of typedEntries(matrix.skills)) {
     if (!skill) continue;
     if (!skill.local) {

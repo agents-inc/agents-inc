@@ -21,11 +21,16 @@ import type {
 import type { InstallMode } from "./installation";
 import { deriveInstallMode } from "./installation";
 import { isHomeDirectory } from "./is-home-directory";
-import { installBaseDir, resolveInstallPaths, type InstallPaths } from "./install-base-dir";
+import {
+  getProjectConfigPath,
+  installBaseDir,
+  resolveInstallPaths,
+  type InstallPaths,
+} from "./install-base-dir";
 import { matrix } from "../matrix/matrix-provider";
-import type { AgentScopeConfig, SkillConfig } from "../../types/config";
+import type { AgentScopeConfig, SkillConfig, SkillScope } from "../../types/config";
 import type { WizardResultV2 } from "../../components/wizard/wizard";
-import { type CopiedSkill, copySkillsToLocalFlattened, deleteLocalSkill } from "../skills";
+import { type CopiedSkill } from "../skills";
 import {
   type MergeResult,
   type AuthoritativeScope,
@@ -49,6 +54,8 @@ import {
   isGlobalTombstone,
   activeSkillScopeMap,
   activeAgentScopeMap,
+  effectivelyExcludedSkillIds,
+  type ScopedEntry,
 } from "../configuration/scope-predicates";
 import { generateConfigSource, type ConfigSourceOptions } from "../configuration/config-writer";
 import {
@@ -57,15 +64,15 @@ import {
   deriveDomains,
   generateConfigTypesSource,
   regenerateConfigTypes,
+  type ConfigTypesExtras,
 } from "../configuration/config-types-writer";
 import { ensureDir, fileExists, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
-import { typedEntries, typedKeys } from "../../utils/typed-object";
+import { typedEntries, typedFromEntries, typedKeys } from "../../utils/typed-object";
 import {
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   DEFAULT_PLUGIN_NAME,
-  EJECT_SOURCE,
+  GLOBAL_CONFIG_NAME,
   LOCAL_SKILLS_PATH,
   PROJECT_ROOT,
   STANDARD_FILES,
@@ -124,28 +131,10 @@ async function prepareDirectories(paths: InstallPaths): Promise<void> {
   await ensureDir(path.dirname(paths.configPath));
 }
 
-async function deleteAndCopySkills(
-  skills: SkillConfig[],
-  sourceResult: SourceLoadResult,
-  baseDir: string,
-  skillsDir: string,
-): Promise<CopiedSkill[]> {
-  for (const skill of skills) {
-    if (skill.source && skill.source !== EJECT_SOURCE) {
-      verbose(`Using alternate source '${skill.source}' for ${skill.id}`);
-      await deleteLocalSkill(baseDir, skill.id);
-    }
-  }
-
-  const skillIds = skills.map((s) => s.id);
-  return copySkillsToLocalFlattened(skillIds, skillsDir, sourceResult);
-}
-
 export function buildEjectSkillsMap(
   copiedSkills: CopiedSkill[],
 ): Partial<Record<SkillId, LocalResolvedSkill>> {
-  // Boundary cast: Object.fromEntries returns { [k: string]: V }
-  return Object.fromEntries(
+  return typedFromEntries(
     copiedSkills.flatMap((cs) => {
       const skill = matrix.skills[cs.skillId];
       if (!skill) return [];
@@ -400,10 +389,7 @@ export function buildCompileAgents(
   agents: Record<AgentName, AgentDefinition>,
 ): Record<string, CompileAgentConfig> {
   const activeAgents = config.agents.filter((a) => !a.excluded);
-  const activeSkillIds = new Set(config.skills.filter((s) => !s.excluded).map((s) => s.id));
-  const excludedSkillIds = new Set(
-    config.skills.filter((s) => s.excluded && !activeSkillIds.has(s.id)).map((s) => s.id),
-  );
+  const excludedSkillIds = effectivelyExcludedSkillIds(config.skills);
 
   // D7 cross-scope safety net: build set of global skill IDs so global agents only see global skills
   const globalSkillIds = new Set(
@@ -437,7 +423,7 @@ export function buildCompileAgents(
   );
 }
 
-export function buildAgentScopeMap(config: ProjectConfig): Map<AgentName, "project" | "global"> {
+export function buildAgentScopeMap(config: ProjectConfig): Map<AgentName, SkillScope> {
   return activeAgentScopeMap(config.agents);
 }
 
@@ -557,12 +543,36 @@ export function mergeGlobalConfigs(
     ...new Set([...(existing.selectedAgents ?? []), ...(incoming.selectedAgents ?? [])]),
   ];
 
+  // Source identity (`marketplace`, `source`) travels on the global partition of
+  // `splitConfigByScope` but was previously lost here, leaving the global config with no
+  // record of where its plugins came from. `uninstall` reads `config.marketplace` to build
+  // the `<id>@<marketplace>` registry key (getCliInstalledPluginKeys) — without it a global
+  // uninstall silently owns nothing and leaves registered plugins behind.
+  //
+  // Precedence is FILL-ONLY: existing wins, incoming is used solely when the global config
+  // has no value yet. Both fields are scalar but the merged config is multi-marketplace by
+  // construction — this merge never removes skills, so after a second project init from a
+  // different marketplace the skills array holds plugins from BOTH, and whichever label is
+  // recorded orphans the other's registry key. Repointing is therefore never a strict
+  // improvement, and doing it from a project context would silently rewrite global state on
+  // behalf of every other registered project (commit 403df46). This also matches
+  // `mergeConfigs`, which preserves `existingConfig.marketplace` on the home-root install
+  // path. Changing global source identity stays an explicit global-scope operation
+  // (`init` run from ~), which writes the global config directly and bypasses this merge.
+  const mergedMarketplace = existing.marketplace ?? incoming.marketplace;
+  const mergedSource = existing.source ?? incoming.source;
+
+  // Newly-filled source identity must mark the merge dirty: `needsGlobalWrite` is gated on
+  // this flag, so a run whose only delta is the now-known marketplace would otherwise skip
+  // the global write entirely and drop the field again.
   const changed =
     newSkills.length > 0 ||
     newAgents.length > 0 ||
     stackChanged ||
     !isDeepEqual(existing.domains ?? [], mergedDomains) ||
-    !isDeepEqual(existing.selectedAgents ?? [], mergedSelectedAgents);
+    !isDeepEqual(existing.selectedAgents ?? [], mergedSelectedAgents) ||
+    mergedMarketplace !== existing.marketplace ||
+    mergedSource !== existing.source;
 
   return {
     config: {
@@ -572,6 +582,8 @@ export function mergeGlobalConfigs(
       stack: mergedStack,
       domains: mergedDomains,
       selectedAgents: mergedSelectedAgents,
+      marketplace: mergedMarketplace,
+      source: mergedSource,
     },
     changed,
   };
@@ -593,7 +605,7 @@ async function registerProjectPath(
   const staleChecks = await Promise.all(
     existing.map(async (p) => ({
       path: p,
-      hasConfig: await fileExists(path.join(p, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS)),
+      hasConfig: await fileExists(getProjectConfigPath(p)),
     })),
   );
   const valid = staleChecks.filter((c) => c.hasConfig).map((c) => c.path);
@@ -621,12 +633,12 @@ export async function deregisterProjectPath(projectDir: string): Promise<void> {
   if (filtered.length === existingGlobal.config.projects.length) return;
 
   const updatedConfig = { ...existingGlobal.config, projects: filtered };
-  const globalConfigPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+  const globalConfigPath = getProjectConfigPath(homeDir);
   await writeConfigFile(updatedConfig, globalConfigPath);
   verbose(`Deregistered project ${normalizedPath} from global config`);
 }
 
-function isProjectScopedEntry(entry: { scope?: string; excluded?: boolean }): boolean {
+function isProjectScopedEntry(entry: ScopedEntry): boolean {
   return entry.scope === "project";
 }
 
@@ -783,7 +795,7 @@ export async function propagateGlobalChangesToProjects(
     // Skip the project currently being installed (it's already being written)
     if (currentNormalized && projectPath === currentNormalized) continue;
 
-    const projectConfigPath = path.join(projectPath, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+    const projectConfigPath = getProjectConfigPath(projectPath);
     if (!(await fileExists(projectConfigPath))) {
       skipped.push(projectPath);
       verbose(`Skipped propagation to ${projectPath} (config not found)`);
@@ -891,7 +903,10 @@ async function resolveEffectiveGlobalConfig(
   const hasGlobalItems = globalSplit.skills.length > 0 || globalSplit.agents.length > 0;
 
   const merged = !hasGlobalItems
-    ? { config: existingGlobalConfig ?? { name: "global", skills: [], agents: [] }, changed: false }
+    ? {
+        config: existingGlobalConfig ?? { name: GLOBAL_CONFIG_NAME, skills: [], agents: [] },
+        changed: false,
+      }
     : existingGlobalConfig
       ? mergeGlobalConfigs(existingGlobalConfig, globalSplit)
       : { config: globalSplit, changed: true };
@@ -932,7 +947,7 @@ export async function writeScopedConfigs(
 
   // Installing from project — split by scope for project config generation.
   const { global: globalConfig, project: projectSplitConfig } = splitConfigByScope(finalConfig);
-  const globalConfigPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+  const globalConfigPath = getProjectConfigPath(homeDir);
 
   // Merge new global-scoped items into the existing global config.
   // - Existing items are preserved (never removed from global during project init)
@@ -1024,12 +1039,7 @@ function buildConfigTypesBackgroundData(
 function buildProjectTypesExtras(
   finalConfig: ProjectConfig,
   matrix: MergedSkillsMatrix,
-): {
-  extraSkillIds: string[];
-  extraAgentNames: string[];
-  extraDomains: string[];
-  extraCategories: string[];
-} {
+): Required<ConfigTypesExtras> {
   const projectSkills = finalConfig.skills.filter((s) => isActiveAt(s, "project"));
   const projectAgents = finalConfig.agents.filter((a) => isActiveAt(a, "project"));
 
@@ -1100,7 +1110,7 @@ async function compileAndWriteAgents(
   sourceResult: SourceLoadResult,
   projectDir: string,
   agentsDir: string,
-  agentScopeMap?: Map<AgentName, "project" | "global">,
+  agentScopeMap?: Map<AgentName, SkillScope>,
 ): Promise<AgentName[]> {
   const engine = await createLiquidEngine(projectDir);
   const resolvedAgents = await resolveAgents(
@@ -1226,10 +1236,6 @@ export async function installEject(options: EjectInstallOptions): Promise<EjectI
   const projectPaths = resolveInstallPaths(projectDir, "project");
   const globalPaths = resolveInstallPaths(projectDir, "global");
 
-  // Split skills by scope for path routing
-  const projectSkills = wizardResult.skills.filter((s) => s.scope !== "global");
-  const globalSkills = wizardResult.skills.filter((s) => s.scope === "global");
-
   // Create directories based on installation context, not data content.
   // ensureDir is idempotent (mkdir -p), so calling it when dirs already exist is safe.
   const isProjectInstall = !isHomeDirectory(projectDir);
@@ -1242,15 +1248,17 @@ export async function installEject(options: EjectInstallOptions): Promise<EjectI
   // Always ensure global skills directory exists when there is a global installation context
   await ensureDir(globalPaths.skillsDir);
 
-  // Copy skills to their scope-appropriate directories
-  const projectCopied =
-    projectSkills.length > 0
-      ? await deleteAndCopySkills(projectSkills, sourceResult, projectDir, projectPaths.skillsDir)
-      : [];
-  const globalCopied =
-    globalSkills.length > 0
-      ? await deleteAndCopySkills(globalSkills, sourceResult, os.homedir(), globalPaths.skillsDir)
-      : [];
+  // Copy skills to their scope-appropriate directories, replacing any stale
+  // ejected copies of skills now sourced from a marketplace. Imported lazily:
+  // copyLocalSkills lives in the operations layer (which imports back into
+  // installation), so a static import here would form a load-time cycle.
+  const { copyLocalSkills } = await import("../operations/skills/copy-local-skills");
+  const { projectCopied, globalCopied } = await copyLocalSkills(
+    wizardResult.skills,
+    projectDir,
+    sourceResult,
+    { deleteAlternateSourceSkills: true },
+  );
   const copiedSkills = [...projectCopied, ...globalCopied];
 
   const ejectSkillsForResolution = buildEjectSkillsMap(copiedSkills);

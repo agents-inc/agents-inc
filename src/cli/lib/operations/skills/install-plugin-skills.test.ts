@@ -1,6 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { SkillConfig } from "../../../types/config.js";
-import type { SkillId } from "../../../types/index.js";
 
 vi.mock("../../../utils/exec.js", () => ({
   claudePluginInstall: vi.fn(),
@@ -8,15 +6,12 @@ vi.mock("../../../utils/exec.js", () => ({
 
 import { installPluginSkills } from "./install-plugin-skills";
 import { claudePluginInstall } from "../../../utils/exec.js";
+import { buildSkillConfig } from "../../__tests__/helpers/index.js";
 
 const mockClaudePluginInstall = vi.mocked(claudePluginInstall);
 
 const PROJECT_DIR = "/tmp/test-project";
 const MARKETPLACE = "agents-inc";
-
-function makeSkillConfig(id: SkillId, scope: "project" | "global", source: string): SkillConfig {
-  return { id, scope, source };
-}
 
 describe("installPluginSkills", () => {
   beforeEach(() => {
@@ -25,8 +20,8 @@ describe("installPluginSkills", () => {
 
   it("should install plugin skills with correct scope routing", async () => {
     const skills = [
-      makeSkillConfig("web-framework-react", "project", MARKETPLACE),
-      makeSkillConfig("api-framework-hono", "global", MARKETPLACE),
+      buildSkillConfig("web-framework-react", { scope: "project", source: MARKETPLACE }),
+      buildSkillConfig("api-framework-hono", { scope: "global", source: MARKETPLACE }),
     ];
 
     const result = await installPluginSkills(skills, MARKETPLACE, PROJECT_DIR);
@@ -52,9 +47,9 @@ describe("installPluginSkills", () => {
 
   it("should filter out local-source skills", async () => {
     const skills = [
-      makeSkillConfig("web-framework-react", "project", "eject"),
-      makeSkillConfig("api-framework-hono", "project", MARKETPLACE),
-      makeSkillConfig("web-styling-tailwind", "global", "eject"),
+      buildSkillConfig("web-framework-react", { scope: "project", source: "eject" }),
+      buildSkillConfig("api-framework-hono", { scope: "project", source: MARKETPLACE }),
+      buildSkillConfig("web-styling-tailwind", { scope: "global", source: "eject" }),
     ];
 
     const result = await installPluginSkills(skills, MARKETPLACE, PROJECT_DIR);
@@ -73,8 +68,8 @@ describe("installPluginSkills", () => {
 
   it("should collect failed installations without throwing", async () => {
     const skills = [
-      makeSkillConfig("web-framework-react", "project", MARKETPLACE),
-      makeSkillConfig("api-framework-hono", "project", MARKETPLACE),
+      buildSkillConfig("web-framework-react", { scope: "project", source: MARKETPLACE }),
+      buildSkillConfig("api-framework-hono", { scope: "project", source: MARKETPLACE }),
     ];
 
     mockClaudePluginInstall
@@ -92,7 +87,9 @@ describe("installPluginSkills", () => {
   });
 
   it("should construct plugin refs as ${id}@${marketplace}", async () => {
-    const skills = [makeSkillConfig("web-testing-vitest", "project", MARKETPLACE)];
+    const skills = [
+      buildSkillConfig("web-testing-vitest", { scope: "project", source: MARKETPLACE }),
+    ];
 
     await installPluginSkills(skills, MARKETPLACE, PROJECT_DIR);
 

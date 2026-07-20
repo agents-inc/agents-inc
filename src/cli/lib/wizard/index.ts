@@ -3,6 +3,7 @@ export {
   validateBuildStep,
   buildCategoriesForDomain,
   isCompatibleWithSelectedFrameworks,
+  FRAMEWORK_CATEGORY_ID,
 } from "./build-step-logic";
 export {
   type AgentDiffRow,
@@ -13,4 +14,6 @@ export {
   type ScopeBadges,
   computeScopeDiff,
   deriveScopeBadges,
+  formatScopeTag,
 } from "./scope-diff";
+export { orderDomains } from "./domain-order";

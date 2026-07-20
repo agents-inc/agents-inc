@@ -1,10 +1,10 @@
+import os from "os";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { SkillConfig } from "../../../types/config.js";
-import type { SkillId } from "../../../types/index.js";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
-import type { CopiedSkill } from "../../skills/index.js";
 import { buildSourceResult } from "../../__tests__/factories/config-factories.js";
-import { createMockMatrix } from "../../__tests__/factories/matrix-factories.js";
+import { createMockCopiedSkill } from "../../__tests__/factories/index.js";
+import { EMPTY_MATRIX } from "../../__tests__/mock-data/mock-matrices.js";
+import { buildSkillConfig } from "../../__tests__/helpers/index.js";
 
 vi.mock("../../installation/index.js", () => ({
   resolveInstallPaths: vi.fn(),
@@ -12,6 +12,7 @@ vi.mock("../../installation/index.js", () => ({
 
 vi.mock("../../skills/index.js", () => ({
   copySkillsToLocalFlattened: vi.fn(),
+  deleteLocalSkill: vi.fn(),
 }));
 
 vi.mock("../../../utils/fs.js", () => ({
@@ -20,36 +21,20 @@ vi.mock("../../../utils/fs.js", () => ({
 
 import { copyLocalSkills } from "./copy-local-skills";
 import { resolveInstallPaths } from "../../installation/index.js";
-import { copySkillsToLocalFlattened } from "../../skills/index.js";
+import { copySkillsToLocalFlattened, deleteLocalSkill } from "../../skills/index.js";
 import { ensureDir } from "../../../utils/fs.js";
 
 const mockResolveInstallPaths = vi.mocked(resolveInstallPaths);
 const mockCopySkillsToLocalFlattened = vi.mocked(copySkillsToLocalFlattened);
 const mockEnsureDir = vi.mocked(ensureDir);
+const mockDeleteLocalSkill = vi.mocked(deleteLocalSkill);
 
 const PROJECT_DIR = "/tmp/test-project";
 
-const MOCK_SOURCE_RESULT: SourceLoadResult = buildSourceResult(
-  createMockMatrix(),
-  "/tmp/test-source",
-  {
-    sourceConfig: { source: "github:test/source", sourceOrigin: "flag" },
-    isLocal: false,
-  },
-);
-
-function makeSkillConfig(id: SkillId, scope: "project" | "global", source = "eject"): SkillConfig {
-  return { id, scope, source };
-}
-
-function makeCopiedSkill(id: SkillId): CopiedSkill {
-  return {
-    skillId: id,
-    contentHash: "abc1234",
-    sourcePath: `/tmp/source/${id}`,
-    destPath: `/tmp/dest/${id}`,
-  };
-}
+const MOCK_SOURCE_RESULT: SourceLoadResult = buildSourceResult(EMPTY_MATRIX, "/tmp/test-source", {
+  sourceConfig: { source: "github:test/source", sourceOrigin: "flag" },
+  isLocal: false,
+});
 
 describe("copyLocalSkills", () => {
   beforeEach(() => {
@@ -67,16 +52,16 @@ describe("copyLocalSkills", () => {
 
   it("should split skills by scope and copy to correct directories", async () => {
     const skills = [
-      makeSkillConfig("web-framework-react", "project"),
-      makeSkillConfig("api-framework-hono", "global"),
-      makeSkillConfig("web-styling-tailwind", "project"),
+      buildSkillConfig("web-framework-react", { scope: "project" }),
+      buildSkillConfig("api-framework-hono", { scope: "global" }),
+      buildSkillConfig("web-styling-tailwind", { scope: "project" }),
     ];
 
     const projectCopied = [
-      makeCopiedSkill("web-framework-react"),
-      makeCopiedSkill("web-styling-tailwind"),
+      createMockCopiedSkill("web-framework-react"),
+      createMockCopiedSkill("web-styling-tailwind"),
     ];
-    const globalCopied = [makeCopiedSkill("api-framework-hono")];
+    const globalCopied = [createMockCopiedSkill("api-framework-hono")];
 
     mockCopySkillsToLocalFlattened
       .mockResolvedValueOnce(projectCopied)
@@ -124,13 +109,13 @@ describe("copyLocalSkills", () => {
 
   it("should only copy project skills when no global skills", async () => {
     const skills = [
-      makeSkillConfig("web-framework-react", "project"),
-      makeSkillConfig("web-styling-tailwind", "project"),
+      buildSkillConfig("web-framework-react", { scope: "project" }),
+      buildSkillConfig("web-styling-tailwind", { scope: "project" }),
     ];
 
     const projectCopied = [
-      makeCopiedSkill("web-framework-react"),
-      makeCopiedSkill("web-styling-tailwind"),
+      createMockCopiedSkill("web-framework-react"),
+      createMockCopiedSkill("web-styling-tailwind"),
     ];
     mockCopySkillsToLocalFlattened.mockResolvedValueOnce(projectCopied);
 
@@ -149,13 +134,13 @@ describe("copyLocalSkills", () => {
 
   it("should only copy global skills when all are global-scoped", async () => {
     const skills = [
-      makeSkillConfig("api-framework-hono", "global"),
-      makeSkillConfig("api-database-drizzle", "global"),
+      buildSkillConfig("api-framework-hono", { scope: "global" }),
+      buildSkillConfig("api-database-drizzle", { scope: "global" }),
     ];
 
     const globalCopied = [
-      makeCopiedSkill("api-framework-hono"),
-      makeCopiedSkill("api-database-drizzle"),
+      createMockCopiedSkill("api-framework-hono"),
+      createMockCopiedSkill("api-database-drizzle"),
     ];
     mockCopySkillsToLocalFlattened.mockResolvedValueOnce(globalCopied);
 
@@ -174,17 +159,65 @@ describe("copyLocalSkills", () => {
 
   it("should calculate totalCopied correctly", async () => {
     const skills = [
-      makeSkillConfig("web-framework-react", "project"),
-      makeSkillConfig("api-framework-hono", "global"),
+      buildSkillConfig("web-framework-react", { scope: "project" }),
+      buildSkillConfig("api-framework-hono", { scope: "global" }),
     ];
 
     mockCopySkillsToLocalFlattened
-      .mockResolvedValueOnce([makeCopiedSkill("web-framework-react")])
-      .mockResolvedValueOnce([makeCopiedSkill("api-framework-hono")]);
+      .mockResolvedValueOnce([createMockCopiedSkill("web-framework-react")])
+      .mockResolvedValueOnce([createMockCopiedSkill("api-framework-hono")]);
 
     const result = await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT);
 
     expect(result.totalCopied).toBe(2);
     expect(result.totalCopied).toBe(result.projectCopied.length + result.globalCopied.length);
+  });
+
+  describe("deleteAlternateSourceSkills", () => {
+    it("deletes only the skills whose source is not eject", async () => {
+      const skills = [
+        buildSkillConfig("web-framework-react", { scope: "project", source: "agents-inc" }),
+        buildSkillConfig("web-styling-tailwind", { scope: "project", source: "eject" }),
+      ];
+
+      await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT, {
+        deleteAlternateSourceSkills: true,
+      });
+
+      expect(mockDeleteLocalSkill).toHaveBeenCalledTimes(1);
+      expect(mockDeleteLocalSkill).toHaveBeenCalledWith(PROJECT_DIR, "web-framework-react");
+    });
+
+    it("treats an empty source as an alternate source rather than silently skipping it", async () => {
+      const skills = [buildSkillConfig("web-framework-react", { scope: "project", source: "" })];
+
+      await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT, {
+        deleteAlternateSourceSkills: true,
+      });
+
+      expect(mockDeleteLocalSkill).toHaveBeenCalledWith(PROJECT_DIR, "web-framework-react");
+    });
+
+    it("deletes global-scoped skills relative to the home directory", async () => {
+      const skills = [
+        buildSkillConfig("api-framework-hono", { scope: "global", source: "agents-inc" }),
+      ];
+
+      await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT, {
+        deleteAlternateSourceSkills: true,
+      });
+
+      expect(mockDeleteLocalSkill).toHaveBeenCalledWith(os.homedir(), "api-framework-hono");
+    });
+
+    it("deletes nothing when the option is off", async () => {
+      const skills = [
+        buildSkillConfig("web-framework-react", { scope: "project", source: "agents-inc" }),
+      ];
+
+      await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT);
+
+      expect(mockDeleteLocalSkill).not.toHaveBeenCalled();
+    });
   });
 });

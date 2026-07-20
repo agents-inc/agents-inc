@@ -1,12 +1,13 @@
 import path from "path";
 import { getErrorMessage } from "../../utils/errors";
-import { readFile, ensureDir, glob, copy } from "../../utils/fs";
+import { readFile, ensureDir, copy } from "../../utils/fs";
 import { log, verbose, warn } from "../../utils/logger";
 import {
   generateAgentPluginManifest,
   writePluginManifest,
   getPluginManifestPath,
 } from "../plugins";
+import { listAgentMdFiles } from "./list-compiled-agents";
 import { computeStringHash, determinePluginVersion, writeContentHash } from "../versioning";
 import { extractFrontmatter } from "../../utils/frontmatter";
 import type { AgentFrontmatter, PluginManifest } from "../../types";
@@ -102,7 +103,7 @@ export async function compileAllAgentPlugins(
 ): Promise<CompiledAgentPlugin[]> {
   const results: CompiledAgentPlugin[] = [];
 
-  const agentMdFiles = await glob("*.md", agentsDir);
+  const agentMdFiles = await listAgentMdFiles(agentsDir);
 
   for (const agentFile of agentMdFiles) {
     const agentPath = path.join(agentsDir, agentFile);

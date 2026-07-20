@@ -8,19 +8,12 @@ vi.mock("../../../utils/exec.js", () => ({
 
 import { uninstallPluginSkills } from "./uninstall-plugin-skills";
 import { claudePluginUninstall } from "../../../utils/exec.js";
+import { buildSkillConfig } from "../../__tests__/helpers/index.js";
 
 const mockClaudePluginUninstall = vi.mocked(claudePluginUninstall);
 
 const PROJECT_DIR = "/tmp/test-project";
 const MARKETPLACE = "agents-inc-marketplace";
-
-function makeSkillConfig(
-  id: SkillId,
-  scope: "project" | "global",
-  source = "agents-inc",
-): SkillConfig {
-  return { id, scope, source };
-}
 
 describe("uninstallPluginSkills", () => {
   beforeEach(() => {
@@ -30,8 +23,8 @@ describe("uninstallPluginSkills", () => {
   it("should uninstall skills with scope from old config", async () => {
     const skillIds: SkillId[] = ["web-framework-react", "api-framework-hono"];
     const oldSkills = [
-      makeSkillConfig("web-framework-react", "project"),
-      makeSkillConfig("api-framework-hono", "global"),
+      buildSkillConfig("web-framework-react", { scope: "project", source: "agents-inc" }),
+      buildSkillConfig("api-framework-hono", { scope: "global", source: "agents-inc" }),
     ];
 
     const result = await uninstallPluginSkills(skillIds, oldSkills, MARKETPLACE, PROJECT_DIR);
@@ -68,8 +61,8 @@ describe("uninstallPluginSkills", () => {
   it("should collect failures without throwing", async () => {
     const skillIds: SkillId[] = ["web-framework-react", "api-framework-hono"];
     const oldSkills = [
-      makeSkillConfig("web-framework-react", "project"),
-      makeSkillConfig("api-framework-hono", "project"),
+      buildSkillConfig("web-framework-react", { scope: "project", source: "agents-inc" }),
+      buildSkillConfig("api-framework-hono", { scope: "project", source: "agents-inc" }),
     ];
 
     mockClaudePluginUninstall
@@ -89,9 +82,9 @@ describe("uninstallPluginSkills", () => {
       "api-framework-hono",
     ];
     const oldSkills = [
-      makeSkillConfig("web-framework-react", "project"),
-      makeSkillConfig("web-styling-tailwind", "project"),
-      makeSkillConfig("api-framework-hono", "global"),
+      buildSkillConfig("web-framework-react", { scope: "project", source: "agents-inc" }),
+      buildSkillConfig("web-styling-tailwind", { scope: "project", source: "agents-inc" }),
+      buildSkillConfig("api-framework-hono", { scope: "global", source: "agents-inc" }),
     ];
 
     const result = await uninstallPluginSkills(skillIds, oldSkills, MARKETPLACE, PROJECT_DIR);

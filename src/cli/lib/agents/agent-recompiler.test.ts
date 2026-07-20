@@ -12,10 +12,10 @@ import { writeTestSkill } from "../__tests__/helpers/disk-writers";
 import { fileExists } from "../__tests__/test-fs-utils";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import type { AgentName, SkillId } from "../../types";
-import { renderConfigTs } from "../__tests__/content-generators";
+import { writeTestTsConfig } from "../__tests__/helpers/config-io";
 import { buildAgentConfigs } from "../__tests__/factories/config-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
-import { CLAUDE_DIR, STANDARD_FILES } from "../../consts";
+import { CLAUDE_DIR } from "../../consts";
 import { VITEST_REACT_HONO_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { expectValidAgentMarkdown } from "../__tests__/assertions/agent-assertions";
 
@@ -89,16 +89,11 @@ describe("agent-recompiler", () => {
     });
 
     it("uses config.ts agent list when present", async () => {
-      const configDir = path.join(testDirs.projectDir, ".claude-src");
-      await mkdir(configDir, { recursive: true });
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-plugin",
-          description: "Test plugin",
-          agents: buildAgentConfigs(["web-pm"]),
-        }),
-      );
+      await writeTestTsConfig(testDirs.projectDir, {
+        name: "test-plugin",
+        description: "Test plugin",
+        agents: buildAgentConfigs(["web-pm"]),
+      });
 
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
@@ -193,26 +188,21 @@ describe("agent-recompiler", () => {
     });
 
     it("should filter excluded skills from compiled agent output", async () => {
-      const configDir = path.join(testDirs.projectDir, ".claude-src");
-      await mkdir(configDir, { recursive: true });
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-plugin",
-          description: "Test plugin",
-          agents: buildAgentConfigs(["web-developer"]),
-          skills: [
-            ...buildSkillConfigs(["web-framework-react"]),
-            ...buildSkillConfigs(["web-testing-vitest"], { excluded: true }),
-          ],
-          stack: {
-            "web-developer": {
-              "web-framework": [{ id: "web-framework-react", preloaded: false }],
-              "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
-            },
+      await writeTestTsConfig(testDirs.projectDir, {
+        name: "test-plugin",
+        description: "Test plugin",
+        agents: buildAgentConfigs(["web-developer"]),
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"]),
+          ...buildSkillConfigs(["web-testing-vitest"], { excluded: true }),
+        ],
+        stack: {
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
           },
-        }),
-      );
+        },
+      });
 
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
@@ -233,26 +223,21 @@ describe("agent-recompiler", () => {
     });
 
     it("should filter project-scoped skills from global-scoped agents (D7 cross-scope safety)", async () => {
-      const configDir = path.join(testDirs.projectDir, ".claude-src");
-      await mkdir(configDir, { recursive: true });
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-plugin",
-          description: "Test plugin",
-          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
-          skills: [
-            ...buildSkillConfigs(["web-framework-react"]),
-            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global" }),
-          ],
-          stack: {
-            "web-developer": {
-              "web-framework": [{ id: "web-framework-react", preloaded: false }],
-              "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
-            },
+      await writeTestTsConfig(testDirs.projectDir, {
+        name: "test-plugin",
+        description: "Test plugin",
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"]),
+          ...buildSkillConfigs(["web-testing-vitest"], { scope: "global" }),
+        ],
+        stack: {
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
           },
-        }),
-      );
+        },
+      });
 
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,

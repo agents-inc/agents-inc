@@ -10,7 +10,6 @@ import type {
   SkillReference,
   Stack,
   StackAgentConfig,
-  StacksConfig,
   Category,
 } from "../../types";
 import { stacksConfigSchema } from "../schemas";
@@ -63,7 +62,7 @@ export async function loadStacks(configDir: string, stacksFile?: string): Promis
   const stacksPath = path.join(configDir, resolvedStacksFile);
 
   try {
-    const raw = await loadConfig<StacksConfig>(stacksPath, stacksConfigSchema);
+    const raw = await loadConfig(stacksPath, stacksConfigSchema);
 
     if (raw == null) {
       verbose(`No stacks file found at ${stacksPath}`);

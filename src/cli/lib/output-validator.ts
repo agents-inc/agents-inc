@@ -1,6 +1,7 @@
 import type { AgentName, ValidationResult } from "../types";
 import { extractFrontmatter } from "../utils/frontmatter";
 import { log } from "../utils/logger";
+import { invalidResult, mergeValidationResults } from "./validation-result";
 
 export function checkXmlTagBalance(content: string): string[] {
   const errors: string[] = [];
@@ -106,26 +107,15 @@ export function validateFrontmatter(content: string): {
 
 export function validateCompiledAgent(content: string): ValidationResult {
   if (!content || content.trim().length === 0) {
-    return {
-      valid: false,
-      errors: ["Compiled output is empty"],
-      warnings: [],
-    };
+    return invalidResult("Compiled output is empty");
   }
 
-  const fmResult = validateFrontmatter(content);
-  const errors = [...fmResult.errors, ...checkXmlTagBalance(content)];
-  const warnings = [
-    ...fmResult.warnings,
-    ...checkTemplateArtifacts(content),
-    ...checkRequiredPatterns(content),
-  ];
-
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings,
-  };
+  return mergeValidationResults([
+    validateFrontmatter(content),
+    { errors: checkXmlTagBalance(content), warnings: [] },
+    { errors: [], warnings: checkTemplateArtifacts(content) },
+    { errors: [], warnings: checkRequiredPatterns(content) },
+  ]);
 }
 
 export function printOutputValidationResult(agentName: AgentName, result: ValidationResult): void {

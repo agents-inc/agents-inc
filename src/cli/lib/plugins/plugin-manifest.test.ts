@@ -7,7 +7,6 @@ import {
   generateStackPluginManifest,
   writePluginManifest,
   getPluginDir,
-  getPluginManifestPath,
 } from "./plugin-manifest";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
@@ -534,26 +533,6 @@ describe("plugin-manifest", () => {
       const result = getPluginDir("dist/plugins");
 
       expect(result).toBe(path.join("dist/plugins", PLUGIN_MANIFEST_DIR));
-    });
-  });
-
-  describe("getPluginManifestPath", () => {
-    it("should return path to plugin.json", () => {
-      const result = getPluginManifestPath("/some/output/dir");
-
-      expect(result).toBe("/some/output/dir/.claude-plugin/plugin.json");
-    });
-
-    it("should handle paths with trailing slash", () => {
-      const result = getPluginManifestPath("/some/output/dir/");
-
-      expect(result).toBe("/some/output/dir/.claude-plugin/plugin.json");
-    });
-
-    it("should handle relative paths", () => {
-      const result = getPluginManifestPath("dist/plugins");
-
-      expect(result).toBe(path.join("dist/plugins", PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE));
     });
   });
 });

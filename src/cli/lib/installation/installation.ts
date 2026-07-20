@@ -4,16 +4,18 @@ import { fileExists } from "../../utils/fs";
 import { loadProjectConfigFromDir } from "../configuration/project-config";
 import {
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
   PLUGINS_SUBDIR,
-  STANDARD_FILES,
+  STANDARD_DIRS,
   EJECT_SOURCE,
 } from "../../consts";
+import { getProjectConfigPath } from "./install-base-dir";
 import type { SkillConfig } from "../../types/config";
+import type { InstallMode } from "../../types/matrix";
 
-export type InstallMode = "eject" | "plugin" | "mixed";
+// Re-exported from types/matrix.ts for existing importers of the installation barrel
+export type { InstallMode };
 
 export const INSTALL_MODE_LABELS = {
   plugin: "Plugin",
@@ -38,50 +40,37 @@ export function deriveInstallMode(skills: SkillConfig[]): InstallMode {
   return hasEject ? "eject" : "plugin";
 }
 
-/** Detect installation in a specific directory only (no global fallback). */
-export async function detectProjectInstallation(projectDir: string): Promise<Installation | null> {
-  const configPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+// Use loadProjectConfigFromDir directly (not detectInstallation) to avoid the
+// project→global fallback recursing back into this detection.
+async function detectInstallationInDir(dir: string): Promise<Installation | null> {
+  const configPath = getProjectConfigPath(dir);
 
   if (!(await fileExists(configPath))) {
     return null;
   }
 
-  // Use loadProjectConfigFromDir to avoid circular global fallback
-  const loaded = await loadProjectConfigFromDir(projectDir);
-
+  const loaded = await loadProjectConfigFromDir(dir);
   const mode: InstallMode = deriveInstallMode(loaded?.config?.skills ?? []);
 
   return {
     mode,
     configPath,
-    agentsDir: path.join(projectDir, CLAUDE_DIR, "agents"),
+    agentsDir: path.join(dir, CLAUDE_DIR, STANDARD_DIRS.AGENTS),
     // Mixed mode has local skills in .claude/skills/ and plugins in cache;
     // use .claude/skills/ as the primary skillsDir (same as eject mode)
-    skillsDir: path.join(projectDir, CLAUDE_DIR, mode === "plugin" ? PLUGINS_SUBDIR : "skills"),
-    projectDir,
+    skillsDir: path.join(dir, CLAUDE_DIR, mode === "plugin" ? PLUGINS_SUBDIR : "skills"),
+    projectDir: dir,
   };
+}
+
+/** Detect installation in a specific directory only (no global fallback). */
+export async function detectProjectInstallation(projectDir: string): Promise<Installation | null> {
+  return detectInstallationInDir(projectDir);
 }
 
 /** Detect installation in the home directory (global scope). */
 export async function detectGlobalInstallation(): Promise<Installation | null> {
-  const homeDir = os.homedir();
-  const configPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-
-  if (!(await fileExists(configPath))) {
-    return null;
-  }
-
-  // Use loadProjectConfigFromDir directly to avoid recursion
-  const loaded = await loadProjectConfigFromDir(homeDir);
-  const mode: InstallMode = deriveInstallMode(loaded?.config?.skills ?? []);
-
-  return {
-    mode,
-    configPath,
-    agentsDir: path.join(homeDir, CLAUDE_DIR, "agents"),
-    skillsDir: path.join(homeDir, CLAUDE_DIR, mode === "plugin" ? PLUGINS_SUBDIR : "skills"),
-    projectDir: homeDir,
-  };
+  return detectInstallationInDir(os.homedir());
 }
 
 /**

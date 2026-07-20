@@ -66,7 +66,7 @@ import {
 } from "./compiler";
 import { validateCompiledAgent } from "./output-validator";
 import { warn } from "../utils/logger";
-import type { AgentName, CompiledAgentData } from "../types";
+import type { CompiledAgentData } from "../types";
 
 /**
  * Copies fixture files into a temp directory matching the project layout
@@ -604,7 +604,7 @@ describe("compiler", () => {
     it("should build template context with all file content", () => {
       const agent = createMockAgentConfig("web-developer", []);
 
-      const result = buildAgentTemplateContext("web-developer" as AgentName, agent, agentFiles);
+      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
 
       expect(result.agent).toBe(agent);
       expect(result.identity).toBe("Test identity content");
@@ -621,7 +621,7 @@ describe("compiler", () => {
       ];
       const agent = createMockAgentConfig("web-developer", skills);
 
-      const result = buildAgentTemplateContext("web-developer" as AgentName, agent, agentFiles);
+      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
 
       expect(result.skills).toStrictEqual(skills);
       expect(result.skills).toHaveLength(2);
@@ -632,7 +632,7 @@ describe("compiler", () => {
       const dynamicSkill = createMockSkillEntry("web-testing-vitest", false);
       const agent = createMockAgentConfig("web-developer", [preloadedSkill, dynamicSkill]);
 
-      const result = buildAgentTemplateContext("web-developer" as AgentName, agent, agentFiles);
+      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
 
       expect(result.preloadedSkills).toStrictEqual([preloadedSkill]);
       expect(result.dynamicSkills).toStrictEqual([dynamicSkill]);
@@ -644,7 +644,7 @@ describe("compiler", () => {
       const dynamic = createMockSkillEntry("web-state-zustand", false);
       const agent = createMockAgentConfig("web-developer", [preloaded1, preloaded2, dynamic]);
 
-      const result = buildAgentTemplateContext("web-developer" as AgentName, agent, agentFiles);
+      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
 
       expect(result.preloadedSkillIds).toStrictEqual(["web-framework-react", "web-testing-vitest"]);
     });
@@ -652,7 +652,7 @@ describe("compiler", () => {
     it("should handle agent with no skills", () => {
       const agent = createMockAgentConfig("web-developer", []);
 
-      const result = buildAgentTemplateContext("web-developer" as AgentName, agent, agentFiles);
+      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
 
       expect(result.skills).toStrictEqual([]);
       expect(result.preloadedSkills).toStrictEqual([]);
@@ -667,7 +667,7 @@ describe("compiler", () => {
       ];
       const agent = createMockAgentConfig("web-developer", skills);
 
-      const result = buildAgentTemplateContext("web-developer" as AgentName, agent, agentFiles);
+      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
 
       expect(result.preloadedSkills).toHaveLength(2);
       expect(result.dynamicSkills).toHaveLength(0);
@@ -681,7 +681,7 @@ describe("compiler", () => {
       ];
       const agent = createMockAgentConfig("web-developer", skills);
 
-      const result = buildAgentTemplateContext("web-developer" as AgentName, agent, agentFiles);
+      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
 
       expect(result.preloadedSkills).toHaveLength(0);
       expect(result.dynamicSkills).toHaveLength(2);

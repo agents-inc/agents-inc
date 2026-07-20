@@ -14,7 +14,6 @@ import {
   metadataValidationSchema,
   projectConfigLoaderSchema,
   projectSourceConfigSchema,
-  skillIdSchema,
   skillMetadataLoaderSchema,
   skillCategoriesFileSchema,
   validateNestingDepth,
@@ -366,21 +365,6 @@ describe("projectSourceConfigSchema with branding", () => {
       source: "github:myorg/skills",
     });
     expect(result.success).toBe(true);
-  });
-});
-
-describe("skillIdSchema", () => {
-  it("should accept valid built-in skill IDs", () => {
-    expect(skillIdSchema.safeParse("web-framework-react").success).toBe(true);
-    expect(skillIdSchema.safeParse("api-database-drizzle").success).toBe(true);
-    expect(skillIdSchema.safeParse("meta-methodology-research-methodology").success).toBe(true);
-    expect(skillIdSchema.safeParse("ai-provider-anthropic-sdk").success).toBe(true);
-  });
-
-  it("should reject IDs not in the generated SKILL_IDS list", () => {
-    expect(skillIdSchema.safeParse("acme-pipeline-deploy").success).toBe(false);
-    expect(skillIdSchema.safeParse("custom-skill-name").success).toBe(false);
-    expect(skillIdSchema.safeParse("web-framework").success).toBe(false);
   });
 });
 

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { findPluginManifest } from "./plugin-manifest-finder";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
+import { writeTestPluginManifest } from "../__tests__/helpers/disk-writers";
 
 describe("plugin-manifest-finder", () => {
   let tempDir: string;
@@ -17,11 +18,13 @@ describe("plugin-manifest-finder", () => {
   });
 
   async function createManifest(dir: string): Promise<string> {
-    const manifestDir = path.join(dir, PLUGIN_MANIFEST_DIR);
-    await mkdir(manifestDir, { recursive: true });
-    const manifestPath = path.join(manifestDir, PLUGIN_MANIFEST_FILE);
-    await writeFile(manifestPath, JSON.stringify({ name: "test-plugin" }));
-    return manifestPath;
+    // findPluginManifest checks path/existence only, not content — version is added to
+    // satisfy TestPluginManifest and is never read.
+    return writeTestPluginManifest(
+      dir,
+      { name: "test-plugin", version: "1.0.0" },
+      { pretty: false },
+    );
   }
 
   describe("findPluginManifest", () => {

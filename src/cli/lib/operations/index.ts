@@ -13,7 +13,6 @@ export {
 
 export {
   discoverInstalledSkills,
-  loadSkillsFromDir,
   discoverLocalProjectSkills,
   mergeSkills,
   type DiscoveredSkills,

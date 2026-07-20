@@ -1,5 +1,6 @@
 import { partition } from "remeda";
 import { writeCompiledAgentsByScope, type AgentWriteOutcome } from "./write-compiled-agents";
+import { listCompiledAgentNames } from "./list-compiled-agents";
 import path from "path";
 
 import { getErrorMessage } from "../../utils/errors";
@@ -10,14 +11,15 @@ import type {
   CompileConfig,
   ProjectConfig,
   SkillDefinitionMap,
+  SkillScope,
 } from "../../types";
 
 import { buildCompileAgents } from "../installation/local-installer";
-import { glob, ensureDir } from "../../utils/fs";
+import { ensureDir } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { typedEntries, typedKeys } from "../../utils/typed-object";
 import { createLiquidEngine } from "../compiler";
-import { loadProjectConfig } from "../configuration";
+import { loadProjectConfig, effectivelyExcludedSkillIds } from "../configuration";
 import { loadAllAgents, loadProjectAgents } from "../loading";
 import { getPluginAgentsDir } from "../plugins";
 import { discoverAllPluginSkills } from "../plugins/plugin-discovery";
@@ -31,7 +33,7 @@ export type RecompileAgentsOptions = {
   projectDir?: string;
   outputDir?: string;
   /** When provided, routes agents by scope: global agents to ~/.claude/agents/, project agents to outputDir */
-  agentScopeMap?: Map<AgentName, "project" | "global">;
+  agentScopeMap?: Map<AgentName, SkillScope>;
 };
 
 export type RecompileAgentsResult = {
@@ -41,10 +43,7 @@ export type RecompileAgentsResult = {
 };
 
 async function getExistingAgentNames(pluginDir: string): Promise<AgentName[]> {
-  const agentsDir = getPluginAgentsDir(pluginDir);
-  const files = await glob("*.md", agentsDir);
-  // Boundary cast: directory names from filesystem are agent names by convention
-  return files.map((f) => path.basename(f, ".md") as AgentName);
+  return listCompiledAgentNames(getPluginAgentsDir(pluginDir));
 }
 
 type ResolveAgentNamesParams = {
@@ -102,10 +101,7 @@ function buildRecompileResult(
 }
 
 export function filterExcludedEntries(config: ProjectConfig): ProjectConfig {
-  const activeIds = new Set(config.skills.filter((s) => !s.excluded).map((s) => s.id));
-  const excludedIds = new Set(
-    config.skills.filter((s) => s.excluded && !activeIds.has(s.id)).map((s) => s.id),
-  );
+  const excludedIds = effectivelyExcludedSkillIds(config.skills);
   const activeSkills = config.skills.filter((s) => !s.excluded);
   const activeAgents = config.agents.filter((a) => !a.excluded);
 

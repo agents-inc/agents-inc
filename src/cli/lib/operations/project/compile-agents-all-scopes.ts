@@ -1,14 +1,14 @@
 import os from "os";
 import { compileAgents, type CompilationResult } from "./compile-agents.js";
 import { isHomeDirectory, resolveInstallPaths } from "../../installation/index.js";
-import type { AgentName, SkillDefinitionMap } from "../../../types/index.js";
+import type { AgentName, SkillDefinitionMap, SkillScope } from "../../../types/index.js";
 
 export type CompileAllScopesOptions = {
   /** Working directory of the command — a project root, or home for global context. */
   projectDir: string;
   sourcePath: string;
   skills: SkillDefinitionMap;
-  agentScopeMap: Map<AgentName, "project" | "global">;
+  agentScopeMap: Map<AgentName, SkillScope>;
 };
 
 /**

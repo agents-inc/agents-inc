@@ -1,7 +1,7 @@
 import os from "os";
 import path from "path";
 import type { SkillId } from "../../types";
-import type { SkillConfig } from "../../types/config";
+import type { SkillConfig, SkillScope } from "../../types/config";
 import type { SourceLoadResult } from "../loading";
 import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
 import { claudePluginInstall, claudePluginUninstallBestEffort } from "../../utils/exec";
@@ -15,8 +15,8 @@ export type SkillMigration = {
   id: SkillId;
   oldSource: string;
   newSource: string;
-  oldScope: "project" | "global";
-  newScope: "project" | "global";
+  oldScope: SkillScope;
+  newScope: SkillScope;
 };
 
 export type MigrationPlan = {
@@ -28,6 +28,13 @@ export type MigrationPlan = {
 export type MigrationResult = {
   ejectedSkills: SkillId[];
   pluginizedSkills: SkillId[];
+  /**
+   * Per-skill plugin install failures, in the shape of `PluginInstallResult["failed"]`.
+   * A non-empty list means this run could NOT honor the user's plugin intent for those
+   * skills, so the caller MUST hard-error before writing any config — otherwise config.ts
+   * records a marketplace `source` for a skill that has no plugin registration.
+   */
+  failedPluginInstalls: Array<{ id: SkillId; error: string }>;
   warnings: string[];
 };
 
@@ -88,6 +95,7 @@ export async function executeMigration(
   const warnings: string[] = [];
   const ejectedSkills: SkillId[] = [];
   const pluginizedSkills: SkillId[] = [];
+  const failedPluginInstalls: MigrationResult["failedPluginInstalls"] = [];
 
   // Migrate skills from plugin to eject, split by scope
   if (plan.toEject.length > 0) {
@@ -135,37 +143,52 @@ export async function executeMigration(
 
   // Migrate skills from eject to plugin
   if (plan.toPlugin.length > 0) {
-    // Delete local copies from the scope-appropriate directory
-    for (const migration of plan.toPlugin) {
-      // Don't delete global local skills when migrating to project scope —
-      // the global local copy must remain for other projects.
-      if (migration.oldScope === "global" && migration.newScope === "project") {
-        verbose(`Keeping global local skill for ${migration.id} (migrated to project-plugin)`);
-        continue;
-      }
-      const baseDir = installBaseDir(projectDir, migration.oldScope);
-      await deleteLocalSkill(baseDir, migration.id);
+    // Plugin install intent is inviolable: without a marketplace NO migration in
+    // this list can be installed, so fail before anything is deleted. Deleting
+    // first and downgrading to a warning destroys the user's editable working
+    // copy and leaves config entries claiming a plugin that was never installed.
+    if (!sourceResult.marketplace) {
+      throw new Error(
+        `Cannot install skills as plugins: marketplace could not be resolved from source ` +
+          `'${sourceResult.sourceConfig.source}'. Plugin install mode requires a marketplace — ` +
+          `fix the source or switch the affected skills to eject mode.`,
+      );
     }
 
-    // Install as plugins using per-skill scope
-    if (sourceResult.marketplace) {
-      for (const migration of plan.toPlugin) {
-        try {
-          const pluginScope = toClaudePluginScope(migration.newScope);
-          const pluginRef = buildMarketplacePluginRef(migration.id, sourceResult.marketplace);
-          await claudePluginInstall(pluginRef, pluginScope, projectDir);
-          pluginizedSkills.push(migration.id);
-          verbose(`Installed plugin for ${migration.id}`);
-        } catch (error) {
-          warnings.push(`Could not install plugin for ${migration.id}: ${getErrorMessage(error)}`);
-        }
+    // The same rule applies per skill: install FIRST and delete the ejected working
+    // copy only once THAT skill's plugin is registered. A failed install then leaves
+    // the skill exactly as it was, and the caller hard-errors on
+    // `failedPluginInstalls` before any config claims the plugin source.
+    for (const migration of plan.toPlugin) {
+      const pluginScope = toClaudePluginScope(migration.newScope);
+      const pluginRef = buildMarketplacePluginRef(migration.id, sourceResult.marketplace);
+      try {
+        await claudePluginInstall(pluginRef, pluginScope, projectDir);
+      } catch (error) {
+        failedPluginInstalls.push({ id: migration.id, error: getErrorMessage(error) });
+        continue;
       }
-    } else {
-      warnings.push(
-        "No marketplace configured — cannot install skills as plugins. Skills deleted but not plugin-installed.",
-      );
+      pluginizedSkills.push(migration.id);
+      verbose(`Installed plugin for ${migration.id}`);
+      await deleteEjectedWorkingCopy(migration, projectDir);
     }
   }
 
-  return { ejectedSkills, pluginizedSkills, warnings };
+  return { ejectedSkills, pluginizedSkills, failedPluginInstalls, warnings };
+}
+
+/**
+ * Removes the local copy a now-pluginized skill no longer needs, from the scope it was
+ * ejected at. A global copy is kept when the skill moves to project scope — the global
+ * copy must remain for other projects.
+ */
+async function deleteEjectedWorkingCopy(
+  migration: SkillMigration,
+  projectDir: string,
+): Promise<void> {
+  if (migration.oldScope === "global" && migration.newScope === "project") {
+    verbose(`Keeping global local skill for ${migration.id} (migrated to project-plugin)`);
+    return;
+  }
+  await deleteLocalSkill(installBaseDir(projectDir, migration.oldScope), migration.id);
 }

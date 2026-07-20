@@ -21,6 +21,7 @@ import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 import {
   createMockSkillEntry,
   createMockSkillDefinition,
+  sa,
 } from "./__tests__/factories/skill-factories";
 import { createMockAgentConfig } from "./__tests__/factories/agent-factories";
 import { createMockCompileConfig } from "./__tests__/factories/plugin-factories";
@@ -43,17 +44,11 @@ import type {
   AgentName,
   CompiledAgentData,
   Skill,
-  SkillAssignment,
   SkillDefinition,
   SkillId,
   SkillReference,
   StackAgentConfig,
 } from "../types";
-
-/** Shorthand: creates a SkillAssignment from an id and optional preloaded flag */
-function sa(id: SkillId, preloaded = false): SkillAssignment {
-  return { id, preloaded };
-}
 
 // Skill definitions (single-consumer — only used in this test file)
 

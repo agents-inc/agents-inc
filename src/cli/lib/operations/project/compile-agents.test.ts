@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { AgentName } from "../../../types";
+import type { AgentName, SkillScope } from "../../../types";
 import { buildAgentConfigs } from "../../__tests__/factories/config-factories.js";
 
 vi.mock("../../agents/index.js", () => ({
@@ -83,7 +83,7 @@ describe("compile-agents", () => {
       ],
       skills: [],
     };
-    const scopeMap = new Map<AgentName, "project" | "global">([
+    const scopeMap = new Map<AgentName, SkillScope>([
       ["web-developer", "project"],
       ["api-developer", "global"],
     ]);
@@ -129,7 +129,7 @@ describe("compile-agents", () => {
       ],
       skills: [],
     };
-    const scopeMap = new Map<AgentName, "project" | "global">([
+    const scopeMap = new Map<AgentName, SkillScope>([
       ["web-developer", "project"],
       ["api-developer", "project"],
       ["web-pm", "global"],
@@ -170,7 +170,7 @@ describe("compile-agents", () => {
       ],
       skills: [],
     };
-    const scopeMap = new Map<AgentName, "project" | "global">([["web-developer", "project"]]);
+    const scopeMap = new Map<AgentName, SkillScope>([["web-developer", "project"]]);
 
     mockLoadProjectConfigFromDir.mockResolvedValue({
       config,

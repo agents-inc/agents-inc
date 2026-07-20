@@ -3,6 +3,7 @@ import type { SourceLoadResult } from "../loading/source-loader";
 import type { MigrationPlan } from "./mode-migrator";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { buildSourceResult } from "../__tests__/factories/config-factories";
+import { createMockCopiedSkill } from "../__tests__/factories/skill-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
 import { WEB_PAIR_MATRIX } from "../__tests__/mock-data/mock-matrices";
 
@@ -28,16 +29,6 @@ import {
   claudePluginUninstall,
   claudePluginUninstallBestEffort,
 } from "../../utils/exec";
-
-/** The copied-skill record copySkillsToLocalFlattened reports for react. */
-function reactCopiedSkill(tempDir: string) {
-  return {
-    skillId: "web-framework-react" as const,
-    contentHash: "abc123",
-    sourcePath: "/source/skills/web/framework/react",
-    destPath: `${tempDir}/.claude/skills/web-framework-react`,
-  };
-}
 
 describe("mode-migrator", () => {
   describe("detectMigrations", () => {
@@ -170,7 +161,9 @@ describe("mode-migrator", () => {
     });
 
     it("should copy skills to local and uninstall plugins for toEject skills", async () => {
-      vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([reactCopiedSkill(tempDir)]);
+      vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
+        createMockCopiedSkill("web-framework-react"),
+      ]);
 
       const plan: MigrationPlan = {
         toEject: [
@@ -226,6 +219,7 @@ describe("mode-migrator", () => {
         tempDir,
       );
       expect(result.pluginizedSkills).toStrictEqual(["web-state-zustand"]);
+      expect(result.failedPluginInstalls).toStrictEqual([]);
       expect(result.warnings).toStrictEqual([]);
     });
 
@@ -248,7 +242,7 @@ describe("mode-migrator", () => {
       expect(result.warnings).toStrictEqual([]);
     });
 
-    it("should collect warnings when plugin operations fail", async () => {
+    it("should report a failed plugin install and preserve the ejected working copy", async () => {
       vi.mocked(claudePluginInstall).mockRejectedValue(new Error("install failed"));
 
       const plan: MigrationPlan = {
@@ -267,14 +261,55 @@ describe("mode-migrator", () => {
 
       const result = await executeMigration(plan, tempDir, sourceResult);
 
-      expect(deleteLocalSkill).toHaveBeenCalledWith(tempDir, "web-state-zustand");
+      expect(
+        deleteLocalSkill,
+        "the ejected working copy must survive a migration whose plugin install failed",
+      ).not.toHaveBeenCalled();
       expect(result.pluginizedSkills).toStrictEqual([]);
-      expect(result.warnings).toStrictEqual([
-        expect.stringContaining("Could not install plugin for web-state-zustand"),
-      ]);
+      expect(
+        result.failedPluginInstalls,
+        "a failed install must be reported structurally so the caller can hard-error before writing config",
+      ).toStrictEqual([{ id: "web-state-zustand", error: "install failed" }]);
+      expect(result.warnings).toStrictEqual([]);
     });
 
-    it("should warn when no marketplace configured for plugin migration", async () => {
+    it("should keep the working copy of the failed skill while migrating the successful one", async () => {
+      vi.mocked(claudePluginInstall)
+        .mockRejectedValueOnce(new Error("install failed"))
+        .mockResolvedValue(undefined);
+
+      const plan: MigrationPlan = {
+        toEject: [],
+        toPlugin: [
+          {
+            id: "web-state-zustand",
+            oldSource: "eject",
+            newSource: "agents-inc",
+            oldScope: "project",
+            newScope: "project",
+          },
+          {
+            id: "web-framework-react",
+            oldSource: "eject",
+            newSource: "agents-inc",
+            oldScope: "project",
+            newScope: "project",
+          },
+        ],
+        scopeChanges: [],
+      };
+
+      const result = await executeMigration(plan, tempDir, sourceResult);
+
+      expect(result.pluginizedSkills).toStrictEqual(["web-framework-react"]);
+      expect(result.failedPluginInstalls).toStrictEqual([
+        { id: "web-state-zustand", error: "install failed" },
+      ]);
+      expect(deleteLocalSkill).toHaveBeenCalledOnce();
+      expect(deleteLocalSkill).toHaveBeenCalledWith(tempDir, "web-framework-react");
+    });
+
+    it("should reject a plugin migration when no marketplace is configured, before deleting anything", async () => {
       const noMarketplaceSource = buildSourceResult(sourceResult.matrix, "/test/source");
 
       const plan: MigrationPlan = {
@@ -291,16 +326,54 @@ describe("mode-migrator", () => {
         scopeChanges: [],
       };
 
-      const result = await executeMigration(plan, tempDir, noMarketplaceSource);
+      await expect(executeMigration(plan, tempDir, noMarketplaceSource)).rejects.toThrow(
+        /marketplace could not be resolved/,
+      );
 
-      expect(deleteLocalSkill).toHaveBeenCalledWith(tempDir, "web-state-zustand");
+      expect(
+        deleteLocalSkill,
+        "the ejected working copy must survive a migration that cannot install it as a plugin",
+      ).not.toHaveBeenCalled();
       expect(claudePluginInstall).not.toHaveBeenCalled();
-      expect(result.warnings).toStrictEqual([expect.stringContaining("No marketplace configured")]);
+    });
+
+    it("should reject before deleting even when a migration skips the delete step", async () => {
+      const noMarketplaceSource = buildSourceResult(sourceResult.matrix, "/test/source");
+
+      const plan: MigrationPlan = {
+        toEject: [],
+        toPlugin: [
+          {
+            id: "web-framework-react",
+            oldSource: "eject",
+            newSource: "agents-inc",
+            oldScope: "global",
+            newScope: "project",
+          },
+          {
+            id: "web-state-zustand",
+            oldSource: "eject",
+            newSource: "agents-inc",
+            oldScope: "project",
+            newScope: "project",
+          },
+        ],
+        scopeChanges: [],
+      };
+
+      await expect(executeMigration(plan, tempDir, noMarketplaceSource)).rejects.toThrow(
+        /marketplace could not be resolved/,
+      );
+
+      expect(deleteLocalSkill).not.toHaveBeenCalled();
+      expect(claudePluginInstall).not.toHaveBeenCalled();
     });
 
     describe("global→project scope migration", () => {
       it("should NOT uninstall global plugin when ejecting to project scope", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([reactCopiedSkill(tempDir)]);
+        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
+          createMockCopiedSkill("web-framework-react"),
+        ]);
 
         const plan: MigrationPlan = {
           toEject: [
@@ -357,7 +430,9 @@ describe("mode-migrator", () => {
 
     describe("same-scope migrations", () => {
       it("should uninstall project plugin when ejecting to project scope", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([reactCopiedSkill(tempDir)]);
+        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
+          createMockCopiedSkill("web-framework-react"),
+        ]);
 
         const plan: MigrationPlan = {
           toEject: [
@@ -384,7 +459,9 @@ describe("mode-migrator", () => {
       });
 
       it("should uninstall global plugin when ejecting to global scope", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([reactCopiedSkill(tempDir)]);
+        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
+          createMockCopiedSkill("web-framework-react"),
+        ]);
 
         const plan: MigrationPlan = {
           toEject: [

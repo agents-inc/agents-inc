@@ -110,6 +110,18 @@ describe("plugin-finder", () => {
 
       expect(result).toBe(path.join("/path/to/plugin", PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE));
     });
+
+    it("should handle paths with trailing slash", () => {
+      const result = getPluginManifestPath("/some/output/dir/");
+
+      expect(result).toBe("/some/output/dir/.claude-plugin/plugin.json");
+    });
+
+    it("should handle relative paths", () => {
+      const result = getPluginManifestPath("dist/plugins");
+
+      expect(result).toBe(path.join("dist/plugins", PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE));
+    });
   });
 
   describe("readPluginManifest", () => {

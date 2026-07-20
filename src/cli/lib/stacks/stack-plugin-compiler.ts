@@ -239,7 +239,7 @@ export async function compileStackPlugin(
   verbose(`  Wrote plugin.json (v${version})`);
 
   const readme = generateStackReadme(stackId, stack, compiledAgentNames, uniqueSkillPlugins);
-  await writeFile(path.join(pluginDir, "README.md"), readme);
+  await writeFile(path.join(pluginDir, STANDARD_FILES.README_MD), readme);
   verbose("  Generated README.md");
 
   return {

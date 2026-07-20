@@ -1,3 +1,8 @@
+/** Message shown when a feature-flagged command is invoked while disabled. */
+export function featureDisabledError(commandName: string): string {
+  return `The \`${commandName}\` command is currently disabled while being improved.`;
+}
+
 export const FEATURE_FLAGS = {
   // Controls whether the search pill appears in the source grid (step-sources)
   SOURCE_SEARCH: false,

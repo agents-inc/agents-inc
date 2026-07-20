@@ -35,7 +35,11 @@ import type {
 } from "../../types";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
-import { createMockSkill, createMockSkillEntry } from "../__tests__/factories/skill-factories";
+import {
+  createMockCopiedSkill,
+  createMockSkill,
+  createMockSkillEntry,
+} from "../__tests__/factories/skill-factories";
 import { createMockAgent } from "../__tests__/factories/agent-factories";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories";
 import {
@@ -46,6 +50,7 @@ import {
 } from "../__tests__/factories/config-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
 import { readTestTsConfig } from "../__tests__/helpers/config-io";
+import { useFakeHome } from "../__tests__/helpers/isolated-home";
 import { fileExists } from "../../utils/fs";
 import { expectInstallResult } from "../__tests__/assertions/index.js";
 import { SKILLS } from "../__tests__/test-fixtures";
@@ -128,43 +133,6 @@ const mockLoadStackById = vi.mocked((await import("../stacks/stacks-loader")).lo
 
 // Boundary cast: fictional skill ID used throughout local-installer tests
 const TEST_SKILL_ID = "meta-test-skill" as SkillId;
-
-/**
- * Registers hooks that point HOME at `<tempDir>/fake-home` for each test and
- * restore the original value afterwards. Pass `setHome: false` when the test
- * itself decides when to point HOME at the fake home. Returns a live view of
- * the fake home dir.
- */
-function useFakeHome(
-  getTempDir: () => string,
-  options?: { setHome?: boolean },
-): { readonly dir: string } {
-  let savedHome: string | undefined;
-  let fakeHome: string;
-
-  beforeEach(async () => {
-    savedHome = process.env.HOME;
-    fakeHome = path.join(getTempDir(), "fake-home");
-    await mkdir(fakeHome, { recursive: true });
-    if (options?.setHome !== false) {
-      process.env.HOME = fakeHome;
-    }
-  });
-
-  afterEach(() => {
-    if (savedHome !== undefined) {
-      process.env.HOME = savedHome;
-    } else {
-      delete process.env.HOME;
-    }
-  });
-
-  return {
-    get dir() {
-      return fakeHome;
-    },
-  };
-}
 
 describe("local-installer", () => {
   let tempDir: string;
@@ -763,14 +731,7 @@ describe("local-installer", () => {
     it("should map copied skills that exist in the matrix", () => {
       initializeMatrix(SINGLE_REACT_MATRIX);
 
-      const copiedSkills = [
-        {
-          skillId: "web-framework-react" as SkillId,
-          contentHash: "abc123",
-          sourcePath: "/source/skills/react",
-          destPath: "/project/.claude/skills/web-framework-react",
-        },
-      ];
+      const copiedSkills = [createMockCopiedSkill("web-framework-react")];
 
       const result = buildEjectSkillsMap(copiedSkills);
 
@@ -785,14 +746,8 @@ describe("local-installer", () => {
     it("should filter out copied skills not in the matrix", () => {
       initializeMatrix(EMPTY_MATRIX);
 
-      const copiedSkills = [
-        {
-          skillId: "web-nonexistent-skill" as SkillId,
-          contentHash: "abc123",
-          sourcePath: "/source/skills/nonexistent",
-          destPath: "/project/.claude/skills/web-nonexistent-skill",
-        },
-      ];
+      // web-nonexistent-skill is a deliberately-invalid id (not a matrix member) — cast stays
+      const copiedSkills = [createMockCopiedSkill("web-nonexistent-skill" as SkillId)];
 
       const result = buildEjectSkillsMap(copiedSkills);
 
@@ -811,18 +766,9 @@ describe("local-installer", () => {
       initializeMatrix(SINGLE_REACT_MATRIX);
 
       const copiedSkills = [
-        {
-          skillId: "web-framework-react" as SkillId,
-          contentHash: "abc123",
-          sourcePath: "/source/skills/react",
-          destPath: "/project/.claude/skills/web-framework-react",
-        },
-        {
-          skillId: "web-nonexistent-skill" as SkillId,
-          contentHash: "def456",
-          sourcePath: "/source/skills/nonexistent",
-          destPath: "/project/.claude/skills/web-nonexistent-skill",
-        },
+        createMockCopiedSkill("web-framework-react"),
+        // web-nonexistent-skill is a deliberately-invalid id (not a matrix member) — cast stays
+        createMockCopiedSkill("web-nonexistent-skill" as SkillId),
       ];
 
       const result = buildEjectSkillsMap(copiedSkills);
@@ -1466,6 +1412,85 @@ describe("local-installer", () => {
       expect(mergedWebReviewer).toBeDefined();
       mergedWebReviewer!.push(SENTINEL);
       expect(incoming).toStrictEqual(incomingSnapshot);
+    });
+
+    it("records the incoming marketplace and source when the global config has none", () => {
+      // Project init: ensureBlankGlobalConfig() creates `existing` moments earlier, so it
+      // carries no source identity. The global config is the only record tying globally
+      // installed plugins back to their marketplace — uninstall builds its `<id>@<marketplace>`
+      // registry key from it.
+      const sharedSkills = buildSkillConfigs(["web-framework-react"], { scope: "global" });
+      const sharedAgents = buildAgentConfigs(["web-developer"], { scope: "global" });
+      const existing: ProjectConfig = buildProjectConfig({
+        name: "global",
+        skills: sharedSkills,
+        agents: sharedAgents,
+      });
+      const incoming: ProjectConfig = buildProjectConfig({
+        name: "global",
+        skills: sharedSkills,
+        agents: sharedAgents,
+        marketplace: "e2e-test-marketplace",
+        source: "/path/to/skills",
+      });
+
+      const { config, changed } = mergeGlobalConfigs(existing, incoming);
+
+      expect(config.marketplace).toBe("e2e-test-marketplace");
+      expect(config.source).toBe("/path/to/skills");
+      // Newly-filled source identity must mark the merge dirty — `needsGlobalWrite` is gated
+      // on this flag, so a false here would skip the global write and drop the fields again.
+      expect(changed, "newly recorded source identity must trigger the global write").toBe(true);
+    });
+
+    it("keeps the existing marketplace and source when the incoming init came from a different one", () => {
+      // Fill-only precedence. The merge never removes skills, so after this merge the global
+      // config holds plugins from BOTH marketplaces and the scalar label can only name one.
+      // Repointing it from a project context would rewrite global state on behalf of every
+      // other registered project, so the already-recorded value wins.
+      const sharedAgents = buildAgentConfigs(["web-developer"], { scope: "global" });
+      const existing: ProjectConfig = buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+        agents: sharedAgents,
+        marketplace: "first-marketplace",
+        source: "/path/to/first",
+      });
+      const incoming: ProjectConfig = buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+        agents: sharedAgents,
+        marketplace: "second-marketplace",
+        source: "/path/to/second",
+      });
+
+      const { config, changed } = mergeGlobalConfigs(existing, incoming);
+
+      expect(config.marketplace).toBe("first-marketplace");
+      expect(config.source).toBe("/path/to/first");
+      // No delta at all — the global config must not be rewritten for an identical merge.
+      expect(changed).toBe(false);
+    });
+
+    it("leaves marketplace and source undefined when neither config records one", () => {
+      const sharedSkills = buildSkillConfigs(["web-framework-react"], { scope: "global" });
+      const sharedAgents = buildAgentConfigs(["web-developer"], { scope: "global" });
+      const existing: ProjectConfig = buildProjectConfig({
+        name: "global",
+        skills: sharedSkills,
+        agents: sharedAgents,
+      });
+      const incoming: ProjectConfig = buildProjectConfig({
+        name: "global",
+        skills: sharedSkills,
+        agents: sharedAgents,
+      });
+
+      const { config, changed } = mergeGlobalConfigs(existing, incoming);
+
+      expect(config.marketplace).toBeUndefined();
+      expect(config.source).toBeUndefined();
+      expect(changed).toBe(false);
     });
   });
 

@@ -1,17 +1,11 @@
 import { z } from "zod";
-import { isSkillId } from "../utils/type-guards";
 import type { LocalSkillMetadata } from "./skills/skill-metadata";
 import type { LocalRawMetadata } from "./skills/local-skill-loader";
-import { KEBAB_CASE_PATTERN } from "../consts";
+import { AUTHOR_HANDLE_PATTERN, KEBAB_CASE_PATTERN, LOCAL_PSEUDO_CATEGORY } from "../consts";
 import { formatZodIssue } from "./schema-validator";
 import { warn } from "../utils/logger";
-import {
-  SKILL_IDS,
-  SKILL_SLUGS,
-  CATEGORIES,
-  DOMAINS,
-  AGENT_NAMES,
-} from "../types/generated/source-types";
+import { SKILL_IDS, SKILL_SLUGS, CATEGORIES } from "../types/generated/source-types";
+import { MODEL_NAMES, PERMISSION_MODES } from "../types/matrix";
 import type {
   AgentHookAction,
   AgentHookDefinition,
@@ -41,18 +35,8 @@ import type {
   SkillAssignment,
   SkillId,
   SkillSlug,
-  SkillSourceType,
   Category,
 } from "../types";
-
-// Bridge pattern: z.ZodType<ExistingType> ensures Zod output matches our union types
-export const domainSchema = z.enum(DOMAINS) as z.ZodType<Domain>;
-
-export const skillSourceTypeSchema = z.enum([
-  "public",
-  "private",
-  "local",
-]) as z.ZodType<SkillSourceType>;
 
 export const boundSkillSchema: z.ZodType<BoundSkill> = z.object({
   id: z.string() as z.ZodType<SkillId>,
@@ -62,36 +46,11 @@ export const boundSkillSchema: z.ZodType<BoundSkill> = z.object({
   description: z.string().optional(),
 });
 
-// Bridge pattern: z.ZodType<ExistingType> ensures Zod output matches our union types
-export const categorySchema = z.enum(CATEGORIES) as z.ZodType<Category>;
+export const modelNameSchema = z.enum(MODEL_NAMES) as z.ZodType<ModelName>;
 
-export const agentNameSchema = z.enum(AGENT_NAMES) as z.ZodType<AgentName>;
-
-export const modelNameSchema = z.enum([
-  "sonnet",
-  "opus",
-  "haiku",
-  "inherit",
-]) as z.ZodType<ModelName>;
-
-export const permissionModeSchema = z.enum([
-  "default",
-  "acceptEdits",
-  "dontAsk",
-  "bypassPermissions",
-  "plan",
-  "delegate",
-]) as z.ZodType<PermissionMode>;
+export const permissionModeSchema = z.enum(PERMISSION_MODES) as z.ZodType<PermissionMode>;
 
 export const skillSlugSchema = z.enum(SKILL_SLUGS) as z.ZodType<SkillSlug>;
-
-// Validated against the generated SKILL_IDS array — no regex needed
-export const skillIdSchema = z
-  .string()
-  .refine(
-    (val): val is SkillId => isSkillId(val),
-    "Must be a known skill ID (e.g., 'web-framework-react')",
-  ) as z.ZodType<SkillId>;
 
 /** Validates category: strict categoryPathSchema by default, any kebab-case string when custom: true */
 function validateCategoryField(
@@ -122,7 +81,7 @@ function validateCategoryField(
 // Accepts: known category, "local", or any kebab-case string (custom categories)
 export const categoryPathSchema = z.string().refine(
   (val): val is CategoryPath => {
-    if (val === "local") return true;
+    if (val === LOCAL_PSEUDO_CATEGORY) return true;
     if ((CATEGORIES as readonly string[]).includes(val)) return true;
     // Accept any kebab-case string for custom categories
     return KEBAB_CASE_PATTERN.test(val);
@@ -185,12 +144,33 @@ export const skillMetadataLoaderSchema = z
   .passthrough()
   .superRefine(validateCategoryField);
 
+/**
+ * Raw metadata.yaml shape read by the matrix loader during skill extraction.
+ * DELIBERATE DIFFERENCE from skillMetadataLoaderSchema / localRawMetadataSchema:
+ * this schema validates `category` with categoryPathSchema directly and does NOT
+ * run the validateCategoryField superRefine, so a `custom: true` category is not
+ * cross-checked against the kebab-case rule. Preserved verbatim on the move from
+ * matrix-loader.ts — do not add the superRefine without an explicit decision.
+ */
+export const matrixRawMetadataSchema = z.object({
+  category: categoryPathSchema,
+  author: z.string(),
+  displayName: z.string().optional(),
+  slug: z.string() as z.ZodType<SkillSlug>,
+  cliDescription: z.string().optional(),
+  usageGuidance: z.string().optional(),
+  // Boundary cast: domain is a string at the YAML parse boundary; narrowed to Domain type
+  domain: z.string() as z.ZodType<Domain>,
+  custom: z.boolean().optional(),
+});
+
 export const pluginAuthorSchema: z.ZodType<PluginAuthor> = z.object({
   name: z.string().min(1),
   email: z.string().optional(),
 });
 
-export const pluginManifestSchema: z.ZodType<PluginManifest> = z.object({
+// Shared plugin.json shape — the lenient (strip) and strict variants below differ only in unknown-key policy
+const pluginManifestObjectSchema = z.object({
   name: z.string(),
   version: z.string().optional(),
   description: z.string().optional(),
@@ -201,6 +181,12 @@ export const pluginManifestSchema: z.ZodType<PluginManifest> = z.object({
   skills: z.union([z.string(), z.array(z.string())]).optional(),
   hooks: z.union([z.string(), hooksRecordSchema]).optional(),
 });
+
+/** Lenient plugin.json schema (strips unknown keys; used at load boundaries) */
+export const pluginManifestSchema: z.ZodType<PluginManifest> = pluginManifestObjectSchema;
+
+/** Strict plugin.json schema — rejects unrecognized keys (used by plugin-validator) */
+export const pluginManifestValidationSchema = pluginManifestObjectSchema.strict();
 
 export const agentYamlConfigSchema: z.ZodType<AgentYamlConfig> = z.object({
   id: z.string() as z.ZodType<AgentName>,
@@ -298,25 +284,22 @@ const categoryDefinitionSchema: z.ZodType<CategoryDefinition> = z.object({
 // Skill references in relationship rules: slugs resolved to canonical IDs by matrix-loader
 const skillRefInRules = skillSlugSchema;
 
-const conflictRuleSchema: z.ZodType<ConflictRule> = z.object({
+// Shared shape for conflict/discourage/compatibility rules: 2+ slugs plus a reason
+const skillGroupRuleSchema = z.object({
   skills: z.array(skillRefInRules).min(2),
   reason: z.string(),
 });
 
-const discourageRuleSchema: z.ZodType<DiscourageRule> = z.object({
-  skills: z.array(skillRefInRules).min(2),
-  reason: z.string(),
-});
+const conflictRuleSchema: z.ZodType<ConflictRule> = skillGroupRuleSchema;
+
+const discourageRuleSchema: z.ZodType<DiscourageRule> = skillGroupRuleSchema;
 
 const recommendationSchema: z.ZodType<Recommendation> = z.object({
   skill: skillRefInRules,
   reason: z.string(),
 });
 
-export const compatibilityGroupSchema: z.ZodType<CompatibilityGroup> = z.object({
-  skills: z.array(skillRefInRules).min(2),
-  reason: z.string(),
-});
+export const compatibilityGroupSchema: z.ZodType<CompatibilityGroup> = skillGroupRuleSchema;
 
 const requireRuleSchema: z.ZodType<RequireRule> = z.object({
   skill: skillRefInRules,
@@ -439,10 +422,8 @@ const marketplacePluginSchema: z.ZodType<MarketplacePlugin> = z.object({
   keywords: z.array(z.string()).optional(),
 });
 
-const marketplaceOwnerSchema: z.ZodType<MarketplaceOwner> = z.object({
-  name: z.string().min(1),
-  email: z.string().optional(),
-});
+// MarketplaceOwner aliases PluginAuthor (identical shape, both require name.min(1))
+const marketplaceOwnerSchema: z.ZodType<MarketplaceOwner> = pluginAuthorSchema;
 
 const marketplaceMetadataSchema: z.ZodType<MarketplaceMetadata> = z.object({
   /** Base directory for resolving plugin source paths (e.g., "plugins/") */
@@ -618,68 +599,40 @@ export const skillFrontmatterValidationSchema = z
   })
   .strict();
 
-/** Strict validation for metadata.yaml in published skills (enforces author format, enum-validated category/slug) */
-export const metadataValidationSchema = z
-  .object({
-    /** Domain-prefixed category — must be a known built-in category */
-    category: z.enum(CATEGORIES) as z.ZodType<Category>,
-    /** Author handle — must start with @ (e.g., "@vince") */
-    author: z.string().regex(/^@[a-z][a-z0-9-]*$/),
-    /** Short display name for the wizard grid (max 30 chars) */
-    displayName: z.string().min(1).max(30),
-    /** One-line description for the wizard (max 60 chars) */
-    cliDescription: z.string().min(1).max(60),
-    /** When an AI agent should invoke this skill (min 10 chars to ensure usefulness) */
-    usageGuidance: z.string().min(10),
-    /** Kebab-case short key — must be a known built-in slug */
-    slug: z.enum(SKILL_SLUGS) as z.ZodType<SkillSlug>,
-    /** 7-char hex SHA of skill content (for change detection) */
-    contentHash: z
-      .string()
-      .regex(/^[a-f0-9]{7}$/)
-      .optional(),
-    /** ISO date of last update */
-    updated: z.string().optional(),
-    /** Provenance tracking when skill was forked from another */
-    forkedFrom: z
-      .object({
-        /** Original skill ID */
-        skillId: z.string(),
-        /** Version of the original at fork time */
-        version: z.number().int().min(1).optional(),
-        /** Content hash of the original at fork time */
-        contentHash: z.string(),
-        /** Source URL or identifier */
-        source: z.string().optional(),
-        /** ISO date of the fork */
-        date: z.string(),
-      })
-      .optional(),
-    /** Domain assignment from metadata */
-    domain: (z.string() as z.ZodType<Domain>).optional(),
-    /** True if this skill was created outside the CLI's built-in vocabulary */
-    custom: z.boolean().optional(),
-  })
-  .strict();
+/**
+ * Provenance object shared verbatim by metadataValidationSchema and
+ * customMetadataValidationSchema. The forkedFrom variants in
+ * localSkillMetadataSchema (no `version`) and importedSkillMetadataSchema
+ * (`skillName`/required `source`) are deliberately NOT unified here — their
+ * shapes differ, so sharing would change validation behavior.
+ */
+const forkedFromSchema = z.object({
+  /** Original skill ID */
+  skillId: z.string(),
+  /** Version of the original at fork time */
+  version: z.number().int().min(1).optional(),
+  /** Content hash of the original at fork time */
+  contentHash: z.string(),
+  /** Source URL or identifier */
+  source: z.string().optional(),
+  /** ISO date of the fork */
+  date: z.string(),
+});
 
-/** Relaxed validation for custom skill metadata.yaml (any category string, kebab-case slug, allows extra fields) */
-export const customMetadataValidationSchema = z.object({
-  /** Any string category — custom skills may define their own categories */
-  category: z.string(),
+/**
+ * Fields shared by metadataValidationSchema (strict, built-in vocabulary) and
+ * customMetadataValidationSchema (relaxed). Only `category` and `slug` differ
+ * between the two variants — each adds those via .extend().
+ */
+const skillMetadataBaseSchema = z.object({
   /** Author handle — must start with @ (e.g., "@vince") */
-  author: z.string().regex(/^@[a-z][a-z0-9-]*$/),
+  author: z.string().regex(AUTHOR_HANDLE_PATTERN),
   /** Short display name for the wizard grid (max 30 chars) */
   displayName: z.string().min(1).max(30),
   /** One-line description for the wizard (max 60 chars) */
   cliDescription: z.string().min(1).max(60),
   /** When an AI agent should invoke this skill (min 10 chars to ensure usefulness) */
   usageGuidance: z.string().min(10),
-  /** Kebab-case short key for alias resolution, search, and relationship rules */
-  slug: z
-    .string()
-    .regex(/^[a-z][a-z0-9-]*$/)
-    .min(1)
-    .max(50),
   /** 7-char hex SHA of skill content (for change detection) */
   contentHash: z
     .string()
@@ -688,24 +641,33 @@ export const customMetadataValidationSchema = z.object({
   /** ISO date of last update */
   updated: z.string().optional(),
   /** Provenance tracking when skill was forked from another */
-  forkedFrom: z
-    .object({
-      /** Original skill ID */
-      skillId: z.string(),
-      /** Version of the original at fork time */
-      version: z.number().int().min(1).optional(),
-      /** Content hash of the original at fork time */
-      contentHash: z.string(),
-      /** Source URL or identifier */
-      source: z.string().optional(),
-      /** ISO date of the fork */
-      date: z.string(),
-    })
-    .optional(),
+  forkedFrom: forkedFromSchema.optional(),
   /** Domain assignment from metadata */
   domain: (z.string() as z.ZodType<Domain>).optional(),
   /** True if this skill was created outside the CLI's built-in vocabulary */
   custom: z.boolean().optional(),
+});
+
+/** Strict validation for metadata.yaml in published skills (enforces author format, enum-validated category/slug) */
+export const metadataValidationSchema = skillMetadataBaseSchema
+  .extend({
+    /** Domain-prefixed category — must be a known built-in category */
+    category: z.enum(CATEGORIES) as z.ZodType<Category>,
+    /** Kebab-case short key — must be a known built-in slug */
+    slug: z.enum(SKILL_SLUGS) as z.ZodType<SkillSlug>,
+  })
+  .strict();
+
+/** Relaxed validation for custom skill metadata.yaml (any category string, kebab-case slug, allows extra fields) */
+export const customMetadataValidationSchema = skillMetadataBaseSchema.extend({
+  /** Any string category — custom skills may define their own categories */
+  category: z.string(),
+  /** Kebab-case short key for alias resolution, search, and relationship rules */
+  slug: z
+    .string()
+    .regex(/^[a-z][a-z0-9-]*$/)
+    .min(1)
+    .max(50),
 });
 
 const stackSkillAssignmentSchema = z
@@ -767,18 +729,7 @@ export const stackConfigValidationSchema = z
       .strict()
       .optional(),
     /** Lifecycle hooks triggered by file changes or commands */
-    hooks: z
-      .record(
-        z.string(),
-        z.array(
-          z.object({
-            /** Glob pattern to match file paths (e.g., "*.tsx") */
-            matcher: z.string().optional(),
-            hooks: z.array(agentHookActionSchema).min(1),
-          }),
-        ),
-      )
-      .optional(),
+    hooks: strictHooksRecordSchema.optional(),
   })
   .strict();
 
