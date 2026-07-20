@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.144.1] - 2026-07-20
+
+**E2E coverage and documentation for the 0.143.0–0.144.0 fixes — no runtime changes**
+
+- Added one E2E spec per fix shipped in 0.143.0 and 0.144.0, each verified to fail against the pre-fix code for the right reason; every spec asserts config _and_ filesystem state rather than exit codes, since a wizard can exit 0 having silently refused the mutation
+- Shared E2E infrastructure extracted, and `waitForStableRender` renamed to `waitForWizardFooter` — it is a wizard-footer sentinel, not a generic stability primitive, and misreading it cost 72 failing tests
+- Transient toast assertions moved to the raw append-only output surface, anchored to a pre-keypress cursor, so a repainted or stale toast can no longer produce a false pass
+
+See [changelogs/0.144.1.md](./changelogs/0.144.1.md) for full details.
+
 ## [0.144.0] - 2026-07-20
 
 **`doctor` stops certifying broken installs; `compile` stops dropping skills silently**
