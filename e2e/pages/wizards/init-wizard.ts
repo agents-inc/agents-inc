@@ -1,7 +1,8 @@
 import { TerminalSession } from "../../helpers/terminal-session.js";
-import { createE2ESource } from "../../helpers/create-e2e-source.js";
+import { createE2ESource, type E2ESource } from "../../helpers/create-e2e-source.js";
 import { TIMEOUTS } from "../constants.js";
 import { DashboardSession } from "../dashboard-session.js";
+import { TerminalScreen } from "../terminal-screen.js";
 import { ConfirmStep } from "../steps/confirm-step.js";
 import { StackStep } from "../steps/stack-step.js";
 import type { WizardResult } from "../wizard-result.js";
@@ -9,7 +10,7 @@ import { cleanupTempDir, createPermissionsFile, createTempDir } from "../../help
 
 export type InitWizardOptions = {
   /** Pre-created source directory. If not provided, creates one. */
-  source?: { sourceDir: string; tempDir: string };
+  source?: E2ESource;
   /** Pre-created project directory. If not provided, creates a temp dir. */
   projectDir?: string;
   /** Terminal dimensions */
@@ -163,6 +164,7 @@ export class InitWizard {
   async acceptStackDefaults(): Promise<WizardResult> {
     const domain = await this.stack.selectFirstStack();
     await domain.acceptDefaults();
+    await new TerminalScreen(this.session).waitForWizardFooter(TIMEOUTS.WIZARD_LOAD);
     this.session.write("a");
     const confirm = new ConfirmStep(this.session, this.projectDir, "init");
     return confirm.confirm();
@@ -193,6 +195,25 @@ export class InitWizard {
     this.session.ctrlC();
   }
 
+  /**
+   * Abort the wizard (Ctrl+C), wait for the process to exit, then destroy the
+   * session and its temp dirs — the standard read-only-scenario teardown
+   * ritual.
+   *
+   * Returns the exit code so sites that assert on it keep their assertion.
+   * `timeoutMs` is passed through to `waitForExit` verbatim — omitting it
+   * falls back to the session's own default, exactly as a bare
+   * `waitForExit()` does. Adopting sites must pass whatever value they used
+   * before (`TIMEOUTS.EXIT_WAIT`, `TIMEOUTS.EXIT`, or nothing) so the wait
+   * budget stays byte-identical.
+   */
+  async abortAndDestroy(timeoutMs?: number): Promise<number> {
+    this.abort();
+    const exitCode = await this.waitForExit(timeoutMs);
+    await this.destroy();
+    return exitCode;
+  }
+
   /** Press Escape on the wizard (useful for cancelling from stack step). */
   escape(): void {
     this.session.escape();
@@ -213,7 +234,7 @@ export class InitWizard {
    */
   static async launchForDashboard(options: {
     projectDir: string;
-    source?: { sourceDir: string; tempDir: string };
+    source?: E2ESource;
     env?: Record<string, string | undefined>;
   }): Promise<DashboardSession> {
     let sourceDir: string | undefined;

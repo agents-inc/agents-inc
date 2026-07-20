@@ -44,13 +44,40 @@ import {
  * Only create sources inline when the test requires a unique/modified source.
  */
 
+/**
+ * Display title written into each E2E source skill's metadata.yaml, and
+ * therefore the text the wizard renders for that skill.
+ *
+ * Single source of truth: assertions that match on rendered skill text should
+ * key off this instead of re-typing the strings.
+ */
+export const E2E_SKILL_TITLES = {
+  "web-framework-react": "web-framework-react",
+  "web-testing-vitest": "web-testing-vitest",
+  "web-state-zustand": "web-state-zustand",
+  "api-framework-hono": "api-framework-hono",
+  "meta-methodology-research-methodology": "Research Methodology",
+  "meta-reviewing-reviewing": "Reviewing",
+  "meta-reviewing-cli-reviewing": "CLI Reviewing",
+  "web-framework-vue-composition-api": "Vue Composition Api",
+  "web-state-pinia": "web-state-pinia",
+} as const satisfies Partial<Record<SkillId, string>>;
+
+/**
+ * Display title written into each E2E source agent's metadata.yaml, and
+ * therefore the text the wizard's agents step renders for that agent.
+ */
+export const E2E_AGENT_TITLES = {
+  "web-developer": "Web Developer",
+  "api-developer": "API Developer",
+} as const satisfies Partial<Record<AgentName, string>>;
+
 type E2ESkill = {
   category: CategoryPath;
-  id: SkillId;
+  id: keyof typeof E2E_SKILL_TITLES;
   slug: SkillSlug;
   description: string;
   domain: string;
-  displayName: string;
 };
 
 const E2E_SKILLS: E2ESkill[] = [
@@ -60,7 +87,6 @@ const E2E_SKILLS: E2ESkill[] = [
     slug: "react",
     description: "React framework for building user interfaces",
     domain: "web",
-    displayName: "web-framework-react",
   },
   {
     category: "web-testing",
@@ -68,7 +94,6 @@ const E2E_SKILLS: E2ESkill[] = [
     slug: "vitest",
     description: "Next generation testing framework",
     domain: "web",
-    displayName: "web-testing-vitest",
   },
   {
     category: "web-client-state",
@@ -76,7 +101,6 @@ const E2E_SKILLS: E2ESkill[] = [
     slug: "zustand",
     description: "Bear necessities state management",
     domain: "web",
-    displayName: "web-state-zustand",
   },
   {
     category: "api-api",
@@ -84,7 +108,6 @@ const E2E_SKILLS: E2ESkill[] = [
     slug: "hono",
     description: "Lightweight web framework for the edge",
     domain: "api",
-    displayName: "api-framework-hono",
   },
   {
     category: "meta-methodology",
@@ -92,7 +115,6 @@ const E2E_SKILLS: E2ESkill[] = [
     slug: "research-methodology",
     description: "Codebase investigation and research methodology",
     domain: "meta",
-    displayName: "Research Methodology",
   },
   {
     category: "meta-reviewing",
@@ -100,7 +122,6 @@ const E2E_SKILLS: E2ESkill[] = [
     slug: "reviewing",
     description: "Code review guidance and patterns",
     domain: "meta",
-    displayName: "Reviewing",
   },
   {
     category: "meta-reviewing",
@@ -108,7 +129,6 @@ const E2E_SKILLS: E2ESkill[] = [
     slug: "cli-reviewing",
     description: "CLI code review patterns",
     domain: "meta",
-    displayName: "CLI Reviewing",
   },
   {
     category: "web-framework",
@@ -116,7 +136,6 @@ const E2E_SKILLS: E2ESkill[] = [
     slug: "vue-composition-api",
     description: "Vue.js composition API framework",
     domain: "web",
-    displayName: "Vue Composition Api",
   },
   {
     category: "web-client-state",
@@ -124,7 +143,6 @@ const E2E_SKILLS: E2ESkill[] = [
     slug: "pinia",
     description: "Vue state management",
     domain: "web",
-    displayName: "web-state-pinia",
   },
 ];
 
@@ -187,6 +205,12 @@ type E2ESourceOptions = {
   relationships?: Partial<RelationshipDefinitions>;
 };
 
+/** A created E2E source: the source root plus the temp dir owning it. */
+export type E2ESource = {
+  sourceDir: string;
+  tempDir: string;
+};
+
 /**
  * Creates a complete skills source directory for E2E init wizard tests.
  *
@@ -202,10 +226,7 @@ type E2ESourceOptions = {
  * written to the source with those relationship rules. This enables E2E testing
  * of slug-based relationship resolution via `cc validate` and `cc info`.
  */
-export async function createE2ESource(options?: E2ESourceOptions): Promise<{
-  sourceDir: string;
-  tempDir: string;
-}> {
+export async function createE2ESource(options?: E2ESourceOptions): Promise<E2ESource> {
   const tempDir = await createTempDir();
   const sourceDir = path.join(tempDir, "source");
 
@@ -237,7 +258,7 @@ async function writeSkills(sourceDir: string, skills: E2ESkill[]): Promise<void>
         category: skill.category,
         domain: skill.domain,
         slug: skill.slug,
-        displayName: skill.displayName,
+        displayName: E2E_SKILL_TITLES[skill.id],
         cliDescription: skill.description,
         usageGuidance: "Use when testing E2E scenarios",
         contentHash: "a1b2c3d",
@@ -283,12 +304,12 @@ async function writeAgents(sourceDir: string): Promise<void> {
   const agents: Array<{ name: AgentName; title: string; description: string }> = [
     {
       name: "web-developer",
-      title: "Web Developer",
+      title: E2E_AGENT_TITLES["web-developer"],
       description: "Full-stack web development specialist",
     },
     {
       name: "api-developer",
-      title: "API Developer",
+      title: E2E_AGENT_TITLES["api-developer"],
       description: "Backend API development specialist",
     },
   ];

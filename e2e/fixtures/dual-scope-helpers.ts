@@ -122,6 +122,41 @@ export async function runEditWithFirstSkillAction(
 }
 
 /**
+ * Re-open `cc edit`, read one skill's scope badges, then abort without saving.
+ *
+ * Read-only: the wizard is aborted with Ctrl+C, so nothing is written to
+ * config.ts or the skill directories. Owns the whole session — it launches,
+ * aborts, waits for exit and destroys, so callers must NOT also track the
+ * wizard for afterEach cleanup.
+ *
+ * Only reads the FIRST domain's grid (the wizard opens on Web). Skills in a
+ * later domain need an explicit `advanceDomain()` and are not covered here.
+ */
+export async function readSkillBadgesViaEdit(
+  projectDir: string,
+  fakeHome: string,
+  sourceDir: string,
+  sourceTempDir: string,
+  skillLabel: string,
+): Promise<Array<"P" | "G">> {
+  const wizard = await EditWizard.launch({
+    projectDir,
+    source: { sourceDir, tempDir: sourceTempDir },
+    env: { HOME: fakeHome },
+    rows: 60,
+    cols: 120,
+  });
+
+  try {
+    return await wizard.build.getScopeBadgesForSkill(skillLabel);
+  } finally {
+    wizard.abort();
+    await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
+    await wizard.destroy();
+  }
+}
+
+/**
  * Shared helpers for dual-scope lifecycle E2E tests.
  *
  * Used by:
@@ -131,6 +166,13 @@ export async function runEditWithFirstSkillAction(
  *   - config-scope-integrity.e2e.test.ts
  */
 
+/** The temp directory triple a dual-scope test runs against. */
+export type TestEnvironment = {
+  tempDir: string;
+  fakeHome: string;
+  projectDir: string;
+};
+
 /**
  * Creates the temp directory structure for a dual-scope test.
  *
@@ -139,12 +181,16 @@ export async function runEditWithFirstSkillAction(
  *       .claude/settings.json
  *       project/
  *         .claude/settings.json
+ *
+ * `permissions` (default true) writes the two `.claude/settings.json`
+ * permission files. Pass `false` for flows that must start with no
+ * `.claude` directory at either scope — the only on-disk difference is the
+ * presence of those two settings.json files (and the `.claude` dirs holding
+ * them).
  */
-export async function createTestEnvironment(): Promise<{
-  tempDir: string;
-  fakeHome: string;
-  projectDir: string;
-}> {
+export async function createTestEnvironment(options?: {
+  permissions?: boolean;
+}): Promise<TestEnvironment> {
   const tempDir = await createTempDir();
   const fakeHome = path.join(tempDir, "fake-home");
   const projectDir = path.join(fakeHome, "project");
@@ -153,8 +199,10 @@ export async function createTestEnvironment(): Promise<{
   await mkdir(projectDir, { recursive: true });
 
   // Create permissions files to prevent permission prompt hang
-  await createPermissionsFile(fakeHome);
-  await createPermissionsFile(projectDir);
+  if (options?.permissions !== false) {
+    await createPermissionsFile(fakeHome);
+    await createPermissionsFile(projectDir);
+  }
 
   return { tempDir, fakeHome, projectDir };
 }
@@ -174,11 +222,7 @@ export async function initGlobal(
   });
 
   try {
-    const result = await wizard.completeWithDefaults();
-    const exitCode = await result.exitCode;
-    const output = result.rawOutput;
-    await result.destroy();
-    return { exitCode, output };
+    return await finishWizard(await wizard.completeWithDefaults());
   } catch (e) {
     await wizard.destroy();
     throw e;
@@ -245,6 +289,23 @@ export async function initProject(
 }
 
 /**
+ * Wait for a finished wizard to exit, capture its raw output, then destroy the
+ * session. `output` is `result.rawOutput` — callers needing the sanitized
+ * `result.output` must read it themselves before destroying.
+ *
+ * Does NOT assert on the exit code: failure-path flows return non-success
+ * codes, so the assertion stays at the call site.
+ */
+export async function finishWizard(
+  result: WizardResult,
+): Promise<{ exitCode: number; output: string }> {
+  const exitCode = await result.exitCode;
+  const output = result.rawOutput;
+  await result.destroy();
+  return { exitCode, output };
+}
+
+/**
  * Confirm the edit wizard and return the exit code + raw output.
  * Shared by initProject() and initProjectAllGlobal(): both flows end with a
  * confirm step followed by session exit and cleanup of the dashboard session.
@@ -253,14 +314,11 @@ async function finalizeEdit(
   confirm: ConfirmStep,
   dashboard: DashboardSession,
 ): Promise<{ exitCode: number; output: string }> {
-  const result: WizardResult = await confirm.confirm();
-  const exitCode = await result.exitCode;
-  const output = result.rawOutput;
-  await result.destroy();
-  // result.destroy() destroys the underlying session; dashboard shares it, so
-  // we only clean up the dashboard's cleanupDirs.
+  const outcome = await finishWizard(await confirm.confirm());
+  // finishWizard destroyed the underlying session; dashboard shares it, so we
+  // only clean up the dashboard's cleanupDirs.
   await dashboard.destroy();
-  return { exitCode, output };
+  return outcome;
 }
 
 /**
@@ -306,11 +364,7 @@ export async function initGlobalWithEject(
     const agents = await sources.advance();
 
     const confirm = await agents.acceptDefaults("init");
-    const result = await confirm.confirm();
-    const exitCode = await result.exitCode;
-    const output = result.rawOutput;
-    await result.destroy();
-    return { exitCode, output };
+    return await finishWizard(await confirm.confirm());
   } catch (e) {
     await wizard.destroy();
     throw e;

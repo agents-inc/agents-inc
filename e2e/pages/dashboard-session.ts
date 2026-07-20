@@ -73,7 +73,7 @@ export class DashboardSession {
         cursor,
         INTERNAL_RETRIES.INTERVAL_MS,
       );
-      await this.screen.waitForStableRender(INTERNAL_RETRIES.INTERVAL_MS);
+      await this.screen.waitForWizardFooter(INTERNAL_RETRIES.INTERVAL_MS);
       await this.screen.waitForTextAfter(STEP_TEXT.BUILD, cursor, INTERNAL_RETRIES.INTERVAL_MS);
     });
     return new BuildStep(this.session, this.projectDir);

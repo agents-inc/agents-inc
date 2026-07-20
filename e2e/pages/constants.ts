@@ -33,6 +33,7 @@ export const STEP_TEXT = {
   DOMAIN_MOBILE: "Mobile",
   BUILD: "Framework", // First category visible in build step
   BUILD_FOOTER: "Filter incompatible", // Build-step-only footer hint — always rendered on first build frame
+  CATEGORY_FRAMEWORK: "Framework", // Category label passed as an argument, not a step sentinel like BUILD
   SOURCES: "Customize skill sources",
   AGENTS: "Select agents",
   CONFIRM: "to install",
@@ -51,11 +52,19 @@ export const STEP_TEXT = {
   RECOMPILING: "Recompiling agents",
   LOADED: "Loaded",
   LOADED_LOCAL: "Loaded from local:",
+  LOADED_SKILL: "Loaded skill:", // Verbose loader line prefix
+  COMPILED_LIST: "Compiled:", // Verbose compile listing prefix, distinct from COMPILE_SUCCESS
 
   // Prompts
   CONFIRM_UPDATE: "Proceed with update?",
   CONFIRM_UNINSTALL: "Are you sure you want to uninstall",
   SEARCH: "Search Skills",
+  UNINSTALL_PREVIEW: "The following will be removed", // Loose form for waitForText
+  UNINSTALL_PREVIEW_HEADING: "The following will be removed:", // Exact rendered heading
+
+  // Sources step
+  CONFIGURED_MARKETPLACES: "Configured marketplaces",
+  ADD_SOURCE: "Add source",
 
   // Dashboard
   DASHBOARD: "Doctor",
@@ -68,6 +77,7 @@ export const STEP_TEXT = {
 
   // Installation output
   INSTALLING_PLUGINS: "Installing skill plugins",
+  INSTALLING_PLUGINS_ELLIPSIS: "Installing skill plugins...", // Exact rendered form; the bare form stays for negative assertions
   PLUGIN_NATIVE: "Plugin (native install)",
   SKILLS_COPIED_TO: "Skills copied to:",
   AGENTS_COMPILED_TO: "Agents compiled to:",
@@ -105,6 +115,8 @@ export const TIMEOUTS = {
   SESSION_DEFAULT_CI: 20_000,
   EXIT_WAIT: 30_000,
   SETUP: 60_000,
+  /** Doubled setup budget for beforeAll hooks that build two sources (dual-scope, plugin source). */
+  SETUP_DUAL: 60_000 * 2, // SETUP * 2
   LIFECYCLE: 180_000,
   EXTENDED_LIFECYCLE: 300_000,
   INTERACTIVE: 120_000,
@@ -144,4 +156,17 @@ export const SOURCE_PATHS = {
   SKILL_RULES: "config/skill-rules.ts",
   STACKS_FILE: "config/stacks.ts",
   PLUGIN_MANIFEST_DIR: ".claude-plugin",
+  PLUGINS_DIST: "dist/plugins", // Mirrors PLUGINS_DIST_PATH in src/cli/consts.ts
 } as const;
+
+/**
+ * Terminal geometry overrides for CLI sessions. The unset defaults live in
+ * e2e/helpers/terminal-session.ts and are deliberately not mirrored here.
+ */
+export const TERMINAL_SIZE = {
+  /** Tall viewport used by wizard flows that need the full build grid visible. */
+  TALL: { rows: 60, cols: 120 },
+} as const;
+
+/** Which wizard a shared step page object is driving. */
+export type WizardType = "init" | "edit";

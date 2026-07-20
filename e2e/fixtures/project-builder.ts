@@ -8,11 +8,13 @@ import {
   writeAgentStubs,
   renderMetadataYaml,
   renderSkillMd,
+  FORKED_FROM_METADATA,
 } from "../helpers/test-utils.js";
 import { DIRS, FILES } from "../pages/constants.js";
 import type {
   ProjectConfig,
   SkillId,
+  SkillConfig,
   AgentName,
   Domain,
   StackAgentConfig,
@@ -29,6 +31,25 @@ export type EditableOptions = {
   agents?: AgentName[];
   domains?: Domain[];
   stack?: Partial<Record<AgentName, StackAgentConfig>>;
+  /**
+   * Writes `FORKED_FROM_METADATA` as each skill's metadata.yaml instead of the
+   * default metadata, marking the skills as CLI-managed so `uninstall` removes
+   * them instead of skipping them as user-created.
+   */
+  forkedFrom?: boolean;
+};
+
+/** Description and metadata.yaml body for one local skill written by a fixture. */
+export type SkillContentOverride = {
+  description: string;
+  metadata: string;
+};
+
+export type DualScopeOptions = {
+  globalSkill?: SkillContentOverride;
+  projectSkills?: SkillConfig[];
+  projectStack?: StackAgentConfig;
+  projectSkill?: SkillContentOverride;
 };
 
 export type PluginProjectOptions = {
@@ -46,13 +67,36 @@ export type PluginProjectOptions = {
   omitMarketplaceField?: boolean;
 };
 
-/** Derive category/slug from a skill ID (e.g. "web-framework-react" -> "web-framework"/"react"). */
-function derivedCategorySlug(skillId: string): { category: string; slug: string } {
-  const parts = skillId.split("-");
-  return {
-    category: parts.slice(0, 2).join("-"),
-    slug: parts.slice(2).join("-") || skillId,
-  };
+/**
+ * Explicit category/slug for every skill ID these fixtures write metadata for.
+ * Deriving a slug from a skill ID is banned (see CLAUDE.md) because a wrong
+ * guess still looks plausible on disk; an unmapped ID must fail loudly instead.
+ *
+ * Every `category` here must be a member of `CATEGORIES` in
+ * `src/cli/types/generated/source-types.ts` — note that `web-state-*` skills
+ * belong to `web-client-state`, not to a `web-state` category.
+ */
+const SKILL_CATEGORY_SLUGS: Partial<Record<SkillId, { category: string; slug: string }>> = {
+  "api-framework-hono": { category: "api-framework", slug: "hono" },
+  "meta-methodology-research-methodology": {
+    category: "meta-methodology",
+    slug: "research-methodology",
+  },
+  "web-framework-react": { category: "web-framework", slug: "react" },
+  "web-state-zustand": { category: "web-client-state", slug: "zustand" },
+  "web-styling-tailwind": { category: "web-styling", slug: "tailwind" },
+  "web-testing-vitest": { category: "web-testing", slug: "vitest" },
+};
+
+function categorySlugFor(skillId: SkillId): { category: string; slug: string } {
+  const entry = SKILL_CATEGORY_SLUGS[skillId];
+  if (!entry) {
+    throw new Error(
+      `No category/slug mapping for skill "${skillId}". ` +
+        `Add it to SKILL_CATEGORY_SLUGS in e2e/fixtures/project-builder.ts.`,
+    );
+  }
+  return entry;
 }
 
 export class ProjectBuilder {
@@ -146,13 +190,15 @@ export class ProjectBuilder {
       await createLocalSkill(projectDir, skillId, {
         description: "Test skill for E2E",
         body: `# ${skillId}\n\nTest content.`,
-        metadata: renderMetadataYaml({
-          displayName: skillId,
-          ...derivedCategorySlug(skillId),
-          cliDescription: "E2E test skill",
-          usageGuidance: "Use when testing E2E scenarios",
-          contentHash: "b2c3d4e",
-        }),
+        metadata: options?.forkedFrom
+          ? FORKED_FROM_METADATA
+          : renderMetadataYaml({
+              displayName: skillId,
+              ...categorySlugFor(skillId),
+              cliDescription: "E2E test skill",
+              usageGuidance: "Use when testing E2E scenarios",
+              contentHash: "b2c3d4e",
+            }),
       });
     }
 
@@ -171,7 +217,7 @@ export class ProjectBuilder {
    *       .claude-src/config.ts             <- project config
    *       .claude/skills/web-testing-playwright-e2e/
    */
-  static async dualScope(): Promise<DualScopeHandle> {
+  static async dualScope(options?: DualScopeOptions): Promise<DualScopeHandle> {
     const tempDir = await createTempDir();
     const globalHome = path.join(tempDir, "global-home");
     const projectDir = path.join(tempDir, "project");
@@ -191,26 +237,28 @@ export class ProjectBuilder {
     await writeProjectConfig(globalHome, globalConfig);
 
     await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
-      description: "Global E2E skill for dual-scope testing",
-      metadata: renderMetadataYaml({
-        displayName: "web-testing-cypress-e2e",
-        cliDescription: "E2E test skill",
-        usageGuidance: "Use when testing E2E scenarios",
-        contentHash: "c3d4e5f",
-      }),
+      description: options?.globalSkill?.description ?? "Global E2E skill for dual-scope testing",
+      metadata:
+        options?.globalSkill?.metadata ??
+        renderMetadataYaml({
+          displayName: "web-testing-cypress-e2e",
+          cliDescription: "E2E test skill",
+          usageGuidance: "Use when testing E2E scenarios",
+          contentHash: "c3d4e5f",
+        }),
     });
 
     // --- Project installation ---
     const projectConfig: ProjectConfig = {
       name: "project-test",
-      skills: [
+      skills: options?.projectSkills ?? [
         { id: "web-testing-playwright-e2e", scope: "project", source: "eject" },
         { id: "web-testing-cypress-e2e", scope: "global", source: "eject" },
       ],
       agents: [{ name: "api-developer", scope: "project" }],
       domains: ["web"],
       stack: {
-        "api-developer": {
+        "api-developer": options?.projectStack ?? {
           "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
           "web-mocking": [{ id: "web-testing-playwright-e2e", preloaded: true }],
         },
@@ -219,13 +267,16 @@ export class ProjectBuilder {
     await writeProjectConfig(projectDir, projectConfig);
 
     await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
-      description: "Project-local E2E skill for dual-scope testing",
-      metadata: renderMetadataYaml({
-        displayName: "web-testing-playwright-e2e",
-        cliDescription: "E2E test skill",
-        usageGuidance: "Use when testing E2E scenarios",
-        contentHash: "d4e5f6a",
-      }),
+      description:
+        options?.projectSkill?.description ?? "Project-local E2E skill for dual-scope testing",
+      metadata:
+        options?.projectSkill?.metadata ??
+        renderMetadataYaml({
+          displayName: "web-testing-playwright-e2e",
+          cliDescription: "E2E test skill",
+          usageGuidance: "Use when testing E2E scenarios",
+          contentHash: "d4e5f6a",
+        }),
     });
 
     return {
@@ -504,7 +555,7 @@ export default {
         description: "Test skill",
         metadata: renderMetadataYaml({
           displayName: skillId,
-          ...derivedCategorySlug(skillId),
+          ...categorySlugFor(skillId),
           contentHash: `e2e-hash-${skillId}`,
         }),
       });
@@ -545,7 +596,7 @@ export default {
         description: "Test skill",
         metadata: renderMetadataYaml({
           displayName: skillId,
-          ...derivedCategorySlug(skillId),
+          ...categorySlugFor(skillId),
           contentHash: `e2e-hash-${skillId}`,
         }),
       });

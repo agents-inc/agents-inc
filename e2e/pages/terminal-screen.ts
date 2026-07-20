@@ -73,20 +73,31 @@ export class TerminalScreen {
     );
   }
 
-  /** Wait for the wizard footer ("select") to render, indicating stable layout. */
-  async waitForStableRender(timeoutMs: number): Promise<void> {
+  /**
+   * ONLY valid on screens rendered by WizardLayout, which paints the footer
+   * containing "select". That footer renders last in the Ink tree, so its
+   * presence means the content above it has painted.
+   *
+   * This is a sentinel match on one literal string, NOT a generic "the UI has
+   * settled" primitive. On a non-wizard screen (the dashboard, a plain
+   * SelectList menu, the post-install result screen) the sentinel never
+   * appears and this burns the full timeout — wait on text that screen
+   * actually renders instead.
+   */
+  async waitForWizardFooter(timeoutMs: number): Promise<void> {
     await this.waitForText("select", timeoutMs);
   }
 
   /**
-   * Cursor-anchored version of waitForStableRender. Waits for the wizard
-   * footer ("select") to appear in raw output AFTER the given cursor.
+   * ONLY valid on screens rendered by WizardLayout (same precondition as
+   * waitForWizardFooter). Cursor-anchored variant: waits for the wizard footer
+   * ("select") to appear in raw output AFTER the given cursor.
    *
    * Use this when a previous wizard step already printed "select" into
    * scrollback — the non-anchored variant would return instantly on the
    * stale residue, masking the fact that the next frame has not rendered.
    */
-  async waitForStableRenderAfter(cursor: number, timeoutMs: number): Promise<void> {
+  async waitForWizardFooterAfter(cursor: number, timeoutMs: number): Promise<void> {
     await this.waitForTextAfter("select", cursor, timeoutMs);
   }
 

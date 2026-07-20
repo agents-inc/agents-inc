@@ -1,4 +1,5 @@
 import { TerminalSession } from "../../helpers/terminal-session.js";
+import type { E2ESource } from "../../helpers/create-e2e-source.js";
 import { createPermissionsFile } from "../../helpers/test-utils.js";
 import { STEP_TEXT, TIMEOUTS } from "../constants.js";
 import { TerminalScreen } from "../terminal-screen.js";
@@ -9,7 +10,7 @@ export type EditWizardOptions = {
   /** Project directory (required -- must have existing installation). */
   projectDir: string;
   /** Source directory for skill resolution. */
-  source?: { sourceDir: string; tempDir: string };
+  source?: E2ESource;
   /** Terminal dimensions */
   cols?: number;
   rows?: number;
@@ -62,14 +63,14 @@ export class EditWizard {
     // step's "Other Frameworks" group). Three-sentinel sequence:
     //   1. BUILD_FOOTER ("Filter incompatible") -- build-step-only footer hint,
     //      rendered on the first build frame.
-    //   2. waitForStableRender -- absorbs subsequent redraws.
+    //   2. waitForWizardFooter -- absorbs subsequent redraws.
     //   3. BUILD ("Framework") -- first category label, ensures build content
     //      has fully painted before callers read scrollback. Without this,
     //      mid-redraw frames can pollute getFullOutput() with category labels
     //      overwritten by later rows.
     const screen = new TerminalScreen(session);
     await screen.waitForText(STEP_TEXT.BUILD_FOOTER, TIMEOUTS.WIZARD_TRANSITION);
-    await screen.waitForStableRender(TIMEOUTS.WIZARD_TRANSITION);
+    await screen.waitForWizardFooter(TIMEOUTS.WIZARD_TRANSITION);
     await screen.waitForText(STEP_TEXT.BUILD, TIMEOUTS.WIZARD_TRANSITION);
 
     const build = new BuildStep(session, options.projectDir);
@@ -92,10 +93,7 @@ export class EditWizard {
    * Single domain: Enter once on build -> sources -> agents -> confirm -> complete.
    */
   async completeFromBuild(): Promise<WizardResult> {
-    const sources = await this.build.advanceToSources();
-    const agents = await sources.acceptDefaults();
-    const confirm = await agents.acceptDefaults("edit");
-    return confirm.confirm();
+    return this.build.saveFromBuild("edit");
   }
 
   /** Get the full output of the session. */
@@ -116,6 +114,24 @@ export class EditWizard {
   /** Abort the wizard with Ctrl+C. */
   abort(): void {
     this.session.ctrlC();
+  }
+
+  /**
+   * Abort the wizard (Ctrl+C), wait for the process to exit, then destroy the
+   * session — the standard read-only-scenario teardown ritual.
+   *
+   * Returns the exit code so sites that assert on it keep their assertion.
+   * `timeoutMs` is passed through to `waitForExit` verbatim — omitting it
+   * falls back to the session's own default, exactly as a bare
+   * `waitForExit()` does. Adopting sites must pass whatever value they used
+   * before (`TIMEOUTS.EXIT_WAIT`, `TIMEOUTS.EXIT`, or nothing) so the wait
+   * budget stays byte-identical.
+   */
+  async abortAndDestroy(timeoutMs?: number): Promise<number> {
+    this.abort();
+    const exitCode = await this.waitForExit(timeoutMs);
+    await this.destroy();
+    return exitCode;
   }
 
   /** Destroy the session. */

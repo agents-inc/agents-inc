@@ -1,11 +1,11 @@
 import path from "path";
 import { createE2ESource } from "./create-e2e-source.js";
+import type { E2ESource } from "./create-e2e-source.js";
 import { runCLI, writeTestPackageJson } from "./test-utils.js";
+import { PLUGINS_DIST_PATH } from "../../src/cli/consts.js";
 import type { RelationshipDefinitions } from "../../src/cli/types/index.js";
 
-export type E2EPluginSource = {
-  sourceDir: string;
-  tempDir: string;
+export type E2EPluginSource = E2ESource & {
   marketplaceName: string;
   pluginsDir: string;
 };
@@ -43,7 +43,7 @@ export async function createE2EPluginSource(options?: {
     );
   }
 
-  const pluginsDir = path.join(sourceDir, "dist", "plugins");
+  const pluginsDir = path.join(sourceDir, PLUGINS_DIST_PATH);
 
   return { sourceDir, tempDir, marketplaceName, pluginsDir };
 }

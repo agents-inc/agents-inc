@@ -6,11 +6,11 @@ import "../matchers/setup.js";
 export async function expectPhaseSuccess(
   result: { project: { dir: string }; exitCode: number | Promise<number> },
   expectations: {
-    skillIds?: string[];
-    agents?: string[];
+    skillIds?: readonly string[];
+    agents?: readonly string[];
     source?: string;
-    compiledAgents?: string[];
-    copiedSkills?: string[];
+    compiledAgents?: readonly string[];
+    copiedSkills?: readonly string[];
     noLocalSkills?: boolean;
   },
 ): Promise<void> {
@@ -38,8 +38,8 @@ export async function expectPhaseSuccess(
 export async function expectFullInstallation(
   project: { dir: string },
   expectations: {
-    skillIds: string[];
-    agents: string[];
+    skillIds: readonly string[];
+    agents: readonly string[];
     source?: string;
     verifyAgentContent?: boolean;
     verifySkillsCopied?: boolean;

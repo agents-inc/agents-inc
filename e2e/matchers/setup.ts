@@ -1,40 +1,25 @@
 import { expect } from "vitest";
 import { agentMatchers } from "./agent-matchers.js";
 import { projectMatchers } from "./project-matchers.js";
+import type {
+  AgentDynamicSkillsExpectations,
+  AgentFrontmatterExpectations,
+} from "./agent-matchers.js";
+import type {
+  AgentContentExpectations,
+  ConfigExpectations,
+  PluginScope,
+  SettingsExpectations,
+} from "./project-matchers.js";
 
 expect.extend({ ...projectMatchers, ...agentMatchers });
 
-type AgentContentExpectations = {
-  contains?: string[];
-  notContains?: string[];
-};
-
-type SettingsExpectations = {
-  hasKey?: string;
-  keyValue?: unknown;
-};
-
-type AgentFrontmatterExpectations = {
-  name?: string;
-  description?: string;
-  model?: string;
-  tools?: string[];
-  skills?: string[];
-  hasSkills?: boolean;
-  noSkills?: boolean;
-};
-
-type AgentDynamicSkillsExpectations = {
-  skillIds?: string[];
-  noSkillIds?: string[];
-  hasActivationProtocol?: boolean;
-  allPreloaded?: boolean;
-};
-
-// Augment Vitest's expect types
+// Augment Vitest's expect types. Every expectation shape is imported from the
+// matcher that implements it, so a change to an implementation's parameters is
+// a compile error here rather than silent drift between two declarations.
 declare module "vitest" {
   interface Assertion<T> {
-    toHaveConfig(expectations?: import("./project-matchers.js").ConfigExpectations): Promise<void>;
+    toHaveConfig(expectations?: ConfigExpectations): Promise<void>;
     toHaveCompiledAgents(): Promise<void>;
     toHaveCompiledAgent(agentName: string): Promise<void>;
     toHaveCompiledAgentContent(
@@ -46,10 +31,7 @@ declare module "vitest" {
     toHaveNoLocalSkills(): Promise<void>;
     toHaveNoPlugins(): Promise<void>;
     toHavePlugin(pluginKey: string): Promise<void>;
-    toHavePluginInRegistry(
-      pluginKey: string,
-      scope?: import("./project-matchers.js").PluginScope,
-    ): Promise<void>;
+    toHavePluginInRegistry(pluginKey: string, scope?: PluginScope): Promise<void>;
     toHaveEjectedTemplate(): Promise<void>;
     toHaveSettings(expectations?: SettingsExpectations): Promise<void>;
     toHaveAgentFrontmatter(
@@ -62,7 +44,7 @@ declare module "vitest" {
     ): Promise<void>;
   }
   interface AsymmetricMatchersContaining {
-    toHaveConfig(expectations?: import("./project-matchers.js").ConfigExpectations): void;
+    toHaveConfig(expectations?: ConfigExpectations): void;
     toHaveCompiledAgents(): void;
     toHaveCompiledAgent(agentName: string): void;
     toHaveCompiledAgentContent(agentName: string, expectations: AgentContentExpectations): void;
@@ -71,10 +53,7 @@ declare module "vitest" {
     toHaveNoLocalSkills(): void;
     toHaveNoPlugins(): void;
     toHavePlugin(pluginKey: string): void;
-    toHavePluginInRegistry(
-      pluginKey: string,
-      scope?: import("./project-matchers.js").PluginScope,
-    ): void;
+    toHavePluginInRegistry(pluginKey: string, scope?: PluginScope): void;
     toHaveEjectedTemplate(): void;
     toHaveSettings(expectations?: SettingsExpectations): void;
     toHaveAgentFrontmatter(agentName: string, expectations: AgentFrontmatterExpectations): void;

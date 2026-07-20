@@ -64,21 +64,6 @@ export class InteractivePrompt {
     await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
-  async arrowRight(): Promise<void> {
-    this.session.arrowRight();
-    await delay(INTERNAL_DELAYS.KEYSTROKE);
-  }
-
-  async arrowLeft(): Promise<void> {
-    this.session.arrowLeft();
-    await delay(INTERNAL_DELAYS.KEYSTROKE);
-  }
-
-  async space(): Promise<void> {
-    this.session.space();
-    await delay(INTERNAL_DELAYS.KEYSTROKE);
-  }
-
   async pressKey(key: string): Promise<void> {
     this.session.write(key);
     await delay(INTERNAL_DELAYS.KEYSTROKE);

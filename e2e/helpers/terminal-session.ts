@@ -131,19 +131,6 @@ export class TerminalSession {
     );
   }
 
-  /**
-   * Waits for the wizard layout to complete rendering, then returns the full output.
-   *
-   * The wizard footer ("select") renders last in the Ink component tree. Waiting
-   * for it guarantees all content above (categories, skill tags, counters) is stable.
-   * Returns getFullOutput() which includes scrollback, avoiding viewport garbling
-   * from overlapping box-drawing characters.
-   */
-  async waitForStableRender(timeoutMs?: number): Promise<string> {
-    await this.waitForText("select", timeoutMs);
-    return this.getFullOutput();
-  }
-
   /** Waits for the PTY process to exit. Returns the exit code. */
   async waitForExit(timeoutMs?: number): Promise<number> {
     const timeout = timeoutMs ?? this.defaultTimeout;
@@ -168,10 +155,6 @@ export class TerminalSession {
 
   arrowUp(): void {
     this.write("\x1b[A");
-  }
-
-  arrowLeft(): void {
-    this.write("\x1b[D");
   }
 
   arrowRight(): void {

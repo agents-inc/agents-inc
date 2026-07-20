@@ -69,6 +69,7 @@ export abstract class BaseStep {
         // current screen shows the label — if so, it is accessible.
         return;
       }
+      await this.waitForWizardFooter();
       await this.pressArrowDown();
     }
     throw new Error(
@@ -90,6 +91,7 @@ export abstract class BaseStep {
       if (focusedLine && focusedLine.includes(label)) {
         return;
       }
+      await this.waitForWizardFooter();
       await this.pressArrowDown();
     }
     throw new Error(
@@ -117,22 +119,27 @@ export abstract class BaseStep {
     await this.screen.waitForTextAfter(stepText, cursor, timeout ?? this.defaultTimeout);
   }
 
-  /** Wait for stable render (footer visible). */
-  protected async waitForStableRender(timeout?: number): Promise<void> {
-    await this.screen.waitForStableRender(timeout ?? this.defaultTimeout);
+  /**
+   * Wait for the wizard footer ("select") to paint. ONLY valid on screens
+   * rendered by WizardLayout — which every BaseStep subclass is. Non-wizard
+   * page objects (the dashboard, plain SelectList menus) must NOT use this;
+   * the sentinel never appears there and the wait burns the full timeout.
+   */
+  protected async waitForWizardFooter(timeout?: number): Promise<void> {
+    await this.screen.waitForWizardFooter(timeout ?? this.defaultTimeout);
   }
 
   /**
-   * Cursor-anchored version of waitForStableRender. Waits for the footer
+   * Cursor-anchored version of waitForWizardFooter. Waits for the footer
    * sentinel "select" to appear in raw output AFTER `cursor`. The footer
    * is present in every wizard step, so the non-anchored variant returns
    * instantly on scrollback residue.
    */
-  protected async waitForStableRenderAfter(cursor: number, timeout?: number): Promise<void> {
-    await this.screen.waitForStableRenderAfter(cursor, timeout ?? this.defaultTimeout);
+  protected async waitForWizardFooterAfter(cursor: number, timeout?: number): Promise<void> {
+    await this.screen.waitForWizardFooterAfter(cursor, timeout ?? this.defaultTimeout);
   }
 
-  /** Capture raw-output cursor for use with waitForStepAfter / waitForStableRenderAfter. */
+  /** Capture raw-output cursor for use with waitForStepAfter / waitForWizardFooterAfter. */
   protected getRawCursor(): number {
     return this.screen.getRawCursor();
   }
@@ -147,6 +154,7 @@ export abstract class BaseStep {
    * own repaint.
    */
   protected async pressEnterAndWaitFor(nextStepText: string): Promise<void> {
+    await this.waitForWizardFooter();
     await retryEnterUntil(this.session, this.screen, (cursor) =>
       this.screen.waitForTextAfter(nextStepText, cursor, INTERNAL_RETRIES.INTERVAL_MS),
     );
@@ -184,7 +192,7 @@ export abstract class BaseStep {
   async getSummaryDiffEntries(
     displayName: string,
   ): Promise<Array<{ prefix: "+" | "-" | "~" | "\u2022"; scope: "Project" | "Global" }>> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     const output = this.getOutput();
     const lines = output.split("\n");
 
@@ -233,21 +241,25 @@ export abstract class BaseStep {
 
   /** Abort the wizard with Ctrl+C. */
   async abort(): Promise<void> {
+    await this.waitForWizardFooter();
     await this.pressCtrlC();
   }
 
   /** Navigate down one item (arrow down). */
   async navigateDown(): Promise<void> {
+    await this.waitForWizardFooter();
     await this.pressArrowDown();
   }
 
   /** Navigate up one item (arrow up). */
   async navigateUp(): Promise<void> {
+    await this.waitForWizardFooter();
     await this.pressArrowUp();
   }
 
   /** Navigate right one item (arrow right). */
   async navigateRight(): Promise<void> {
+    await this.waitForWizardFooter();
     await this.pressArrowRight();
   }
 }

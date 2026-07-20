@@ -4,15 +4,46 @@ import { DIRS, FILES } from "../pages/constants.js";
 import { directoryExists, fileExists } from "../helpers/test-utils.js";
 
 export type PluginScope = "project" | "user";
-type AgentContentExpectations = {
-  contains?: string[];
-  notContains?: string[];
+
+export type AgentContentExpectations = {
+  contains?: readonly string[];
+  notContains?: readonly string[];
 };
 
 export type ConfigExpectations = {
-  skillIds?: string[];
+  skillIds?: readonly string[];
   source?: string;
-  agents?: string[];
+  agents?: readonly string[];
+};
+
+export type SettingsExpectations = {
+  hasKey?: string;
+  keyValue?: unknown;
+};
+
+/**
+ * Boundary shapes for the JSON artifacts these matchers read.
+ *
+ * `JSON.parse` returns `any`, which silently disables checking on every field
+ * access downstream. Annotating the parse result narrows it to exactly the
+ * slice each matcher inspects — no cast is involved, since `any` is assignable
+ * to any annotation.
+ *
+ * Every field is optional on purpose: these files are produced by the CLI under
+ * test and by Claude Code, so a matcher must be able to observe that a key is
+ * absent and fail with its own message rather than throw a TypeError. Fields
+ * the matchers never read are deliberately omitted rather than modelled.
+ */
+type ClaudeSettingsFile = {
+  enabledPlugins?: Record<string, boolean>;
+};
+
+type PluginInstallationRecord = {
+  scope: string;
+};
+
+type InstalledPluginsFile = {
+  plugins?: Record<string, PluginInstallationRecord[]>;
 };
 
 export const projectMatchers = {
@@ -181,7 +212,7 @@ export const projectMatchers = {
     }
 
     const content = await readFile(settingsPath, "utf-8");
-    const settings = JSON.parse(content);
+    const settings: ClaudeSettingsFile = JSON.parse(content);
     const enabled = settings.enabledPlugins;
 
     if (!enabled) {
@@ -213,7 +244,7 @@ export const projectMatchers = {
     }
 
     const content = await readFile(settingsPath, "utf-8");
-    const settings = JSON.parse(content);
+    const settings: ClaudeSettingsFile = JSON.parse(content);
     const isEnabled = settings.enabledPlugins?.[pluginKey] === true;
 
     return {
@@ -246,7 +277,7 @@ export const projectMatchers = {
     }
 
     const content = await readFile(registryPath, "utf-8");
-    const registry = JSON.parse(content);
+    const registry: InstalledPluginsFile = JSON.parse(content);
     const installations = registry.plugins?.[pluginKey];
 
     if (!Array.isArray(installations) || installations.length === 0) {
@@ -257,7 +288,7 @@ export const projectMatchers = {
     }
 
     if (scope) {
-      const hasScope = installations.some((i: { scope: string }) => i.scope === scope);
+      const hasScope = installations.some((i) => i.scope === scope);
       return {
         pass: hasScope,
         message: () =>
@@ -322,7 +353,7 @@ export const projectMatchers = {
    * Checks that the .claude/skills/ directory has the expected number of entries,
    * or optionally that specific skill IDs exist.
    */
-  async toHaveLocalSkills(received: { dir: string }, expectedSkillIds?: string[]) {
+  async toHaveLocalSkills(received: { dir: string }, expectedSkillIds?: readonly string[]) {
     const skillsDir = path.join(received.dir, DIRS.CLAUDE, DIRS.SKILLS);
     const exists = await directoryExists(skillsDir);
 
@@ -375,10 +406,7 @@ export const projectMatchers = {
   /**
    * Checks that settings.json exists and optionally validates its content.
    */
-  async toHaveSettings(
-    received: { dir: string },
-    expectations?: { hasKey?: string; keyValue?: unknown },
-  ) {
+  async toHaveSettings(received: { dir: string }, expectations?: SettingsExpectations) {
     const settingsPath = path.join(received.dir, DIRS.CLAUDE, FILES.SETTINGS_JSON);
     const exists = await fileExists(settingsPath);
 
@@ -397,9 +425,14 @@ export const projectMatchers = {
     }
 
     const content = await readFile(settingsPath, "utf-8");
-    const settings = JSON.parse(content);
+    // `hasKey` is an arbitrary caller-supplied dotted path, so this matcher
+    // treats settings.json as an opaque JSON tree rather than a known shape.
+    const settings: unknown = JSON.parse(content);
 
     if (expectations.hasKey) {
+      // Each step claims the current node is an object solely to index it. The
+      // claim is unverified by design: a non-object (or missing) node yields
+      // `undefined`, which the check below reports as a missing key.
       const val = expectations.hasKey
         .split(".")
         .reduce<unknown>((v, k) => (v as Record<string, unknown> | undefined)?.[k], settings);

@@ -1,13 +1,13 @@
 import { BaseStep } from "../base-step.js";
-import { STEP_TEXT, TIMEOUTS } from "../constants.js";
+import { STEP_TEXT, TIMEOUTS, type WizardType } from "../constants.js";
 import { ConfirmStep } from "./confirm-step.js";
 import { SourcesStep } from "./sources-step.js";
 
 export class AgentsStep extends BaseStep {
   /** Accept defaults and advance to confirm step. */
-  async acceptDefaults(wizardType: "init" | "edit" = "init"): Promise<ConfirmStep> {
+  async acceptDefaults(wizardType: WizardType = "init"): Promise<ConfirmStep> {
     await this.screen.waitForText(STEP_TEXT.AGENTS, TIMEOUTS.WIZARD_LOAD);
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressEnter();
     return new ConfirmStep(this.session, this.projectDir, wizardType);
   }
@@ -18,7 +18,7 @@ export class AgentsStep extends BaseStep {
    */
   async toggleAgent(agentName: string): Promise<void> {
     await this.navigateCursorToItem(agentName);
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressSpace();
   }
 
@@ -32,7 +32,7 @@ export class AgentsStep extends BaseStep {
 
   /** Toggle scope on the currently focused agent (press "s"). */
   async toggleScopeOnFocusedAgent(): Promise<void> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressKey("s");
   }
 
@@ -54,7 +54,7 @@ export class AgentsStep extends BaseStep {
    * Requires a stable render — the agents step must have finished redraws.
    */
   async getScopeBadgesForAgent(agentLabel: string): Promise<Array<"P" | "G">> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     const output = this.getOutput();
     const lines = output.split("\n");
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -74,13 +74,15 @@ export class AgentsStep extends BaseStep {
   }
 
   /** Advance to confirm step (Enter). */
-  async advance(wizardType: "init" | "edit" = "init"): Promise<ConfirmStep> {
+  async advance(wizardType: WizardType = "init"): Promise<ConfirmStep> {
+    await this.waitForWizardFooter();
     await this.pressEnter();
     return new ConfirmStep(this.session, this.projectDir, wizardType);
   }
 
   /** Go back to sources step (Escape). */
   async goBack(): Promise<SourcesStep> {
+    await this.waitForWizardFooter();
     await this.pressEscape();
     await this.screen.waitForText(STEP_TEXT.SOURCES, TIMEOUTS.WIZARD_LOAD);
     return new SourcesStep(this.session, this.projectDir);

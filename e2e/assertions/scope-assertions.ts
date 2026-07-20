@@ -2,9 +2,9 @@ import { expect } from "vitest";
 import "../matchers/setup.js";
 
 interface ScopeExpectation {
-  skillIds: string[];
-  agents: string[];
-  copiedSkills?: string[];
+  skillIds: readonly string[];
+  agents: readonly string[];
+  copiedSkills?: readonly string[];
 }
 
 interface DualScopeExpectation {

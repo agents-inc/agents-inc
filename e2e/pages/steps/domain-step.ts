@@ -23,6 +23,7 @@ export class DomainStep extends BaseStep {
    */
   async toggleDomain(domainName: string): Promise<void> {
     await this.navigateCursorToItem(domainName);
+    await this.waitForWizardFooter();
     await this.pressSpace();
   }
 
@@ -49,14 +50,17 @@ export class DomainStep extends BaseStep {
       const lines = output.split("\n");
       const focusedLine = lines.find((l) => l.includes("❯"));
       if (focusedLine && focusedLine.includes("✓")) {
+        await this.waitForWizardFooter();
         await this.pressSpace();
       }
+      await this.waitForWizardFooter();
       await this.pressArrowDown();
     }
   }
 
   /** Go back to stack selection (Escape). */
   async goBack(): Promise<StackStep> {
+    await this.waitForWizardFooter();
     await this.pressEscape();
     await this.screen.waitForText(STEP_TEXT.STACK, TIMEOUTS.WIZARD_LOAD);
     return new StackStep(this.session, this.projectDir);

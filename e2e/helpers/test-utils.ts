@@ -1,9 +1,19 @@
 import { execa } from "execa";
-import { mkdir, readdir, readFile, writeFile } from "fs/promises";
+import { cp, mkdir, readdir, readFile, writeFile } from "fs/promises";
 import { stripVTControlCharacters } from "node:util";
 import path from "path";
 import { fileURLToPath } from "url";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../src/cli/consts.js";
+import os from "os";
+import {
+  CACHE_DIR,
+  CLAUDE_DIR,
+  CLAUDE_SRC_DIR,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+} from "../../src/cli/consts.js";
+import { DEFAULT_SOURCE } from "../../src/cli/lib/configuration/config.js";
+import { sanitizeSourceForCache } from "../../src/cli/lib/loading/source-fetcher.js";
+import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
 import {
   renderAgentMd,
   renderAgentYaml,
@@ -19,7 +29,15 @@ import {
   directoryExists,
   fileExists,
 } from "../../src/cli/lib/__tests__/test-fs-utils.js";
-import type { Marketplace, ProjectConfig, SkillId } from "../../src/cli/types/index.js";
+import type {
+  AgentName,
+  AgentScopeConfig,
+  Marketplace,
+  ProjectConfig,
+  SkillId,
+} from "../../src/cli/types/index.js";
+import type { InitWizard } from "../pages/wizards/init-wizard.js";
+import type { WizardResult } from "../pages/wizard-result.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -93,6 +111,31 @@ export async function writeProjectConfig(
   const configDir = path.join(baseDir, CLAUDE_SRC_DIR);
   await mkdir(configDir, { recursive: true });
   await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), renderConfigTs(resolved));
+}
+
+/** Sub-path of a source cache entry inside CACHE_DIR (mirrors getCacheDir in source-fetcher.ts). */
+const SOURCE_CACHE_SUBDIR = "sources";
+
+/**
+ * Populate the CLI's source cache for `DEFAULT_SOURCE` under `homeDir` with a
+ * copy of `sourceDir`, so the public-marketplace fallback in the multi-source
+ * loader resolves from disk instead of hitting the network.
+ *
+ * The CLI derives its cache root from `os.homedir()`, which the spawned process
+ * resolves from the HOME it is given — so the seed is written under the test's
+ * fake home, re-rooting the production `CACHE_DIR` shape rather than restating
+ * it. Returns the seeded directory so callers can assert the seed landed.
+ */
+export async function seedDefaultSourceCache(homeDir: string, sourceDir: string): Promise<string> {
+  const cacheDir = path.join(
+    homeDir,
+    path.relative(os.homedir(), CACHE_DIR),
+    SOURCE_CACHE_SUBDIR,
+    sanitizeSourceForCache(DEFAULT_SOURCE),
+  );
+  await mkdir(path.dirname(cacheDir), { recursive: true });
+  await cp(sourceDir, cacheDir, { recursive: true });
+  return cacheDir;
 }
 
 export async function ensureBinaryExists(): Promise<void> {
@@ -194,9 +237,38 @@ export async function createLocalSkill(
   return skillDir;
 }
 
-/** Write a minimal agent .md file to the agents directory (no frontmatter needed for doctor). */
-export async function writeAgentFile(baseDir: string, agentName: string): Promise<void> {
-  await writeFile(path.join(agentsPath(baseDir), `${agentName}.md`), `# ${agentName}\n`);
+const AGENT_STUB_BODY = "Test agent content.\n";
+
+type AgentFileOptions = {
+  /**
+   * Exact file body. Written verbatim after the frontmatter block (or as the
+   * whole file when `frontmatter` is false), so callers control trailing
+   * newlines themselves.
+   */
+  body?: string;
+  /** Prefix the body with a `---\nname: <agentName>\n---\n` block. */
+  frontmatter?: boolean;
+};
+
+/**
+ * Write an agent .md file to `<baseDir>/.claude/agents/`, creating the
+ * directory if needed.
+ *
+ * Defaults to a bare `# <agentName>` heading with no frontmatter, which is all
+ * `doctor` and `list` need to see an agent as present.
+ */
+export async function writeAgentFile(
+  baseDir: string,
+  agentName: string,
+  options?: AgentFileOptions,
+): Promise<void> {
+  const agentsDir = agentsPath(baseDir);
+  await mkdir(agentsDir, { recursive: true });
+
+  const body = options?.body ?? `# ${agentName}\n`;
+  const content = options?.frontmatter ? `---\nname: ${agentName}\n---\n${body}` : body;
+
+  await writeFile(path.join(agentsDir, `${agentName}.md`), content);
 }
 
 /**
@@ -204,13 +276,8 @@ export async function writeAgentFile(baseDir: string, agentName: string): Promis
  * `<projectDir>/.claude/agents/`, as left behind by a prior compile.
  */
 export async function writeAgentStubs(projectDir: string, agents: string[]): Promise<void> {
-  const agentsDir = agentsPath(projectDir);
-  await mkdir(agentsDir, { recursive: true });
   for (const agent of agents) {
-    await writeFile(
-      path.join(agentsDir, `${agent}.md`),
-      `---\nname: ${agent}\n---\nTest agent content.\n`,
-    );
+    await writeAgentFile(projectDir, agent, { frontmatter: true, body: AGENT_STUB_BODY });
   }
 }
 
@@ -238,6 +305,57 @@ export function agentsPath(dir: string): string {
 /** Returns the path to installed skills dir in a project. */
 export function skillsPath(dir: string): string {
   return path.join(dir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+}
+
+/** Returns the path to config.ts in a project or global scope dir. */
+export function configTsPath(dir: string): string {
+  return path.join(dir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+}
+
+/** Returns the path to config-types.ts in a project or global scope dir. */
+export function configTypesTsPath(dir: string): string {
+  return path.join(dir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TYPES_TS);
+}
+
+/**
+ * Load a scope's config.ts structurally, throwing when it is absent or fails
+ * to parse. There is no meaningful default config, so a missing one is always
+ * a test bug — never silently substitute an empty config.
+ */
+export async function loadConfigOrFail(dir: string): Promise<ProjectConfig> {
+  const loaded = await loadProjectConfigFromDir(dir);
+  if (!loaded) {
+    throw new Error(`config.ts must exist and be loadable at ${dir}`);
+  }
+  return loaded.config;
+}
+
+/** Load a scope's config.ts and return every agent entry named `agentName`. */
+export async function readAgentEntriesFor(
+  dir: string,
+  agentName: AgentName,
+): Promise<AgentScopeConfig[]> {
+  const config = await loadConfigOrFail(dir);
+  return config.agents.filter((agent) => agent.name === agentName);
+}
+
+/**
+ * Drive the init wizard end to end with every skill source switched to local
+ * (the `l` hotkey on the Sources step).
+ *
+ * Flow: Stack -> Domain -> Build (all domains) -> Sources -> Agents -> Confirm.
+ * Without `setAllLocal()` the wizard defaults to plugin mode, so tests that
+ * assert on `.claude/skills/` contents must go through this helper.
+ */
+export async function completeWithLocalSources(wizard: InitWizard): Promise<WizardResult> {
+  const domain = await wizard.stack.selectFirstStack();
+  const build = await domain.acceptDefaults();
+  const sources = await build.passThroughAllDomains();
+  await sources.waitForReady();
+  await sources.setAllLocal();
+  const agents = await sources.advance();
+  const confirm = await agents.acceptDefaults("init");
+  return confirm.confirm();
 }
 
 /**
@@ -290,7 +408,8 @@ export function getEjectedTemplatePath(projectDir: string): string {
   return path.join(projectDir, CLAUDE_SRC_DIR, "agents", "_templates", "agent.liquid");
 }
 
-export { createE2ESource } from "./create-e2e-source.js";
+export { createE2ESource, E2E_AGENT_TITLES, E2E_SKILL_TITLES } from "./create-e2e-source.js";
+export type { E2ESource } from "./create-e2e-source.js";
 
 export {
   isClaudeCLIAvailable,

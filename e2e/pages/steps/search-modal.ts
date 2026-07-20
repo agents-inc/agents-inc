@@ -4,6 +4,7 @@ export class SearchModal extends BaseStep {
   /** Type a search query into the modal. */
   async type(query: string): Promise<void> {
     for (const char of query) {
+      await this.waitForWizardFooter();
       await this.pressKey(char);
     }
   }
@@ -11,11 +12,13 @@ export class SearchModal extends BaseStep {
   /** Select a result by label. */
   async selectResult(label: string): Promise<void> {
     await this.waitForItemVisible(label);
+    await this.waitForWizardFooter();
     await this.pressEnter();
   }
 
   /** Close the search modal (Escape). */
   async close(): Promise<void> {
+    await this.waitForWizardFooter();
     await this.pressEscape();
   }
 

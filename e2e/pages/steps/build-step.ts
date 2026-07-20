@@ -1,6 +1,7 @@
 import { BaseStep } from "../base-step.js";
-import { INTERNAL_RETRIES, STEP_TEXT, TIMEOUTS } from "../constants.js";
+import { INTERNAL_RETRIES, STEP_TEXT, TIMEOUTS, type WizardType } from "../constants.js";
 import { retryEnterUntil } from "../retry-enter.js";
+import type { WizardResult } from "../wizard-result.js";
 import { SearchModal } from "./search-modal.js";
 import { SourcesStep } from "./sources-step.js";
 
@@ -28,7 +29,7 @@ export class BuildStep extends BaseStep {
 
   /** Advance current domain without changes (Enter). */
   async advanceDomain(): Promise<void> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressEnterWaitNewFrame();
     this.gridRow = 0;
     this.gridCol = 0;
@@ -46,8 +47,9 @@ export class BuildStep extends BaseStep {
    * frame without depending on domain-specific text.
    */
   private async pressEnterWaitNewFrame(): Promise<void> {
+    await this.waitForWizardFooter();
     await retryEnterUntil(this.session, this.screen, (cursor) =>
-      this.waitForStableRenderAfter(cursor, INTERNAL_RETRIES.INTERVAL_MS),
+      this.waitForWizardFooterAfter(cursor, INTERNAL_RETRIES.INTERVAL_MS),
     );
   }
 
@@ -60,7 +62,7 @@ export class BuildStep extends BaseStep {
    * or `toggleFocusedSkill()` when you need to act on a specific skill.
    */
   async focusSkill(skillLabel: string): Promise<void> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     const { row, col, totalRows } = this.findSkillGridPosition(skillLabel);
 
     // Navigate DOWN to target row (DOWN always resets col to 0)
@@ -68,6 +70,7 @@ export class BuildStep extends BaseStep {
     const currentRow = this.gridRow % totalRows;
     const downs = (row - currentRow + totalRows) % totalRows;
     for (let i = 0; i < downs; i++) {
+      await this.waitForWizardFooter();
       await this.pressArrowDown();
     }
     this.gridRow = row;
@@ -75,6 +78,7 @@ export class BuildStep extends BaseStep {
 
     // Navigate RIGHT to target column
     for (let i = 0; i < col; i++) {
+      await this.waitForWizardFooter();
       await this.pressArrowRight();
     }
     this.gridCol = col;
@@ -85,13 +89,41 @@ export class BuildStep extends BaseStep {
    */
   async selectSkill(skillLabel: string): Promise<void> {
     await this.focusSkill(skillLabel);
+    await this.waitForWizardFooter();
     await this.pressSpace();
   }
 
   /** Toggle the currently focused skill selection (Space). */
   async toggleFocusedSkill(): Promise<void> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressSpace();
+  }
+
+  /**
+   * Press Space on the focused skill and wait for `sentinel` in RAW PTY output
+   * emitted after the press.
+   *
+   * Use instead of `toggleFocusedSkill()` whenever the assertion is on a TOAST.
+   * See `toggleFilterIncompatibleAwaiting` for why the processed buffer is the
+   * wrong surface for a toast and why anchoring on a pre-press cursor is
+   * required rather than a bare raw match.
+   */
+  async toggleFocusedSkillAwaiting(sentinel: string): Promise<void> {
+    await this.waitForWizardFooter();
+    const cursor = this.getRawCursor();
+    await this.pressSpace();
+    await this.screen.waitForTextAfter(sentinel, cursor, this.defaultTimeout);
+  }
+
+  /**
+   * Navigate to a skill by label, press Space, and wait for `sentinel` in RAW
+   * PTY output emitted after the press. Toast-asserting counterpart of
+   * `selectSkill` — the navigation keystrokes happen BEFORE the cursor
+   * snapshot, so only the Space press's own output is anchored.
+   */
+  async selectSkillAwaiting(skillLabel: string, sentinel: string): Promise<void> {
+    await this.focusSkill(skillLabel);
+    await this.toggleFocusedSkillAwaiting(sentinel);
   }
 
   /**
@@ -103,7 +135,7 @@ export class BuildStep extends BaseStep {
    * focused skill as soon as the frame paints — no post-mount effect to await.
    */
   async toggleScopeOnFocusedSkill(): Promise<void> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressKey("s");
   }
 
@@ -120,7 +152,7 @@ export class BuildStep extends BaseStep {
     // Initial Web frame must be fully painted before we start (guaranteed by
     // the wizard launcher, but re-checked here for robustness).
     await this.screen.waitForText(STEP_TEXT.BUILD, TIMEOUTS.WIZARD_LOAD);
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
 
     // Web -> API
     await this.pressEnterWaitNewFrame();
@@ -137,7 +169,7 @@ export class BuildStep extends BaseStep {
    * Use for non-standard sources (e.g., real marketplace) where domain count is unknown.
    */
   async passThroughAllDomainsGeneric(): Promise<SourcesStep> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     for (let i = 0; i < 10; i++) {
       await this.pressEnterWaitNewFrame();
       // The Sources step emits a distinct sentinel that does NOT appear in
@@ -160,12 +192,12 @@ export class BuildStep extends BaseStep {
   async passThroughScratchDomains(): Promise<SourcesStep> {
     // Web domain — select required skill
     await this.screen.waitForText(STEP_TEXT.DOMAIN_WEB, TIMEOUTS.WIZARD_LOAD);
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressSpace();
     await this.pressEnterWaitNewFrame();
 
-    // API domain — select required skill. pressEnterWaitNewFrame above
-    // already confirmed the new frame painted, so Space is safe to press.
+    // API domain — select required skill.
+    await this.waitForWizardFooter();
     await this.pressSpace();
     await this.pressEnterWaitNewFrame();
 
@@ -180,7 +212,7 @@ export class BuildStep extends BaseStep {
    */
   async passThroughWebAndMethodologyDomains(): Promise<SourcesStep> {
     await this.screen.waitForText(STEP_TEXT.BUILD, TIMEOUTS.WIZARD_LOAD);
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
 
     // Web -> Methodology
     await this.pressEnterWaitNewFrame();
@@ -195,38 +227,78 @@ export class BuildStep extends BaseStep {
    * Use when the project has only one domain.
    */
   async advanceToSources(): Promise<SourcesStep> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressEnterWaitNewFrame();
     return new SourcesStep(this.session, this.projectDir);
   }
 
+  /**
+   * Run the DEFAULT remaining flow from a single-domain build step through to
+   * install: Build -> Sources -> Agents -> Confirm -> confirm().
+   *
+   * ONLY valid where the sources step is passed through WITHOUT mutation and
+   * the agents step is accepted with defaults. Sites that call setAllLocal /
+   * setAllPlugin / moveSourceColumnRight / selectFocusedSourceCell on the
+   * sources step, or navigate/toggle scope on the agents step, or that stop
+   * at the confirm screen instead of confirming, MUST keep the explicit
+   * step-by-step sequence — this method would silently skip their mutation.
+   */
+  async saveFromBuild(wizardType: WizardType): Promise<WizardResult> {
+    const sources = await this.advanceToSources();
+    const agents = await sources.acceptDefaults();
+    const confirm = await agents.acceptDefaults(wizardType);
+    return confirm.confirm();
+  }
+
   /** Navigate to the next category within the current domain (Tab). */
   async navigateToNextCategory(): Promise<void> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressKey("\t");
     this.gridRow++;
     this.gridCol = 0;
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
   }
 
   /** Toggle compatibility labels on focused skill (press "d"). */
   async toggleLabels(): Promise<void> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressKey("d");
   }
 
   /** Open the search modal (press "/"). */
   async openSearch(): Promise<SearchModal> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressKey("/");
     return new SearchModal(this.session, this.projectDir);
   }
 
   /** Toggle filter incompatible skills (press "f"). */
   async toggleFilterIncompatible(): Promise<void> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressKey("f");
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
+  }
+
+  /**
+   * Press F and wait for `sentinel` in RAW PTY output emitted after the press.
+   *
+   * Use instead of `toggleFilterIncompatible()` whenever the assertion is on a
+   * TOAST. Toasts render in an absolutely-positioned row that Ink rewrites in
+   * place, so xterm's processed buffer (`getOutput()` / `getScreen()`) has
+   * already lost the text by the time a test reads it — a `toContain` on that
+   * surface fails even though the process did write the toast. Raw output IS
+   * append-only, so the toast survives there.
+   *
+   * Anchoring on a pre-press cursor is required for two reasons: the footer
+   * sentinel is re-emitted on every frame (so `waitForWizardFooterAfter` can
+   * fire on a repaint that precedes the toast), and an earlier frame's residue
+   * would satisfy a non-anchored raw match.
+   */
+  async toggleFilterIncompatibleAwaiting(sentinel: string): Promise<void> {
+    await this.waitForWizardFooter();
+    const cursor = this.getRawCursor();
+    await this.pressKey("f");
+    await this.screen.waitForTextAfter(sentinel, cursor, this.defaultTimeout);
   }
 
   /**
@@ -237,14 +309,14 @@ export class BuildStep extends BaseStep {
    * then use `getSummaryDiffEntries()` to inspect the live diff.
    */
   async toggleInfoPanel(): Promise<void> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressKey("i");
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
   }
 
   /** Go back to domain step (Escape). */
   async goBack(): Promise<void> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     await this.pressEscape();
   }
 
@@ -267,7 +339,7 @@ export class BuildStep extends BaseStep {
    * finished any pending redraws before invoking.
    */
   async getScopeBadgesForSkill(skillLabel: string): Promise<Array<"P" | "G">> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     const output = this.getOutput();
     const lines = output.split("\n");
     // Walk newest-to-oldest so re-opened wizards pick up the most recent
@@ -311,7 +383,7 @@ export class BuildStep extends BaseStep {
    * finished any pending redraws before invoking.
    */
   async getExclusiveCategorySelectedCount(categoryDisplayName: string): Promise<number> {
-    await this.waitForStableRender();
+    await this.waitForWizardFooter();
     const output = this.getOutput();
     const escaped = categoryDisplayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const pattern = new RegExp(`(?:^|\\s)${escaped}\\s*\\*?\\s*\\((\\d+) of (\\d+)\\)`);

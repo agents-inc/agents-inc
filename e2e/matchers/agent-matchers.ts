@@ -24,20 +24,29 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
 
+export type AgentFrontmatterExpectations = {
+  name?: string;
+  description?: string;
+  model?: string;
+  tools?: readonly string[];
+  skills?: readonly string[];
+  hasSkills?: boolean;
+  noSkills?: boolean;
+};
+
+export type AgentDynamicSkillsExpectations = {
+  skillIds?: readonly string[];
+  noSkillIds?: readonly string[];
+  hasActivationProtocol?: boolean;
+  allPreloaded?: boolean;
+};
+
 export const agentMatchers = {
   /** Verify parsed YAML frontmatter fields of a compiled agent */
   async toHaveAgentFrontmatter(
     received: { dir: string },
     agentName: string,
-    expectations: {
-      name?: string;
-      description?: string;
-      model?: string;
-      tools?: string[];
-      skills?: string[];
-      hasSkills?: boolean;
-      noSkills?: boolean;
-    },
+    expectations: AgentFrontmatterExpectations,
   ) {
     const agentPath = path.join(received.dir, DIRS.CLAUDE, DIRS.AGENTS, `${agentName}.md`);
     const exists = await fileExists(agentPath);
@@ -132,12 +141,7 @@ export const agentMatchers = {
   async toHaveAgentDynamicSkills(
     received: { dir: string },
     agentName: string,
-    expectations: {
-      skillIds?: string[];
-      noSkillIds?: string[];
-      hasActivationProtocol?: boolean;
-      allPreloaded?: boolean;
-    },
+    expectations: AgentDynamicSkillsExpectations,
   ) {
     const agentPath = path.join(received.dir, DIRS.CLAUDE, DIRS.AGENTS, `${agentName}.md`);
     const exists = await fileExists(agentPath);

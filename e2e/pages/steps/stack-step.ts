@@ -6,7 +6,7 @@ export class StackStep extends BaseStep {
   /** Wait for the stack step to be ready. */
   async waitForReady(timeout?: number): Promise<void> {
     await this.waitForStep(STEP_TEXT.STACK, timeout);
-    await this.waitForStableRender(timeout);
+    await this.waitForWizardFooter(timeout);
   }
 
   /** Select the first stack in the list (Enter on default selection). */
@@ -36,6 +36,7 @@ export class StackStep extends BaseStep {
 
   /** Cancel the wizard from the stack step (Escape). */
   async cancel(): Promise<void> {
+    await this.waitForWizardFooter();
     await this.pressEscape();
   }
 }
