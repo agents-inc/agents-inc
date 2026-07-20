@@ -1,12 +1,9 @@
-import path from "path";
 import type { SourceEntry } from "./config";
-import { loadProjectSourceConfig, getProjectConfigPath, DEFAULT_SOURCE } from "./config";
-import { generateConfigSource } from "./config-writer";
+import { loadProjectSourceConfig, DEFAULT_SOURCE } from "./config";
+import { writePartialProjectConfig } from "./config-writer";
 import { fetchMarketplace } from "../loading/source-fetcher";
 import { discoverLocalSkills } from "../skills/local-skill-loader";
 import { discoverAllPluginSkills } from "../plugins/plugin-discovery";
-import { writeFile, ensureDir } from "../../utils/fs";
-import { CLAUDE_SRC_DIR, CLI_INVOKE_COMMAND } from "../../consts";
 import type { ProjectConfig } from "../../types";
 import { verbose } from "../../utils/logger";
 
@@ -39,7 +36,7 @@ export async function addSource(
   }
 
   const updated: Partial<ProjectConfig> = { ...config, sources: [...sources, { name, url }] };
-  await writeConfigFromPartial(projectDir, updated);
+  await writePartialProjectConfig(projectDir, updated);
 
   verbose(`Added source "${name}" with ${skillCount} skills`);
   return { name, skillCount };
@@ -62,7 +59,7 @@ export async function removeSource(projectDir: string, name: string): Promise<vo
   }
 
   const updated: Partial<ProjectConfig> = { ...config, sources: filtered };
-  await writeConfigFromPartial(projectDir, updated);
+  await writePartialProjectConfig(projectDir, updated);
 
   verbose(`Removed source "${name}"`);
 }
@@ -104,27 +101,4 @@ async function countPluginSkills(projectDir: string): Promise<number> {
     verbose("Failed to discover plugin skills for source summary");
     return 0;
   }
-}
-
-/** Write a partial config to disk. Requires `name` to be present (config must already exist). */
-async function writeConfigFromPartial(
-  projectDir: string,
-  partial: Partial<ProjectConfig>,
-): Promise<void> {
-  if (!partial.name) {
-    throw new Error(
-      `Cannot write config: no project config found. Run \`${CLI_INVOKE_COMMAND} init\` first.`,
-    );
-  }
-
-  const config: ProjectConfig = {
-    ...partial,
-    name: partial.name,
-    skills: partial.skills ?? [],
-    agents: partial.agents ?? [],
-  };
-
-  const configPath = getProjectConfigPath(projectDir);
-  await ensureDir(path.join(projectDir, CLAUDE_SRC_DIR));
-  await writeFile(configPath, generateConfigSource(config));
 }

@@ -4,9 +4,9 @@ import {
   buildStackProperty,
   splitConfigByScope,
 } from "./config-generator";
-import type { AgentName, SkillAssignment, SkillId, StackAgentConfig } from "../../types";
+import type { AgentName, SkillId, StackAgentConfig } from "../../types";
 import { initializeMatrix } from "../matrix/matrix-provider";
-import { createMockSkillAssignment } from "../__tests__/factories/skill-factories.js";
+import { sa } from "../__tests__/factories/skill-factories.js";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
 import { buildProjectConfig, buildAgentConfigs } from "../__tests__/factories/config-factories.js";
 import {
@@ -38,10 +38,6 @@ import {
   REACT_SCSS_HONO_MATRIX,
   MULTI_STYLING_MATRIX,
 } from "../__tests__/mock-data/mock-matrices.js";
-
-/** Shorthand: creates a SkillAssignment from an id and optional preloaded flag */
-const sa = (id: SkillId, preloaded = false): SkillAssignment =>
-  createMockSkillAssignment(id, preloaded);
 
 describe("config-generator", () => {
   describe("generateProjectConfigFromSkills", () => {

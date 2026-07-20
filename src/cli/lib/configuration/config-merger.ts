@@ -4,7 +4,7 @@ import type { ProjectConfig, SkillId } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
 import { loadProjectConfig } from "./project-config";
 import { loadProjectSourceConfig } from "./config";
-import { isGlobalTombstone, isProjectOwned } from "./scope-predicates";
+import { isGlobalTombstone, isProjectOwned, type ScopedEntry } from "./scope-predicates";
 
 /**
  * How authoritative `newConfig` is over entries absent from it (D-233 Scenario C):
@@ -69,10 +69,7 @@ function skillTombstoneIds(skills: SkillConfig[]): Set<string> {
  * entries and the project's own global tombstones — inherited global-active entries belong to
  * the global config and must never be dropped from a project edit.
  */
-function isWithinSessionAuthority(
-  entry: { scope?: string; excluded?: boolean },
-  scope: AuthoritativeScope,
-): boolean {
+function isWithinSessionAuthority(entry: ScopedEntry, scope: AuthoritativeScope): boolean {
   if (scope === "all") return true;
   return isProjectOwned(entry);
 }

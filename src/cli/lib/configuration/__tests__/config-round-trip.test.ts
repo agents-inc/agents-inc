@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { TEST_SOURCE_URL } from "../../__tests__/test-constants.js";
 import path from "path";
 import { writeFile } from "fs/promises";
 import { generateConfigSource } from "../config-writer";
@@ -114,7 +115,7 @@ describe("config round-trip", () => {
       author: "@vince",
       domains: ["web", "api"],
       selectedAgents: ["web-developer", "api-developer"],
-      source: "github:agents-inc/skills",
+      source: TEST_SOURCE_URL,
       marketplace: "agents-inc",
     });
 

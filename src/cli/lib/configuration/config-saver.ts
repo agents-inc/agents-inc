@@ -1,9 +1,5 @@
-import path from "path";
-import { writeFile, ensureDir } from "../../utils/fs";
-import { CLAUDE_SRC_DIR } from "../../consts";
-import type { ProjectConfig } from "../../types";
-import { loadProjectSourceConfig, getProjectConfigPath } from "./config";
-import { generateConfigSource } from "./config-writer";
+import { loadProjectSourceConfig } from "./config";
+import { writePartialProjectConfig } from "./config-writer";
 
 export async function saveSourceToProjectConfig(
   projectDir: string,
@@ -12,15 +8,6 @@ export async function saveSourceToProjectConfig(
 ): Promise<void> {
   const existing = (await loadProjectSourceConfig(projectDir)) ?? {};
 
-  const config: ProjectConfig = {
-    ...existing,
-    name: existing.name ?? name,
-    skills: existing.skills ?? [],
-    agents: existing.agents ?? [],
-    source,
-  };
-
-  const configPath = getProjectConfigPath(projectDir);
-  await ensureDir(path.join(projectDir, CLAUDE_SRC_DIR));
-  await writeFile(configPath, generateConfigSource(config));
+  // config-saver invents a name (from the project dir) when none exists.
+  await writePartialProjectConfig(projectDir, { ...existing, source }, { fallbackName: name });
 }

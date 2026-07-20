@@ -1,7 +1,6 @@
 export {
   DEFAULT_SOURCE,
   SOURCE_ENV_VAR,
-  PROJECT_CONFIG_FILE,
   type BrandingConfig,
   type SourceEntry,
   type ResolvedConfig,
@@ -38,6 +37,7 @@ export {
   isGlobalTombstone,
   isProjectOwned,
   activeProjectAgentNames,
+  effectivelyExcludedSkillIds,
 } from "./scope-predicates";
 
 export {

@@ -13,19 +13,15 @@ const CONFIG_EXPORTS_PATH = path.resolve(
   "../../config-exports.ts",
 );
 
-type ZodLikeSchema = {
-  safeParse: (data: unknown) => { success: boolean; data?: unknown; error?: z.ZodError };
-};
-
 /**
  * Loads a TypeScript config file using jiti.
  * Returns null when the file does not exist.
  * Throws on validation failure or malformed/broken files.
  *
  * @param configPath - Absolute path to the .ts config file
- * @param schema - Optional Zod schema for validation
+ * @param schema - Optional Zod schema; when provided, T is inferred from it
  */
-export async function loadConfig<T>(configPath: string, schema?: ZodLikeSchema): Promise<T | null> {
+export async function loadConfig<T>(configPath: string, schema?: z.ZodType<T>): Promise<T | null> {
   if (!(await fileExists(configPath))) {
     verbose(`Config not found at ${configPath}`);
     return null;
@@ -54,13 +50,11 @@ export async function loadConfig<T>(configPath: string, schema?: ZodLikeSchema):
   if (schema) {
     const result = schema.safeParse(raw);
     if (!result.success) {
-      // safeParse({success: false}) always populates `error`; the loose ZodLikeSchema
-      // type marks it optional, so narrow before formatting.
-      const issues: z.ZodIssue[] = result.error ? result.error.issues : [];
-      throw new Error(`Config validation failed at '${configPath}': ${formatZodIssues(issues)}`);
+      throw new Error(
+        `Config validation failed at '${configPath}': ${formatZodIssues(result.error.issues)}`,
+      );
     }
-    // Post-safeParse cast: schema.safeParse widened by passthrough, narrow to actual type
-    return result.data as T;
+    return result.data;
   }
 
   // Boundary cast: jiti returns unknown, caller provides expected type

@@ -10,10 +10,10 @@ import type {
 } from "../../types";
 import { groupBy, indexBy, partition } from "remeda";
 
-import type { AgentScopeConfig, SkillConfig } from "../../types/config";
+import type { AgentScopeConfig, SkillConfig, SkillScope } from "../../types/config";
 import { matrix } from "../matrix/matrix-provider";
-import { EJECT_SOURCE } from "../../consts";
-import { isActiveAt, activeAgentScopeMap } from "./scope-predicates";
+import { EJECT_SOURCE, GLOBAL_CONFIG_NAME, LOCAL_PSEUDO_CATEGORY } from "../../consts";
+import { isActiveAt, activeAgentScopeMap, effectivelyExcludedSkillIds } from "./scope-predicates";
 import { verbose, warn } from "../../utils/logger";
 import { typedEntries, typedFromEntries, typedKeys } from "../../utils/typed-object";
 
@@ -28,7 +28,7 @@ export type ProjectConfigOptions = {
 };
 
 function extractCategoryFromPath(categoryPath: CategoryPath): Category | undefined {
-  if (categoryPath === "local") return undefined;
+  if (categoryPath === LOCAL_PSEUDO_CATEGORY) return undefined;
   // TypeScript narrows CategoryPath to Category after excluding "local"
   return categoryPath;
 }
@@ -36,8 +36,8 @@ function extractCategoryFromPath(categoryPath: CategoryPath): Category | undefin
 type StackBuildInputs = {
   agentList: AgentName[];
   activeSkillsByCategory: Map<Category, SkillId[]>;
-  skillScope: Map<SkillId, "project" | "global">;
-  agentScope: Map<AgentName, "project" | "global">;
+  skillScope: Map<SkillId, SkillScope>;
+  agentScope: Map<AgentName, SkillScope>;
   existingStack: Partial<Record<AgentName, StackAgentConfig>>;
   /**
    * Skills that are new to this session's top-level selection (not in the prior
@@ -79,11 +79,7 @@ function wasPreviouslyPreloaded(
   return prior?.preloaded === true;
 }
 
-function getScopeOrThrow<K>(
-  map: Map<K, "project" | "global">,
-  key: K,
-  kind: "skill" | "agent",
-): "project" | "global" {
+function getScopeOrThrow<K>(map: Map<K, SkillScope>, key: K, kind: "skill" | "agent"): SkillScope {
   const scope = map.get(key);
   if (scope === undefined) {
     throw new Error(
@@ -97,18 +93,15 @@ function getScopeOrThrow<K>(
 }
 
 /** Project skills never reach global agents; global skills reach any agent. */
-export function isScopePairCompatible(
-  skillScope: "project" | "global",
-  agentScope: "project" | "global",
-): boolean {
+export function isScopePairCompatible(skillScope: SkillScope, agentScope: SkillScope): boolean {
   return !(skillScope === "project" && agentScope === "global");
 }
 
 function isScopeCompatible(
   skillId: SkillId,
   agent: AgentName,
-  skillScope: Map<SkillId, "project" | "global">,
-  agentScope: Map<AgentName, "project" | "global">,
+  skillScope: Map<SkillId, SkillScope>,
+  agentScope: Map<AgentName, SkillScope>,
 ): boolean {
   const sScope = getScopeOrThrow(skillScope, skillId, "skill");
   const aScope = getScopeOrThrow(agentScope, agent, "agent");
@@ -255,10 +248,7 @@ function resolveValidSkills(
     );
   }
 
-  const activeSkillIds = new Set(skillConfigs.filter((s) => !s.excluded).map((s) => s.id));
-  const excludedSkillIds = new Set(
-    skillConfigs.filter((s) => s.excluded && !activeSkillIds.has(s.id)).map((s) => s.id),
-  );
+  const excludedSkillIds = effectivelyExcludedSkillIds(skillConfigs);
 
   const validSkills = found
     .map(({ skillId, skill }) => ({
@@ -276,7 +266,7 @@ function resolveValidSkills(
  * and an active entry (excluded global + active project), excluded entries spread
  * first so active entries overwrite them.
  */
-function buildSkillScopeMap(skillConfigs: SkillConfig[]): Map<SkillId, "project" | "global"> {
+function buildSkillScopeMap(skillConfigs: SkillConfig[]): Map<SkillId, SkillScope> {
   const [excludedConfigs, activeConfigs] = partition(skillConfigs, (s) => Boolean(s.excluded));
   return new Map([...excludedConfigs, ...activeConfigs].map((s) => [s.id, s.scope]));
 }
@@ -521,7 +511,7 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
   // Project config inherits domains from global at runtime, so it gets none.
   const globalConfig: ProjectConfig = {
     ...config,
-    name: "global",
+    name: GLOBAL_CONFIG_NAME,
     agents: globalAgents,
     skills: globalSkills,
     ...(Object.keys(globalStack).length > 0 ? { stack: globalStack } : { stack: undefined }),

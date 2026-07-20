@@ -19,7 +19,7 @@ import {
 } from "../config-types-writer";
 import { createTempDir, cleanupTempDir } from "../../__tests__/test-fs-utils";
 import { createMockSkill } from "../../__tests__/factories/skill-factories.js";
-import { createMockMatrix } from "../../__tests__/factories/matrix-factories.js";
+import { buildCategoryMap, createMockMatrix } from "../../__tests__/factories/matrix-factories.js";
 import { createMockCategory } from "../../__tests__/factories/category-factories.js";
 import {
   buildProjectConfig,
@@ -103,10 +103,10 @@ describe("generateConfigTypesSource", () => {
   });
 
   it("generates Domain type from matrix categories", () => {
-    const categories = {
+    const categories = buildCategoryMap({
       "web-framework": TEST_CATEGORIES.framework,
       "api-api": { ...TEST_CATEGORIES.api, displayName: "API", domain: "api" },
-    } as Record<Category, CategoryDefinition>;
+    });
 
     const matrix = createMockMatrix({}, { categories });
     const source = generateConfigTypesSource(matrix, []);
@@ -114,21 +114,23 @@ describe("generateConfigTypesSource", () => {
   });
 
   it("generates Category union from matrix category keys", () => {
-    const categories = {
+    const categories = buildCategoryMap({
       "web-framework": TEST_CATEGORIES.framework,
       "api-api": { ...TEST_CATEGORIES.api, displayName: "API", domain: "api" },
       "web-styling": TEST_CATEGORIES.styling,
-    } as Record<Category, CategoryDefinition>;
+    });
 
     const matrix = createMockMatrix({}, { categories });
     const source = generateConfigTypesSource(matrix, []);
     expect(source).toContain('export type Category = "api-api" | "web-framework" | "web-styling";');
   });
 
-  it("falls back to string for empty categories", () => {
-    const matrix = createMockMatrix({}, { categories: {} as Record<Category, CategoryDefinition> });
+  it("emits never for empty categories", () => {
+    const matrix = createMockMatrix({}, { categories: buildCategoryMap({}) });
     const source = generateConfigTypesSource(matrix, []);
-    expect(source).toContain("export type Category = string;");
+    expect(source, "an empty category union must accept no category, not every string").toContain(
+      "export type Category = never;",
+    );
   });
 
   it("generates InstallMode type", () => {
@@ -154,9 +156,9 @@ describe("generateConfigTypesSource", () => {
   });
 
   it("generates per-category constrained StackAgentConfig with single skill", () => {
-    const categories = {
+    const categories = buildCategoryMap({
       "web-framework": TEST_CATEGORIES.framework,
-    } as Record<Category, CategoryDefinition>;
+    });
     const matrix = createMockMatrix(SKILLS.react, { categories });
     const source = generateConfigTypesSource(matrix, []);
     expect(source).toContain("export type StackAgentConfig = {");
@@ -165,11 +167,11 @@ describe("generateConfigTypesSource", () => {
   });
 
   it("generates per-category constrained StackAgentConfig with multiple categories", () => {
-    const categories = {
+    const categories = buildCategoryMap({
       "web-framework": TEST_CATEGORIES.framework,
       "web-styling": TEST_CATEGORIES.styling,
       "api-api": { ...TEST_CATEGORIES.api, displayName: "API", domain: "api" },
-    } as Record<Category, CategoryDefinition>;
+    });
     const matrix = createMockMatrix(SKILLS.react, SKILLS.scss, SKILLS.hono, { categories });
     const source = generateConfigTypesSource(matrix, []);
     expect(source).toContain("export type StackAgentConfig = {");
@@ -179,9 +181,9 @@ describe("generateConfigTypesSource", () => {
   });
 
   it("generates multi-line union for categories with more than 3 skills", () => {
-    const categories = {
+    const categories = buildCategoryMap({
       "web-framework": TEST_CATEGORIES.framework,
-    } as Record<Category, CategoryDefinition>;
+    });
     const matrix = createMockMatrix(
       createMockSkill("web-framework-react"),
       createMockSkill("web-framework-vue-composition-api"),
@@ -200,10 +202,10 @@ describe("generateConfigTypesSource", () => {
   });
 
   it("omits categories that have no matching skills from StackAgentConfig", () => {
-    const categories = {
+    const categories = buildCategoryMap({
       "web-framework": TEST_CATEGORIES.framework,
       "web-styling": TEST_CATEGORIES.styling,
-    } as Record<Category, CategoryDefinition>;
+    });
     // Only add a React skill (web-framework), no styling skills
     const matrix = createMockMatrix(SKILLS.react, { categories });
     const source = generateConfigTypesSource(matrix, []);
@@ -236,7 +238,7 @@ describe("generateConfigTypesSource", () => {
   });
 
   it("generates ProjectAgentName = SelectedAgentName for global config", () => {
-    const matrix = createMockMatrix(SKILLS.react);
+    const matrix = SINGLE_REACT_MATRIX;
     const agentNames: AgentName[] = ["web-developer", "web-reviewer"];
     const config = buildProjectConfig({
       agents: buildAgentConfigs(["web-developer", "web-reviewer"], { scope: "global" }),
@@ -247,7 +249,7 @@ describe("generateConfigTypesSource", () => {
   });
 
   it("generates ProjectAgentName narrowed to project-scoped agents", () => {
-    const matrix = createMockMatrix(SKILLS.react);
+    const matrix = SINGLE_REACT_MATRIX;
     const agentNames: AgentName[] = ["web-developer", "web-reviewer", "api-developer"];
     const config = buildProjectConfig({
       agents: [
@@ -261,24 +263,30 @@ describe("generateConfigTypesSource", () => {
     expect(source).not.toContain("export type ProjectAgentName = SelectedAgentName");
   });
 
-  it("falls back to string for empty skills", () => {
+  it("emits never for empty skills", () => {
     const matrix = EMPTY_MATRIX;
     const source = generateConfigTypesSource(matrix, []);
-    expect(source).toContain("export type SkillId = string;");
+    expect(source, "an empty skill union must accept no skill id, not every string").toContain(
+      "export type SkillId = never;",
+    );
   });
 
-  it("falls back to string for empty agents", () => {
+  it("emits never for empty agents", () => {
     const matrix = SINGLE_REACT_MATRIX;
     const source = generateConfigTypesSource(matrix, []);
-    expect(source).toContain("export type AgentName = string;");
+    expect(source, "an empty agent union must accept no agent name, not every string").toContain(
+      "export type AgentName = never;",
+    );
   });
 
-  it("falls back to string for empty domains", () => {
+  it("emits never for empty domains", () => {
     const matrix = createMockMatrix(SKILLS.react, {
-      categories: {} as Record<Category, CategoryDefinition>,
+      categories: buildCategoryMap({}),
     });
     const source = generateConfigTypesSource(matrix, []);
-    expect(source).toContain("export type Domain = string;");
+    expect(source, "an empty domain union must accept no domain, not every string").toContain(
+      "export type Domain = never;",
+    );
   });
 
   it("uses single-line format for 5 or fewer union members", () => {

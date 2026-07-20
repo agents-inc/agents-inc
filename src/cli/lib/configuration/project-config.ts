@@ -3,11 +3,12 @@ import path from "path";
 import { fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../consts";
 import type { ProjectConfig, ValidationResult } from "../../types";
 import { normalizeStackRecord } from "../stacks/stacks-loader";
 import { projectConfigLoaderSchema } from "../schemas";
 import { formatZodErrors } from "../schema-validator";
+import { getProjectConfigPath } from "../installation/install-base-dir";
+import { isHomeDirectory } from "../installation/is-home-directory";
 import { loadConfig } from "./config-loader";
 
 export type LoadedProjectConfig = {
@@ -19,7 +20,7 @@ export type LoadedProjectConfig = {
 export async function loadProjectConfigFromDir(
   projectDir: string,
 ): Promise<LoadedProjectConfig | null> {
-  const configPath = path.join(projectDir, `${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
+  const configPath = getProjectConfigPath(projectDir);
 
   if (!(await fileExists(configPath))) {
     verbose(`Project config not found at ${configPath}`);
@@ -80,7 +81,7 @@ export async function loadProjectConfig(projectDir: string): Promise<LoadedProje
 
   // Global fallback: try home directory
   const homeDir = os.homedir();
-  if (projectDir !== homeDir) {
+  if (!isHomeDirectory(projectDir)) {
     return loadProjectConfigFromDir(homeDir);
   }
 

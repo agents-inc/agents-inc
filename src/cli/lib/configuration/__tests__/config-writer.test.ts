@@ -14,22 +14,10 @@ import {
 } from "../../__tests__/factories/config-factories.js";
 import { CLAUDE_SRC_DIR } from "../../../consts";
 import { EXPECTED_SKILLS } from "../../__tests__/expected-values";
-
-function extractNamedSection(source: string, name: "skills" | "agents" | "stack"): string {
-  const startMarker = `const ${name}:`;
-  const endMarker = name === "stack" ? "};" : "];";
-  const start = source.indexOf(startMarker);
-  return source.slice(start, source.indexOf(endMarker, start) + 2);
-}
-
-function extractScopeSections(section: string): { global: string; project: string } {
-  const globalStart = section.indexOf("// global");
-  const projectStart = section.indexOf("// project");
-  return {
-    global: section.slice(globalStart, projectStart),
-    project: section.slice(projectStart),
-  };
-}
+import {
+  extractNamedSection,
+  extractScopeSections,
+} from "../../__tests__/helpers/config-source-sections.js";
 
 describe("generateConfigSource", () => {
   it("produces valid TypeScript with import type, export default, and named variables", () => {

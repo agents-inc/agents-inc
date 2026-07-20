@@ -1,84 +1,82 @@
 import os from "os";
-import path from "path";
 import { uniqueBy } from "remeda";
 import { fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
-import { CLAUDE_SRC_DIR, DEFAULT_BRANDING, GITHUB_SOURCE, STANDARD_FILES } from "../../consts";
+import { DEFAULT_BRANDING, GITHUB_SOURCE } from "../../consts";
 import { projectSourceConfigSchema } from "../schemas";
 import type { ProjectConfig, SourceEntry } from "../../types";
 import { loadConfig } from "./config-loader";
+import { getProjectConfigPath } from "../installation/install-base-dir";
 
 export const DEFAULT_SOURCE = `${GITHUB_SOURCE.GITHUB_PREFIX}agents-inc/skills`;
 export const SOURCE_ENV_VAR = "CC_SOURCE";
-export const PROJECT_CONFIG_FILE = STANDARD_FILES.CONFIG_TS;
 
 // Re-export types that moved to src/cli/types/config.ts for backward compatibility
 export type { SourceEntry, BrandingConfig } from "../../types/config";
 
+// getProjectConfigPath lives in install-base-dir.ts (a neutral leaf) to avoid an
+// import cycle; re-exported here for existing importers of this module.
+export { getProjectConfigPath };
+
 export type ResolvedConfig = {
   source: string;
-  sourceOrigin: "flag" | "env" | "project" | "default";
+  sourceOrigin: "flag" | "env" | "project" | "global" | "default";
   marketplace?: string;
 };
 
-export function getProjectConfigPath(projectDir: string): string {
-  return path.join(projectDir, CLAUDE_SRC_DIR, PROJECT_CONFIG_FILE);
+async function loadSourceConfig(
+  dir: string,
+  scope: "project" | "global",
+): Promise<Partial<ProjectConfig> | null> {
+  const scopeLabel = scope === "project" ? "Project" : "Global";
+  const configPath = getProjectConfigPath(dir);
+
+  if (!(await fileExists(configPath))) {
+    verbose(`${scopeLabel} config not found at ${configPath}`);
+    return null;
+  }
+
+  let data: Partial<ProjectConfig> | null;
+  try {
+    data = await loadConfig(configPath, projectSourceConfigSchema);
+  } catch (error) {
+    verbose(`Failed to load ${scope} source config at ${configPath}: ${getErrorMessage(error)}`);
+    return null;
+  }
+  if (!data) return null;
+
+  verbose(`Loaded ${scope} config from ${dir}`);
+  return data;
 }
 
 export async function loadProjectSourceConfig(
   projectDir: string,
 ): Promise<Partial<ProjectConfig> | null> {
-  const configPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-
-  if (!(await fileExists(configPath))) {
-    verbose(`Project config not found at ${configPath}`);
-    return null;
-  }
-
-  let data: Partial<ProjectConfig> | null;
-  try {
-    data = await loadConfig<Partial<ProjectConfig>>(configPath, projectSourceConfigSchema);
-  } catch (error) {
-    verbose(`Failed to load project source config at ${configPath}: ${getErrorMessage(error)}`);
-    return null;
-  }
-  if (!data) return null;
-
-  verbose(`Loaded project config from ${projectDir}`);
-  return data;
+  return loadSourceConfig(projectDir, "project");
 }
 
 /** Load source config from the global home directory (~/.claude-src/config.ts). */
 export async function loadGlobalSourceConfig(): Promise<Partial<ProjectConfig> | null> {
-  const homeDir = os.homedir();
-  const globalConfigPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-
-  if (!(await fileExists(globalConfigPath))) {
-    verbose(`Global config not found at ${globalConfigPath}`);
-    return null;
-  }
-
-  let data: Partial<ProjectConfig> | null;
-  try {
-    data = await loadConfig<Partial<ProjectConfig>>(globalConfigPath, projectSourceConfigSchema);
-  } catch (error) {
-    verbose(
-      `Failed to load global source config at ${globalConfigPath}: ${getErrorMessage(error)}`,
-    );
-    return null;
-  }
-  if (!data) return null;
-
-  verbose(`Loaded global config from ${homeDir}`);
-  return data;
+  return loadSourceConfig(os.homedir(), "global");
 }
+
+/** The effective source config plus which scope it was actually loaded from. */
+type EffectiveSourceConfig = {
+  config: Partial<ProjectConfig>;
+  origin: "project" | "global";
+};
 
 async function loadEffectiveSourceConfig(
   projectDir?: string,
-): Promise<Partial<ProjectConfig> | null> {
+): Promise<EffectiveSourceConfig | null> {
   const projectConfig = projectDir ? await loadProjectSourceConfig(projectDir) : null;
-  return projectConfig ?? (await loadGlobalSourceConfig());
+  if (projectConfig) return { config: projectConfig, origin: "project" };
+
+  const globalConfig = await loadGlobalSourceConfig();
+  if (globalConfig) return { config: globalConfig, origin: "global" };
+
+  return null;
 }
 
 // Precedence: flag > env > project > global > default
@@ -86,8 +84,8 @@ export async function resolveSource(
   flagValue?: string,
   projectDir?: string,
 ): Promise<ResolvedConfig> {
-  const effectiveConfig = await loadEffectiveSourceConfig(projectDir);
-  const marketplace = effectiveConfig?.marketplace;
+  const effective = await loadEffectiveSourceConfig(projectDir);
+  const marketplace = effective?.config.marketplace;
 
   if (flagValue !== undefined) {
     if (flagValue === "" || flagValue.trim() === "") {
@@ -119,11 +117,11 @@ export async function resolveSource(
     }
   }
 
-  if (effectiveConfig?.source) {
-    verbose(`Source from project config: ${effectiveConfig.source}`);
+  if (effective?.config.source) {
+    verbose(`Source from ${effective.origin} config: ${effective.config.source}`);
     return {
-      source: effectiveConfig.source,
-      sourceOrigin: "project",
+      source: effective.config.source,
+      sourceOrigin: effective.origin,
       marketplace,
     };
   }
@@ -133,8 +131,8 @@ export async function resolveSource(
 }
 
 export async function resolveAuthor(projectDir?: string): Promise<string | undefined> {
-  const effectiveConfig = await loadEffectiveSourceConfig(projectDir);
-  return effectiveConfig?.author;
+  const effective = await loadEffectiveSourceConfig(projectDir);
+  return effective?.config.author;
 }
 
 /** Resolved branding with defaults applied for any missing fields */
@@ -145,17 +143,17 @@ export type ResolvedBranding = {
 
 /** Resolves branding from project config, falling back to global then DEFAULT_BRANDING. */
 export async function resolveBranding(projectDir?: string): Promise<ResolvedBranding> {
-  const effectiveConfig = await loadEffectiveSourceConfig(projectDir);
+  const effective = await loadEffectiveSourceConfig(projectDir);
   return {
-    name: effectiveConfig?.branding?.name ?? DEFAULT_BRANDING.NAME,
-    tagline: effectiveConfig?.branding?.tagline ?? DEFAULT_BRANDING.TAGLINE,
+    name: effective?.config.branding?.name ?? DEFAULT_BRANDING.NAME,
+    tagline: effective?.config.branding?.tagline ?? DEFAULT_BRANDING.TAGLINE,
   };
 }
 
 export async function resolveAllSources(
   projectDir?: string,
 ): Promise<{ primary: SourceEntry; extras: SourceEntry[] }> {
-  const effectiveConfig = await loadEffectiveSourceConfig(projectDir);
+  const effective = await loadEffectiveSourceConfig(projectDir);
 
   const resolvedConfig = await resolveSource(undefined, projectDir);
   const primary: SourceEntry = {
@@ -164,7 +162,7 @@ export async function resolveAllSources(
     description: "Primary skills marketplace",
   };
 
-  const extras = uniqueBy(effectiveConfig?.sources ?? [], (s) => s.name);
+  const extras = uniqueBy(effective?.config.sources ?? [], (s) => s.name);
 
   return { primary, extras };
 }

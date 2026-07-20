@@ -1,11 +1,11 @@
 import type { AgentName, SkillId } from "../../types/index.js";
-import type { AgentScopeConfig, SkillConfig } from "../../types/config.js";
+import type { AgentScopeConfig, SkillConfig, SkillScope } from "../../types/config.js";
 
 /** Shared shape of scoped config entries (skills and agents). */
-type ScopedEntry = { scope?: string; excluded?: boolean };
+export type ScopedEntry = { scope?: SkillScope; excluded?: boolean };
 
 /** Active (non-excluded) entry at the given scope. */
-export function isActiveAt(entry: ScopedEntry, scope: "project" | "global"): boolean {
+export function isActiveAt(entry: ScopedEntry, scope: SkillScope): boolean {
   return entry.scope === scope && !entry.excluded;
 }
 
@@ -30,13 +30,23 @@ export function activeProjectAgentNames(agents: readonly AgentScopeConfig[]): Ag
 /** Scope of each active (non-excluded) skill, keyed by id. */
 export function activeSkillScopeMap(
   skills: readonly SkillConfig[] | undefined,
-): Map<SkillId, "project" | "global"> {
+): Map<SkillId, SkillScope> {
   return new Map((skills ?? []).filter((s) => !s.excluded).map((s) => [s.id, s.scope]));
 }
 
 /** Scope of each active (non-excluded) agent, keyed by name. */
 export function activeAgentScopeMap(
   agents: readonly AgentScopeConfig[] | undefined,
-): Map<AgentName, "project" | "global"> {
+): Map<AgentName, SkillScope> {
   return new Map((agents ?? []).filter((a) => !a.excluded).map((a) => [a.name, a.scope]));
+}
+
+/**
+ * Ids of skills that are effectively excluded: they have an excluded entry and no
+ * active (non-excluded) entry with the same id rescues them. A skill with an
+ * excluded global entry AND an active project entry is NOT effectively excluded.
+ */
+export function effectivelyExcludedSkillIds(skills: readonly SkillConfig[]): Set<SkillId> {
+  const activeIds = new Set(skills.filter((s) => !s.excluded).map((s) => s.id));
+  return new Set(skills.filter((s) => s.excluded && !activeIds.has(s.id)).map((s) => s.id));
 }
