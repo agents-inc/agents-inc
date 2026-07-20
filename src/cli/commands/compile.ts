@@ -11,11 +11,18 @@ import {
   discoverInstalledSkills,
   type DiscoveredSkills,
 } from "../lib/operations";
-import { resolveSource } from "../lib/configuration";
+import {
+  effectivelyExcludedSkillIds,
+  loadProjectConfig,
+  resolveSource,
+} from "../lib/configuration";
+import { getStackSkillIds } from "../lib/stacks";
 import { CLI_INVOKE_COMMAND } from "../consts";
 import { EXIT_CODES } from "../lib/exit-codes";
 import { ERROR_MESSAGES, STATUS_MESSAGES, INFO_MESSAGES } from "../utils/messages";
 import { type Installation } from "../lib/installation";
+import type { SkillScope } from "../types/config";
+import type { SkillDefinitionMap } from "../types";
 
 export default class Compile extends BaseCommand {
   static summary = "Compile agents using local skills and agent definitions";
@@ -117,6 +124,31 @@ export default class Compile extends BaseCommand {
     return result;
   }
 
+  /**
+   * A stack skill that is not among the discovered skills is dropped from every
+   * agent that references it. The resolver only records that at verbose level, so
+   * the default output would claim a successful recompile of an agent that no
+   * longer matches config.ts. Name each dropped skill instead.
+   */
+  private async warnUnresolvedStackSkills(
+    projectDir: string,
+    allSkills: SkillDefinitionMap,
+  ): Promise<void> {
+    const loaded = await loadProjectConfig(projectDir);
+    if (!loaded?.config.stack) return;
+
+    const excludedIds = effectivelyExcludedSkillIds(loaded.config.skills);
+    const unresolved = getStackSkillIds(loaded.config.stack).filter(
+      (id) => !excludedIds.has(id) && !(id in allSkills),
+    );
+
+    for (const id of unresolved) {
+      this.warn(
+        `Skill '${id}' is configured but was not found — agents will be compiled without it.`,
+      );
+    }
+  }
+
   private async runCompilePass(params: CompilePass): Promise<boolean> {
     const { label, projectDir, installation, sourcePath, scopeFilter } = params;
 
@@ -133,6 +165,8 @@ export default class Compile extends BaseCommand {
       this.log(`No skills found for ${label.toLowerCase()} pass, skipping`);
       return false;
     }
+
+    await this.warnUnresolvedStackSkills(projectDir, allSkills);
 
     this.log(STATUS_MESSAGES.RECOMPILING_AGENTS);
     try {
@@ -175,11 +209,11 @@ export default class Compile extends BaseCommand {
 }
 
 type CompilePass = {
-  label: string;
+  label: "Global" | "Project";
   projectDir: string;
   installation: Installation;
   sourcePath: string;
-  scopeFilter?: "project" | "global";
+  scopeFilter?: SkillScope;
 };
 
 function buildCompilePasses(
