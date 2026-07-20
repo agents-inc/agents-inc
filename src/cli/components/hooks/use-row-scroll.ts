@@ -18,7 +18,7 @@ export type UseRowScrollResult = {
  *
  * Manages a scroll offset (in rows) to keep the focused row visible within
  * a constrained viewport. Extracted from the identical scroll plumbing in
- * checkbox-grid.tsx, step-agents.tsx, and step-settings.tsx.
+ * checkbox-grid.tsx, step-agents.tsx, and stack-selection.tsx.
  */
 export function useRowScroll({
   focusedIndex,

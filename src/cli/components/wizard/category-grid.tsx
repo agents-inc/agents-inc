@@ -4,7 +4,7 @@ import { Box, Text } from "ink";
 
 import { CLI_COLORS } from "../../consts.js";
 import { getSkillById } from "../../lib/matrix/matrix-provider.js";
-import type { Category, OptionState, SkillId } from "../../types/index.js";
+import type { Category, OptionState, SkillId, SkillScope } from "../../types/index.js";
 import { useCategoryGridInput } from "../hooks/use-category-grid-input.js";
 import { useFocusedListItem } from "../hooks/use-focused-list-item.js";
 import { useSectionScroll } from "../hooks/use-section-scroll.js";
@@ -15,9 +15,9 @@ export type CategoryOption = {
   selected: boolean;
   local?: boolean;
   installed?: boolean;
-  scope?: "project" | "global";
+  scope?: SkillScope;
   /** Secondary scope badge shown alongside primary (e.g. after G->P toggle, excluded tombstone) */
-  secondaryScope?: "project" | "global";
+  secondaryScope?: SkillScope;
   source?: string;
   /** True when selected but has unmet dependency requirements (shown dimmed) */
   hasUnmetRequirements?: boolean;
@@ -112,14 +112,11 @@ const SkillTag: React.FC<SkillTagProps> = ({ option, isFocused, showLabels }) =>
       <>
         {option.scope && (
           <>
-            <Text color={CLI_COLORS.WARNING} backgroundColor={CLI_COLORS.LABEL_BG}>
-              {option.scope === "global" ? " G " : " P "}
-            </Text>
-            {option.secondaryScope && (
-              <Text color={CLI_COLORS.WARNING} backgroundColor={CLI_COLORS.LABEL_BG}>
-                {option.secondaryScope === "global" ? " G " : " P "}
+            {[option.scope, option.secondaryScope].filter(Boolean).map((badgeScope, i) => (
+              <Text key={i} color={CLI_COLORS.WARNING} backgroundColor={CLI_COLORS.LABEL_BG}>
+                {badgeScope === "global" ? " G " : " P "}
               </Text>
-            )}
+            ))}
             <Text> </Text>
           </>
         )}

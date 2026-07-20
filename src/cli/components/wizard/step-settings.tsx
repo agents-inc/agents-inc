@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
-import { CLI_COLORS } from "../../consts.js";
-import { Toast } from "./toast.js";
+import { CLI_COLORS, formatSourceDisplayName, PUBLIC_SOURCE_NAME } from "../../consts.js";
 import { getSourceSummary, type SourceSummary } from "../../lib/configuration/source-manager.js";
 import { DEFAULT_SOURCE } from "../../lib/configuration/config.js";
 import { useKeyboardNavigation } from "../hooks/use-keyboard-navigation.js";
 import { useModalState } from "../hooks/use-modal-state.js";
-import { useRowScroll } from "../hooks/use-row-scroll.js";
-import { useSourceOperations } from "../hooks/use-source-operations.js";
+import { useSourceOperations, type StatusVariant } from "../hooks/use-source-operations.js";
 import { useTextInput } from "../hooks/use-text-input.js";
 import { verbose } from "../../utils/logger.js";
 import { getErrorMessage } from "../../utils/errors.js";
@@ -20,23 +18,18 @@ import {
   isHotkey,
 } from "./hotkeys.js";
 
-const DEFAULT_SOURCE_NAME = "public";
-
-/** Fixed lines around the source list: border top/bottom (2) */
-const SOURCE_LIST_BORDER_LINES = 2;
+/** Maps a status variant to its CLI color at the render boundary. */
+const STATUS_VARIANT_COLORS = {
+  success: CLI_COLORS.SUCCESS,
+  error: CLI_COLORS.ERROR,
+} as const satisfies Record<StatusVariant, string>;
 
 export type StepSettingsProps = {
   projectDir: string;
-  /** Available height in terminal lines for the scrollable source list. 0 = no constraint. */
-  availableHeight?: number;
   onClose: () => void;
 };
 
-export const StepSettings: React.FC<StepSettingsProps> = ({
-  projectDir,
-  availableHeight = 0,
-  onClose,
-}) => {
+export const StepSettings: React.FC<StepSettingsProps> = ({ projectDir, onClose }) => {
   const [summary, setSummary] = useState<SourceSummary | null>(null);
   const addModal = useModalState();
   const {
@@ -53,7 +46,7 @@ export const StepSettings: React.FC<StepSettingsProps> = ({
     } catch (error) {
       verbose(`Failed to load source summary: ${getErrorMessage(error)}`);
       setSummary({
-        sources: [{ name: DEFAULT_SOURCE_NAME, url: DEFAULT_SOURCE, enabled: true }],
+        sources: [{ name: PUBLIC_SOURCE_NAME, url: DEFAULT_SOURCE, enabled: true }],
         localSkillCount: 0,
         pluginSkillCount: 0,
       });
@@ -77,15 +70,6 @@ export const StepSettings: React.FC<StepSettingsProps> = ({
     { onEscape: onClose },
     { wrap: false, vimKeys: false, active: !addModal.isOpen },
   );
-
-  // Compute scroll offset for source list
-  const sourceViewportHeight =
-    availableHeight > SOURCE_LIST_BORDER_LINES ? availableHeight - SOURCE_LIST_BORDER_LINES : 0;
-  const { scrollEnabled, scrollTop } = useRowScroll({
-    focusedIndex,
-    itemCount: sourceCount,
-    availableHeight: sourceViewportHeight,
-  });
 
   useInput((input, key) => {
     if (statusMessage) {
@@ -119,7 +103,7 @@ export const StepSettings: React.FC<StepSettingsProps> = ({
 
     if (key.backspace || key.delete) {
       const source = summary?.sources[focusedIndex];
-      if (!source || source.name === DEFAULT_SOURCE_NAME) return;
+      if (!source || source.name === PUBLIC_SOURCE_NAME) return;
       void handleRemove(source.name).then((success) => {
         if (success) {
           setFocusedIndex((prev) => Math.max(0, prev - 1));
@@ -137,7 +121,6 @@ export const StepSettings: React.FC<StepSettingsProps> = ({
   if (isLoading) {
     return (
       <Box flexDirection="column" paddingX={2}>
-        {/* <Toast>Skill Sources</Toast> */}
         <Text dimColor>Loading sources...</Text>
       </Box>
     );
@@ -145,9 +128,9 @@ export const StepSettings: React.FC<StepSettingsProps> = ({
 
   const sourceElements = summary?.sources.map((source, index) => {
     const isFocused = index === focusedIndex && !addModal.isOpen;
-    const isDefault = source.name === DEFAULT_SOURCE_NAME;
+    const isDefault = source.name === PUBLIC_SOURCE_NAME;
     const checkmark = source.enabled ? "\u2713" : " ";
-    const displayName = isDefault ? "Public" : source.name;
+    const displayName = isDefault ? formatSourceDisplayName(PUBLIC_SOURCE_NAME) : source.name;
     const suffix = isDefault ? " (default)" : "";
 
     return (
@@ -166,7 +149,6 @@ export const StepSettings: React.FC<StepSettingsProps> = ({
 
   return (
     <Box flexDirection="column" paddingX={2}>
-      {/* <Toast>Skill Sources</Toast> */}
       <Box marginTop={1} />
 
       <Text bold>Configured marketplaces:</Text>
@@ -177,18 +159,7 @@ export const StepSettings: React.FC<StepSettingsProps> = ({
         paddingX={1}
         marginTop={1}
       >
-        <Box
-          flexDirection="column"
-          {...(scrollEnabled && { height: sourceViewportHeight, overflow: "hidden" as const })}
-        >
-          <Box
-            flexDirection="column"
-            marginTop={scrollTop > 0 ? -scrollTop : 0}
-            {...(scrollEnabled && { flexShrink: 0 })}
-          >
-            {sourceElements}
-          </Box>
-        </Box>
+        <Box flexDirection="column">{sourceElements}</Box>
       </Box>
 
       <Box
@@ -206,7 +177,7 @@ export const StepSettings: React.FC<StepSettingsProps> = ({
 
       {statusMessage && (
         <Box marginTop={1}>
-          <Text color={statusMessage.color}>{statusMessage.text}</Text>
+          <Text color={STATUS_VARIANT_COLORS[statusMessage.variant]}>{statusMessage.text}</Text>
         </Box>
       )}
 

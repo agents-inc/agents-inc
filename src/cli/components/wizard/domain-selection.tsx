@@ -5,19 +5,7 @@ import { matrix } from "../../lib/matrix/matrix-provider.js";
 import type { Domain } from "../../types/index.js";
 import { typedEntries } from "../../utils/typed-object.js";
 import { CheckboxGrid, type CheckboxItem } from "./checkbox-grid.js";
-import { getDomainDisplayName, orderDomains } from "./utils.js";
-
-const BUILT_IN_DOMAIN_DESCRIPTIONS: Record<Domain, string> = {
-  web: "Frontend web applications",
-  api: "Backend APIs and services",
-  ai: "AI and LLM integrations",
-  cli: "Command-line tools",
-  mobile: "Mobile applications",
-  desktop: "Desktop applications",
-  infra: "CI/CD, deployment, and infrastructure",
-  meta: "Design patterns, code review, and research methodology",
-  shared: "Shared utilities and methodology",
-};
+import { BUILT_IN_DOMAIN_DESCRIPTIONS, getDomainDisplayName, orderDomains } from "./utils.js";
 
 export const DomainSelection: React.FC = () => {
   const { selectedDomains, toggleDomain, setStep, setApproach, selectStack, goBack } =
@@ -47,7 +35,6 @@ export const DomainSelection: React.FC = () => {
 
   return (
     <CheckboxGrid
-      title="Select domains to configure"
       items={availableDomains}
       selectedIds={selectedDomains}
       onToggle={toggleDomain}

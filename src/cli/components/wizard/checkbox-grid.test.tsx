@@ -21,7 +21,6 @@ const TEST_ITEMS: CheckboxGridProps<TestItem>["items"] = [
 ];
 
 const defaultProps: CheckboxGridProps<TestItem> = {
-  title: "Test title",
   subtitle: "Test subtitle",
   items: TEST_ITEMS,
   selectedIds: [],

@@ -1,6 +1,6 @@
 import { groupBy, unique } from "remeda";
 import { Box, Text, useInput } from "ink";
-import { deriveScopeBadges } from "../../lib/wizard/index.js";
+import { deriveScopeBadges, formatScopeTag } from "../../lib/wizard/index.js";
 import React, { useMemo, useState } from "react";
 import { CLI_COLORS, UI_SYMBOLS } from "../../consts.js";
 import { matrix } from "../../lib/matrix/matrix-provider.js";
@@ -8,15 +8,14 @@ import { useWizardStore } from "../../stores/wizard-store.js";
 import type { AgentName, MergedSkillsMatrix } from "../../types/index.js";
 import { isAgentName } from "../../utils/type-guards.js";
 import { typedKeys } from "../../utils/typed-object.js";
+import { toTitleCase } from "../../utils/string.js";
 import { useMeasuredHeight } from "../hooks/use-measured-height.js";
 import { useRowScroll } from "../hooks/use-row-scroll.js";
+import { type CheckboxItem } from "./checkbox-grid.js";
+import { KEY_SPACE } from "./hotkeys.js";
 import { getDomainDisplayName } from "./utils.js";
 
-type AgentItem = {
-  id: AgentName;
-  label: string;
-  description: string;
-};
+type AgentItem = CheckboxItem<AgentName>;
 
 type AgentGroup = {
   label: string;
@@ -100,14 +99,6 @@ const BUILT_IN_AGENT_IDS = new Set<string>(
   BUILT_IN_AGENT_GROUPS.flatMap((group) => group.items.map((a) => a.id)),
 );
 
-/** Convert a kebab-case agent ID to a title-case label. */
-function agentIdToLabel(id: string): string {
-  return id
-    .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}
-
 type FocusId = AgentName | "continue";
 
 type ListRow =
@@ -131,7 +122,7 @@ function buildAgentGroups(matrix: MergedSkillsMatrix): AgentGroup[] {
       item: {
         // Boundary cast: custom agent names from marketplace stacks are not in the AgentName union
         id: agentId as AgentName,
-        label: agentIdToLabel(agentId),
+        label: toTitleCase(agentId),
         description: "Custom agent",
       },
     };
@@ -205,7 +196,7 @@ export const StepAgents: React.FC = () => {
       return;
     }
 
-    if (input === " " && focusedId !== "continue") {
+    if (input === KEY_SPACE && focusedId !== "continue") {
       useWizardStore.getState().toggleAgent(focusedId);
     }
   });
@@ -269,13 +260,13 @@ export const StepAgents: React.FC = () => {
                 {checkbox}{" "}
               </Text>
               <Text color={scope === "global" ? CLI_COLORS.WARNING : CLI_COLORS.TOAST_BG}>
-                {scope === "global" ? "[G]" : "[P]"}
+                {formatScopeTag(scope)}
               </Text>
               {secondaryScope && (
                 <Text
                   color={secondaryScope === "global" ? CLI_COLORS.WARNING : CLI_COLORS.TOAST_BG}
                 >
-                  {secondaryScope === "global" ? "[G]" : "[P]"}
+                  {formatScopeTag(secondaryScope)}
                 </Text>
               )}
               <Text

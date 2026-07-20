@@ -2,7 +2,7 @@ import { Box, Text, useInput } from "ink";
 import React, { useState } from "react";
 import { CLI_COLORS, UI_SYMBOLS } from "../../consts.js";
 import { useRowScroll } from "../hooks/use-row-scroll.js";
-import { Toast } from "./toast.js";
+import { KEY_SPACE } from "./hotkeys.js";
 
 export type CheckboxItem<T extends string = string> = {
   id: T;
@@ -11,7 +11,6 @@ export type CheckboxItem<T extends string = string> = {
 };
 
 export type CheckboxGridProps<T extends string = string> = {
-  title: string;
   subtitle?: string;
   items: CheckboxItem<T>[];
   selectedIds: T[];
@@ -25,7 +24,6 @@ export type CheckboxGridProps<T extends string = string> = {
 };
 
 export const CheckboxGrid = <T extends string = string>({
-  title,
   subtitle,
   items,
   selectedIds,
@@ -60,15 +58,13 @@ export const CheckboxGrid = <T extends string = string>({
       return;
     }
 
-    if (input === " ") {
+    if (input === KEY_SPACE) {
       const item = items[focusedIndex];
       if (item) {
         onToggle(item.id);
       }
     }
   });
-
-  const continueIndex = items.length;
 
   // When focus is on continue (past items), scroll to show last items
   const effectiveRow = focusedIndex >= items.length ? items.length - 1 : focusedIndex;
@@ -115,7 +111,6 @@ export const CheckboxGrid = <T extends string = string>({
 
   return (
     <Box flexDirection="column">
-      {/* <Toast>{title}</Toast> */}
       {subtitle && <Text dimColor>{subtitle}</Text>}
       <Box
         flexDirection="column"

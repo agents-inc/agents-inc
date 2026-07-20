@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import React, { Fragment } from "react";
-import { CLI_COLORS } from "../../consts.js";
+import { CLI_COLORS, FALLBACK_DOMAIN } from "../../consts.js";
 import type { StartupMessage } from "../../utils/logger.js";
 import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
 import { useWizardStore, type WizardStep } from "../../stores/wizard-store.js";
@@ -26,15 +26,12 @@ import {
   type TabDropdownProps,
 } from "./wizard-tabs.js";
 import { getDomainDisplayName, getStackName, orderDomains } from "./utils.js";
-import type { Domain } from "../../types/index.js";
-
-const FALLBACK_DOMAIN: Domain = "web";
 
 type KeyHintProps = {
   isVisible?: boolean;
   isActive?: boolean;
   label: string;
-  values: string[];
+  values: readonly string[];
 };
 
 const DefinitionItem: React.FC<KeyHintProps> = ({
@@ -65,11 +62,11 @@ const DefinitionItem: React.FC<KeyHintProps> = ({
   );
 };
 
-const HOT_KEYS: { label: string; values: string[] }[] = [
+const HOT_KEYS = [
   { label: "select", values: [KEY_LABEL_SPACE] },
   { label: "continue", values: [KEY_LABEL_ENTER] },
   { label: "back", values: [KEY_LABEL_ESC] },
-];
+] as const satisfies readonly { label: string; values: readonly string[] }[];
 
 const WizardFooter = () => {
   return (
@@ -121,20 +118,12 @@ export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, child
   const { completedSteps, skippedSteps } = store.getStepProgress();
   const { rows: terminalHeight } = useTerminalDimensions();
 
-  const handleSelectDomain = (domain: Domain) => {
-    const index = store.selectedDomains.indexOf(domain);
-    if (index !== -1) {
-      useWizardStore.getState().setCurrentDomainIndex(index);
-    }
-  };
-
   const domainNav: DomainNavProps | undefined =
     store.step === "build" && store.selectedDomains.length > 0
       ? {
           domains: orderDomains(store.selectedDomains),
           activeDomain: store.getCurrentDomain() || store.selectedDomains[0] || FALLBACK_DOMAIN,
           getDomainLabel: getDomainDisplayName,
-          onSelectDomain: handleSelectDomain,
         }
       : undefined;
 

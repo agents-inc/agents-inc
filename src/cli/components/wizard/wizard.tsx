@@ -22,7 +22,13 @@ import {
   HOTKEY_SETTINGS,
   isHotkey,
 } from "./hotkeys.js";
-import type { AgentName, Domain, DomainSelections, SkillId } from "../../types/index.js";
+import type {
+  AgentName,
+  Domain,
+  DomainSelections,
+  SelectionValidation,
+  SkillId,
+} from "../../types/index.js";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config.js";
 import type { StartupMessage } from "../../utils/logger.js";
 import { useBuildStepProps } from "../hooks/use-build-step-props.js";
@@ -45,17 +51,13 @@ export type WizardResultV2 = {
    */
   unresolvableSkillIds: SkillId[];
   cancelled: boolean;
-  validation: {
-    valid: boolean;
-    errors: Array<{ message: string }>;
-    warnings: Array<{ message: string }>;
-  };
+  validation: SelectionValidation;
 };
 
 export type WizardProps = {
   onComplete: (result: WizardResultV2) => void;
   onCancel: () => void;
-  version?: string;
+  version: string;
   logo?: string;
   projectDir?: string;
   startupMessages?: StartupMessage[];

@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useInput } from "ink";
+import { useInput, type Key } from "ink";
 
 type KeyboardNavigationHandlers = {
   onEnter?: (focusedIndex: number) => void;
@@ -51,10 +51,7 @@ export function useKeyboardNavigation(
 
   useInput(
     useCallback(
-      (
-        input: string,
-        key: { upArrow: boolean; downArrow: boolean; return: boolean; escape: boolean },
-      ) => {
+      (input: string, key: Key) => {
         if (key.escape) {
           onEscape?.();
           return;

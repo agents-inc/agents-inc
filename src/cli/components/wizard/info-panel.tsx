@@ -3,8 +3,8 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   CLI_COLORS,
   DEFAULT_PUBLIC_SOURCE_NAME,
+  formatSourceDisplayName,
   SCROLL_VIEWPORT,
-  SOURCE_DISPLAY_NAMES,
 } from "../../consts.js";
 import { findStack } from "../../lib/matrix/matrix-provider.js";
 import { useWizardStore } from "../../stores/wizard-store.js";
@@ -27,7 +27,7 @@ export const InfoPanel: React.FC = () => {
   const resolvedSourceIds =
     enabledSourceIds.length > 0 ? enabledSourceIds : [DEFAULT_PUBLIC_SOURCE_NAME];
 
-  const sourceNames = resolvedSourceIds.map((id) => SOURCE_DISPLAY_NAMES[id] ?? id).join(" · ");
+  const sourceNames = resolvedSourceIds.map((id) => formatSourceDisplayName(id)).join(" · ");
 
   const contentRef = useRef<DOMElement>(null);
   const [contentHeight, setContentHeight] = useState(0);

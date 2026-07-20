@@ -1,37 +1,30 @@
 import { Box, Text } from "ink";
 import React from "react";
-import { CLI_COLORS, EJECT_SOURCE, SOURCE_DISPLAY_NAMES, UI_SYMBOLS } from "../../consts.js";
-import { matrix } from "../../lib/matrix/matrix-provider.js";
+import { CLI_COLORS, EJECT_SOURCE, formatSourceDisplayName, UI_SYMBOLS } from "../../consts.js";
+import { getSkillDisplayName } from "../../lib/matrix/matrix-provider.js";
 import { computeScopeDiff } from "../../lib/wizard/index.js";
 import type { AgentDiffRow, DiffRowStatus, SkillDiffRow } from "../../lib/wizard/index.js";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config.js";
-import type { SkillId } from "../../types/index.js";
 import { useWizardStore } from "../../stores/wizard-store.js";
 
 export type SkillAgentSummaryProps = {
-  skillConfigs?: SkillConfig[];
-  agentConfigs?: AgentScopeConfig[];
+  skillConfigs: SkillConfig[];
+  agentConfigs: AgentScopeConfig[];
 };
 
-function getSkillDisplayName(id: SkillId): string {
-  return matrix.skills[id]?.displayName ?? id;
-}
-
-export const TableHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+const TableHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Text bold color={CLI_COLORS.WARNING}>
     {children}
   </Text>
 );
 
-export const ScopeLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+const ScopeLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Text color={CLI_COLORS.WHITE} backgroundColor={CLI_COLORS.LABEL_BG}>
     {` ${children} `}
   </Text>
 );
 
-export const EjectIcon: React.FC = () => (
-  <Text color={CLI_COLORS.WARNING}> {UI_SYMBOLS.EJECT}</Text>
-);
+const EjectIcon: React.FC = () => <Text color={CLI_COLORS.WARNING}> {UI_SYMBOLS.EJECT}</Text>;
 
 const DIFF_PREFIX: Record<DiffRowStatus, string> = {
   added: "+ ",
@@ -47,10 +40,6 @@ const DIFF_COLOR: Record<DiffRowStatus, string> = {
   unchanged: CLI_COLORS.NEUTRAL,
 };
 
-function sourceDisplayName(source: string): string {
-  return SOURCE_DISPLAY_NAMES[source] ?? source;
-}
-
 const SkillRow: React.FC<{ row: SkillDiffRow }> = ({ row }) => (
   <Box width="50%" flexDirection="row">
     <Text color={DIFF_COLOR[row.status]}>
@@ -60,7 +49,7 @@ const SkillRow: React.FC<{ row: SkillDiffRow }> = ({ row }) => (
     {row.status === "source-changed" && row.prevSource != null && (
       <Text dimColor>
         {" "}
-        ({sourceDisplayName(row.prevSource)} → {sourceDisplayName(row.source)})
+        ({formatSourceDisplayName(row.prevSource)} → {formatSourceDisplayName(row.source)})
       </Text>
     )}
     {row.source === EJECT_SOURCE && <EjectIcon />}
@@ -89,8 +78,8 @@ export const SkillAgentSummary: React.FC<SkillAgentSummaryProps> = ({
   const isInitMode = useWizardStore((s) => s.isInitMode);
 
   const diff = computeScopeDiff({
-    currentSkills: skillConfigs ?? [],
-    currentAgents: agentConfigs ?? [],
+    currentSkills: skillConfigs,
+    currentAgents: agentConfigs,
     installedSkillConfigs,
     installedAgentConfigs,
     isInitMode,

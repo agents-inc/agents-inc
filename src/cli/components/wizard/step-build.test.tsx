@@ -22,7 +22,7 @@ import {
 } from "../../lib/__tests__/test-constants";
 import { SKILLS } from "../../lib/__tests__/test-fixtures";
 import { createMockSkill } from "../../lib/__tests__/factories/skill-factories";
-import { createMockMatrix } from "../../lib/__tests__/factories/matrix-factories";
+import { buildCategoryMap, createMockMatrix } from "../../lib/__tests__/factories/matrix-factories";
 import { initializeMatrix } from "../../lib/matrix/matrix-provider";
 import {
   WEB_FRAMEWORK_CATEGORY,
@@ -35,8 +35,7 @@ import {
 
 const buildTestMatrix = (categories: CategoryDefinition[], skills: ResolvedSkill[]) =>
   createMockMatrix(...skills, {
-    // Test data construction cast: indexBy returns generic Record
-    categories: indexBy(categories, (c) => c.id) as Record<Category, CategoryDefinition>,
+    categories: buildCategoryMap(indexBy(categories, (c) => c.id)),
   });
 
 const defaultMatrix = buildTestMatrix(

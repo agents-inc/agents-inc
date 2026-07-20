@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from "ink";
 import React from "react";
 import { CLI_COLORS } from "../../consts.js";
-import type { WizardStep } from "../../stores/wizard-store.js";
+import { WIZARD_STEP_ORDER, type WizardStep } from "../../stores/wizard-store.js";
 import type { Domain } from "../../types/index.js";
 
 type WizardTabStep = {
@@ -25,7 +25,6 @@ export type DomainNavProps = {
   domains: Domain[];
   activeDomain: Domain;
   getDomainLabel: (domain: Domain) => string;
-  onSelectDomain?: (domain: Domain) => void;
 };
 
 export type WizardTabsProps = {
@@ -38,14 +37,20 @@ export type WizardTabsProps = {
   dropdowns?: Partial<Record<WizardStep, TabDropdownProps>>;
 };
 
-export const WIZARD_STEPS: WizardTabStep[] = [
-  { id: "stack", label: "Stack" },
-  { id: "domains", label: "Domains" },
-  { id: "build", label: "Skills" },
-  { id: "sources", label: "Sources" },
-  { id: "agents", label: "Agents" },
-  { id: "confirm", label: "Confirm" },
-];
+/** Display label per wizard step. Step ORDER has a single source: WIZARD_STEP_ORDER. */
+const WIZARD_STEP_LABELS = {
+  stack: "Stack",
+  domains: "Domains",
+  build: "Skills",
+  sources: "Sources",
+  agents: "Agents",
+  confirm: "Confirm",
+} as const satisfies Record<WizardStep, string>;
+
+export const WIZARD_STEPS: WizardTabStep[] = WIZARD_STEP_ORDER.map((id) => ({
+  id,
+  label: WIZARD_STEP_LABELS[id],
+}));
 
 /** Tab label for a wizard step; falls back to the raw id for unknown steps. */
 export function formatStepLabel(stepId: WizardStep): string {

@@ -1,5 +1,5 @@
-import { BUILT_IN_DOMAIN_ORDER } from "../../consts.js";
 import { findStack } from "../../lib/matrix/matrix-provider.js";
+import { orderDomains } from "../../lib/wizard/index.js";
 import type { Domain } from "../../types/index.js";
 import { isDomain } from "../../utils/type-guards.js";
 
@@ -15,6 +15,19 @@ const DOMAIN_DISPLAY_NAMES: Record<Domain, string> = {
   shared: "Shared",
 };
 
+/** One-line domain descriptions shown in the domain-selection grid. */
+export const BUILT_IN_DOMAIN_DESCRIPTIONS: Record<Domain, string> = {
+  web: "Frontend web applications",
+  api: "Backend APIs and services",
+  ai: "AI and LLM integrations",
+  cli: "Command-line tools",
+  mobile: "Mobile applications",
+  desktop: "Desktop applications",
+  infra: "CI/CD, deployment, and infrastructure",
+  meta: "Design patterns, code review, and research methodology",
+  shared: "Shared utilities and methodology",
+};
+
 export function getDomainDisplayName(domain: string): string {
   return (
     (isDomain(domain) ? DOMAIN_DISPLAY_NAMES[domain] : null) ??
@@ -27,9 +40,4 @@ export function getStackName(stackId: string | null): string | undefined {
   return findStack(stackId)?.name;
 }
 
-/** Sort domains into canonical display order: custom domains first (alphabetically), then built-in domains (per BUILT_IN_DOMAIN_ORDER). */
-export function orderDomains(domains: Domain[]): Domain[] {
-  const builtIn = BUILT_IN_DOMAIN_ORDER.filter((d) => domains.includes(d));
-  const custom = domains.filter((d) => !BUILT_IN_DOMAIN_ORDER.includes(d)).sort();
-  return [...custom, ...builtIn];
-}
+export { orderDomains };

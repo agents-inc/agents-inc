@@ -1,13 +1,15 @@
 import { flatMap } from "remeda";
 import { create } from "zustand";
-import { BUILT_IN_DOMAIN_ORDER, DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../consts.js";
+import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../consts.js";
 import type { InstallMode } from "../lib/installation/index.js";
 import { deriveInstallMode as sharedDeriveInstallMode } from "../lib/installation/installation.js";
-import type { AgentScopeConfig, SkillConfig } from "../types/config.js";
+import type { AgentScopeConfig, SkillConfig, SkillScope } from "../types/config.js";
 import { matrix, getSkillById, getCategoryDomain } from "../lib/matrix/matrix-provider.js";
 import {
   buildCategoriesForDomain,
   isCompatibleWithSelectedFrameworks,
+  FRAMEWORK_CATEGORY_ID,
+  orderDomains,
 } from "../lib/wizard/index.js";
 import type {
   AgentName,
@@ -15,7 +17,6 @@ import type {
   Domain,
   DomainSelections,
   SkillAlias,
-  SkillAssignment,
   SkillId,
   SkillSource,
   Category,
@@ -23,28 +24,32 @@ import type {
   ResolvedSkill,
 } from "../types/index.js";
 import type { SourceOption, SourceRow } from "../components/wizard/source-grid.js";
-import { isAgentName } from "../utils/type-guards.js";
 import { warn } from "../utils/logger.js";
-import { typedEntries, typedFromEntries, typedKeys } from "../utils/typed-object.js";
+import { typedEntries, typedFromEntries, typedKeys, typedValues } from "../utils/typed-object.js";
+
+/** Toast strings surfaced by scope/selection guards (E2E asserts these verbatim). */
+const TOAST_MESSAGES = {
+  GLOBAL_SKILLS_LOCKED: "Global skills cannot be changed from project scope",
+  ONLY_SKILL_IN_CATEGORY: "Cannot deselect the only skill in this category",
+  INSTALLED_AT_BOTH_SCOPES: "Installed at both scopes — use space to change project scope",
+  ALREADY_EJECTED_AT_GLOBAL: "Already exists as ejected skill at global scope",
+  GLOBAL_AGENTS_LOCKED: "Global agents cannot be changed from project scope",
+} as const;
 
 /** First defined source among candidates, else the default public source. */
 function resolveEffectiveSource(...candidates: Array<string | undefined>): string {
   return candidates.find((source) => source !== undefined) ?? DEFAULT_PUBLIC_SOURCE_NAME;
 }
 
-function createDefaultSkillConfig(id: SkillId): SkillConfig {
-  const skill = matrix.skills[id];
-  const primarySource = skill?.availableSources?.find((s) => s.primary)?.name;
-  return { id, scope: "global", source: primarySource ?? DEFAULT_PUBLIC_SOURCE_NAME };
+/** Name of a skill's primary available source, if any. */
+function primarySourceName(skill: ResolvedSkill | undefined): string | undefined {
+  return skill?.availableSources?.find((s) => s.primary)?.name;
 }
 
-/** Sort domains into canonical order: custom domains first (alphabetically), then built-in domains per BUILT_IN_DOMAIN_ORDER. */
-function sortDomainsCanonically(domains: Domain[]): Domain[] {
-  const builtInSet = new Set<Domain>(BUILT_IN_DOMAIN_ORDER);
-  return [
-    ...domains.filter((d) => !builtInSet.has(d)).sort(),
-    ...BUILT_IN_DOMAIN_ORDER.filter((d) => domains.includes(d)),
-  ];
+function createDefaultSkillConfig(id: SkillId): SkillConfig {
+  const skill = matrix.skills[id];
+  const primarySource = primarySourceName(skill);
+  return { id, scope: "global", source: primarySource ?? DEFAULT_PUBLIC_SOURCE_NAME };
 }
 
 /** Finds framework-incompatible skill IDs in web domain selections, excluding already-excluded skills. */
@@ -52,7 +57,7 @@ function findIncompatibleWebSkills(
   webSelections: CategorySelections,
   skillConfigs: SkillConfig[],
 ): Set<SkillId> {
-  const frameworkSelections = webSelections["web-framework"] ?? [];
+  const frameworkSelections = webSelections[FRAMEWORK_CATEGORY_ID] ?? [];
   if (frameworkSelections.length === 0) return new Set();
 
   const excludedIds = new Set(skillConfigs.filter((s) => s.excluded).map((s) => s.id));
@@ -60,7 +65,7 @@ function findIncompatibleWebSkills(
 
   return new Set(
     flatMap(typedEntries(webSelections), ([cat, skills]) =>
-      cat === "web-framework" || !skills
+      cat === FRAMEWORK_CATEGORY_ID || !skills
         ? []
         : skills.filter(
             (id) =>
@@ -157,7 +162,7 @@ function applySkillRemoval(
 
 /** All skill IDs across a domain's category selections, in category order. */
 function flattenCategorySelections(selections: CategorySelections): SkillId[] {
-  return Object.values(selections).filter(Boolean).flat();
+  return typedValues(selections).flat();
 }
 
 /** Collects all skill IDs from a domain's category selections. */
@@ -207,7 +212,13 @@ function reconcileSkillConfigs(
         sc.id === id && sc.excluded ? { ...sc, excluded: undefined } : sc,
       );
     } else if (!result.some((sc) => sc.id === id)) {
-      result = [...result, createDefaultSkillConfig(id)];
+      // Re-selecting a skill that the hydration snapshot still holds is a RESTORE, not a fresh
+      // add: it must come back with its persisted scope and source rather than the wizard
+      // defaults (a project-scoped eject skill would otherwise round-trip to global+marketplace
+      // and trigger a bogus scope/source migration). buildSkillConfigForId degrades to exactly
+      // createDefaultSkillConfig's output when the snapshot has no entry, so genuinely-new
+      // selections are unaffected.
+      result = [...result, buildSkillConfigForId(id, installedSkillConfigs)];
     }
   }
 
@@ -312,13 +323,13 @@ function restoreDualScopeAgent(
 }
 
 /** Builds a SkillConfig for a resolved skill ID, preferring saved config values. */
-function buildSkillConfigForId(id: SkillId, savedConfigs?: SkillConfig[]): SkillConfig {
+function buildSkillConfigForId(id: SkillId, savedConfigs?: SkillConfig[] | null): SkillConfig {
   // Prefer project-scoped entry over global when duplicates exist (D-198 defensive fix)
   const saved =
     savedConfigs?.find((sc) => sc.id === id && !sc.excluded && sc.scope === "project") ??
     savedConfigs?.find((sc) => sc.id === id && !sc.excluded);
   const skill = matrix.skills[id];
-  const primarySource = skill?.availableSources?.find((s) => s.primary)?.name;
+  const primarySource = primarySourceName(skill);
   return {
     id,
     scope: saved?.scope ?? "global",
@@ -456,7 +467,6 @@ function buildSkillSourceOptions(
     sortedSources.length > 0
       ? sortedSources.map((source) => ({
           id: source.name,
-          displayName: source.displayName,
           selected: selectedSource === source.name,
           installed: source.installed,
         }))
@@ -507,20 +517,15 @@ function classifySkillSourceRows(
     return [{ skillId, options: excludedOptions, scope: "global" as const, readOnly: true }];
   }
 
-  const isInstalledGlobal = installedSkillConfigs?.some(
+  const installedGlobalConfig = installedSkillConfigs?.find(
     (sc) => sc.id === skillId && sc.scope === "global" && !sc.excluded,
   );
-  const wasReScoped =
-    !isEditingFromGlobalScope && !!isInstalledGlobal && configEntry?.scope === "project";
 
-  if (wasReScoped) {
+  if (!isEditingFromGlobalScope && installedGlobalConfig && configEntry?.scope === "project") {
     // Skill toggled from global to project — emit locked global copy + editable project copy
-    const installedSource = installedSkillConfigs!.find(
-      (sc) => sc.id === skillId && sc.scope === "global" && !sc.excluded,
-    )!.source;
     const globalOptions = options.map((o) => ({
       ...o,
-      selected: o.id === installedSource,
+      selected: o.id === installedGlobalConfig.source,
     }));
     return [
       { skillId, options: globalOptions, scope: "global" as const, readOnly: true },
@@ -528,12 +533,12 @@ function classifySkillSourceRows(
     ];
   }
 
-  const readOnly = !isEditingFromGlobalScope && !!isInstalledGlobal;
+  const readOnly = !isEditingFromGlobalScope && !!installedGlobalConfig;
   return [
     {
       skillId,
       options,
-      scope: configEntry?.scope as "project" | "global" | undefined,
+      scope: configEntry?.scope,
       ...(readOnly ? { readOnly: true as const } : {}),
     },
   ];
@@ -562,7 +567,13 @@ export type WizardStep =
   | "agents" // Select which agents to compile
   | "confirm"; // Final confirmation
 
-const WIZARD_STEP_ORDER = [
+/** How the user builds their config: from a pre-built stack, or skill-by-skill. */
+type WizardApproach = "stack" | "scratch";
+
+/** For the stack approach: use the stack's defaults, or customize its skills. */
+type StackAction = "defaults" | "customize";
+
+export const WIZARD_STEP_ORDER = [
   "stack",
   "domains",
   "build",
@@ -584,9 +595,9 @@ const WIZARD_STEP_ORDER = [
 export type WizardState = {
   step: WizardStep;
 
-  approach: "stack" | "scratch" | null;
+  approach: WizardApproach | null;
   selectedStackId: string | null;
-  stackAction: "defaults" | "customize" | null;
+  stackAction: StackAction | null;
 
   selectedDomains: Domain[];
 
@@ -669,7 +680,7 @@ export type WizardState = {
    *
    * Side effects: sets `approach`
    */
-  setApproach: (approach: "stack" | "scratch" | null) => void;
+  setApproach: (approach: WizardApproach | null) => void;
   /**
    * Select a stack by ID, or null to deselect.
    * @param stackId - Stack identifier from suggestedStacks, or null to clear
@@ -683,22 +694,7 @@ export type WizardState = {
    *
    * Side effects: sets `stackAction`
    */
-  setStackAction: (action: "defaults" | "customize") => void;
-  /**
-   * Pre-populate domainSelections from a stack's agent-to-skill mappings.
-   *
-   * Iterates all agents in the stack, resolving each category's skill assignments
-   * to the appropriate domain. Enables all domains and deduplicates skill IDs.
-   *
-   * @param stack - Stack definition with agent-level skill assignments
-   * @param stack.agents - Record of agent name to `{ category: SkillAssignment[] }` mappings
-   * @param categories - Category definitions used to resolve category -> domain mapping
-   *
-   * Side effects: sets `domainSelections`, sets `selectedDomains` to ALL_DOMAINS
-   */
-  populateFromStack: (stack: {
-    agents: Record<string, Partial<Record<Category, SkillAssignment[]>>>;
-  }) => void;
+  setStackAction: (action: StackAction) => void;
   /**
    * Pre-populate domainSelections from a flat list of installed skill IDs.
    *
@@ -933,12 +929,7 @@ export type WizardState = {
    *   - `skillId` - Canonical resolved skill ID
    *   - `options` - Available sources with selection state and install status
    */
-  buildSourceRows: () => {
-    skillId: SkillId;
-    options: SourceOption[];
-    scope?: "global" | "project";
-    readOnly?: boolean;
-  }[];
+  buildSourceRows: () => SourceRow[];
 };
 
 /** State-only fields from WizardState (excludes actions/getters). Used to type createInitialState(). */
@@ -985,7 +976,7 @@ export const createInitialState = (overrides?: Partial<WizardStateData>): Wizard
   selectedDomains: [],
   currentDomainIndex: 0,
   domainSelections: {},
-  /** Snapshot of domainSelections from populateFromStack/populateFromSkillIds, used to restore on domain re-toggle */
+  /** Snapshot of domainSelections from populateFromSkillIds, used to restore on domain re-toggle */
   _stackDomainSelections: null,
   showLabels: false,
   filterIncompatible: false,
@@ -1042,53 +1033,6 @@ export const useWizardStore = create<WizardState>((set, get) => ({
 
   setStackAction: (action) => set({ stackAction: action }),
 
-  populateFromStack: (stack) =>
-    set(() => {
-      const { categories } = matrix;
-      const domainSelections: DomainSelections = {};
-      const domains = new Set<Domain>();
-      const allSkillIds = new Set<SkillId>();
-
-      for (const agentConfig of Object.values(stack.agents)) {
-        for (const [subcat, assignments] of typedEntries<Category, SkillAssignment[]>(
-          agentConfig,
-        )) {
-          const category = categories[subcat];
-          const domain = category?.domain;
-
-          if (!domain || !assignments) {
-            continue;
-          }
-
-          domains.add(domain);
-
-          for (const assignment of assignments) {
-            if (addToDomainSelections(domainSelections, domain, subcat, assignment.id)) {
-              allSkillIds.add(assignment.id);
-            }
-          }
-        }
-      }
-
-      const skillConfigs: SkillConfig[] = [...allSkillIds].map(createDefaultSkillConfig);
-
-      // Derive agent preselection from the stack's agent keys
-      const stackAgents: AgentName[] = Object.keys(stack.agents).filter(isAgentName).sort();
-      const agentConfigs: AgentScopeConfig[] = stackAgents.map((name) => ({
-        name,
-        scope: "global" as const,
-      }));
-
-      return {
-        domainSelections,
-        _stackDomainSelections: structuredClone(domainSelections),
-        selectedDomains: sortDomainsCanonically([...domains]),
-        skillConfigs,
-        selectedAgents: stackAgents,
-        agentConfigs,
-      };
-    }),
-
   populateFromSkillIds: (skillIds, savedConfigs) =>
     set(() => {
       const domainSelections: DomainSelections = {};
@@ -1114,7 +1058,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         );
       }
 
-      const selectedDomains = sortDomainsCanonically(typedKeys<Domain>(domainSelections));
+      const selectedDomains = orderDomains(typedKeys<Domain>(domainSelections));
 
       const skillConfigs: SkillConfig[] = resolvedSkillIds.map((id) =>
         buildSkillConfigForId(id, savedConfigs),
@@ -1163,7 +1107,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         const restoredSkillIds = [...collectSkillIdsFromSelections(stackSelections)];
 
         return {
-          selectedDomains: sortDomainsCanonically([...state.selectedDomains, domain]),
+          selectedDomains: orderDomains([...state.selectedDomains, domain]),
           domainSelections: {
             ...state.domainSelections,
             [domain]: structuredClone(stackSelections),
@@ -1173,7 +1117,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       }
 
       return {
-        selectedDomains: sortDomainsCanonically([...state.selectedDomains, domain]),
+        selectedDomains: orderDomains([...state.selectedDomains, domain]),
       };
     }),
 
@@ -1199,17 +1143,17 @@ export const useWizardStore = create<WizardState>((set, get) => ({
           hasGlobalTombstone(installed, technology) &&
           hasGlobalActive(state.skillConfigs, technology));
       if (isActiveGlobal && !state.isEditingFromGlobalScope && !state.isInitMode) {
-        return { toastMessage: "Global skills cannot be changed from project scope" };
+        return { toastMessage: TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED };
       }
 
       if (isSelected) {
         const categoryDef = matrix.categories[category];
         if (categoryDef?.exclusive && categoryDef?.required) {
-          const categorySkillCount = Object.values(matrix.skills).filter(
-            (s) => s?.category === category,
+          const categorySkillCount = typedValues(matrix.skills).filter(
+            (s) => s.category === category,
           ).length;
           if (categorySkillCount <= 1) {
-            return { toastMessage: "Cannot deselect the only skill in this category" };
+            return { toastMessage: TOAST_MESSAGES.ONLY_SKILL_IN_CATEGORY };
           }
         }
       }
@@ -1224,7 +1168,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
               hasGlobalActive(state.skillConfigs, selectedId)),
         );
         if (hasGlobalSelection && !state.isEditingFromGlobalScope && !state.isInitMode) {
-          return { toastMessage: "Global skills cannot be changed from project scope" };
+          return { toastMessage: TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED };
         }
       }
 
@@ -1325,6 +1269,22 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       const removed = findIncompatibleWebSkills(webSelections, state.skillConfigs);
       if (removed.size === 0) return { filterIncompatible: true };
 
+      // F uninstalls every incompatible skill, so it must honour the same global lock the
+      // spacebar path applies in toggleTechnology: a project-scope edit may never uninstall a
+      // globally installed skill. Every targeted id is a removal here, so the tombstone arm
+      // (the stale-snapshot state a persisted `[P][G]` reaches after an in-session collapse)
+      // needs no `isSelected` gate. The whole operation is refused — filter included — rather
+      // than silently removing only the unlocked subset.
+      const installed = state.installedSkillConfigs ?? [];
+      const removesLockedGlobal = [...removed].some(
+        (id) =>
+          hasGlobalActive(installed, id) ||
+          (hasGlobalTombstone(installed, id) && hasGlobalActive(state.skillConfigs, id)),
+      );
+      if (removesLockedGlobal && !state.isEditingFromGlobalScope && !state.isInitMode) {
+        return { toastMessage: TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED };
+      }
+
       return {
         filterIncompatible: true,
         domainSelections: {
@@ -1365,7 +1325,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         hasGlobalTombstone(state.installedSkillConfigs ?? [], skillId) &&
         isDualScopePair(state.skillConfigs, skillId)
       ) {
-        return { toastMessage: "Installed at both scopes — use space to change project scope" };
+        return { toastMessage: TOAST_MESSAGES.INSTALLED_AT_BOTH_SCOPES };
       }
 
       // Guard: block project eject → global when global eject already exists (would overwrite)
@@ -1382,7 +1342,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
             (sc) => sc.id === skillId && sc.excluded,
           );
           if (!hasExcludedEntry) {
-            return { toastMessage: "Already exists as ejected skill at global scope" };
+            return { toastMessage: TOAST_MESSAGES.ALREADY_EJECTED_AT_GLOBAL };
           }
         }
       }
@@ -1396,10 +1356,10 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       const wasInstalledGlobally =
         state.installedSkillConfigs?.some((sc) => sc.id === skillId && sc.scope === "global") ??
         false;
-      const newScope = config.scope === "project" ? "global" : "project";
+      const newScope = config.scope === "project" ? ("global" as const) : ("project" as const);
 
       let updatedConfigs = state.skillConfigs.map((sc) =>
-        sc.id === skillId && !sc.excluded ? { ...sc, scope: newScope as "project" | "global" } : sc,
+        sc.id === skillId && !sc.excluded ? { ...sc, scope: newScope } : sc,
       );
 
       let pairRebuilt = false;
@@ -1556,7 +1516,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         (agentHasGlobalTombstone(installed, agent) &&
           agentHasGlobalActive(state.agentConfigs, agent));
       if (isActiveGlobal && !state.isEditingFromGlobalScope && !state.isInitMode) {
-        return { toastMessage: "Global agents cannot be changed from project scope" };
+        return { toastMessage: TOAST_MESSAGES.GLOBAL_AGENTS_LOCKED };
       }
 
       const isInList = state.selectedAgents.includes(agent);
@@ -1622,7 +1582,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         agentHasGlobalTombstone(state.installedAgentConfigs ?? [], agentName) &&
         isDualScopeAgentPair(state.agentConfigs, agentName)
       ) {
-        return { toastMessage: "Installed at both scopes — use space to change project scope" };
+        return { toastMessage: TOAST_MESSAGES.INSTALLED_AT_BOTH_SCOPES };
       }
 
       // Counts a global tombstone as "installed globally" (a tombstone means a real global
@@ -1703,7 +1663,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
   reset: () => set(createInitialState()),
 
   getAllSelectedTechnologies: () => {
-    return Object.values(get().domainSelections).filter(Boolean).flatMap(flattenCategorySelections);
+    return typedValues(get().domainSelections).flatMap(flattenCategorySelections);
   },
 
   getSelectedTechnologiesPerDomain: () => {
@@ -1779,7 +1739,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       const skill = getSkillById(tech);
       const skillId = skill.id;
       const configEntry = skillConfigs.find((sc) => sc.id === skillId);
-      const primarySource = skill.availableSources?.find((s) => s.primary)?.name;
+      const primarySource = primarySourceName(skill);
       const selectedSource = resolveEffectiveSource(
         configEntry?.source,
         skill.activeSource?.name,

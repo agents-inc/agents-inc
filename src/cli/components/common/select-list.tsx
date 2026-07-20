@@ -9,7 +9,7 @@ export type SelectListItem<T> = {
 };
 
 export type SelectListProps<T> = {
-  items: SelectListItem<T>[];
+  items: readonly SelectListItem<T>[];
   onSelect: (value: T) => void;
   onCancel?: () => void;
   renderItem?: (item: SelectListItem<T>, isFocused: boolean) => React.ReactNode;

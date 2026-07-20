@@ -10,16 +10,10 @@ import {
   ALL_SKILLS_TEST_CATEGORIES_MATRIX,
   ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX,
   ALL_SKILLS_WEB_AND_API_MATRIX,
-  ALL_SKILLS_WEB_PAIR_CATEGORIES_MATRIX,
-  ALL_SKILLS_WEB_FRAMEWORK_MATRIX,
-  ALL_SKILLS_METHODOLOGY_MATRIX,
-  ALL_SKILLS_METHODOLOGY_BARE_MATRIX,
-  ALL_SKILLS_MULTI_DOMAIN_MATRIX,
   REACT_HONO_FRAMEWORK_API_MATRIX,
   REACT_HONO_WEB_API_DOMAINS_MATRIX,
 } from "../lib/__tests__/mock-data/mock-matrices";
-import type { AgentScopeConfig, SkillConfig, SkillId, SkillSource } from "../types";
-import { createMockSkillAssignment as sa } from "../lib/__tests__/factories/skill-factories";
+import type { AgentScopeConfig, SkillConfig, SkillSource } from "../types";
 import { EXPECTED_AGENTS } from "../lib/__tests__/expected-values";
 
 describe("WizardStore", () => {
@@ -298,33 +292,6 @@ describe("WizardStore", () => {
       expect(store.getAllSelectedTechnologies()).toStrictEqual(["api-framework-hono"]);
     });
 
-    it("should restore stack skills when re-toggling a domain ON after populateFromStack", () => {
-      const store = useWizardStore.getState();
-
-      const stack: Parameters<typeof store.populateFromStack>[0] = {
-        agents: {
-          web: {
-            "web-framework": [sa("web-framework-react", true)],
-            "web-client-state": [sa("web-state-zustand")],
-          },
-          api: { "api-api": [sa("api-framework-hono", true)] },
-        },
-      };
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-
-      store.populateFromStack(stack);
-
-      // Deselect web domain (clears its skills)
-      store.toggleDomain("web");
-      expect(useWizardStore.getState().domainSelections.web).toBeUndefined();
-
-      // Re-select web domain (should restore stack skills)
-      store.toggleDomain("web");
-      const { domainSelections } = useWizardStore.getState();
-      expect(domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
-      expect(domainSelections.web!["web-client-state"]).toStrictEqual(["web-state-zustand"]);
-    });
-
     it("should restore stack skills when re-toggling a domain ON after populateFromSkillIds", () => {
       const store = useWizardStore.getState();
 
@@ -357,33 +324,6 @@ describe("WizardStore", () => {
       const { domainSelections } = useWizardStore.getState();
       expect(domainSelections.web).toBeUndefined();
       expect(store.getAllSelectedTechnologies()).toStrictEqual([]);
-    });
-
-    it("should not affect other domains when restoring stack skills for one domain", () => {
-      const store = useWizardStore.getState();
-
-      const stack: Parameters<typeof store.populateFromStack>[0] = {
-        agents: {
-          web: { "web-framework": [sa("web-framework-react", true)] },
-          api: { "api-api": [sa("api-framework-hono", true)] },
-        },
-      };
-      initializeMatrix(ALL_SKILLS_WEB_AND_API_MATRIX);
-
-      store.populateFromStack(stack);
-
-      // Manually change api skills
-      store.toggleTechnology("api", "api-api", "api-framework-hono", true); // deselect
-      store.toggleTechnology("api", "api-api", "api-framework-express", true); // select new
-
-      // Toggle web off then on
-      store.toggleDomain("web");
-      store.toggleDomain("web");
-
-      // Web should be restored from stack, api should keep manual changes
-      const { domainSelections } = useWizardStore.getState();
-      expect(domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
-      expect(domainSelections.api!["api-api"]).toStrictEqual(["api-framework-express"]);
     });
   });
 
@@ -851,6 +791,47 @@ describe("WizardStore", () => {
       );
     });
 
+    it("restores the persisted project scope and eject source when a project-only skill is deselected and re-selected in one session", () => {
+      const store = useWizardStore.getState();
+      const persisted = buildSkillConfigs(["web-framework-react"], {
+        scope: "project",
+        source: "eject",
+      });
+      useWizardStore.setState({
+        domainSelections: { web: { "web-framework": ["web-framework-react"] } },
+        skillConfigs: persisted,
+        installedSkillConfigs: persisted,
+        isEditingFromGlobalScope: false,
+        isInitMode: false,
+      });
+
+      // Deselect: a project-only skill has no global install underneath, so it is dropped.
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      expect(useWizardStore.getState().skillConfigs).toStrictEqual([]);
+
+      // Re-select: a RESTORE of the hydration snapshot, not a fresh add at wizard defaults.
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      expect(useWizardStore.getState().skillConfigs).toStrictEqual(persisted);
+    });
+
+    it("adds a genuinely new skill at wizard defaults when the hydration snapshot has no entry for it", () => {
+      const store = useWizardStore.getState();
+      useWizardStore.setState({
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          source: "eject",
+        }),
+        isEditingFromGlobalScope: false,
+        isInitMode: false,
+      });
+
+      store.toggleTechnology("web", "web-testing", "web-testing-vitest", false);
+
+      expect(useWizardStore.getState().skillConfigs).toStrictEqual(
+        buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+      );
+    });
+
     describe("dual-scope spacebar toggle", () => {
       const dualScopeConfigs = (): SkillConfig[] => [
         ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
@@ -1314,31 +1295,6 @@ describe("WizardStore", () => {
       expect(skillConfigs[0].source).toBe("eject");
     });
 
-    it("should populate skillConfigs from populateFromStack", () => {
-      const store = useWizardStore.getState();
-
-      const stack: Parameters<typeof store.populateFromStack>[0] = {
-        agents: {
-          web: {
-            "web-framework": [sa("web-framework-react", true)],
-            "web-client-state": [sa("web-state-zustand")],
-          },
-        },
-      };
-      initializeMatrix(ALL_SKILLS_WEB_PAIR_CATEGORIES_MATRIX);
-
-      store.populateFromStack(stack);
-
-      const { skillConfigs } = useWizardStore.getState();
-      expect(skillConfigs).toHaveLength(2);
-      expect(skillConfigs.map((sc) => sc.id)).toStrictEqual([
-        "web-framework-react",
-        "web-state-zustand",
-      ]);
-      expect(skillConfigs.every((sc) => sc.scope === "global")).toBe(true);
-      expect(skillConfigs.every((sc) => sc.source === "agents-inc")).toBe(true);
-    });
-
     it("should populate skillConfigs from populateFromSkillIds", () => {
       const store = useWizardStore.getState();
 
@@ -1558,31 +1514,6 @@ describe("WizardStore", () => {
       expect(useWizardStore.getState().skillConfigs).toStrictEqual([]);
     });
 
-    it("should restore skillConfigs when domain is re-toggled after populateFromStack during fresh init", () => {
-      const store = useWizardStore.getState();
-
-      const stack: Parameters<typeof store.populateFromStack>[0] = {
-        agents: {
-          web: { "web-framework": [sa("web-framework-react", true)] },
-        },
-      };
-      initializeMatrix(ALL_SKILLS_WEB_FRAMEWORK_MATRIX);
-
-      store.populateFromStack(stack);
-      expect(useWizardStore.getState().skillConfigs).toHaveLength(1);
-
-      store.toggleDomain("web");
-      // Fresh init: global skill is removed, not excluded
-      expect(useWizardStore.getState().skillConfigs).toHaveLength(0);
-
-      store.toggleDomain("web");
-      // Re-toggling restores the domain from stack snapshot
-      const { skillConfigs } = useWizardStore.getState();
-      expect(skillConfigs).toHaveLength(1);
-      expect(skillConfigs[0].id).toBe("web-framework-react");
-      expect(skillConfigs[0].excluded).toBeUndefined();
-    });
-
     it("should reset skillConfigs and focusedSkillId on reset", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
@@ -1743,157 +1674,6 @@ describe("WizardStore", () => {
       expect(state.selectedStackId).toBeNull();
       expect(state.selectedDomains).toStrictEqual([]);
       expect(state.history).toStrictEqual([]);
-    });
-  });
-
-  describe("populateFromStack", () => {
-    it("should set selectedDomains to only domains present in stack contents", () => {
-      const store = useWizardStore.getState();
-
-      const stack: Parameters<typeof store.populateFromStack>[0] = {
-        agents: {
-          web: { "web-framework": [sa("web-framework-react", true)] },
-        },
-      };
-      initializeMatrix(ALL_SKILLS_WEB_FRAMEWORK_MATRIX);
-
-      store.populateFromStack(stack);
-
-      const { selectedDomains, domainSelections } = useWizardStore.getState();
-
-      expect(selectedDomains).toStrictEqual(["web"]);
-
-      expect(domainSelections.web?.["web-framework"]).toStrictEqual(["web-framework-react"]);
-      expect(domainSelections.api).toBeUndefined();
-    });
-
-    it("should populate domainSelections from stack agents", () => {
-      const store = useWizardStore.getState();
-
-      const stack: Parameters<typeof store.populateFromStack>[0] = {
-        agents: {
-          web: {
-            "web-framework": [sa("web-framework-react", true)],
-            "web-client-state": [sa("web-state-zustand")],
-          },
-          api: { "api-api": [sa("api-framework-hono", true)] },
-        },
-      };
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-
-      store.populateFromStack(stack);
-
-      const { domainSelections } = useWizardStore.getState();
-
-      expect(domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
-      expect(domainSelections.web!["web-client-state"]).toStrictEqual(["web-state-zustand"]);
-      expect(domainSelections.api!["api-api"]).toStrictEqual(["api-framework-hono"]);
-    });
-
-    it("should skip entries without a domain", () => {
-      const store = useWizardStore.getState();
-
-      const stack: Parameters<typeof store.populateFromStack>[0] = {
-        agents: {
-          misc: { "meta-reviewing": [sa("meta-methodology-vitest" as SkillId)] },
-        },
-      };
-      initializeMatrix(ALL_SKILLS_METHODOLOGY_BARE_MATRIX);
-
-      store.populateFromStack(stack);
-
-      const { domainSelections } = useWizardStore.getState();
-
-      expect(typedKeys(domainSelections)).toHaveLength(0);
-    });
-
-    it("should populate multiple skills from array-valued categories", () => {
-      const store = useWizardStore.getState();
-
-      const stack: Parameters<typeof store.populateFromStack>[0] = {
-        agents: {
-          "pattern-scout": {
-            "meta-reviewing": [
-              sa("meta-methodology-research-methodology", true),
-              sa("meta-reviewing-reviewing", true),
-              sa("meta-reviewing-cli-reviewing", true),
-            ],
-          },
-        },
-      };
-      initializeMatrix(ALL_SKILLS_METHODOLOGY_MATRIX);
-
-      store.populateFromStack(stack);
-
-      const { domainSelections } = useWizardStore.getState();
-
-      expect(domainSelections.meta!["meta-reviewing"]).toStrictEqual([
-        "meta-methodology-research-methodology",
-        "meta-reviewing-reviewing",
-        "meta-reviewing-cli-reviewing",
-      ]);
-    });
-
-    it("should handle single-element and multi-element arrays across agents", () => {
-      const store = useWizardStore.getState();
-
-      const stack: Parameters<typeof store.populateFromStack>[0] = {
-        agents: {
-          web: {
-            "web-framework": [sa("web-framework-react", true)],
-            "meta-reviewing": [
-              sa("meta-methodology-research-methodology", true),
-              sa("meta-reviewing-reviewing", true),
-            ],
-          },
-          api: { "api-api": [sa("api-framework-hono", true)] },
-        },
-      };
-      initializeMatrix(ALL_SKILLS_MULTI_DOMAIN_MATRIX);
-
-      store.populateFromStack(stack);
-
-      const { domainSelections } = useWizardStore.getState();
-
-      expect(domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
-      expect(domainSelections.meta!["meta-reviewing"]).toStrictEqual([
-        "meta-methodology-research-methodology",
-        "meta-reviewing-reviewing",
-      ]);
-      expect(domainSelections.api!["api-api"]).toStrictEqual(["api-framework-hono"]);
-    });
-
-    it("should deduplicate skills from arrays across multiple agents", () => {
-      const store = useWizardStore.getState();
-
-      const stack: Parameters<typeof store.populateFromStack>[0] = {
-        agents: {
-          agent1: {
-            "meta-reviewing": [
-              sa("meta-methodology-research-methodology", true),
-              sa("meta-reviewing-reviewing", true),
-            ],
-          },
-          agent2: {
-            "meta-reviewing": [
-              sa("meta-reviewing-reviewing", true),
-              sa("meta-reviewing-cli-reviewing", true),
-            ],
-          },
-        },
-      };
-      initializeMatrix(ALL_SKILLS_METHODOLOGY_MATRIX);
-
-      store.populateFromStack(stack);
-
-      const { domainSelections } = useWizardStore.getState();
-
-      // Should deduplicate: anti-over-engineering appears in both agents
-      expect(domainSelections.meta!["meta-reviewing"]).toStrictEqual([
-        "meta-methodology-research-methodology",
-        "meta-reviewing-reviewing",
-        "meta-reviewing-cli-reviewing",
-      ]);
     });
   });
 
@@ -3307,6 +3087,94 @@ describe("WizardStore", () => {
       const state = useWizardStore.getState();
       // SCSS has compatibleWith: [] so it should remain
       expect(state.domainSelections.web!["web-styling"]).toContain("web-styling-scss-modules");
+    });
+
+    it("refuses to uninstall an actively-installed global skill from project scope", () => {
+      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
+      const store = useWizardStore.getState();
+
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      store.toggleTechnology("web", "web-client-state", "web-state-pinia", false);
+      store.toggleTechnology("web", "web-client-state", "web-state-zustand", false);
+
+      // pinia is globally installed; the project-scope edit has no authority over it.
+      useWizardStore.setState({
+        installedSkillConfigs: buildSkillConfigs(["web-state-pinia"], {
+          scope: "global",
+          source: "eject",
+        }),
+        isEditingFromGlobalScope: false,
+        isInitMode: false,
+      });
+
+      store.toggleFilterIncompatible();
+
+      const state = useWizardStore.getState();
+      expect(state.toastMessage).toBe("Global skills cannot be changed from project scope");
+      // The whole operation is refused: the filter stays off and nothing is removed.
+      expect(state.filterIncompatible).toBe(false);
+      expect(state.domainSelections.web!["web-client-state"]).toContain("web-state-pinia");
+      expect(state.skillConfigs.some((sc) => sc.id === "web-state-pinia")).toBe(true);
+      expect(state.domainSelections.web!["web-client-state"]).toContain("web-state-zustand");
+    });
+
+    it("refuses the filter when a stale global tombstone has collapsed to an active global entry", () => {
+      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
+      const store = useWizardStore.getState();
+
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      store.toggleTechnology("web", "web-client-state", "web-state-pinia", false);
+
+      // Snapshot still holds the persisted [P][G] tombstone while the live config has already
+      // collapsed to a plain active global entry — the same shape toggleTechnology blocks.
+      useWizardStore.setState({
+        skillConfigs: buildSkillConfigs(["web-state-pinia"], {
+          scope: "global",
+          source: "eject",
+        }),
+        installedSkillConfigs: [
+          ...buildSkillConfigs(["web-state-pinia"], { scope: "project", source: "eject" }),
+          ...buildSkillConfigs(["web-state-pinia"], {
+            scope: "global",
+            source: "eject",
+            excluded: true,
+          }),
+        ],
+        isEditingFromGlobalScope: false,
+        isInitMode: false,
+      });
+
+      store.toggleFilterIncompatible();
+
+      const state = useWizardStore.getState();
+      expect(state.toastMessage).toBe("Global skills cannot be changed from project scope");
+      expect(state.filterIncompatible).toBe(false);
+      expect(state.skillConfigs).toStrictEqual(
+        buildSkillConfigs(["web-state-pinia"], { scope: "global", source: "eject" }),
+      );
+    });
+
+    it("removes an incompatible global skill during init mode, where no global install is at risk", () => {
+      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
+      const store = useWizardStore.getState();
+
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      store.toggleTechnology("web", "web-client-state", "web-state-pinia", false);
+
+      useWizardStore.setState({
+        installedSkillConfigs: buildSkillConfigs(["web-state-pinia"], {
+          scope: "global",
+          source: "eject",
+        }),
+        isInitMode: true,
+      });
+
+      store.toggleFilterIncompatible();
+
+      const state = useWizardStore.getState();
+      expect(state.toastMessage).toBeNull();
+      expect(state.filterIncompatible).toBe(true);
+      expect(state.domainSelections.web!["web-client-state"]).not.toContain("web-state-pinia");
     });
   });
 

@@ -1,7 +1,7 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 import { SourceGrid, type SourceGridProps, type SourceRow, type SourceOption } from "./source-grid";
-import type { BoundSkillCandidate, SkillId } from "../../types";
+import type { BoundSkillCandidate, SkillId, SkillScope } from "../../types";
 import { UI_SYMBOLS } from "../../consts";
 import { initializeMatrix } from "../../lib/matrix/matrix-provider";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
@@ -31,7 +31,7 @@ const createSourceOption = (id: string, overrides: Partial<SourceOption> = {}): 
 const createSourceRow = (
   skillId: SkillId,
   options: SourceOption[],
-  scope?: "global" | "project",
+  scope?: SkillScope,
   readOnly?: boolean,
 ): SourceRow => ({
   skillId,

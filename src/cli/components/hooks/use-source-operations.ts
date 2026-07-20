@@ -1,9 +1,10 @@
 import { useState, useCallback } from "react";
-import { CLI_COLORS } from "../../consts.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { addSource, removeSource } from "../../lib/configuration/source-manager.js";
 
-type StatusMessage = { text: string; color: string } | null;
+/** Status variant — mapped to a CLI color at the render site (see step-settings). */
+export type StatusVariant = "success" | "error";
+type StatusMessage = { text: string; variant: StatusVariant } | null;
 
 type UseSourceOperationsResult = {
   handleAdd: (url: string) => Promise<void>;
@@ -24,12 +25,12 @@ export function useSourceOperations(
         const result = await addSource(projectDir, url);
         setStatusMessage({
           text: `Added "${result.name}" (${result.skillCount} skills)`,
-          color: CLI_COLORS.SUCCESS,
+          variant: "success",
         });
         await onReload();
       } catch (error) {
         const message = getErrorMessage(error);
-        setStatusMessage({ text: `Failed to add source: ${message}`, color: CLI_COLORS.ERROR });
+        setStatusMessage({ text: `Failed to add source: ${message}`, variant: "error" });
       }
     },
     [projectDir, onReload],
@@ -39,12 +40,12 @@ export function useSourceOperations(
     async (name: string): Promise<boolean> => {
       try {
         await removeSource(projectDir, name);
-        setStatusMessage({ text: `Removed "${name}"`, color: CLI_COLORS.SUCCESS });
+        setStatusMessage({ text: `Removed "${name}"`, variant: "success" });
         await onReload();
         return true;
       } catch (error) {
         const message = getErrorMessage(error);
-        setStatusMessage({ text: `Failed to remove: ${message}`, color: CLI_COLORS.ERROR });
+        setStatusMessage({ text: `Failed to remove: ${message}`, variant: "error" });
         return false;
       }
     },

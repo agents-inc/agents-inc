@@ -8,19 +8,20 @@ import { useWizardStore } from "../../stores/wizard-store.js";
 import { useMeasuredHeight } from "../hooks/use-measured-height.js";
 import { useRowScroll } from "../hooks/use-row-scroll.js";
 
-import type { AgentName } from "../../types/index.js";
+import type { AgentName, ResolvedStack } from "../../types/index.js";
 import { typedKeys } from "../../utils/typed-object.js";
 
-type StackItem = { id: string; name: string; description: string };
+type StackItem = Pick<ResolvedStack, "id" | "name" | "description">;
 type StackGroup = { label: string; items: StackItem[] };
-type FocusId = string | "scratch";
+/** A focusable row id: a stack id, or the "scratch" sentinel for the "Start from scratch" row. */
+type FocusId = string;
 
 const OTHER_FRAMEWORKS_LABEL = "Other Frameworks";
 const GROUP_ORDER: string[] = ["React", "CLI"];
 const SCRATCH_LABEL = "Start from scratch";
 const SCRATCH_DESCRIPTION = "Select domains and skills manually";
 
-type GroupableStack = { id: string; name: string; description: string; group?: string };
+type GroupableStack = Pick<ResolvedStack, "id" | "name" | "description" | "group">;
 
 function toStackItem(stack: GroupableStack): StackItem {
   return { id: stack.id, name: stack.name, description: stack.description };
@@ -120,8 +121,6 @@ const ScratchRow: React.FC<{ isFocused: boolean }> = ({ isFocused }) => {
 };
 
 export type StackSelectionProps = {
-  /** Available height in terminal lines for the scrollable viewport. 0 = no constraint. */
-  availableHeight?: number;
   onCancel?: () => void;
 };
 

@@ -10,7 +10,6 @@ import { useMeasuredHeight } from "../hooks/use-measured-height.js";
 import { HOTKEY_SET_ALL_LOCAL, HOTKEY_SET_ALL_PLUGIN, isHotkey } from "./hotkeys.js";
 import { SelectionCard } from "./selection-card.js";
 import { SourceGrid } from "./source-grid.js";
-import { Toast } from "./toast.js";
 
 export type StepSourcesProps = {
   projectDir?: string;

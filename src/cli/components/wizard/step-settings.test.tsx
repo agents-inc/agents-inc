@@ -1,5 +1,6 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
+import { TEST_SOURCE_URL } from "../../lib/__tests__/test-constants.js";
 import { StepSettings, type StepSettingsProps } from "./step-settings";
 import {
   ESCAPE,
@@ -37,7 +38,7 @@ describe("StepSettings component", () => {
     const { getSourceSummary } = await import("../../lib/configuration/source-manager.js");
     vi.mocked(getSourceSummary).mockResolvedValue({
       sources: [
-        { name: "public", url: "github:agents-inc/skills", enabled: true },
+        { name: "public", url: TEST_SOURCE_URL, enabled: true },
         { name: "acme-corp", url: "github:acme-corp/claude-skills", enabled: true },
       ],
       localSkillCount: 3,
@@ -256,7 +257,7 @@ describe("StepSettings component", () => {
     it("should handle empty sources list gracefully", async () => {
       const { getSourceSummary } = await import("../../lib/configuration/source-manager.js");
       vi.mocked(getSourceSummary).mockResolvedValue({
-        sources: [{ name: "public", url: "github:agents-inc/skills", enabled: true }],
+        sources: [{ name: "public", url: TEST_SOURCE_URL, enabled: true }],
         localSkillCount: 0,
         pluginSkillCount: 0,
       });

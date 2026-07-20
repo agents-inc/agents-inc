@@ -34,6 +34,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={vi.fn()}
           skillConfigs={buildSkillConfigs(["web-framework-react"], { scope: "global" })}
+          agentConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -48,6 +50,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={vi.fn()}
           skillConfigs={buildSkillConfigs(["web-framework-react"], { scope: "project" })}
+          agentConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -64,7 +68,12 @@ describe("StepConfirm component", () => {
       ];
 
       const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={skillConfigs} />,
+        <StepConfirm
+          onComplete={vi.fn()}
+          skillConfigs={skillConfigs}
+          agentConfigs={[]}
+          onBack={vi.fn()}
+        />,
       );
       cleanup = unmount;
 
@@ -78,6 +87,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={vi.fn()}
           skillConfigs={buildSkillConfigs(["web-framework-react"], { scope: "global" })}
+          agentConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -92,6 +103,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={vi.fn()}
           skillConfigs={buildSkillConfigs(["web-framework-react"], { scope: "project" })}
+          agentConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -108,6 +121,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={vi.fn()}
           skillConfigs={buildSkillConfigs(["web-framework-react"], { source: "eject" })}
+          agentConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -120,6 +135,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={vi.fn()}
           skillConfigs={buildSkillConfigs(["web-framework-react"], { source: "agents-inc" })}
+          agentConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -134,6 +151,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={vi.fn()}
           skillConfigs={buildSkillConfigs(["web-framework-react", "web-state-zustand"])}
+          agentConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -148,7 +167,12 @@ describe("StepConfirm component", () => {
 
     it("should show + prefix for agents when installedAgentConfigs is absent", () => {
       const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} agentConfigs={buildAgentConfigs(["web-developer"])} />,
+        <StepConfirm
+          onComplete={vi.fn()}
+          agentConfigs={buildAgentConfigs(["web-developer"])}
+          skillConfigs={[]}
+          onBack={vi.fn()}
+        />,
       );
       cleanup = unmount;
 
@@ -168,6 +192,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={vi.fn()}
           skillConfigs={buildSkillConfigs(["web-framework-react"])}
+          agentConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -183,7 +209,12 @@ describe("StepConfirm component", () => {
       useWizardStore.setState({ installedSkillConfigs: configs });
 
       const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={configs} />,
+        <StepConfirm
+          onComplete={vi.fn()}
+          skillConfigs={configs}
+          agentConfigs={[]}
+          onBack={vi.fn()}
+        />,
       );
       cleanup = unmount;
 
@@ -203,7 +234,12 @@ describe("StepConfirm component", () => {
       useWizardStore.setState({ installedSkillConfigs: existingConfigs });
 
       const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={allConfigs} />,
+        <StepConfirm
+          onComplete={vi.fn()}
+          skillConfigs={allConfigs}
+          agentConfigs={[]}
+          onBack={vi.fn()}
+        />,
       );
       cleanup = unmount;
 
@@ -223,7 +259,12 @@ describe("StepConfirm component", () => {
       useWizardStore.setState({ installedAgentConfigs: [] });
 
       const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} agentConfigs={buildAgentConfigs(["web-developer"])} />,
+        <StepConfirm
+          onComplete={vi.fn()}
+          agentConfigs={buildAgentConfigs(["web-developer"])}
+          skillConfigs={[]}
+          onBack={vi.fn()}
+        />,
       );
       cleanup = unmount;
 
@@ -238,7 +279,12 @@ describe("StepConfirm component", () => {
       useWizardStore.setState({ installedAgentConfigs: agents });
 
       const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} agentConfigs={agents} />,
+        <StepConfirm
+          onComplete={vi.fn()}
+          agentConfigs={agents}
+          skillConfigs={[]}
+          onBack={vi.fn()}
+        />,
       );
       cleanup = unmount;
 
@@ -256,7 +302,9 @@ describe("StepConfirm component", () => {
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"]),
       });
 
-      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} skillConfigs={[]} />);
+      const { lastFrame, unmount } = render(
+        <StepConfirm onComplete={vi.fn()} skillConfigs={[]} agentConfigs={[]} onBack={vi.fn()} />,
+      );
       cleanup = unmount;
 
       const lines = lastFrame()?.split("\n") ?? [];
@@ -270,7 +318,9 @@ describe("StepConfirm component", () => {
         installedAgentConfigs: buildAgentConfigs(["web-developer"]),
       });
 
-      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} agentConfigs={[]} />);
+      const { lastFrame, unmount } = render(
+        <StepConfirm onComplete={vi.fn()} agentConfigs={[]} skillConfigs={[]} onBack={vi.fn()} />,
+      );
       cleanup = unmount;
 
       const lines = lastFrame()?.split("\n") ?? [];
@@ -288,6 +338,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={vi.fn()}
           skillConfigs={buildSkillConfigs(["web-framework-react"])}
+          agentConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -310,7 +362,9 @@ describe("StepConfirm component", () => {
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       });
 
-      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} skillConfigs={[]} />);
+      const { lastFrame, unmount } = render(
+        <StepConfirm onComplete={vi.fn()} skillConfigs={[]} agentConfigs={[]} onBack={vi.fn()} />,
+      );
       cleanup = unmount;
 
       expect(lastFrame()).toContain("Global");
@@ -324,7 +378,9 @@ describe("StepConfirm component", () => {
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       });
 
-      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} skillConfigs={[]} />);
+      const { lastFrame, unmount } = render(
+        <StepConfirm onComplete={vi.fn()} skillConfigs={[]} agentConfigs={[]} onBack={vi.fn()} />,
+      );
       cleanup = unmount;
 
       const lines = lastFrame()?.split("\n") ?? [];
@@ -338,7 +394,9 @@ describe("StepConfirm component", () => {
         installedAgentConfigs: buildAgentConfigs(["web-developer"], { scope: "global" }),
       });
 
-      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} agentConfigs={[]} />);
+      const { lastFrame, unmount } = render(
+        <StepConfirm onComplete={vi.fn()} agentConfigs={[]} skillConfigs={[]} onBack={vi.fn()} />,
+      );
       cleanup = unmount;
 
       const lines = lastFrame()?.split("\n") ?? [];
@@ -352,7 +410,9 @@ describe("StepConfirm component", () => {
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
       });
 
-      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} skillConfigs={[]} />);
+      const { lastFrame, unmount } = render(
+        <StepConfirm onComplete={vi.fn()} skillConfigs={[]} agentConfigs={[]} onBack={vi.fn()} />,
+      );
       cleanup = unmount;
 
       const lines = lastFrame()?.split("\n") ?? [];
@@ -367,7 +427,9 @@ describe("StepConfirm component", () => {
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       });
 
-      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} skillConfigs={[]} />);
+      const { lastFrame, unmount } = render(
+        <StepConfirm onComplete={vi.fn()} skillConfigs={[]} agentConfigs={[]} onBack={vi.fn()} />,
+      );
       cleanup = unmount;
 
       const lines = lastFrame()?.split("\n") ?? [];
@@ -383,6 +445,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={vi.fn()}
           agentConfigs={buildAgentConfigs(["web-developer"], { scope: "global" })}
+          skillConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -397,6 +461,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={vi.fn()}
           agentConfigs={buildAgentConfigs(["web-developer"], { scope: "project" })}
+          skillConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -415,6 +481,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={onComplete}
           skillConfigs={buildSkillConfigs(["web-framework-react"])}
+          agentConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -435,6 +503,7 @@ describe("StepConfirm component", () => {
           onComplete={onComplete}
           skillConfigs={buildSkillConfigs(["web-framework-react"])}
           onBack={onBack}
+          agentConfigs={[]}
         />,
       );
       cleanup = unmount;
@@ -454,6 +523,8 @@ describe("StepConfirm component", () => {
         <StepConfirm
           onComplete={onComplete}
           skillConfigs={buildSkillConfigs(["web-framework-react"])}
+          agentConfigs={[]}
+          onBack={vi.fn()}
         />,
       );
       cleanup = unmount;
@@ -479,7 +550,12 @@ describe("StepConfirm component", () => {
       ];
 
       const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={skillConfigs} />,
+        <StepConfirm
+          onComplete={vi.fn()}
+          skillConfigs={skillConfigs}
+          agentConfigs={[]}
+          onBack={vi.fn()}
+        />,
       );
       cleanup = unmount;
 
@@ -499,7 +575,12 @@ describe("StepConfirm component", () => {
       });
 
       const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={skillConfigs} />,
+        <StepConfirm
+          onComplete={vi.fn()}
+          skillConfigs={skillConfigs}
+          agentConfigs={[]}
+          onBack={vi.fn()}
+        />,
       );
       cleanup = unmount;
 
@@ -518,7 +599,12 @@ describe("StepConfirm component", () => {
       });
 
       const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} agentConfigs={agentConfigs} />,
+        <StepConfirm
+          onComplete={vi.fn()}
+          agentConfigs={agentConfigs}
+          skillConfigs={[]}
+          onBack={vi.fn()}
+        />,
       );
       cleanup = unmount;
 
@@ -536,7 +622,12 @@ describe("StepConfirm component", () => {
       });
 
       const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={skillConfigs} />,
+        <StepConfirm
+          onComplete={vi.fn()}
+          skillConfigs={skillConfigs}
+          agentConfigs={[]}
+          onBack={vi.fn()}
+        />,
       );
       cleanup = unmount;
 
@@ -554,7 +645,12 @@ describe("StepConfirm component", () => {
       ];
 
       const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={skillConfigs} />,
+        <StepConfirm
+          onComplete={vi.fn()}
+          skillConfigs={skillConfigs}
+          agentConfigs={[]}
+          onBack={vi.fn()}
+        />,
       );
       cleanup = unmount;
 
@@ -592,6 +688,7 @@ describe("StepConfirm component", () => {
               excluded: true,
             },
           ]}
+          agentConfigs={[]}
         />,
       );
       cleanup = unmount;
@@ -614,7 +711,9 @@ describe("StepConfirm component", () => {
 
   describe("empty state", () => {
     it("should render without crash when no skillConfigs or agentConfigs provided", () => {
-      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} />);
+      const { lastFrame, unmount } = render(
+        <StepConfirm onComplete={vi.fn()} skillConfigs={[]} agentConfigs={[]} onBack={vi.fn()} />,
+      );
       cleanup = unmount;
 
       expect(lastFrame()).toBeDefined();
@@ -648,7 +747,10 @@ describe("SkillAgentSummary component", () => {
       });
 
       const { lastFrame, unmount } = render(
-        <SkillAgentSummary skillConfigs={buildSkillConfigs(["web-framework-react"])} />,
+        <SkillAgentSummary
+          skillConfigs={buildSkillConfigs(["web-framework-react"])}
+          agentConfigs={[]}
+        />,
       );
       cleanup = unmount;
 
@@ -669,6 +771,7 @@ describe("SkillAgentSummary component", () => {
       const { lastFrame, unmount } = render(
         <SkillAgentSummary
           skillConfigs={buildSkillConfigs(["web-framework-react"], { source: "agents-inc" })}
+          agentConfigs={[]}
         />,
       );
       cleanup = unmount;
@@ -690,6 +793,7 @@ describe("SkillAgentSummary component", () => {
       const { lastFrame, unmount } = render(
         <SkillAgentSummary
           skillConfigs={buildSkillConfigs(["web-framework-react"], { source: "agents-inc" })}
+          agentConfigs={[]}
         />,
       );
       cleanup = unmount;
@@ -713,6 +817,7 @@ describe("SkillAgentSummary component", () => {
       const { lastFrame, unmount } = render(
         <SkillAgentSummary
           skillConfigs={buildSkillConfigs(["web-framework-react"], { scope: "global" })}
+          agentConfigs={[]}
         />,
       );
       cleanup = unmount;
@@ -737,6 +842,7 @@ describe("SkillAgentSummary component", () => {
             ...buildSkillConfigs(["web-framework-react"]),
             ...buildSkillConfigs(["web-testing-vitest"], { source: "agents-inc" }),
           ]}
+          agentConfigs={[]}
         />,
       );
       cleanup = unmount;
@@ -772,6 +878,7 @@ describe("SkillAgentSummary component", () => {
             ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
             ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
           ]}
+          agentConfigs={[]}
         />,
       );
       cleanup = unmount;
@@ -795,7 +902,9 @@ describe("SkillAgentSummary component", () => {
       ];
       useWizardStore.setState({ installedSkillConfigs: savedDualScope });
 
-      const { lastFrame, unmount } = render(<SkillAgentSummary skillConfigs={savedDualScope} />);
+      const { lastFrame, unmount } = render(
+        <SkillAgentSummary skillConfigs={savedDualScope} agentConfigs={[]} />,
+      );
       cleanup = unmount;
 
       const output = lastFrame()!;
@@ -820,6 +929,7 @@ describe("SkillAgentSummary component", () => {
             ...buildAgentConfigs(["web-developer"], { scope: "project" }),
             ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
           ]}
+          skillConfigs={[]}
         />,
       );
       cleanup = unmount;
@@ -838,7 +948,9 @@ describe("SkillAgentSummary component", () => {
       ];
       useWizardStore.setState({ installedAgentConfigs: savedDualScope });
 
-      const { lastFrame, unmount } = render(<SkillAgentSummary agentConfigs={savedDualScope} />);
+      const { lastFrame, unmount } = render(
+        <SkillAgentSummary agentConfigs={savedDualScope} skillConfigs={[]} />,
+      );
       cleanup = unmount;
 
       const output = lastFrame()!;
@@ -865,6 +977,7 @@ describe("SkillAgentSummary component", () => {
       const { lastFrame, unmount } = render(
         <SkillAgentSummary
           skillConfigs={buildSkillConfigs(["web-framework-react"], { scope: "global" })}
+          agentConfigs={[]}
         />,
       );
       cleanup = unmount;

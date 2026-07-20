@@ -7,9 +7,9 @@ import { SkillAgentSummary } from "./skill-agent-summary.js";
 
 type StepConfirmProps = {
   onComplete: () => void;
-  skillConfigs?: SkillConfig[];
-  agentConfigs?: AgentScopeConfig[];
-  onBack?: () => void;
+  skillConfigs: SkillConfig[];
+  agentConfigs: AgentScopeConfig[];
+  onBack: () => void;
 };
 
 const BORDER_ROWS = 2;
@@ -42,7 +42,7 @@ export const StepConfirm: React.FC<StepConfirmProps> = ({
     if (key.return) {
       onComplete();
     }
-    if (key.escape && onBack) {
+    if (key.escape) {
       onBack();
     }
     if (!needsScroll) return;

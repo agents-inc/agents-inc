@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 
-type Direction = "up" | "down" | "left" | "right";
+export type Direction = "up" | "down" | "left" | "right";
 
 type UseFocusedListItemOptions = {
   /** Wrap around when reaching boundaries (default: true) */

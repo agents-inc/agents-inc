@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useInput } from "ink";
+import { useInput, type Key } from "ink";
 
 import type { Category, SkillId } from "../../types/index.js";
-import type { CategoryOption, CategoryRow } from "../wizard/category-grid.js";
-import { HOTKEY_FILTER_INCOMPATIBLE, HOTKEY_TOGGLE_LABELS, isHotkey } from "../wizard/hotkeys.js";
+import type { CategoryRow } from "../wizard/category-grid.js";
+import type { Direction } from "./use-focused-list-item.js";
+import {
+  HOTKEY_FILTER_INCOMPATIBLE,
+  HOTKEY_TOGGLE_LABELS,
+  KEY_SPACE,
+  isHotkey,
+} from "../wizard/hotkeys.js";
 
 /** Find next section index (wrapping forward) */
-export const findNextIndex = (
-  categories: { id: Category; options: CategoryOption[] }[],
-  currentIndex: number,
-): number => {
-  const length = categories.length;
+const findNextIndex = (items: { length: number }, currentIndex: number): number => {
+  const length = items.length;
   if (length === 0) return currentIndex;
   return (currentIndex + 1) % length;
 };
@@ -20,7 +23,7 @@ type UseCategoryGridInputOptions = {
   focusedRow: number;
   focusedCol: number;
   setFocused: (row: number, col: number) => void;
-  moveFocus: (direction: "up" | "down" | "left" | "right") => void;
+  moveFocus: (direction: Direction) => void;
   onToggle: (categoryId: Category, technologyId: SkillId) => void;
   onToggleLabels: () => void;
   onToggleFilterIncompatible?: () => void;
@@ -55,17 +58,8 @@ export function useCategoryGridInput({
   // where, after a domain switch (CategoryGrid remount via key={activeDomain}),
   // the useInput effect may not yet have re-registered the updated handler when
   // the first keypress arrives — causing the first space press to be silently lost.
-  type InputKey = {
-    leftArrow: boolean;
-    rightArrow: boolean;
-    upArrow: boolean;
-    downArrow: boolean;
-    tab: boolean;
-    shift: boolean;
-  };
-
-  const handlerRef = useRef<((input: string, key: InputKey) => void) | null>(null);
-  handlerRef.current = (input: string, key: InputKey) => {
+  const handlerRef = useRef<((input: string, key: Key) => void) | null>(null);
+  handlerRef.current = (input: string, key: Key) => {
     if (key.tab && key.shift) {
       onToggleLabels();
       return;
@@ -89,7 +83,7 @@ export function useCategoryGridInput({
       return;
     }
 
-    if (input === " ") {
+    if (input === KEY_SPACE) {
       const currentOption = currentOptions[focusedCol];
       if (currentOption) {
         onToggle(currentRow.id, currentOption.id);
@@ -114,7 +108,7 @@ export function useCategoryGridInput({
   };
 
   // Stable handler reference — never changes, so useInput's effect registers once
-  const stableHandler = useCallback((input: string, key: InputKey) => {
+  const stableHandler = useCallback((input: string, key: Key) => {
     handlerRef.current?.(input, key);
   }, []);
 

@@ -1,11 +1,12 @@
 import React, { useCallback } from "react";
-import { Box, Text, useInput } from "ink";
-import type { BoundSkillCandidate, SkillAlias, SkillId } from "../../types/index.js";
-import { CLI_COLORS, SOURCE_DISPLAY_NAMES, UI_SYMBOLS } from "../../consts.js";
+import { Box, Text, useInput, type Key } from "ink";
+import type { BoundSkillCandidate, SkillAlias, SkillId, SkillScope } from "../../types/index.js";
+import { CLI_COLORS, SOURCE_DISPLAY_NAMES, SOURCE_HEADER_NAMES, UI_SYMBOLS } from "../../consts.js";
 import { getSkillById } from "../../lib/matrix/matrix-provider.js";
 import { useFocusedListItem } from "../hooks/use-focused-list-item.js";
 import { useSectionScroll } from "../hooks/use-section-scroll.js";
 import { useSourceGridSearchModal } from "../hooks/use-source-grid-search-modal.js";
+import { KEY_SPACE } from "./hotkeys.js";
 import { SearchModal } from "./search-modal.js";
 
 const SEARCH_PILL_LABEL = "\u2315 Search";
@@ -14,15 +15,8 @@ const SKILL_NAME_WIDTH = 24;
 const SOURCE_COL_WIDTH = 18;
 const SCOPE_COL_WIDTH = 11;
 
-const SOURCE_HEADER_NAMES: Record<string, string> = {
-  eject: "Local",
-  "agents-inc": "Plugin",
-  public: "Public",
-};
-
 export type SourceOption = {
   id: string;
-  displayName?: string;
   selected: boolean;
   installed: boolean;
 };
@@ -30,7 +24,7 @@ export type SourceOption = {
 export type SourceRow = {
   skillId: SkillId;
   options: SourceOption[];
-  scope?: "global" | "project";
+  scope?: SkillScope;
   readOnly?: boolean;
 };
 
@@ -72,7 +66,7 @@ type SourceSectionProps = {
 };
 
 function formatSourceLabel(option: SourceOption): string {
-  return option.displayName ?? SOURCE_DISPLAY_NAMES[option.id] ?? option.id;
+  return SOURCE_DISPLAY_NAMES[option.id] ?? option.id;
 }
 
 const SourceTag: React.FC<{ option: SourceOption; isFocused: boolean; readOnly?: boolean }> = ({
@@ -229,17 +223,8 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
 
   useInput(
     useCallback(
-      (
-        input: string,
-        key: {
-          leftArrow: boolean;
-          rightArrow: boolean;
-          upArrow: boolean;
-          downArrow: boolean;
-          return: boolean;
-        },
-      ) => {
-        if (input === " ") {
+      (input: string, key: Key) => {
+        if (input === KEY_SPACE) {
           const currentRow = rows[focusedRow];
           if (!currentRow || currentRow.readOnly) return;
           if (showSearchPill && focusedCol === currentRow.options.length) {

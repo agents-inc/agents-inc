@@ -12,6 +12,8 @@
 
 export const HOTKEY_INFO = { key: "i", label: "I" } as const;
 export const HOTKEY_ACCEPT_DEFAULTS = { key: "a", label: "A" } as const;
+// HOTKEY_SCOPE and HOTKEY_SETTINGS deliberately share "s" — they are context-gated
+// (scope acts on the build/agents grids, settings on the settings step; never both active).
 export const HOTKEY_SCOPE = { key: "s", label: "S" } as const;
 export const HOTKEY_SETTINGS = { key: "s", label: "S" } as const;
 
@@ -39,15 +41,14 @@ export const HOTKEY_ADD_SOURCE = { key: "a", label: "A" } as const;
 // Common key labels (for structural keys handled via Ink key objects)
 // ---------------------------------------------------------------------------
 
+/** The spacebar input character (Ink delivers a literal space for the space key). */
+export const KEY_SPACE = " ";
+
 export const KEY_LABEL_ENTER = "ENTER" as const;
 export const KEY_LABEL_ESC = "ESC" as const;
 export const KEY_LABEL_SPACE = "SPACE" as const;
-export const KEY_LABEL_TAB = "TAB" as const;
 export const KEY_LABEL_DEL = "DEL" as const;
-export const KEY_LABEL_ARROWS = "\u2190/\u2192" as const;
 export const KEY_LABEL_ARROWS_VERT = "\u2191/\u2193" as const;
-export const KEY_LABEL_VIM = "h/j/k/l" as const;
-export const KEY_LABEL_VIM_VERT = "j/k" as const;
 
 // ---------------------------------------------------------------------------
 // Helpers
