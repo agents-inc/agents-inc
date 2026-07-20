@@ -411,7 +411,7 @@ Two findings same day (`e2e-build-step-keypress-missing-stable-render`, `e2e-key
 1. **`agent-system.md`** — DONE (created, last_validated 2026-04-21 per DOCUMENTATION_MAP).
 2. **Pattern 9 closure** — run a convention-keeper iter doing a bidirectional diff between CLAUDE.md and `clean-code-standards.md`; promote missed rules.
 3. **Pattern 6 closure** — surface `skipped` + sweep results in `config-writer.md` contract; document `registerProjectPath` / `deregisterProjectPath` normalization symmetry.
-4. **Pattern 7 closure** — add enumerated coverage-as-policy list to `page-objects.md` for step page-objects that must call `waitForStableRender()` before every keypress.
+4. **Pattern 7 closure** — add enumerated coverage-as-policy list to `page-objects.md` for step page-objects that must call `waitForWizardFooter()` before every keypress (`BaseStep` subclasses only — the wait is a wizard-footer sentinel, not a generic stability primitive).
 5. **Skills-content.md decision** — 38 skill-content findings: decide whether to create in CLI repo or migrate to `/home/vince/dev/skills/`.
 
 ### MEDIUM Priority

@@ -56,7 +56,7 @@ This file provides behavioral rules and conventions. For codebase reference docu
 - NEVER define local parser/extractor helpers inside a test file (loops, regex scans, state machines that pick data out of rendered output or config text). If the helper has non-trivial logic it would need its OWN tests to be trusted. Instead: assert directly on the raw output with `toContain`, `toMatchInlineSnapshot`, or a structural load (e.g., `loadProjectConfig` for config.ts). If a helper is genuinely reusable across tests, live it in `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested.
 - NEVER split/loop/regex-scan `lastFrame()` output in component tests — use `toContain("+ React")` or snapshot the frame. The rendered frame is the contract; that's what you assert.
 - NEVER broaden an assertion to make a failing test pass — investigate why it fails. If it's a fixture limitation, keep the strict assertion as a commented-out `// KNOWN GAP:` with an explanation. If it's a product bug, mark the test `it.fails`.
-- NEVER add a key-press method to an E2E step page object without calling `waitForStableRender()` first — React effects may not have fired yet, causing handlers to silently no-op
+- NEVER add a key-press method to an E2E step page object without calling `waitForWizardFooter()` first — React effects may not have fired yet, causing handlers to silently no-op. NEVER call it on a screen that is not rendered by `WizardLayout` — it is a one-string match on the wizard footer text `"select"`, so on the dashboard (or any other footer-less screen) it hangs for the full 15s timeout instead of settling. The rule covers `BaseStep` subclasses only; non-wizard page objects need their own screen-specific sentinel.
 
 ### Test Data
 - NEVER construct test data inline — use factories from `__tests__/factories/` and `__tests__/helpers/` and fixtures from `__tests__/fixtures/create-test-source.ts`. If a factory doesn't exist, create one.
@@ -137,7 +137,7 @@ Is it a complete skill/agent/category object?
 
 - **File naming:** kebab-case for ALL files and directories
 - **Exports:** Named exports only (no default exports). Use `.js` extensions on relative imports in new files.
-- **Constants:** No magic numbers or hardcoded strings — use `STANDARD_FILES.*`, `STANDARD_DIRS.*`, `EXIT_CODES.*`, `UI_SYMBOLS.*`, `CLI_COLORS.*` from `consts.ts`
+- **Constants:** No magic numbers or hardcoded strings — use `STANDARD_FILES.*`, `STANDARD_DIRS.*`, `UI_SYMBOLS.*`, `CLI_COLORS.*` from `consts.ts` (and `EXIT_CODES.*` from `lib/exit-codes.ts`)
 - **Error handling:** `getErrorMessage(error)` for unknown errors, `this.handleError(error)` in commands, `EXIT_CODES.*` constants, no silent catch blocks
 - **Logging:** `warn()` for user issues, `verbose()` for diagnostics, `log()` for always-visible
 - **TypeScript:** Zero `any` without justification, no `@ts-ignore` without comment, Zod schemas at parse boundaries, all remaining casts must have comments explaining why

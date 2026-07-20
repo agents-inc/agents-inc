@@ -111,7 +111,6 @@ For non-wizard interactive prompts (uninstall confirmation, update), use `Intera
 - `getFullOutput()`: viewport + scrollback (use for most assertions)
 - `getRawOutput()`: raw PTY data with ANSI stripped (for text that Ink overwrites in the buffer)
 - `waitForText()`: polls `getFullOutput()` every 50ms until match or timeout
-- `waitForStableRender()`: waits for wizard footer ("select") then returns `getFullOutput()`
 - `waitForExit()`: waits for process to exit, returns exit code
 - Kills process tree via `tree-kill` on destroy
 
@@ -148,7 +147,6 @@ beforeAll(ensureBinaryExists);
 | `enter()`      | `\r`            | Confirm selection   |
 | `arrowDown()`  | `\x1b[B`        | Navigate down       |
 | `arrowUp()`    | `\x1b[A`        | Navigate up         |
-| `arrowLeft()`  | `\x1b[D`        | Navigate left       |
 | `arrowRight()` | `\x1b[C`        | Navigate right      |
 | `space()`      | ` `             | Toggle checkbox     |
 | `escape()`     | `\x1b`          | Cancel / back       |
@@ -169,12 +167,14 @@ session.enter();
 
 Never send keystrokes without first waiting for the expected UI text. The delay after `waitForText` prevents race conditions where the UI hasn't finished rendering all elements.
 
-**4.3 Use `waitForStableRender()` for assertions on wizard content.** It waits for the footer ("select") to render (last element in Ink tree), guaranteeing all content above is stable:
+**4.3 Use `waitForWizardFooter()` for assertions on wizard content.** It waits for the footer ("select") to render (last element in Ink tree), guaranteeing all content above is stable:
 
 ```typescript
-const output = await session.waitForStableRender();
-expect(output).toContain("web-framework-react");
+await screen.waitForWizardFooter(TIMEOUTS.WIZARD_LOAD);
+expect(screen.getFullOutput()).toContain("web-framework-react");
 ```
+
+**Precondition — `WizardLayout` screens only.** This is a one-string sentinel match on the footer text `"select"`, which only `WizardLayout` paints. It is not a generic "the UI has settled" primitive: on a footer-less screen (the dashboard, a plain `SelectList` menu, the post-install result screen) the sentinel never appears and the call burns the full 15s timeout instead of settling. On those screens, wait on text that screen actually renders.
 
 **4.4 For text that Ink overwrites (installation progress), use `getRawOutput()`.** The xterm buffer has limited scrollback (1000 lines). Installation warnings may exceed this. `getRawOutput()` captures everything:
 
@@ -193,7 +193,9 @@ await screen.waitForRawText("initialized successfully", TIMEOUTS.INSTALL);
 | `BuildStep.passThroughAllDomains()`           | Web -> API -> Methodology domain build steps                   | `steps/build-step.ts`    |
 | `TerminalScreen.waitForRawText(text, ms)`     | Poll raw PTY output (bypasses xterm buffer limits)             | `terminal-screen.ts`     |
 
-**4.7 Page-object keypress rule.** Every key-press method in an E2E step page object (`e2e/pages/steps/*.ts`, `e2e/pages/base-step.ts`) MUST call `await this.waitForStableRender()` _before_ pressing the key. This applies to `pressEnter`, `pressSpace`, `pressKey`, `pressEscape`, `pressArrowUp`/`Down`/`Left`/`Right`, `pressCtrlC`, and any domain-specific keypress method (e.g. `toggleFocusedSkill`, `openSearch`, `navigateToNextCategory`, `goBack`).
+**4.7 Page-object keypress rule.** Every key-press method in an E2E step page object (`e2e/pages/steps/*.ts`, `e2e/pages/base-step.ts`) MUST call `await this.waitForWizardFooter()` _before_ pressing the key. This applies to `pressEnter`, `pressSpace`, `pressKey`, `pressEscape`, `pressArrowUp`/`Down`/`Right`, `pressCtrlC`, and any domain-specific keypress method (e.g. `toggleFocusedSkill`, `openSearch`, `navigateToNextCategory`, `goBack`).
+
+**The rule binds `BaseStep` subclasses only.** `waitForWizardFooter()` is a one-string match on the wizard footer text `"select"`, which only `WizardLayout` paints — so on a footer-less screen it hangs for the full timeout rather than settling. A non-wizard page object (e.g. `DashboardSession`) must gate on its own screen-specific sentinel instead. Applying the guard to the dashboard once cost 72 failures across 35 files; see `.ai-docs/agent-findings/2026-07-20-waitforstablerender-is-a-wizard-footer-sentinel-not-a-generic-primitive.md`.
 
 React effects may not have fired yet — without the wait, the PTY write lands between commit and `useEffect`, so the `useInput` handler registered by the new frame isn't listening. The keystroke is silently swallowed and the test passes by not exercising the behavior it claims to test. Post-press waits don't substitute — the race is upstream of the keystroke. Callers cannot be trusted to have left the screen stable, because the previous method may itself have been a keypress-before-settle. In isolation the race is invisible; under parallel suite contention it surfaces as flake. See `.ai-docs/agent-findings/2026-04-21-e2e-build-step-keypress-missing-stable-render.md`.
 

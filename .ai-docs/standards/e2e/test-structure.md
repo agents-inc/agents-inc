@@ -142,7 +142,7 @@ All delays are encapsulated inside the framework:
 - `BaseStep.pressEnter()` includes an internal `STEP_TRANSITION` delay
 - `BaseStep.pressSpace()` includes an internal `KEYSTROKE` delay
 - `TerminalScreen.waitForText()` polls with auto-retry
-- `TerminalScreen.waitForStableRender()` waits for the footer to render
+- `TerminalScreen.waitForWizardFooter()` waits for the wizard footer to render (wizard screens only)
 
 The only timing concern in tests is per-test timeouts for tests that take longer than the default 30 seconds:
 

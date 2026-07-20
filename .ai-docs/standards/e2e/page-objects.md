@@ -142,19 +142,20 @@ Each step class models the user actions available on one wizard screen. Methods 
 
 **File:** `e2e/pages/steps/sources-step.ts`
 
-| Method                  | Returns      | Action                             |
-| ----------------------- | ------------ | ---------------------------------- |
-| `waitForReady()`        | `void`       | Wait for sources step to render    |
-| `acceptDefaults()`      | `AgentsStep` | Wait for ready, press Enter        |
-| `setAllLocal()`         | `void`       | Press "l" (sets all to eject mode) |
-| `setAllPlugin()`        | `void`       | Press "p"                          |
-| `toggleFocusedSource()` | `void`       | Press Space                        |
-| `openSettings()`        | `void`       | Press "s"                          |
-| `closeSettings()`       | `void`       | Press Escape                       |
-| `pressAddSource()`      | `void`       | Press "a" (within settings)        |
-| `pressDeleteSource()`   | `void`       | Press backspace (within settings)  |
-| `goBack()`              | `BuildStep`  | Press Escape, wait for build step  |
-| `advance()`             | `AgentsStep` | Press Enter                        |
+| Method                      | Returns      | Action                                                          |
+| --------------------------- | ------------ | --------------------------------------------------------------- |
+| `waitForReady()`            | `void`       | Wait for sources step to render                                 |
+| `acceptDefaults()`          | `AgentsStep` | Wait for ready, press Enter                                     |
+| `setAllLocal()`             | `void`       | Press "l" (sets all to eject mode)                              |
+| `setAllPlugin()`            | `void`       | Press "p"                                                       |
+| `selectFocusedSourceCell()` | `void`       | Press Space — commits the focused column as that skill's source |
+| `moveSourceColumnRight()`   | `void`       | Arrow Right — move the grid cursor one source column right      |
+| `openSettings()`            | `void`       | Press "s"                                                       |
+| `closeSettings()`           | `void`       | Press Escape                                                    |
+| `pressAddSource()`          | `void`       | Press "a" (within settings)                                     |
+| `pressDeleteSource()`       | `void`       | Press backspace (within settings)                               |
+| `goBack()`                  | `BuildStep`  | Press Escape, wait for build step                               |
+| `advance()`                 | `AgentsStep` | Press Enter                                                     |
 
 ### AgentsStep
 
@@ -212,7 +213,7 @@ All step classes extend `BaseStep`. Its methods are `protected` -- tests cannot 
 | `pressArrowRight()`                         | Arrow right + KEYSTROKE delay                |
 | `pressCtrlC()`                              | Ctrl+C + KEYSTROKE delay                     |
 | `waitForStep(text)`                         | Wait for step identification text            |
-| `waitForStableRender()`                     | Wait for footer ("select") text to render    |
+| `waitForWizardFooter()`                     | Wait for wizard footer ("select") text       |
 | `waitForItemVisible(label, maxAttempts?)`   | Scroll down until label is on screen         |
 | `navigateCursorToItem(label, maxAttempts?)` | Scroll down until cursor line contains label |
 | `delay(ms)`                                 | Internal delay (wraps `test-utils.delay`)    |
@@ -241,7 +242,7 @@ Wraps `TerminalSession` with auto-retrying text matchers. Used internally by ste
 | `waitForText(text, timeoutMs)`           | Poll full output until text appears                |
 | `waitForRawText(text, timeoutMs)`        | Poll raw PTY output (bypasses xterm buffer limits) |
 | `waitForEither(textA, textB, timeoutMs)` | Poll until either text appears                     |
-| `waitForStableRender(timeoutMs)`         | Wait for "select" footer text                      |
+| `waitForWizardFooter(timeoutMs)`         | Wait for "select" wizard footer text               |
 | `getScreen()`                            | Current visible viewport                           |
 | `getFullOutput()`                        | All output including scrollback                    |
 | `getRawOutput()`                         | Raw PTY output with ANSI stripped                  |
@@ -294,20 +295,19 @@ For testing non-wizard interactive prompts (uninstall confirmation, update confi
 
 This is an architectural boundary -- it uses index-based navigation methods (`arrowDown`, `arrowUp`) because non-wizard prompts don't have the step/cursor model. Document assumptions when using index-based navigation.
 
-| Method                                                    | Purpose                      |
-| --------------------------------------------------------- | ---------------------------- |
-| `waitForText(text, timeout?)`                             | Wait for text in full output |
-| `waitForRawText(text, timeout?)`                          | Wait for text in raw output  |
-| `confirm()`                                               | Type "y" + Enter             |
-| `deny()`                                                  | Type "n" + Enter             |
-| `pressEnter()`                                            | Enter with delay             |
-| `arrowDown()`, `arrowUp()`, `arrowLeft()`, `arrowRight()` | Navigation with delay        |
-| `space()`                                                 | Toggle with delay            |
-| `pressKey(key)`                                           | Write key with delay         |
-| `ctrlC()`, `escape()`                                     | Control keys with delay      |
-| `waitForExit(timeout?)`                                   | Wait for process exit        |
-| `getOutput()`, `getScreen()`, `getRawOutput()`            | Read output                  |
-| `destroy()`                                               | Clean up session             |
+| Method                                         | Purpose                      |
+| ---------------------------------------------- | ---------------------------- |
+| `waitForText(text, timeout?)`                  | Wait for text in full output |
+| `waitForRawText(text, timeout?)`               | Wait for text in raw output  |
+| `confirm()`                                    | Type "y" + Enter             |
+| `deny()`                                       | Type "n" + Enter             |
+| `pressEnter()`                                 | Enter with delay             |
+| `arrowDown()`, `arrowUp()`                     | Navigation with delay        |
+| `pressKey(key)`                                | Write key with delay         |
+| `ctrlC()`, `escape()`                          | Control keys with delay      |
+| `waitForExit(timeout?)`                        | Wait for process exit        |
+| `getOutput()`, `getScreen()`, `getRawOutput()` | Read output                  |
+| `destroy()`                                    | Clean up session             |
 
 ---
 
@@ -324,10 +324,10 @@ This is an architectural boundary -- it uses index-based navigation methods (`ar
 ### Adding a New Wizard Method
 
 1. Add the method to the step class (e.g., `BuildStep.toggleLabel()`)
-2. Use the `protected` methods from `BaseStep` (`pressKey`, `waitForStableRender`, etc.). **Never call `pressKey` / `pressSpace` / `pressEnter` / `pressEscape` / `pressArrowX` / `session.*` without a preceding `await this.waitForStableRender()` in the same method** — every keypress needs the wait under parallel suite contention, not just the first one. Post-press waits don't substitute; the race sits upstream of the keystroke. See `.ai-docs/agent-findings/2026-04-21-e2e-build-step-keypress-missing-stable-render.md`.
+2. Use the `protected` methods from `BaseStep` (`pressKey`, `waitForWizardFooter`, etc.). **Never call `pressKey` / `pressSpace` / `pressEnter` / `pressEscape` / `pressArrowX` / `session.*` without a preceding `await this.waitForWizardFooter()` in the same method** — every keypress needs the wait under parallel suite contention, not just the first one. Post-press waits don't substitute; the race sits upstream of the keystroke. The wait is a one-string match on the footer text `"select"` that only `WizardLayout` paints, so it is valid on `BaseStep` subclasses only — a non-wizard page object (e.g. `DashboardSession`) must wait on its own screen-specific sentinel instead, or it hangs for the full timeout. See `.ai-docs/agent-findings/2026-04-21-e2e-build-step-keypress-missing-stable-render.md` and `.ai-docs/agent-findings/2026-07-20-waitforstablerender-is-a-wizard-footer-sentinel-not-a-generic-primitive.md`.
 3. If the method transitions to a new step, return the new step object
 
-**Self-check before committing a new step method:** grep the method body for `this.session.` and `this.press*`. Every hit MUST be immediately preceded by `await this.waitForStableRender()` in the same method. A `waitForStableRender` elsewhere in the method (after the press, in a loop body) does not count — the wait must sit upstream of every PTY write. Helpers that loop over keypresses (arrow-down walks, per-character typing) need the wait inside the loop body before each press, or refactored to walk via a single `waitForItemVisible` + keypress call. Coverage audit: `.ai-docs/reference/testing/e2e-infrastructure.md` § "Page-Object Keypress Rule" tracks the per-method state of every step file.
+**Self-check before committing a new step method:** grep the method body for `this.session.` and `this.press*`. Every hit MUST be immediately preceded by `await this.waitForWizardFooter()` in the same method. A `waitForWizardFooter` elsewhere in the method (after the press, in a loop body) does not count — the wait must sit upstream of every PTY write. Helpers that loop over keypresses (arrow-down walks, per-character typing) need the wait inside the loop body before each press, or refactored to walk via a single `waitForItemVisible` + keypress call. Coverage audit: `.ai-docs/reference/testing/e2e-infrastructure.md` § "Page-Object Keypress Rule" tracks the per-method state of every step file.
 
 ### Adding a New Wizard Type
 

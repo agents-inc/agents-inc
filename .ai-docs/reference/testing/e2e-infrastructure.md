@@ -13,7 +13,7 @@ keywords:
     dual-scope,
     timeout,
     keypress-rule,
-    waitForStableRender,
+    waitForWizardFooter,
   ]
 related:
   - reference/testing/infrastructure.md
@@ -308,7 +308,7 @@ Key rules enforced across the suite:
 
 `TerminalSession` has a `defaultTimeout` readonly property (set from `TerminalSessionOptions.defaultTimeout` or CI-aware defaults: `TIMEOUTS.SESSION_DEFAULT` (10s) locally, `TIMEOUTS.SESSION_DEFAULT_CI` (20s) in CI). Methods `waitForText()` and `waitForExit()` use this as their fallback timeout.
 
-`BaseStep` sets its own `defaultTimeout` to `TIMEOUTS.WIZARD_LOAD` (15s) -- intentionally different from the session default -- used by `waitForStep()` and `waitForStableRender()`.
+`BaseStep` sets its own `defaultTimeout` to `TIMEOUTS.WIZARD_LOAD` (15s) -- intentionally different from the session default -- used by `waitForStep()` and `waitForWizardFooter()`.
 
 `InitWizardOptions` and `EditWizardOptions` both accept `defaultTimeout` which is passed through to `TerminalSession`. `InitWizardOptions` also accepts `loadTimeout` to override the initial `waitForReady()` timeout separately.
 
@@ -347,13 +347,13 @@ Imported per-test via `import "../matchers/setup.js"`. The setup extends `expect
 
 `BaseStep` (`e2e/pages/base-step.ts`) is the superclass for every wizard step page object. It provides raw PTY-input primitives, output-scraping accessors, and a small set of composition helpers. Subclasses (`BuildStep`, `DomainStep`, etc.) compose these into step-specific methods.
 
-**Design intent:** primitives are intentionally "raw" — they write to the PTY and wait only for a minimal intra-keystroke debounce. They do NOT call `waitForStableRender`. The render-stability wait is the responsibility of each composed step method (see [Page-Object Keypress Rule](#page-object-keypress-rule-waitforstablerender)). This keeps primitive cost flat and lets callers batch operations without paying for a stability probe on every character.
+**Design intent:** primitives are intentionally "raw" — they write to the PTY and wait only for a minimal intra-keystroke debounce. They do NOT call `waitForWizardFooter`. The footer wait is the responsibility of each composed step method (see [Page-Object Keypress Rule](#page-object-keypress-rule-waitforwizardfooter)). This keeps primitive cost flat and lets callers batch operations without paying for a stability probe on every character.
 
 ### Key-Press Primitives (protected)
 
 All key-press primitives share the same contract: write one PTY token, then `await delay(INTERNAL_DELAYS.KEYSTROKE)` (150ms) — except `pressEnter`, which uses `INTERNAL_DELAYS.STEP_TRANSITION` (500ms) because Enter typically advances wizard state.
 
-| Primitive         | Writes to PTY          | Post-press delay                        | Pre-press `waitForStableRender`? |
+| Primitive         | Writes to PTY          | Post-press delay                        | Pre-press `waitForWizardFooter`? |
 | ----------------- | ---------------------- | --------------------------------------- | -------------------------------- |
 | `pressEnter`      | `session.enter()`      | `INTERNAL_DELAYS.STEP_TRANSITION` 500ms | NO                               |
 | `pressSpace`      | `session.space()`      | `INTERNAL_DELAYS.KEYSTROKE` 150ms       | NO                               |
@@ -370,14 +370,14 @@ All key-press primitives share the same contract: write one PTY token, then `awa
 
 ### Wait Primitives (protected)
 
-| Primitive                          | Delegates to                              | Guarantee                                                                                                           |
-| ---------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `waitForStep(text, t?)`            | `screen.waitForText`                      | Returns when `text` appears anywhere in full output within `t ?? TIMEOUTS.WIZARD_LOAD` (15s).                       |
-| `waitForStepAfter(text, cur, t?)`  | `screen.waitForTextAfter`                 | Cursor-anchored variant. Returns when `text` appears AFTER raw-output offset `cur`. Use when scrollback may match.  |
-| `waitForStableRender(t?)`          | `screen.waitForStableRender`              | Returns when footer sentinel `"select"` is visible. Observes PTY output, NOT React lifecycle (see scrollback note). |
-| `waitForStableRenderAfter(cur,t?)` | `screen.waitForStableRenderAfter`         | Cursor-anchored stable-render. Required at step transitions where prior frames sit in scrollback.                   |
-| `waitForItemVisible(label, n=30)`  | loop: `arrowDown` until `label` in output | Scrolls looking for `label`. Throws after `n` attempts. Does NOT confirm cursor is on the label.                    |
-| `navigateCursorToItem(label, n)`   | loop: `arrowDown` until `❯` line matches  | Moves cursor until focused line (marked with `❯`) contains `label`. Throws after `n` attempts.                      |
+| Primitive                          | Delegates to                              | Guarantee                                                                                                                                                   |
+| ---------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `waitForStep(text, t?)`            | `screen.waitForText`                      | Returns when `text` appears anywhere in full output within `t ?? TIMEOUTS.WIZARD_LOAD` (15s).                                                               |
+| `waitForStepAfter(text, cur, t?)`  | `screen.waitForTextAfter`                 | Cursor-anchored variant. Returns when `text` appears AFTER raw-output offset `cur`. Use when scrollback may match.                                          |
+| `waitForWizardFooter(t?)`          | `screen.waitForWizardFooter`              | Returns when the wizard footer sentinel `"select"` is visible. `WizardLayout` screens only. Observes PTY output, NOT React lifecycle (see scrollback note). |
+| `waitForWizardFooterAfter(cur,t?)` | `screen.waitForWizardFooterAfter`         | Cursor-anchored footer wait. Required at step transitions where prior frames sit in scrollback.                                                             |
+| `waitForItemVisible(label, n=30)`  | loop: `arrowDown` until `label` in output | Scrolls looking for `label`. Throws after `n` attempts. Does NOT confirm cursor is on the label.                                                            |
+| `navigateCursorToItem(label, n)`   | loop: `arrowDown` until `❯` line matches  | Moves cursor until focused line (marked with `❯`) contains `label`. Throws after `n` attempts.                                                              |
 
 **Distinction:** `waitForItemVisible` is a VISIBILITY check — it only guarantees the label is on screen somewhere. `navigateCursorToItem` is a CURSOR check — it guarantees the focused row contains the label. Choose the latter whenever the next action depends on cursor position.
 
@@ -388,7 +388,7 @@ All key-press primitives share the same contract: write one PTY token, then `awa
 | `getOutput()`              | public    | Full PTY output including scrollback. For test assertions.                                                                                                                           |
 | `getScreen()`              | public    | Visible viewport only. For test assertions that must ignore scrollback.                                                                                                              |
 | `getRawCursor()`           | protected | Raw-output byte offset snapshot, for pairing with `*After` wait methods.                                                                                                             |
-| `getSummaryDiffEntries(n)` | public    | Parses `SkillAgentSummary` panel; returns `{prefix, scope}[]` for the given display name. Internally calls `waitForStableRender` once before scraping — the only query that does so. |
+| `getSummaryDiffEntries(n)` | public    | Parses `SkillAgentSummary` panel; returns `{prefix, scope}[]` for the given display name. Internally calls `waitForWizardFooter` once before scraping — the only query that does so. |
 
 ### Composition Helpers (protected / public)
 
@@ -402,17 +402,17 @@ All key-press primitives share the same contract: write one PTY token, then `awa
 
 ### Design Question: Primitive-Level Wait vs. Method-Level Wait
 
-The iter-9 audit found 32 sibling-step methods and 5 `BaseStep` composition helpers that press keys without a pre-press `waitForStableRender`. Two structural options:
+The iter-9 audit found 32 sibling-step methods and 5 `BaseStep` composition helpers that press keys without a pre-press `waitForWizardFooter`. Two structural options:
 
-**Option A — internalize the wait in primitives.** Move `await this.waitForStableRender()` into every `press*` primitive. Pros: structurally enforced, impossible to forget, deletes ~32 caller lines. Cons: every primitive pays the stability probe cost (worst case one `TerminalScreen.waitForStableRender` poll interval per keystroke); breaks the "primitives are cheap" design; over-serializes tests that legitimately batch keystrokes (e.g. `search-modal.type` typing a query char-by-char).
+**Option A — internalize the wait in primitives.** Move `await this.waitForWizardFooter()` into every `press*` primitive. Pros: structurally enforced, impossible to forget, deletes ~32 caller lines. Cons: every primitive pays the footer probe cost (worst case one `TerminalScreen.waitForWizardFooter` poll interval per keystroke); breaks the "primitives are cheap" design; over-serializes tests that legitimately batch keystrokes (e.g. `search-modal.type` typing a query char-by-char); and hard-couples every primitive to the wizard footer, which non-`WizardLayout` screens never paint.
 
-**Option B — keep primitives raw, enforce at method level.** Require every composed method to call `waitForStableRender` before any primitive use. Pros: primitives stay fast, batched typing remains one wait; callers can use `waitForStableRenderAfter(cursor)` or custom waits where footer-sentinel is wrong. Cons: structurally unenforced (the 32 audit gaps prove this); every new step method is a potential regression.
+**Option B — keep primitives raw, enforce at method level.** Require every composed method to call `waitForWizardFooter` before any primitive use. Pros: primitives stay fast, batched typing remains one wait; callers can use `waitForWizardFooterAfter(cursor)` or custom waits where the footer sentinel is wrong. Cons: structurally unenforced (the 32 audit gaps prove this); every new step method is a potential regression.
 
-**Option C (hybrid) — keep primitives raw, but add a wait-first composition helper.** Introduce `pressAfterStable(primitiveFn)` that calls `waitForStableRender` then invokes the primitive. Refactor compliant methods through it. Pros: opt-in, cheap primitives preserved, single audit point. Cons: two ways to press a key; linting would need a custom rule.
+**Option C (hybrid) — keep primitives raw, but add a wait-first composition helper.** Introduce `pressAfterStable(primitiveFn)` that calls `waitForWizardFooter` then invokes the primitive. Refactor compliant methods through it. Pros: opt-in, cheap primitives preserved, single audit point. Cons: two ways to press a key; linting would need a custom rule.
 
 **Cost estimate for Option A (back-of-envelope):**
 
-- `TerminalScreen.waitForStableRender` polls full output for `"select"` on an interval. A compliant session where the footer is already present returns on the first poll (~0ms observation, ~20-50ms scheduling). A session mid-transition waits one full poll cycle (~100ms typical).
+- `TerminalScreen.waitForWizardFooter` polls full output for `"select"` on an interval. A compliant session where the footer is already present returns on the first poll (~0ms observation, ~20-50ms scheduling). A session mid-transition waits one full poll cycle (~100ms typical).
 - Current suite has ~65 E2E files × ~5-10 keypresses per test × ~100ms worst-case = ~30-60s total added under contention. Under no contention: negligible (first-poll hits).
 - `search-modal.type` is the outlier: typing "cli" is 3 `pressKey` calls → 3 extra stability probes on text that is intentionally mid-change. Would need an exemption.
 
@@ -420,13 +420,15 @@ The iter-9 audit found 32 sibling-step methods and 5 `BaseStep` composition help
 
 ### Primitives That Already Wait
 
-Only one: `getSummaryDiffEntries` calls `waitForStableRender` before scraping. All other `get*` methods read without waiting. All `press*`, `navigate*`, `waitForItemVisible`, `navigateCursorToItem`, `abort`, and `pressEnterAndWaitFor` do NOT wait before pressing.
+Only one: `getSummaryDiffEntries` calls `waitForWizardFooter` before scraping. All other `get*` methods read without waiting. All `press*`, `navigate*`, `waitForItemVisible`, `navigateCursorToItem`, `abort`, and `pressEnterAndWaitFor` do NOT wait before pressing.
 
-## Page-Object Keypress Rule (waitForStableRender)
+## Page-Object Keypress Rule (waitForWizardFooter)
 
 ### Invariant
 
-Every page-object method that sends a key press (keystroke, Space, Enter, Escape, arrow, Tab, literal char, `session.*`) MUST `await this.waitForStableRender()` **before** the press. Post-press waits do not substitute. This applies to every method on every step, not just the first interaction after a step transition.
+Every page-object method that sends a key press (keystroke, Space, Enter, Escape, arrow, Tab, literal char, `session.*`) MUST `await this.waitForWizardFooter()` **before** the press. Post-press waits do not substitute. This applies to every method on every step, not just the first interaction after a step transition.
+
+**Precondition — `WizardLayout` screens only.** `waitForWizardFooter` matches the single footer string `"select"`, which only `WizardLayout` paints. The rule therefore binds `BaseStep` subclasses; a page object for a footer-less screen (`DashboardSession`) must gate on its own sentinel instead. Applying the guard to the dashboard once cost 72 failures across 35 files — see the findings at the end of this section.
 
 ### Why (focusedSkillId Seeding Race)
 
@@ -434,9 +436,9 @@ Every page-object method that sends a key press (keystroke, Space, Enter, Escape
 - Under parallel-suite contention, a PTY write can land between React commit and `useEffect` flush. The keystroke reaches the new frame, but the `useInput` handler hasn't registered yet, so the press silently no-ops.
 - In isolation the race is invisible (slack in the event loop). Under load it surfaces as flake on whichever scenario loses the race first — see `lifecycle/tombstone-cleanup-PtoG-restoration.e2e.test.ts`.
 
-### How `waitForStableRender` Works
+### How `waitForWizardFooter` Works
 
-Defined on `BaseStep` (`e2e/pages/base-step.ts`), delegates to `TerminalScreen.waitForStableRender` (`e2e/pages/terminal-screen.ts`), which polls for the footer sentinel `"select"` in full output until `TIMEOUTS.WIZARD_LOAD` (15s).
+Defined on `BaseStep` (`e2e/pages/base-step.ts`), delegates to `TerminalScreen.waitForWizardFooter` (`e2e/pages/terminal-screen.ts`), which polls for the footer sentinel `"select"` in full output until `TIMEOUTS.WIZARD_LOAD` (15s).
 
 | Observes                                        | Does NOT observe                                             |
 | ----------------------------------------------- | ------------------------------------------------------------ |
@@ -444,35 +446,37 @@ Defined on `BaseStep` (`e2e/pages/base-step.ts`), delegates to `TerminalScreen.w
 | Frame layout having painted                     | `useInput` handler being registered on new frame             |
 | Wizard has reached a renderable, laid-out state | Store fields seeded by post-mount effects (`focusedSkillId`) |
 
-**Scrollback hazard:** The footer "select" is emitted by every wizard step. On step transitions where previous frames sit in scrollback, `waitForStableRender` can return instantly on stale residue — use `waitForStableRenderAfter(cursor)` (cursor-anchored, footer match post-cursor).
+**Scrollback hazard:** The footer "select" is emitted by every wizard step. On step transitions where previous frames sit in scrollback, `waitForWizardFooter` can return instantly on stale residue — use `waitForWizardFooterAfter(cursor)` (cursor-anchored, footer match post-cursor).
 
 ### When It's Insufficient — The `FOCUS_EFFECT_FLUSH_MS` Escape Hatch
 
-`BuildStep.toggleScopeOnFocusedSkill` adds `await this.delay(FOCUS_EFFECT_FLUSH_MS)` (500ms) **after** `waitForStableRender` and **before** pressing `s`. The comment documents this as a workaround, not the fix:
+`BuildStep.toggleScopeOnFocusedSkill` adds `await this.delay(FOCUS_EFFECT_FLUSH_MS)` (500ms) **after** `waitForWizardFooter` and **before** pressing `s`. The comment documents this as a workaround, not the fix:
 
 > TODO: Fix A — seed `focusedSkillId` synchronously in `hydrateWizardStore` so this delay becomes unnecessary.
 
-Use this escape hatch only when a keypress depends on store state seeded by a post-mount effect that `waitForStableRender` cannot observe. Prefer fixing the seeding layer over widening the delay.
+Use this escape hatch only when a keypress depends on store state seeded by a post-mount effect that `waitForWizardFooter` cannot observe. Prefer fixing the seeding layer over widening the delay.
 
 ### Better Primitives (Open Question)
 
-`waitForStableRender` observes terminal output, not React lifecycle. Alternatives that would strictly bound the race:
+`waitForWizardFooter` observes terminal output, not React lifecycle. Alternatives that would strictly bound the race:
 
 - **ANSI focus-indicator parse** — detect that CategoryGrid emitted the focused skill's inverted-style marker before keypress. Tighter than footer match but requires per-screen parsing logic.
 - **Store snapshot probe** — expose a debug hook that prints `focusedSkillId` to stderr, poll until non-null. Requires product-code instrumentation.
 - **Fix A (canonical)** — seed `focusedSkillId` synchronously in `hydrateWizardStore`. Eliminates the race entirely; makes `FOCUS_EFFECT_FLUSH_MS` dead code.
 
-Until Fix A lands, `waitForStableRender` + documented escape hatch is the pragmatic primitive.
+Until Fix A lands, `waitForWizardFooter` + documented escape hatch is the pragmatic primitive.
 
 ### Scope: Where the Rule Applies
 
-- **All step page objects** (`e2e/pages/steps/*.ts`, `e2e/pages/dashboard-session.ts`) — every public method that presses a key.
+- **All step page objects** (`e2e/pages/steps/*.ts`) — every public method that presses a key. NOT `e2e/pages/dashboard-session.ts`: the dashboard paints no wizard footer, so the guard can never match there.
 - **`BaseStep` helpers** (`e2e/pages/base-step.ts`) — the `pressEnter` / `pressSpace` / `pressKey` / `pressEscape` / `pressArrowX` / `pressCtrlC` primitives do NOT wait internally. Callers (subclass methods) are responsible.
-- **Higher-level `BaseStep` methods** (`waitForItemVisible`, `navigateCursorToItem`, `navigate*`, `abort`, `pressEnterAndWaitFor`) — these send keystrokes; they currently do NOT call `waitForStableRender` and are coverage gaps (see below).
+- **Higher-level `BaseStep` methods** (`waitForItemVisible`, `navigateCursorToItem`, `navigate*`, `abort`, `pressEnterAndWaitFor`) — these send keystrokes; they currently do NOT call `waitForWizardFooter` and are coverage gaps (see below).
 - **All interactions, not just keypress:** The rule applies to any `session.*` write — character input (`search-modal.type`), navigation, modifier keys, Ctrl+C. The race is between PTY write and React commit+effect, independent of the key's semantic.
 - **Not applicable:** `render`-inspection methods (`getOutput`, `getScreen`, `getScopeBadgesForSkill`, `findSkillGridPosition`, `getSummaryDiffEntries`) — these only read output.
 
 ### Coverage Audit (2026-04-21, re-validated iter 35)
+
+> **Superseded 2026-07-20.** The sweep in [`2026-07-20-e2e-keypress-guard-sweep-landed-sync-abort-carveout.md`](../../agent-findings/2026-07-20-e2e-keypress-guard-sweep-landed-sync-abort-carveout.md) added the guard upstream of every PTY write in `e2e/pages/steps/*.ts` and `e2e/pages/base-step.ts`, so the `NO` column below is historical. Re-audit before citing it.
 
 After iter 8/9 fixes, `BuildStep` is fully compliant. Sibling step files still lack the wait on many keypress methods:
 
@@ -493,7 +497,7 @@ After iter 8/9 fixes, `BuildStep` is fully compliant. Sibling step files still l
 | `search-modal.ts` | `close`                     | Escape                             | NO                                         |
 | `sources-step.ts` | `setAllLocal`               | `l`                                | NO                                         |
 | `sources-step.ts` | `setAllPlugin`              | `p`                                | NO                                         |
-| `sources-step.ts` | `toggleFocusedSource`       | Space                              | NO                                         |
+| `sources-step.ts` | `selectFocusedSourceCell`   | Space                              | NO                                         |
 | `sources-step.ts` | `openSettings`              | `s`                                | NO                                         |
 | `sources-step.ts` | `closeSettings`             | Escape                             | NO                                         |
 | `sources-step.ts` | `pressAddSource`            | `a`                                | NO                                         |
@@ -515,3 +519,5 @@ After iter 8/9 fixes, `BuildStep` is fully compliant. Sibling step files still l
 ### Findings
 
 - [`2026-04-21-e2e-build-step-keypress-missing-stable-render.md`](../../agent-findings/2026-04-21-e2e-build-step-keypress-missing-stable-render.md) — original 7 `build-step.ts` fixes and proposed standard tightening.
+- [`2026-07-20-waitforstablerender-is-a-wizard-footer-sentinel-not-a-generic-primitive.md`](../../agent-findings/2026-07-20-waitforstablerender-is-a-wizard-footer-sentinel-not-a-generic-primitive.md) — the 72-failure regression from applying the guard to `DashboardSession`; source of the `WizardLayout` precondition above.
+- [`2026-07-20-waitforstablerender-renamed-to-waitforwizardfooter.md`](../../agent-findings/2026-07-20-waitforstablerender-renamed-to-waitforwizardfooter.md) — the rename (`waitForStableRender` → `waitForWizardFooter`, `waitForStableRenderAfter` → `waitForWizardFooterAfter`) that puts the precondition in the name.

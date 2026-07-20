@@ -9,6 +9,7 @@
 
 | ID    | Task                                                                                                                                                                                             | Status                   |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
+| —     | Blank/contentless global config counts as an installation — routes `cc init` to the dashboard. [Detail](#change-request-blank-global-config-counts-as-an-installation)                           | Investigate              |
 | D-240 | Propagating a global config change must recompile affected agents in every registered project, not just rewrite config.ts. [Detail](#d-240-propagate-agent-recompilation-to-registered-projects) | Ready for Dev            |
 | D-239 | Web UI: extract shared matrix/config-types package for a new browser skill-picker repo. [Plan](./D-239-web-ui-shared-matrix-package.md)                                                          | Investigate              |
 | D-237 | Create a GIF demo for the README                                                                                                                                                                 | Ready for Dev            |
@@ -87,6 +88,31 @@ Fixing #2 closed the `config.ts` gap, but surfaced a **third, still-open gap**: 
 **Regression coverage needed**: an E2E test that, after a global skill removal propagates to a registered project, asserts the project's `.claude/agents/<name>.md` no longer references the removed skill (not just `config.ts`).
 
 **Related findings**: `.ai-docs/agent-findings/2026-07-18-propagation-stack-reconcile-gap-reachable.md` (resolved — the config-side fix), `.ai-docs/agent-findings/2026-07-18-propagation-skips-agent-recompile.md` (open — this task).
+
+---
+
+#### Change request: blank global config counts as an installation
+
+**Status**: change request awaiting triage. Recorded from an owner decision (2026-07-20); no code change approved or made. Needs a task ID when it's picked up.
+
+**Current behaviour**: `detectInstallationInDir` (`src/cli/lib/installation/installation.ts`) returns an `Installation` whenever `<dir>/.claude-src/config.ts` **exists**. It never checks whether the config actually declares any skills or agents — it only reads `skills` to derive the install mode, and `deriveInstallMode([])` returns `"eject"`, so an empty config is indistinguishable from a real one. Because `detectInstallation` falls back to `detectGlobalInstallation()` when the project has no config of its own, a blank **global** config makes `cc init` in an unrelated, uninitialized directory route to `runDashboardFlow` (the dashboard) instead of the setup wizard.
+
+**Why this is still open**: a fix landed this session that stops a **cancelled** `cc init` from creating a blank global config in the first place — the config is now only written after the wizard succeeds (see the comment above `isGlobalRoot` in `src/cli/commands/init.tsx`). That removes the common trigger, not the detection gap underneath it. A blank global config arriving by any other route still reproduces the symptom.
+
+At least one such route is live today: on a project init where every selected skill ends up project-scoped, `resolveEffectiveGlobalConfig` (`local-installer.ts`) yields an empty global config with `changed: false`, but `registerProjectPath` then appends the project directory and returns `changed: true`. The combined `changed` flag makes `writeScopedConfigs` write `~/.claude-src/config.ts` containing `skills: []`, `agents: []` and nothing but a `projects` entry. Any later `cc init` in a different directory finds that file and shows the dashboard.
+
+**Proposed fix — detection layer**: have `detectGlobalInstallation` (i.e. `detectInstallationInDir`) return `null` for a config that declares neither skills nor agents. This catches every route that can produce a blank config, present and future, instead of plugging them one at a time as they surface.
+
+**Risk the owner flagged**: it may have unintended consequences beyond the routing decision it is meant to fix.
+
+- A "clean installation" check elsewhere may expect no folders/config to exist rather than expecting them to be empty, so redefining what counts as _installed_ could shift its meaning — see `e2e/lifecycle/uninstall-reinit-lifecycle.e2e.test.ts` ("init then uninstall then re-init produces clean installation").
+- Several test fixtures build deliberately-empty configs and would need updating:
+  - `src/cli/lib/__tests__/commands/compile.test.ts` — three cases in the "metadata.yaml requirement for local skills" block pass `skills: []` / `agents: []` to `createTestSource` alongside `buildTestProjectConfig([], [])`.
+  - `e2e/interactive/init-wizard-existing.e2e.test.ts` — the `writeProjectConfig` helper defaults to `{ skills: [], agents: [] }`, and two tests ("should show dashboard when project already has a config" and "should show dashboard when global config exists but no project config") assert the dashboard appears from exactly the blank config this change would stop treating as an installation. Both would need real skills/agents so they keep asserting the intended behaviour rather than the bug.
+
+**Triage question to settle first**: is an installation defined by "a config file exists" or by "the config has content"? The proposed fix picks the latter. That answer also decides whether an empty **project** config should keep falling back to the global one.
+
+**Key files**: `src/cli/lib/installation/installation.ts` (`detectInstallationInDir`, `detectGlobalInstallation`, `deriveInstallMode`), `src/cli/commands/init.tsx` (`runDashboardFlow`), `src/cli/lib/installation/local-installer.ts` (`resolveEffectiveGlobalConfig`, `registerProjectPath`, `writeScopedConfigs`).
 
 ---
 
@@ -642,7 +668,7 @@ The current skill covers oclif command structure and Ink component patterns but 
 
 Root fix ("Fix A") for the CategoryGrid mount-effect focus-race currently papered over by a 500ms sleep in E2E.
 
-**Workaround in place**: `FOCUS_EFFECT_FLUSH_MS = 500` in `e2e/pages/steps/build-step.ts::toggleScopeOnFocusedSkill` — delays after `waitForStableRender()` before pressing `s`, giving `CategoryGrid`'s post-mount `useEffect` time to flush `setFocusedSkillId` into the store. Without the sleep, `wizard.tsx`'s HOTKEY_SCOPE branch reads a null `store.focusedSkillId` and silently no-ops.
+**Workaround in place**: `FOCUS_EFFECT_FLUSH_MS = 500` in `e2e/pages/steps/build-step.ts::toggleScopeOnFocusedSkill` — delays after `waitForWizardFooter()` before pressing `s`, giving `CategoryGrid`'s post-mount `useEffect` time to flush `setFocusedSkillId` into the store. Without the sleep, `wizard.tsx`'s HOTKEY_SCOPE branch reads a null `store.focusedSkillId` and silently no-ops.
 
 **Root cause**: `focusedSkillId` is populated by a `CategoryGrid` mount `useEffect` rather than computed at hydration time. Any keypress handler that reads `store.focusedSkillId` between first paint and the post-mount flush observes `null`.
 
