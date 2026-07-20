@@ -3,11 +3,14 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupTempDir,
+  completeWithLocalSources,
+  configTsPath,
+  configTypesTsPath,
   createPermissionsFile,
   createTempDir,
   ensureBinaryExists,
@@ -16,6 +19,7 @@ import {
 } from "../helpers/test-utils.js";
 import {
   createTestEnvironment,
+  finishWizard,
   initGlobal,
   initGlobalWithEject,
   initProject,
@@ -43,24 +47,7 @@ async function initGlobalWithLocalSource(
   wizard: InitWizard,
 ): Promise<{ exitCode: number; output: string }> {
   // Stack -> Domain -> Build (all domains) -> Sources -> Agents -> Confirm
-  const domain = await wizard.stack.selectFirstStack();
-  const build = await domain.acceptDefaults();
-  const sources = await build.passThroughAllDomains();
-
-  // Sources -- press "l" to set ALL sources to local
-  await sources.waitForReady();
-  await sources.setAllLocal();
-  const agents = await sources.advance();
-
-  // Agents -- accept defaults
-  const confirm = await agents.acceptDefaults("init");
-
-  // Confirm
-  const result = await confirm.confirm();
-  const exitCode = await result.exitCode;
-  const output = result.rawOutput;
-  await result.destroy();
-  return { exitCode, output };
+  return finishWizard(await completeWithLocalSources(wizard));
 }
 
 describe("config-scope integrity -- source priority preservation", () => {
@@ -75,7 +62,7 @@ describe("config-scope integrity -- source priority preservation", () => {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await initWizard?.destroy();
@@ -109,7 +96,7 @@ describe("config-scope integrity -- source priority preservation", () => {
       expect(initResult.exitCode, `Init failed: ${initResult.output}`).toBe(EXIT_CODES.SUCCESS);
 
       // Verify Phase A: config has source: "eject"
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const globalConfigPath = configTsPath(fakeHome);
       const configAfterInit = await readTestFile(globalConfigPath);
       expect(configAfterInit).toContain('"eject"');
 
@@ -118,8 +105,7 @@ describe("config-scope integrity -- source priority preservation", () => {
         projectDir: fakeHome,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const result = await wizard.passThrough();
@@ -167,7 +153,7 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await wizard?.destroy();
@@ -197,7 +183,7 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
 
       // Phase B: Manually edit the config to remove api skills while keeping
       // domains: ["web", "api", "shared"].
-      const configPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const configPath = configTsPath(fakeHome);
       const originalConfig = await readTestFile(configPath);
 
       // Remove api-framework-hono from the skills array (but stack refs remain).
@@ -223,8 +209,7 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
         projectDir: fakeHome,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Skills were removed from config, so domain count may differ — use generic
@@ -238,7 +223,7 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       wizard = undefined;
 
       // Phase D: Verify config-types.ts Domain type includes ALL config.domains
-      const configTypesPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+      const configTypesPath = configTypesTsPath(fakeHome);
       expect(await fileExists(configTypesPath), "config-types.ts must exist after edit").toBe(true);
 
       const configTypesContent = await readTestFile(configTypesPath);
@@ -269,7 +254,7 @@ describe("config-scope integrity -- global config includes source field", () => 
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     if (tempDir) {
@@ -305,7 +290,7 @@ describe("config-scope integrity -- global config includes source field", () => 
       // Phase C: Verify global config includes the source field.
       // Before the D-92 fix, splitConfigByScope did not spread ...config,
       // so source (and marketplace) were lost in the global partition.
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const globalConfigPath = configTsPath(fakeHome);
       const globalConfig = await readTestFile(globalConfigPath);
 
       // The top-level "source" field in the export default block should reference
@@ -316,7 +301,7 @@ describe("config-scope integrity -- global config includes source field", () => 
       );
 
       // Phase D: Verify project config also includes the source field
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const projectConfigPath = configTsPath(projectDir);
       const projectConfig = await readTestFile(projectConfigPath);
 
       expect(projectConfig, "Project config must contain a top-level source field").toContain(

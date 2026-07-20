@@ -4,7 +4,7 @@ import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupTempDir,
@@ -12,9 +12,11 @@ import {
   createPermissionsFile,
   createTempDir,
   ensureBinaryExists,
+  loadConfigOrFail,
+  renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -35,19 +37,20 @@ import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/t
  * mergeWithExistingConfig -> mergeConfigs -> writeScopedConfigs HOME-context).
  */
 
-const REACT = "web-framework-react";
-const WEB_DEVELOPER: AgentName = "web-developer";
-
 const globalStack = {
-  [WEB_DEVELOPER]: {
-    "web-framework": [{ id: REACT, preloaded: true }],
+  [E2E_AGENT["web-developer"].name]: {
+    "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
 
-const reactMetadata =
-  `author: "@test"\ndisplayName: ${REACT}\ncategory: web-framework\nslug: react\n` +
-  `cliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\n` +
-  `contentHash: "b2c3d4e"\n`;
+const reactMetadata = renderMetadataYaml({
+  displayName: E2E_SKILL.react.display,
+  category: "web-framework",
+  slug: E2E_SKILL.react.slug,
+  cliDescription: "E2E test skill",
+  usageGuidance: "Use when testing E2E scenarios",
+  contentHash: "b2c3d4e",
+});
 
 describe("global edit at HOME preserves the registered projects array", () => {
   let sourceDir: string;
@@ -80,8 +83,8 @@ describe("global edit at HOME preserves the registered projects array", () => {
       registeredProject,
       buildProjectConfig({
         name: "registered-project",
-        skills: buildSkillConfigs([REACT], { scope: "global", source: "eject" }),
-        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "project" }),
+        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
       }),
     );
 
@@ -89,22 +92,20 @@ describe("global edit at HOME preserves the registered projects array", () => {
     // project path in `projects`.
     const globalConfig: ProjectConfig = buildProjectConfig({
       name: "preserve-projects-global",
-      skills: buildSkillConfigs([REACT], { scope: "global", source: "eject" }),
-      agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+      skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
+      agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       domains: ["web"],
-      selectedAgents: [WEB_DEVELOPER],
+      selectedAgents: [E2E_AGENT["web-developer"].name],
       stack: globalStack,
       projects: [realpathSync(registeredProject)],
     });
     await writeProjectConfig(globalHome, globalConfig);
-    await createLocalSkill(globalHome, REACT, {
+    await createLocalSkill(globalHome, E2E_SKILL.react.id, {
       description: "Global react copy",
       metadata: reactMetadata,
     });
 
-    const seededGlobal = await loadProjectConfigFromDir(globalHome);
-    if (!seededGlobal) throw new Error("seeded global config must load");
-    projectsBefore = seededGlobal.config.projects;
+    projectsBefore = (await loadConfigOrFail(globalHome)).projects;
 
     // Edit at global scope and toggle react off — any change forces the
     // HOME-context write path, which is where `projects` would be lost.
@@ -112,10 +113,9 @@ describe("global edit at HOME preserves the registered projects array", () => {
       projectDir: globalHome,
       source: { sourceDir, tempDir: sourceTempDir },
       env: { HOME: globalHome },
-      rows: 60,
-      cols: 120,
+      ...TERMINAL_SIZE.TALL,
     });
-    await wizard.build.selectSkill(REACT);
+    await wizard.build.selectSkill(E2E_SKILL.react.display);
     const sources = await wizard.build.passThroughAllDomainsGeneric();
     await sources.waitForReady();
     const agents = await sources.advance();
@@ -124,9 +124,7 @@ describe("global edit at HOME preserves the registered projects array", () => {
     editExitCode = await result.exitCode;
     await result.destroy();
 
-    const loadedGlobal = await loadProjectConfigFromDir(globalHome);
-    if (!loadedGlobal) throw new Error("global config must exist after edit");
-    projectsAfter = loadedGlobal.config.projects;
+    projectsAfter = (await loadConfigOrFail(globalHome)).projects;
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {

@@ -2,15 +2,18 @@ import path from "path";
 import { mkdir } from "fs/promises";
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import {
+  agentsPath,
   createTempDir,
   cleanupTempDir,
   ensureBinaryExists,
   writeProjectConfig,
   createLocalSkill,
+  renderMetadataYaml,
 } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { DIRS, TIMEOUTS } from "../pages/constants.js";
+import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
 
 /**
  * E2E tests for edit wizard skill detection (Gap 6).
@@ -57,8 +60,7 @@ describe("edit wizard — skill detection across sources and scopes", () => {
         //   - web-testing-vitest: local source, global scope
         //   - web-state-zustand: local source, project scope
         //   - api-framework-hono: local source, global scope
-        const agentsDir = path.join(projectDir, DIRS.CLAUDE, "agents");
-        await mkdir(agentsDir, { recursive: true });
+        await mkdir(agentsPath(projectDir), { recursive: true });
 
         await writeProjectConfig(projectDir, {
           name: "test-mixed-detection",
@@ -69,11 +71,11 @@ describe("edit wizard — skill detection across sources and scopes", () => {
             { id: "api-framework-hono", scope: "global", source: "eject" },
           ],
           agents: [
-            { name: "web-developer", scope: "project" },
-            { name: "api-developer", scope: "global" },
+            { name: E2E_AGENT["web-developer"].name, scope: "project" },
+            { name: E2E_AGENT["api-developer"].name, scope: "global" },
           ],
           domains: ["web", "api"],
-          selectedAgents: ["web-developer", "api-developer"],
+          selectedAgents: [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
         });
 
         // Create local skill directories with SKILL.md and metadata
@@ -87,7 +89,15 @@ describe("edit wizard — skill detection across sources and scopes", () => {
         for (const skill of skills) {
           await createLocalSkill(projectDir, skill.id, {
             description: `Test skill ${skill.id}`,
-            metadata: `author: "@test"\ndisplayName: ${skill.id}\ncategory: ${skill.category}\nslug: ${skill.slug}\ndomain: ${skill.domain}\ncliDescription: "Test skill"\nusageGuidance: "Testing"\ncontentHash: "e2e-hash"\n`,
+            metadata: renderMetadataYaml({
+              domain: skill.domain,
+              displayName: skill.id,
+              category: skill.category,
+              slug: skill.slug,
+              cliDescription: "Test skill",
+              usageGuidance: "Testing",
+              contentHash: "e2e-hash",
+            }),
           });
         }
 
@@ -95,14 +105,13 @@ describe("edit wizard — skill detection across sources and scopes", () => {
         wizard = await EditWizard.launch({
           projectDir,
           source,
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         const webOutput = wizard.build.getOutput();
 
         // Verify we're on the build step — web domain categories should be visible
-        expect(webOutput).toContain("Framework");
+        expect(webOutput).toContain(STEP_TEXT.BUILD);
         expect(webOutput).toContain("Testing");
 
         // Navigate to API domain to verify api skills are also detected
@@ -124,8 +133,7 @@ describe("edit wizard — skill detection across sources and scopes", () => {
         const source = await createE2ESource();
         sourceTempDir = source.tempDir;
 
-        const agentsDir = path.join(projectDir, DIRS.CLAUDE, "agents");
-        await mkdir(agentsDir, { recursive: true });
+        await mkdir(agentsPath(projectDir), { recursive: true });
 
         // Create project with 3 skills
         await writeProjectConfig(projectDir, {
@@ -135,7 +143,7 @@ describe("edit wizard — skill detection across sources and scopes", () => {
             { id: "web-testing-vitest", scope: "project", source: "eject" },
             { id: "web-state-zustand", scope: "global", source: "eject" },
           ],
-          agents: [{ name: "web-developer", scope: "project" }],
+          agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
           domains: ["web"],
         });
 
@@ -150,15 +158,21 @@ describe("edit wizard — skill detection across sources and scopes", () => {
           const slug = parts.slice(2).join("-");
           await createLocalSkill(projectDir, id, {
             description: `Test skill`,
-            metadata: `author: "@test"\ndisplayName: ${id}\ncategory: ${category}\nslug: ${slug}\ncliDescription: "Test"\nusageGuidance: "Test"\ncontentHash: "e2e-hash"\n`,
+            metadata: renderMetadataYaml({
+              displayName: id,
+              category,
+              slug,
+              cliDescription: "Test",
+              usageGuidance: "Test",
+              contentHash: "e2e-hash",
+            }),
           });
         }
 
         wizard = await EditWizard.launch({
           projectDir,
           source,
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         const buildOutput = wizard.build.getOutput();

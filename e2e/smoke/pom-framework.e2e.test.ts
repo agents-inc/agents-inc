@@ -5,13 +5,14 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { CLI } from "../fixtures/cli.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import { ensureBinaryExists, cleanupTempDir, isClaudeCLIAvailable } from "../helpers/test-utils.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import type { WizardResult, ProjectHandle } from "../pages/wizard-result.js";
 
@@ -38,7 +39,7 @@ describe("POM Framework Smoke Tests", () => {
 
     beforeAll(async () => {
       pluginFixture = await createE2EPluginSource({ marketplaceName: "agents-inc" });
-    }, TIMEOUTS.SETUP * 2);
+    }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
       if (pluginFixture) await cleanupTempDir(pluginFixture.tempDir);
@@ -58,7 +59,7 @@ describe("POM Framework Smoke Tests", () => {
         result = await wizard.completeWithDefaults();
 
         await expectPhaseSuccess(result, {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer", "api-developer"],
           source: "agents-inc",
           compiledAgents: ["web-developer", "api-developer"],
@@ -70,7 +71,7 @@ describe("POM Framework Smoke Tests", () => {
 
   describe("EditWizard.passThrough", () => {
     let result: WizardResult | undefined;
-    let source: { sourceDir: string; tempDir: string } | undefined;
+    let source: E2ESource | undefined;
     let project: ProjectHandle | undefined;
 
     afterEach(async () => {
@@ -91,11 +92,7 @@ describe("POM Framework Smoke Tests", () => {
       async () => {
         source = await createE2ESource();
         project = await ProjectBuilder.editable({
-          skills: [
-            "web-framework-react",
-            "api-framework-hono",
-            "meta-methodology-research-methodology",
-          ],
+          skills: [E2E_SKILL.react.id, E2E_SKILL.hono.id, E2E_SKILL["research-methodology"].id],
           agents: ["web-developer", "api-developer"],
           domains: ["web", "api", "meta"],
         });
@@ -107,11 +104,7 @@ describe("POM Framework Smoke Tests", () => {
         result = await wizard.passThrough();
 
         await expectPhaseSuccess(result, {
-          skillIds: [
-            "web-framework-react",
-            "api-framework-hono",
-            "meta-methodology-research-methodology",
-          ],
+          skillIds: [E2E_SKILL.react.id, E2E_SKILL.hono.id, E2E_SKILL["research-methodology"].id],
           agents: ["web-developer", "api-developer"],
           compiledAgents: [],
         });

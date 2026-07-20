@@ -6,11 +6,14 @@ import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment, initProjectAllGlobal } from "../fixtures/dual-scope-helpers.js";
 import { createE2EPluginSource } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupTempDir,
+  configTsPath,
+  configTypesTsPath,
   createPermissionsFile,
   ensureBinaryExists,
   fileExists,
@@ -39,7 +42,7 @@ beforeAll(async () => {
   const source = await createE2EPluginSource();
   sourceDir = source.sourceDir;
   sourceTempDir = source.tempDir;
-}, TIMEOUTS.SETUP * 2);
+}, TIMEOUTS.SETUP_DUAL);
 
 afterAll(async () => {
   if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -88,7 +91,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- registration", () => {
       expect(p2.exitCode, "Project-2 init should succeed").toBe(EXIT_CODES.SUCCESS);
 
       // Verification: Global config should contain projects field with both paths
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const globalConfigPath = configTsPath(fakeHome);
       expect(await fileExists(globalConfigPath), "Global config must exist").toBe(true);
 
       const globalConfig = await readTestFile(globalConfigPath);
@@ -132,10 +135,10 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
 
       // Verify global install emitted the standalone (inlined) config-types — the
       // global types file is the source of truth for GlobalSkillId / GlobalAgentName.
-      const globalConfigTypesPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+      const globalConfigTypesPath = configTypesTsPath(fakeHome);
       const globalTypesContent = await readTestFile(globalConfigTypesPath);
       expect(globalTypesContent, "Global config-types must inline skill IDs").toContain(
-        "web-framework-react",
+        E2E_SKILL.react.id,
       );
       expect(globalTypesContent, "Global config-types must NOT import from itself").not.toContain(
         "as GlobalSkillId",
@@ -147,7 +150,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
 
       // Project's config-types.ts must be the IMPORT-AND-EXTEND form, not the
       // standalone/inlined form.
-      const projectConfigTypesPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+      const projectConfigTypesPath = configTypesTsPath(projectDir);
       expect(await fileExists(projectConfigTypesPath), "Project config-types.ts must exist").toBe(
         true,
       );
@@ -188,10 +191,10 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       expect(
         configTypesContent,
         "Project config-types must NOT inline global skill IDs",
-      ).not.toContain('"web-framework-react"');
+      ).not.toContain(`"${E2E_SKILL.react.id}"`);
 
       // Global config should have project registered
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const globalConfigPath = configTsPath(fakeHome);
       const globalConfig = await readTestFile(globalConfigPath);
       const realProjectDir = realpathSync(projectDir);
       expect(globalConfig, "Global config must contain project path").toContain(realProjectDir);
@@ -225,7 +228,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       const proj = await initProjectAllGlobal(sourceDir, sourceTempDir, fakeHome, projectDir);
       expect(proj.exitCode, "Project init should succeed").toBe(EXIT_CODES.SUCCESS);
 
-      const projectConfigTypesPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+      const projectConfigTypesPath = configTypesTsPath(projectDir);
       const projectTypesBefore = await readTestFile(projectConfigTypesPath);
       // Pre-condition: project types START in the import-and-extend form. If
       // this fails, Phase B regressed — the Phase C assertion would be a
@@ -247,8 +250,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
         projectDir: fakeHome,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       try {
@@ -256,7 +258,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
         // domains (API, Methodology) to reach Sources. The generic
         // passthrough is required because edit-at-HOME carries all domains
         // where the global install has skills — not just Web.
-        await editWizard.build.selectSkill("Vue Composition Api");
+        await editWizard.build.selectSkill(E2E_SKILL["vue-composition-api"].display);
         const sources = await editWizard.build.passThroughAllDomainsGeneric();
         const agents = await sources.acceptDefaults();
         const confirm = await agents.acceptDefaults("edit");
@@ -270,12 +272,12 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
 
       // Sanity: the global install must actually have grown — otherwise any
       // downstream assertion about propagation is testing the wrong state.
-      const globalConfigTypesPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+      const globalConfigTypesPath = configTypesTsPath(fakeHome);
       const globalTypesAfter = await readTestFile(globalConfigTypesPath);
       expect(
         globalTypesAfter,
         "Pre-condition: global config-types must inline the newly-added skill after Phase C",
-      ).toContain("web-framework-vue-composition-api");
+      ).toContain(E2E_SKILL["vue-composition-api"].id);
 
       // Contract: project config-types.ts must STILL be the import-and-extend
       // form after the global edit. A regression would replace the import
@@ -316,7 +318,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       expect(
         projectTypesAfter,
         "Project config-types must NOT inline the newly-added global skill ID",
-      ).not.toContain('"web-framework-vue-composition-api"');
+      ).not.toContain(`"${E2E_SKILL["vue-composition-api"].id}"`);
 
       // KNOWN GAP: ideally we would assert `projectTypesAfter !==
       // projectTypesBefore` to prove `propagateGlobalChangesToProjects`
@@ -376,7 +378,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- deregistration on uninsta
       expect(p2.exitCode, "Project-2 init should succeed").toBe(EXIT_CODES.SUCCESS);
 
       // Pre-check: Both projects should be registered
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const globalConfigPath = configTsPath(fakeHome);
       const configBefore = await readTestFile(globalConfigPath);
       const realProject1 = realpathSync(project1Dir);
       const realProject2 = realpathSync(project2Dir);
@@ -454,7 +456,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- stale path filtering", ()
       expect(p2.exitCode, "Project-2 init should succeed").toBe(EXIT_CODES.SUCCESS);
 
       // Verification: Global config should only contain project-2, not stale project-1
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const globalConfigPath = configTsPath(fakeHome);
       const globalConfig = await readTestFile(globalConfigPath);
 
       const realProject2 = realpathSync(project2Dir);

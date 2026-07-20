@@ -4,17 +4,18 @@ import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS } from "../pages/constants.js";
+import { TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupTempDir,
+  completeWithLocalSources,
   createPermissionsFile,
   createTempDir,
   ensureBinaryExists,
+  loadConfigOrFail,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
 
 /**
  * Re-edit / multiple edit cycle E2E tests.
@@ -33,13 +34,11 @@ async function readConfigArrays(projectDir: string): Promise<{
   agentNames: string[];
   domains: string[];
 }> {
-  const loaded = await loadProjectConfigFromDir(projectDir);
-  expect(loaded, `project config.ts must exist at ${projectDir}`).not.toBeNull();
-  if (!loaded) return { skillIds: [], agentNames: [], domains: [] };
+  const config = await loadConfigOrFail(projectDir);
   return {
-    skillIds: loaded.config.skills.map((sc) => sc.id),
-    agentNames: loaded.config.agents.map((agent) => agent.name),
-    domains: loaded.config.domains ?? [],
+    skillIds: config.skills.map((sc) => sc.id),
+    agentNames: config.agents.map((agent) => agent.name),
+    domains: config.domains ?? [],
   };
 }
 
@@ -86,14 +85,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           source: { sourceDir, tempDir: sourceTempDir },
           projectDir,
         });
-        const initDomain = await initWizard.stack.selectFirstStack();
-        const initBuild = await initDomain.acceptDefaults();
-        const initSources = await initBuild.passThroughAllDomains();
-        await initSources.waitForReady();
-        await initSources.setAllLocal();
-        const initAgentsStep = await initSources.advance();
-        const initConfirm = await initAgentsStep.acceptDefaults("init");
-        const initResult = await initConfirm.confirm();
+        const initResult = await completeWithLocalSources(initWizard);
         await initResult.destroy();
 
         // --- Phase 1 verification ---
@@ -245,8 +237,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         const edit1Wizard = await EditWizard.launch({
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         // Arrow down to next category, space to select
@@ -301,14 +292,10 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         const edit2Wizard = await EditWizard.launch({
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
-        const sources2 = await edit2Wizard.build.advanceToSources();
-        const agents2 = await sources2.acceptDefaults();
-        const confirm2 = await agents2.acceptDefaults("edit");
-        const edit2Result = await confirm2.confirm();
+        const edit2Result = await edit2Wizard.build.saveFromBuild("edit");
 
         await edit2Result.destroy();
 

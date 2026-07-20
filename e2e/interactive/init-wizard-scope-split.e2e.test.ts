@@ -1,17 +1,19 @@
-import path from "path";
-import { mkdir } from "fs/promises";
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
-  createTempDir,
   cleanupTempDir,
+  configTypesTsPath,
   ensureBinaryExists,
-  createPermissionsFile,
   fileExists,
 } from "../helpers/test-utils.js";
-import { readConfigSkillIds, readSkillEntries } from "../fixtures/dual-scope-helpers.js";
+import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
+import {
+  createTestEnvironment,
+  readConfigSkillIds,
+  readSkillEntries,
+} from "../fixtures/dual-scope-helpers.js";
 import "../matchers/setup.js";
 
 /**
@@ -26,7 +28,7 @@ import "../matchers/setup.js";
 describe("init wizard — mixed scope config split", () => {
   let wizard: InitWizard | undefined;
   let tempDir: string | undefined;
-  let source: { sourceDir: string; tempDir: string } | undefined;
+  let source: E2ESource | undefined;
 
   beforeAll(ensureBinaryExists);
 
@@ -48,16 +50,8 @@ describe("init wizard — mixed scope config split", () => {
     fakeHome: string;
     projectDir: string;
   }> {
-    tempDir = await createTempDir();
-
-    const fakeHome = path.join(tempDir, "fake-home");
-    const projectDir = path.join(fakeHome, "project");
-
-    await mkdir(fakeHome, { recursive: true });
-    await mkdir(projectDir, { recursive: true });
-
-    await createPermissionsFile(fakeHome);
-    await createPermissionsFile(projectDir);
+    const { tempDir: envTempDir, fakeHome, projectDir } = await createTestEnvironment();
+    tempDir = envTempDir;
 
     source = await createE2ESource();
 
@@ -74,8 +68,7 @@ describe("init wizard — mixed scope config split", () => {
         projectDir,
         source: { sourceDir: source!.sourceDir, tempDir: source!.tempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Select stack, accept domains
@@ -97,7 +90,7 @@ describe("init wizard — mixed scope config split", () => {
       const agents = await sources.advance();
 
       // Toggle api-developer agent scope by navigating to it
-      await agents.navigateCursorToAgent("API Developer");
+      await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
       await agents.toggleScopeOnFocusedAgent();
 
       const confirm = await agents.advance("init");
@@ -110,24 +103,24 @@ describe("init wizard — mixed scope config split", () => {
       // Both config files should exist
       await expect({ dir: fakeHome }).toHaveConfig();
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: ["web-framework-react"],
+        skillIds: [E2E_SKILL.react.id],
       });
 
       // Global config should NOT contain the project-scoped skill (scope-specific check)
       const globalSkillIds = await readConfigSkillIds(fakeHome);
-      expect(globalSkillIds).not.toContain("web-framework-react");
-      expect(globalSkillIds).toContain("web-testing-vitest");
+      expect(globalSkillIds).not.toContain(E2E_SKILL.react.id);
+      expect(globalSkillIds).toContain(E2E_SKILL.vitest.id);
 
       // web-developer should be compiled (global agent)
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
 
       // config-types.ts must exist at both scopes
       expect(
-        await fileExists(path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS)),
+        await fileExists(configTypesTsPath(fakeHome)),
         "Global config-types.ts must exist",
       ).toBe(true);
       expect(
-        await fileExists(path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS)),
+        await fileExists(configTypesTsPath(projectDir)),
         "Project config-types.ts must exist",
       ).toBe(true);
     },
@@ -143,8 +136,7 @@ describe("init wizard — mixed scope config split", () => {
         projectDir,
         source: { sourceDir: source!.sourceDir, tempDir: source!.tempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Select stack, accept domains
@@ -174,16 +166,16 @@ describe("init wizard — mixed scope config split", () => {
 
       // Project config: should contain both project-scoped skills
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: ["web-framework-react", "api-framework-hono"],
+        skillIds: [E2E_SKILL.react.id, E2E_SKILL.hono.id],
       });
 
       // Global skills: should NOT contain project-scoped skills
       const globalSkillIds = await readConfigSkillIds(fakeHome);
-      expect(globalSkillIds).not.toContain("web-framework-react");
-      expect(globalSkillIds).not.toContain("api-framework-hono");
+      expect(globalSkillIds).not.toContain(E2E_SKILL.react.id);
+      expect(globalSkillIds).not.toContain(E2E_SKILL.hono.id);
 
       // Verify scope field values in the project config (scope-specific check)
-      const projectReactEntries = await readSkillEntries(projectDir, "web-framework-react");
+      const projectReactEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);
       expect(projectReactEntries.map((entry) => entry.scope)).toStrictEqual(["project"]);
     },
   );

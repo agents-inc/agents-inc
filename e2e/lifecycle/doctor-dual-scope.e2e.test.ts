@@ -22,7 +22,7 @@ beforeAll(async () => {
   const source = await createE2ESource();
   sourceDir = source.sourceDir;
   sourceTempDir = source.tempDir;
-}, TIMEOUTS.SETUP * 2);
+}, TIMEOUTS.SETUP_DUAL);
 
 afterAll(async () => {
   if (sourceTempDir) await cleanupTempDir(sourceTempDir);

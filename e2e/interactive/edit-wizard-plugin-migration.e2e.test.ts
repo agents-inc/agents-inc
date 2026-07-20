@@ -5,6 +5,7 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import { cleanupTempDir, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import "../matchers/setup.js";
@@ -18,9 +19,6 @@ import "../matchers/setup.js";
  *
  * The entire suite is skipped when the Claude CLI is not available.
  */
-
-/** Combined timeout for tests that include plugin operations + exit wait */
-const PLUGIN_TEST_TIMEOUT_MS = TIMEOUTS.PLUGIN_TEST;
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
@@ -45,12 +43,12 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
   describe("mode migration local -> plugin", () => {
     it(
       "should switch skills from local to plugin mode",
-      { timeout: PLUGIN_TEST_TIMEOUT_MS },
+      { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.localProjectWithMarketplace({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           marketplace: fixture.marketplaceName,
-          agents: ["web-developer"],
+          agents: [...E2E_AGENTS.WEB],
           domains: ["web"],
         });
 
@@ -77,7 +75,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
         expect(rawOutput).toContain("to plugin");
 
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           source: fixture.marketplaceName,
         });
 
@@ -94,12 +92,12 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
   describe("mode migration plugin -> eject", () => {
     it(
       "should switch skills from plugin to eject mode",
-      { timeout: PLUGIN_TEST_TIMEOUT_MS },
+      { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           marketplace: fixture.marketplaceName,
-          agents: ["web-developer"],
+          agents: [...E2E_AGENTS.WEB],
           domains: ["web"],
         });
 
@@ -125,9 +123,9 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
         expect(rawOutput).toContain("Switching");
         expect(rawOutput).toContain("to eject");
 
-        await expect(result.project).toHaveSkillCopied("web-framework-react");
+        await expect(result.project).toHaveSkillCopied(E2E_SKILL.react.id);
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           source: "eject",
         });
 

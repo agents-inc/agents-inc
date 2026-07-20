@@ -2,12 +2,8 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import {
-  agentsPath,
   cleanupTempDir,
   ensureBinaryExists,
-  fileExists,
-  listFiles,
-  readTestFile,
   renderAgentYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";

@@ -2,13 +2,14 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   createGlobalOnlyEnv,
   runEditWithFirstSkillAction,
   type DualScopeEnv,
 } from "../fixtures/dual-scope-helpers.js";
+import { E2E_AGENT, E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Info-panel scope-toggle diff — D-225 symmetry + D-230 / D-232 correctness.
@@ -44,9 +45,6 @@ import {
  * tombstone).
  */
 
-const REACT_SKILL_DISPLAY_NAME = "web-framework-react";
-const WEB_DEVELOPER_AGENT_NAME = "web-developer";
-
 describe("info panel — scope-toggle diff symmetry", () => {
   let sourceDir: string;
   let sourceTempDir: string;
@@ -58,7 +56,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -85,15 +83,14 @@ describe("info panel — scope-toggle diff symmetry", () => {
       projectDir,
       source: { sourceDir, tempDir: sourceTempDir },
       env: { HOME: fakeHome },
-      rows: 60,
-      cols: 120,
+      ...TERMINAL_SIZE.TALL,
     });
 
     try {
       const sources = await toggleWizard.build.passThroughAllDomains();
       await sources.waitForReady();
       const agentsStep = await sources.advance();
-      await agentsStep.navigateCursorToAgent("Web Developer");
+      await agentsStep.navigateCursorToAgent(E2E_AGENT_DISPLAY["web-developer"]);
       await agentsStep.toggleScopeOnFocusedAgent();
       const confirm = await agentsStep.advance("edit");
       const result = await confirm.confirm();
@@ -129,8 +126,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Web domain: react is a persisted [P][G] pair, so `s` is now inert on it
@@ -147,7 +143,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       const confirm = await agentsStep.acceptDefaults("edit");
       await confirm.waitForReady();
 
-      const skillEntries = await confirm.getSummaryDiffEntries(REACT_SKILL_DISPLAY_NAME);
+      const skillEntries = await confirm.getSummaryDiffEntries(E2E_SKILL.react.display);
 
       expect(
         skillEntries,
@@ -183,8 +179,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Web domain: react is at global — toggle G→P.
@@ -197,7 +192,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       const confirm = await agentsStep.acceptDefaults("edit");
       await confirm.waitForReady();
 
-      const skillEntries = await confirm.getSummaryDiffEntries(REACT_SKILL_DISPLAY_NAME);
+      const skillEntries = await confirm.getSummaryDiffEntries(E2E_SKILL.react.display);
 
       expect(
         skillEntries,
@@ -235,8 +230,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const sources = await wizard.build.passThroughAllDomains();
@@ -245,11 +239,11 @@ describe("info panel — scope-toggle diff symmetry", () => {
       // web-developer is a persisted [P][G] pair, so `s` is now inert on it.
       // Space (deselect) is the sanctioned way to drop the project half — it
       // collapses [P][G] → [G], the same P→G restoration end-state.
-      await agentsStep.toggleAgent("Web Developer");
+      await agentsStep.toggleAgent(E2E_AGENT_DISPLAY["web-developer"]);
       const confirm = await agentsStep.advance("edit");
       await confirm.waitForReady();
 
-      const agentEntries = await confirm.getSummaryDiffEntries(WEB_DEVELOPER_AGENT_NAME);
+      const agentEntries = await confirm.getSummaryDiffEntries(E2E_AGENT["web-developer"].name);
 
       expect(
         agentEntries,
@@ -287,8 +281,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Web domain: react is a persisted [P][G] pair, so `s` is now inert on it.
@@ -298,7 +291,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       await wizard.build.toggleFocusedSkill();
       await wizard.build.toggleInfoPanel();
 
-      const skillEntries = await wizard.build.getSummaryDiffEntries(REACT_SKILL_DISPLAY_NAME);
+      const skillEntries = await wizard.build.getSummaryDiffEntries(E2E_SKILL.react.display);
 
       expect(
         skillEntries,
@@ -336,8 +329,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       await wizard.build.advanceDomain();
@@ -348,7 +340,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       const confirm = await agentsStep.acceptDefaults("edit");
       await confirm.waitForReady();
 
-      const skillEntries = await confirm.getSummaryDiffEntries(REACT_SKILL_DISPLAY_NAME);
+      const skillEntries = await confirm.getSummaryDiffEntries(E2E_SKILL.react.display);
 
       // Under D-232 a tombstone re-read from config must render as • on both
       // rows — the Project row (from the active project-scoped entry) and the

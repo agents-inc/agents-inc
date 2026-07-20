@@ -4,13 +4,13 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
-import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupTempDir,
-  createPermissionsFile,
+  configTsPath,
   createTempDir,
   ensureBinaryExists,
   fileExists,
@@ -48,7 +48,7 @@ describe.skipIf(!claudeAvailable)(
     beforeAll(async () => {
       await ensureBinaryExists();
       pluginSource = await createE2EPluginSource();
-    }, TIMEOUTS.SETUP * 2);
+    }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
       if (pluginSource) await cleanupTempDir(pluginSource.tempDir);
@@ -56,14 +56,14 @@ describe.skipIf(!claudeAvailable)(
 
     describe("init plugin then edit toggle ONE skill to local: mixed compiled output", () => {
       let initWizard: InitWizard | undefined;
-      let prompt: InteractivePrompt | undefined;
+      let editWizard: EditWizard | undefined;
       let tempDir: string | undefined;
 
       afterEach(async () => {
         await initWizard?.destroy();
         initWizard = undefined;
-        await prompt?.destroy();
-        prompt = undefined;
+        await editWizard?.destroy();
+        editWizard = undefined;
         if (tempDir) {
           await cleanupTempDir(tempDir);
           tempDir = undefined;
@@ -97,55 +97,44 @@ describe.skipIf(!claudeAvailable)(
           await initResult.destroy();
 
           // Phase 2: edit + flip the FIRST source-row's source from the
-          // plugin marketplace (col 1) back to eject (col 0) via arrow-left
-          // + Space. The first row in the customize grid for this stack is
+          // plugin marketplace back to eject by pressing Space on the grid's
+          // default focus, which is (row 0, col 0) = "Local". No arrow key is
+          // needed. The first row in the customize grid for this stack is
           // web-framework-react. After the toggle: react = eject, rest stay
           // plugin.
-          //
-          // We use InteractivePrompt because per-skill source navigation
-          // (arrow-left/right + Space inside the SourceGrid) is exposed
-          // there but not on the SourcesStep page object — the existing
-          // mixed-source lifecycle test (source-switching-per-skill) sets
-          // the precedent.
-          await createPermissionsFile(projectDir);
-          prompt = new InteractivePrompt(
-            ["edit", "--source", pluginSource!.sourceDir],
+          editWizard = await EditWizard.launch({
             projectDir,
-            {
-              env: { AGENTSINC_SOURCE: undefined },
-              rows: 60,
-              cols: 120,
-            },
-          );
+            source: { sourceDir: pluginSource!.sourceDir, tempDir: pluginSource!.tempDir },
+            ...TERMINAL_SIZE.TALL,
+          });
 
-          await prompt.waitForRawText(STEP_TEXT.BUILD, TIMEOUTS.WIZARD_LOAD);
-          await prompt.pressEnter();
-          await prompt.waitForRawText(STEP_TEXT.DOMAIN_API, TIMEOUTS.WIZARD_LOAD);
-          await prompt.pressEnter();
-          await prompt.waitForRawText(STEP_TEXT.DOMAIN_META, TIMEOUTS.WIZARD_LOAD);
-          await prompt.pressEnter();
-          await prompt.waitForRawText(STEP_TEXT.SOURCES, TIMEOUTS.WIZARD_LOAD);
+          const sources = await editWizard.build.passThroughAllDomains();
+          await sources.waitForReady();
 
           // After plugin-mode init, react's selected column is the marketplace
-          // plugin (col 1). Default grid focus is (row 0, col 0). Press
-          // Space at col 0 selects "Local" (eject) for react. The other
-          // skills' rows are not touched, so they retain plugin source.
-          await prompt.space();
+          // plugin (col 1). Default grid focus is (row 0, col 0). Space at
+          // col 0 selects "Local" (eject) for react. The other skills' rows
+          // are not touched, so they retain plugin source.
+          await sources.selectFocusedSourceCell();
 
-          await prompt.pressEnter();
-          await prompt.waitForRawText(STEP_TEXT.AGENTS, TIMEOUTS.WIZARD_LOAD);
-          await prompt.pressEnter();
-          await prompt.waitForRawText(STEP_TEXT.CONFIRM, TIMEOUTS.WIZARD_LOAD);
-          await prompt.pressEnter();
-          await prompt.waitForRawText(STEP_TEXT.EDIT_SUCCESS, TIMEOUTS.PLUGIN_INSTALL);
-          const editExitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
-          expect(editExitCode).toBe(EXIT_CODES.SUCCESS);
+          const agents = await sources.advance();
+          const confirm = await agents.acceptDefaults("edit");
+
+          // confirmAwaiting, not confirm(): this test needs EDIT_SUCCESS alone
+          // in raw PTY output on the TIMEOUTS.PLUGIN_INSTALL budget a real
+          // `claude plugin install` round-trip takes. confirm() would accept
+          // EDIT_UNCHANGED too, off the xterm buffer, on half the budget.
+          const editResult = await confirm.confirmAwaiting(
+            STEP_TEXT.EDIT_SUCCESS,
+            TIMEOUTS.PLUGIN_INSTALL,
+          );
+          expect(await editResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
           // Phase 3: assert config.ts records the per-skill split.
           // web-framework-react → "eject" after the toggle.
           // The other web-developer skills (vitest, zustand, meta skills) →
           // marketplaceName (still plugin).
-          const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+          const configPath = configTsPath(projectDir);
           expect(await fileExists(configPath)).toBe(true);
           const configContent = await readTestFile(configPath);
 
@@ -163,11 +152,12 @@ describe.skipIf(!claudeAvailable)(
           );
 
           // zustand stays plugin — verifies the toggle was scoped to react.
-          // The source is "agents-inc" (the skill author from metadata.yaml,
-          // NOT the dynamic marketplaceName). This is set by the multi-source
-          // loader from each skill's metadata.yaml `author` field.
+          // Its source is the source's own marketplace name, the same label the
+          // plugin install and the registry use.
           expect(configContent).toMatch(
-            /"id":"web-state-zustand","scope":"(?:project|global)","source":"agents-inc"/,
+            new RegExp(
+              `"id":"web-state-zustand","scope":"(?:project|global)","source":"${pluginSource!.marketplaceName}"`,
+            ),
           );
 
           // Phase 4: assert the compiled web-developer.md honors per-skill

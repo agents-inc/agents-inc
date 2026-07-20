@@ -18,10 +18,12 @@ import {
   directoryExists,
   renderSkillMd,
   writeProjectConfig,
-  agentsPath,
+  writeAgentFile,
+  skillsPath,
   FORKED_FROM_METADATA,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
 
 /**
@@ -59,7 +61,7 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
     await claudePluginMarketplaceAdd(fixture.sourceDir);
 
     // Step 4: Install a plugin via Claude CLI
-    const pluginRef = `web-framework-react@${fixture.marketplaceName}`;
+    const pluginRef = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
     await claudePluginInstall(pluginRef, "project", projectDir);
 
     // Step 5: Create config.ts referencing the installed plugin
@@ -67,7 +69,7 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
       name: "plugin-uninstall-test",
       skills: [
         {
-          id: "web-framework-react",
+          id: E2E_SKILL.react.id,
           scope: "project",
           source: fixture.marketplaceName,
         },
@@ -77,18 +79,16 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
     });
 
     // Step 6: Create local skill with forkedFrom metadata (so skill uninstall works)
-    const skillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, "web-framework-react");
+    const skillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
     await mkdir(skillDir, { recursive: true });
     await writeFile(
       path.join(skillDir, FILES.SKILL_MD),
-      renderSkillMd("web-framework-react", "React framework", "# React\n\nTest content."),
+      renderSkillMd(E2E_SKILL.react.id, "React framework", "# React\n\nTest content."),
     );
     await writeFile(path.join(skillDir, FILES.METADATA_YAML), FORKED_FROM_METADATA);
 
     // Step 7: Create agents directory
-    const agentsDir = agentsPath(projectDir);
-    await mkdir(agentsDir, { recursive: true });
-    await writeFile(path.join(agentsDir, "web-developer.md"), "---\nname: web-developer\n---\n");
+    await writeAgentFile(projectDir, "web-developer", { frontmatter: true, body: "" });
 
     // Note: No createPermissionsFile() here. The claudePluginInstall() call
     // in Step 4 creates .claude/settings.json with enabledPlugins. We must
@@ -102,7 +102,7 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
 
   describe("pre-conditions", () => {
     it("should have the plugin registered in settings before uninstall", async () => {
-      const pluginKey = `web-framework-react@${fixture.marketplaceName}`;
+      const pluginKey = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
       await expect({ dir: projectDir }).toHavePlugin(pluginKey);
     });
   });

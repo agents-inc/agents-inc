@@ -1,9 +1,14 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { TIMEOUTS, DIRS, FILES, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
-import { cleanupTempDir, ensureBinaryExists, readTestFile } from "../helpers/test-utils.js";
+import { TIMEOUTS, TERMINAL_SIZE, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import {
+  cleanupTempDir,
+  configTsPath,
+  ensureBinaryExists,
+  readTestFile,
+} from "../helpers/test-utils.js";
 import { createGlobalOnlyEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import { E2E_AGENT, E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import "../matchers/setup.js";
 
@@ -28,7 +33,7 @@ describe("global agent toggle guard from project scope", () => {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -51,13 +56,19 @@ describe("global agent toggle guard from project scope", () => {
       // Setup: global init + project init with all skills/agents staying global
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
 
+      // `cc init` inside a project materialises that project — it writes the
+      // project's config.ts and registers the path in the global projects list —
+      // so a project config already exists before the guarded edit runs. The
+      // guard's contract is therefore "changes nothing", not "writes nothing":
+      // snapshot the project config now and assert it is byte-identical after.
+      const projectConfigBefore = await readTestFile(configTsPath(env.projectDir));
+
       // Launch edit wizard from project scope
       wizard = await EditWizard.launch({
         projectDir: env.projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: env.fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Navigate to agents step: build (all domains) -> sources -> agents
@@ -65,7 +76,7 @@ describe("global agent toggle guard from project scope", () => {
       const agents = await sources.acceptDefaults();
 
       // Attempt to toggle a globally installed agent
-      await agents.toggleAgent("Web Developer");
+      await agents.toggleAgent(E2E_AGENT_DISPLAY["web-developer"]);
 
       // Verify the toast message appeared
       const output = agents.getOutput();
@@ -78,14 +89,24 @@ describe("global agent toggle guard from project scope", () => {
       expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
       // Verify the global config still contains the agent (unchanged)
-      const globalConfigPath = path.join(env.fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const globalConfigPath = configTsPath(env.fakeHome);
       const globalConfig = await readTestFile(globalConfigPath);
-      expect(globalConfig).toContain("web-developer");
+      expect(globalConfig).toContain(E2E_AGENT["web-developer"].name);
       // Guard against a silent scope flip: the agent must remain global-scoped.
       expect(globalConfig).toContain('"scope":"global"');
 
-      // Guard blocked the toggle: no project config written and wizard reported no-op.
-      await expect({ dir: env.projectDir }).not.toHaveConfig();
+      // Guard blocked the toggle: the project config is byte-identical to the
+      // pre-edit snapshot, so no agent entry was added, removed or re-scoped.
+      expect(
+        await readTestFile(configTsPath(env.projectDir)),
+        "a blocked agent toggle must leave the project config byte-identical",
+      ).toBe(projectConfigBefore);
+
+      // Filesystem: the agent stays compiled at global scope only — a blocked
+      // toggle must not materialise a project-scope copy of it.
+      await expect({ dir: env.projectDir }).not.toHaveCompiledAgents();
+      await expect({ dir: env.fakeHome }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
+
       expect(result.output).toContain(STEP_TEXT.EDIT_UNCHANGED);
 
       await result.destroy();

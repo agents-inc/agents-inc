@@ -2,7 +2,7 @@ import { CLI } from "../fixtures/cli.js";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
@@ -25,7 +25,7 @@ beforeAll(async () => {
   const source = await createE2ESource();
   sourceDir = source.sourceDir;
   sourceTempDir = source.tempDir;
-}, TIMEOUTS.SETUP * 2);
+}, TIMEOUTS.SETUP_DUAL);
 
 afterAll(async () => {
   if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -49,8 +49,7 @@ describe("global scope lifecycle -- source loader merge", () => {
         projectDir: env.projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: env.fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const sources = await wizard.build.passThroughAllDomainsGeneric();
@@ -164,8 +163,7 @@ describe("global scope lifecycle -- init wizard with scope toggling", () => {
         source: { sourceDir, tempDir: sourceTempDir },
         projectDir,
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Stack -> Domain -> Build

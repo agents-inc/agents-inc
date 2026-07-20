@@ -6,7 +6,7 @@ import { DashboardSession } from "../pages/dashboard-session.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
   createTempDir,
   cleanupTempDir,
@@ -20,7 +20,7 @@ describe("init wizard — existing projects", () => {
   let dashboard: DashboardSession | undefined;
   let editWizard: EditWizard | undefined;
   let tempDir: string | undefined;
-  let source: { sourceDir: string; tempDir: string } | undefined;
+  let source: E2ESource | undefined;
 
   beforeAll(ensureBinaryExists);
 

@@ -1,4 +1,3 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
@@ -6,16 +5,19 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   isClaudeCLIAvailable,
   cleanupTempDir,
+  completeWithLocalSources,
+  configTsPath,
   ensureBinaryExists,
   fileExists,
   injectMarketplaceIntoConfig,
 } from "../helpers/test-utils.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Scope-aware local skill copying E2E tests.
@@ -39,7 +41,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
   beforeAll(async () => {
     await ensureBinaryExists();
     fixture = await createE2EPluginSource();
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (fixture) await cleanupTempDir(fixture.tempDir);
@@ -69,8 +71,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
           projectDir,
           env: { HOME: fakeHome },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         // Stack -> Domain -> Build
@@ -91,9 +92,9 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
         // Sort order: global skills first, project-scoped skills last.
         // Position 0 = web-testing-vitest (global), last = web-framework-react (project)
         await sources.waitForReady();
-        await sources.toggleFocusedSource(); // Set web-testing-vitest to local (first global skill)
+        await sources.selectFocusedSourceCell(); // Set web-testing-vitest to local (first global skill)
         await sources.navigateUp(); // Wrap to last position (project-scoped react)
-        await sources.toggleFocusedSource(); // Set web-framework-react to local
+        await sources.selectFocusedSourceCell(); // Set web-framework-react to local
         const agents = await sources.advance();
 
         // Agents -- accept defaults
@@ -110,11 +111,11 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
         expect(rawOutput).toContain("Mixed");
 
         // --- Scope-aware copy assertions ---
-        await expect({ dir: projectDir }).toHaveSkillCopied("web-framework-react");
-        await expect({ dir: fakeHome }).toHaveSkillCopied("web-testing-vitest");
-        await expect({ dir: fakeHome }).not.toHaveSkillCopied("web-framework-react");
-        await expect({ dir: projectDir }).not.toHaveSkillCopied("web-testing-vitest");
-        await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
+        await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
+        await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.vitest.id);
+        await expect({ dir: fakeHome }).not.toHaveSkillCopied(E2E_SKILL.react.id);
+        await expect({ dir: projectDir }).not.toHaveSkillCopied(E2E_SKILL.vitest.id);
+        await expect({ dir: fakeHome }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
 
         await result.destroy();
       },
@@ -146,8 +147,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
           projectDir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
           env: { HOME: fakeHome },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         const sources = await editWizard.build.passThroughAllDomains();
@@ -163,9 +163,9 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
         expect(editExitCode).toBe(EXIT_CODES.SUCCESS);
 
         // --- Assertions ---
-        await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
-        await expect({ dir: projectDir }).not.toHaveSkillCopied("web-framework-react");
-        await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
+        await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
+        await expect({ dir: projectDir }).not.toHaveSkillCopied(E2E_SKILL.react.id);
+        await expect({ dir: fakeHome }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
 
         await result.destroy();
       },
@@ -184,32 +184,20 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
           projectDir,
           env: { HOME: fakeHome },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
-        const domain = await initWizard.stack.selectFirstStack();
-        const build = await domain.acceptDefaults();
-        const initSources = await build.passThroughAllDomains();
-
         // Sources -- set ALL to local
-        await initSources.waitForReady();
-        await initSources.setAllLocal();
-        const initAgents = await initSources.advance();
-
-        const initConfirm = await initAgents.acceptDefaults("init");
-        const initResult = await initConfirm.confirm();
+        const initResult = await completeWithLocalSources(initWizard);
         expect(await initResult.exitCode).toBe(EXIT_CODES.SUCCESS);
         await initResult.destroy();
 
         // Verify Phase 1: Skills were copied to HOME
-        await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
+        await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
 
         // Inject marketplace so mode-migrator can install plugins
-        const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-        const globalConfigExists = await fileExists(globalConfigPath);
-        const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-        const projectConfigExists = await fileExists(projectConfigPath);
+        const globalConfigExists = await fileExists(configTsPath(fakeHome));
+        const projectConfigExists = await fileExists(configTsPath(projectDir));
 
         if (globalConfigExists) {
           await injectMarketplaceIntoConfig(fakeHome, fixture.marketplaceName);
@@ -223,8 +211,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
           projectDir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
           env: { HOME: fakeHome },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         const editSources = await editWizard.build.passThroughAllDomains();
@@ -244,9 +231,9 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
         expect(rawOutput).toContain("to plugin");
 
         // --- Assertions ---
-        await expect({ dir: fakeHome }).not.toHaveSkillCopied("web-framework-react");
-        await expect({ dir: projectDir }).not.toHaveSkillCopied("web-framework-react");
-        await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
+        await expect({ dir: fakeHome }).not.toHaveSkillCopied(E2E_SKILL.react.id);
+        await expect({ dir: projectDir }).not.toHaveSkillCopied(E2E_SKILL.react.id);
+        await expect({ dir: fakeHome }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
 
         await editResult.destroy();
       },

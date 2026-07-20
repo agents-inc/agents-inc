@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { STEP_TEXT, EXIT_CODES } from "../pages/constants.js";
+import { STEP_TEXT, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 
 describe("init wizard — flags and permissions", () => {
   let wizard: InitWizard | undefined;
   let editWizard: EditWizard | undefined;
-  let source: { sourceDir: string; tempDir: string } | undefined;
+  let source: E2ESource | undefined;
 
   beforeAll(ensureBinaryExists);
 
@@ -47,8 +47,7 @@ describe("init wizard — flags and permissions", () => {
       editWizard = await EditWizard.launch({
         projectDir: dashboardProject.dir,
         source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const output = editWizard.build.getOutput();

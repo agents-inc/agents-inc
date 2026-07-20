@@ -4,7 +4,7 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupTempDir,
@@ -13,9 +13,12 @@ import {
   createTempDir,
   directoryExists,
   ensureBinaryExists,
+  loadConfigOrFail,
+  renderMetadataYaml,
+  skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -34,26 +37,26 @@ import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
  * own copy.
  */
 
-const VITEST = "web-testing-vitest";
-const WEB_DEVELOPER: AgentName = "web-developer";
-const API_DEVELOPER: AgentName = "api-developer";
-
 const globalStack = {
-  [WEB_DEVELOPER]: {
-    "web-testing": [{ id: VITEST, preloaded: false }],
+  [E2E_AGENT["web-developer"].name]: {
+    "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
 
 const projectStack = {
-  [API_DEVELOPER]: {
-    "web-testing": [{ id: VITEST, preloaded: false }],
+  [E2E_AGENT["api-developer"].name]: {
+    "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
 
-const vitestMetadata =
-  `author: "@test"\ndisplayName: ${VITEST}\ncategory: web-testing\nslug: vitest\n` +
-  `cliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\n` +
-  `contentHash: "c3d4e5f"\n`;
+const vitestMetadata = renderMetadataYaml({
+  displayName: E2E_SKILL.vitest.id,
+  category: "web-testing",
+  slug: E2E_SKILL.vitest.slug,
+  cliDescription: "E2E test skill",
+  usageGuidance: "Use when testing E2E scenarios",
+  contentHash: "c3d4e5f",
+});
 
 describe("edit at global scope removes only the global copy of a dual-scope skill", () => {
   let sourceDir: string;
@@ -100,15 +103,15 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
 
       const globalConfig = buildProjectConfig({
         name: "dual-scope-global",
-        skills: buildSkillConfigs([VITEST], { scope: "global", source: "eject" }),
-        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+        skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", source: "eject" }),
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         domains: ["web"],
-        selectedAgents: [WEB_DEVELOPER],
+        selectedAgents: [E2E_AGENT["web-developer"].name],
         stack: globalStack,
         projects: [realpathSync(projectDir)],
       });
       await writeProjectConfig(globalHome, globalConfig);
-      await createLocalSkill(globalHome, VITEST, {
+      await createLocalSkill(globalHome, E2E_SKILL.vitest.id, {
         description: "Global vitest copy",
         metadata: vitestMetadata,
       });
@@ -118,15 +121,15 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
       const projectConfig = buildProjectConfig({
         name: "dual-scope-project",
         skills: [
-          ...buildSkillConfigs([VITEST], { scope: "global", source: "eject" }),
-          ...buildSkillConfigs([VITEST], { scope: "project", source: "eject" }),
+          ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", source: "eject" }),
+          ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", source: "eject" }),
         ],
-        agents: buildAgentConfigs([API_DEVELOPER], { scope: "project" }),
-        selectedAgents: [API_DEVELOPER],
+        agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
+        selectedAgents: [E2E_AGENT["api-developer"].name],
         stack: projectStack,
       });
       await writeProjectConfig(projectDir, projectConfig);
-      await createLocalSkill(projectDir, VITEST, {
+      await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
         description: "Project's own vitest copy",
         metadata: vitestMetadata,
       });
@@ -140,11 +143,10 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
         projectDir: globalHome,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: globalHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
-      await wizard.build.selectSkill(VITEST);
+      await wizard.build.selectSkill(E2E_SKILL.vitest.id);
 
       const sources = await wizard.build.passThroughAllDomainsGeneric();
       await sources.waitForReady();
@@ -158,12 +160,9 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
       // Phase 3a: Global config — vitest gone from skills[] and stack.
       // ================================================================
 
-      const globalLoaded = await loadProjectConfigFromDir(globalHome);
-      expect(globalLoaded, "global config.ts must exist after edit").not.toBeNull();
-      if (!globalLoaded) return;
-      const g = globalLoaded.config;
-      expect(g.skills.map((s) => s.id)).not.toContain(VITEST);
-      expect(g.stack?.[WEB_DEVELOPER]?.["web-testing"]).toBeUndefined();
+      const g = await loadConfigOrFail(globalHome);
+      expect(g.skills.map((s) => s.id)).not.toContain(E2E_SKILL.vitest.id);
+      expect(g.stack?.[E2E_AGENT["web-developer"].name]?.["web-testing"]).toBeUndefined();
 
       // ================================================================
       // Phase 3b: Project config — the project's OWN project-scope vitest entry
@@ -171,10 +170,7 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
       // inherited global vitest is dropped, showing propagation actually ran.
       // ================================================================
 
-      const projectLoaded = await loadProjectConfigFromDir(projectDir);
-      expect(projectLoaded, "project config.ts must exist after edit").not.toBeNull();
-      if (!projectLoaded) return;
-      const p = projectLoaded.config;
+      const p = await loadConfigOrFail(projectDir);
 
       // Proof-of-execution: propagation rewrote the project, dropping the stale
       // inherited global vitest. Without this, the assertions below could pass
@@ -185,21 +181,23 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
       ).toBe(0);
 
       // The project's own project-scope vitest survives, unchanged.
-      const projectVitest = p.skills.find((s) => s.id === VITEST && s.scope === "project");
+      const projectVitest = p.skills.find(
+        (s) => s.id === E2E_SKILL.vitest.id && s.scope === "project",
+      );
       expect(
         projectVitest,
         "project's own project-scope vitest must survive the global removal",
-      ).toStrictEqual({ id: VITEST, scope: "project", source: "eject" });
+      ).toStrictEqual({ id: E2E_SKILL.vitest.id, scope: "project", source: "eject" });
 
       // The project agent's stack still references its project-scope vitest.
       expect(
-        p.stack?.[API_DEVELOPER]?.["web-testing"],
+        p.stack?.[E2E_AGENT["api-developer"].name]?.["web-testing"],
         "project agent stack must still reference the project-scope vitest",
-      ).toStrictEqual([{ id: VITEST, preloaded: false }]);
+      ).toStrictEqual([{ id: E2E_SKILL.vitest.id, preloaded: false }]);
 
       // Filesystem side: the project's own eject skill dir is untouched.
       expect(
-        await directoryExists(path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, VITEST)),
+        await directoryExists(path.join(skillsPath(projectDir), E2E_SKILL.vitest.id)),
         "project's own vitest skill dir must remain",
       ).toBe(true);
     },

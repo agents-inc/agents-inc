@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { E2E_AGENT_DISPLAY, E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
@@ -68,12 +69,12 @@ describe.skipIf(!claudeAvailable)("init wizard — interactions", () => {
 
         // API skills should NOT be in config
         await expectPhaseSuccess(result, {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
         });
 
         // The output should NOT contain API-only skills
         const output = result.output;
-        expect(output).not.toContain("api-framework-hono");
+        expect(output).not.toContain(E2E_SKILL.hono.id);
       },
     );
   });
@@ -91,16 +92,16 @@ describe.skipIf(!claudeAvailable)("init wizard — interactions", () => {
       const agents = await sources.acceptDefaults();
 
       // Deselect API Developer agent
-      await agents.toggleAgent("API Developer");
+      await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
 
       const confirm = await agents.advance("init");
       const result = await confirm.confirm();
 
       // api-developer should NOT be compiled (it was deselected)
       await expectPhaseSuccess(result, {
-        skillIds: ["web-framework-react"],
-        agents: ["web-developer"],
-        compiledAgents: ["web-developer"],
+        skillIds: [E2E_SKILL.react.id],
+        agents: [...E2E_AGENTS.WEB],
+        compiledAgents: [...E2E_AGENTS.WEB],
       });
     });
   });
@@ -147,7 +148,7 @@ describe.skipIf(!claudeAvailable)("init wizard — interactions", () => {
 
         // Config should contain the skill with project scope
         await expectPhaseSuccess(result, {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
         });
 
         // Agents should be compiled after wizard completion (to global home since agents default to global)

@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
 
 /**
@@ -26,7 +26,7 @@ import "../matchers/setup.js";
  */
 
 describe("init with unresolvable marketplace: filesystem integrity", () => {
-  let localSource: Awaited<ReturnType<typeof createE2ESource>>;
+  let localSource: E2ESource;
   let wizard: InitWizard | undefined;
 
   beforeAll(async () => {
@@ -63,7 +63,7 @@ describe("init with unresolvable marketplace: filesystem integrity", () => {
       // first (pre-fix), then `installPluginsStep` would hard-error, leaving
       // eject copies orphaned on disk.
       await sources.waitForReady();
-      await sources.toggleFocusedSource();
+      await sources.selectFocusedSourceCell();
       const agents = await sources.advance();
       const confirm = await agents.acceptDefaults("init");
       const result = await confirm.confirmExpectingExit();
@@ -80,7 +80,7 @@ describe("init with unresolvable marketplace: filesystem integrity", () => {
       await expect({ dir: result.project.dir }).toHaveNoLocalSkills();
 
       // And the old "Skills copied to:" success banner must never appear.
-      expect(output).not.toContain("Skills copied to:");
+      expect(output).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
     },
   );
 });

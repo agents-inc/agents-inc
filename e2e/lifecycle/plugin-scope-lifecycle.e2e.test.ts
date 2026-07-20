@@ -1,19 +1,17 @@
 import { CLI } from "../fixtures/cli.js";
-import { mkdir } from "fs/promises";
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, DIRS, EXIT_CODES } from "../pages/constants.js";
+import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   isClaudeCLIAvailable,
   cleanupTempDir,
   createPermissionsFile,
-  createTempDir,
   ensureBinaryExists,
 } from "../helpers/test-utils.js";
 
@@ -38,13 +36,8 @@ describe.skipIf(!claudeAvailable)(
       await ensureBinaryExists();
       fixture = await createE2EPluginSource();
 
-      tempDir = await createTempDir();
-      fakeHome = path.join(tempDir, "fake-home");
-      projectDir = path.join(fakeHome, "project");
-
-      await mkdir(fakeHome, { recursive: true });
-      await mkdir(projectDir, { recursive: true });
-    }, TIMEOUTS.SETUP * 2);
+      ({ tempDir, fakeHome, projectDir } = await createTestEnvironment({ permissions: false }));
+    }, TIMEOUTS.SETUP_DUAL);
 
     afterEach(async () => {
       await wizard?.destroy();
@@ -71,8 +64,7 @@ describe.skipIf(!claudeAvailable)(
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
           projectDir,
           env: { HOME: fakeHome },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         // Stack -> Domain -> Build

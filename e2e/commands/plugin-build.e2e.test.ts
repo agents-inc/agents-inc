@@ -11,6 +11,7 @@ import {
   writeTestPackageJson,
 } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
 
 /**
@@ -26,13 +27,13 @@ import { CLI } from "../fixtures/cli.js";
  */
 
 const E2E_SKILL_NAMES = [
-  "web-framework-react",
-  "web-testing-vitest",
-  "web-state-zustand",
-  "api-framework-hono",
-  "meta-methodology-research-methodology",
-  "meta-reviewing-reviewing",
-  "meta-reviewing-cli-reviewing",
+  E2E_SKILL.react.id,
+  E2E_SKILL.vitest.id,
+  E2E_SKILL.zustand.id,
+  E2E_SKILL.hono.id,
+  E2E_SKILL["research-methodology"].id,
+  E2E_SKILL.reviewing.id,
+  E2E_SKILL["cli-reviewing"].id,
 ];
 
 const EXPECTED_SKILL_COUNT = 9;
@@ -71,7 +72,7 @@ describe("build pipeline (plugin chain)", () => {
     });
 
     it("should produce a plugin directory with manifest for each skill", async () => {
-      const pluginsDir = path.join(sourceDir, "dist", "plugins");
+      const pluginsDir = path.join(sourceDir, SOURCE_PATHS.PLUGINS_DIST);
 
       for (const skillName of E2E_SKILL_NAMES) {
         const manifestPath = path.join(
@@ -86,7 +87,7 @@ describe("build pipeline (plugin chain)", () => {
     });
 
     it("should produce valid manifest JSON with name and version fields", async () => {
-      const pluginsDir = path.join(sourceDir, "dist", "plugins");
+      const pluginsDir = path.join(sourceDir, SOURCE_PATHS.PLUGINS_DIST);
       const pluginDirs = await listFiles(pluginsDir);
 
       expect(pluginDirs.length).toBeGreaterThanOrEqual(1);

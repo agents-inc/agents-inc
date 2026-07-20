@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import { EXIT_CODES } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { createTempDir, cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
 
@@ -126,18 +127,18 @@ describe("import skill command", () => {
     e2eSourceTempDir = srcTempDir;
 
     const { exitCode, stdout } = await CLI.run(
-      ["import", "skill", sourceDir, "--skill", "web-framework-react"],
+      ["import", "skill", sourceDir, "--skill", E2E_SKILL.react.id],
       { dir: tempDir },
     );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain("Imported:");
-    expect(stdout).toContain("Import complete:");
+    expect(stdout).toContain(STEP_TEXT.IMPORT_SUCCESS);
     expect(stdout).toContain("compile");
 
     // Verify the skill was actually copied to .claude/skills/
-    await expect({ dir: tempDir }).toHaveLocalSkills(["web-framework-react"]);
-    await expect({ dir: tempDir }).toHaveSkillCopied("web-framework-react");
+    await expect({ dir: tempDir }).toHaveLocalSkills([E2E_SKILL.react.id]);
+    await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.react.id);
   });
 
   // BUG: Same parseGitHubSource() issue. Cannot reach the duplicate-detection logic
@@ -149,13 +150,13 @@ describe("import skill command", () => {
     e2eSourceTempDir = srcTempDir;
 
     // First import
-    await CLI.run(["import", "skill", sourceDir, "--skill", "web-framework-react"], {
+    await CLI.run(["import", "skill", sourceDir, "--skill", E2E_SKILL.react.id], {
       dir: tempDir,
     });
 
     // Second import should warn about skipping
     const { output } = await CLI.run(
-      ["import", "skill", sourceDir, "--skill", "web-framework-react"],
+      ["import", "skill", sourceDir, "--skill", E2E_SKILL.react.id],
       { dir: tempDir },
     );
 
@@ -170,19 +171,19 @@ describe("import skill command", () => {
     e2eSourceTempDir = srcTempDir;
 
     // First import
-    await CLI.run(["import", "skill", sourceDir, "--skill", "web-framework-react"], {
+    await CLI.run(["import", "skill", sourceDir, "--skill", E2E_SKILL.react.id], {
       dir: tempDir,
     });
 
     // Second import with --force should succeed
     const { exitCode, stdout } = await CLI.run(
-      ["import", "skill", sourceDir, "--skill", "web-framework-react", "--force"],
+      ["import", "skill", sourceDir, "--skill", E2E_SKILL.react.id, "--force"],
       { dir: tempDir },
     );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain("Imported:");
-    expect(stdout).toContain("Import complete:");
+    expect(stdout).toContain(STEP_TEXT.IMPORT_SUCCESS);
   });
 
   // BUG: parseGitHubSource() corrupts local paths by prepending "github:" to any
@@ -198,7 +199,7 @@ describe("import skill command", () => {
     });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain("Import complete:");
+    expect(stdout).toContain(STEP_TEXT.IMPORT_SUCCESS);
     expect(stdout).toContain("imported");
 
     // Verify imported skills exist in .claude/skills/

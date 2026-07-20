@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { TIMEOUTS } from "../pages/constants.js";
 import { ensureBinaryExists, cleanupTempDir } from "../helpers/test-utils.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 
 /**
@@ -13,7 +13,7 @@ import "../matchers/setup.js";
 
 describe("init wizard -- exclusive category incompatibility suppression", () => {
   let wizard: InitWizard | undefined;
-  let source: { sourceDir: string; tempDir: string };
+  let source: E2ESource;
 
   beforeAll(async () => {
     await ensureBinaryExists();

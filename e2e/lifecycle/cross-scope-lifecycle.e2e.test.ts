@@ -1,22 +1,23 @@
-import { mkdir } from "fs/promises";
-import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { E2E_AGENTS } from "../fixtures/expected-values.js";
-import { TIMEOUTS, DIRS, FILES } from "../pages/constants.js";
+import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
+import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupTempDir,
+  completeWithLocalSources,
+  configTsPath,
+  configTypesTsPath,
   createPermissionsFile,
-  createTempDir,
   ensureBinaryExists,
   fileExists,
   isClaudeCLIAvailable,
@@ -48,7 +49,7 @@ const claudeAvailable = await isClaudeCLIAvailable();
 
 describe("cross-scope lifecycle: init global -> edit global from project", () => {
   let tempDir: string;
-  let source: { sourceDir: string; tempDir: string };
+  let source: E2ESource;
   let fakeHome: string;
   let projectDir: string;
 
@@ -56,13 +57,8 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
     await ensureBinaryExists();
     source = await createE2ESource();
 
-    tempDir = await createTempDir();
-    fakeHome = path.join(tempDir, "fake-home");
-    projectDir = path.join(fakeHome, "project");
-
-    await mkdir(fakeHome, { recursive: true });
-    await mkdir(projectDir, { recursive: true });
-  }, TIMEOUTS.SETUP * 2);
+    ({ tempDir, fakeHome, projectDir } = await createTestEnvironment({ permissions: false }));
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -86,24 +82,17 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
         projectDir: fakeHome,
         env: { HOME: fakeHome },
       });
-      const initDomain = await initWizard.stack.selectFirstStack();
-      const initBuild = await initDomain.acceptDefaults();
-      const initSources = await initBuild.passThroughAllDomains();
-      await initSources.waitForReady();
-      await initSources.setAllLocal();
-      const initAgentsStep = await initSources.advance();
-      const initConfirm = await initAgentsStep.acceptDefaults("init");
-      const initResult = await initConfirm.confirm();
+      const initResult = await completeWithLocalSources(initWizard);
 
       // --- Phase 1 Verification ---
 
       await expectPhaseSuccess(
         { project: { dir: fakeHome }, exitCode: initResult.exitCode },
         {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
           source: "eject",
-          copiedSkills: ["web-framework-react"],
+          copiedSkills: [E2E_SKILL.react.id],
         },
       );
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
@@ -149,10 +138,10 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
       await expectPhaseSuccess(
         { project: { dir: fakeHome }, exitCode: editResult.exitCode },
         {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
           source: "eject",
-          copiedSkills: ["web-framework-react"],
+          copiedSkills: [E2E_SKILL.react.id],
         },
       );
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
@@ -163,8 +152,7 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
       });
 
       // No project config created
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      expect(await fileExists(projectConfigPath)).toBe(false);
+      expect(await fileExists(configTsPath(projectDir))).toBe(false);
 
       // No project-scope skills or agents leaked
       await expectCleanUninstall(projectDir);
@@ -203,13 +191,8 @@ describe.skipIf(!claudeAvailable)(
       await ensureBinaryExists();
       fixture = await createE2EPluginSource();
 
-      tempDir = await createTempDir();
-      fakeHome = path.join(tempDir, "fake-home");
-      projectDir = path.join(fakeHome, "project");
-
-      await mkdir(fakeHome, { recursive: true });
-      await mkdir(projectDir, { recursive: true });
-    }, TIMEOUTS.SETUP * 2);
+      ({ tempDir, fakeHome, projectDir } = await createTestEnvironment({ permissions: false }));
+    }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
       if (tempDir) await cleanupTempDir(tempDir);
@@ -244,7 +227,7 @@ describe.skipIf(!claudeAvailable)(
         await expectPhaseSuccess(
           { project: { dir: fakeHome }, exitCode: initResult.exitCode },
           {
-            skillIds: ["web-framework-react"],
+            skillIds: [E2E_SKILL.react.id],
             agents: E2E_AGENTS.WEB_AND_API,
             source: fixture.marketplaceName,
           },
@@ -258,7 +241,7 @@ describe.skipIf(!claudeAvailable)(
 
         // Plugin entries must land under fake HOME's settings.json. The
         // marketplace-resolved key matches the form `<skillId>@<marketplaceName>`.
-        const reactPluginKey = `web-framework-react@${fixture.marketplaceName}`;
+        const reactPluginKey = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
         await expect({ dir: fakeHome }).toHavePlugin(reactPluginKey);
 
         const initOutput = initResult.output;
@@ -293,7 +276,7 @@ describe.skipIf(!claudeAvailable)(
         await expectPhaseSuccess(
           { project: { dir: fakeHome }, exitCode: editResult.exitCode },
           {
-            skillIds: ["web-framework-react"],
+            skillIds: [E2E_SKILL.react.id],
             agents: E2E_AGENTS.WEB_AND_API,
             source: fixture.marketplaceName,
           },
@@ -309,12 +292,10 @@ describe.skipIf(!claudeAvailable)(
         await expect({ dir: fakeHome }).toHavePlugin(reactPluginKey);
 
         // config-types.ts exists alongside config.ts at the global scope.
-        const globalConfigTypesPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
-        expect(await fileExists(globalConfigTypesPath)).toBe(true);
+        expect(await fileExists(configTypesTsPath(fakeHome))).toBe(true);
 
         // No project config created
-        const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-        expect(await fileExists(projectConfigPath)).toBe(false);
+        expect(await fileExists(configTsPath(projectDir))).toBe(false);
 
         // No project-scope skills or agents leaked
         await expectCleanUninstall(projectDir);
@@ -352,13 +333,8 @@ describe.skipIf(!claudeAvailable)(
       await ensureBinaryExists();
       fixture = await createE2EPluginSource();
 
-      tempDir = await createTempDir();
-      fakeHome = path.join(tempDir, "fake-home");
-      projectDir = path.join(fakeHome, "project");
-
-      await mkdir(fakeHome, { recursive: true });
-      await mkdir(projectDir, { recursive: true });
-    }, TIMEOUTS.SETUP * 2);
+      ({ tempDir, fakeHome, projectDir } = await createTestEnvironment({ permissions: false }));
+    }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
       if (tempDir) await cleanupTempDir(tempDir);
@@ -387,8 +363,8 @@ describe.skipIf(!claudeAvailable)(
         // remain on their default source (plugin), producing a mixed install.
         // This matches the precedent in init-wizard-plugin.e2e.test.ts
         // "mixed install mode": per-skill granularity is achievable via
-        // toggleFocusedSource on the first focused skill only.
-        await initSources.toggleFocusedSource();
+        // selectFocusedSourceCell on the first focused skill only.
+        await initSources.selectFocusedSourceCell();
 
         const initAgentsStep = await initSources.advance();
         const initConfirm = await initAgentsStep.acceptDefaults("init");
@@ -396,11 +372,11 @@ describe.skipIf(!claudeAvailable)(
 
         // --- Phase 1 Verification ---
 
-        expect(await initResult.exitCode).toBe(0);
+        expect(await initResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
         // Config exists with both agents and the selected skill.
         await expect({ dir: fakeHome }).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
         });
 
@@ -415,11 +391,10 @@ describe.skipIf(!claudeAvailable)(
         // The toggled skill (first focused, web-framework-react in this
         // source ordering) is ejected into the global skills dir. The
         // non-toggled plugin-sourced skills remain installed as plugins.
-        await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
+        await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
 
         // Config mentions both per-skill source modes.
-        const initConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-        const initConfigContent = await readTestFile(initConfigPath);
+        const initConfigContent = await readTestFile(configTsPath(fakeHome));
         expect(initConfigContent).toContain(`"eject"`);
         expect(initConfigContent).toContain(`"${fixture.marketplaceName}"`);
 
@@ -427,7 +402,7 @@ describe.skipIf(!claudeAvailable)(
         // web-testing-vitest is the plugin-only skill from the plugin fixture
         // (see init-wizard-plugin plugin scope routing test asserting it
         // installs under the same marketplace).
-        const vitestPluginKey = `web-testing-vitest@${fixture.marketplaceName}`;
+        const vitestPluginKey = `${E2E_SKILL.vitest.id}@${fixture.marketplaceName}`;
         await expect({ dir: fakeHome }).toHavePlugin(vitestPluginKey);
 
         const initOutput = initResult.output;
@@ -459,16 +434,16 @@ describe.skipIf(!claudeAvailable)(
         // Phase 3: Verification -- global preserved, no project leakage
         // ================================================================
 
-        expect(await editResult.exitCode).toBe(0);
+        expect(await editResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
         // Global config preserved with both agents.
         await expect({ dir: fakeHome }).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
         });
 
         // Ejected skill still present at the global scope.
-        await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
+        await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
 
         // Plugin-sourced skill still enabled in settings.json.
         await expect({ dir: fakeHome }).toHavePlugin(vitestPluginKey);
@@ -482,12 +457,10 @@ describe.skipIf(!claudeAvailable)(
         });
 
         // config-types.ts still exists alongside config.ts at the global scope.
-        const globalConfigTypesPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
-        expect(await fileExists(globalConfigTypesPath)).toBe(true);
+        expect(await fileExists(configTypesTsPath(fakeHome))).toBe(true);
 
         // No project config created.
-        const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-        expect(await fileExists(projectConfigPath)).toBe(false);
+        expect(await fileExists(configTsPath(projectDir))).toBe(false);
 
         // No project-scope skills or agents leaked.
         await expectCleanUninstall(projectDir);

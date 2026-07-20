@@ -1,14 +1,15 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupTempDir,
+  configTsPath,
   ensureBinaryExists,
   normalizeGlobalConfig,
   readTestFile,
 } from "../helpers/test-utils.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createGlobalOnlyEnv,
   createTestEnvironment,
@@ -35,7 +36,7 @@ describe("scope change deselect integrity", () => {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -70,29 +71,18 @@ describe("scope change deselect integrity", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Web domain (pass through)
       await wizard.build.advanceDomain();
 
       // API domain -- deselect api-framework-hono
-      await wizard.build.selectSkill("hono");
+      await wizard.build.selectSkill(E2E_SKILL.hono.slug);
       await wizard.build.advanceDomain();
 
-      // Methodology domain (pass through) -> Sources
-      const sources = await wizard.build.advanceToSources();
-
-      // Sources step (pass through)
-      await sources.waitForReady();
-      const agents = await sources.advance();
-
-      // Agents step (pass through)
-      const confirm = await agents.acceptDefaults("edit");
-
-      // Confirm step
-      const result = await confirm.confirm();
+      // Methodology domain -> Sources -> Agents -> Confirm (all pass through)
+      const result = await wizard.build.saveFromBuild("edit");
       const exitCode = await result.exitCode;
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
@@ -120,7 +110,7 @@ describe("scope change deselect integrity", () => {
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
 
       // Snapshot global config before edit
-      const globalConfigPath = path.join(env.fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const globalConfigPath = configTsPath(env.fakeHome);
       const globalConfigBefore = await readTestFile(globalConfigPath);
 
       // Launch edit wizard from project scope, pass through without changes
@@ -128,8 +118,7 @@ describe("scope change deselect integrity", () => {
         projectDir: env.projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: env.fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const result = await wizard.passThrough();
@@ -176,7 +165,7 @@ describe("scope change deselect integrity", () => {
       await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
 
       // Snapshot global skills before edit
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const globalConfigPath = configTsPath(fakeHome);
       const globalConfigBefore = await readTestFile(globalConfigPath);
       const globalSkillsBefore = globalConfigBefore
         .split("\n")
@@ -191,29 +180,18 @@ describe("scope change deselect integrity", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Web domain (pass through)
       await wizard.build.advanceDomain();
 
       // API domain -- deselect api-framework-hono
-      await wizard.build.selectSkill("hono");
+      await wizard.build.selectSkill(E2E_SKILL.hono.slug);
       await wizard.build.advanceDomain();
 
-      // Methodology domain (pass through) -> Sources
-      const sources = await wizard.build.advanceToSources();
-
-      // Sources step (pass through)
-      await sources.waitForReady();
-      const agents = await sources.advance();
-
-      // Agents step (pass through)
-      const confirm = await agents.acceptDefaults("edit");
-
-      // Confirm step
-      const result = await confirm.confirm();
+      // Methodology domain -> Sources -> Agents -> Confirm (all pass through)
+      const result = await wizard.build.saveFromBuild("edit");
       const exitCode = await result.exitCode;
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 

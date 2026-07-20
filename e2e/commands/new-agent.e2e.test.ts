@@ -4,6 +4,7 @@ import path from "path";
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
 import {
+  agentsPath,
   createTempDir,
   cleanupTempDir,
   ensureBinaryExists,
@@ -153,7 +154,7 @@ describe.skip("new agent command", () => {
 
     // The _custom directory is only created by the claude CLI invocation, not by
     // the command itself. If meta-agent loading fails, no directory is created.
-    const customDir = path.join(tempDir, DIRS.CLAUDE, "agents", "_custom", "no-dir-agent");
+    const customDir = path.join(agentsPath(tempDir), "_custom", "no-dir-agent");
     expect(await directoryExists(customDir)).toBe(false);
   });
 
@@ -189,7 +190,7 @@ describe.skip("new agent command", () => {
     tempDir = await createTempDir();
 
     const agentName = "existing-agent";
-    const agentDir = path.join(tempDir, DIRS.CLAUDE, "agents", "_custom", agentName);
+    const agentDir = path.join(agentsPath(tempDir), "_custom", agentName);
     await mkdir(agentDir, { recursive: true });
 
     const { exitCode, output } = await CLI.run(
@@ -207,7 +208,7 @@ describe.skip("new agent command", () => {
     tempDir = await createTempDir();
 
     const agentName = "force-agent";
-    const agentDir = path.join(tempDir, DIRS.CLAUDE, "agents", "_custom", agentName);
+    const agentDir = path.join(agentsPath(tempDir), "_custom", agentName);
     await mkdir(agentDir, { recursive: true });
 
     // Write a stub file so we can verify the directory existed before

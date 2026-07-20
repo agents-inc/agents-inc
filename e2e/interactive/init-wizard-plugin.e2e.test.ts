@@ -4,7 +4,7 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
@@ -57,11 +57,11 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
         const output = result.output;
-        expect(output).toContain("Installing skill plugins...");
+        expect(output).toContain(STEP_TEXT.INSTALLING_PLUGINS_ELLIPSIS);
         expect(output).toContain("skill plugins");
-        expect(output).toContain("Plugin (native install)");
+        expect(output).toContain(STEP_TEXT.PLUGIN_NATIVE);
         expect(output).toContain(`Installed web-framework-react@${fixture.marketplaceName}`);
-        expect(output).not.toContain("Skills copied to:");
+        expect(output).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
 
         await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
         await expect(result.project).toHaveCompiledAgents();
@@ -109,8 +109,8 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         await result.exitCode;
 
         const output = result.output;
-        expect(output).toContain("Agents compiled to:");
-        expect(output).toContain("Configuration:");
+        expect(output).toContain(STEP_TEXT.AGENTS_COMPILED_TO);
+        expect(output).toContain(STEP_TEXT.CONFIGURATION_LABEL);
 
         await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
         await expect(result.project).toHaveCompiledAgents();
@@ -149,7 +149,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
    * `.claude/settings.json` untouched) in addition to exit code + output.
    */
   describe("hard error when source has no marketplace", () => {
-    let localSource: Awaited<ReturnType<typeof createE2ESource>>;
+    let localSource: E2ESource;
     let projectDir: string | undefined;
 
     beforeAll(async () => {
@@ -197,7 +197,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         const output = result.output;
         expect(output).toContain("marketplace could not be resolved");
         // Old silent fallback emitted "Skills copied to:" — it must be absent.
-        expect(output).not.toContain("Skills copied to:");
+        expect(output).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
         expect(output).not.toContain(STEP_TEXT.INIT_SUCCESS);
 
         // Filesystem integrity: init must not create `.claude-src/` on
@@ -260,7 +260,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
         const output = result.output;
-        expect(output).toContain("Installing skill plugins...");
+        expect(output).toContain(STEP_TEXT.INSTALLING_PLUGINS_ELLIPSIS);
         expect(output).toContain(`Installed web-framework-react@${fixture.marketplaceName}`);
         expect(output).not.toContain("Failed to install plugin");
 
@@ -287,7 +287,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         const sources = await build.passThroughAllDomains();
 
         // Toggle one skill to local source
-        await sources.toggleFocusedSource();
+        await sources.selectFocusedSourceCell();
         const agents = await sources.advance();
         const confirm = await agents.acceptDefaults("init");
         const result = await confirm.confirm();
@@ -295,7 +295,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
         const output = result.output;
-        expect(output).toContain("Installing skill plugins...");
+        expect(output).toContain(STEP_TEXT.INSTALLING_PLUGINS_ELLIPSIS);
 
         // The local-sourced skill should be copied locally
         await expect(result.project).toHaveSkillCopied("web-framework-react");

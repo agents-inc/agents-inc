@@ -2,15 +2,18 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
+  agentsPath,
   cleanupTempDir,
+  configTsPath,
   directoryExists,
   ensureBinaryExists,
   fileExists,
   listFiles,
   readTestFile,
   runCLI,
+  skillsPath,
 } from "../helpers/test-utils.js";
 import {
   createTestEnvironment,
@@ -34,7 +37,7 @@ beforeAll(async () => {
   const source = await createE2ESource();
   sourceDir = source.sourceDir;
   sourceTempDir = source.tempDir;
-}, TIMEOUTS.SETUP * 2);
+}, TIMEOUTS.SETUP_DUAL);
 
 afterAll(async () => {
   if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -61,9 +64,9 @@ describe("uninstall-reinit lifecycle", () => {
       expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
       // Verify Phase A installation exists
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const globalSkillsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS);
-      const globalAgentsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS);
+      const globalConfigPath = configTsPath(fakeHome);
+      const globalSkillsDir = skillsPath(fakeHome);
+      const globalAgentsDir = agentsPath(fakeHome);
 
       expect(await fileExists(globalConfigPath), "Config must exist after init").toBe(true);
       expect(await directoryExists(globalSkillsDir), "Skills dir must exist after init").toBe(true);
@@ -152,9 +155,9 @@ describe("uninstall scope isolation", () => {
       await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
 
       // Snapshot global state before project uninstall
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const globalSkillsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS);
-      const globalAgentsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS);
+      const globalConfigPath = configTsPath(fakeHome);
+      const globalSkillsDir = skillsPath(fakeHome);
+      const globalAgentsDir = agentsPath(fakeHome);
 
       expect(await fileExists(globalConfigPath), "Global config must exist before uninstall").toBe(
         true,
@@ -170,8 +173,8 @@ describe("uninstall scope isolation", () => {
       );
 
       // Verify project installation was removed
-      const projectSkillsDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS);
-      const projectAgentsDir = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS);
+      const projectSkillsDir = skillsPath(projectDir);
+      const projectAgentsDir = agentsPath(projectDir);
 
       const projectSkillsExist = await directoryExists(projectSkillsDir);
       if (projectSkillsExist) {

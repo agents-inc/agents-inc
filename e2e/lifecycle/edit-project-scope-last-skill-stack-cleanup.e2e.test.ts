@@ -3,7 +3,7 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupTempDir,
@@ -12,9 +12,12 @@ import {
   createTempDir,
   directoryExists,
   ensureBinaryExists,
+  loadConfigOrFail,
+  renderMetadataYaml,
+  skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -31,12 +34,9 @@ import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
  * agent's stack category; deselecting it must leave no stale reference in `stack`.
  */
 
-const VITEST = "web-testing-vitest";
-const WEB_DEVELOPER: AgentName = "web-developer";
-
 const singleSkillStack = {
-  [WEB_DEVELOPER]: {
-    "web-testing": [{ id: VITEST, preloaded: false }],
+  [E2E_AGENT["web-developer"].name]: {
+    "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
 
@@ -86,20 +86,24 @@ describe("edit removes the only project-scoped skill an agent references", () =>
 
       const config = buildProjectConfig({
         name: "project-scope-edit-test",
-        skills: buildSkillConfigs([VITEST], { scope: "project", source: "eject" }),
-        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "project" }),
+        skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", source: "eject" }),
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
         domains: ["web"],
-        selectedAgents: [WEB_DEVELOPER],
+        selectedAgents: [E2E_AGENT["web-developer"].name],
         stack: singleSkillStack,
       });
       await writeProjectConfig(projectDir, config);
 
-      await createLocalSkill(projectDir, VITEST, {
+      await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
         description: "Vitest testing framework for project-scope edit testing",
-        metadata:
-          `author: "@test"\ndisplayName: ${VITEST}\ncategory: web-testing\nslug: vitest\n` +
-          `cliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\n` +
-          `contentHash: "c3d4e5f"\n`,
+        metadata: renderMetadataYaml({
+          displayName: E2E_SKILL.vitest.id,
+          category: "web-testing",
+          slug: E2E_SKILL.vitest.slug,
+          cliDescription: "E2E test skill",
+          usageGuidance: "Use when testing E2E scenarios",
+          contentHash: "c3d4e5f",
+        }),
       });
 
       // ================================================================
@@ -112,13 +116,12 @@ describe("edit removes the only project-scoped skill an agent references", () =>
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // vitest is currently selected — pressing Space deselects it. It is a
       // project-scoped, non-preloaded skill, so the deselect goes through.
-      await wizard.build.selectSkill(VITEST);
+      await wizard.build.selectSkill(E2E_SKILL.vitest.id);
 
       const sources = await wizard.build.passThroughAllDomainsGeneric();
       await sources.waitForReady();
@@ -133,16 +136,13 @@ describe("edit removes the only project-scoped skill an agent references", () =>
       // the filesystem.
       // ================================================================
 
-      const loaded = await loadProjectConfigFromDir(projectDir);
-      expect(loaded, "config.ts must exist at the project dir after edit").not.toBeNull();
-      if (!loaded) return;
-      const finalConfig = loaded.config;
+      const finalConfig = await loadConfigOrFail(projectDir);
 
       // Sanity: vitest is gone from the top-level skills roster.
-      expect(finalConfig.skills.map((s) => s.id)).not.toContain(VITEST);
+      expect(finalConfig.skills.map((s) => s.id)).not.toContain(E2E_SKILL.vitest.id);
 
       // Filesystem side: the removed eject skill's directory is deleted.
-      const removedSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, VITEST);
+      const removedSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.vitest.id);
       expect(
         await directoryExists(removedSkillDir),
         "removed skill's directory must be deleted from the project",
@@ -151,7 +151,8 @@ describe("edit removes the only project-scoped skill an agent references", () =>
       // The stack must not retain a reference to the removed skill. web-testing
       // was vitest's only category and vitest was web-developer's only stack
       // entry, so the whole web-developer stack should be gone.
-      const webTestingAssignments = finalConfig.stack?.[WEB_DEVELOPER]?.["web-testing"];
+      const webTestingAssignments =
+        finalConfig.stack?.[E2E_AGENT["web-developer"].name]?.["web-testing"];
       expect(
         webTestingAssignments,
         "web-developer stack must not retain the removed web-testing-vitest",

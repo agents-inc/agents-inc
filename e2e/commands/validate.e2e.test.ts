@@ -3,24 +3,13 @@ import path from "path";
 import { readdir, writeFile } from "fs/promises";
 import { CLI } from "../fixtures/cli.js";
 import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
-import { cleanupTempDir, createTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  completeWithLocalSources,
+  createTempDir,
+  ensureBinaryExists,
+} from "../helpers/test-utils.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import type { WizardResult } from "../pages/wizard-result.js";
-
-/**
- * Complete the init wizard selecting eject mode (`l` on sources step) so
- * `.claude/skills/` is populated in the project — required by the installed-
- * skill validation tests below.
- */
-async function completeInitWithEject(wizard: InitWizard): Promise<WizardResult> {
-  const domain = await wizard.stack.selectFirstStack();
-  const build = await domain.acceptDefaults();
-  const sources = await build.passThroughAllDomains();
-  await sources.setAllLocal();
-  const agents = await sources.advance();
-  const confirm = await agents.acceptDefaults("init");
-  return confirm.confirm();
-}
 
 describe("validate command", () => {
   let wizard: InitWizard | undefined;
@@ -58,7 +47,7 @@ describe("validate command", () => {
         { timeout: TIMEOUTS.LIFECYCLE },
         async () => {
           wizard = await InitWizard.launch();
-          const result = await completeInitWithEject(wizard);
+          const result = await completeWithLocalSources(wizard);
           expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
           const { exitCode, stdout } = await CLI.run(["validate"], result.project);
@@ -77,7 +66,7 @@ describe("validate command", () => {
         { timeout: TIMEOUTS.LIFECYCLE },
         async () => {
           wizard = await InitWizard.launch();
-          const result = await completeInitWithEject(wizard);
+          const result = await completeWithLocalSources(wizard);
           expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
           const { exitCode, stdout } = await CLI.run(["validate"], result.project);
@@ -97,7 +86,7 @@ describe("validate command", () => {
         { timeout: TIMEOUTS.LIFECYCLE },
         async () => {
           wizard = await InitWizard.launch();
-          const result = await completeInitWithEject(wizard);
+          const result = await completeWithLocalSources(wizard);
           expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
           // Corrupt one installed skill's metadata.yaml so the installed-skill
@@ -125,7 +114,7 @@ describe("validate command", () => {
         { timeout: TIMEOUTS.LIFECYCLE },
         async () => {
           wizard = await InitWizard.launch();
-          const result = await completeInitWithEject(wizard);
+          const result = await completeWithLocalSources(wizard);
           expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
           const { exitCode, stdout } = await CLI.run(["validate"], result.project);
@@ -141,7 +130,7 @@ describe("validate command", () => {
         { timeout: TIMEOUTS.LIFECYCLE },
         async () => {
           wizard = await InitWizard.launch();
-          const result = await completeInitWithEject(wizard);
+          const result = await completeWithLocalSources(wizard);
           expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
           const { exitCode, stdout } = await CLI.run(["validate"], result.project);

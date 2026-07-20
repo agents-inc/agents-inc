@@ -72,12 +72,11 @@ describe("build agent plugins", () => {
 
   describe("build plugins with --agents-dir flag", () => {
     let buildResult: Awaited<ReturnType<typeof CLI.run>>;
-    const outputDir = "dist/plugins";
 
     beforeAll(async () => {
       // We also need a minimal skills directory for the skills portion.
       // `build plugins` reads skills from `src/skills/` relative to cwd.
-      const skillsDir = path.join(sourceDir, "src", "skills");
+      const skillsDir = path.join(sourceDir, SOURCE_PATHS.SKILLS_DIR);
       await mkdir(skillsDir, { recursive: true });
 
       buildResult = await CLI.run(["build", "plugins", "--agents-dir", agentsDir], {
@@ -94,7 +93,7 @@ describe("build agent plugins", () => {
     });
 
     it("should produce a plugin directory for each agent", async () => {
-      const pluginsDir = path.join(sourceDir, outputDir);
+      const pluginsDir = path.join(sourceDir, SOURCE_PATHS.PLUGINS_DIST);
 
       for (const agentName of AGENT_NAMES) {
         const agentPluginDir = path.join(pluginsDir, `agent-${agentName}`);
@@ -106,7 +105,7 @@ describe("build agent plugins", () => {
     });
 
     it("should produce valid plugin.json with name, version, and agents path", async () => {
-      const pluginsDir = path.join(sourceDir, outputDir);
+      const pluginsDir = path.join(sourceDir, SOURCE_PATHS.PLUGINS_DIST);
 
       for (const agentName of AGENT_NAMES) {
         const manifestPath = path.join(
@@ -126,7 +125,7 @@ describe("build agent plugins", () => {
     });
 
     it("should copy agent .md files into the plugin's agents/ subdirectory", async () => {
-      const pluginsDir = path.join(sourceDir, outputDir);
+      const pluginsDir = path.join(sourceDir, SOURCE_PATHS.PLUGINS_DIST);
 
       for (const agentName of AGENT_NAMES) {
         const copiedAgentPath = path.join(
@@ -164,7 +163,7 @@ describe("build agent plugins", () => {
 
     it("should not produce agent plugin directories when --agents-dir is omitted", async () => {
       const noAgentSourceDir = path.join(noAgentTempDir, "source");
-      const skillsDir = path.join(noAgentSourceDir, "src", "skills");
+      const skillsDir = path.join(noAgentSourceDir, SOURCE_PATHS.SKILLS_DIR);
       await mkdir(skillsDir, { recursive: true });
 
       const result = await CLI.run(["build", "plugins"], { dir: noAgentSourceDir });
@@ -188,7 +187,7 @@ describe("build agent plugins", () => {
     it("should skip agents with missing frontmatter and compile valid ones", async () => {
       const edgeSourceDir = path.join(edgeCaseTempDir, "source");
       const edgeAgentsDir = path.join(edgeSourceDir, "edge-agents");
-      const edgeSkillsDir = path.join(edgeSourceDir, "src", "skills");
+      const edgeSkillsDir = path.join(edgeSourceDir, SOURCE_PATHS.SKILLS_DIR);
       await mkdir(edgeAgentsDir, { recursive: true });
       await mkdir(edgeSkillsDir, { recursive: true });
 
@@ -212,7 +211,7 @@ describe("build agent plugins", () => {
       expect(result.stdout).toContain("agent-good-agent");
       expect(result.stdout).toContain("Compiled 1 agent plugins");
 
-      const pluginDir = path.join(edgeSourceDir, "dist", "plugins", "agent-good-agent");
+      const pluginDir = path.join(edgeSourceDir, SOURCE_PATHS.PLUGINS_DIST, "agent-good-agent");
       expect(
         await fileExists(path.join(pluginDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR, "plugin.json")),
       ).toBe(true);
@@ -221,7 +220,7 @@ describe("build agent plugins", () => {
     it("should handle empty agents directory gracefully", async () => {
       const emptySourceDir = path.join(edgeCaseTempDir, "source");
       const emptyAgentsDir = path.join(emptySourceDir, "empty-agents");
-      const emptySkillsDir = path.join(emptySourceDir, "src", "skills");
+      const emptySkillsDir = path.join(emptySourceDir, SOURCE_PATHS.SKILLS_DIR);
       await mkdir(emptyAgentsDir, { recursive: true });
       await mkdir(emptySkillsDir, { recursive: true });
 
@@ -236,7 +235,7 @@ describe("build agent plugins", () => {
     it("should use custom --output-dir for agent plugin output", async () => {
       const customOutSourceDir = path.join(edgeCaseTempDir, "source");
       const customAgentsDir = path.join(customOutSourceDir, "my-agents");
-      const customSkillsDir = path.join(customOutSourceDir, "src", "skills");
+      const customSkillsDir = path.join(customOutSourceDir, SOURCE_PATHS.SKILLS_DIR);
       const customOutputDir = "custom-output/plugins";
       await mkdir(customAgentsDir, { recursive: true });
       await mkdir(customSkillsDir, { recursive: true });

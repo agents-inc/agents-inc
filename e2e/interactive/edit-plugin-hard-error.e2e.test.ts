@@ -4,17 +4,19 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupTempDir,
+  configTsPath,
   ensureBinaryExists,
   isClaudeCLIAvailable,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
 
 /**
@@ -54,7 +56,7 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
    */
   describe("cc edit with local source (no marketplace) + plugin skill addition", () => {
     let fixture: E2EPluginSource;
-    let localSource: Awaited<ReturnType<typeof createE2ESource>>;
+    let localSource: E2ESource;
     let wizard: EditWizard | undefined;
 
     beforeAll(async () => {
@@ -64,7 +66,7 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
       // localSource is a plain directory with NO marketplace.json — the
       // resolution path we expect to fail.
       localSource = await createE2ESource();
-    }, TIMEOUTS.SETUP * 2);
+    }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
       if (fixture) await cleanupTempDir(fixture.tempDir);
@@ -81,15 +83,15 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           marketplace: fixture.marketplaceName,
-          agents: ["web-developer"],
+          agents: [...E2E_AGENTS.WEB],
           domains: ["web"],
           omitMarketplaceField: true,
         });
 
         // Snapshot state that must NOT change on hard-error.
-        const configPath = path.join(project.dir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+        const configPath = configTsPath(project.dir);
         const settingsPath = path.join(project.dir, DIRS.CLAUDE, FILES.SETTINGS_JSON);
         const configBefore = await readTestFile(configPath);
         const settingsBefore = await readTestFile(settingsPath);
@@ -98,8 +100,7 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
           projectDir: project.dir,
           // local source without marketplace.json — the resolution failure point
           source: { sourceDir: localSource.sourceDir, tempDir: localSource.tempDir },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         // Add a new skill — newly added skills default to a plugin-intent
@@ -137,7 +138,7 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
    * This documents the removal of the old "eject mode fallback" in init.tsx.
    */
   describe("cc init with local source (no marketplace) + default plugin intent", () => {
-    let localSource: Awaited<ReturnType<typeof createE2ESource>>;
+    let localSource: E2ESource;
     let wizard: InitWizard | undefined;
 
     beforeAll(async () => {
@@ -174,8 +175,8 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
 
         const output = result.output;
         expect(output).toContain("marketplace could not be resolved");
-        // The old silent fallback emitted "Skills copied to:" — it must be absent.
-        expect(output).not.toContain("Skills copied to:");
+        // The old silent fallback emitted the eject-copy line — it must be absent.
+        expect(output).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
       },
     );
   });

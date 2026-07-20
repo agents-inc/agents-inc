@@ -1,17 +1,18 @@
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { cleanupTempDir, ensureBinaryExists, fileExists } from "../helpers/test-utils.js";
+import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import {
   createDualScopeEnv,
   createGlobalOnlyEnv,
   readAgentEntries,
   type DualScopeEnv,
 } from "../fixtures/dual-scope-helpers.js";
-import type { AgentScopeConfig } from "../../src/cli/types/index.js";
 
 /**
  * D-221 — Agent scope toggle (project → global) corrupts `agents` array
@@ -39,18 +40,6 @@ import type { AgentScopeConfig } from "../../src/cli/types/index.js";
  * once `mergeConfigs` composes scope into the identity key.
  */
 
-/**
- * Returns the list of `(name, scope)` pairs that appear more than once in the
- * agents array. Per D-221 acceptance criteria, every pair MUST appear exactly
- * once — duplicates (regardless of `excluded`) indicate corruption. Used to
- * build explicit failure messages pointing directly at the corrupted rows.
- */
-function findDuplicateNameScopePairs(rows: AgentScopeConfig[]): string[] {
-  const keys = rows.map((row) => `${row.name}:${row.scope}`);
-  const duplicateKeys = [...new Set(keys.filter((key, idx) => keys.indexOf(key) !== idx))];
-  return duplicateKeys.map((key) => `${key} × ${keys.filter((k) => k === key).length}`);
-}
-
 describe("agent scope toggle keeps agents array duplicate-free", () => {
   let sourceDir: string;
   let sourceTempDir: string;
@@ -60,7 +49,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -112,8 +101,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
           env: { HOME: fakeHome },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         const sources = await wizard.build.passThroughAllDomains();
@@ -123,7 +111,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // api-developer is a persisted dual-scope [P][G] agent — `s` is inert on
         // it. Space (deselect) collapses [P][G] → [G], the sanctioned P→G
         // restoration path.
-        await agents.toggleAgent("API Developer");
+        await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
         const confirm = await agents.advance("edit");
 
         const result = await confirm.confirm();
@@ -136,13 +124,11 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         const rows = await readAgentEntries(projectDir);
 
         // No (name, scope) pair appears more than once, anywhere.
-        const duplicates = findDuplicateNameScopePairs(rows);
-        expect(
-          duplicates,
-          `agents array must not contain duplicate (name, scope) pairs, got: ${duplicates.join(
-            ", ",
-          )}\nFull agents array: ${JSON.stringify(rows, null, 2)}`,
-        ).toStrictEqual([]);
+        expectNoDuplicates(
+          rows.map((row) => `${row.name}:${row.scope}`),
+          "(name, scope) pairs in the agents array",
+          `Full agents array: ${JSON.stringify(rows, null, 2)}`,
+        );
 
         // The migrated agent appears EXACTLY once and only at global scope.
         const apiDevRows = rows.filter((r) => r.name === "api-developer");
@@ -213,8 +199,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
           env: { HOME: fakeHome },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         const sources1 = await wizard1.build.passThroughAllDomains();
@@ -222,18 +207,17 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         const agents1 = await sources1.advance();
         // api-developer is a persisted dual-scope [P][G] agent — `s` is inert;
         // space (deselect) collapses [P][G] → [G], restoring it to global.
-        await agents1.toggleAgent("API Developer");
+        await agents1.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
         const confirm1 = await agents1.advance("edit");
         const result1 = await confirm1.confirm();
         expect(await result1.exitCode).toBe(EXIT_CODES.SUCCESS);
         await result1.destroy();
 
         const rowsAfterFirstEdit = await readAgentEntries(projectDir);
-        const duplicatesAfterFirst = findDuplicateNameScopePairs(rowsAfterFirstEdit);
-        expect(
-          duplicatesAfterFirst,
-          `After first edit: no duplicate (name, scope) pairs allowed. Got: ${duplicatesAfterFirst.join(", ")}`,
-        ).toStrictEqual([]);
+        expectNoDuplicates(
+          rowsAfterFirstEdit.map((row) => `${row.name}:${row.scope}`),
+          "(name, scope) pairs after the first edit",
+        );
 
         // ================================================================
         // Phase 3: Second edit — add one skill (unrelated change) to force
@@ -245,10 +229,9 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
           env: { HOME: fakeHome },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
-        await wizard2.build.selectSkill("web-state-zustand");
+        await wizard2.build.selectSkill(E2E_SKILL.zustand.id);
         const sources2 = await wizard2.build.passThroughAllDomainsGeneric();
         await sources2.waitForReady();
         const agents2 = await sources2.advance();
@@ -263,13 +246,11 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // must NOT self-amplify across edit cycles.
         // ================================================================
         const rowsAfterSecondEdit = await readAgentEntries(projectDir);
-        const duplicatesAfterSecond = findDuplicateNameScopePairs(rowsAfterSecondEdit);
-        expect(
-          duplicatesAfterSecond,
-          `After second edit: corruption must not self-amplify. Duplicates: ${duplicatesAfterSecond.join(
-            ", ",
-          )}\nFull agents array: ${JSON.stringify(rowsAfterSecondEdit, null, 2)}`,
-        ).toStrictEqual([]);
+        expectNoDuplicates(
+          rowsAfterSecondEdit.map((row) => `${row.name}:${row.scope}`),
+          "(name, scope) pairs after the second edit — corruption must not self-amplify",
+          `Full agents array: ${JSON.stringify(rowsAfterSecondEdit, null, 2)}`,
+        );
 
         // Specific invariant: api-developer still at global only, exactly once.
         const apiDevRows = rowsAfterSecondEdit.filter((r) => r.name === "api-developer");
@@ -323,14 +304,13 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
           env: { HOME: fakeHome },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         const sources = await wizard.build.passThroughAllDomains();
         await sources.waitForReady();
         const agents = await sources.advance();
-        await agents.navigateCursorToAgent("API Developer");
+        await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
         await agents.toggleScopeOnFocusedAgent();
         const confirm = await agents.advance("edit");
         const result = await confirm.confirm();
@@ -342,13 +322,11 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // ================================================================
         const rows = await readAgentEntries(projectDir);
 
-        const duplicates = findDuplicateNameScopePairs(rows);
-        expect(
-          duplicates,
-          `agents array must not contain duplicate (name, scope) pairs after G→P. Got: ${duplicates.join(
-            ", ",
-          )}\nFull agents array: ${JSON.stringify(rows, null, 2)}`,
-        ).toStrictEqual([]);
+        expectNoDuplicates(
+          rows.map((row) => `${row.name}:${row.scope}`),
+          "(name, scope) pairs after G→P",
+          `Full agents array: ${JSON.stringify(rows, null, 2)}`,
+        );
 
         // api-developer appears exactly twice — as active project row and
         // global tombstone — with distinct (name, scope) keys.

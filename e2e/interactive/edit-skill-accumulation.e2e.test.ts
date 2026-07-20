@@ -1,31 +1,23 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   createTempDir,
   cleanupTempDir,
+  configTsPath,
   ensureBinaryExists,
   writeProjectConfig,
   createPermissionsFile,
   createLocalSkill,
-  agentsPath,
+  writeAgentFile,
   readTestFile,
+  renderMetadataYaml,
 } from "../helpers/test-utils.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { DIRS, FILES, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { readSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import "../matchers/setup.js";
-
-/** Write a minimal agent .md stub to the agents directory. */
-async function writeAgentStub(baseDir: string, agentName: string, content: string): Promise<void> {
-  const agentsDir = agentsPath(baseDir);
-  await mkdir(agentsDir, { recursive: true });
-  await writeFile(
-    path.join(agentsDir, `${agentName}.md`),
-    `---\nname: ${agentName}\n---\n${content}\n`,
-  );
-}
 
 /**
  * Bug B regression test: project config must not accumulate global-scoped skills
@@ -79,18 +71,26 @@ describe("project config does not accumulate global skills after edit", () => {
       await writeProjectConfig(tempHOME, {
         name: "global",
         skills: [{ id: "web-framework-react", scope: "global", source: "eject" }],
-        agents: [{ name: "web-developer", scope: "global" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
         domains: ["web"],
       });
 
       // Create global skill directory with SKILL.md and metadata.yaml
       await createLocalSkill(tempHOME, "web-framework-react", {
         description: "React framework",
-        metadata: `author: "@test"\ndisplayName: web-framework-react\ncategory: web-framework\nslug: react\ncontentHash: "e2e-hash-react"\n`,
+        metadata: renderMetadataYaml({
+          displayName: "web-framework-react",
+          category: "web-framework",
+          slug: "react",
+          contentHash: "e2e-hash-react",
+        }),
       });
 
       // Create global agent file
-      await writeAgentStub(tempHOME, "web-developer", "Global web developer agent.");
+      await writeAgentFile(tempHOME, E2E_AGENT["web-developer"].name, {
+        frontmatter: true,
+        body: "Global web developer agent.\n",
+      });
 
       // --- Setup project config at <tempHOME>/project/.claude-src/config.ts ---
       await writeProjectConfig(projectDir, {
@@ -99,23 +99,31 @@ describe("project config does not accumulate global skills after edit", () => {
           { id: "web-framework-react", scope: "global", source: "eject" },
           { id: "web-testing-vitest", scope: "project", source: "eject" },
         ],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         domains: ["web"],
       });
 
       // Create project skill directory with SKILL.md and metadata.yaml
       await createLocalSkill(projectDir, "web-testing-vitest", {
         description: "Vitest testing",
-        metadata: `author: "@test"\ndisplayName: web-testing-vitest\ncategory: web-testing\nslug: vitest\ncontentHash: "e2e-hash-vitest"\n`,
+        metadata: renderMetadataYaml({
+          displayName: "web-testing-vitest",
+          category: "web-testing",
+          slug: "vitest",
+          contentHash: "e2e-hash-vitest",
+        }),
       });
 
       // Create project agent file
-      await writeAgentStub(projectDir, "web-developer", "Project web developer agent.");
+      await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name, {
+        frontmatter: true,
+        body: "Project web developer agent.\n",
+      });
 
       // Create permissions file to prevent blocking prompt
       await createPermissionsFile(projectDir);
 
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const projectConfigPath = configTsPath(projectDir);
 
       // --- Action: run edit wizard, navigate through without changes ---
       wizard = await EditWizard.launch({
@@ -125,10 +133,7 @@ describe("project config does not accumulate global skills after edit", () => {
       });
 
       // Single domain — advance through build -> sources -> agents -> confirm
-      const sources = await wizard.build.advanceToSources();
-      const agents = await sources.acceptDefaults();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
+      const result = await wizard.build.saveFromBuild("edit");
 
       expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
@@ -160,7 +165,7 @@ describe("project config does not accumulate global skills after edit", () => {
       // In this test, the installation is global-only (no project init was run).
       // Agents are compiled at HOME scope, not project scope.
       await expect({ dir: tempHOME }).toHaveCompiledAgents();
-      await expect({ dir: tempHOME }).toHaveCompiledAgent("web-developer");
+      await expect({ dir: tempHOME }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
     },
   );
 });

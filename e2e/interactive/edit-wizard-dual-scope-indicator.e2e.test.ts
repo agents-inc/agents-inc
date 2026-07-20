@@ -3,15 +3,19 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
+  configTsPath,
   directoryExists,
   ensureBinaryExists,
   readTestFile,
+  skillsPath,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createGlobalOnlyEnv,
+  readSkillBadgesViaEdit,
   readSkillEntries,
   runEditWithFirstSkillAction,
   type DualScopeEnv,
@@ -41,29 +45,23 @@ import {
  * no manual writes to `config.ts` or skill files.
  */
 
-const REACT_SKILL_ID = "web-framework-react";
-const REACT_DISPLAY_NAME = "web-framework-react";
-
 describe("edit wizard — dual-scope indicator after G→P toggle", () => {
   let sourceDir: string;
   let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
-  let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     await env?.destroy();
     env = undefined;
   });
@@ -83,22 +81,18 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
 
       // Phase 3: re-open the wizard. On `main`, the hydrator drops the tombstone,
       // so only a single badge renders. Expected after fix: BOTH badges visible.
-      wizard = await EditWizard.launch({
+      // The helper aborts without writing anything — scenario A is strictly a
+      // read-path check.
+      const badges = await readSkillBadgesViaEdit(
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
-        env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
-      });
-
-      const badges = await wizard.build.getScopeBadgesForSkill(REACT_DISPLAY_NAME);
+        fakeHome,
+        sourceDir,
+        sourceTempDir,
+        E2E_SKILL.react.display,
+      );
 
       // Strict: primary = active project scope, secondary = excluded global tombstone.
       expect(badges).toStrictEqual(["P", "G"]);
-
-      // Abort without writing anything — scenario A is strictly a read-path check.
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
     },
   );
 
@@ -118,8 +112,7 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       try {
@@ -133,19 +126,14 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
       // Phase 4: open the wizard AGAIN. If phase 3's no-op edit preserved the
       // tombstone, both badges should still render. On `main`, the tombstone
       // is lost after phase 3, so only a single badge renders.
-      wizard = await EditWizard.launch({
+      const badges = await readSkillBadgesViaEdit(
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
-        env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
-      });
-
-      const badges = await wizard.build.getScopeBadgesForSkill(REACT_DISPLAY_NAME);
+        fakeHome,
+        sourceDir,
+        sourceTempDir,
+        E2E_SKILL.react.display,
+      );
       expect(badges).toStrictEqual(["P", "G"]);
-
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
     },
   );
 
@@ -158,14 +146,14 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
       const { fakeHome, projectDir } = env;
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, REACT_SKILL_ID);
-      const projectSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, REACT_SKILL_ID);
+      const projectConfigPath = configTsPath(projectDir);
+      const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
+      const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
 
       // Sanity check: the toggle produced the expected dual-scope config on disk.
       // This state is already correct on `main` (config writer is D-221-clean).
       const configAfterToggle = await readTestFile(projectConfigPath);
-      expect(configAfterToggle).toContain(`"id":"${REACT_SKILL_ID}"`);
+      expect(configAfterToggle).toContain(`"id":"${E2E_SKILL.react.id}"`);
       expect(configAfterToggle).toContain('"scope":"project"');
       expect(configAfterToggle).toContain('"scope":"global"');
       expect(configAfterToggle).toContain('"excluded":true');
@@ -177,8 +165,7 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       try {
@@ -192,7 +179,7 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
       // Phase 4: the config on disk MUST still carry both entries. Load the
       // config structurally to isolate the react entries and compare shapes
       // instead of relying on substring containment.
-      const reactEntries = await readSkillEntries(projectDir, REACT_SKILL_ID);
+      const reactEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);
 
       const activeEntry = reactEntries.find((entry) => entry.excluded !== true);
       const tombstoneEntry = reactEntries.find((entry) => entry.excluded === true);
@@ -217,8 +204,8 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
 
       // Both config-side matchers still hold — the project config advertises
       // react as a top-level skill and the global config retains it too.
-      await expect({ dir: projectDir }).toHaveConfig({ skillIds: [REACT_SKILL_ID] });
-      await expect({ dir: fakeHome }).toHaveConfig({ skillIds: [REACT_SKILL_ID] });
+      await expect({ dir: projectDir }).toHaveConfig({ skillIds: [E2E_SKILL.react.id] });
+      await expect({ dir: fakeHome }).toHaveConfig({ skillIds: [E2E_SKILL.react.id] });
     },
   );
 });

@@ -6,15 +6,18 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, FILES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
+  agentsPath,
   isClaudeCLIAvailable,
   cleanupTempDir,
   ensureBinaryExists,
   fileExists,
   readTestFile,
+  skillsPath,
 } from "../helpers/test-utils.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createTestEnvironment,
   initGlobal,
@@ -41,7 +44,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
     await ensureBinaryExists();
     pluginFixture = await createE2EPluginSource();
     pluginSourceTempDir = pluginFixture.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await wizard?.destroy();
@@ -79,8 +82,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
         projectDir,
         source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const sources = await wizard.build.passThroughAllDomains();
@@ -100,30 +102,24 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
       expect(output).toMatch(/[Ss]witch/);
 
       // D-3: api-framework-hono local files deleted (migrated to plugin)
-      const localSkillPath = path.join(
-        projectDir,
-        DIRS.CLAUDE,
-        DIRS.SKILLS,
-        "api-framework-hono",
-        FILES.SKILL_MD,
-      );
+      const localSkillPath = path.join(skillsPath(projectDir), E2E_SKILL.hono.id, FILES.SKILL_MD);
       expect(await fileExists(localSkillPath)).toBe(false);
 
       // D-4: Both scopes have correct config and compiled agents
       await expectDualScopeInstallation(fakeHome, projectDir, {
         global: {
-          skillIds: ["web-framework-react", "web-testing-vitest", "web-state-zustand"],
+          skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
           agents: ["web-developer"],
         },
         project: {
-          skillIds: ["api-framework-hono"],
+          skillIds: [E2E_SKILL.hono.id],
           agents: ["api-developer"],
         },
       });
 
       // D-5: Project-scoped api-framework-hono source must have been updated from eject to plugin
       // (excluded global entries may legitimately retain source:"eject")
-      const projectHonoEntry = (await readSkillEntries(projectDir, "api-framework-hono")).find(
+      const projectHonoEntry = (await readSkillEntries(projectDir, E2E_SKILL.hono.id)).find(
         (entry) => entry.scope === "project",
       );
       expect(
@@ -160,8 +156,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
         projectDir,
         source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const sources = await wizard.build.passThroughAllDomains();
@@ -181,20 +176,20 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
       // Phase D: Verify agent content
 
       // D-1: web-developer.md (global) contains all selected skills
-      const globalWebDevPath = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, "web-developer.md");
+      const globalWebDevPath = path.join(agentsPath(fakeHome), "web-developer.md");
       expect(await fileExists(globalWebDevPath)).toBe(true);
       const webDevContent = await readTestFile(globalWebDevPath);
-      expect(webDevContent).toContain("web-framework-react");
+      expect(webDevContent).toContain(E2E_SKILL.react.id);
       // web-developer contains api-framework-hono (all skills go to all agents)
-      expect(webDevContent).toContain("api-framework-hono");
+      expect(webDevContent).toContain(E2E_SKILL.hono.id);
 
       // D-2: api-developer.md (project) contains all selected skills
-      const projectApiDevPath = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
+      const projectApiDevPath = path.join(agentsPath(projectDir), "api-developer.md");
       expect(await fileExists(projectApiDevPath)).toBe(true);
       const apiDevContent = await readTestFile(projectApiDevPath);
-      expect(apiDevContent).toContain("api-framework-hono");
+      expect(apiDevContent).toContain(E2E_SKILL.hono.id);
       // api-developer contains web-framework-react (all skills go to all agents)
-      expect(apiDevContent).toContain("web-framework-react");
+      expect(apiDevContent).toContain(E2E_SKILL.react.id);
 
       await result.destroy();
     },

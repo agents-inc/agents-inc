@@ -1,15 +1,15 @@
 import path from "path";
-import { stat } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, SOURCE_PATHS, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
 import {
   CLI_ROOT,
   createTempDir,
   cleanupTempDir,
+  directoryExists,
   ensureBinaryExists,
 } from "../helpers/test-utils.js";
 
@@ -33,13 +33,7 @@ const SKILLS_SOURCE = process.env.SKILLS_SOURCE ?? path.resolve(CLI_ROOT, "../sk
 
 const REAL_INSTALL_TIMEOUT = TIMEOUTS.PLUGIN_INSTALL;
 
-async function skillsSourceExists(): Promise<boolean> {
-  return stat(path.join(SKILLS_SOURCE, "src", "skills"))
-    .then((s) => s.isDirectory())
-    .catch(() => false);
-}
-
-const hasSkillsSource = await skillsSourceExists();
+const hasSkillsSource = await directoryExists(path.join(SKILLS_SOURCE, SOURCE_PATHS.SKILLS_DIR));
 
 describe.skipIf(!hasSkillsSource)("real marketplace", () => {
   let projectDir: string;
@@ -127,9 +121,7 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
 
     afterEach(async () => {
       if (editWizard) {
-        editWizard.abort();
-        await editWizard.waitForExit(TIMEOUTS.EXIT);
-        await editWizard.destroy();
+        await editWizard.abortAndDestroy(TIMEOUTS.EXIT);
         editWizard = undefined;
       }
     });

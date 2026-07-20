@@ -2,8 +2,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createGlobalOnlyEnv,
   readSkillEntries,
@@ -43,11 +44,6 @@ import {
  * selection. cli-developer flips it green by fixing the store.
  */
 
-const REACT_SKILL_ID = "web-framework-react";
-const FRAMEWORK_CATEGORY_LABEL = "Framework";
-
-/** Load react's project-config entries, sorted deterministically for toStrictEqual. */
-
 describe("dual-scope spacebar collapse — live in-session selected state", () => {
   let sourceDir: string;
   let sourceTempDir: string;
@@ -58,7 +54,7 @@ describe("dual-scope spacebar collapse — live in-session selected state", () =
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -78,9 +74,9 @@ describe("dual-scope spacebar collapse — live in-session selected state", () =
 
       // Establish the persisted dual-scope pair via a real `s` toggle + save.
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
-      expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
-        { id: REACT_SKILL_ID, scope: "global", source: "eject", excluded: true },
-        { id: REACT_SKILL_ID, scope: "project", source: "eject" },
+      expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
+        { id: E2E_SKILL.react.id, scope: "global", source: "eject", excluded: true },
+        { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
       ]);
 
       // Re-open and act on the LIVE session — do NOT save.
@@ -88,17 +84,19 @@ describe("dual-scope spacebar collapse — live in-session selected state", () =
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       try {
         // Baseline: the persisted dual-scope row renders both badges and counts
         // react as the single selected framework.
-        expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["P", "G"]);
-        expect(await wizard.build.getExclusiveCategorySelectedCount(FRAMEWORK_CATEGORY_LABEL)).toBe(
-          1,
-        );
+        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.id)).toStrictEqual([
+          "P",
+          "G",
+        ]);
+        expect(
+          await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
+        ).toBe(1);
 
         // Spacebar collapses the dual-scope pair: skillConfigs drops to a single
         // active inherited-global entry, so react is STILL active.
@@ -106,7 +104,7 @@ describe("dual-scope spacebar collapse — live in-session selected state", () =
 
         // The badge correctly collapses to a single `G` — react remains installed
         // globally. This half already works on current code.
-        expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["G"]);
+        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.id)).toStrictEqual(["G"]);
 
         // RED until Bug 1 fix: react is still active via global, so the exclusive
         // Framework category must still count it as selected. Current code drops
@@ -114,13 +112,11 @@ describe("dual-scope spacebar collapse — live in-session selected state", () =
         // though the row still shows the `G` badge and a save-and-reopen renders
         // it selected again.
         expect(
-          await wizard.build.getExclusiveCategorySelectedCount(FRAMEWORK_CATEGORY_LABEL),
+          await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
           "collapsed-but-still-global react must render as selected (1 of 1) in-session",
         ).toBe(1);
       } finally {
-        wizard.abort();
-        await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
-        await wizard.destroy();
+        await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
       }
     },
   );

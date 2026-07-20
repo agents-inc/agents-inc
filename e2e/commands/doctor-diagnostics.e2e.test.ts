@@ -1,24 +1,24 @@
 import path from "path";
 import { writeFile, mkdir, rm } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { EXIT_CODES, FILES } from "../pages/constants.js";
 import {
   createTempDir,
   cleanupTempDir,
   ensureBinaryExists,
-  agentsPath,
+  skillsPath,
   writeAgentFile,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
 import type { SkillId } from "../../src/cli/types/index.js";
 
 describe("doctor diagnostics", () => {
   let tempDir: string;
   // Created once for the whole file — doctor only reads the source via CC_SOURCE
-  let source: { sourceDir: string; tempDir: string };
+  let source: E2ESource;
 
   beforeAll(async () => {
     await ensureBinaryExists();
@@ -188,12 +188,7 @@ describe("doctor diagnostics", () => {
 
       // Manual mkdir+writeFile: fabricated orphan skill ID not in SkillId union,
       // so createLocalSkill() cannot be used without a type cast.
-      const orphanDir = path.join(
-        project.dir,
-        DIRS.CLAUDE,
-        DIRS.SKILLS,
-        "web-testing-orphan-extra",
-      );
+      const orphanDir = path.join(skillsPath(project.dir), "web-testing-orphan-extra");
       await mkdir(orphanDir, { recursive: true });
       await writeFile(path.join(orphanDir, FILES.SKILL_MD), "# Orphan Skill\n");
 
@@ -344,7 +339,7 @@ describe("doctor diagnostics", () => {
       expect(stdout).toContain("Check skill IDs");
     });
 
-    it("should emit 'reinstall missing skill files' tip when installed check warns", async () => {
+    it("should emit re-eject tip when installed check warns", async () => {
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
       });
@@ -362,12 +357,7 @@ describe("doctor diagnostics", () => {
       await writeAgentFile(projectDir, "web-developer");
 
       // Ensure the eject skill directory is absent so checkSkillsInstalled warns
-      const ejectedSkillDir = path.join(
-        projectDir,
-        DIRS.CLAUDE,
-        DIRS.SKILLS,
-        "web-framework-react",
-      );
+      const ejectedSkillDir = path.join(skillsPath(projectDir), "web-framework-react");
       await rm(ejectedSkillDir, { recursive: true, force: true });
 
       const { exitCode, stdout } = await CLI.run(
@@ -377,7 +367,7 @@ describe("doctor diagnostics", () => {
       );
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("reinstall missing skill files");
+      expect(stdout).toContain("Re-eject the missing skills from the source");
     });
   });
 

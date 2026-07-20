@@ -1,9 +1,13 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists, readTestFile } from "../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  configTsPath,
+  ensureBinaryExists,
+  readTestFile,
+} from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   createGlobalOnlyEnv,
@@ -39,9 +43,6 @@ import {
  */
 
 const REACT_SKILL_ID = "web-framework-react";
-const FRAMEWORK_CATEGORY_LABEL = "Framework";
-
-/** Load react's project-config entries, sorted deterministically for toStrictEqual. */
 
 describe("dual-scope in-session collapse → blocked-space → s-restore → s-flip", () => {
   let sourceDir: string;
@@ -53,7 +54,7 @@ describe("dual-scope in-session collapse → blocked-space → s-restore → s-f
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -78,7 +79,7 @@ describe("dual-scope in-session collapse → blocked-space → s-restore → s-f
         { id: REACT_SKILL_ID, scope: "project", source: "eject" },
       ]);
 
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const projectConfigPath = configTsPath(projectDir);
       const configBefore = await readTestFile(projectConfigPath);
 
       // Re-open and act on the LIVE session — do NOT save until the end (we abort).
@@ -86,37 +87,36 @@ describe("dual-scope in-session collapse → blocked-space → s-restore → s-f
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       try {
         // Baseline: persisted dual-scope row renders both badges, react is the one
         // selected framework.
         expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["P", "G"]);
-        expect(await wizard.build.getExclusiveCategorySelectedCount(FRAMEWORK_CATEGORY_LABEL)).toBe(
-          1,
-        );
+        expect(
+          await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
+        ).toBe(1);
 
         // Step 1 — spacebar collapses [P][G] to a single inherited-global [G]; react
         // stays active (and selected).
         await wizard.build.toggleFocusedSkill();
         expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["G"]);
         expect(
-          await wizard.build.getExclusiveCategorySelectedCount(FRAMEWORK_CATEGORY_LABEL),
+          await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
           "collapsed-but-still-global react must render as selected (1 of 1)",
         ).toBe(1);
 
-        // Step 2 — a second spacebar on the collapsed row is BLOCKED. Read the toast
-        // immediately (it auto-clears), then assert the row is unchanged.
-        await wizard.build.toggleFocusedSkill();
-        expect(
-          wizard.build.getOutput(),
-          "second spacebar on the collapsed [G] row must be blocked with a toast",
-        ).toContain(STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
+        // Step 2 — a second spacebar on the collapsed [G] row must be BLOCKED with
+        // a toast. The toast is awaited on the append-only raw surface anchored to
+        // a pre-press cursor: Ink rewrites the absolutely-positioned toast row in
+        // place, so xterm's processed buffer can lose it before the test reads it,
+        // and an unanchored raw match would accept the toast this same session
+        // already emitted. Then assert the row itself is unchanged.
+        await wizard.build.toggleFocusedSkillAwaiting(STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
         expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["G"]);
         expect(
-          await wizard.build.getExclusiveCategorySelectedCount(FRAMEWORK_CATEGORY_LABEL),
+          await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
           "blocked spacebar must leave react selected (1 of 1) — no silent tombstone",
         ).toBe(1);
 
@@ -136,9 +136,7 @@ describe("dual-scope in-session collapse → blocked-space → s-restore → s-f
           (await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).slice().sort(),
         ).toStrictEqual(["G", "P"]);
       } finally {
-        wizard.abort();
-        await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
-        await wizard.destroy();
+        await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
       }
 
       // The seeded config.ts was never re-saved: it must be byte-identical, and its

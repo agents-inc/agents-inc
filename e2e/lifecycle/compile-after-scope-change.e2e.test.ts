@@ -2,7 +2,7 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, DIRS } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { cleanupTempDir, ensureBinaryExists, readTestFile, runCLI } from "../helpers/test-utils.js";
 import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
@@ -27,7 +27,7 @@ describe("compile after scope change", () => {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -56,8 +56,7 @@ describe("compile after scope change", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       testWizard = wizard;
 
@@ -68,18 +67,8 @@ describe("compile after scope change", () => {
       // Build step -- API domain (pass through)
       await wizard.build.advanceDomain();
 
-      // Build step -- Shared domain (pass through)
-      const sources = await wizard.build.advanceToSources();
-
-      // Sources step (pass through)
-      await sources.waitForReady();
-      const agents = await sources.advance();
-
-      // Agents step (pass through)
-      const confirm = await agents.acceptDefaults("edit");
-
-      // Confirm step
-      const result = await confirm.confirm();
+      // Build step -- Shared domain, sources, agents and confirm (all pass through)
+      const result = await wizard.build.saveFromBuild("edit");
       const exitCode = await result.exitCode;
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       await result.destroy();
@@ -96,7 +85,7 @@ describe("compile after scope change", () => {
       expect(compileExitCode).toBe(EXIT_CODES.SUCCESS);
 
       // D-2: Output mentions compilation
-      expect(combined).toContain("Compiled");
+      expect(combined).toContain(STEP_TEXT.COMPILE_SUCCESS);
 
       // D-3: web-developer.md at global scope starts with YAML frontmatter
       const globalWebDevPath = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, "web-developer.md");
@@ -125,8 +114,7 @@ describe("compile after scope change", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       testWizard = wizard;
 

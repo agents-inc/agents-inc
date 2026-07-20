@@ -1,20 +1,22 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupTempDir,
+  configTsPath,
+  configTypesTsPath,
   ensureBinaryExists,
   fileExists,
   isClaudeCLIAvailable,
   readTestFile,
 } from "../helpers/test-utils.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
 
 /**
  * SelectedAgentName excluded global agent E2E test.
@@ -36,7 +38,7 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName includes excluded global ag
     fixture = await createE2EPluginSource();
     sourceDir = fixture.sourceDir;
     sourceTempDir = fixture.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -93,7 +95,7 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName includes excluded global ag
       const agents = await sources.advance();
 
       // Deselect api-developer by toggling it off (display name on screen).
-      await agents.toggleAgent("API Developer");
+      await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
 
       const confirm = await agents.advance("edit");
       const result = await confirm.confirm();
@@ -102,7 +104,7 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName includes excluded global ag
       await dashboard.destroy();
 
       // Read the project's config-types.ts
-      const configTypesPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+      const configTypesPath = configTypesTsPath(projectDir);
       expect(await fileExists(configTypesPath)).toBe(true);
 
       const content = await readTestFile(configTypesPath);
@@ -114,9 +116,7 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName includes excluded global ag
       expect(content).toContain("api-developer");
 
       // Verify the config.ts has the excluded agent marked
-      const configContent = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
+      const configContent = await readTestFile(configTsPath(projectDir));
       expect(configContent).toContain("excluded");
     },
   );

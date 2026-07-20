@@ -78,7 +78,7 @@ describe("edit wizard — navigation and hotkeys", () => {
 
       const screen = wizard.build.getScreen();
       expect(screen).toContain(STEP_TEXT.BUILD);
-      expect(screen).not.toContain("Select domains");
+      expect(screen).not.toContain(STEP_TEXT.DOMAINS);
     });
   });
 
@@ -100,7 +100,7 @@ describe("edit wizard — navigation and hotkeys", () => {
       const output = wizard.build.getOutput();
       // The build step footer shows these hotkey indicators
       expect(output).toContain("Labels");
-      expect(output).toContain("Filter incompatible");
+      expect(output).toContain(STEP_TEXT.BUILD_FOOTER);
     });
 
     it("should toggle focused skill scope with S key", async () => {

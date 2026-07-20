@@ -2,15 +2,18 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupTempDir,
+  configTsPath,
   directoryExists,
   ensureBinaryExists,
   readTestFile,
+  skillsPath,
 } from "../helpers/test-utils.js";
 import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
+import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
 
 /**
@@ -33,7 +36,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -62,8 +65,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       testWizard = wizard;
 
@@ -82,7 +84,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
       const agents = await sources.advance();
 
       // Agents step -- navigate to Web Developer and toggle scope (G->P)
-      await agents.navigateCursorToAgent("Web Developer");
+      await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["web-developer"]);
       await agents.toggleScopeOnFocusedAgent();
       const confirm = await agents.advance("edit");
 
@@ -94,19 +96,14 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
       // Phase D: Assertions
 
       // D-1: web-framework-react directory exists at project scope (G->P additive)
-      const projectSkillDir = path.join(
-        projectDir,
-        DIRS.CLAUDE,
-        DIRS.SKILLS,
-        "web-framework-react",
-      );
+      const projectSkillDir = path.join(skillsPath(projectDir), "web-framework-react");
       expect(
         await directoryExists(projectSkillDir),
         "web-framework-react directory must exist at project scope after G->P toggle",
       ).toBe(true);
 
       // D-2: web-framework-react directory STILL exists at global scope (G->P is additive)
-      const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, "web-framework-react");
+      const globalSkillDir = path.join(skillsPath(fakeHome), "web-framework-react");
       expect(
         await directoryExists(globalSkillDir),
         "web-framework-react directory must still exist at global scope (G->P is additive)",
@@ -123,9 +120,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
         skillIds: ["api-framework-hono", "web-framework-react"],
         agents: ["api-developer", "web-developer"],
       });
-      const projectConfig = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
+      const projectConfig = await readTestFile(configTsPath(projectDir));
       expect(projectConfig).toContain('"scope":"project"');
 
       // D-6: Global config still has both (unchanged)
@@ -159,17 +154,14 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
       // deselect it). web-developer is a plain global agent, so `s` G->P on it
       // still works. This exercises both an inert scope toggle and a live one in
       // the same edit.
-      const projectSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, "api-framework-hono");
-      const projectConfigBefore = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
+      const projectSkillDir = path.join(skillsPath(projectDir), "api-framework-hono");
+      const projectConfigBefore = await readTestFile(configTsPath(projectDir));
 
       const wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       testWizard = wizard;
 
@@ -186,7 +178,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
       const agents = await sources.advance();
 
       // Agents step -- web-developer is a plain global agent: `s` G->P works
-      await agents.navigateCursorToAgent("Web Developer");
+      await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["web-developer"]);
       await agents.toggleScopeOnFocusedAgent();
       const confirm = await agents.advance("edit");
 
@@ -201,16 +193,14 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
         await directoryExists(projectSkillDir),
         "api-framework-hono must remain at project scope — `s` is inert on a locked dual-scope pair",
       ).toBe(true);
-      const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, "api-framework-hono");
+      const globalSkillDir = path.join(skillsPath(fakeHome), "api-framework-hono");
       expect(
         await directoryExists(globalSkillDir),
         "api-framework-hono must remain at global scope",
       ).toBe(true);
 
       // D-2: Project config still carries api-framework-hono at project scope
-      const projectConfig = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
+      const projectConfig = await readTestFile(configTsPath(projectDir));
       const honoProjectLines = projectConfig
         .split("\n")
         .filter((l: string) => l.includes("api-framework-hono") && l.includes('"scope":"project"'));

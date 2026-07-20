@@ -1,22 +1,23 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   isClaudeCLIAvailable,
   cleanupTempDir,
+  configTsPath,
   createPermissionsFile,
   createTempDir,
   ensureBinaryExists,
   fileExists,
   readTestFile,
 } from "../helpers/test-utils.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Edit: add new local-source skills lifecycle E2E test.
@@ -43,7 +44,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
   beforeAll(async () => {
     await ensureBinaryExists();
     fixture = await createE2EPluginSource();
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (fixture) await cleanupTempDir(fixture.tempDir);
@@ -75,8 +76,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       const initWizard = await InitWizard.launch({
         source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         projectDir,
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       activeWizard = initWizard;
 
@@ -96,7 +96,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       activeWizard = undefined;
 
       // Phase 1 verification
-      const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const configPath = configTsPath(projectDir);
       expect(await fileExists(configPath)).toBe(true);
       const configAfterInit = await readTestFile(configPath);
       // All skills should be plugin (not eject)
@@ -113,8 +113,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       const editWizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       activeWizard = editWizard;
 
@@ -123,7 +122,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
 
       // Sources step: toggle first skill to eject (cursor is already on it)
       await editSources.waitForReady();
-      await editSources.toggleFocusedSource();
+      await editSources.selectFocusedSourceCell();
       const editAgents = await editSources.advance();
 
       // Agents: accept defaults
@@ -144,7 +143,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
 
       // The eject-sourced skill should be copied to .claude/skills/
       // This validates the source migration path (plugin → eject) in edit.
-      await expect({ dir: projectDir }).toHaveSkillCopied("web-framework-react");
+      await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
       await expect({ dir: projectDir }).toHaveCompiledAgents();
     },
   );

@@ -3,7 +3,7 @@ import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS } from "../pages/constants.js";
+import { TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { cleanupTempDir, createTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
@@ -90,8 +90,7 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
         const editWizard = await EditWizard.launch({
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         // Arrow down to reach another skill, toggle it

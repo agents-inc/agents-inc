@@ -8,21 +8,19 @@ import {
   ensureBinaryExists,
   directoryExists,
   fileExists,
+  renderMetadataYaml,
   renderSkillMd,
   agentsPath,
   skillsPath,
+  writeAgentFile,
   writeProjectConfig,
   addForkedFromMetadata,
 } from "../helpers/test-utils.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
-
-/** Write a minimal agent .md file to the agents directory. */
-async function writeAgentFile(baseDir: string, agentName: string, content: string): Promise<void> {
-  await writeFile(path.join(agentsPath(baseDir), `${agentName}.md`), content);
-}
 
 describe("uninstall command", () => {
   let tempDir: string;
@@ -68,7 +66,7 @@ describe("uninstall command", () => {
     await writeProjectConfig(projectDir, {
       name: "test-edit-project",
       skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
-      agents: [{ name: "web-developer", scope: "project" }],
+      agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       domains: ["web"],
     });
 
@@ -89,7 +87,7 @@ describe("uninstall command", () => {
     // Config should be preserved intact (uninstall --yes does not remove .claude-src/)
     await expect({ dir: projectDir }).toHaveConfig({
       skillIds: ["web-framework-react"],
-      agents: ["web-developer"],
+      agents: [E2E_AGENT["web-developer"].name],
     });
 
     // Config directory preserved (without --all)
@@ -161,7 +159,7 @@ describe("uninstall command", () => {
 
     // ProjectBuilder.editable() generates config with agents: ["web-developer"]
     // Add an extra agent file NOT in the config
-    await writeAgentFile(projectDir, "my-custom-agent", "# Custom Agent");
+    await writeAgentFile(projectDir, "my-custom-agent", { body: "# Custom Agent" });
 
     const { exitCode } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
 
@@ -172,7 +170,9 @@ describe("uninstall command", () => {
     expect(await fileExists(path.join(agentsDir, "my-custom-agent.md"))).toBe(true);
 
     // CLI-managed agent (web-developer) should be removed
-    expect(await fileExists(path.join(agentsDir, "web-developer.md"))).toBe(false);
+    expect(await fileExists(path.join(agentsDir, `${E2E_AGENT["web-developer"].name}.md`))).toBe(
+      false,
+    );
   });
 
   it("should skip user-created skills without forkedFrom metadata", async () => {
@@ -181,7 +181,7 @@ describe("uninstall command", () => {
     const projectDir = project.dir;
 
     // Create a user-created skill with no forkedFrom metadata
-    const userSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, "my-custom-skill");
+    const userSkillDir = path.join(skillsPath(projectDir), "my-custom-skill");
     await mkdir(userSkillDir, { recursive: true });
     await writeFile(
       path.join(userSkillDir, FILES.SKILL_MD),
@@ -189,7 +189,7 @@ describe("uninstall command", () => {
     );
     await writeFile(
       path.join(userSkillDir, FILES.METADATA_YAML),
-      'author: "@user"\ncontentHash: "user-hash"\n',
+      renderMetadataYaml({ author: "@user", contentHash: "user-hash" }),
     );
 
     await addForkedFromMetadata(projectDir);
@@ -211,7 +211,7 @@ describe("uninstall command", () => {
   it("should skip all skills when only user-created skills exist", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
-    const userSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, "my-custom-skill");
+    const userSkillDir = path.join(skillsPath(projectDir), "my-custom-skill");
     await mkdir(userSkillDir, { recursive: true });
 
     await writeFile(
@@ -220,7 +220,7 @@ describe("uninstall command", () => {
     );
     await writeFile(
       path.join(userSkillDir, FILES.METADATA_YAML),
-      'author: "@user"\ncontentHash: "user-hash"\n',
+      renderMetadataYaml({ author: "@user", contentHash: "user-hash" }),
     );
 
     const { exitCode, output } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
@@ -242,7 +242,7 @@ describe("uninstall command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     // --yes should print what will be removed (without interactive prompt)
-    expect(stdout).toContain("The following will be removed:");
+    expect(stdout).toContain(STEP_TEXT.UNINSTALL_PREVIEW_HEADING);
     expect(stdout).toContain("CLI-managed files:");
   });
 

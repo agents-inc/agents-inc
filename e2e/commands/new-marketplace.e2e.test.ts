@@ -1,8 +1,9 @@
 import path from "path";
 import { CLI } from "../fixtures/cli.js";
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import { EXIT_CODES, FILES, DIRS, SOURCE_PATHS } from "../pages/constants.js";
+import { EXIT_CODES, FILES, SOURCE_PATHS } from "../pages/constants.js";
 import {
+  configTsPath,
   createTempDir,
   cleanupTempDir,
   ensureBinaryExists,
@@ -90,7 +91,7 @@ describe.skip("new marketplace command", () => {
     expect(await fileExists(path.join(marketplaceDir, "README.md"))).toBe(true);
 
     // Verify .claude-src/config.ts exists (installation marker)
-    const configPath = path.join(marketplaceDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+    const configPath = configTsPath(marketplaceDir);
     expect(await fileExists(configPath)).toBe(true);
   });
 

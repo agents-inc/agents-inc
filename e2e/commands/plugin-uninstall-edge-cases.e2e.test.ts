@@ -11,6 +11,9 @@ import {
   readTestFile,
   renderSkillMd,
   writeProjectConfig,
+  writeAgentFile,
+  agentsPath,
+  skillsPath,
   FORKED_FROM_METADATA,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
@@ -58,7 +61,7 @@ async function createUninstallableProject(
     domains: ["web"],
   });
 
-  const skillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, "web-framework-react");
+  const skillDir = path.join(skillsPath(projectDir), "web-framework-react");
   await mkdir(skillDir, { recursive: true });
   await writeFile(
     path.join(skillDir, FILES.SKILL_MD),
@@ -66,9 +69,8 @@ async function createUninstallableProject(
   );
   await writeFile(path.join(skillDir, FILES.METADATA_YAML), FORKED_FROM_METADATA);
 
-  const agentsDir = path.join(projectDir, DIRS.CLAUDE, "agents");
-  await mkdir(agentsDir, { recursive: true });
-  await writeFile(path.join(agentsDir, "web-developer.md"), "---\nname: web-developer\n---\n");
+  const agentsDir = agentsPath(projectDir);
+  await writeAgentFile(projectDir, "web-developer", { frontmatter: true, body: "" });
 
   if (options.settingsJson) {
     const claudeDir = path.join(projectDir, DIRS.CLAUDE);

@@ -1,10 +1,11 @@
 import { realpathSync } from "fs";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_AGENT, E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   agentsPath,
@@ -14,9 +15,11 @@ import {
   createTempDir,
   ensureBinaryExists,
   fileExists,
+  loadConfigOrFail,
+  renderMetadataYaml,
+  writeAgentFile,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -49,15 +52,10 @@ import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/t
  *      project's agent .md files).
  */
 
-const REACT = "web-framework-react";
-const WEB_DEVELOPER: AgentName = "web-developer";
-const WEB_DEVELOPER_DISPLAY = "Web Developer";
-const API_DEVELOPER: AgentName = "api-developer";
-
 // The global (web-developer) agent's stack references react at global scope.
 const globalStack = {
-  [WEB_DEVELOPER]: {
-    "web-framework": [{ id: REACT, preloaded: true }],
+  [E2E_AGENT["web-developer"].name]: {
+    "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
 
@@ -65,15 +63,19 @@ const globalStack = {
 // react that the removed global agent also references. Removing the global
 // AGENT (not the skill) must leave this project-scoped stack entry intact.
 const projectStack = {
-  [API_DEVELOPER]: {
-    "web-framework": [{ id: REACT, preloaded: false }],
+  [E2E_AGENT["api-developer"].name]: {
+    "web-framework": [{ id: E2E_SKILL.react.id, preloaded: false }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
 
-const reactMetadata =
-  `author: "@test"\ndisplayName: ${REACT}\ncategory: web-framework\nslug: react\n` +
-  `cliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\n` +
-  `contentHash: "b2c3d4e"\n`;
+const reactMetadata = renderMetadataYaml({
+  displayName: E2E_SKILL.react.id,
+  category: "web-framework",
+  slug: E2E_SKILL.react.slug,
+  cliDescription: "E2E test skill",
+  usageGuidance: "Use when testing E2E scenarios",
+  contentHash: "b2c3d4e",
+});
 
 /**
  * The registered project as it would appear after a normal wizard flow:
@@ -84,12 +86,12 @@ const reactMetadata =
 function buildRegisteredProjectConfig(name: string): ProjectConfig {
   return buildProjectConfig({
     name,
-    skills: buildSkillConfigs([REACT], { scope: "global", source: "eject" }),
+    skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
     agents: [
-      ...buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
-      ...buildAgentConfigs([API_DEVELOPER], { scope: "project" }),
+      ...buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
+      ...buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
     ],
-    selectedAgents: [WEB_DEVELOPER, API_DEVELOPER],
+    selectedAgents: [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
     stack: projectStack,
   });
 }
@@ -124,15 +126,15 @@ describe("global-scope agent removal propagates to registered projects", () => {
     // references the global react.
     const globalConfig = buildProjectConfig({
       name: "propagation-agent-removal-global",
-      skills: buildSkillConfigs([REACT], { scope: "global", source: "eject" }),
-      agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+      skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
+      agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       domains: ["web"],
-      selectedAgents: [WEB_DEVELOPER],
+      selectedAgents: [E2E_AGENT["web-developer"].name],
       stack: globalStack,
       projects: [realpathSync(projectDir)],
     });
     await writeProjectConfig(globalHome, globalConfig);
-    await createLocalSkill(globalHome, REACT, {
+    await createLocalSkill(globalHome, E2E_SKILL.react.id, {
       description: "Global react copy",
       metadata: reactMetadata,
     });
@@ -141,12 +143,10 @@ describe("global-scope agent removal propagates to registered projects", () => {
 
     // Seed a previously-compiled web-developer.md in the PROJECT's agents dir.
     // Its survival after propagation is what demonstrates the D-240 gap.
-    const projectAgentsDir = agentsPath(projectDir);
-    await mkdir(projectAgentsDir, { recursive: true });
-    await writeFile(
-      path.join(projectAgentsDir, `${WEB_DEVELOPER}.md`),
-      "---\nname: web-developer\n---\nStale compiled agent body\n",
-    );
+    await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name, {
+      frontmatter: true,
+      body: "Stale compiled agent body\n",
+    });
 
     // Edit at global scope: keep react, deselect the web-developer AGENT. This
     // rewrites the global config and fires propagateGlobalChangesToProjects for
@@ -155,25 +155,22 @@ describe("global-scope agent removal propagates to registered projects", () => {
       projectDir: globalHome,
       source: { sourceDir, tempDir: sourceTempDir },
       env: { HOME: globalHome },
-      rows: 60,
-      cols: 120,
+      ...TERMINAL_SIZE.TALL,
     });
     const sources = await wizard.build.passThroughAllDomainsGeneric();
     await sources.waitForReady();
     const agents = await sources.advance();
-    await agents.toggleAgent(WEB_DEVELOPER_DISPLAY);
+    await agents.toggleAgent(E2E_AGENT_DISPLAY["web-developer"]);
     const confirm = await agents.advance("edit");
     const result = await confirm.confirm();
     editExitCode = await result.exitCode;
     editRawOutput = result.rawOutput;
     await result.destroy();
 
-    const loaded = await loadProjectConfigFromDir(projectDir);
-    if (!loaded) throw new Error("project config must exist after edit");
-    projectConfig = loaded.config;
+    projectConfig = await loadConfigOrFail(projectDir);
 
     compiledAgentMdExists = await fileExists(
-      path.join(agentsPath(projectDir), `${WEB_DEVELOPER}.md`),
+      path.join(agentsPath(projectDir), `${E2E_AGENT["web-developer"].name}.md`),
     );
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
@@ -192,7 +189,7 @@ describe("global-scope agent removal propagates to registered projects", () => {
     expect(
       projectConfig.agents.filter((a) => !a.excluded).map((a) => a.name),
       "project agents[] must no longer contain the removed global web-developer",
-    ).not.toContain(WEB_DEVELOPER);
+    ).not.toContain(E2E_AGENT["web-developer"].name);
   });
 
   // Assertion 1b: the removed global agent should ALSO be gone from
@@ -211,7 +208,7 @@ describe("global-scope agent removal propagates to registered projects", () => {
     expect(
       projectConfig.selectedAgents ?? [],
       "selectedAgents[] must not contain the removed global web-developer",
-    ).not.toContain(WEB_DEVELOPER);
+    ).not.toContain(E2E_AGENT["web-developer"].name);
   });
 
   // Assertion 2: the project-scoped api-developer's stack referencing the
@@ -223,16 +220,16 @@ describe("global-scope agent removal propagates to registered projects", () => {
   // is the seeded entry verbatim.
   it("leaves the project-scoped agent's own stack entries untouched", () => {
     expect(
-      projectConfig.stack?.[API_DEVELOPER]?.["web-framework"],
+      projectConfig.stack?.[E2E_AGENT["api-developer"].name]?.["web-framework"],
       "project-scoped api-developer stack must still reference react unchanged",
-    ).toStrictEqual([{ id: REACT, preloaded: false }]);
+    ).toStrictEqual([{ id: E2E_SKILL.react.id, preloaded: false }]);
   });
 
   it("keeps the project-scoped api-developer active in agents[]", () => {
     expect(
       projectConfig.agents.filter((a) => !a.excluded).map((a) => a.name),
       "project-scoped api-developer must survive propagation",
-    ).toContain(API_DEVELOPER);
+    ).toContain(E2E_AGENT["api-developer"].name);
   });
 
   // Assertion 3: KNOWN D-240 gap — propagation rewrites config.ts /

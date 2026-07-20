@@ -4,6 +4,7 @@ import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
 
@@ -60,17 +61,14 @@ describe("unique skill in category guard", () => {
       });
 
       // Deselect vitest — web-testing is not required, so deselection succeeds
-      await wizard.build.selectSkill("web-testing-vitest");
+      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
 
       // Verify no toast message appeared (guard no longer fires for non-required categories)
       const output = wizard.build.getOutput();
       expect(output).not.toContain("Cannot deselect the only skill in this category");
 
       // Complete the wizard
-      const sources = await wizard.build.advanceToSources();
-      const agents = await sources.acceptDefaults();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
+      const result = await wizard.build.saveFromBuild("edit");
 
       // Config should reflect the deselection (vitest removed, only react remains)
       await expectPhaseSuccess(result, {
@@ -101,17 +99,14 @@ describe("unique skill in category guard", () => {
       });
 
       // Attempt to deselect react — web-framework has 2 skills (react + vue)
-      await wizard.build.selectSkill("web-framework-react");
+      await wizard.build.selectSkill(E2E_SKILL.react.display);
 
       // Verify no toast message appeared
       const output = wizard.build.getOutput();
       expect(output).not.toContain("Cannot deselect the only skill in this category");
 
       // Complete the wizard and verify it exits successfully
-      const sources = await wizard.build.advanceToSources();
-      const agents = await sources.acceptDefaults();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
+      const result = await wizard.build.saveFromBuild("edit");
 
       // Config should reflect the deselection (react removed from multi-skill category)
       await expectPhaseSuccess(result, {

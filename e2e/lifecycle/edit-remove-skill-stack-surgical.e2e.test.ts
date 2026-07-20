@@ -2,7 +2,7 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupTempDir,
@@ -11,9 +11,12 @@ import {
   createTempDir,
   directoryExists,
   ensureBinaryExists,
+  loadConfigOrFail,
+  renderMetadataYaml,
+  skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -30,23 +33,13 @@ import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
  * stack rewrite.
  */
 
-const REACT = "web-framework-react";
-const VITEST = "web-testing-vitest";
-const ZUSTAND = "web-state-zustand";
-const WEB_DEVELOPER: AgentName = "web-developer";
-
 const multiCategoryStack = {
-  [WEB_DEVELOPER]: {
-    "web-framework": [{ id: REACT, preloaded: true }],
-    "web-testing": [{ id: VITEST, preloaded: false }],
-    "web-client-state": [{ id: ZUSTAND, preloaded: false }],
+  [E2E_AGENT["web-developer"].name]: {
+    "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
+    "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],
+    "web-client-state": [{ id: E2E_SKILL.zustand.id, preloaded: false }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
-
-const skillMetadata = (id: string, category: string, slug: string): string =>
-  `author: "@test"\ndisplayName: ${id}\ncategory: ${category}\nslug: ${slug}\n` +
-  `cliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\n` +
-  `contentHash: "a1b2c3d"\n`;
 
 describe("edit removes exactly one skill from a multi-category agent stack", () => {
   let sourceDir: string;
@@ -88,25 +81,49 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
 
       const config = buildProjectConfig({
         name: "surgical-edit-test",
-        skills: buildSkillConfigs([REACT, VITEST, ZUSTAND], { scope: "global", source: "eject" }),
-        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+        skills: buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id], {
+          scope: "global",
+          source: "eject",
+        }),
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         domains: ["web"],
-        selectedAgents: [WEB_DEVELOPER],
+        selectedAgents: [E2E_AGENT["web-developer"].name],
         stack: multiCategoryStack,
       });
       await writeProjectConfig(globalHome, config);
 
-      await createLocalSkill(globalHome, REACT, {
+      await createLocalSkill(globalHome, E2E_SKILL.react.id, {
         description: "React framework",
-        metadata: skillMetadata(REACT, "web-framework", "react"),
+        metadata: renderMetadataYaml({
+          displayName: E2E_SKILL.react.id,
+          category: "web-framework",
+          slug: E2E_SKILL.react.slug,
+          cliDescription: "E2E test skill",
+          usageGuidance: "Use when testing E2E scenarios",
+          contentHash: "a1b2c3d",
+        }),
       });
-      await createLocalSkill(globalHome, VITEST, {
+      await createLocalSkill(globalHome, E2E_SKILL.vitest.id, {
         description: "Vitest testing framework",
-        metadata: skillMetadata(VITEST, "web-testing", "vitest"),
+        metadata: renderMetadataYaml({
+          displayName: E2E_SKILL.vitest.id,
+          category: "web-testing",
+          slug: E2E_SKILL.vitest.slug,
+          cliDescription: "E2E test skill",
+          usageGuidance: "Use when testing E2E scenarios",
+          contentHash: "a1b2c3d",
+        }),
       });
-      await createLocalSkill(globalHome, ZUSTAND, {
+      await createLocalSkill(globalHome, E2E_SKILL.zustand.id, {
         description: "Zustand state management",
-        metadata: skillMetadata(ZUSTAND, "web-client-state", "zustand"),
+        metadata: renderMetadataYaml({
+          displayName: E2E_SKILL.zustand.id,
+          category: "web-client-state",
+          slug: E2E_SKILL.zustand.slug,
+          cliDescription: "E2E test skill",
+          usageGuidance: "Use when testing E2E scenarios",
+          contentHash: "a1b2c3d",
+        }),
       });
 
       await createPermissionsFile(globalHome);
@@ -120,11 +137,10 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
         projectDir: globalHome,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: globalHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
-      await wizard.build.selectSkill(ZUSTAND);
+      await wizard.build.selectSkill(E2E_SKILL.zustand.id);
 
       const sources = await wizard.build.passThroughAllDomainsGeneric();
       await sources.waitForReady();
@@ -139,34 +155,31 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
       // stack MINUS only the removed web-client-state entry.
       // ================================================================
 
-      const loaded = await loadProjectConfigFromDir(globalHome);
-      expect(loaded, "config.ts must exist at the global home after edit").not.toBeNull();
-      if (!loaded) return;
-      const finalConfig = loaded.config;
+      const finalConfig = await loadConfigOrFail(globalHome);
 
       // Top-level skills roster: zustand gone, react + vitest retained.
       const finalSkillIds = finalConfig.skills.map((s) => s.id);
-      expect(finalSkillIds).not.toContain(ZUSTAND);
-      expect(finalSkillIds).toContain(REACT);
-      expect(finalSkillIds).toContain(VITEST);
+      expect(finalSkillIds).not.toContain(E2E_SKILL.zustand.id);
+      expect(finalSkillIds).toContain(E2E_SKILL.react.id);
+      expect(finalSkillIds).toContain(E2E_SKILL.vitest.id);
 
       // Stack is the loader-normalized form: every assignment is
       // { id, preloaded }. Only the web-client-state category was removed;
       // web-framework (preloaded true) and web-testing (preloaded false) must
       // be exactly preserved, nothing reordered or re-flagged.
       const expectedWebDeveloperStack: StackAgentConfig = {
-        "web-framework": [{ id: REACT, preloaded: true }],
-        "web-testing": [{ id: VITEST, preloaded: false }],
+        "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
+        "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],
       };
       expect(
-        finalConfig.stack?.[WEB_DEVELOPER],
+        finalConfig.stack?.[E2E_AGENT["web-developer"].name],
         "web-developer stack must equal the prior stack minus only the removed category",
       ).toStrictEqual(expectedWebDeveloperStack);
 
       // Filesystem side: only zustand's directory is deleted.
-      const zustandDir = path.join(globalHome, DIRS.CLAUDE, DIRS.SKILLS, ZUSTAND);
-      const reactDir = path.join(globalHome, DIRS.CLAUDE, DIRS.SKILLS, REACT);
-      const vitestDir = path.join(globalHome, DIRS.CLAUDE, DIRS.SKILLS, VITEST);
+      const zustandDir = path.join(skillsPath(globalHome), E2E_SKILL.zustand.id);
+      const reactDir = path.join(skillsPath(globalHome), E2E_SKILL.react.id);
+      const vitestDir = path.join(skillsPath(globalHome), E2E_SKILL.vitest.id);
       expect(await directoryExists(zustandDir), "removed zustand dir must be deleted").toBe(false);
       expect(await directoryExists(reactDir), "react dir must be retained").toBe(true);
       expect(await directoryExists(vitestDir), "vitest dir must be retained").toBe(true);

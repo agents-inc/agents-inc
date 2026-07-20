@@ -1,17 +1,21 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists, readTestFile } from "../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  configTsPath,
+  ensureBinaryExists,
+  readTestFile,
+} from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { TIMEOUTS } from "../pages/constants.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createGlobalOnlyEnv,
+  readSkillBadgesViaEdit,
   readSkillEntries,
   runEditWithFirstSkillAction,
   type DualScopeEnv,
 } from "../fixtures/dual-scope-helpers.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
 
 /**
  * D-233 — spacebar collapse of a persisted dual-scope `[P][G]` skill, and the
@@ -43,33 +47,6 @@ import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.
  * additionally snapshots the raw config.ts and requires it byte-identical.
  */
 
-const REACT_SKILL_ID = "web-framework-react";
-
-/** Load the project config's react entries, sorted deterministically for toStrictEqual. */
-
-/** Re-open `cc edit`, read react's scope badges, then abort without saving. */
-async function readReactBadges(
-  projectDir: string,
-  fakeHome: string,
-  sourceDir: string,
-  sourceTempDir: string,
-): Promise<Array<"P" | "G">> {
-  const wizard = await EditWizard.launch({
-    projectDir,
-    source: { sourceDir, tempDir: sourceTempDir },
-    env: { HOME: fakeHome },
-    rows: 60,
-    cols: 120,
-  });
-  try {
-    return await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID);
-  } finally {
-    wizard.abort();
-    await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
-    await wizard.destroy();
-  }
-}
-
 /**
  * Establish the collapsed inherited-global state:
  *   global react install -> `s` G->P (dual-scope) -> spacebar collapse -> `[G]`.
@@ -83,15 +60,15 @@ async function collapseToInheritedGlobal(
 ): Promise<void> {
   // `s` G->P: produces the persisted dual-scope pair.
   await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
-  expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
-    { id: REACT_SKILL_ID, scope: "global", source: "eject", excluded: true },
-    { id: REACT_SKILL_ID, scope: "project", source: "eject" },
+  expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
+    { id: E2E_SKILL.react.id, scope: "global", source: "eject", excluded: true },
+    { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
   ]);
 
   // Spacebar: collapse dual-scope pair to a single inherited-global entry.
   await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
-  expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
-    { id: REACT_SKILL_ID, scope: "global", source: "eject" },
+  expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
+    { id: E2E_SKILL.react.id, scope: "global", source: "eject" },
   ]);
 }
 
@@ -105,7 +82,7 @@ describe("D-233 — spacebar dual-scope collapse and re-select restoration", () 
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -126,7 +103,13 @@ describe("D-233 — spacebar dual-scope collapse and re-select restoration", () 
       await collapseToInheritedGlobal(projectDir, fakeHome, sourceDir, sourceTempDir);
 
       // Re-open: the collapsed row renders a single `G` badge (inherited-global).
-      const collapsedBadges = await readReactBadges(projectDir, fakeHome, sourceDir, sourceTempDir);
+      const collapsedBadges = await readSkillBadgesViaEdit(
+        projectDir,
+        fakeHome,
+        sourceDir,
+        sourceTempDir,
+        E2E_SKILL.react.id,
+      );
       expect(collapsedBadges).toStrictEqual(["G"]);
     },
   );
@@ -144,13 +127,13 @@ describe("D-233 — spacebar dual-scope collapse and re-select restoration", () 
       // pure global-inherited row has no project override to deselect. Snapshot
       // the raw config first, drive a full `cc edit` pressing space on the row,
       // then require both the react rows and the whole config.ts byte-identical.
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const projectConfigPath = configTsPath(projectDir);
       const configBeforeSpace = await readTestFile(projectConfigPath);
 
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
 
-      expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
-        { id: REACT_SKILL_ID, scope: "global", source: "eject" },
+      expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
+        { id: E2E_SKILL.react.id, scope: "global", source: "eject" },
       ]);
       const configAfterSpace = await readTestFile(projectConfigPath);
       expect(
@@ -158,7 +141,13 @@ describe("D-233 — spacebar dual-scope collapse and re-select restoration", () 
         "project config.ts must be unchanged after an inert spacebar on the [G] row",
       ).toBe(configBeforeSpace);
 
-      const noopBadges = await readReactBadges(projectDir, fakeHome, sourceDir, sourceTempDir);
+      const noopBadges = await readSkillBadgesViaEdit(
+        projectDir,
+        fakeHome,
+        sourceDir,
+        sourceTempDir,
+        E2E_SKILL.react.id,
+      );
       expect(noopBadges).toStrictEqual(["G"]);
 
       // (b) `s` on the same collapsed `[G]` row restores project scope via the
@@ -166,12 +155,18 @@ describe("D-233 — spacebar dual-scope collapse and re-select restoration", () 
       // pair (active project entry + global excluded tombstone).
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
-      expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
-        { id: REACT_SKILL_ID, scope: "global", source: "eject", excluded: true },
-        { id: REACT_SKILL_ID, scope: "project", source: "eject" },
+      expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
+        { id: E2E_SKILL.react.id, scope: "global", source: "eject", excluded: true },
+        { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
       ]);
 
-      const restoredBadges = await readReactBadges(projectDir, fakeHome, sourceDir, sourceTempDir);
+      const restoredBadges = await readSkillBadgesViaEdit(
+        projectDir,
+        fakeHome,
+        sourceDir,
+        sourceTempDir,
+        E2E_SKILL.react.id,
+      );
       expect(restoredBadges.slice().sort()).toStrictEqual(["G", "P"]);
     },
   );

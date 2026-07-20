@@ -11,8 +11,8 @@ import {
   createPermissionsFile,
   createTempDir,
   ensureBinaryExists,
+  loadConfigOrFail,
 } from "../helpers/test-utils.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
 
 /**
  * `cc init` registers each project's realpath in the global config's `projects`
@@ -63,21 +63,21 @@ describe("cc init registers each project exactly once in the global projects arr
     // subsequent project edits have skills to keep at global scope.
     const globalRes = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
     globalExit = globalRes.exitCode;
-    const afterGlobal = await loadProjectConfigFromDir(fakeHome);
-    projectsAfterGlobalInit = afterGlobal?.config.projects;
+    const afterGlobal = await loadConfigOrFail(fakeHome);
+    projectsAfterGlobalInit = afterGlobal.projects;
 
     // Phase B: project-1 via dashboard -> Edit, toggling a skill + agent to
     // project scope (a genuine change that drives the registration write).
     const firstRes = await initProject(sourceDir, sourceTempDir, fakeHome, project1);
     firstExit = firstRes.exitCode;
-    const afterFirst = await loadProjectConfigFromDir(fakeHome);
-    projectsAfterFirst = afterFirst?.config.projects;
+    const afterFirst = await loadConfigOrFail(fakeHome);
+    projectsAfterFirst = afterFirst.projects;
 
     // Phase C: project-2 via dashboard -> Edit, same genuine change.
     const secondRes = await initProject(sourceDir, sourceTempDir, fakeHome, project2);
     secondExit = secondRes.exitCode;
-    const afterSecond = await loadProjectConfigFromDir(fakeHome);
-    projectsAfterSecond = afterSecond?.config.projects;
+    const afterSecond = await loadConfigOrFail(fakeHome);
+    projectsAfterSecond = afterSecond.projects;
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {

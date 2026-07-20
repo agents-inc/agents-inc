@@ -42,7 +42,7 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
 
     tempDir = await createTempDir();
     projectDir = tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -77,10 +77,10 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
       });
 
       const initOutput = initResult.output;
-      expect(initOutput).toContain("Installing skill plugins...");
-      expect(initOutput).toContain("Plugin (native install)");
+      expect(initOutput).toContain(STEP_TEXT.INSTALLING_PLUGINS_ELLIPSIS);
+      expect(initOutput).toContain(STEP_TEXT.PLUGIN_NATIVE);
       expect(initOutput).toContain(`Installed web-framework-react@${fixture.marketplaceName}`);
-      expect(initOutput).not.toContain("Skills copied to:");
+      expect(initOutput).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
 
       // Settings file exists with permissions
       await expect({ dir: projectDir }).toHaveSettings({ hasKey: "permissions" });

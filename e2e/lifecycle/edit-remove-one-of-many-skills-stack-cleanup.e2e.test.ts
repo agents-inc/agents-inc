@@ -1,17 +1,19 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupTempDir,
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
   ensureBinaryExists,
+  loadConfigOrFail,
+  renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -41,14 +43,10 @@ import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
  * ONLY web-testing from the stack, leaving web-framework/react intact.
  */
 
-const REACT = "web-framework-react";
-const VITEST = "web-testing-vitest";
-const WEB_DEVELOPER: AgentName = "web-developer";
-
 const multiSkillStack = {
-  [WEB_DEVELOPER]: {
-    "web-framework": [{ id: REACT, preloaded: true }],
-    "web-testing": [{ id: VITEST, preloaded: false }],
+  [E2E_AGENT["web-developer"].name]: {
+    "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
+    "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
 
@@ -84,27 +82,38 @@ describe("edit removes one of several skills an agent references", () => {
 
       const config = buildProjectConfig({
         name: "global-multi-edit-test",
-        skills: buildSkillConfigs([REACT, VITEST], { scope: "global", source: "eject" }),
-        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+        skills: buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.vitest.id], {
+          scope: "global",
+          source: "eject",
+        }),
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         domains: ["web"],
-        selectedAgents: [WEB_DEVELOPER],
+        selectedAgents: [E2E_AGENT["web-developer"].name],
         stack: multiSkillStack,
       });
       await writeProjectConfig(globalHome, config);
 
-      await createLocalSkill(globalHome, REACT, {
+      await createLocalSkill(globalHome, E2E_SKILL.react.id, {
         description: "React framework for global-scope multi-skill edit testing",
-        metadata:
-          `author: "@test"\ndisplayName: ${REACT}\ncategory: web-framework\nslug: react\n` +
-          `cliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\n` +
-          `contentHash: "b2c3d4e"\n`,
+        metadata: renderMetadataYaml({
+          displayName: E2E_SKILL.react.display,
+          category: "web-framework",
+          slug: E2E_SKILL.react.slug,
+          cliDescription: "E2E test skill",
+          usageGuidance: "Use when testing E2E scenarios",
+          contentHash: "b2c3d4e",
+        }),
       });
-      await createLocalSkill(globalHome, VITEST, {
+      await createLocalSkill(globalHome, E2E_SKILL.vitest.id, {
         description: "Vitest testing framework for global-scope multi-skill edit testing",
-        metadata:
-          `author: "@test"\ndisplayName: ${VITEST}\ncategory: web-testing\nslug: vitest\n` +
-          `cliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\n` +
-          `contentHash: "c3d4e5f"\n`,
+        metadata: renderMetadataYaml({
+          displayName: E2E_SKILL.vitest.display,
+          category: "web-testing",
+          slug: E2E_SKILL.vitest.slug,
+          cliDescription: "E2E test skill",
+          usageGuidance: "Use when testing E2E scenarios",
+          contentHash: "c3d4e5f",
+        }),
       });
 
       await createPermissionsFile(globalHome);
@@ -114,11 +123,11 @@ describe("edit removes one of several skills an agent references", () => {
         projectDir: globalHome,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: globalHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
-      await wizard.build.selectSkill(VITEST); // navigate to vitest and press Space (deselect)
+      // navigate to vitest and press Space (deselect)
+      await wizard.build.selectSkill(E2E_SKILL.vitest.id);
 
       const sources = await wizard.build.passThroughAllDomainsGeneric();
       await sources.waitForReady();
@@ -129,19 +138,16 @@ describe("edit removes one of several skills an agent references", () => {
       await result.destroy();
       await wizard.destroy();
 
-      const loaded = await loadProjectConfigFromDir(globalHome);
-      expect(loaded, "config.ts must exist at the global home after edit").not.toBeNull();
-      if (!loaded) return;
-      const finalConfig = loaded.config;
+      const finalConfig = await loadConfigOrFail(globalHome);
 
       // Top-level roster: vitest gone, react retained.
-      expect(finalConfig.skills.map((s) => s.id)).not.toContain(VITEST);
-      expect(finalConfig.skills.map((s) => s.id)).toContain(REACT);
+      expect(finalConfig.skills.map((s) => s.id)).not.toContain(E2E_SKILL.vitest.id);
+      expect(finalConfig.skills.map((s) => s.id)).toContain(E2E_SKILL.react.id);
 
       // Stack: web-developer keeps web-framework/react, drops the web-testing
       // category (vitest was its only entry). No stale vitest reference survives.
-      expect(finalConfig.stack?.[WEB_DEVELOPER]).toStrictEqual({
-        "web-framework": [{ id: REACT, preloaded: true }],
+      expect(finalConfig.stack?.[E2E_AGENT["web-developer"].name]).toStrictEqual({
+        "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
       });
     },
   );

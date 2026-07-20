@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { STEP_TEXT } from "../pages/constants.js";
 import { ensureBinaryExists } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 
@@ -19,14 +19,14 @@ describe("init wizard — UI elements", () => {
       wizard = await InitWizard.launchRaw({ cols: 40, rows: 40 });
 
       const screen = wizard.getScreen();
-      expect(screen).toContain("too narrow");
+      expect(screen).toContain(STEP_TEXT.TOO_NARROW);
     });
 
     it("should show resize warning in a short terminal", async () => {
       wizard = await InitWizard.launchRaw({ cols: 120, rows: 10 });
 
       const screen = wizard.getScreen();
-      expect(screen).toContain("too short");
+      expect(screen).toContain(STEP_TEXT.TOO_SHORT);
     });
   });
 
@@ -63,7 +63,7 @@ describe("init wizard — UI elements", () => {
       await build.toggleScopeOnFocusedSkill();
 
       const output = build.getOutput();
-      expect(output).toContain("Framework");
+      expect(output).toContain(STEP_TEXT.BUILD);
     });
 
     it("should open settings overlay when S key is pressed during sources step", async () => {
@@ -92,7 +92,7 @@ describe("init wizard — UI elements", () => {
       const confirm = await agents.acceptDefaults("init");
 
       const confirmOutput = confirm.getOutput();
-      expect(confirmOutput).toContain("Ready to install");
+      expect(confirmOutput).toContain(STEP_TEXT.READY_TO_INSTALL);
     });
 
     it("should display install scope on the confirm step", async () => {
@@ -105,7 +105,7 @@ describe("init wizard — UI elements", () => {
       const confirm = await agents.acceptDefaults("init");
 
       const confirmOutput = confirm.getOutput();
-      expect(confirmOutput).toContain("Ready to install");
+      expect(confirmOutput).toContain(STEP_TEXT.READY_TO_INSTALL);
       expect(confirmOutput).toContain("Global");
     });
 
@@ -120,7 +120,7 @@ describe("init wizard — UI elements", () => {
       const confirm = await agents.acceptDefaults("init");
 
       const confirmOutput = confirm.getOutput();
-      expect(confirmOutput).toContain("Ready to install");
+      expect(confirmOutput).toContain(STEP_TEXT.READY_TO_INSTALL);
     });
 
     it("should display selected agent count on the confirm step", async () => {
@@ -133,7 +133,7 @@ describe("init wizard — UI elements", () => {
       const confirm = await agents.acceptDefaults("init");
 
       const confirmOutput = confirm.getOutput();
-      expect(confirmOutput).toContain("Ready to install");
+      expect(confirmOutput).toContain(STEP_TEXT.READY_TO_INSTALL);
       expect(confirmOutput).toContain("web-developer");
     });
   });

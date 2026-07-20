@@ -3,6 +3,7 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { DashboardSession } from "../pages/dashboard-session.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
@@ -76,7 +77,7 @@ describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", ()
     expect(output).toContain("Registering marketplace");
 
     await expect(result.project).toHaveConfig({
-      skillIds: ["web-framework-react"],
+      skillIds: [E2E_SKILL.react.id],
       agents: ["web-developer"],
     });
 

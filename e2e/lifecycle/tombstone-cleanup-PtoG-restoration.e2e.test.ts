@@ -3,15 +3,19 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
+  configTsPath,
   directoryExists,
   ensureBinaryExists,
   fileExists,
+  skillsPath,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createGlobalOnlyEnv,
+  readSkillBadgesViaEdit,
   readSkillEntries,
   runEditWithFirstSkillAction,
   type DualScopeEnv,
@@ -47,28 +51,23 @@ import {
  * added per investigation 09).
  */
 
-const REACT_SKILL_ID = "web-framework-react";
-
 describe("edit wizard — tombstone cleanup after P→G restoration", () => {
   let sourceDir: string;
   let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
-  let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     await env?.destroy();
     env = undefined;
   });
@@ -90,11 +89,11 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
 
       // Config assertion: exactly ONE react entry, scope global, no tombstone.
-      const reactEntries = await readSkillEntries(projectDir, REACT_SKILL_ID);
+      const reactEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);
 
       expect(reactEntries).toHaveLength(1);
       expect(reactEntries[0]).toStrictEqual({
-        id: REACT_SKILL_ID,
+        id: E2E_SKILL.react.id,
         scope: "global",
         source: "eject",
       });
@@ -108,8 +107,8 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       expect(tombstones).toStrictEqual([]);
 
       // Filesystem assertion: react at global path, absent from project path.
-      const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, REACT_SKILL_ID);
-      const projectSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, REACT_SKILL_ID);
+      const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
+      const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
       expect(
         await directoryExists(globalSkillDir),
         `react must remain physically installed at ${globalSkillDir} (global untouched)`,
@@ -121,18 +120,14 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
 
       // Phase 4: re-open the wizard. Must show a single `G` badge (not dual,
       // not missing) for react.
-      wizard = await EditWizard.launch({
+      const badges = await readSkillBadgesViaEdit(
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
-        env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
-      });
-      const badges = await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID);
+        fakeHome,
+        sourceDir,
+        sourceTempDir,
+        E2E_SKILL.react.id,
+      );
       expect(badges).toStrictEqual(["G"]);
-
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
     },
   );
 
@@ -144,15 +139,15 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
 
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, REACT_SKILL_ID);
-      const projectSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, REACT_SKILL_ID);
+      const projectConfigPath = configTsPath(projectDir);
+      const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
+      const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
 
       // After a pure-global init with no project overrides, the project config
       // file may not exist at all (the skill is inherited). If it does exist,
       // it must carry no tombstone and no project-scoped entry for react.
       if (await fileExists(projectConfigPath)) {
-        const entriesPhase1 = await readSkillEntries(projectDir, REACT_SKILL_ID);
+        const entriesPhase1 = await readSkillEntries(projectDir, E2E_SKILL.react.id);
         expect(entriesPhase1.filter((entry) => entry.excluded === true)).toStrictEqual([]);
         expect(entriesPhase1.filter((entry) => entry.scope === "project")).toStrictEqual([]);
       }
@@ -162,7 +157,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       // Phase 2: toggle G→P. Assert active project + global tombstone.
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
-      const entriesPhase2 = await readSkillEntries(projectDir, REACT_SKILL_ID);
+      const entriesPhase2 = await readSkillEntries(projectDir, E2E_SKILL.react.id);
       const activePhase2 = entriesPhase2.find((entry) => entry.excluded !== true);
       const tombstonePhase2 = entriesPhase2.find((entry) => entry.excluded === true);
       expect(activePhase2, "G→P must produce an active project entry").toBeDefined();
@@ -177,10 +172,10 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       // project entry. This is the D-224 failure point.
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
 
-      const entriesPhase3 = await readSkillEntries(projectDir, REACT_SKILL_ID);
+      const entriesPhase3 = await readSkillEntries(projectDir, E2E_SKILL.react.id);
       expect(entriesPhase3).toHaveLength(1);
       expect(entriesPhase3[0]).toStrictEqual({
-        id: REACT_SKILL_ID,
+        id: E2E_SKILL.react.id,
         scope: "global",
         source: "eject",
       });
@@ -208,8 +203,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       try {
         const result = await passThroughWizard.passThrough();
@@ -223,11 +217,11 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
 
       // Config assertion: exactly ONE react entry at global scope, no tombstone.
-      const reactEntries = await readSkillEntries(projectDir, REACT_SKILL_ID);
+      const reactEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);
 
       expect(reactEntries).toHaveLength(1);
       expect(reactEntries[0]).toStrictEqual({
-        id: REACT_SKILL_ID,
+        id: E2E_SKILL.react.id,
         scope: "global",
         source: "eject",
       });
@@ -235,8 +229,8 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       expect(reactEntries.filter((entry) => entry.scope === "project")).toStrictEqual([]);
 
       // Filesystem assertion.
-      const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, REACT_SKILL_ID);
-      const projectSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, REACT_SKILL_ID);
+      const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
+      const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
       expect(
         await directoryExists(globalSkillDir),
         `react must remain physically installed at ${globalSkillDir} (global untouched)`,
@@ -247,18 +241,14 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       ).toBe(false);
 
       // Re-open wizard: single `G` badge, no dual-scope residue.
-      wizard = await EditWizard.launch({
+      const badges = await readSkillBadgesViaEdit(
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
-        env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
-      });
-      const badges = await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID);
+        fakeHome,
+        sourceDir,
+        sourceTempDir,
+        E2E_SKILL.react.id,
+      );
       expect(badges).toStrictEqual(["G"]);
-
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
     },
   );
 });

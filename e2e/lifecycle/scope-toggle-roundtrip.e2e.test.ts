@@ -1,11 +1,14 @@
 import path from "path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { normalizeConfigPreservingOrder } from "../assertions/config-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, DIRS, TERMINAL_SIZE } from "../pages/constants.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupTempDir,
+  configTsPath,
   directoryExists,
   ensureBinaryExists,
   readTestFile,
@@ -20,13 +23,6 @@ import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual
  * do not mutate scope or config.
  */
 
-function normalizeConfig(config: string): string {
-  return config
-    .split("\n")
-    .filter((l) => !l.includes('"projects"'))
-    .join("\n");
-}
-
 describe("scope toggle roundtrip", () => {
   let sourceDir: string;
   let sourceTempDir: string;
@@ -40,7 +36,7 @@ describe("scope toggle roundtrip", () => {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -69,8 +65,7 @@ describe("scope toggle roundtrip", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       testWizard = wizardC;
 
@@ -81,18 +76,8 @@ describe("scope toggle roundtrip", () => {
       // Build step -- API domain (pass through)
       await wizardC.build.advanceDomain();
 
-      // Build step -- Shared domain (pass through) -> Sources
-      const sourcesC = await wizardC.build.advanceToSources();
-
-      // Sources step (pass through)
-      await sourcesC.waitForReady();
-      const agentsC = await sourcesC.advance();
-
-      // Agents step (pass through)
-      const confirmC = await agentsC.acceptDefaults("edit");
-
-      // Confirm step
-      const resultC = await confirmC.confirm();
+      // Shared domain -> Sources -> Agents -> Confirm, every step on defaults
+      const resultC = await wizardC.build.saveFromBuild("edit");
       const exitCodeC = await resultC.exitCode;
       expect(exitCodeC).toBe(EXIT_CODES.SUCCESS);
       await resultC.destroy();
@@ -103,8 +88,7 @@ describe("scope toggle roundtrip", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       testWizard = wizardD;
 
@@ -115,33 +99,24 @@ describe("scope toggle roundtrip", () => {
       // Assertions: scope toggle persisted through re-open
 
       // Project config has web-framework-react with scope "project" and source "eject"
-      const projectConfig = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
-      expect(projectConfig).toContain("web-framework-react");
+      const projectConfig = await readTestFile(configTsPath(projectDir));
+      expect(projectConfig).toContain(E2E_SKILL.react.id);
       expect(projectConfig).toContain('"scope":"project"');
       expect(projectConfig).toContain('"source":"eject"');
 
       // Project skill directory exists
-      const projectSkillDir = path.join(
-        projectDir,
-        DIRS.CLAUDE,
-        DIRS.SKILLS,
-        "web-framework-react",
-      );
+      const projectSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, E2E_SKILL.react.id);
       expect(
         await directoryExists(projectSkillDir),
         "web-framework-react directory must exist at project scope after roundtrip",
       ).toBe(true);
 
       // Global config still has web-framework-react (global is untouched)
-      const globalConfig = await readTestFile(
-        path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
-      expect(globalConfig).toContain("web-framework-react");
+      const globalConfig = await readTestFile(configTsPath(fakeHome));
+      expect(globalConfig).toContain(E2E_SKILL.react.id);
 
       // Global skill directory still exists
-      const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, "web-framework-react");
+      const globalSkillDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS, E2E_SKILL.react.id);
       expect(
         await directoryExists(globalSkillDir),
         "web-framework-react directory must still exist at global scope after roundtrip",
@@ -150,7 +125,7 @@ describe("scope toggle roundtrip", () => {
       // Global web-developer agent should still contain web-framework-react
       // (mergeGlobalConfigs preserves the global config entry)
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["web-framework-react"],
+        contains: [E2E_SKILL.react.id],
       });
 
       await resultD.destroy();
@@ -162,8 +137,8 @@ describe("scope toggle roundtrip", () => {
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // BEFORE: Snapshot configs
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const projectConfigPath = configTsPath(projectDir);
+      const globalConfigPath = configTsPath(fakeHome);
       const projectConfigBefore = await readTestFile(projectConfigPath);
       const globalConfigBefore = await readTestFile(globalConfigPath);
 
@@ -172,8 +147,7 @@ describe("scope toggle roundtrip", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       testWizard = wizard;
 
@@ -183,12 +157,14 @@ describe("scope toggle roundtrip", () => {
 
       // AFTER: Global config is functionally identical (normalize projects line)
       const globalConfigAfter = await readTestFile(globalConfigPath);
-      expect(normalizeConfig(globalConfigAfter)).toStrictEqual(normalizeConfig(globalConfigBefore));
+      expect(normalizeConfigPreservingOrder(globalConfigAfter)).toStrictEqual(
+        normalizeConfigPreservingOrder(globalConfigBefore),
+      );
 
       // AFTER: All skill directories still exist at their original scopes
       // Global skills
       const globalSkillsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS);
-      for (const skillName of ["web-framework-react", "web-testing-vitest", "web-state-zustand"]) {
+      for (const skillName of [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id]) {
         expect(
           await directoryExists(path.join(globalSkillsDir, skillName)),
           `${skillName} must still exist at global scope`,
@@ -198,7 +174,7 @@ describe("scope toggle roundtrip", () => {
       // Project skills
       const projectSkillsDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS);
       expect(
-        await directoryExists(path.join(projectSkillsDir, "api-framework-hono")),
+        await directoryExists(path.join(projectSkillsDir, E2E_SKILL.hono.id)),
         "api-framework-hono must still exist at project scope",
       ).toBe(true);
 

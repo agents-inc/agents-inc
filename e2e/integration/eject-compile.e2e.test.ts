@@ -11,9 +11,11 @@ import {
   getEjectedTemplatePath,
   listFiles,
   readTestFile,
+  renderMetadataYaml,
   writeProjectConfig,
   createLocalSkill,
 } from "../helpers/test-utils.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, FILES } from "../pages/constants.js";
@@ -63,12 +65,12 @@ describe("template ejection + custom compilation", () => {
 
       // Step 5: Verify the marker appears in compiled agent output
       const outputFiles = await listFiles(agentsDir);
-      expect(outputFiles).toContain("web-developer.md");
+      expect(outputFiles).toContain(`${E2E_AGENT["web-developer"].name}.md`);
 
       // Verify the agent was compiled with valid frontmatter
-      await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
+      await expect({ dir: projectDir }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
 
-      const webDevPath = path.join(agentsDir, "web-developer.md");
+      const webDevPath = path.join(agentsDir, `${E2E_AGENT["web-developer"].name}.md`);
       const webDevContent = await readTestFile(webDevPath);
       expect(webDevContent).toContain(CUSTOM_TEMPLATE_MARKER);
       expect(webDevContent).toContain("name: web-developer");
@@ -138,7 +140,7 @@ describe("template ejection + custom compilation", () => {
 
       // Step 5: Check if any compiled agent contains the custom intro
       const outputFiles = await listFiles(agentsDir);
-      expect(outputFiles).toContain("web-developer.md");
+      expect(outputFiles).toContain(`${E2E_AGENT["web-developer"].name}.md`);
 
       const contents = await Promise.all(
         outputFiles.map((file) => readTestFile(path.join(agentsDir, file))),
@@ -161,18 +163,18 @@ describe("template ejection + custom compilation", () => {
           { id: E2E_SECOND_SKILL, scope: "project", source: "eject" },
         ],
         agents: [
-          { name: "web-developer", scope: "project" },
-          { name: "api-developer", scope: "project" },
+          { name: E2E_AGENT["web-developer"].name, scope: "project" },
+          { name: E2E_AGENT["api-developer"].name, scope: "project" },
         ],
       });
 
       await createLocalSkill(projectDir, E2E_FIRST_SKILL, {
         description: "First test skill",
-        metadata: `author: "@test"\ncontentHash: "hash-first"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-first" }),
       });
       await createLocalSkill(projectDir, E2E_SECOND_SKILL, {
         description: "Second test skill",
-        metadata: `author: "@test"\ncontentHash: "hash-second"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-second" }),
       });
 
       // Eject templates
@@ -246,7 +248,7 @@ describe("template ejection + custom compilation", () => {
       const compileResult = await CLI.run(["compile"], { dir: projectDir });
       expect(compileResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      const webDevPath = path.join(agentsDir, "web-developer.md");
+      const webDevPath = path.join(agentsDir, `${E2E_AGENT["web-developer"].name}.md`);
       const content = await readTestFile(webDevPath);
       expect(content).toContain(markerText);
     });

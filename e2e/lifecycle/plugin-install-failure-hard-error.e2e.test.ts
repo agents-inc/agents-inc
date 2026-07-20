@@ -10,12 +10,14 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupTempDir,
+  configTsPath,
   ensureBinaryExists,
   fileExists,
   isClaudeCLIAvailable,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, SOURCE_PATHS, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 
 /**
@@ -53,7 +55,7 @@ describe.skipIf(!claudeAvailable)(
       // overwrite its plugin list so individual installs fail per-skill.
       fixture = await createE2EPluginSource();
       await overwriteMarketplacePluginsWithPlaceholder(fixture);
-    }, TIMEOUTS.SETUP * 2);
+    }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
       if (fixture) await cleanupTempDir(fixture.tempDir);
@@ -89,12 +91,12 @@ describe.skipIf(!claudeAvailable)(
         expect(output).toContain("Plugin install intent could not be honored");
         // The failing skill id surfaces in the per-skill warn line that runs
         // before the hard-error, so stderr/stdout combined contains it.
-        expect(output).toContain("web-framework-react");
+        expect(output).toContain(E2E_SKILL.react.id);
 
         // The core regression check: pre-fix, config.ts was written with an
         // orphan entry (`source: "<marketplace>"`) claiming web-framework-react
         // was installed. Post-fix, `writeConfigAndCompile` never runs.
-        const configPath = path.join(result.project.dir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+        const configPath = configTsPath(result.project.dir);
         expect(await fileExists(configPath)).toBe(false);
       },
     );
@@ -130,7 +132,7 @@ describe.skipIf(!claudeAvailable)(
       await ensureBinaryExists();
       fixture = await createE2EPluginSource();
       await overwriteMarketplacePluginsWithPlaceholder(fixture);
-    }, TIMEOUTS.SETUP * 2);
+    }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
       if (fixture) await cleanupTempDir(fixture.tempDir);
@@ -146,7 +148,7 @@ describe.skipIf(!claudeAvailable)(
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           marketplace: fixture.marketplaceName,
           agents: ["web-developer"],
           domains: ["web"],
@@ -155,14 +157,13 @@ describe.skipIf(!claudeAvailable)(
         // Snapshot config.ts BEFORE edit. The hard-error contract is that
         // writeConfigAndCompile never runs, so the file must be identical
         // after the failed edit (no orphan entries, no timestamp-only churn).
-        const configPath = path.join(project.dir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+        const configPath = configTsPath(project.dir);
         const configBefore = await readTestFile(configPath);
 
         wizard = await EditWizard.launch({
           projectDir: project.dir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         // Add a plugin-sourced skill adjacent to web-framework-react.

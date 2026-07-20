@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
-import { E2E_AGENTS } from "../fixtures/expected-values.js";
+import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { STEP_TEXT } from "../pages/constants.js";
 import { ensureBinaryExists } from "../helpers/test-utils.js";
@@ -49,7 +49,7 @@ describe("init wizard — scratch flow", () => {
       const build = await domain.acceptDefaults();
 
       // Select required Framework skill before advancing
-      await build.selectSkill("react");
+      await build.selectSkill(E2E_SKILL.react.slug);
 
       // Advance to next domain (API)
       await build.advanceDomain();
@@ -74,7 +74,7 @@ describe("init wizard — scratch flow", () => {
       const confirm = await agents.acceptDefaults("init");
 
       const confirmOutput = confirm.getOutput();
-      expect(confirmOutput).toContain("Ready to install");
+      expect(confirmOutput).toContain(STEP_TEXT.READY_TO_INSTALL);
       expect(confirmOutput).toContain("Global");
     });
 

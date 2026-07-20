@@ -6,7 +6,7 @@ import {
 import { cleanupTempDir, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
+import { TERMINAL_SIZE, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import "../matchers/setup.js";
 
@@ -22,9 +22,6 @@ import "../matchers/setup.js";
  *
  * The entire suite is skipped when the Claude CLI is not available.
  */
-
-/** Combined timeout for tests that include plugin operations + exit wait */
-const PLUGIN_TEST_TIMEOUT_MS = TIMEOUTS.PLUGIN_TEST;
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
@@ -47,7 +44,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
   });
 
   describe("remove skill triggers plugin uninstall", () => {
-    it("should uninstall removed plugin skills", { timeout: PLUGIN_TEST_TIMEOUT_MS }, async () => {
+    it("should uninstall removed plugin skills", { timeout: TIMEOUTS.PLUGIN_TEST }, async () => {
       const project = await ProjectBuilder.pluginProject({
         skills: ["web-framework-react", "web-styling-tailwind"],
         marketplace: fixture.marketplaceName,
@@ -82,7 +79,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
 
     it(
       "should update config after removing a plugin skill",
-      { timeout: PLUGIN_TEST_TIMEOUT_MS },
+      { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
           skills: ["web-framework-react", "web-styling-tailwind"],
@@ -108,7 +105,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
 
     it(
       "should recompile agents after removing a plugin skill",
-      { timeout: PLUGIN_TEST_TIMEOUT_MS },
+      { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
           skills: ["web-framework-react", "web-styling-tailwind"],
@@ -134,7 +131,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
   describe("add skill triggers plugin install", () => {
     it(
       "should install added plugin skills when navigating to a new skill",
-      { timeout: PLUGIN_TEST_TIMEOUT_MS },
+      { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
           skills: ["web-framework-react"],
@@ -146,8 +143,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
         wizard = await EditWizard.launch({
           projectDir: project.dir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         // Arrow down to next skill and select it
@@ -177,7 +173,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
   describe("plugin mode completion without skill changes", () => {
     it(
       "should complete edit without triggering plugin install/uninstall when skills are unchanged",
-      { timeout: PLUGIN_TEST_TIMEOUT_MS },
+      { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
           skills: ["web-framework-react"],

@@ -3,10 +3,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupTempDir,
+  configTsPath,
   createPermissionsFile,
   createTempDir,
   ensureBinaryExists,
@@ -42,8 +44,13 @@ type Stack = Record<string, Record<string, StackSkillAssignment[]>>;
  * Extracts the stack JSON from a CLI-written `config.ts` by finding the
  * `const stack` declaration and parsing its value. Returns the parsed stack.
  *
- * Mirrors the `extractStack` helper in `preloaded-preservation.e2e.test.ts`.
- * Kept local until a shared helper is extracted (see finding).
+ * Deliberately NOT `loadConfigOrFail`: this file asserts on the writer's
+ * compaction contract, which the structural loader undoes. `compactAssignment`
+ * (config-writer.ts) writes `{ id, preloaded: false }` as a bare string, and
+ * `normalizeAgentConfig` (stacks-loader.ts) expands it back to
+ * `{ id, preloaded: false }` on load. The bare-string assertions below (e.g.
+ * `toStrictEqual(["api-framework-hono"])`) are therefore only observable in the
+ * config.ts text as written — a structural read cannot express them.
  */
 function extractStack(configContent: string): Stack {
   const marker = "const stack";
@@ -149,7 +156,7 @@ describe("stack per-agent curation survives edit", () => {
         const projectDir = project.dir;
         await createPermissionsFile(projectDir);
 
-        const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+        const configPath = configTsPath(projectDir);
 
         // ================================================================
         // Phase 2: Run `cc edit` and add `web-state-zustand` as a new skill.
@@ -161,11 +168,10 @@ describe("stack per-agent curation survives edit", () => {
         const wizard = await EditWizard.launch({
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
-        await wizard.build.selectSkill("web-state-zustand");
+        await wizard.build.selectSkill(E2E_SKILL.zustand.id);
 
         // Two-domain project: use the dynamic helper (fixed-3-Enter variant
         // would overshoot and skip the Sources step).
@@ -305,7 +311,7 @@ describe("stack per-agent curation survives edit", () => {
         const projectDir = project.dir;
         await createPermissionsFile(projectDir);
 
-        const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+        const configPath = configTsPath(projectDir);
 
         // ================================================================
         // Phase 2: Run `cc edit` and toggle `api-developer` ON in the agents
@@ -323,8 +329,7 @@ describe("stack per-agent curation survives edit", () => {
         const wizard = await EditWizard.launch({
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
           env: { HOME: globalHomeDir },
         });
 
@@ -336,7 +341,7 @@ describe("stack per-agent curation survives edit", () => {
         const agents = await sources.advance();
 
         // The agents step shows display names from the source ("API Developer").
-        await agents.toggleAgent("API Developer");
+        await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
 
         // Agents default to scope: "global" when toggled ON. A global agent
         // does not appear in the project's config.ts stack — it lives in the

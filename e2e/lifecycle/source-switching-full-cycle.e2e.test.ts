@@ -1,15 +1,15 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   isClaudeCLIAvailable,
   cleanupTempDir,
+  configTsPath,
   ensureBinaryExists,
   readTestFile,
   injectMarketplaceIntoConfig,
@@ -35,7 +35,7 @@ describe.skipIf(!claudeAvailable)("source switching full cycle -- eject to plugi
   beforeAll(async () => {
     await ensureBinaryExists();
     pluginFixture = await createE2EPluginSource();
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await wizard?.destroy();
@@ -70,7 +70,7 @@ describe.skipIf(!claudeAvailable)("source switching full cycle -- eject to plugi
       await injectMarketplaceIntoConfig(projectDir, pluginFixture.marketplaceName);
 
       // --- Phase A: Snapshot -- verify all sources are "eject" ---
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const projectConfigPath = configTsPath(projectDir);
       const configPhaseA = await readTestFile(projectConfigPath);
       expect(configPhaseA).toContain('"eject"');
 
@@ -87,8 +87,7 @@ describe.skipIf(!claudeAvailable)("source switching full cycle -- eject to plugi
         projectDir,
         source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const sourcesB = await wizard.build.passThroughAllDomains();
@@ -121,8 +120,7 @@ describe.skipIf(!claudeAvailable)("source switching full cycle -- eject to plugi
         projectDir,
         source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const sourcesC = await wizard.build.passThroughAllDomains();

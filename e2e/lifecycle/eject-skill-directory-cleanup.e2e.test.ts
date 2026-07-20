@@ -1,12 +1,13 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
+  configTsPath,
   ensureBinaryExists,
   normalizeGlobalConfig,
   readTestFile,
 } from "../helpers/test-utils.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createTestEnvironment,
   initGlobalWithEject,
@@ -15,7 +16,7 @@ import {
   setupProjectOnlyMixedScope,
 } from "../fixtures/dual-scope-helpers.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 
 /**
@@ -39,7 +40,7 @@ describe("eject skill directory cleanup on deselect", () => {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -67,8 +68,8 @@ describe("eject skill directory cleanup on deselect", () => {
       // to projectDir; web-framework-react stays global (copied to fakeHome).
       await setupProjectOnlyMixedScope(sourceDir, sourceTempDir, fakeHome, projectDir);
 
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const projectConfigPath = configTsPath(projectDir);
+      const globalConfigPath = configTsPath(fakeHome);
 
       // Setup proof: the project-scoped eject skill's directory genuinely exists on
       // disk and in config before the edit.
@@ -84,20 +85,15 @@ describe("eject skill directory cleanup on deselect", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       // Web domain: deselect web-testing-vitest.
-      await wizard.build.selectSkill("vitest");
+      await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
       await wizard.build.advanceDomain();
       // API domain: pass through.
       await wizard.build.advanceDomain();
       // Methodology domain -> Sources.
-      const sources = await wizard.build.advanceToSources();
-      await sources.waitForReady();
-      const agents = await sources.acceptDefaults();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
+      const result = await wizard.build.saveFromBuild("edit");
       expect(await result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
       await result.destroy();
 
@@ -150,20 +146,15 @@ describe("eject skill directory cleanup on deselect", () => {
         projectDir: fakeHome,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       // Web domain: deselect web-testing-vitest.
-      await wizard.build.selectSkill("vitest");
+      await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
       await wizard.build.advanceDomain();
       // API domain: pass through.
       await wizard.build.advanceDomain();
       // Methodology domain -> Sources.
-      const sources = await wizard.build.advanceToSources();
-      await sources.waitForReady();
-      const agents = await sources.acceptDefaults();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
+      const result = await wizard.build.saveFromBuild("edit");
       expect(await result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
       await result.destroy();
 

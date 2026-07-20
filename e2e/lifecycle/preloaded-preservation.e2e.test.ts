@@ -13,8 +13,8 @@ import {
   createTempDir,
   ensureBinaryExists,
   isClaudeCLIAvailable,
+  loadConfigOrFail,
 } from "../helpers/test-utils.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
 import type { AgentName, Category } from "../../src/cli/types/index.js";
 
 /**
@@ -47,9 +47,7 @@ async function assertPreloadedInStack(
   category: Category,
   skillId: string,
 ): Promise<void> {
-  const loaded = await loadProjectConfigFromDir(projectDir);
-  expect(loaded, `project config.ts must exist at ${projectDir}`).not.toBeNull();
-  const stack = loaded?.config.stack;
+  const { stack } = await loadConfigOrFail(projectDir);
   expect(stack, "Expected config.ts to contain a stack").toBeDefined();
 
   const agentConfig = stack?.[agentName];
@@ -79,7 +77,7 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
   beforeAll(async () => {
     await ensureBinaryExists();
     fixture = await createE2EPluginSource();
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (fixture) await cleanupTempDir(fixture.tempDir);

@@ -1,8 +1,9 @@
 import path from "path";
 import { chmod, mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import {
+  configTsPath,
   createTempDir,
   cleanupTempDir,
   ensureBinaryExists,
@@ -14,6 +15,7 @@ import {
 } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 
 describe("eject command", () => {
@@ -67,7 +69,7 @@ describe("eject command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain("Eject");
-    expect(stdout).toContain("Eject complete!");
+    expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
 
     // Verify agent partials directory was created with content
     const agentsDir = path.join(tempDir, DIRS.CLAUDE_SRC, "agents");
@@ -96,7 +98,7 @@ describe("eject command", () => {
     const { exitCode, stdout } = await CLI.run(["eject", "templates"], { dir: tempDir });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain("Eject complete!");
+    expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
 
     // Verify the template file was actually created with liquid content
     await expect({ dir: tempDir }).toHaveEjectedTemplate();
@@ -126,7 +128,7 @@ describe("eject command", () => {
     });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain("Eject complete!");
+    expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
     expect(await directoryExists(outputDir)).toBe(true);
 
     // Verify agent partial files were created in the custom directory
@@ -170,7 +172,7 @@ describe("eject command", () => {
     });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain("Eject complete!");
+    expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
   });
 
   it("should eject skills from a local source", async () => {
@@ -190,22 +192,22 @@ describe("eject command", () => {
 
     // Verify specific ejected skills exist with expected content
     await expect({ dir: tempDir }).toHaveLocalSkills([
-      "web-framework-react",
-      "web-testing-vitest",
-      "web-state-zustand",
-      "api-framework-hono",
+      E2E_SKILL.react.id,
+      E2E_SKILL.vitest.id,
+      E2E_SKILL.zustand.id,
+      E2E_SKILL.hono.id,
     ]);
 
     // Verify each ejected skill has SKILL.md with content
-    await expect({ dir: tempDir }).toHaveSkillCopied("web-framework-react");
-    await expect({ dir: tempDir }).toHaveSkillCopied("web-testing-vitest");
-    await expect({ dir: tempDir }).toHaveSkillCopied("web-state-zustand");
-    await expect({ dir: tempDir }).toHaveSkillCopied("api-framework-hono");
+    await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.react.id);
+    await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.vitest.id);
+    await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.zustand.id);
+    await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.hono.id);
 
     // Verify SKILL.md content for a representative skill
-    const skillMdPath = path.join(skillsDir, "web-framework-react", FILES.SKILL_MD);
+    const skillMdPath = path.join(skillsDir, E2E_SKILL.react.id, FILES.SKILL_MD);
     const skillContent = await readTestFile(skillMdPath);
-    expect(skillContent).toContain("web-framework-react");
+    expect(skillContent).toContain(E2E_SKILL.react.id);
 
     // Verify config was saved with source
     await expect({ dir: tempDir }).toHaveConfig({ source: sourceDir });
@@ -220,7 +222,7 @@ describe("eject command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain("ejected");
-    expect(stdout).toContain("Eject complete!");
+    expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
 
     // Verify agent partials were created with content
     const agentsDir = path.join(tempDir, DIRS.CLAUDE_SRC, "agents");
@@ -235,8 +237,8 @@ describe("eject command", () => {
     expect(templateContent).toContain("---");
 
     // Verify skills were created with SKILL.md files
-    await expect({ dir: tempDir }).toHaveLocalSkills(["web-framework-react"]);
-    await expect({ dir: tempDir }).toHaveSkillCopied("web-framework-react");
+    await expect({ dir: tempDir }).toHaveLocalSkills([E2E_SKILL.react.id]);
+    await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.react.id);
 
     // Verify config was created with source reference
     await expect({ dir: tempDir }).toHaveConfig({ source: sourceDir });
@@ -255,7 +257,7 @@ describe("eject command", () => {
     // Verify the config file was actually created with source reference
     await expect({ dir: tempDir }).toHaveConfig({ source: sourceDir });
 
-    const configContent = await readTestFile(path.join(tempDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS));
+    const configContent = await readTestFile(configTsPath(tempDir));
     expect(configContent).toContain("source");
   });
 
@@ -267,7 +269,7 @@ describe("eject command", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
     // Config file should exist with a project name (derived from the temp dir basename)
-    const configContent = await readTestFile(path.join(tempDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS));
+    const configContent = await readTestFile(configTsPath(tempDir));
     expect(configContent).toContain("name");
     expect(configContent).toContain("export default");
   });
@@ -320,7 +322,7 @@ describe("eject command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain("Agent templates ejected");
-    expect(stdout).toContain("Eject complete!");
+    expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
 
     // The agent.liquid template should exist
     await expect({ dir: tempDir }).toHaveEjectedTemplate();
@@ -410,7 +412,7 @@ describe("eject command", () => {
     });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain("Eject complete!");
+    expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
     expect(stdout).toContain("Output directory:");
     expect(await directoryExists(outputDir)).toBe(true);
 
@@ -436,16 +438,16 @@ describe("eject command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain("skills ejected");
-    expect(stdout).toContain("Eject complete!");
+    expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
     expect(await directoryExists(outputDir)).toBe(true);
     const files = await listFiles(outputDir);
     expect(files).toHaveLength(9);
 
     // Verify skill content in custom output directory
-    const skillMdPath = path.join(outputDir, "web-framework-react", FILES.SKILL_MD);
+    const skillMdPath = path.join(outputDir, E2E_SKILL.react.id, FILES.SKILL_MD);
     expect(await fileExists(skillMdPath)).toBe(true);
     const skillContent = await readTestFile(skillMdPath);
-    expect(skillContent).toContain("web-framework-react");
+    expect(skillContent).toContain(E2E_SKILL.react.id);
   });
 
   it("should error when --output points to an existing file", async () => {

@@ -1,15 +1,17 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
+  agentsPath,
   cleanupTempDir,
+  configTsPath,
   directoryExists,
   ensureBinaryExists,
   fileExists,
   readTestFile,
+  skillsPath,
 } from "../helpers/test-utils.js";
 import { createTestEnvironment, initGlobalWithEject } from "../fixtures/dual-scope-helpers.js";
 
@@ -30,7 +32,7 @@ describe("edit with global-only installation (no project config)", () => {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -61,7 +63,7 @@ describe("edit with global-only installation (no project config)", () => {
       expect(phaseA.exitCode, `Global init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
       // Verify: no project config exists before edit
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const projectConfigPath = configTsPath(projectDir);
       expect(
         await fileExists(projectConfigPath),
         "Project config must NOT exist before edit (global-only setup)",
@@ -72,8 +74,7 @@ describe("edit with global-only installation (no project config)", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       testWizard = wizard;
 
@@ -92,7 +93,7 @@ describe("edit with global-only installation (no project config)", () => {
       // This verifies the global fallback path completes without error.
 
       // Assertion: global config still exists and is unchanged
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const globalConfigPath = configTsPath(fakeHome);
       expect(
         await fileExists(globalConfigPath),
         "Global config must still exist after project edit",
@@ -120,9 +121,9 @@ describe("edit with global-only installation (no project config)", () => {
       expect(phaseA.exitCode, `Global init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
       // Snapshot global state before edit
-      const globalSkillsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS);
-      const globalAgentsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS);
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const globalSkillsDir = skillsPath(fakeHome);
+      const globalAgentsDir = agentsPath(fakeHome);
+      const globalConfigPath = configTsPath(fakeHome);
       const globalConfigBefore = await readTestFile(globalConfigPath);
 
       // Launch edit wizard from project dir (falls back to global installation)
@@ -130,8 +131,7 @@ describe("edit with global-only installation (no project config)", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       testWizard = wizard;
 

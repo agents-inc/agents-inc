@@ -6,10 +6,12 @@ import {
   createLocalSkill,
   createTempDir,
   ensureBinaryExists,
+  renderMetadataYaml,
   runCLI,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
  * Error guard E2E tests for init, compile, and edit commands.
@@ -61,7 +63,7 @@ describe("init/edit error guards", () => {
       await writeProjectConfig(projectDir, {
         name: "test-missing-skills",
         skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 
       // Create .claude/ directory without skills/ subdirectory
@@ -72,7 +74,7 @@ describe("init/edit error guards", () => {
       });
 
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
-      expect(combined).toContain("No skills found");
+      expect(combined).toContain(STEP_TEXT.NO_SKILLS_FOUND);
     },
   );
 
@@ -94,7 +96,7 @@ describe("init/edit error guards", () => {
       });
 
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
-      expect(combined).toContain("No skills found");
+      expect(combined).toContain(STEP_TEXT.NO_SKILLS_FOUND);
     },
   );
 
@@ -109,12 +111,12 @@ describe("init/edit error guards", () => {
       await writeProjectConfig(projectDir, {
         name: "test-edit-bad-source",
         skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 
       await createLocalSkill(projectDir, "web-framework-react", {
         description: "Minimal skill for edit error test",
-        metadata: `author: "@test"\ncontentHash: "hash-edit-err"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-edit-err" }),
       });
 
       const { exitCode, combined } = await runCLI(

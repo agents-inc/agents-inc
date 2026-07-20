@@ -8,12 +8,15 @@ import {
   ensureBinaryExists,
   listFiles,
   readTestFile,
+  renderMetadataYaml,
   renderSkillMd,
   agentsPath,
+  skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { EXIT_CODES, FILES } from "../pages/constants.js";
 import type { SkillId, SkillAssignment } from "../../src/cli/types/index.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
@@ -33,7 +36,7 @@ describe("compile command edge cases", () => {
     it("should compile agents with a custom category added to the stack", async () => {
       const project = await ProjectBuilder.editable({
         skills: ["web-framework-react"],
-        agents: ["web-developer"],
+        agents: [E2E_AGENT["web-developer"].name],
         domains: ["web"],
       });
       tempDir = path.dirname(project.dir);
@@ -42,7 +45,11 @@ describe("compile command edge cases", () => {
       // Create a second local skill for a custom category
       await createLocalSkill(projectDir, "web-custom-e2e-tool" as SkillId, {
         description: "A custom tool skill for edge case testing",
-        metadata: `author: "@test"\ncategory: web-custom-tool\nslug: e2e-tool\ncontentHash: "hash-custom-tool"\n`,
+        metadata: renderMetadataYaml({
+          category: "web-custom-tool",
+          slug: "e2e-tool",
+          contentHash: "hash-custom-tool",
+        }),
       });
 
       // Manually rewrite config.ts with a custom category in the stack
@@ -52,10 +59,10 @@ describe("compile command edge cases", () => {
           { id: "web-framework-react", scope: "project", source: "eject" },
           { id: "web-custom-e2e-tool" as SkillId, scope: "project", source: "eject" }, // fabricated E2E test ID
         ],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         domains: ["web"],
         stack: {
-          "web-developer": {
+          [E2E_AGENT["web-developer"].name]: {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
             "web-custom-tool": [{ id: "web-custom-e2e-tool" as SkillId, preloaded: true }],
           } as Record<string, SkillAssignment[]>, // fabricated category key
@@ -68,9 +75,12 @@ describe("compile command edge cases", () => {
       expect(output).toContain("Discovered 2 local skills");
 
       // The custom skill should appear in the compiled agent output
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer", "web-custom-e2e-tool", "web-framework-react"],
-      });
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer", "web-custom-e2e-tool", "web-framework-react"],
+        },
+      );
     });
   });
 
@@ -83,16 +93,11 @@ describe("compile command edge cases", () => {
       // Create a valid skill
       await createLocalSkill(projectDir, "web-testing-e2e-valid" as SkillId, {
         description: "Valid skill that should compile",
-        metadata: `author: "@test"\ncontentHash: "hash-valid"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-valid" }),
       });
 
       // Create a skill with broken YAML frontmatter in SKILL.md
-      const brokenSkillDir = path.join(
-        projectDir,
-        DIRS.CLAUDE,
-        DIRS.SKILLS,
-        "web-testing-e2e-broken",
-      );
+      const brokenSkillDir = path.join(skillsPath(projectDir), "web-testing-e2e-broken");
       await mkdir(brokenSkillDir, { recursive: true });
 
       // Write SKILL.md with invalid YAML frontmatter (unbalanced quotes)
@@ -112,7 +117,7 @@ This skill has invalid YAML frontmatter.
       // for the missing-metadata reason
       await writeFile(
         path.join(brokenSkillDir, FILES.METADATA_YAML),
-        `author: "@test"\ncontentHash: "hash-broken"\n`,
+        renderMetadataYaml({ contentHash: "hash-broken" }),
       );
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
@@ -121,10 +126,13 @@ This skill has invalid YAML frontmatter.
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain("Discovered 1 local skills");
 
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer"],
-        notContains: ["web-testing-e2e-broken"],
-      });
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer"],
+          notContains: ["web-testing-e2e-broken"],
+        },
+      );
     });
 
     it("should skip skill with completely malformed metadata.yaml", async () => {
@@ -135,16 +143,11 @@ This skill has invalid YAML frontmatter.
       // Create a valid skill
       await createLocalSkill(projectDir, "web-testing-e2e-good" as SkillId, {
         description: "Good skill",
-        metadata: `author: "@test"\ncontentHash: "hash-good"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-good" }),
       });
 
       // Create a skill with valid SKILL.md but broken metadata.yaml
-      const badMetadataSkillDir = path.join(
-        projectDir,
-        DIRS.CLAUDE,
-        DIRS.SKILLS,
-        "web-testing-e2e-bad-meta",
-      );
+      const badMetadataSkillDir = path.join(skillsPath(projectDir), "web-testing-e2e-bad-meta");
       await mkdir(badMetadataSkillDir, { recursive: true });
 
       await writeFile(
@@ -170,9 +173,12 @@ This skill has invalid YAML frontmatter.
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toMatch(/Discovered \d+ local skills/);
 
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer"],
-      });
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer"],
+        },
+      );
     });
   });
 
@@ -188,9 +194,9 @@ This skill has invalid YAML frontmatter.
           { id: "web-testing-e2e-exists" as SkillId, scope: "project", source: "eject" },
           { id: "web-testing-e2e-phantom" as SkillId, scope: "project", source: "eject" },
         ],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         stack: {
-          "web-developer": {
+          [E2E_AGENT["web-developer"].name]: {
             "web-testing": [
               { id: "web-testing-e2e-exists" as SkillId, preloaded: true }, // fabricated E2E test ID
               { id: "web-testing-e2e-phantom" as SkillId, preloaded: true }, // fabricated E2E test ID
@@ -202,7 +208,7 @@ This skill has invalid YAML frontmatter.
       // Only create the skill that exists
       await createLocalSkill(projectDir, "web-testing-e2e-exists" as SkillId, {
         description: "This skill exists on disk",
-        metadata: `author: "@test"\ncontentHash: "hash-exists"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-exists" }),
       });
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
@@ -214,10 +220,13 @@ This skill has invalid YAML frontmatter.
       expect(output).toContain("Discovered 1 local skills");
 
       // The compiled agent should reference the existing skill but not the phantom
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["web-testing-e2e-exists"],
-        notContains: ["web-testing-e2e-phantom"],
-      });
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["web-testing-e2e-exists"],
+          notContains: ["web-testing-e2e-phantom"],
+        },
+      );
     });
   });
 
@@ -229,14 +238,14 @@ This skill has invalid YAML frontmatter.
       await writeProjectConfig(projectDir, {
         name: "e2e-empty-stack",
         skills: [{ id: "web-testing-e2e-orphan" as SkillId, scope: "project", source: "eject" }],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         stack: {},
       });
 
       // Create the skill on disk so discovery finds it
       await createLocalSkill(projectDir, "web-testing-e2e-orphan" as SkillId, {
         description: "Skill with no stack assignment",
-        metadata: `author: "@test"\ncontentHash: "hash-orphan"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-orphan" }),
       });
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
@@ -247,10 +256,13 @@ This skill has invalid YAML frontmatter.
       expect(output).toContain("Discovered 1 local skills");
 
       // The agent should compile but not reference the orphan skill
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer"],
-        notContains: ["web-testing-e2e-orphan"],
-      });
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer"],
+          notContains: ["web-testing-e2e-orphan"],
+        },
+      );
     });
   });
 

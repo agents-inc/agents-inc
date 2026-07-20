@@ -7,6 +7,7 @@ import {
 import { CLI } from "../fixtures/cli.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 // Plugin-source fixture is required because local sources without
 // marketplace.json now hard-error on default plugin-intent install.
@@ -36,7 +37,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
           relationships: {
             conflicts: [
               {
-                skills: ["react", "angular-standalone"],
+                skills: [E2E_SKILL.react.slug, "angular-standalone"],
                 reason: "React and Angular are mutually exclusive frameworks",
               },
             ],
@@ -70,7 +71,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
           relationships: {
             requires: [
               {
-                skill: "zustand",
+                skill: E2E_SKILL.zustand.slug,
                 needs: ["angular-standalone"],
                 reason: "Zustand needs Angular (testing unresolved reference)",
               },
@@ -101,20 +102,20 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
           relationships: {
             conflicts: [
               {
-                skills: ["react", "hono"],
+                skills: [E2E_SKILL.react.slug, E2E_SKILL.hono.slug],
                 reason: "Test conflict with valid slugs only",
               },
             ],
             requires: [
               {
-                skill: "zustand",
-                needs: ["react"],
+                skill: E2E_SKILL.zustand.slug,
+                needs: [E2E_SKILL.react.slug],
                 reason: "Zustand requires React",
               },
             ],
             recommends: [
               {
-                skill: "vitest",
+                skill: E2E_SKILL.vitest.slug,
                 reason: "Vitest is recommended",
               },
             ],
@@ -138,10 +139,10 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
         //
         // Message format: "Skill 'X' has unresolved reference 'Y' in 'field'"
         // The quoted reference position must never hold an E2E skill's resolved ID.
-        expect(output).not.toContain("unresolved reference 'web-framework-react'");
-        expect(output).not.toContain("unresolved reference 'web-testing-vitest'");
-        expect(output).not.toContain("unresolved reference 'web-state-zustand'");
-        expect(output).not.toContain("unresolved reference 'api-framework-hono'");
+        expect(output).not.toContain(`unresolved reference '${E2E_SKILL.react.id}'`);
+        expect(output).not.toContain(`unresolved reference '${E2E_SKILL.vitest.id}'`);
+        expect(output).not.toContain(`unresolved reference '${E2E_SKILL.zustand.id}'`);
+        expect(output).not.toContain(`unresolved reference '${E2E_SKILL.hono.id}'`);
       },
     );
   });
@@ -155,7 +156,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
           relationships: {
             discourages: [
               {
-                skills: ["react", "angular-standalone"],
+                skills: [E2E_SKILL.react.slug, "angular-standalone"],
                 reason: "React and Angular are discouraged together",
               },
             ],

@@ -4,17 +4,20 @@ import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { finishWizard } from "../fixtures/dual-scope-helpers.js";
 import {
   cleanupTempDir,
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
   ensureBinaryExists,
+  loadConfigOrFail,
+  renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -37,11 +40,9 @@ import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/t
  */
 
 const REACT = "web-framework-react";
-const WEB_DEVELOPER: AgentName = "web-developer";
-const API_DEVELOPER: AgentName = "api-developer";
 
 const globalStack = {
-  [WEB_DEVELOPER]: {
+  [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: REACT, preloaded: true }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
@@ -49,22 +50,26 @@ const globalStack = {
 // A project-scoped agent whose stack references the GLOBALLY-installed react.
 // Legitimate: global skills reach any agent per isScopeCompatible.
 const projectStack = {
-  [API_DEVELOPER]: {
+  [E2E_AGENT["api-developer"].name]: {
     "web-framework": [{ id: REACT, preloaded: false }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
 
-const reactMetadata =
-  `author: "@test"\ndisplayName: ${REACT}\ncategory: web-framework\nslug: react\n` +
-  `cliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\n` +
-  `contentHash: "b2c3d4e"\n`;
+const reactMetadata = renderMetadataYaml({
+  displayName: REACT,
+  category: "web-framework",
+  slug: "react",
+  cliDescription: "E2E test skill",
+  usageGuidance: "Use when testing E2E scenarios",
+  contentHash: "b2c3d4e",
+});
 
 function buildRegisteredProjectConfig(name: string): ProjectConfig {
   return buildProjectConfig({
     name,
     skills: buildSkillConfigs([REACT], { scope: "global", source: "eject" }),
-    agents: buildAgentConfigs([API_DEVELOPER], { scope: "project" }),
-    selectedAgents: [API_DEVELOPER],
+    agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
+    selectedAgents: [E2E_AGENT["api-developer"].name],
     stack: projectStack,
   });
 }
@@ -98,9 +103,9 @@ describe("global-scope skill removal propagates to registered projects", () => {
     const globalConfig = buildProjectConfig({
       name: "propagation-global",
       skills: buildSkillConfigs([REACT], { scope: "global", source: "eject" }),
-      agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+      agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       domains: ["web"],
-      selectedAgents: [WEB_DEVELOPER],
+      selectedAgents: [E2E_AGENT["web-developer"].name],
       stack: globalStack,
       projects: [realpathSync(projectA), realpathSync(projectB)],
     });
@@ -119,8 +124,7 @@ describe("global-scope skill removal propagates to registered projects", () => {
       projectDir: globalHome,
       source: { sourceDir, tempDir: sourceTempDir },
       env: { HOME: globalHome },
-      rows: 60,
-      cols: 120,
+      ...TERMINAL_SIZE.TALL,
     });
     await wizard.build.selectSkill(REACT);
     const sources = await wizard.build.passThroughAllDomainsGeneric();
@@ -128,15 +132,11 @@ describe("global-scope skill removal propagates to registered projects", () => {
     const agents = await sources.advance();
     const confirm = await agents.acceptDefaults("edit");
     const result = await confirm.confirm();
-    const exitCode = await result.exitCode;
-    expect(exitCode, `global edit must succeed: ${result.rawOutput}`).toBe(EXIT_CODES.SUCCESS);
-    await result.destroy();
+    const { exitCode, output } = await finishWizard(result);
+    expect(exitCode, `global edit must succeed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
-    const loadedA = await loadProjectConfigFromDir(projectA);
-    const loadedB = await loadProjectConfigFromDir(projectB);
-    if (!loadedA || !loadedB) throw new Error("project configs must exist after edit");
-    projectAConfig = loadedA.config;
-    projectBConfig = loadedB.config;
+    projectAConfig = await loadConfigOrFail(projectA);
+    projectBConfig = await loadConfigOrFail(projectB);
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
@@ -163,11 +163,11 @@ describe("global-scope skill removal propagates to registered projects", () => {
   // the now-current global data, dropping the dangling reference.
   it("does not leave a stale global-skill reference in a project-scoped agent's stack", () => {
     expect(
-      projectAConfig.stack?.[API_DEVELOPER]?.["web-framework"],
+      projectAConfig.stack?.[E2E_AGENT["api-developer"].name]?.["web-framework"],
       "project-a api-developer stack must not reference the removed react",
     ).toBeUndefined();
     expect(
-      projectBConfig.stack?.[API_DEVELOPER]?.["web-framework"],
+      projectBConfig.stack?.[E2E_AGENT["api-developer"].name]?.["web-framework"],
       "project-b api-developer stack must not reference the removed react",
     ).toBeUndefined();
   });

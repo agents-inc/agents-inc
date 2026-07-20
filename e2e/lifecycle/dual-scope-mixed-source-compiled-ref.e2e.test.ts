@@ -3,18 +3,21 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
+  agentsPath,
   cleanupTempDir,
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
   ensureBinaryExists,
+  loadConfigOrFail,
   readTestFile,
+  renderMetadataYaml,
   runCLI,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/types/index.js";
@@ -47,16 +50,20 @@ const HONO = "api-framework-hono";
 const HONO_PLUGIN_REF = `${HONO}:${HONO}`;
 const MARKET = "test-marketplace";
 
-const HONO_METADATA =
-  `author: "@agents-inc"\ncategory: api-api\ndomain: api\nslug: hono\n` +
-  `displayName: ${HONO}\ncliDescription: "Hono edge framework"\n` +
-  `usageGuidance: "Use when testing E2E scenarios"\ncontentHash: "a1b2c3d"\n`;
-const API_DEVELOPER: AgentName = "api-developer";
-const WEB_DEVELOPER: AgentName = "web-developer";
+const HONO_METADATA = renderMetadataYaml({
+  domain: "api",
+  author: "@agents-inc",
+  displayName: HONO,
+  category: "api-api",
+  slug: "hono",
+  cliDescription: "Hono edge framework",
+  usageGuidance: "Use when testing E2E scenarios",
+  contentHash: "a1b2c3d",
+});
 
 // Project agent (api-developer) preloads hono — appears in compiled frontmatter.
 const projectStack = {
-  [API_DEVELOPER]: {
+  [E2E_AGENT["api-developer"].name]: {
     "api-api": [{ id: HONO, preloaded: true }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
@@ -64,7 +71,7 @@ const projectStack = {
 // Global agent (web-developer) also preloads hono so the SAME skill id renders
 // under the GLOBAL scope's source — proving per-scope format independence.
 const globalStack = {
-  [WEB_DEVELOPER]: {
+  [E2E_AGENT["web-developer"].name]: {
     "api-api": [{ id: HONO, preloaded: true }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
@@ -118,8 +125,8 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
       await seedScope(fakeHome, {
         name: "dual-global-plugin",
         skills: buildSkillConfigs([HONO], { scope: "global", source: MARKET }),
-        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
-        selectedAgents: [WEB_DEVELOPER],
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
+        selectedAgents: [E2E_AGENT["web-developer"].name],
         stack: globalStack,
         projects: [projectDir],
       });
@@ -132,8 +139,8 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
           ...buildSkillConfigs([HONO], { scope: "global", source: MARKET, excluded: true }),
           ...buildSkillConfigs([HONO], { scope: "project", source: "eject" }),
         ],
-        agents: buildAgentConfigs([API_DEVELOPER], { scope: "project" }),
-        selectedAgents: [API_DEVELOPER],
+        agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
+        selectedAgents: [E2E_AGENT["api-developer"].name],
         stack: projectStack,
       });
 
@@ -143,16 +150,15 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
       expect(result.exitCode, `compile failed:\n${result.combined}`).toBe(EXIT_CODES.SUCCESS);
 
       // Config check: dual-scope pair intact after compile (compile must not rewrite config).
-      const projectLoaded = await loadProjectConfigFromDir(projectDir);
-      expect(projectLoaded, "project config.ts must exist").not.toBeNull();
-      expect(projectLoaded!.config.skills).toStrictEqual([
+      const projectConfig = await loadConfigOrFail(projectDir);
+      expect(projectConfig.skills).toStrictEqual([
         { id: HONO, scope: "global", source: MARKET, excluded: true },
         { id: HONO, scope: "project", source: "eject" },
       ]);
 
       // CRITICAL CHECK: project (active=eject) agent renders BARE id, NOT id:id.
       const projectAgent = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, `${API_DEVELOPER}.md`),
+        path.join(agentsPath(projectDir), `${E2E_AGENT["api-developer"].name}.md`),
       );
       expect(projectAgent).toContain(HONO);
       expect(
@@ -162,7 +168,7 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
 
       // Cross-scope evidence: the GLOBAL (active=plugin) agent renders id:id for the SAME skill.
       const globalAgent = await readTestFile(
-        path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, `${WEB_DEVELOPER}.md`),
+        path.join(agentsPath(fakeHome), `${E2E_AGENT["web-developer"].name}.md`),
       );
       expect(globalAgent, "global/plugin active entry must render the plugin ref id:id").toContain(
         HONO_PLUGIN_REF,
@@ -182,8 +188,8 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
       await seedScope(fakeHome, {
         name: "dual-global-eject",
         skills: buildSkillConfigs([HONO], { scope: "global", source: "eject" }),
-        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
-        selectedAgents: [WEB_DEVELOPER],
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
+        selectedAgents: [E2E_AGENT["web-developer"].name],
         stack: globalStack,
         projects: [projectDir],
       });
@@ -196,8 +202,8 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
           ...buildSkillConfigs([HONO], { scope: "global", source: "eject", excluded: true }),
           ...buildSkillConfigs([HONO], { scope: "project", source: MARKET }),
         ],
-        agents: buildAgentConfigs([API_DEVELOPER], { scope: "project" }),
-        selectedAgents: [API_DEVELOPER],
+        agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
+        selectedAgents: [E2E_AGENT["api-developer"].name],
         stack: projectStack,
       });
 
@@ -206,16 +212,15 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
       });
       expect(result.exitCode, `compile failed:\n${result.combined}`).toBe(EXIT_CODES.SUCCESS);
 
-      const projectLoaded = await loadProjectConfigFromDir(projectDir);
-      expect(projectLoaded, "project config.ts must exist").not.toBeNull();
-      expect(projectLoaded!.config.skills).toStrictEqual([
+      const projectConfig = await loadConfigOrFail(projectDir);
+      expect(projectConfig.skills).toStrictEqual([
         { id: HONO, scope: "global", source: "eject", excluded: true },
         { id: HONO, scope: "project", source: MARKET },
       ]);
 
       // CRITICAL CHECK: project (active=plugin) agent renders id:id.
       const projectAgent = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, `${API_DEVELOPER}.md`),
+        path.join(agentsPath(projectDir), `${E2E_AGENT["api-developer"].name}.md`),
       );
       expect(
         projectAgent,
@@ -224,7 +229,7 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
 
       // Cross-scope evidence: the GLOBAL (active=eject) agent renders bare id.
       const globalAgent = await readTestFile(
-        path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, `${WEB_DEVELOPER}.md`),
+        path.join(agentsPath(fakeHome), `${E2E_AGENT["web-developer"].name}.md`),
       );
       expect(globalAgent).toContain(HONO);
       expect(

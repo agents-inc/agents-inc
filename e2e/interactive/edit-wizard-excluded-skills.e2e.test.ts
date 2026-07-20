@@ -8,9 +8,12 @@ import {
   writeProjectConfig,
   createLocalSkill,
   readTestFile,
+  configTsPath,
+  renderMetadataYaml,
 } from "../helpers/test-utils.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { DIRS, FILES, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 
 /**
@@ -67,7 +70,7 @@ describe("edit wizard — excluded skills", () => {
           { id: "web-framework-react", scope: "project", source: "eject" },
           { id: "web-testing-vitest", scope: "project", source: "eject", excluded: true },
         ],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         domains: ["web"],
       });
 
@@ -75,14 +78,21 @@ describe("edit wizard — excluded skills", () => {
       // The excluded skill has no local directory — it was excluded by the user.
       await createLocalSkill(projectDir, "web-framework-react", {
         description: "React framework",
-        metadata: `author: "@test"\ndisplayName: web-framework-react\ncategory: web-framework\nslug: react\ndomain: web\ncliDescription: "React framework"\nusageGuidance: "Testing"\ncontentHash: "e2e-hash"\n`,
+        metadata: renderMetadataYaml({
+          domain: "web",
+          displayName: "web-framework-react",
+          category: "web-framework",
+          slug: "react",
+          cliDescription: "React framework",
+          usageGuidance: "Testing",
+          contentHash: "e2e-hash",
+        }),
       });
 
       wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const buildOutput = wizard.build.getOutput();
@@ -112,7 +122,7 @@ describe("edit wizard — excluded skills", () => {
       });
 
       // The excluded flag must be preserved on the vitest entry
-      const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const configPath = configTsPath(projectDir);
       const updatedConfig = await readTestFile(configPath);
       expect(updatedConfig).toContain('"excluded":true');
 
@@ -134,20 +144,27 @@ describe("edit wizard — excluded skills", () => {
           { id: "web-framework-react", scope: "project", source: "eject" },
           { id: "web-testing-vitest", scope: "project", source: "eject", excluded: true },
         ],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         domains: ["web"],
       });
 
       await createLocalSkill(projectDir, "web-framework-react", {
         description: "React framework",
-        metadata: `author: "@test"\ndisplayName: web-framework-react\ncategory: web-framework\nslug: react\ndomain: web\ncliDescription: "React framework"\nusageGuidance: "Testing"\ncontentHash: "e2e-hash"\n`,
+        metadata: renderMetadataYaml({
+          domain: "web",
+          displayName: "web-framework-react",
+          category: "web-framework",
+          slug: "react",
+          cliDescription: "React framework",
+          usageGuidance: "Testing",
+          contentHash: "e2e-hash",
+        }),
       });
 
       wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Navigate through wizard without changes: Build → Sources → Agents → Confirm
@@ -162,7 +179,7 @@ describe("edit wizard — excluded skills", () => {
 
       // The excluded flag must be preserved on the vitest entry.
       // Production config-writer uses JSON.stringify without indent, so no space before "true".
-      const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const configPath = configTsPath(projectDir);
       const updatedConfig = await readTestFile(configPath);
       expect(updatedConfig).toContain('"excluded":true');
 
@@ -185,26 +202,41 @@ describe("edit wizard — excluded skills", () => {
           { id: "web-testing-vitest", scope: "project", source: "eject" },
           { id: "web-state-zustand", scope: "project", source: "eject", excluded: true },
         ],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         domains: ["web"],
       });
 
       // Create local skill directories for non-excluded skills only
       await createLocalSkill(projectDir, "web-framework-react", {
         description: "React framework",
-        metadata: `author: "@test"\ndisplayName: web-framework-react\ncategory: web-framework\nslug: react\ndomain: web\ncliDescription: "React framework"\nusageGuidance: "Testing"\ncontentHash: "e2e-hash"\n`,
+        metadata: renderMetadataYaml({
+          domain: "web",
+          displayName: "web-framework-react",
+          category: "web-framework",
+          slug: "react",
+          cliDescription: "React framework",
+          usageGuidance: "Testing",
+          contentHash: "e2e-hash",
+        }),
       });
 
       await createLocalSkill(projectDir, "web-testing-vitest", {
         description: "Vitest testing",
-        metadata: `author: "@test"\ndisplayName: web-testing-vitest\ncategory: web-testing\nslug: vitest\ndomain: web\ncliDescription: "Vitest testing"\nusageGuidance: "Testing"\ncontentHash: "e2e-hash"\n`,
+        metadata: renderMetadataYaml({
+          domain: "web",
+          displayName: "web-testing-vitest",
+          category: "web-testing",
+          slug: "vitest",
+          cliDescription: "Vitest testing",
+          usageGuidance: "Testing",
+          contentHash: "e2e-hash",
+        }),
       });
 
       wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const buildOutput = wizard.build.getOutput();
@@ -229,7 +261,7 @@ describe("edit wizard — excluded skills", () => {
       });
 
       // Production config-writer uses JSON.stringify without indent, so no space before "true".
-      const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const configPath = configTsPath(projectDir);
       const updatedConfig = await readTestFile(configPath);
       expect(updatedConfig).toContain('"excluded":true');
 
@@ -253,26 +285,41 @@ describe("edit wizard — excluded skills", () => {
           { id: "web-state-zustand", scope: "global", source: "eject", excluded: true },
           { id: "web-state-zustand", scope: "project", source: "eject" },
         ],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         domains: ["web"],
       });
 
       // Create local skill directories for both non-excluded skills
       await createLocalSkill(projectDir, "web-framework-react", {
         description: "React framework",
-        metadata: `author: "@test"\ndisplayName: web-framework-react\ncategory: web-framework\nslug: react\ndomain: web\ncliDescription: "React framework"\nusageGuidance: "Testing"\ncontentHash: "e2e-hash"\n`,
+        metadata: renderMetadataYaml({
+          domain: "web",
+          displayName: "web-framework-react",
+          category: "web-framework",
+          slug: "react",
+          cliDescription: "React framework",
+          usageGuidance: "Testing",
+          contentHash: "e2e-hash",
+        }),
       });
 
       await createLocalSkill(projectDir, "web-state-zustand", {
         description: "State management",
-        metadata: `author: "@test"\ndisplayName: web-state-zustand\ncategory: web-client-state\nslug: zustand\ndomain: web\ncliDescription: "State management"\nusageGuidance: "Testing"\ncontentHash: "e2e-hash"\n`,
+        metadata: renderMetadataYaml({
+          domain: "web",
+          displayName: "web-state-zustand",
+          category: "web-client-state",
+          slug: "zustand",
+          cliDescription: "State management",
+          usageGuidance: "Testing",
+          contentHash: "e2e-hash",
+        }),
       });
 
       wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const buildOutput = wizard.build.getOutput();
@@ -295,7 +342,7 @@ describe("edit wizard — excluded skills", () => {
       });
 
       // The excluded flag and scope entries require raw config reading
-      const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const configPath = configTsPath(projectDir);
       const updatedConfig = await readTestFile(configPath);
 
       // The excluded flag must be preserved on the tombstone entry
@@ -327,25 +374,40 @@ describe("edit wizard — excluded skills", () => {
           { id: "web-state-zustand", scope: "global", source: "eject", excluded: true },
           { id: "web-state-zustand", scope: "project", source: "eject" },
         ],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         domains: ["web"],
       });
 
       await createLocalSkill(projectDir, "web-framework-react", {
         description: "React framework",
-        metadata: `author: "@test"\ndisplayName: web-framework-react\ncategory: web-framework\nslug: react\ndomain: web\ncliDescription: "React framework"\nusageGuidance: "Testing"\ncontentHash: "e2e-hash"\n`,
+        metadata: renderMetadataYaml({
+          domain: "web",
+          displayName: "web-framework-react",
+          category: "web-framework",
+          slug: "react",
+          cliDescription: "React framework",
+          usageGuidance: "Testing",
+          contentHash: "e2e-hash",
+        }),
       });
 
       await createLocalSkill(projectDir, "web-state-zustand", {
         description: "State management",
-        metadata: `author: "@test"\ndisplayName: web-state-zustand\ncategory: web-client-state\nslug: zustand\ndomain: web\ncliDescription: "State management"\nusageGuidance: "Testing"\ncontentHash: "e2e-hash"\n`,
+        metadata: renderMetadataYaml({
+          domain: "web",
+          displayName: "web-state-zustand",
+          category: "web-client-state",
+          slug: "zustand",
+          cliDescription: "State management",
+          usageGuidance: "Testing",
+          contentHash: "e2e-hash",
+        }),
       });
 
       wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Navigate through wizard without changes: Build → Sources → Agents → Confirm
@@ -359,7 +421,7 @@ describe("edit wizard — excluded skills", () => {
       });
 
       // The excluded flag and scope entries require raw config reading
-      const configPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const configPath = configTsPath(projectDir);
       const updatedConfig = await readTestFile(configPath);
 
       // The excluded flag must be preserved on the tombstone entry

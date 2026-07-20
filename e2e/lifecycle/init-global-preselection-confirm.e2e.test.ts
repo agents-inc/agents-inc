@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
@@ -31,7 +32,7 @@ describe.skipIf(!claudeAvailable)("init global preselection confirm step", () =>
   beforeAll(async () => {
     await ensureBinaryExists();
     fixture = await createE2EPluginSource();
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     if (tempDir) {
@@ -59,7 +60,7 @@ describe.skipIf(!claudeAvailable)("init global preselection confirm step", () =>
         env: { HOME: fakeHome },
       });
       const globalResult = await globalWizard.completeWithDefaults();
-      await expectPhaseSuccess(globalResult, { skillIds: ["web-framework-react"] });
+      await expectPhaseSuccess(globalResult, { skillIds: [E2E_SKILL.react.id] });
       await globalResult.destroy();
 
       // Phase 2: `cc init` from project dir -- global install exists, so the
@@ -75,7 +76,7 @@ describe.skipIf(!claudeAvailable)("init global preselection confirm step", () =>
       const build = await dashboard.selectEdit();
 
       // Deselect React (pre-selected from global) on the Web domain
-      await build.selectSkill("react");
+      await build.selectSkill(E2E_SKILL.react.slug);
 
       // Advance through remaining domains to the sources step
       const sources = await build.passThroughAllDomainsGeneric();

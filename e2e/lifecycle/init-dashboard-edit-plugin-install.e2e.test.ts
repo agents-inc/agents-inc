@@ -5,17 +5,18 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { createTestEnvironment, initGlobal } from "../fixtures/dual-scope-helpers.js";
-import { cleanupTempDir, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
+import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
+import {
+  cleanupTempDir,
+  ensureBinaryExists,
+  isClaudeCLIAvailable,
+  loadConfigOrFail,
+} from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
-
-const REACT_SKILL_ID = "web-framework-react";
-const VUE_SKILL_ID = "web-framework-vue-composition-api";
-const VUE_LABEL = "Vue Composition Api";
-const FRAMEWORK_CATEGORY_LABEL = "Framework";
 
 /**
  * Two related init -> dashboard -> Edit plugin scenarios:
@@ -47,7 +48,7 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
   beforeAll(async () => {
     await ensureBinaryExists();
     fixture = await createE2EPluginSource();
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (fixture) await cleanupTempDir(fixture.tempDir);
@@ -96,8 +97,8 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
         const phaseA = await initGlobal(fixture.sourceDir, fixture.tempDir, fakeHome);
         expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
-        const baselinePluginKey = `web-framework-react@${fixture.marketplaceName}`;
-        await expect({ dir: fakeHome }).toHaveConfig({ skillIds: [REACT_SKILL_ID] });
+        const baselinePluginKey = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
+        await expect({ dir: fakeHome }).toHaveConfig({ skillIds: [E2E_SKILL.react.id] });
         await expect({ dir: fakeHome }).toHavePlugin(baselinePluginKey);
 
         // --- Phase 2: dashboard → Edit at genuine PROJECT scope ---
@@ -113,20 +114,22 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
 
         // React (installed globally) is the sole selected framework in the
         // exclusive category, rendered as an inherited-global entry.
-        expect(await build.getExclusiveCategorySelectedCount(FRAMEWORK_CATEGORY_LABEL)).toBe(1);
+        expect(await build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK)).toBe(1);
 
         // Selecting Vue — a DIFFERENT skill in the exclusive Framework category —
-        // at project scope must be rejected up-front: the global React install
-        // cannot be evicted from the single-choice slot from project scope.
-        await build.selectSkill(VUE_LABEL);
-        expect(
-          build.getOutput(),
-          "selecting a conflicting exclusive-category skill at project scope must be blocked with a toast",
-        ).toContain(STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
+        // at project scope must be rejected up-front with a toast: the global
+        // React install cannot be evicted from the single-choice slot from
+        // project scope. The toast is awaited on the append-only raw surface
+        // anchored to a pre-press cursor, because Ink rewrites the toast row in
+        // place and xterm's processed buffer can lose it before the test reads it.
+        await build.selectSkillAwaiting(
+          E2E_SKILL["vue-composition-api"].display,
+          STEP_TEXT.GLOBAL_SKILLS_BLOCKED,
+        );
 
         // React remains the sole selected framework; Vue was never added.
         expect(
-          await build.getExclusiveCategorySelectedCount(FRAMEWORK_CATEGORY_LABEL),
+          await build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
           "blocked selection must leave React the sole selected framework",
         ).toBe(1);
 
@@ -139,14 +142,13 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
 
         // --- Phase 2 assertions: global install untouched, Vue never added ---
 
-        const addedPluginKey = `web-framework-vue-composition-api@${fixture.marketplaceName}`;
+        const addedPluginKey = `${E2E_SKILL["vue-composition-api"].id}@${fixture.marketplaceName}`;
 
         // Global config still carries React and NOT Vue.
-        const globalConfig = await loadProjectConfigFromDir(fakeHome);
-        expect(globalConfig, "global config.ts must exist").not.toBeNull();
-        const globalSkillIds = globalConfig?.config.skills.map((s) => s.id) ?? [];
-        expect(globalSkillIds).toContain(REACT_SKILL_ID);
-        expect(globalSkillIds).not.toContain(VUE_SKILL_ID);
+        const globalConfig = await loadConfigOrFail(fakeHome);
+        const globalSkillIds = globalConfig.skills.map((s) => s.id);
+        expect(globalSkillIds).toContain(E2E_SKILL.react.id);
+        expect(globalSkillIds).not.toContain(E2E_SKILL["vue-composition-api"].id);
 
         // React plugin still enabled globally; Vue plugin never installed anywhere.
         await expect({ dir: fakeHome }).toHavePlugin(baselinePluginKey);
@@ -156,7 +158,7 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
         // Vue must not leak into the project config either.
         const projectConfig = await loadProjectConfigFromDir(projectDir);
         const projectSkillIds = projectConfig?.config.skills.map((s) => s.id) ?? [];
-        expect(projectSkillIds).not.toContain(VUE_SKILL_ID);
+        expect(projectSkillIds).not.toContain(E2E_SKILL["vue-composition-api"].id);
 
         // The blocked selection must not have triggered a failed plugin install.
         expect(editResult.rawOutput).not.toContain("Failed to install plugin");
@@ -182,17 +184,16 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           marketplace: fixture.marketplaceName,
-          agents: ["web-developer"],
+          agents: [...E2E_AGENTS.WEB],
           domains: ["web"],
         });
 
         wizard = await EditWizard.launch({
           projectDir: project.dir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         await wizard.build.navigateDown();
@@ -201,10 +202,10 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
         const result = await wizard.completeFromBuild();
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-        const addedPluginKey = `web-state-pinia@${fixture.marketplaceName}`;
+        const addedPluginKey = `${E2E_SKILL.pinia.id}@${fixture.marketplaceName}`;
 
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react", "web-state-pinia"],
+          skillIds: [E2E_SKILL.react.id, E2E_SKILL.pinia.id],
           source: fixture.marketplaceName,
         });
 
@@ -238,9 +239,9 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           marketplace: fixture.marketplaceName,
-          agents: ["web-developer"],
+          agents: [...E2E_AGENTS.WEB],
           domains: ["web"],
           omitMarketplaceField: true,
         });
@@ -248,8 +249,7 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
         wizard = await EditWizard.launch({
           projectDir: project.dir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         await wizard.build.navigateDown();
@@ -258,14 +258,14 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
         const result = await wizard.completeFromBuild();
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-        const addedPluginKey = `web-state-pinia@${fixture.marketplaceName}`;
+        const addedPluginKey = `${E2E_SKILL.pinia.id}@${fixture.marketplaceName}`;
 
         // The added plugin must be installed into settings.json even though
         // the original config had no marketplace field.
         await expect(result.project).toHavePlugin(addedPluginKey);
 
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react", "web-state-pinia"],
+          skillIds: [E2E_SKILL.react.id, E2E_SKILL.pinia.id],
         });
 
         expect(result.rawOutput).toContain("Installed");

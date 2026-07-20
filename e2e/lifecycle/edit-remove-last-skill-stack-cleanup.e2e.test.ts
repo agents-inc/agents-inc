@@ -1,8 +1,9 @@
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupTempDir,
@@ -11,9 +12,11 @@ import {
   createTempDir,
   directoryExists,
   ensureBinaryExists,
+  loadConfigOrFail,
+  renderMetadataYaml,
+  skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -38,12 +41,9 @@ import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
  * `skills[]` correctly but survives in `stack.web-developer.web-framework`.
  */
 
-const REACT = "web-framework-react";
-const WEB_DEVELOPER: AgentName = "web-developer";
-
 const singleSkillStack = {
-  [WEB_DEVELOPER]: {
-    "web-framework": [{ id: REACT, preloaded: true }],
+  [E2E_AGENT["web-developer"].name]: {
+    "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
 
@@ -86,20 +86,24 @@ describe("edit removes the only skill an agent references", () => {
 
       const config = buildProjectConfig({
         name: "global-edit-test",
-        skills: buildSkillConfigs([REACT], { scope: "global", source: "eject" }),
-        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         domains: ["web"],
-        selectedAgents: [WEB_DEVELOPER],
+        selectedAgents: [E2E_AGENT["web-developer"].name],
         stack: singleSkillStack,
       });
       await writeProjectConfig(globalHome, config);
 
-      await createLocalSkill(globalHome, REACT, {
+      await createLocalSkill(globalHome, E2E_SKILL.react.id, {
         description: "React framework for global-scope edit testing",
-        metadata:
-          `author: "@test"\ndisplayName: ${REACT}\ncategory: web-framework\nslug: react\n` +
-          `cliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\n` +
-          `contentHash: "b2c3d4e"\n`,
+        metadata: renderMetadataYaml({
+          displayName: E2E_SKILL.react.id,
+          category: "web-framework",
+          slug: E2E_SKILL.react.slug,
+          cliDescription: "E2E test skill",
+          usageGuidance: "Use when testing E2E scenarios",
+          contentHash: "b2c3d4e",
+        }),
       });
 
       await createPermissionsFile(globalHome);
@@ -114,14 +118,13 @@ describe("edit removes the only skill an agent references", () => {
         projectDir: globalHome,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: globalHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // react is currently selected — pressing Space deselects it. At global
       // scope the "global skills cannot be changed from project scope" guard
       // does not apply, so the deselect goes through.
-      await wizard.build.selectSkill(REACT);
+      await wizard.build.selectSkill(E2E_SKILL.react.id);
 
       const sources = await wizard.build.passThroughAllDomainsGeneric();
       await sources.waitForReady();
@@ -136,16 +139,13 @@ describe("edit removes the only skill an agent references", () => {
       // filesystem.
       // ================================================================
 
-      const loaded = await loadProjectConfigFromDir(globalHome);
-      expect(loaded, "config.ts must exist at the global home after edit").not.toBeNull();
-      if (!loaded) return;
-      const finalConfig = loaded.config;
+      const finalConfig = await loadConfigOrFail(globalHome);
 
       // Sanity (already works): react is gone from the top-level skills roster.
-      expect(finalConfig.skills.map((s) => s.id)).not.toContain(REACT);
+      expect(finalConfig.skills.map((s) => s.id)).not.toContain(E2E_SKILL.react.id);
 
       // Filesystem side: the removed eject skill's directory is deleted.
-      const removedSkillDir = path.join(globalHome, DIRS.CLAUDE, DIRS.SKILLS, REACT);
+      const removedSkillDir = path.join(skillsPath(globalHome), E2E_SKILL.react.id);
       expect(
         await directoryExists(removedSkillDir),
         "removed skill's directory must be deleted from the global home",
@@ -154,7 +154,8 @@ describe("edit removes the only skill an agent references", () => {
       // The bug: the stack must not retain a reference to the removed skill.
       // web-framework was react's only category and react was web-developer's
       // only stack entry, so the whole web-developer stack should be gone.
-      const webFrameworkAssignments = finalConfig.stack?.[WEB_DEVELOPER]?.["web-framework"];
+      const webFrameworkAssignments =
+        finalConfig.stack?.[E2E_AGENT["web-developer"].name]?.["web-framework"];
       expect(
         webFrameworkAssignments,
         "web-developer stack must not retain the removed web-framework-react",

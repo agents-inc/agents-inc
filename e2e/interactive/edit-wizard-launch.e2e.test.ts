@@ -5,12 +5,14 @@ import {
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
+  renderMetadataYaml,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { CLI } from "../fixtures/cli.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { CLI_INVOKE_COMMAND } from "../../src/cli/consts.js";
 import "../matchers/setup.js";
 import path from "path";
@@ -63,7 +65,7 @@ describe("edit wizard — launch and display", () => {
       wizard = await EditWizard.launch({ projectDir: project.dir });
 
       const output = wizard.build.getOutput();
-      expect(output).toContain("Framework");
+      expect(output).toContain(STEP_TEXT.BUILD);
     });
 
     it("should show skills loaded status", async () => {
@@ -79,7 +81,7 @@ describe("edit wizard — launch and display", () => {
     it("should show pre-selected skills in the build step", async () => {
       const project = await ProjectBuilder.editable({
         skills: ["web-framework-react"],
-        agents: ["web-developer"],
+        agents: [E2E_AGENT["web-developer"].name],
         domains: ["web"],
       });
       tempDir = path.dirname(project.dir);
@@ -116,12 +118,12 @@ describe("edit wizard — launch and display", () => {
     it("should handle edit with multiple installed skills", async () => {
       const project = await ProjectBuilder.editable({
         skills: ["web-framework-react", "web-testing-vitest"],
-        agents: ["web-developer"],
+        agents: [E2E_AGENT["web-developer"].name],
         domains: ["web"],
       });
       tempDir = path.dirname(project.dir);
 
-      wizard = await EditWizard.launch({ projectDir: project.dir, rows: 60, cols: 120 });
+      wizard = await EditWizard.launch({ projectDir: project.dir, ...TERMINAL_SIZE.TALL });
 
       const output = wizard.build.getOutput();
       // Framework category should show the pre-selected react skill
@@ -138,7 +140,7 @@ describe("edit wizard — launch and display", () => {
     it("should load skills from custom source directory", async () => {
       const project = await ProjectBuilder.editable({
         skills: ["web-framework-react"],
-        agents: ["web-developer"],
+        agents: [E2E_AGENT["web-developer"].name],
         domains: ["web"],
       });
       tempDir = path.dirname(project.dir);
@@ -149,14 +151,13 @@ describe("edit wizard — launch and display", () => {
       wizard = await EditWizard.launch({
         projectDir: project.dir,
         source,
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const output = wizard.build.getOutput();
       // The E2E source includes web-framework-react — the build step should show
       // skills from the custom source
-      expect(output).toContain("Framework");
+      expect(output).toContain(STEP_TEXT.BUILD);
       // E2E source uses skill IDs as displayNames (e.g. "web-framework-react")
       expect(output).toContain("react");
     });
@@ -166,7 +167,7 @@ describe("edit wizard — launch and display", () => {
     it("should show a new local skill alongside original skills in build step", async () => {
       const project = await ProjectBuilder.editable({
         skills: ["web-framework-react"],
-        agents: ["web-developer"],
+        agents: [E2E_AGENT["web-developer"].name],
         domains: ["web"],
       });
       tempDir = path.dirname(project.dir);
@@ -174,10 +175,16 @@ describe("edit wizard — launch and display", () => {
       // Create an additional local skill that was NOT in the original config.
       await createLocalSkill(project.dir, "web-testing-vitest", {
         description: "Next generation testing framework",
-        metadata: `author: "@test"\ndisplayName: web-testing-vitest\nslug: vitest\ncategory: web-testing\ndomain: web\ncontentHash: "e2e-hash-vitest"\n`,
+        metadata: renderMetadataYaml({
+          domain: "web",
+          displayName: "web-testing-vitest",
+          category: "web-testing",
+          slug: "vitest",
+          contentHash: "e2e-hash-vitest",
+        }),
       });
 
-      wizard = await EditWizard.launch({ projectDir: project.dir, rows: 60, cols: 120 });
+      wizard = await EditWizard.launch({ projectDir: project.dir, ...TERMINAL_SIZE.TALL });
 
       const output = wizard.build.getOutput();
       // The original pre-selected skill should still be visible
@@ -206,7 +213,7 @@ describe("edit wizard — launch and display", () => {
       // Create a global installation (acts as HOME)
       const project = await ProjectBuilder.editable({
         skills: ["web-framework-react"],
-        agents: ["web-developer"],
+        agents: [E2E_AGENT["web-developer"].name],
         domains: ["web"],
       });
       tempDir = path.dirname(project.dir);

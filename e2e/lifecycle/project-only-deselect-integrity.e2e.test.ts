@@ -4,6 +4,8 @@ import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   agentsPath,
   cleanupTempDir,
+  configTsPath,
+  configTypesTsPath,
   ensureBinaryExists,
   fileExists,
   normalizeGlobalConfig,
@@ -14,8 +16,9 @@ import {
   readConfigSkillIds,
   setupProjectOnlyMixedScope,
 } from "../fixtures/dual-scope-helpers.js";
+import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 
 /**
@@ -38,7 +41,7 @@ describe("project-only deselection integrity", () => {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -64,11 +67,11 @@ describe("project-only deselection integrity", () => {
       testTempDir = tempDir;
       await setupProjectOnlyMixedScope(sourceDir, sourceTempDir, fakeHome, projectDir);
 
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const projectTypesPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+      const projectConfigPath = configTsPath(projectDir);
+      const projectTypesPath = configTypesTsPath(projectDir);
       const projectAgentMd = path.join(agentsPath(projectDir), "api-developer.md");
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const globalTypesPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+      const globalConfigPath = configTsPath(fakeHome);
+      const globalTypesPath = configTypesTsPath(fakeHome);
 
       // Setup proof: the project-only agent is genuinely present before the edit.
       expect(
@@ -88,12 +91,11 @@ describe("project-only deselection integrity", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       const sources = await wizard.build.passThroughAllDomains();
       const agents = await sources.acceptDefaults();
-      await agents.toggleAgent("API Developer");
+      await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
       const confirm = await agents.advance("edit");
       const result = await confirm.confirm();
       expect(await result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
@@ -140,9 +142,9 @@ describe("project-only deselection integrity", () => {
       testTempDir = tempDir;
       await setupProjectOnlyMixedScope(sourceDir, sourceTempDir, fakeHome, projectDir);
 
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const projectTypesPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const projectConfigPath = configTsPath(projectDir);
+      const projectTypesPath = configTypesTsPath(projectDir);
+      const globalConfigPath = configTsPath(fakeHome);
 
       // Setup proof: the project-only skill is genuinely present before the edit.
       const projectConfigBefore = await readTestFile(projectConfigPath);
@@ -158,20 +160,15 @@ describe("project-only deselection integrity", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       // Web domain: deselect web-testing-vitest.
-      await wizard.build.selectSkill("vitest");
+      await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
       await wizard.build.advanceDomain();
       // API domain: pass through.
       await wizard.build.advanceDomain();
-      // Methodology domain -> Sources.
-      const sources = await wizard.build.advanceToSources();
-      await sources.waitForReady();
-      const agents = await sources.acceptDefaults();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
+      // Methodology domain -> Sources -> Agents -> Confirm.
+      const result = await wizard.build.saveFromBuild("edit");
       expect(await result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
       await result.destroy();
 

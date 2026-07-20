@@ -2,17 +2,20 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
+  agentsPath,
   cleanupTempDir,
+  configTsPath,
   ensureBinaryExists,
   fileExists,
+  readAgentEntriesFor,
   readTestFile,
 } from "../helpers/test-utils.js";
 import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
-import type { AgentName, AgentScopeConfig } from "../../src/cli/types/index.js";
+import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
+import type { AgentName } from "../../src/cli/types/index.js";
 
 /**
  * Dual-scope AGENT flow — badge rendering and the guarded-no-op `s` toggle.
@@ -36,14 +39,6 @@ import type { AgentName, AgentScopeConfig } from "../../src/cli/types/index.js";
  */
 
 const API_DEVELOPER: AgentName = "api-developer";
-const API_DEVELOPER_DISPLAY = "API Developer";
-
-/** Load the api-developer agent rows from the project's on-disk config. */
-async function loadApiDevAgentRows(projectDir: string): Promise<AgentScopeConfig[]> {
-  const loaded = await loadProjectConfigFromDir(projectDir);
-  if (!loaded) throw new Error("project config must exist after dual-scope setup");
-  return loaded.config.agents.filter((a) => a.name === API_DEVELOPER);
-}
 
 describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () => {
   let sourceDir: string;
@@ -56,7 +51,7 @@ describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () =>
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -77,7 +72,7 @@ describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () =>
       const { fakeHome, projectDir } = env;
 
       // Check 1: the persisted config carries the dual-scope pair.
-      const rows = await loadApiDevAgentRows(projectDir);
+      const rows = await readAgentEntriesFor(projectDir, API_DEVELOPER);
       const active = rows.filter((a) => !a.excluded);
       const tombstone = rows.filter((a) => a.excluded === true);
       expect(active, "api-developer must have exactly one active project entry").toStrictEqual([
@@ -89,8 +84,8 @@ describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () =>
       ).toStrictEqual([{ name: API_DEVELOPER, scope: "global", excluded: true }]);
 
       // Filesystem sanity: dual-scope is additive — agent compiled at BOTH scopes.
-      const projectAgentFile = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
-      const globalAgentFile = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
+      const projectAgentFile = path.join(agentsPath(projectDir), "api-developer.md");
+      const globalAgentFile = path.join(agentsPath(fakeHome), "api-developer.md");
       expect(
         await fileExists(projectAgentFile),
         "api-developer.md must exist at project scope",
@@ -104,16 +99,15 @@ describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () =>
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const sources = await wizard.build.passThroughAllDomains();
       await sources.waitForReady();
       const agents = await sources.advance();
-      await agents.navigateCursorToAgent(API_DEVELOPER_DISPLAY);
+      await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
 
-      const badges = await agents.getScopeBadgesForAgent(API_DEVELOPER_DISPLAY);
+      const badges = await agents.getScopeBadgesForAgent(E2E_AGENT_DISPLAY["api-developer"]);
       expect(
         [...badges].sort(),
         "persisted dual-scope api-developer must render both [P] and [G] badges",
@@ -132,16 +126,15 @@ describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () =>
       env = await createDualScopeEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
 
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const projectConfigPath = configTsPath(projectDir);
       const configBefore = await readTestFile(projectConfigPath);
-      const rowsBefore = await loadApiDevAgentRows(projectDir);
+      const rowsBefore = await readAgentEntriesFor(projectDir, API_DEVELOPER);
 
       wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const sources = await wizard.build.passThroughAllDomains();
@@ -151,10 +144,10 @@ describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () =>
       // Focus api-developer and press `s`. The scope-toggle guard makes this
       // inert on a persisted dual-scope agent (toast: "use space to change
       // project scope"), so the badges must remain [P][G].
-      await agents.navigateCursorToAgent(API_DEVELOPER_DISPLAY);
+      await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
       await agents.toggleScopeOnFocusedAgent();
 
-      const badgesAfterS = await agents.getScopeBadgesForAgent(API_DEVELOPER_DISPLAY);
+      const badgesAfterS = await agents.getScopeBadgesForAgent(E2E_AGENT_DISPLAY["api-developer"]);
       expect(
         [...badgesAfterS].sort(),
         "`s` must not change the dual-scope agent's badges (guarded no-op)",
@@ -172,7 +165,7 @@ describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () =>
         configBefore,
       );
 
-      const rowsAfter = await loadApiDevAgentRows(projectDir);
+      const rowsAfter = await readAgentEntriesFor(projectDir, API_DEVELOPER);
       expect(
         rowsAfter,
         "api-developer dual-scope rows must be unchanged after an inert `s` toggle",

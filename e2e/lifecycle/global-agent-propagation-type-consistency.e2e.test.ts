@@ -3,17 +3,24 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupTempDir,
+  configTsPath,
+  configTypesTsPath,
   createPermissionsFile,
   ensureBinaryExists,
   fileExists,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { createTestEnvironment, readSelectedAgents } from "../fixtures/dual-scope-helpers.js";
+import {
+  createTestEnvironment,
+  finishWizard,
+  readSelectedAgents,
+} from "../fixtures/dual-scope-helpers.js";
+import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
 
 /**
  * D-222 — Global-agent propagation writes `selectedAgents` value but not its
@@ -71,7 +78,6 @@ import { createTestEnvironment, readSelectedAgents } from "../fixtures/dual-scop
 
 const WEB_DEVELOPER_AGENT = "web-developer";
 const API_DEVELOPER_AGENT = "api-developer";
-const API_DEVELOPER_DISPLAY = "API Developer";
 
 /**
  * Extract the `SelectedAgentName` union literal members from a rendered
@@ -126,13 +132,9 @@ async function initGlobalWithoutApiDeveloper(
 
     // Deselect api-developer. Fresh global init → no tombstone → name
     // simply leaves selectedAgents.
-    await agents.toggleAgent(API_DEVELOPER_DISPLAY);
+    await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
     const confirm = await agents.advance("init");
-    const result = await confirm.confirm();
-    const exitCode = await result.exitCode;
-    const output = result.rawOutput;
-    await result.destroy();
-    return { exitCode, output };
+    return finishWizard(await confirm.confirm());
   } catch (e) {
     await wizard.destroy();
     throw e;
@@ -163,8 +165,7 @@ async function registerProjectViaAgentScopeChange(
     projectDir,
     source: { sourceDir, tempDir: sourceTempDir },
     env: { HOME: fakeHome },
-    rows: 60,
-    cols: 120,
+    ...TERMINAL_SIZE.TALL,
   });
 
   try {
@@ -176,15 +177,11 @@ async function registerProjectViaAgentScopeChange(
     // that creates a project-scoped agent without creating any
     // project-scoped skills (preventing reconcileNewAgentScopes from
     // interfering with Phase 4's promotion).
-    await agents.navigateCursorToAgent("Web Developer");
+    await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["web-developer"]);
     await agents.toggleScopeOnFocusedAgent();
 
     const confirm = await agents.advance("edit");
-    const result = await confirm.confirm();
-    const exitCode = await result.exitCode;
-    const output = result.rawOutput;
-    await result.destroy();
-    return { exitCode, output };
+    return finishWizard(await confirm.confirm());
   } catch (e) {
     await editWizard.destroy();
     throw e;
@@ -222,8 +219,7 @@ async function addApiDeveloperGloballyViaProjectEdit(
     projectDir,
     source: { sourceDir, tempDir: sourceTempDir },
     env: { HOME: fakeHome },
-    rows: 60,
-    cols: 120,
+    ...TERMINAL_SIZE.TALL,
   });
 
   try {
@@ -234,13 +230,9 @@ async function addApiDeveloperGloballyViaProjectEdit(
     // Toggle api-developer ON. Registration helper deliberately avoids
     // project-scoped skills, so `reconcileNewAgentScopes` skips the
     // demotion path and the agent stays at its default scope:global.
-    await agents.toggleAgent(API_DEVELOPER_DISPLAY);
+    await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
     const confirm = await agents.advance("edit");
-    const result = await confirm.confirm();
-    const exitCode = await result.exitCode;
-    const output = result.rawOutput;
-    await result.destroy();
-    return { exitCode, output };
+    return finishWizard(await confirm.confirm());
   } catch (e) {
     await editWizard.destroy();
     throw e;
@@ -256,7 +248,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -292,8 +284,8 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       const phase1 = await initGlobalWithoutApiDeveloper(sourceDir, sourceTempDir, fakeHome);
       expect(phase1.exitCode, `Global init failed: ${phase1.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const globalTypesPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+      const globalConfigPath = configTsPath(fakeHome);
+      const globalTypesPath = configTypesTsPath(fakeHome);
       expect(await fileExists(globalConfigPath)).toBe(true);
       expect(await fileExists(globalTypesPath)).toBe(true);
 
@@ -329,8 +321,8 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
         EXIT_CODES.SUCCESS,
       );
 
-      const projectBConfigPath = path.join(projectBDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const projectBTypesPath = path.join(projectBDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+      const projectBConfigPath = configTsPath(projectBDir);
+      const projectBTypesPath = configTypesTsPath(projectBDir);
       expect(await fileExists(projectBConfigPath)).toBe(true);
       expect(await fileExists(projectBTypesPath)).toBe(true);
 

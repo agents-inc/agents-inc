@@ -1,12 +1,13 @@
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
+  agentsPath,
   cleanupTempDir,
+  configTsPath,
   ensureBinaryExists,
   listFiles,
   readTestFile,
@@ -83,15 +84,11 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
 
       // Excluded tombstone entries must exist in project config
-      const configWithExclusions = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
+      const configWithExclusions = await readTestFile(configTsPath(projectDir));
       expect(configWithExclusions).toContain('"excluded":true');
 
       // Snapshot config before passthrough edit
-      const configBeforeEdit = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
+      const configBeforeEdit = await readTestFile(configTsPath(projectDir));
 
       // ================================================================
       // Phase C: Edit passthrough — navigate through without changes
@@ -101,8 +98,7 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       const editResult = await editWizard.passThrough();
@@ -132,9 +128,7 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
 
       // Verify config unchanged by passthrough
-      const configAfterEdit = await readTestFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
+      const configAfterEdit = await readTestFile(configTsPath(projectDir));
       expect(configAfterEdit).toStrictEqual(configBeforeEdit);
 
       // 8. api-developer agent at project scope contains all selected skills
@@ -148,8 +142,8 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
       });
 
       // 9. No duplicate agent files in either scope directory
-      const projectAgentFiles = await listFiles(path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS));
-      const globalAgentFiles = await listFiles(path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS));
+      const projectAgentFiles = await listFiles(agentsPath(projectDir));
+      const globalAgentFiles = await listFiles(agentsPath(fakeHome));
       const projectMdFiles = projectAgentFiles.filter((f) => f.endsWith(".md"));
       const globalMdFiles = globalAgentFiles.filter((f) => f.endsWith(".md"));
       const projectDupes = projectMdFiles.filter((f, i) => projectMdFiles.indexOf(f) !== i);

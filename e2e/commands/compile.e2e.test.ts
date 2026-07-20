@@ -9,12 +9,15 @@ import {
   ensureBinaryExists,
   listFiles,
   readTestFile,
+  renderMetadataYaml,
   renderSkillMd,
   agentsPath,
+  skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
@@ -42,10 +45,10 @@ describe("compile command", () => {
     expect(output).toMatch(/Recompiled \d+ global agents/);
     expect(output).toContain("Global compile complete");
 
-    await expect(project).toHaveCompiledAgentContent("web-developer", {
+    await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
       contains: ["name: web-developer"],
     });
-    await expect(project).toHaveCompiledAgentContent("api-developer", {
+    await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
       contains: ["name: api-developer"],
     });
 
@@ -62,10 +65,10 @@ describe("compile command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    await expect(project).toHaveCompiledAgentContent("web-developer", {
+    await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
       contains: ["name: web-developer", "description:", "tools:", "model:", "#"],
     });
-    await expect(project).toHaveCompiledAgentContent("api-developer", {
+    await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
       contains: ["name: api-developer", "description:", "tools:", "model:", "#"],
     });
   });
@@ -79,10 +82,10 @@ describe("compile command", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(output).toContain("Recompiled");
 
-    await expect(project).toHaveCompiledAgentContent("web-developer", {
+    await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
       contains: ["name: web-developer"],
     });
-    await expect(project).toHaveCompiledAgentContent("api-developer", {
+    await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
       contains: ["name: api-developer"],
     });
   });
@@ -96,10 +99,10 @@ describe("compile command", () => {
     const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
     expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain("No skills found");
+    expect(output).toContain(STEP_TEXT.NO_SKILLS_FOUND);
 
     // No agent files should be created on compile failure
-    const agentsDirPath = path.join(projectDir, ".claude", "agents");
+    const agentsDirPath = agentsPath(projectDir);
     expect(
       await directoryExists(agentsDirPath),
       "agents directory should not exist after compile failure",
@@ -114,15 +117,15 @@ describe("compile command", () => {
 
       await createLocalSkill(projectDir, "web-testing-react-testing-library", {
         description: "First test skill",
-        metadata: `author: "@test"\ncontentHash: "hash-first"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-first" }),
       });
       await createLocalSkill(projectDir, "web-testing-vue-test-utils", {
         description: "Second test skill",
-        metadata: `author: "@test"\ncontentHash: "hash-second"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-second" }),
       });
       await createLocalSkill(projectDir, "web-mocks-msw", {
         description: "Third test skill",
-        metadata: `author: "@test"\ncontentHash: "hash-third"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-third" }),
       });
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
@@ -131,19 +134,25 @@ describe("compile command", () => {
       expect(output).toContain("Discovered 3 local skills");
       expect(output).toMatch(/Recompiled \d+ global agents/);
 
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer"],
-      });
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-        contains: ["name: api-developer"],
-      });
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer"],
+        },
+      );
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["api-developer"].name,
+        {
+          contains: ["name: api-developer"],
+        },
+      );
 
       // Both agents must exist with valid YAML frontmatter
-      await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
-      await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
+      await expect({ dir: projectDir }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
+      await expect({ dir: projectDir }).toHaveCompiledAgent(E2E_AGENT["api-developer"].name);
       // Agent frontmatter must have name field
-      await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
-        name: "web-developer",
+      await expect({ dir: projectDir }).toHaveAgentFrontmatter(E2E_AGENT["web-developer"].name, {
+        name: E2E_AGENT["web-developer"].name,
       });
     });
 
@@ -154,21 +163,27 @@ describe("compile command", () => {
 
       await createLocalSkill(projectDir, "web-forms-zod-validation", {
         description: "Skill for compile listing verification",
-        metadata: `author: "@test"\ncontentHash: "hash-content"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-content" }),
       });
 
       const { exitCode, output } = await CLI.run(["compile", "--verbose"], { dir: projectDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain("Discovered 1 local skills");
-      expect(output).toContain("Compiled:");
+      expect(output).toContain(STEP_TEXT.COMPILED_LIST);
 
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer"],
-      });
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-        contains: ["name: api-developer"],
-      });
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer"],
+        },
+      );
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["api-developer"].name,
+        {
+          contains: ["name: api-developer"],
+        },
+      );
     });
   });
 
@@ -180,13 +195,13 @@ describe("compile command", () => {
       const { exitCode, output } = await CLI.run(["compile", "--verbose"], { dir: project.dir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain("Loaded skill:");
+      expect(output).toContain(STEP_TEXT.LOADED_SKILL);
       expect(output).toContain("web-testing-vitest");
 
-      await expect(project).toHaveCompiledAgentContent("web-developer", {
+      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
         contains: ["name: web-developer"],
       });
-      await expect(project).toHaveCompiledAgentContent("api-developer", {
+      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
         contains: ["name: api-developer"],
       });
     });
@@ -201,10 +216,10 @@ describe("compile command", () => {
       // Create a valid skill
       await createLocalSkill(projectDir, "web-state-jotai", {
         description: "Valid skill",
-        metadata: `author: "@test"\ncontentHash: "hash-valid"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-valid" }),
       });
 
-      const invalidSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, "web-state-mobx");
+      const invalidSkillDir = path.join(skillsPath(projectDir), "web-state-mobx");
       await mkdir(invalidSkillDir, { recursive: true });
       await writeFile(
         path.join(invalidSkillDir, FILES.SKILL_MD),
@@ -217,10 +232,13 @@ describe("compile command", () => {
       expect(output).toContain("missing metadata.yaml");
       expect(output).toContain("Discovered 1 local skills");
 
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer"],
-        notContains: ["web-state-mobx"],
-      });
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer"],
+          notContains: ["web-state-mobx"],
+        },
+      );
     });
   });
 
@@ -251,7 +269,7 @@ describe("compile command", () => {
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain("No skills found");
+      expect(output).toContain(STEP_TEXT.NO_SKILLS_FOUND);
     });
   });
 
@@ -277,10 +295,10 @@ describe("compile command", () => {
       expect(outputFiles).toContain(preExistingFile);
 
       // Compiled agent files should also be present with correct content
-      await expect(project).toHaveCompiledAgentContent("web-developer", {
+      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
         contains: ["name: web-developer"],
       });
-      await expect(project).toHaveCompiledAgentContent("api-developer", {
+      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
         contains: ["name: api-developer"],
       });
     });
@@ -295,10 +313,10 @@ describe("compile command", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      await expect(project).toHaveCompiledAgentContent("web-developer", {
+      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
         contains: ["name: web-developer", "description:"],
       });
-      await expect(project).toHaveCompiledAgentContent("api-developer", {
+      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
         contains: ["name: api-developer", "description:"],
       });
     });
@@ -313,10 +331,10 @@ describe("compile command", () => {
 
       // toHaveCompiledAgentContent checks file exists and contains text;
       // heading markers verify body content exists after frontmatter
-      await expect(project).toHaveCompiledAgentContent("web-developer", {
+      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
         contains: ["#"],
       });
-      await expect(project).toHaveCompiledAgentContent("api-developer", {
+      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
         contains: ["#"],
       });
     });
@@ -331,10 +349,10 @@ describe("compile command", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
       // Verify each agent has its own name in frontmatter
-      await expect(project).toHaveCompiledAgentContent("web-developer", {
+      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
         contains: ["name: web-developer"],
       });
-      await expect(project).toHaveCompiledAgentContent("api-developer", {
+      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
         contains: ["name: api-developer"],
       });
 
@@ -355,9 +373,12 @@ describe("compile command", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toMatch(/Recompiled \d+ global agents/);
 
-      await expect({ dir: project.dir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer", "web-custom-e2e-widget"],
-      });
+      await expect({ dir: project.dir }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer", "web-custom-e2e-widget"],
+        },
+      );
     });
 
     it("should include custom skill in compiled agent frontmatter", async () => {
@@ -370,9 +391,12 @@ describe("compile command", () => {
 
       // The custom skill is assigned as preloaded in the stack config,
       // so it should appear in the YAML frontmatter skills list
-      await expect({ dir: project.dir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer", "web-custom-e2e-widget"],
-      });
+      await expect({ dir: project.dir }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer", "web-custom-e2e-widget"],
+        },
+      );
     });
   });
 
@@ -393,7 +417,7 @@ describe("compile command", () => {
       // Create a local skill in the project
       await createLocalSkill(projectDir, "web-state-pinia", {
         description: "Skill for --source flag verification",
-        metadata: `author: "@test"\ncontentHash: "hash-source-flag"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-source-flag" }),
       });
 
       // Create an E2E source directory (provides agent definitions + templates)
@@ -409,12 +433,18 @@ describe("compile command", () => {
       expect(output).toContain("Source: flag");
       expect(output).toMatch(/Recompiled \d+ global agents/);
 
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer"],
-      });
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-        contains: ["name: api-developer"],
-      });
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer"],
+        },
+      );
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["api-developer"].name,
+        {
+          contains: ["name: api-developer"],
+        },
+      );
     });
   });
 
@@ -427,13 +457,13 @@ describe("compile command", () => {
       await writeProjectConfig(globalHome, {
         name: "global-test",
         skills: [{ id: "web-testing-cypress-e2e", scope: "project", source: "eject" }],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 
       // Create a local skill in the global home directory
       await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
         description: "Global skill for compile fallback",
-        metadata: `author: "@test"\ncontentHash: "hash-global"\n`,
+        metadata: renderMetadataYaml({ contentHash: "hash-global" }),
       });
 
       // Create a project directory WITHOUT config
@@ -452,9 +482,12 @@ describe("compile command", () => {
       // When using global installation, dual-pass compile runs the global pass
       expect(output).toContain("Compiling global agents");
 
-      await expect({ dir: globalHome }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer"],
-      });
+      await expect({ dir: globalHome }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer"],
+        },
+      );
     });
   });
 });

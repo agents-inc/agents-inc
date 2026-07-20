@@ -1,17 +1,19 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import {
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
   ensureBinaryExists,
-  agentsPath,
+  renderMetadataYaml,
+  skillsPath,
   writeAgentFile,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 
 describe("list command", () => {
@@ -31,7 +33,7 @@ describe("list command", () => {
     const { exitCode, stdout } = await CLI.run(["list"], { dir: tempDir });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain("No installation found");
+    expect(stdout).toContain(STEP_TEXT.NO_INSTALLATION);
   });
 
   it("should work with ls alias", async () => {
@@ -40,7 +42,7 @@ describe("list command", () => {
     const { exitCode, stdout } = await CLI.run(["ls"], { dir: tempDir });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain("No installation found");
+    expect(stdout).toContain(STEP_TEXT.NO_INSTALLATION);
   });
 
   it("should suggest running init when no installation found", async () => {
@@ -126,14 +128,14 @@ describe("list command", () => {
 
     it("should show agent count when agents exist", async () => {
       const project = await ProjectBuilder.editable({
-        agents: ["web-developer", "api-developer"],
+        agents: [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
       });
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
       // Create agent markdown files in the agents directory
-      await writeAgentFile(projectDir, "web-developer");
-      await writeAgentFile(projectDir, "api-developer");
+      await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name);
+      await writeAgentFile(projectDir, E2E_AGENT["api-developer"].name);
 
       const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
 
@@ -177,7 +179,13 @@ describe("list command", () => {
       // Add a user-created skill (custom: true, no forkedFrom)
       await createLocalSkill(projectDir, "web-utilities-date-fns", {
         description: "A user-created custom skill",
-        metadata: `custom: true\nauthor: "@local"\ndisplayName: My Custom Helper\ncategory: web-utilities\ncontentHash: "custom-hash"\n`,
+        metadata: renderMetadataYaml({
+          custom: true,
+          author: "@local",
+          displayName: "My Custom Helper",
+          category: "web-utilities",
+          contentHash: "custom-hash",
+        }),
       });
 
       const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
@@ -197,15 +205,14 @@ describe("list command", () => {
       tempDir = await createTempDir();
 
       // Create .claude/skills/ with a skill but no config.ts
-      const skillsDir = path.join(tempDir, DIRS.CLAUDE, DIRS.SKILLS);
-      await mkdir(skillsDir, { recursive: true });
+      await mkdir(skillsPath(tempDir), { recursive: true });
       await createLocalSkill(tempDir, "web-animation-css-animations");
 
       const { exitCode, stdout } = await CLI.run(["list"], { dir: tempDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       // Without config.ts, detectInstallation returns null
-      expect(stdout).toContain("No installation found");
+      expect(stdout).toContain(STEP_TEXT.NO_INSTALLATION);
     });
 
     it("should work with ls alias on a local installation", async () => {
@@ -230,17 +237,11 @@ describe("list command", () => {
       await writeProjectConfig(globalHome, {
         name: "global-test",
         skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
-        agents: [{ name: "web-developer", scope: "project" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 
       // Create skills directory with a skill folder so skill count > 0
-      const globalSkillsDir = path.join(
-        globalHome,
-        DIRS.CLAUDE,
-        DIRS.SKILLS,
-        "web-framework-react",
-      );
-      await mkdir(globalSkillsDir, { recursive: true });
+      await mkdir(path.join(skillsPath(globalHome), "web-framework-react"), { recursive: true });
 
       // Create a project directory WITHOUT config (so detectInstallation falls back to global)
       const projectDir = path.join(tempDir, "project");

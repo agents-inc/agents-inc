@@ -6,6 +6,7 @@ import { EXIT_CODES, DIRS, FILES, SOURCE_PATHS } from "../pages/constants.js";
 import {
   createTempDir,
   cleanupTempDir,
+  configTypesTsPath,
   ensureBinaryExists,
   fileExists,
   readTestFile,
@@ -300,7 +301,7 @@ describe.skip("new skill command", () => {
     expect(stdout).toContain("Skill created successfully");
 
     // Verify config-types.ts was regenerated with custom values
-    const configTypesPath = path.join(marketplaceDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+    const configTypesPath = configTypesTsPath(marketplaceDir);
     expect(await fileExists(configTypesPath)).toBe(true);
 
     const configTypesContent = await readTestFile(configTypesPath);

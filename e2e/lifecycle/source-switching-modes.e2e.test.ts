@@ -8,12 +8,14 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { E2E_AGENTS } from "../fixtures/expected-values.js";
-import { TIMEOUTS, DIRS } from "../pages/constants.js";
+import { TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
+  agentsPath,
   isClaudeCLIAvailable,
   cleanupTempDir,
+  completeWithLocalSources,
   createTempDir,
   ensureBinaryExists,
   fileExists,
@@ -42,7 +44,7 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- bulk mode s
   beforeAll(async () => {
     await ensureBinaryExists();
     fixture = await createE2EPluginSource();
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (fixture) await cleanupTempDir(fixture.tempDir);
@@ -70,13 +72,7 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- bulk mode s
         });
 
         // Navigate through init with eject source selection
-        const domain = await initWizard.stack.selectFirstStack();
-        const build = await domain.acceptDefaults();
-        const sources = await build.passThroughAllDomains();
-        await sources.setAllLocal();
-        const agents = await sources.advance();
-        const confirm = await agents.acceptDefaults("init");
-        const initResult = await confirm.confirm();
+        const initResult = await completeWithLocalSources(initWizard);
 
         await expectPhaseSuccess(initResult, {
           skillIds: ["web-framework-react"],
@@ -160,12 +156,7 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- bulk mode s
         expect(rawOutput).toContain("to eject");
 
         // Agent may be compiled at project or global scope
-        const projectAgentPath = path.join(
-          projectDir,
-          DIRS.CLAUDE,
-          DIRS.AGENTS,
-          "web-developer.md",
-        );
+        const projectAgentPath = path.join(agentsPath(projectDir), "web-developer.md");
         const checkDir = (await fileExists(projectAgentPath)) ? projectDir : os.homedir();
         await expect({ dir: checkDir }).toHaveCompiledAgent("web-developer");
 

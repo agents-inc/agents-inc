@@ -3,7 +3,7 @@ import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { STEP_TEXT, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
+import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import "../matchers/setup.js";
 
@@ -74,10 +74,7 @@ describe("edit wizard — confirm step and completion", () => {
         });
 
         // Single domain — advance Build -> Sources -> Agents -> Confirm
-        const sources = await wizard.build.advanceToSources();
-        const agents = await sources.acceptDefaults();
-        const confirm = await agents.acceptDefaults("edit");
-        const result = await confirm.confirm();
+        const result = await wizard.build.saveFromBuild("edit");
 
         await expectPhaseSuccess(result, {
           skillIds: ["web-framework-react", "web-styling-tailwind"],

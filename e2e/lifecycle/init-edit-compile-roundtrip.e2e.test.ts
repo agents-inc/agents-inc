@@ -2,15 +2,20 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
+  agentsPath,
   cleanupTempDir,
+  configTsPath,
+  configTypesTsPath,
   directoryExists,
   ensureBinaryExists,
   fileExists,
   readTestFile,
   runCLI,
+  skillsPath,
 } from "../helpers/test-utils.js";
 import {
   createTestEnvironment,
@@ -35,7 +40,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP * 2);
+  }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
@@ -67,7 +72,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
 
       expect(phaseA.exitCode, `Phase A failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      const globalConfigPath = path.join(fakeHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const globalConfigPath = configTsPath(fakeHome);
       expect(await fileExists(globalConfigPath), "Global config must exist after init").toBe(true);
 
       const globalConfigAfterInit = await readTestFile(globalConfigPath);
@@ -75,10 +80,10 @@ describe("init-edit-compile roundtrip lifecycle", () => {
         "version:",
       );
 
-      const globalSkillsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS);
+      const globalSkillsDir = skillsPath(fakeHome);
       expect(await directoryExists(globalSkillsDir), "Global skills dir must exist").toBe(true);
 
-      const globalAgentsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS);
+      const globalAgentsDir = agentsPath(fakeHome);
       expect(await directoryExists(globalAgentsDir), "Global agents dir must exist").toBe(true);
 
       // Phase B: Project init with scope toggle
@@ -86,7 +91,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
 
       expect(phaseB.exitCode, `Phase B failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      const projectConfigPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+      const projectConfigPath = configTsPath(projectDir);
       expect(await fileExists(projectConfigPath), "Project config must exist after init").toBe(
         true,
       );
@@ -96,12 +101,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
         "version:",
       );
 
-      const projectHonoSkillDir = path.join(
-        projectDir,
-        DIRS.CLAUDE,
-        DIRS.SKILLS,
-        "api-framework-hono",
-      );
+      const projectHonoSkillDir = path.join(skillsPath(projectDir), "api-framework-hono");
       expect(
         await directoryExists(projectHonoSkillDir),
         "Project must have api-framework-hono skill",
@@ -110,7 +110,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
 
       // config-types.ts must be generated alongside config.ts
-      const projectConfigTypesPath = path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+      const projectConfigTypesPath = configTypesTsPath(projectDir);
       expect(
         await fileExists(projectConfigTypesPath),
         "config-types.ts must exist after project init",
@@ -121,12 +121,11 @@ describe("init-edit-compile roundtrip lifecycle", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
 
       // Web domain: focus web-framework-react explicitly, then toggle scope to project
-      await wizard.build.focusSkill("web-framework-react");
+      await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
 
       // Advance through remaining domains
@@ -152,12 +151,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
         "version:",
       );
 
-      const projectReactSkillDir = path.join(
-        projectDir,
-        DIRS.CLAUDE,
-        DIRS.SKILLS,
-        "web-framework-react",
-      );
+      const projectReactSkillDir = path.join(skillsPath(projectDir), "web-framework-react");
       expect(
         await directoryExists(projectReactSkillDir),
         "Project must have web-framework-react skill after scope toggle",

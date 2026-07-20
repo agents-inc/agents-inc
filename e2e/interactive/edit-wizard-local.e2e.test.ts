@@ -1,10 +1,16 @@
 import path from "path";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists, readTestFile } from "../helpers/test-utils.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
+import {
+  cleanupTempDir,
+  configTsPath,
+  ensureBinaryExists,
+  readTestFile,
+} from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import "../matchers/setup.js";
 
@@ -18,7 +24,7 @@ import "../matchers/setup.js";
  */
 
 describe("edit wizard — eject mode", () => {
-  let sourceFixture: { sourceDir: string; tempDir: string };
+  let sourceFixture: E2ESource;
   let wizard: EditWizard | undefined;
   let tempDir: string | undefined;
 
@@ -57,13 +63,12 @@ describe("edit wizard — eject mode", () => {
         wizard = await EditWizard.launch({
           projectDir: project.dir,
           source: sourceFixture,
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
           env: { HOME: project.dir },
         });
 
         // Select the vitest skill by name
-        await wizard.build.selectSkill("vitest");
+        await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
 
         // Navigate through remaining steps with explicit eject source selection
         const sources = await wizard.build.advanceToSources();
@@ -110,14 +115,13 @@ describe("edit wizard — eject mode", () => {
         wizard = await EditWizard.launch({
           projectDir: project.dir,
           source: sourceFixture,
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
           env: { HOME: project.dir },
         });
 
         // Select an additional skill
         await wizard.build.navigateDown();
-        await wizard.build.selectSkill("vitest");
+        await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
 
         const result = await wizard.completeFromBuild();
 
@@ -146,14 +150,13 @@ describe("edit wizard — eject mode", () => {
         wizard = await EditWizard.launch({
           projectDir: project.dir,
           source: sourceFixture,
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
           env: { HOME: project.dir },
         });
 
         // Select an additional skill
         await wizard.build.navigateDown();
-        await wizard.build.selectSkill("vitest");
+        await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
 
         const result = await wizard.completeFromBuild();
 
@@ -182,8 +185,7 @@ describe("edit wizard — eject mode", () => {
         wizard = await EditWizard.launch({
           projectDir: project.dir,
           source: sourceFixture,
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
           env: { HOME: project.dir },
         });
 
@@ -219,8 +221,7 @@ describe("edit wizard — eject mode", () => {
       wizard = await EditWizard.launch({
         projectDir: project.dir,
         source: sourceFixture,
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
         env: { HOME: project.dir },
       });
 
@@ -233,9 +234,7 @@ describe("edit wizard — eject mode", () => {
       // The changes summary should list removals
       expect(rawOutput).toContain("Changes:");
 
-      const config = await readTestFile(
-        path.join(result.project.dir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
-      );
+      const config = await readTestFile(configTsPath(result.project.dir));
       expect(config).not.toContain('"web-testing-vitest"');
 
       await expect(result.project).toHaveCompiledAgents();
@@ -255,8 +254,7 @@ describe("edit wizard — eject mode", () => {
         wizard = await EditWizard.launch({
           projectDir: project.dir,
           source: sourceFixture,
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
           env: { HOME: project.dir },
         });
 
@@ -282,8 +280,7 @@ describe("edit wizard — eject mode", () => {
         wizard = await EditWizard.launch({
           projectDir: project.dir,
           source: sourceFixture,
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
           env: { HOME: project.dir },
         });
 

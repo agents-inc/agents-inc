@@ -4,13 +4,14 @@ import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { E2E_AGENTS } from "../fixtures/expected-values.js";
+import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { CLI } from "../fixtures/cli.js";
 import {
   createTempDir,
   cleanupTempDir,
+  completeWithLocalSources,
   ensureBinaryExists,
   directoryExists,
 } from "../helpers/test-utils.js";
@@ -58,32 +59,25 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
         projectDir,
       });
 
-      // Eject mode: explicitly switch all sources to local via "l" hotkey.
-      // Without this, the wizard defaults to plugin mode (source: "agents-inc").
-      const domain = await wizard.stack.selectFirstStack();
-      const build = await domain.acceptDefaults();
-      const sources = await build.passThroughAllDomains();
-      await sources.waitForReady();
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("init");
-      const initResult = await confirm.confirm();
+      // Eject mode: every skill source is switched to local, otherwise the
+      // wizard defaults to plugin mode (source: "agents-inc").
+      const initResult = await completeWithLocalSources(wizard);
 
       // --- Phase 1 Verification ---
 
       await expectPhaseSuccess(
         { project: { dir: projectDir }, exitCode: initResult.exitCode },
         {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
           source: "eject",
-          copiedSkills: ["web-framework-react"],
+          copiedSkills: [E2E_SKILL.react.id],
         },
       );
 
       // P1-C/D: Agents compiled with correct content
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer", "web-framework-react"],
+        contains: ["name: web-developer", E2E_SKILL.react.id],
       });
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
         contains: ["name: api-developer"],
@@ -115,13 +109,13 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
       await expectPhaseSuccess(
         { project: { dir: projectDir }, exitCode: compileResult.exitCode },
         {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
           source: "eject",
         },
       );
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer", "web-framework-react"],
+        contains: ["name: web-developer", E2E_SKILL.react.id],
       });
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
         contains: ["name: api-developer"],

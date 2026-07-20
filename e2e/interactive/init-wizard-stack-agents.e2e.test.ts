@@ -4,6 +4,7 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import { cleanupTempDir, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
+import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import "../matchers/setup.js";
@@ -53,10 +54,10 @@ describe.skipIf(!claudeAvailable)("init wizard — stack agent preselection", ()
       // Verify that agents from the E2E stack are pre-selected with checkmarks.
       // The E2E stack defines "web-developer" and "api-developer" agents.
       // The UI renders selected agents as: [✓] Web Developer
-      expect(output).toContain("Web Developer");
+      expect(output).toContain(E2E_AGENT_DISPLAY["web-developer"]);
       expect(output).toMatch(/\[✓\].*Web Developer/);
 
-      expect(output).toContain("API Developer");
+      expect(output).toContain(E2E_AGENT_DISPLAY["api-developer"]);
       expect(output).toMatch(/\[✓\].*API Developer/);
 
       // Complete the wizard

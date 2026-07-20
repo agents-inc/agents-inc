@@ -1,12 +1,7 @@
 import path from "path";
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT } from "../pages/constants.js";
-import {
-  cleanupTempDir,
-  ensureBinaryExists,
-  directoryExists,
-  addForkedFromMetadata,
-} from "../helpers/test-utils.js";
+import { cleanupTempDir, ensureBinaryExists, directoryExists } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 
@@ -36,32 +31,20 @@ describe("uninstall interactive", () => {
     }
   });
 
-  /**
-   * Creates a project with CLI-managed skills (forkedFrom metadata present)
-   * so that uninstall detects content to remove.
-   */
-  async function createUninstallableProject(): Promise<string> {
-    const project = await ProjectBuilder.editable({
-      skills: ["web-framework-react"],
-      agents: ["web-developer"],
-      domains: ["web"],
-    });
-    tempDir = path.dirname(project.dir);
-    const projectDir = project.dir;
-
-    // Add forkedFrom metadata so uninstall recognizes the skill as CLI-managed
-    await addForkedFromMetadata(projectDir);
-
-    return projectDir;
-  }
-
   describe("confirmation prompt", () => {
     it("should show confirmation prompt with files to remove", async () => {
-      const projectDir = await createUninstallableProject();
+      const project = await ProjectBuilder.editable({
+        skills: ["web-framework-react"],
+        agents: ["web-developer"],
+        domains: ["web"],
+        forkedFrom: true,
+      });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
 
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
-      await prompt.waitForText("The following will be removed", TIMEOUTS.WIZARD_LOAD);
+      await prompt.waitForText(STEP_TEXT.UNINSTALL_PREVIEW, TIMEOUTS.WIZARD_LOAD);
 
       const output = prompt.getOutput();
       expect(output).toContain("CLI-managed files");
@@ -69,7 +52,14 @@ describe("uninstall interactive", () => {
     });
 
     it("should show the y/N prompt defaulting to cancel", async () => {
-      const projectDir = await createUninstallableProject();
+      const project = await ProjectBuilder.editable({
+        skills: ["web-framework-react"],
+        agents: ["web-developer"],
+        domains: ["web"],
+        forkedFrom: true,
+      });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
 
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
@@ -82,7 +72,14 @@ describe("uninstall interactive", () => {
 
   describe("cancel with n", () => {
     it("should cancel when user types n", async () => {
-      const projectDir = await createUninstallableProject();
+      const project = await ProjectBuilder.editable({
+        skills: ["web-framework-react"],
+        agents: ["web-developer"],
+        domains: ["web"],
+        forkedFrom: true,
+      });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
 
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
@@ -98,7 +95,14 @@ describe("uninstall interactive", () => {
     });
 
     it("should preserve files after cancellation", async () => {
-      const projectDir = await createUninstallableProject();
+      const project = await ProjectBuilder.editable({
+        skills: ["web-framework-react"],
+        agents: ["web-developer"],
+        domains: ["web"],
+        forkedFrom: true,
+      });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
 
       const skillsDir = path.join(projectDir, DIRS.CLAUDE, "skills");
       const agentsDir = path.join(projectDir, DIRS.CLAUDE, "agents");
@@ -121,7 +125,14 @@ describe("uninstall interactive", () => {
     });
 
     it("should cancel when user presses Enter (default is cancel)", async () => {
-      const projectDir = await createUninstallableProject();
+      const project = await ProjectBuilder.editable({
+        skills: ["web-framework-react"],
+        agents: ["web-developer"],
+        domains: ["web"],
+        forkedFrom: true,
+      });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
 
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
@@ -139,7 +150,14 @@ describe("uninstall interactive", () => {
 
   describe("confirm with y", () => {
     it("should proceed when user types y", async () => {
-      const projectDir = await createUninstallableProject();
+      const project = await ProjectBuilder.editable({
+        skills: ["web-framework-react"],
+        agents: ["web-developer"],
+        domains: ["web"],
+        forkedFrom: true,
+      });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
 
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
@@ -153,7 +171,14 @@ describe("uninstall interactive", () => {
     });
 
     it("should remove CLI-managed files after confirming", async () => {
-      const projectDir = await createUninstallableProject();
+      const project = await ProjectBuilder.editable({
+        skills: ["web-framework-react"],
+        agents: ["web-developer"],
+        domains: ["web"],
+        forkedFrom: true,
+      });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
 
       const skillsDir = path.join(projectDir, DIRS.CLAUDE, "skills");
       const agentsDir = path.join(projectDir, DIRS.CLAUDE, "agents");
@@ -176,11 +201,18 @@ describe("uninstall interactive", () => {
 
   describe("--all flag", () => {
     it("should show config removal in confirmation prompt with --all", async () => {
-      const projectDir = await createUninstallableProject();
+      const project = await ProjectBuilder.editable({
+        skills: ["web-framework-react"],
+        agents: ["web-developer"],
+        domains: ["web"],
+        forkedFrom: true,
+      });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
 
       prompt = new InteractivePrompt(["uninstall", "--all"], projectDir);
 
-      await prompt.waitForText("The following will be removed", TIMEOUTS.WIZARD_LOAD);
+      await prompt.waitForText(STEP_TEXT.UNINSTALL_PREVIEW, TIMEOUTS.WIZARD_LOAD);
 
       const output = prompt.getOutput();
       expect(output).toContain("Config:");
@@ -190,7 +222,14 @@ describe("uninstall interactive", () => {
 
   describe("Ctrl+C during confirmation", () => {
     it("should exit cleanly when Ctrl+C is pressed", async () => {
-      const projectDir = await createUninstallableProject();
+      const project = await ProjectBuilder.editable({
+        skills: ["web-framework-react"],
+        agents: ["web-developer"],
+        domains: ["web"],
+        forkedFrom: true,
+      });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
 
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
@@ -204,7 +243,14 @@ describe("uninstall interactive", () => {
     });
 
     it("should preserve files after Ctrl+C", async () => {
-      const projectDir = await createUninstallableProject();
+      const project = await ProjectBuilder.editable({
+        skills: ["web-framework-react"],
+        agents: ["web-developer"],
+        domains: ["web"],
+        forkedFrom: true,
+      });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
 
       const skillsDir = path.join(projectDir, DIRS.CLAUDE, "skills");
       const agentsDir = path.join(projectDir, DIRS.CLAUDE, "agents");

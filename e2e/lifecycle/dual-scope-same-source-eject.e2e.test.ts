@@ -5,20 +5,24 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { CLI } from "../fixtures/cli.js";
-import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
+  agentsPath,
   cleanupTempDir,
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
   directoryExists,
   ensureBinaryExists,
+  loadConfigOrFail,
   readTestFile,
+  renderMetadataYaml,
+  skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -53,10 +57,7 @@ import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
  */
 
 const HONO_ID = "api-framework-hono";
-const HONO_LABEL = "api-framework-hono";
 const HONO_PLUGIN_REF = `${HONO_ID}:${HONO_ID}`;
-const API_DEVELOPER: AgentName = "api-developer";
-const WEB_DEVELOPER: AgentName = "web-developer";
 
 // Check 5 uses a NON-framework skill (web-testing-vitest). Framework skills
 // (api-framework-hono) are required and cannot be deselected at global scope,
@@ -65,20 +66,24 @@ const WEB_DEVELOPER: AgentName = "web-developer";
 // uses vitest. It is seeded preloaded:true on the project agent so its
 // compiled-agent reference form is still asserted.
 const VITEST_ID = "web-testing-vitest";
-const VITEST_LABEL = "web-testing-vitest";
 const VITEST_PLUGIN_REF = `${VITEST_ID}:${VITEST_ID}`;
 
-const vitestMetadata =
-  `author: "@agents-inc"\ndisplayName: ${VITEST_ID}\ncategory: web-testing\nslug: vitest\n` +
-  `cliDescription: "E2E test skill"\nusageGuidance: "Use when testing E2E scenarios"\n` +
-  `contentHash: "b2c3d4e"\n`;
+const vitestMetadata = renderMetadataYaml({
+  author: "@agents-inc",
+  displayName: VITEST_ID,
+  category: "web-testing",
+  slug: "vitest",
+  cliDescription: "E2E test skill",
+  usageGuidance: "Use when testing E2E scenarios",
+  contentHash: "b2c3d4e",
+});
 
 const globalStack = {
-  [WEB_DEVELOPER]: { "web-testing": [{ id: VITEST_ID, preloaded: false }] },
+  [E2E_AGENT["web-developer"].name]: { "web-testing": [{ id: VITEST_ID, preloaded: false }] },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
 
 const projectStack = {
-  [API_DEVELOPER]: { "web-testing": [{ id: VITEST_ID, preloaded: true }] },
+  [E2E_AGENT["api-developer"].name]: { "web-testing": [{ id: VITEST_ID, preloaded: true }] },
 } satisfies Partial<Record<AgentName, StackAgentConfig>>;
 
 describe("dual-scope same-source (both eject)", () => {
@@ -118,10 +123,8 @@ describe("dual-scope same-source (both eject)", () => {
       const { fakeHome, projectDir } = env;
 
       // --- Check 1: project config carries the both-eject dual-scope pair. ---
-      const loaded = await loadProjectConfigFromDir(projectDir);
-      expect(loaded, "project config.ts must exist").not.toBeNull();
-      if (!loaded) return;
-      const honoEntries = loaded.config.skills.filter((s) => s.id === HONO_ID);
+      const projectConfig = await loadConfigOrFail(projectDir);
+      const honoEntries = projectConfig.skills.filter((s) => s.id === HONO_ID);
 
       const active = honoEntries.find((s) => s.excluded !== true);
       const tombstone = honoEntries.find((s) => s.excluded === true);
@@ -137,11 +140,14 @@ describe("dual-scope same-source (both eject)", () => {
       // --- Check 2: compiled project agent references hono in BARE form. ---
       // api-developer is project-scoped and preloads hono; eject source ⇒ no
       // `id:id` colon form.
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent(API_DEVELOPER, {
-        contains: [HONO_ID],
-        notContains: [HONO_PLUGIN_REF],
-      });
-      const agentPath = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, `${API_DEVELOPER}.md`);
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["api-developer"].name,
+        {
+          contains: [HONO_ID],
+          notContains: [HONO_PLUGIN_REF],
+        },
+      );
+      const agentPath = path.join(agentsPath(projectDir), `${E2E_AGENT["api-developer"].name}.md`);
       const agentContent = await readTestFile(agentPath);
       expect(agentContent).toContain(`  - ${HONO_ID}`);
       expect(agentContent).not.toContain(HONO_PLUGIN_REF);
@@ -151,13 +157,12 @@ describe("dual-scope same-source (both eject)", () => {
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       // hono lives in the API domain — advance from Web before reading badges.
       await wizard.build.advanceDomain();
-      await wizard.build.focusSkill(HONO_LABEL);
-      const badgesBefore = await wizard.build.getScopeBadgesForSkill(HONO_LABEL);
+      await wizard.build.focusSkill(E2E_SKILL.hono.display);
+      const badgesBefore = await wizard.build.getScopeBadgesForSkill(E2E_SKILL.hono.display);
       expect([...badgesBefore].sort()).toStrictEqual(["G", "P"]);
 
       // --- Check 4: pressing `s` on a PERSISTED dual-scope pair is an
@@ -165,7 +170,7 @@ describe("dual-scope same-source (both eject)", () => {
       // it does NOT collapse to a single global entry. Space is the sanctioned
       // collapse mechanism. The dual-scope badges remain unchanged. ---
       await wizard.build.toggleScopeOnFocusedSkill();
-      const badgesAfter = await wizard.build.getScopeBadgesForSkill(HONO_LABEL);
+      const badgesAfter = await wizard.build.getScopeBadgesForSkill(E2E_SKILL.hono.display);
       expect([...badgesAfter].sort()).toStrictEqual(["G", "P"]);
 
       wizard.abort();
@@ -194,9 +199,9 @@ describe("dual-scope same-source (both eject)", () => {
       const globalConfig = buildProjectConfig({
         name: "dual-scope-global-eject",
         skills: buildSkillConfigs([VITEST_ID], { scope: "global", source: "eject" }),
-        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         domains: ["web"],
-        selectedAgents: [WEB_DEVELOPER],
+        selectedAgents: [E2E_AGENT["web-developer"].name],
         stack: globalStack,
         projects: [realpathSync(projectDir)],
       });
@@ -212,9 +217,9 @@ describe("dual-scope same-source (both eject)", () => {
           ...buildSkillConfigs([VITEST_ID], { scope: "global", source: "eject", excluded: true }),
           ...buildSkillConfigs([VITEST_ID], { scope: "project", source: "eject" }),
         ],
-        agents: buildAgentConfigs([API_DEVELOPER], { scope: "project" }),
+        agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
         domains: ["web"],
-        selectedAgents: [API_DEVELOPER],
+        selectedAgents: [E2E_AGENT["api-developer"].name],
         stack: projectStack,
       });
       await writeProjectConfig(projectDir, projectConfig);
@@ -229,11 +234,10 @@ describe("dual-scope same-source (both eject)", () => {
         projectDir: globalHome,
         source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: globalHome },
-        rows: 60,
-        cols: 120,
+        ...TERMINAL_SIZE.TALL,
       });
       try {
-        await globalEdit.build.selectSkill(VITEST_LABEL); // deselect global vitest
+        await globalEdit.build.selectSkill(E2E_SKILL.vitest.display); // deselect global vitest
         const sources = await globalEdit.build.passThroughAllDomainsGeneric();
         await sources.waitForReady();
         const agents = await sources.advance();
@@ -246,17 +250,14 @@ describe("dual-scope same-source (both eject)", () => {
       }
 
       // Global config: vitest gone from the global skills[] and stack.
-      const globalLoaded = await loadProjectConfigFromDir(globalHome);
-      expect(globalLoaded, "global config.ts must exist").not.toBeNull();
-      if (!globalLoaded) return;
-      expect(globalLoaded.config.skills.map((s) => s.id)).not.toContain(VITEST_ID);
-      expect(globalLoaded.config.stack?.[WEB_DEVELOPER]?.["web-testing"]).toBeUndefined();
+      const globalLoaded = await loadConfigOrFail(globalHome);
+      expect(globalLoaded.skills.map((s) => s.id)).not.toContain(VITEST_ID);
+      expect(
+        globalLoaded.stack?.[E2E_AGENT["web-developer"].name]?.["web-testing"],
+      ).toBeUndefined();
 
       // Project config: the project's OWN project-scope vitest survives untouched.
-      const projectLoaded = await loadProjectConfigFromDir(projectDir);
-      expect(projectLoaded, "project config.ts must exist").not.toBeNull();
-      if (!projectLoaded) return;
-      const p = projectLoaded.config;
+      const p = await loadConfigOrFail(projectDir);
 
       // Proof-of-execution: propagation rewrote the project, dropping the stale
       // inherited-global vitest (tombstone). Guards against a vacuous pass on an
@@ -268,7 +269,7 @@ describe("dual-scope same-source (both eject)", () => {
 
       const projectVitest = p.skills.find((s) => s.id === VITEST_ID && s.scope === "project");
       expect(projectVitest).toStrictEqual({ id: VITEST_ID, scope: "project", source: "eject" });
-      expect(p.stack?.[API_DEVELOPER]?.["web-testing"]).toStrictEqual([
+      expect(p.stack?.[E2E_AGENT["api-developer"].name]?.["web-testing"]).toStrictEqual([
         { id: VITEST_ID, preloaded: true },
       ]);
 
@@ -281,14 +282,17 @@ describe("dual-scope same-source (both eject)", () => {
         },
       );
       expect(compile.exitCode, compile.output).toBe(EXIT_CODES.SUCCESS);
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent(API_DEVELOPER, {
-        contains: [`  - ${VITEST_ID}`],
-        notContains: [VITEST_PLUGIN_REF],
-      });
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["api-developer"].name,
+        {
+          contains: [`  - ${VITEST_ID}`],
+          notContains: [VITEST_PLUGIN_REF],
+        },
+      );
 
       // Filesystem: the project's own ejected vitest skill dir survives.
       expect(
-        await directoryExists(path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, VITEST_ID)),
+        await directoryExists(path.join(skillsPath(projectDir), VITEST_ID)),
         "project's own ejected vitest skill dir must remain after global removal",
       ).toBe(true);
     },

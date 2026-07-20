@@ -46,8 +46,8 @@ describe("init wizard — source management", () => {
       await sources.openSettings();
 
       const output = sources.getOutput();
-      expect(output).toContain("Configured marketplaces");
-      expect(output).toContain("Add source");
+      expect(output).toContain(STEP_TEXT.CONFIGURED_MARKETPLACES);
+      expect(output).toContain(STEP_TEXT.ADD_SOURCE);
     });
 
     it("should show add source UI when pressing A in settings", async () => {
@@ -82,7 +82,7 @@ describe("init wizard — source management", () => {
       await sources.closeSettings();
 
       const output = sources.getOutput();
-      expect(output).not.toContain("Configured marketplaces");
+      expect(output).not.toContain(STEP_TEXT.CONFIGURED_MARKETPLACES);
     });
   });
 
@@ -105,8 +105,8 @@ describe("init wizard — source management", () => {
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
         const output = result.output;
-        expect(output).toContain("Skills copied to:");
-        expect(output).not.toContain("Installing skill plugins");
+        expect(output).toContain(STEP_TEXT.SKILLS_COPIED_TO);
+        expect(output).not.toContain(STEP_TEXT.INSTALLING_PLUGINS);
 
         await expect(result.project).toHaveConfig({
           skillIds: ["web-framework-react"],

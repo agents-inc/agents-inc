@@ -1,13 +1,18 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
-import { E2E_AGENTS } from "../fixtures/expected-values.js";
+import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { cleanupTempDir, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  completeWithLocalSources,
+  ensureBinaryExists,
+  isClaudeCLIAvailable,
+} from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -116,23 +121,12 @@ describe("init wizard — stack flow", () => {
   });
 
   describe("local install verification", () => {
-    /** Navigate the full wizard and explicitly set all sources to eject (local copy). */
-    async function completeWithEjectSources(w: InitWizard) {
-      const domain = await w.stack.selectFirstStack();
-      const build = await domain.acceptDefaults();
-      const sources = await build.passThroughAllDomains();
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("init");
-      return confirm.confirm();
-    }
-
     it(
       "should copy skills to .claude/skills/ directory",
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         wizard = await InitWizard.launch();
-        const result = await completeWithEjectSources(wizard);
+        const result = await completeWithLocalSources(wizard);
 
         await expectPhaseSuccess(
           { project: result.project, exitCode: result.exitCode },
@@ -147,7 +141,7 @@ describe("init wizard — stack flow", () => {
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         wizard = await InitWizard.launch();
-        const result = await completeWithEjectSources(wizard);
+        const result = await completeWithLocalSources(wizard);
 
         await result.exitCode;
 
@@ -163,7 +157,7 @@ describe("init wizard — stack flow", () => {
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         wizard = await InitWizard.launch();
-        const result = await completeWithEjectSources(wizard);
+        const result = await completeWithLocalSources(wizard);
 
         await result.exitCode;
 
@@ -178,7 +172,7 @@ describe("init wizard — stack flow", () => {
 
     it("should list copied skills in output", { timeout: TIMEOUTS.INTERACTIVE }, async () => {
       wizard = await InitWizard.launch();
-      const result = await completeWithEjectSources(wizard);
+      const result = await completeWithLocalSources(wizard);
 
       await result.exitCode;
 
@@ -238,7 +232,7 @@ describe("init wizard — stack flow", () => {
       const build = await domain.advance();
 
       // Select required skill in Web domain and advance
-      await build.selectSkill("react");
+      await build.selectSkill(E2E_SKILL.react.slug);
       await build.advanceDomain();
 
       // In scratch flow, no stack snapshot exists — API domain should have 0 selected skills

@@ -5,14 +5,14 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, FILES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   isClaudeCLIAvailable,
   cleanupTempDir,
   ensureBinaryExists,
   fileExists,
-  readTestFile,
+  skillsPath,
 } from "../helpers/test-utils.js";
 import {
   createTestEnvironment,
@@ -42,7 +42,7 @@ describe.skipIf(!claudeAvailable)(
       await ensureBinaryExists();
       pluginFixture = await createE2EPluginSource();
       pluginSourceTempDir = pluginFixture.tempDir;
-    }, TIMEOUTS.SETUP * 2);
+    }, TIMEOUTS.SETUP_DUAL);
 
     afterEach(async () => {
       await wizard?.destroy();
@@ -81,8 +81,7 @@ describe.skipIf(!claudeAvailable)(
           projectDir,
           source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
           env: { HOME: fakeHome },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         // Build step -- pass through all three domains
@@ -109,9 +108,7 @@ describe.skipIf(!claudeAvailable)(
 
         // D-2: Local skill files removed (switched to plugin)
         const localSkillPath = path.join(
-          projectDir,
-          DIRS.CLAUDE,
-          DIRS.SKILLS,
+          skillsPath(projectDir),
           "api-framework-hono",
           FILES.SKILL_MD,
         );
@@ -168,8 +165,7 @@ describe.skipIf(!claudeAvailable)(
           projectDir,
           source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
           env: { HOME: fakeHome },
-          rows: 60,
-          cols: 120,
+          ...TERMINAL_SIZE.TALL,
         });
 
         const sources = await wizard.build.passThroughAllDomains();
@@ -191,9 +187,7 @@ describe.skipIf(!claudeAvailable)(
 
         // D-2: Local skill files deleted by migration (switched to plugin)
         const localSkillPath = path.join(
-          projectDir,
-          DIRS.CLAUDE,
-          DIRS.SKILLS,
+          skillsPath(projectDir),
           "api-framework-hono",
           FILES.SKILL_MD,
         );
