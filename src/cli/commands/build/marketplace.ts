@@ -13,11 +13,11 @@ import {
   writeMarketplace,
   getMarketplaceStats,
 } from "../../lib/marketplace-generator";
-import { PLUGIN_MANIFEST_DIR, PLUGINS_DIST_PATH } from "../../consts";
+import { MARKETPLACE_JSON, PLUGIN_MANIFEST_DIR, PLUGINS_DIST_PATH } from "../../consts";
 import type { Marketplace } from "../../types/plugins";
 import { validateKebabCaseName } from "../../lib/validate-kebab-name.js";
 
-const DEFAULT_OUTPUT_FILE = `${PLUGIN_MANIFEST_DIR}/marketplace.json`;
+const DEFAULT_OUTPUT_FILE = `${PLUGIN_MANIFEST_DIR}/${MARKETPLACE_JSON}`;
 
 const AUTHOR_STRING_PATTERN = /^(.*?)\s*<([^>]+)>\s*(?:\(([^)]+)\))?\s*$/;
 

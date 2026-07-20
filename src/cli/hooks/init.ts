@@ -1,7 +1,6 @@
 import { Hook } from "@oclif/core";
 import { resolveSource } from "../lib/configuration/index.js";
-import { detectInstallation } from "../lib/installation/installation.js";
-import { showDashboard } from "../commands/init.js";
+import { runDashboardFlow } from "../commands/init.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import type { ConfigWithSource } from "../base-command.js";
 
@@ -10,13 +9,8 @@ const hook: Hook<"init"> = async function (options) {
 
   // When no command is given and project is already initialized, show dashboard
   if (options.id === undefined) {
-    const installation = await detectInstallation(projectDir);
-
-    if (installation) {
-      const selectedCommand = await showDashboard(projectDir);
-      if (selectedCommand) {
-        await options.config.runCommand(selectedCommand);
-      }
+    const shown = await runDashboardFlow(projectDir, options.config, "standalone");
+    if (shown) {
       this.exit(EXIT_CODES.SUCCESS);
     }
   }
@@ -27,7 +21,7 @@ const hook: Hook<"init"> = async function (options) {
     const resolvedConfig = await resolveSource(sourceFlag, projectDir);
     // Boundary cast: oclif Config is a class (not augmentable); read in BaseCommand.sourceConfig
     (options.config as unknown as ConfigWithSource).sourceConfig = resolvedConfig;
-  } catch (error) {
+  } catch {
     // Let the command handle config failures - commands can check if sourceConfig is undefined
   }
 };

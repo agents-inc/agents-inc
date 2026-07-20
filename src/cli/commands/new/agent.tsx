@@ -4,11 +4,14 @@ import { Args, Flags } from "@oclif/core";
 import { TextInput } from "@inkjs/ui";
 import { spawn } from "child_process";
 import matter from "gray-matter";
-import { render, Box, Text, useApp, useInput } from "ink";
+import { z } from "zod";
+import { Box, Text, useApp, useInput } from "ink";
 import path from "path";
 
 import { BaseCommand } from "../../base-command.js";
-import { CLAUDE_DIR, CLI_COLORS, STANDARD_FILES } from "../../consts.js";
+import { promptValue } from "../../components/common/prompt-confirm.js";
+import { CLAUDE_DIR, CLI_COLORS, STANDARD_DIRS, STANDARD_FILES } from "../../consts.js";
+import { resolveInstallPaths } from "../../lib/installation/index.js";
 import { resolveSource } from "../../lib/configuration/index.js";
 import {
   type ConfigTypesBackgroundData,
@@ -16,9 +19,10 @@ import {
   regenerateConfigTypes,
 } from "../../lib/configuration/config-types-writer.js";
 import { EXIT_CODES } from "../../lib/exit-codes.js";
-import { assertDirOverwritable } from "../../lib/assert-dir-overwritable.js";
-import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
+import { FEATURE_FLAGS, featureDisabledError } from "../../lib/feature-flags.js";
+import { modelNameSchema } from "../../lib/schemas.js";
 import { getAgentDefinitions } from "../../lib/agents/index.js";
+import type { ModelName } from "../../types/index.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { isClaudeCLIAvailable } from "../../utils/exec.js";
 import { directoryExists, fileExists, readFile } from "../../utils/fs.js";
@@ -112,7 +116,7 @@ export default class NewAgent extends BaseCommand {
 
   async run(): Promise<void> {
     if (!FEATURE_FLAGS.NEW_AGENT_COMMAND) {
-      this.error("The `new agent` command is currently disabled while being improved.", {
+      this.error(featureDisabledError("new agent"), {
         exit: EXIT_CODES.ERROR,
       });
     }
@@ -124,7 +128,7 @@ export default class NewAgent extends BaseCommand {
     await this.ensureClaudeCliAvailable();
 
     const purpose = flags.purpose ?? (await this.promptForPurpose());
-    const outputDir = path.join(projectDir, CLAUDE_DIR, "agents", "_custom");
+    const outputDir = path.join(resolveInstallPaths(projectDir, "project").agentsDir, "_custom");
 
     await this.checkExistingDir(path.join(outputDir, args.name), flags.force);
     this.logAgentPlan(args.name, purpose, outputDir);
@@ -137,14 +141,10 @@ export default class NewAgent extends BaseCommand {
   }
 
   private async checkExistingDir(agentDir: string, force: boolean): Promise<void> {
-    const result = await assertDirOverwritable(agentDir);
-    if (result.ok) return;
-    if (!force) {
-      this.error(`Agent directory already exists: ${agentDir}\nUse --force to overwrite.`, {
-        exit: EXIT_CODES.ERROR,
-      });
-    }
-    this.warn(`Overwriting existing agent at ${agentDir}`);
+    await this.ensureDirOverwritable(agentDir, force, {
+      exists: `Agent directory already exists: ${agentDir}`,
+      overwriting: `Overwriting existing agent at ${agentDir}`,
+    });
   }
 
   private async ensureClaudeCliAvailable(): Promise<void> {
@@ -159,20 +159,15 @@ export default class NewAgent extends BaseCommand {
   }
 
   private async promptForPurpose(): Promise<string> {
-    const outcome = await new Promise<PurposeOutcome>((resolve) => {
-      const { waitUntilExit } = render(
+    const outcome = await promptValue<PurposeOutcome>(
+      (resolve) => (
         <PurposeInput
           onSubmit={(value) => resolve({ status: "submitted", purpose: value })}
           onCancel={() => resolve({ status: "cancelled" })}
-        />,
-      );
-      // App exit without a callback (or a render failure) counts as a cancel;
-      // resolve is first-wins, so a prior submit is unaffected.
-      waitUntilExit().then(
-        () => resolve({ status: "cancelled" }),
-        () => resolve({ status: "cancelled" }),
-      );
-    });
+        />
+      ),
+      { onExit: { status: "cancelled" } },
+    );
 
     if (outcome.status === "cancelled") {
       this.log("Cancelled");
@@ -244,9 +239,16 @@ const META_AGENT_NAME = "agent-summoner";
 type NewAgentInput = {
   description: string;
   prompt: string;
-  model?: string;
+  model?: ModelName;
   tools?: string[];
 };
+
+/** Frontmatter shape of the compiled agent-summoner.md read at the matter() parse boundary. */
+const metaAgentFrontmatterSchema = z.object({
+  description: z.string().optional(),
+  tools: z.union([z.string(), z.array(z.string())]).optional(),
+  model: modelNameSchema.optional(),
+});
 
 type LoadMetaAgentOptions = {
   projectDir: string;
@@ -259,10 +261,11 @@ type InvokeMetaAgentOptions = {
 };
 
 function parseCompiledAgent(content: string): NewAgentInput {
-  const { data: frontmatter, content: body } = matter(content);
+  const { data, content: body } = matter(content);
+  const frontmatter = metaAgentFrontmatterSchema.parse(data);
   const tools =
     typeof frontmatter.tools === "string"
-      ? frontmatter.tools.split(",").map((t: string) => t.trim())
+      ? frontmatter.tools.split(",").map((t) => t.trim())
       : frontmatter.tools;
 
   return {
@@ -277,7 +280,10 @@ async function loadMetaAgent(options: LoadMetaAgentOptions): Promise<NewAgentInp
   const { projectDir, source } = options;
   const compiledFileName = `${META_AGENT_NAME}.md`;
 
-  const localAgentPath = path.join(projectDir, CLAUDE_DIR, "agents", compiledFileName);
+  const localAgentPath = path.join(
+    resolveInstallPaths(projectDir, "project").agentsDir,
+    compiledFileName,
+  );
   if (await fileExists(localAgentPath)) {
     return parseCompiledAgent(await readFile(localAgentPath));
   }
@@ -287,7 +293,7 @@ async function loadMetaAgent(options: LoadMetaAgentOptions): Promise<NewAgentInp
     const remoteAgentPath = path.join(
       agentPaths.sourcePath,
       CLAUDE_DIR,
-      "agents",
+      STANDARD_DIRS.AGENTS,
       compiledFileName,
     );
     if (await fileExists(remoteAgentPath)) {

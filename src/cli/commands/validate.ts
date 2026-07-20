@@ -20,7 +20,8 @@ import { formatZodErrors } from "../lib/schema-validator.js";
 import { validateSkillMetadata } from "../lib/schemas.js";
 import { PLUGIN_MANIFEST_DIR, STANDARD_FILES } from "../consts.js";
 import type { ValidationResult } from "../types/index.js";
-import { directoryExists, fileExists, glob, listDirectories, readFile } from "../utils/fs.js";
+import { directoryExists, fileExists, listDirectories, readFile } from "../utils/fs.js";
+import { listAgentMdFiles } from "../lib/agents/index.js";
 
 const COL_NAME_WIDTH = 30;
 const COL_URL_WIDTH = 40;
@@ -236,7 +237,7 @@ export default class Validate extends BaseCommand {
       return NO_ISSUES;
     }
 
-    const agentFiles = await findAgentFiles(agentsDir);
+    const agentFiles = await listAgentMdFiles(agentsDir);
     if (agentFiles.length === 0) {
       this.log(`  ${displayPath.padEnd(COL_PATH_WIDTH)} ${VALIDATE_STATUS.EMPTY}`);
       return NO_ISSUES;
@@ -268,10 +269,6 @@ function displayDir(absolutePath: string): string {
     return `~${path.sep}${path.relative(home, absolutePath)}`;
   }
   return absolutePath;
-}
-
-async function findAgentFiles(agentsDir: string): Promise<string[]> {
-  return glob("*.md", agentsDir);
 }
 
 async function validateInstalledSkill(skillDir: string): Promise<ValidationResult> {

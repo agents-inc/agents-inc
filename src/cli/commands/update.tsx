@@ -17,7 +17,7 @@ import {
   findSkillMatch,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
-import { CLI_INVOKE_COMMAND, LOCAL_SKILLS_PATH } from "../consts.js";
+import { CLI_INVOKE_COMMAND, LOCAL_SKILLS_PATH, SOURCE_SRC_DIR } from "../consts.js";
 import {
   ERROR_MESSAGES,
   SUCCESS_MESSAGES,
@@ -28,6 +28,7 @@ import { Confirm } from "../components/common/confirm.js";
 import { promptConfirm } from "../components/common/prompt-confirm.js";
 import { injectForkedFromMetadata, type SkillComparisonResult } from "../lib/skills/index.js";
 import type { SourceLoadResult } from "../lib/loading/source-loader.js";
+import type { AgentName, SkillId } from "../types/index.js";
 
 type UpdateConfirmProps = {
   onConfirm: () => void;
@@ -50,7 +51,7 @@ type UpdateContext = {
   homeDir: string;
   sourceResult: SourceLoadResult;
   allResults: SkillComparisonResult[];
-  skillBaseDir: Map<string, string>;
+  skillBaseDir: Map<SkillId, string>;
 };
 
 export default class Update extends BaseCommand {
@@ -142,7 +143,7 @@ export default class Update extends BaseCommand {
     );
 
     // Later entries overwrite earlier ones, so project wins on duplicate ids.
-    const skillBaseDir = new Map<string, string>([
+    const skillBaseDir = new Map<SkillId, string>([
       ...comparison.globalResults.map((r) => [r.id, homeDir] as const),
       ...comparison.projectResults.map((r) => [r.id, projectDir] as const),
     ]);
@@ -274,7 +275,7 @@ export default class Update extends BaseCommand {
   private async recompileAfterUpdate(
     updateResult: UpdateLocalSkillsResult,
     context: UpdateContext,
-  ): Promise<string[]> {
+  ): Promise<AgentName[]> {
     if (updateResult.updated.length === 0) return [];
 
     this.log("");
@@ -315,7 +316,7 @@ export default class Update extends BaseCommand {
 
   private printCompletionSummary(
     updateResult: UpdateLocalSkillsResult,
-    recompiledAgents: string[],
+    recompiledAgents: AgentName[],
   ): void {
     this.log("");
     if (updateResult.failed.length === 0) {
@@ -338,8 +339,7 @@ export default class Update extends BaseCommand {
 }
 
 type SkillUpdateResult = {
-  id: string;
-  success: boolean;
+  id: SkillId;
   newHash: string | null;
   error?: string;
 };
@@ -352,7 +352,7 @@ type UpdateLocalSkillsResult = {
 type UpdateLocalSkillsOptions = {
   skills: SkillComparisonResult[];
   sourceResult: SourceLoadResult;
-  skillBaseDir: Map<string, string>;
+  skillBaseDir: Map<SkillId, string>;
   /** Called before each skill update starts. Use for progress logging. */
   onProgress?: (skillId: string) => void;
 };
@@ -375,7 +375,6 @@ async function updateLocalSkills(
     if (!skill.sourcePath || !skill.sourceHash) {
       failed.push({
         id: skill.id,
-        success: false,
         newHash: null,
         error: "No source path available",
       });
@@ -385,14 +384,14 @@ async function updateLocalSkills(
     const baseDir = skillBaseDir.get(skill.id) ?? process.cwd();
     const localSkillsPath = path.join(baseDir, LOCAL_SKILLS_PATH);
     const destPath = path.join(localSkillsPath, skill.dirName);
-    const srcPath = path.join(sourceResult.sourcePath, "src", skill.sourcePath);
+    const srcPath = path.join(sourceResult.sourcePath, SOURCE_SRC_DIR, skill.sourcePath);
 
     try {
       await copy(srcPath, destPath);
       await injectForkedFromMetadata(destPath, skill.id, skill.sourceHash);
-      updated.push({ id: skill.id, success: true, newHash: skill.sourceHash });
+      updated.push({ id: skill.id, newHash: skill.sourceHash });
     } catch (error) {
-      failed.push({ id: skill.id, success: false, newHash: null, error: getErrorMessage(error) });
+      failed.push({ id: skill.id, newHash: null, error: getErrorMessage(error) });
     }
   }
 

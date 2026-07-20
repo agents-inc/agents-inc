@@ -3,17 +3,15 @@ import path from "path";
 
 import { BaseCommand } from "../../base-command";
 import { setVerbose } from "../../utils/logger";
-import { getErrorMessage } from "../../utils/errors";
-import { fileExists, listDirectories, readFile, remove } from "../../utils/fs";
-import { DIRS, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE, PLUGINS_DIST_PATH } from "../../consts";
+import { listDirectories, remove } from "../../utils/fs";
+import { DIRS, PLUGINS_DIST_PATH } from "../../consts";
 import {
   compileAllSkillPlugins,
   compileSkillPlugin,
   printCompilationSummary,
 } from "../../lib/skills";
 import { compileAllAgentPlugins, printAgentCompilationSummary } from "../../lib/agents";
-import { pluginManifestSchema } from "../../lib/schemas";
-import type { PluginManifest } from "../../types";
+import { readPluginManifest } from "../../lib/plugins";
 
 export default class BuildPlugins extends BaseCommand {
   static summary = "Build skills and agents into standalone plugins";
@@ -184,28 +182,12 @@ export default class BuildPlugins extends BaseCommand {
       if (expectedSkillPlugins.has(dirName)) continue;
 
       const pluginDir = path.join(outputDir, dirName);
-      const manifest = await this.readPluginManifest(pluginDir);
+      const manifest = await readPluginManifest(pluginDir);
       if (!manifest) continue;
       if (manifest.agents !== undefined) continue;
 
       await remove(pluginDir);
       this.log(`  Pruned stale plugin: ${dirName}`);
-    }
-  }
-
-  private async readPluginManifest(pluginDir: string): Promise<PluginManifest | null> {
-    const manifestPath = path.join(pluginDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
-    if (!(await fileExists(manifestPath))) return null;
-
-    try {
-      const raw: unknown = JSON.parse(await readFile(manifestPath));
-      const result = pluginManifestSchema.safeParse(raw);
-      return result.success ? result.data : null;
-    } catch (error) {
-      this.warn(
-        `Skipping unreadable plugin manifest at '${manifestPath}': ${getErrorMessage(error)}`,
-      );
-      return null;
     }
   }
 }

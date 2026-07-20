@@ -1,22 +1,17 @@
 import React from "react";
+import { z } from "zod";
 import { isRecord } from "../utils/type-guards.js";
 
 import { Text, Box } from "ink";
 import path from "path";
 
-import { CLAUDE_DIR, CLI_COLORS, MAX_CONFIG_FILE_SIZE } from "../consts";
+import { CLAUDE_DIR, CLI_COLORS, MAX_CONFIG_FILE_SIZE, STANDARD_FILES } from "../consts";
 import { fileExists, readFileSafe } from "../utils/fs";
 import { warn } from "../utils/logger";
 import { settingsFileSchema, warnUnknownFields } from "./schemas";
 
-type PermissionConfig = {
-  allow?: string[];
-  deny?: string[];
-};
-
-type SettingsFile = {
-  permissions?: PermissionConfig;
-};
+type SettingsFile = z.infer<typeof settingsFileSchema>;
+type PermissionConfig = NonNullable<SettingsFile["permissions"]>;
 
 // Known Claude CLI settings.json fields (permissions is ours; the rest are managed by Claude CLI)
 const EXPECTED_SETTINGS_KEYS = [
@@ -48,8 +43,8 @@ async function readSettingsPermissions(filePath: string): Promise<PermissionConf
 
 /** Permissions from the first settings file that defines them — settings.local.json wins. */
 async function loadPermissions(projectRoot: string): Promise<PermissionConfig | undefined> {
-  const settingsPath = path.join(projectRoot, CLAUDE_DIR, "settings.json");
-  const localSettingsPath = path.join(projectRoot, CLAUDE_DIR, "settings.local.json");
+  const settingsPath = path.join(projectRoot, CLAUDE_DIR, STANDARD_FILES.SETTINGS_JSON);
+  const localSettingsPath = path.join(projectRoot, CLAUDE_DIR, STANDARD_FILES.SETTINGS_LOCAL_JSON);
 
   for (const filePath of [localSettingsPath, settingsPath]) {
     const permissions = await readSettingsPermissions(filePath);

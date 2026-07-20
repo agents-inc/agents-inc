@@ -6,6 +6,7 @@ import { getErrorMessage } from "../../utils/errors.js";
 import {
   CLAUDE_SRC_DIR,
   CLI_INVOKE_COMMAND,
+  MARKETPLACE_JSON,
   PLUGIN_MANIFEST_DIR,
   marketplaceManifestPath,
   SKILL_CATEGORIES_PATH,
@@ -17,9 +18,8 @@ import {
   PLUGINS_DIST_PATH,
 } from "../../consts.js";
 import { EXIT_CODES } from "../../lib/exit-codes.js";
-import { assertDirOverwritable } from "../../lib/assert-dir-overwritable.js";
 import { validateKebabCaseName } from "../../lib/validate-kebab-name.js";
-import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
+import { FEATURE_FLAGS, featureDisabledError } from "../../lib/feature-flags.js";
 import { LOCAL_DEFAULTS } from "../../lib/metadata-keys.js";
 import { compileAllSkillPlugins } from "../../lib/skills/skill-plugin-compiler.js";
 import {
@@ -135,7 +135,7 @@ export default class NewMarketplace extends BaseCommand {
 
   async run(): Promise<void> {
     if (!FEATURE_FLAGS.NEW_MARKETPLACE_COMMAND) {
-      this.error("The `new marketplace` command is currently disabled while being improved.", {
+      this.error(featureDisabledError("new marketplace"), {
         exit: EXIT_CODES.ERROR,
       });
     }
@@ -190,14 +190,10 @@ export default class NewMarketplace extends BaseCommand {
     force: boolean,
   ): Promise<void> {
     if (useCurrentDir) return;
-    const result = await assertDirOverwritable(dir);
-    if (result.ok) return;
-    if (!force) {
-      this.error(`Directory already exists: ${dir}\nUse --force to overwrite.`, {
-        exit: EXIT_CODES.ERROR,
-      });
-    }
-    this.warn(`Overwriting existing directory at ${dir}`);
+    await this.ensureDirOverwritable(dir, force, {
+      exists: `Directory already exists: ${dir}`,
+      overwriting: `Overwriting existing directory at ${dir}`,
+    });
   }
 
   private async createMarketplaceFiles(
@@ -266,7 +262,7 @@ export default class NewMarketplace extends BaseCommand {
     this.logSuccess(`Created ${SKILL_CATEGORIES_PATH}`);
     this.logSuccess(`Created ${SKILL_RULES_PATH}`);
     this.logSuccess("Created README.md");
-    this.logSuccess("Created .claude-src/config.ts");
+    this.logSuccess(`Created ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
     this.log("");
   }
 
@@ -308,13 +304,13 @@ export default class NewMarketplace extends BaseCommand {
       });
       await writeMarketplace(marketplaceOutputPath, marketplace);
       this.logSuccess(
-        `Generated ${PLUGIN_MANIFEST_DIR}/marketplace.json with ${marketplace.plugins.length} plugins.`,
+        `Generated ${PLUGIN_MANIFEST_DIR}/${MARKETPLACE_JSON} with ${marketplace.plugins.length} plugins.`,
       );
 
       this.log("Generating config-types.ts...");
       const configTypesData = loadConfigTypesDataInBackground(marketplaceDir, marketplaceDir);
       await regenerateConfigTypes(marketplaceDir, configTypesData);
-      this.logSuccess("Generated .claude-src/config-types.ts");
+      this.logSuccess(`Generated ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TYPES_TS}`);
     } catch (error) {
       this.warn(`Build step failed: ${getErrorMessage(error)}`);
       this.warn(

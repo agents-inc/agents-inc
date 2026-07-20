@@ -7,12 +7,14 @@ import { BaseCommand } from "../base-command.js";
 import { DEFAULT_SKILLS_SUBDIR, STANDARD_FILES } from "../consts.js";
 import { resolveAllSources } from "../lib/configuration/index.js";
 import { fetchFromSource, parseFrontmatter } from "../lib/loading/index.js";
+import { IMPORT_DEFAULTS } from "../lib/metadata-keys.js";
 import { loadSource } from "../lib/operations/index.js";
 import type { SourceEntry } from "../types/config.js";
-import type { CategoryPath, ResolvedSkill, SkillSlug } from "../types/index.js";
+import type { ResolvedSkill, SkillSlug } from "../types/index.js";
 import { fileExists, listDirectories, readFile } from "../utils/fs.js";
 import { STATUS_MESSAGES } from "../utils/messages.js";
 import { truncateText } from "../utils/string.js";
+import { typedValues } from "../utils/typed-object.js";
 
 const MAX_DESCRIPTION_WIDTH = 50;
 const PRIMARY_SOURCE_NAME = "marketplace";
@@ -102,9 +104,10 @@ async function loadSkillsFromAllSources(projectDir: string): Promise<SearchableS
   const { sourceResult } = await loadSource({ projectDir });
   const { matrix } = sourceResult;
 
-  const primarySkills: SearchableSkill[] = Object.values(matrix.skills)
-    .filter((skill): skill is ResolvedSkill => skill !== undefined)
-    .map((skill) => ({ ...skill, sourceName: PRIMARY_SOURCE_NAME }));
+  const primarySkills: SearchableSkill[] = typedValues(matrix.skills).map((skill) => ({
+    ...skill,
+    sourceName: PRIMARY_SOURCE_NAME,
+  }));
 
   const { extras } = await resolveAllSources(projectDir);
 
@@ -153,7 +156,7 @@ async function loadExternalSkill(
     slug: skillDir as SkillSlug,
     displayName: skillDir,
     // Boundary cast: external source skills have no real category; "imported" is a display-only placeholder
-    category: "imported" as CategoryPath,
+    category: IMPORT_DEFAULTS.CATEGORY,
     author: `@${sourceName}`,
     conflictsWith: [],
     isRecommended: false,

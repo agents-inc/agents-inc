@@ -1,7 +1,7 @@
 import { Args, Flags } from "@oclif/core";
 import path from "path";
 import os from "os";
-import { BaseCommand } from "../base-command.js";
+import { BaseCommand, type SourceRefreshFlags } from "../base-command.js";
 import {
   copy,
   ensureDir,
@@ -27,6 +27,7 @@ import {
   resolveSource,
   loadProjectSourceConfig,
   generateConfigSource,
+  getProjectConfigPath,
 } from "../lib/configuration/index.js";
 import { copySkillsToLocalFlattened, type CopiedSkill } from "../lib/skills/index.js";
 import type { MergedSkillsMatrix, ProjectConfig, SkillId } from "../types/index.js";
@@ -160,7 +161,7 @@ export default class Eject extends BaseCommand {
 
   private async loadSourceIfNeeded(
     ejectType: EjectType,
-    flags: { source?: string; refresh: boolean },
+    flags: SourceRefreshFlags,
     projectDir: string,
   ): Promise<SourceLoadResult | undefined> {
     if (ejectType === "skills" || ejectType === "all") {
@@ -217,7 +218,7 @@ export default class Eject extends BaseCommand {
   ): Promise<void> {
     if (sourceFlag) {
       await saveSourceToProjectConfig(projectDir, sourceFlag, path.basename(projectDir));
-      this.log(`Source saved to .claude-src/config.ts`);
+      this.log(`Source saved to ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
     }
   }
 
@@ -232,7 +233,7 @@ export default class Eject extends BaseCommand {
       sourceResult,
     });
     if (configResult.created) {
-      this.logSuccess(`Created ${CLAUDE_SRC_DIR}/config.ts`);
+      this.logSuccess(`Created ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
     }
   }
 
@@ -513,7 +514,7 @@ async function ensureMinimalConfig(
 ): Promise<EnsureMinimalConfigResult> {
   const { projectDir, sourceFlag, sourceResult } = options;
 
-  const tsConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+  const tsConfigPath = getProjectConfigPath(projectDir);
 
   if (await fileExists(tsConfigPath)) {
     return { configPath: tsConfigPath, created: false };
