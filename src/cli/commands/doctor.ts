@@ -3,17 +3,17 @@ import path from "path";
 import { BaseCommand } from "../base-command";
 import { getErrorMessage } from "../utils/errors";
 import { EXIT_CODES } from "../lib/exit-codes";
-import { validateProjectConfig } from "../lib/configuration";
+import { effectivelyExcludedSkillIds, validateProjectConfig } from "../lib/configuration";
 import { loadSource, detectProject } from "../lib/operations";
 import { matrix } from "../lib/matrix/matrix-provider";
 import { discoverLocalSkills } from "../lib/skills";
 import { getStackSkillIds } from "../lib/stacks";
-import { filterExcludedEntries } from "../lib/agents";
-import { isHomeDirectory, installBaseDir } from "../lib/installation";
+import { filterExcludedEntries, listAgentMdFiles } from "../lib/agents";
+import { getVerifiedPluginInstallPaths, parseMarketplacePluginRef } from "../lib/plugins";
+import { isHomeDirectory, installBaseDir, resolveInstallPaths } from "../lib/installation";
 import type { MergedSkillsMatrix, ProjectConfig, SkillConfig } from "../types";
-import { fileExists, glob, directoryExists } from "../utils/fs";
+import { fileExists, directoryExists } from "../utils/fs";
 import {
-  CLAUDE_DIR,
   CLAUDE_SRC_DIR,
   CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
@@ -22,10 +22,10 @@ import {
   STANDARD_FILES,
   UI_SYMBOLS,
 } from "../consts";
-import { countBy } from "remeda";
+import { countBy, unique } from "remeda";
 import { setVerbose } from "../utils/logger";
 
-type CheckKind = "config" | "skills" | "agents" | "orphans" | "installed" | "source";
+type CheckKind = "config" | "skills" | "agents" | "orphans" | "installed" | "plugins" | "source";
 
 type CheckResult = {
   kind: CheckKind;
@@ -39,13 +39,16 @@ type ConfigCheckOutput = {
   config: ProjectConfig | null;
 };
 
+/** Project-relative path to the config file, shown in doctor messages. */
+const CONFIG_TS_REL = `${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`;
+
 function checkConfigValid(config: ProjectConfig | null): ConfigCheckOutput {
   if (!config) {
     return {
       result: {
         kind: "config",
         status: "fail",
-        message: `${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS} not found`,
+        message: `${CONFIG_TS_REL} not found`,
         details: [`Run '${CLI_INVOKE_COMMAND} init' to create a configuration`],
       },
       config: null,
@@ -59,7 +62,7 @@ function checkConfigValid(config: ProjectConfig | null): ConfigCheckOutput {
       result: {
         kind: "config",
         status: "fail",
-        message: `${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS} has errors`,
+        message: `${CONFIG_TS_REL} has errors`,
         details: validation.errors,
       },
       config: null,
@@ -71,7 +74,7 @@ function checkConfigValid(config: ProjectConfig | null): ConfigCheckOutput {
       result: {
         kind: "config",
         status: "warn",
-        message: `${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS} has warnings`,
+        message: `${CONFIG_TS_REL} has warnings`,
         details: validation.warnings,
       },
       config,
@@ -82,7 +85,7 @@ function checkConfigValid(config: ProjectConfig | null): ConfigCheckOutput {
     result: {
       kind: "config",
       status: "pass",
-      message: `${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS} is valid`,
+      message: `${CONFIG_TS_REL} is valid`,
     },
     config,
   };
@@ -93,14 +96,14 @@ async function checkSkillsResolved(
   matrix: MergedSkillsMatrix,
   projectDir: string,
 ): Promise<CheckResult> {
-  // Filter excluded skill IDs from the stack check
-  const activeIds = new Set(config.skills.filter((s) => !s.excluded).map((s) => s.id));
-  const excludedIds = new Set(
-    config.skills.filter((s) => s.excluded && !activeIds.has(s.id)).map((s) => s.id),
+  // config.ts declares skills both directly and through the stack. A global-only
+  // install has a populated skills array and no stack at all, so keying this check
+  // off the stack alone would report "No skills configured" for a real install.
+  const excludedIds = effectivelyExcludedSkillIds(config.skills);
+  const stackIds = config.stack ? getStackSkillIds(config.stack) : [];
+  const uniqueSkills = unique([...stackIds, ...config.skills.map((s) => s.id)]).filter(
+    (id) => !excludedIds.has(id),
   );
-  const uniqueSkills = config.stack
-    ? getStackSkillIds(config.stack).filter((id) => !excludedIds.has(id))
-    : [];
 
   if (uniqueSkills.length === 0) {
     return {
@@ -158,8 +161,8 @@ async function checkAgentsCompiled(
     };
   }
 
-  const projectAgentsDir = path.join(projectDir, CLAUDE_DIR, "agents");
-  const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, "agents");
+  const projectAgentsDir = resolveInstallPaths(projectDir, "project").agentsDir;
+  const globalAgentsDir = resolveInstallPaths(projectDir, "global").agentsDir;
   const agentChecks = await Promise.all(
     agents.map(async (agent) => {
       // Check scope-appropriate directory for the agent
@@ -187,12 +190,16 @@ async function checkAgentsCompiled(
 }
 
 async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promise<CheckResult> {
-  const projectAgentsDir = path.join(projectDir, CLAUDE_DIR, "agents");
-  const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, "agents");
+  const projectAgentsDir = resolveInstallPaths(projectDir, "project").agentsDir;
+  const globalAgentsDir = resolveInstallPaths(projectDir, "global").agentsDir;
+
+  // At home scope both scopes resolve to the same agents directory, so it is
+  // listed once and its files are matched against both scopes' known names.
+  const scopesShareAgentsDir = isHomeDirectory(projectDir);
 
   const [projectExists, globalExists] = await Promise.all([
     directoryExists(projectAgentsDir),
-    !isHomeDirectory(projectDir) ? directoryExists(globalAgentsDir) : false,
+    !scopesShareAgentsDir ? directoryExists(globalAgentsDir) : false,
   ]);
 
   if (!projectExists && !globalExists) {
@@ -203,8 +210,8 @@ async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promis
     };
   }
 
-  const projectMdFiles = projectExists ? await glob("*.md", projectAgentsDir) : [];
-  const globalMdFiles = globalExists ? await glob("*.md", globalAgentsDir) : [];
+  const projectMdFiles = projectExists ? await listAgentMdFiles(projectAgentsDir) : [];
+  const globalMdFiles = globalExists ? await listAgentMdFiles(globalAgentsDir) : [];
 
   // Project files: only active project-scoped agents should have .md files here
   const activeProjectAgents: Set<string> = new Set(
@@ -215,10 +222,14 @@ async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promis
     (config.agents ?? []).filter((a) => a.scope === "global").map((a) => a.name),
   );
 
+  const knownProjectDirAgents = scopesShareAgentsDir
+    ? new Set([...activeProjectAgents, ...knownGlobalAgents])
+    : activeProjectAgents;
+
   const orphanedFiles: string[] = [];
   for (const file of projectMdFiles) {
     const agentName = file.replace(/\.md$/, "");
-    if (!activeProjectAgents.has(agentName)) {
+    if (!knownProjectDirAgents.has(agentName)) {
       orphanedFiles.push(agentName);
     }
   }
@@ -282,6 +293,57 @@ async function checkSkillsInstalled(
     kind: "installed",
     status: "pass",
     message: `${ejectSkills.length}/${ejectSkills.length} eject-mode skills installed`,
+  };
+}
+
+/**
+ * Plugin-mode skills have no files under `.claude/skills/` — they live in the
+ * Claude plugin registry. Verifying them means asking the registry for the scope
+ * each skill was installed at, not looking on disk.
+ */
+async function checkPluginSkillsInstalled(
+  config: ProjectConfig,
+  projectDir: string,
+): Promise<CheckResult> {
+  const pluginSkills: SkillConfig[] = config.skills.filter((s) => s.source !== EJECT_SOURCE);
+
+  if (pluginSkills.length === 0) {
+    return {
+      kind: "plugins",
+      status: "pass",
+      message: "No plugin-mode skills configured",
+    };
+  }
+
+  const baseDirs = unique(pluginSkills.map((s) => installBaseDir(projectDir, s.scope)));
+  const missingPerBaseDir = await Promise.all(
+    baseDirs.map(async (baseDir) => {
+      const installedIds = new Set(
+        (await getVerifiedPluginInstallPaths(baseDir)).map((plugin) =>
+          parseMarketplacePluginRef(plugin.pluginKey),
+        ),
+      );
+      return pluginSkills
+        .filter((skill) => installBaseDir(projectDir, skill.scope) === baseDir)
+        .filter((skill) => !installedIds.has(skill.id))
+        .map((skill) => skill.id);
+    }),
+  );
+  const missingSkills = missingPerBaseDir.flat();
+
+  if (missingSkills.length > 0) {
+    return {
+      kind: "plugins",
+      status: "warn",
+      message: `${missingSkills.length} skill${missingSkills.length === 1 ? "" : "s"} not installed as plugins`,
+      details: missingSkills.map((s) => `- ${s} (no enabled plugin found)`),
+    };
+  }
+
+  return {
+    kind: "plugins",
+    status: "pass",
+    message: `${pluginSkills.length}/${pluginSkills.length} plugin-mode skills installed`,
   };
 }
 
@@ -374,7 +436,10 @@ const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string 
   {
     kind: "installed",
     status: "warn",
-    tip: `  Tip: Run '${CLI_INVOKE_COMMAND} compile' to reinstall missing skill files`,
+    // No command is named on purpose: 'eject skills --force' re-copies every skill in the
+    // source and always targets project scope, so it cannot repair a global-scoped skill
+    // and it litters a plugin-mode project with local skill directories.
+    tip: "  Tip: Re-eject the missing skills from the source to restore their files",
   },
 ];
 
@@ -472,9 +537,22 @@ export default class Doctor extends BaseCommand {
       : skippedResult("installed");
     this.logCheck("Skills Installed", installedResult);
 
+    const pluginsResult = filteredConfig
+      ? await safeCheck("plugins", () => checkPluginSkillsInstalled(filteredConfig, projectDir))
+      : skippedResult("plugins");
+    this.logCheck("Plugins Installed", pluginsResult);
+
     this.logCheck("Source Reachable", sourceResult);
 
-    return [configResult, skillsResult, agentsResult, orphansResult, installedResult, sourceResult];
+    return [
+      configResult,
+      skillsResult,
+      agentsResult,
+      orphansResult,
+      installedResult,
+      pluginsResult,
+      sourceResult,
+    ];
   }
 
   private logCheck(name: string, result: CheckResult): void {
