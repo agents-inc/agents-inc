@@ -7,6 +7,18 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.143.0] - 2026-07-20
+
+**Data-integrity and correctness pass across install, config generation and the wizard**
+
+- Fixed two paths that deleted a globally-installed skill from `$HOME` while the global config still declared it installed: the `f` filter hotkey bypassing the global-skill lock (D-242), and deselect+re-select discarding a skill's persisted scope and source (D-243)
+- Fixed `eject → plugin` migration deleting ejected skill copies before checking a marketplace existed, and per-skill install failures leaving orphan config entries (D-218, D-252)
+- Fixed generated `config-types.ts` collapsing `SkillId`/`AgentName`/`Domain`/`Category` to `string`, silently disabling type checking in your `config.ts` (D-244)
+- Fixed the marketplace name recorded for local sources, and a global `uninstall --all` that silently left every plugin registered before deleting the config recording them (D-245, D-246, D-247)
+- Fixed a project-context source switch that did the work but never recorded it, a cancelled `init` making the setup wizard permanently unreachable, `cc init` not materialising the project, and an install report naming the wrong directories (D-248, D-249, D-250, D-251)
+
+See [changelogs/0.143.0.md](./changelogs/0.143.0.md) for full details.
+
 ## [0.142.5] - 2026-07-19
 
 **Wizard scope-hotkey reliability fix + E2E stability**
