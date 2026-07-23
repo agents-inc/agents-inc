@@ -6,7 +6,7 @@ related:
   - reference/wizard/state-transitions.md
   - reference/wizard/component-patterns.md
   - reference/wizard/flow.md
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # Store / State Map

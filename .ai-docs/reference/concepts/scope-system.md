@@ -6,9 +6,16 @@ keywords:
     scope,
     project,
     global,
+    SkillScope,
     resolveInstallPaths,
+    installBaseDir,
+    isHomeDirectory,
     writeScopedConfigs,
     splitConfigByScope,
+    scope-predicates,
+    isActiveAt,
+    isProjectOwned,
+    isGlobalTombstone,
     dual-scope,
     lock-icon,
     isEditingFromGlobalScope,
@@ -22,13 +29,14 @@ related:
   - reference/config/scope-split.md
   - reference/wizard/component-patterns.md
   - reference/concepts/tombstone-pattern.md
-last_validated: 2026-04-21
+  - reference/concepts/guard-pattern.md
+last_validated: 2026-07-23
 ---
 
 # Scope System (Project vs Global)
 
-**Last Updated:** 2026-04-21
-**Last Validated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 > **Cross-cutting concept.** Consolidates scope documentation from: `architecture-overview.md` (Section 11), `wizard-flow.md` (guards), `state-transitions.md` (scope actions), `configuration.md` (scope-aware splitting), `component-patterns.md` (dual-scope badges, lock icons).
 
@@ -45,25 +53,31 @@ Skills and agents can exist at two scopes: `"project"` and `"global"`. This affe
 
 ## Path Resolution
 
-**Function:** `resolveInstallPaths(projectDir, scope)` in `src/cli/lib/installation/local-installer.ts`
+**Function:** `resolveInstallPaths(projectDir, scope)` in `src/cli/lib/installation/install-base-dir.ts`
 
-Branches on `scope`: uses `os.homedir()` for `"global"`, `projectDir` for `"project"`. Defaults to `"project"` when scope is omitted. `os.homedir()` is called at runtime (not the `GLOBAL_INSTALL_ROOT` import-time constant) so the path agrees with mocked home directories in tests.
+Delegates to `installBaseDir(projectDir, scope)` (same file): uses `os.homedir()` for `"global"`, `projectDir` for `"project"`. Defaults to `"project"` when `scope` is omitted. `os.homedir()` is called at runtime (not the `GLOBAL_INSTALL_ROOT` import-time constant in `consts.ts`) so the path agrees with mocked home directories in tests.
 
-**Returned paths** (`InstallPaths`):
+**Returned paths** (`InstallPaths` type, `install-base-dir.ts`):
 
 - `skillsDir` = `{base}/{LOCAL_SKILLS_PATH}`
-- `agentsDir` = `{base}/{CLAUDE_DIR}/agents`
-- `configPath` = `{base}/{CLAUDE_SRC_DIR}/{STANDARD_FILES.CONFIG_TS}`
+- `agentsDir` = `{base}/{CLAUDE_DIR}/{STANDARD_DIRS.AGENTS}`
+- `configPath` = `getProjectConfigPath(base)` = `{base}/{CLAUDE_SRC_DIR}/{STANDARD_FILES.CONFIG_TS}`
 
 ## Type Definitions
+
+**`SkillScope`** (`src/cli/types/config.ts`) is the named union both configs use:
+
+```typescript
+type SkillScope = "project" | "global";
+```
 
 **`SkillConfig`** (`src/cli/types/config.ts`):
 
 ```typescript
 type SkillConfig = {
   id: SkillId;
-  scope: "project" | "global";
-  source: string; // "eject" | marketplace name
+  scope: SkillScope;
+  source: string; // "eject" | marketplace name (e.g., "agents-inc")
   excluded?: boolean;
 };
 ```
@@ -73,16 +87,47 @@ type SkillConfig = {
 ```typescript
 type AgentScopeConfig = {
   name: AgentName;
-  scope: "project" | "global";
+  scope: SkillScope;
   excluded?: boolean;
 };
 ```
+
+## Scope Predicates
+
+**Module:** `src/cli/lib/configuration/scope-predicates.ts` — the source of truth for classifying scoped config entries. Partitioning, tombstone routing, and prior-vs-next delta computation all funnel through these pure predicates instead of re-deriving `scope`/`excluded` comparisons inline.
+
+**`ScopedEntry`** is the shared shape every predicate accepts (both `SkillConfig` and `AgentScopeConfig` structurally satisfy it):
+
+```typescript
+type ScopedEntry = { scope?: SkillScope; excluded?: boolean };
+```
+
+| Export                        | Signature                                                                          | Meaning                                                                                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `isActiveAt`                  | `(entry: ScopedEntry, scope: SkillScope) => boolean`                               | `entry.scope === scope && !entry.excluded` — active (non-excluded) entry at the given scope.                                            |
+| `isGlobalTombstone`           | `(entry: ScopedEntry) => boolean`                                                  | `scope === "global"` AND `excluded` — a project-level directive masking a shared global install.                                        |
+| `isProjectOwned`              | `(entry: ScopedEntry) => boolean`                                                  | Project-scoped OR a global tombstone. Inherited global-active entries belong to the global config, not the project.                     |
+| `activeProjectAgentNames`     | `(agents: readonly AgentScopeConfig[]) => AgentName[]`                             | Names of agents active at `"project"` scope.                                                                                            |
+| `activeSkillScopeMap`         | `(skills: readonly SkillConfig[] \| undefined) => Map<SkillId, SkillScope>`        | Scope of each non-excluded skill, keyed by id.                                                                                          |
+| `activeAgentScopeMap`         | `(agents: readonly AgentScopeConfig[] \| undefined) => Map<AgentName, SkillScope>` | Scope of each non-excluded agent, keyed by name.                                                                                        |
+| `effectivelyExcludedSkillIds` | `(skills: readonly SkillConfig[]) => Set<SkillId>`                                 | Ids with an excluded entry that no same-id active entry rescues (an excluded-global + active-project pair is NOT effectively excluded). |
+
+**Consumers:**
+
+| File                     | Predicates used                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `config-generator.ts`    | `isActiveAt` (drives the `splitConfigByScope` partition), `activeAgentScopeMap`, `effectivelyExcludedSkillIds`                       |
+| `local-installer.ts`     | `isActiveAt`, `isGlobalTombstone`, `activeSkillScopeMap`, `activeAgentScopeMap`, `effectivelyExcludedSkillIds` (prior-vs-next delta) |
+| `config-merger.ts`       | `isGlobalTombstone`, `isProjectOwned`, `ScopedEntry`                                                                                 |
+| `config-types-writer.ts` | `activeProjectAgentNames`                                                                                                            |
+
+Re-exported from `src/cli/lib/configuration/index.ts`.
 
 ## Config Splitting
 
 **Function:** `splitConfigByScope()` in `src/cli/lib/configuration/config-generator.ts`
 
-Splits a `ProjectConfig` into global and project partitions by skill/agent scope. Returns `SplitConfigResult` (`{ global: ProjectConfig; project: ProjectConfig }`). Tombstones (`scope: "global", excluded: true`) route to the PROJECT split because they are project-level directives suppressing a shared global install.
+Splits a `ProjectConfig` into global and project partitions by skill/agent scope. Partitions each of `config.skills` and `config.agents` with `isActiveAt(entry, "global")` from [Scope Predicates](#scope-predicates): active-global entries form the global split, everything else (project-scoped entries and global tombstones) forms the project split. Returns `SplitConfigResult` (`{ global: ProjectConfig; project: ProjectConfig }`). Tombstones (`scope: "global", excluded: true`) route to the PROJECT split because they are project-level directives suppressing a shared global install.
 
 > **Detailed partition rules, stack routing, and delta pipeline:** See [config/scope-split.md](../config/scope-split.md).
 
@@ -90,11 +135,11 @@ Splits a `ProjectConfig` into global and project partitions by skill/agent scope
 
 Writes:
 
-1. Global config to `~/.claude-src/config.ts` (standalone)
+1. Global config to `~/.claude-src/config.ts` (standalone) — merged into any existing global config via `mergeGlobalConfigs()`, then written only when `resolveEffectiveGlobalConfig()` reports a change
 2. Project config to `{projectDir}/.claude-src/config.ts` (self-contained snapshot via `generateProjectConfigWithInlinedGlobal()` -- both global and project entries inlined, no import/spread)
-3. Config-types files: both global and project get standalone types (self-contained)
+3. Config-types files: the global config-types is standalone (`writeStandaloneConfigTypes`); the project config-types is written via `regenerateConfigTypes`, whose global-aware branch imports `GlobalSkillId`/`GlobalAgentName` from the global types and extends them with project-only additions when a global install exists (falls back to standalone otherwise)
 
-When installing from the home directory (`fs.realpathSync(projectDir) === fs.realpathSync(homeDir)`), scope splitting is skipped: a single standalone global config is written via `writeConfigFile` + `writeStandaloneConfigTypes`, and changes propagate to all registered projects via `propagateGlobalChangesToProjects`.
+When installing from the home directory (detected via `isHomeDirectory(projectDir)` in `src/cli/lib/installation/is-home-directory.ts`, which compares `fs.realpathSync` of the dir and `os.homedir()`), scope splitting is skipped: a single standalone global config is written via `writeConfigFile` + `writeStandaloneConfigTypes`, and changes propagate to all registered projects via `propagateGlobalChangesToProjects`.
 
 ## Config Writer Scope Handling
 
@@ -114,29 +159,30 @@ Guards prevent project-scope edits from modifying globally-installed skills/agen
 **Key state fields:**
 
 - `isEditingFromGlobalScope` (boolean) -- When true, `toggleSkillScope`/`toggleAgentScope` short-circuit to a no-op (not a toast). Set during wizard hydration.
-- `isInitMode` (boolean, default `false`) -- Distinguishes init wizard (first-time setup, no restrictions) from edit wizard (existing installation, global items locked). Set by `hydrateWizardStore` to `!initialStep` (init passes no `initialStep`; edit passes `"build"`).
+- `isInitMode` (boolean, default `false`) -- Distinguishes init wizard (first-time setup, no restrictions) from edit wizard (existing installation, global items locked). `hydrateWizardStore` dispatches to `hydrateForInit` (sets `isInitMode: true`) when no `initialStep` is passed, or `hydrateForEdit` (sets `isInitMode: false`) when one is. Init passes no `initialStep`; edit passes `"build"`.
 
 **How `isEditingFromGlobalScope` is computed:**
 
-- `init.tsx`: `fs.realpathSync(projectDir) === fs.realpathSync(GLOBAL_INSTALL_ROOT)` — resolves symlinks on both sides before comparing.
-- `edit.tsx`: `cwd === GLOBAL_INSTALL_ROOT` — plain string equality (no `realpathSync`). Asymmetric with init; if `cwd` is a symlinked home directory, edit will not detect global-scope editing.
-- `GLOBAL_INSTALL_ROOT = os.homedir()` from `src/cli/consts.ts` (evaluated at import time).
+- Both `init.tsx` and `edit.tsx` now use the shared `isHomeDirectory(dir)` helper (`src/cli/lib/installation/is-home-directory.ts`), which compares `fs.realpathSync(dir)` against `fs.realpathSync(os.homedir())` (falling back to plain string equality when a path cannot be resolved). This resolves symlinks on both sides, so the earlier init-vs-edit asymmetry is gone.
+  - `init.tsx`: `isEditingFromGlobalScope: isHomeDirectory(projectDir)`.
+  - `edit.tsx`: `isEditingFromGlobalScope: isHomeDirectory(cwd)`.
+- `GLOBAL_INSTALL_ROOT = os.homedir()` from `src/cli/consts.ts` is evaluated at import time; runtime callers use `os.homedir()` directly (or `isHomeDirectory`) so test home-dir mocks apply.
 
 **Actions with guards:**
 
-| Action                       | Guard Behavior                                                                                                           |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `toggleTechnology()`         | Toast if skill is installed globally. Also toasts if exclusive swap would deselect a globally-installed skill.           |
-| `toggleSkillScope()`         | No-op if `isEditingFromGlobalScope`. Toast if project eject to global and global eject already installed (no tombstone). |
-| `toggleAgent()`              | Toast if agent is installed globally (not in global edit or init mode).                                                  |
-| `toggleAgentScope()`         | No-op if `isEditingFromGlobalScope`.                                                                                     |
-| `toggleFilterIncompatible()` | Skips skills with `excluded` flag when finding incompatible web skills (protects tombstoned globals).                    |
+| Action                       | Guard Behavior                                                                                                                                                                                                                               |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toggleTechnology()`         | Toast if skill is installed globally (snapshot active global, OR a snapshot tombstone paired with a live active-global entry on the `isSelected` deselect path). Also toasts if an exclusive swap would deselect a globally-installed skill. |
+| `toggleSkillScope()`         | No-op if `isEditingFromGlobalScope`. Toast `Installed at both scopes` if an untouched persisted `[P][G]` pair (snapshot holds the global tombstone). Toast if project eject to global and global eject already installed (no tombstone).     |
+| `toggleAgent()`              | Toast if agent is installed globally (same snapshot/tombstone shape as `toggleTechnology`), unless global edit or init mode.                                                                                                                 |
+| `toggleAgentScope()`         | No-op if `isEditingFromGlobalScope`. Toast `Installed at both scopes` for an untouched persisted `[P][G]` agent pair.                                                                                                                        |
+| `toggleFilterIncompatible()` | Skips skills with `excluded` flag when finding incompatible web skills (protects tombstoned globals); refuses the whole toggle with a toast if any target is a locked global.                                                                |
 
 > **Detailed documentation:** See [concepts/guard-pattern.md](./guard-pattern.md) for the full unified guard reference.
 
 ### Scope Toggle Eject Guard (D-199)
 
-`toggleSkillScope` in `wizard-store.ts` blocks project-eject to global-eject promotion when a non-excluded global eject entry already exists in `installedSkillConfigs`. However, if the current `skillConfigs` already contains an excluded tombstone for that skill ID, the guard allows the toggle (undo path).
+`toggleSkillScope` in `wizard-store.ts` blocks project-eject to global-eject promotion when a non-excluded global eject entry already exists in `installedSkillConfigs` (source compared against the `EJECT_SOURCE` constant). However, if the current `skillConfigs` already contains an excluded tombstone for that skill ID, the guard allows the toggle (undo path). Note the persisted-dual-scope-pair guard (toast `Installed at both scopes`) runs BEFORE this eject-collision check, so an untouched reopened `[P][G]` pair never reaches the eject-collision path — see [concepts/guard-pattern.md](./guard-pattern.md).
 
 > **Detailed documentation:** See [concepts/tombstone-pattern.md](./tombstone-pattern.md) for full tombstone lifecycle.
 
@@ -149,10 +195,12 @@ Guards prevent project-scope edits from modifying globally-installed skills/agen
 
 **Tombstone management on scope toggle:**
 
-- Moving global-installed skill/agent to project (G→P): adds excluded global entry (tombstone). Gated on `wasInstalledGlobally` (derived from `installedSkillConfigs`/`installedAgentConfigs`) so fresh init toggles don't create spurious tombstones.
-- Moving back to global (P→G): unconditionally removes any excluded global tombstone for that id/name. Unconditional removal (not gated on `wasInstalledGlobally`) is load-bearing for the D-224 undo path — `installedSkillConfigs`-derived `wasInstalledGlobally` cannot see a tombstone created earlier in the same session because its `!sc.excluded` filter hides it.
+- Moving global-installed skill/agent to project (G→P): adds excluded global entry (tombstone). Gated on `wasInstalledGlobally` (derived from `installedSkillConfigs`/`installedAgentConfigs`) so fresh init toggles don't create spurious tombstones. Since the 2026-07-18 hydration-snapshot fix, `wasInstalledGlobally` counts a **global tombstone** as "installed globally" (the `.some((sc) => sc.id === skillId && sc.scope === "global")` predicate has no `!excluded` filter) — a tombstone means the skill IS installed globally and this project overrides it. This lets an in-session collapse→`s` restore a genuine `[P][G]` pair. The skill and agent paths now match on this point.
+- Moving back to global (P→G): unconditionally removes any excluded global tombstone for that id/name. The rationale is the invariant below — an active entry at global scope supersedes any tombstone at the same scope. Unconditional removal (not gated on `wasInstalledGlobally`) is load-bearing for the D-224 undo path.
 
 **Invariant:** no active entry and tombstone coexist at the same `(id, scope)` — an active entry at global scope always supersedes any tombstone at the same scope.
+
+> **Known limitation (D-227, open):** preselection can transiently violate this same-scope invariant. When the ONLY saved entry for a name/id is a global-scope excluded tombstone and preselection then re-includes it, `buildSkillConfigForId`/`buildAgentConfigForName` emits a fresh `{ scope: "global" }` active entry while `collectTombstones` also preserves the `{ scope: "global", excluded: true }` tombstone — a same-scope active + tombstone pair. `config-merger.ts`'s compound key (`${id}:${scope}${excluded ? ":excluded" : ""}`) keys them distinctly, so both survive to `config.ts`. Tracked in `.ai-docs/agent-findings/2026-07-17-d227-same-scope-active-tombstone-duplicate.md`.
 
 **Scope of installed-config lookups:** `wasInstalledGlobally` reads `installedSkillConfigs`/`installedAgentConfigs` (the persisted prior state), NOT `skillConfigs`/`agentConfigs` (the current wizard state). Tombstone presence in `skillConfigs` is checked separately.
 
@@ -163,11 +211,11 @@ Guards prevent project-scope edits from modifying globally-installed skills/agen
 Both the build step (CategoryGrid) and agent step (StepAgents) show dual-scope badges when a scope toggle creates a tombstone:
 
 - **CategoryGrid** (`category-grid.tsx`): `CategoryOption.secondaryScope` renders a second `[G]`/`[P]` badge next to the primary scope badge.
-- **StepAgents** (`step-agents.tsx`): Computes `secondaryScope` by checking for an excluded entry in `agentConfigs` with a different scope than the active entry. Renders `[G]`/`[P]` badge after the primary scope badge.
+- **StepAgents** (`step-agents.tsx`): Derives the primary + secondary badges via `deriveScopeBadges(agentConfig, excludedConfig)` and `formatScopeTag()` from `src/cli/lib/wizard/scope-diff.ts` — a tombstone at the OTHER scope renders as a secondary `[G]`/`[P]` badge.
 
-### Lock Icon for Globally Installed Skills (D-189)
+### Lock Icon for Read-Only Skills (D-189)
 
-In the build step, `SkillTag` in `category-grid.tsx` appends `UI_SYMBOLS.LOCK` after the display name when `option.installed && option.scope === "global"`. This visually marks skills that cannot be toggled from project scope.
+The lock icon lives in the **Sources step**, not the build step. `source-grid.tsx` prefixes `UI_SYMBOLS.LOCK` on any `SourceRow` whose `readOnly` flag is set. `buildSourceRows()` in `wizard-store.ts` sets `readOnly: true` on a globally-installed skill's source row when editing from project scope (`!isEditingFromGlobalScope && installedGlobalConfig`) and on excluded-global tombstone rows. The build-step `SkillTag` (`category-grid.tsx`) no longer renders a lock — it shows scope badges (`G`/`P`) only.
 
 ### Scope Labels in Change Summary
 
@@ -183,7 +231,7 @@ When editing from project scope, globally-installed skills/agents appear in the 
 
 - They are loaded into `installedSkillConfigs`/`installedAgentConfigs` during hydration (from `projectConfig?.skills`/`projectConfig?.agents`, which includes inlined globals when the project config is generated with `generateProjectConfigWithInlinedGlobal()`).
 - Project-scope edits cannot modify them — guard checks route all mutations through `toggleTechnology` / `toggleAgent` / `toggleSkillScope` / `toggleAgentScope`, which either toast or no-op when `isEditingFromGlobalScope === false` and `isInitMode === false`.
-- The lock icon (`UI_SYMBOLS.LOCK`) in `SkillTag` and the `readOnly` flag on info-panel entries visually mark the read-only state.
+- The `readOnly` flag on `SourceRow` (rendered with `UI_SYMBOLS.LOCK` in `source-grid.tsx`) visually marks the read-only state on the Sources step.
 
 Global skills are merged with project-local skills during source loading — see `source-loader.ts` and `compile.ts` for the merge pattern.
 

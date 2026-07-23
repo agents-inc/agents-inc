@@ -14,13 +14,13 @@ related:
   - reference/types/core-types.md
   - reference/features/operations-layer.md
   - reference/commands/edit.md
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # Operations Layer Types
 
-**Last Updated:** 2026-04-21
-**Last Validated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 > **Split from:** `reference/type-system.md`. See also: [core-types.md](./core-types.md), [zod-schemas.md](./zod-schemas.md).
 
@@ -43,6 +43,7 @@ The operations layer defines focused result types for each operation, re-exporte
 | `DiscoveredSkills`       | `operations/skills/discover-skills.ts`           | Result of skill discovery (local + marketplace) |
 | `ScopedSkillDir`         | `operations/skills/collect-scoped-skill-dirs.ts` | Single scoped skill directory entry             |
 | `ScopedSkillDirsResult`  | `operations/skills/collect-scoped-skill-dirs.ts` | Collected scoped dirs with counts               |
+| `CopyLocalSkillsOptions` | `operations/skills/copy-local-skills.ts`         | Options for copying local skills                |
 | `SkillCopyResult`        | `operations/skills/copy-local-skills.ts`         | Result of copying local skills                  |
 | `SkillComparisonResults` | `operations/skills/compare-skills.ts`            | Comparison results (added/removed/changed)      |
 | `SkillMatchResult`       | `operations/skills/find-skill-match.ts`          | Result of matching a skill to a source          |
@@ -63,7 +64,7 @@ The operations layer defines focused result types for each operation, re-exporte
 
 ## Key Type Shapes
 
-Shapes verified against source 2026-04-21. No line numbers (names only, per project convention).
+Shapes verified against source 2026-07-23. No line numbers (names only, per project convention).
 
 ### `PluginInstallResult` (D-229 contract)
 
@@ -120,13 +121,12 @@ type CompileAgentsOptions = {
   skills?: SkillDefinitionMap;
   agentScopeMap?: Map<AgentName, "project" | "global">;
   agents?: AgentName[];
-  scopeFilter?: "project" | "global"; // loads config and filters by scope
+  scopeFilter?: "project" | "global"; // loads config and filters agents by scope
   outputDir?: string;
-  installMode?: InstallMode; // "eject" | "plugin" | "mixed" — NOT deprecated
 };
 ```
 
-`installMode` is alive post-D-217. Derived via `deriveInstallMode(skills)` in `installation.ts` and threaded through `recompileAgents`. D-217 changed the plugin skill-reference _format_ (per-skill source-based), not the `InstallMode` type.
+There is no `installMode` field on `CompileAgentsOptions` (nor on `RecompileAgentsOptions` in `agent-recompiler.ts`) — the compile path no longer threads an install mode. The `InstallMode` type (`"eject" | "plugin" | "mixed"`) still exists in `matrix.ts` and is derived on demand via `deriveInstallMode(skills)` in `installation.ts`; D-217 made the plugin skill-reference _format_ per-skill source-based (`SkillReference.source`), which removed the need to pass a whole-project `installMode` into compilation.
 
 ### `LoadedSource`
 
@@ -147,6 +147,21 @@ type LoadSourceOptions = {
   captureStartupMessages?: boolean; // wraps load in buffer mode for Wizard <Static>
 };
 ```
+
+### `ConfigWriteOptions`
+
+```typescript
+type ConfigWriteOptions = {
+  wizardResult: WizardResultV2;
+  sourceResult: SourceLoadResult;
+  projectDir: string;
+  sourceFlag?: string;
+  agents?: Record<AgentName, AgentDefinition>; // pre-loaded; loads from CLI + source when omitted
+  authoritativeScope?: AuthoritativeScope; // D-233 Scenario C
+};
+```
+
+`authoritativeScope` (type `AuthoritativeScope = "all" | "owned"`, from `src/cli/lib/configuration/config-merger.ts`) governs how `cc edit`'s new config treats absent entries: `"all"` (global edit) drops any deselected entry, `"owned"` (project edit) drops deselected project-owned entries only, `undefined` (init) keeps the additive union-preserve merge. Threaded into `buildAndMergeConfig()` by `writeProjectConfig`.
 
 ### `ConfigWriteResult`
 
@@ -210,6 +225,18 @@ type AgentDefs = {
 };
 ```
 
+### `CopyLocalSkillsOptions`
+
+```typescript
+type CopyLocalSkillsOptions = {
+  // eject installer only — before copying, delete an already-present local skill
+  // whose config names a non-eject source so a stale ejected copy is replaced
+  deleteAlternateSourceSkills?: boolean;
+};
+```
+
+Passed to `copyLocalSkills(skills, projectDir, sourceResult, options)`. Defaults `deleteAlternateSourceSkills` to `false`; `init`/`edit` leave it off, only the eject installer sets it. Applied per-scope inside `copyScopedLocalSkills`, which calls `deleteLocalSkill` for any skill whose `source !== EJECT_SOURCE` before re-copying.
+
 ### `SkillCopyResult`
 
 ```typescript
@@ -268,16 +295,36 @@ Types and functions exported from `edit.tsx` for config change detection and plu
 ### ConfigChanges (`src/cli/commands/edit.tsx`)
 
 ```typescript
+type ScopeChange = { from: "project" | "global"; to: "project" | "global" };
+
 type ConfigChanges = {
   addedSkills: SkillId[];
   removedSkills: SkillId[];
   addedAgents: AgentName[];
   removedAgents: AgentName[];
   sourceChanges: Map<SkillId, { from: string; to: string }>;
-  scopeChanges: Map<SkillId, { from: "project" | "global"; to: "project" | "global" }>;
-  agentScopeChanges: Map<AgentName, { from: "project" | "global"; to: "project" | "global" }>;
+  scopeChanges: Map<SkillId, ScopeChange>;
+  agentScopeChanges: Map<AgentName, ScopeChange>;
+  // Ids whose scope entry is a dual-scope ([P][G]) add/remove, NOT a true
+  // single-entry migration. Steers the completion-summary display only; the
+  // disk-side scope work still flows through scopeChanges / agentScopeChanges.
+  dualScopeSkillTransitions: Set<SkillId>;
+  dualScopeAgentTransitions: Set<AgentName>;
 };
 ```
+
+### FullScopeEntries (`src/cli/commands/edit.tsx`)
+
+```typescript
+type FullScopeEntries = {
+  newSkills: SkillConfig[]; // new roster INCLUDING excluded tombstones
+  oldSkills: SkillConfig[]; // prior roster INCLUDING excluded tombstones
+  newAgents: AgentScopeConfig[];
+  oldAgents: AgentScopeConfig[];
+};
+```
+
+Module-internal type (not exported). Passed as the optional `fullEntries` arg to `detectConfigChanges` and consumed ONLY by the local `detectDualScopeTransitions()` helper to tell a genuine single-entry scope migration apart from a dual-scope (`[P][G]`) add/remove. When omitted, every scope change is treated as a migration (pre-dual-scope behaviour). Unlike `oldConfig`/`wizardResult` (which carry the ACTIVE, tombstone-filtered entries), these lists keep the excluded tombstones.
 
 ### detectConfigChanges (`src/cli/commands/edit.tsx`)
 
@@ -285,10 +332,11 @@ type ConfigChanges = {
 function detectConfigChanges(
   oldConfig: ProjectConfig | null,
   wizardResult: WizardResultV2,
+  fullEntries?: FullScopeEntries, // { newSkills, oldSkills, newAgents, oldAgents }
 ): ConfigChanges;
 ```
 
-Compares old project config against wizard result. Uses `remeda.difference()` for added/removed and `remeda.indexBy()` for property change detection (source, scope, agent scope).
+`oldConfig` / `wizardResult` carry the ACTIVE (tombstone-filtered) entries used for add/remove/source/scope diffing. `fullEntries`, when provided, carries the unfiltered lists (including excluded tombstones) used only to tell a genuine scope migration apart from a dual-scope add/remove; when omitted, every scope change is treated as a migration. Uses `difference()` (remeda) for added/removed, `indexBy()` (remeda) to build old-entry lookups, a local `detectPropertyChanges()` helper for source/scope/agent-scope diffs, and `detectDualScopeTransitions()` to populate the `dualScope*Transitions` sets.
 
 ### PluginScopeMigrationResult (`src/cli/commands/edit.tsx`)
 
@@ -303,8 +351,8 @@ type PluginScopeMigrationResult = {
 
 ```typescript
 async function migratePluginSkillScopes(
-  scopeChanges: Map<SkillId, { from: "project" | "global"; to: "project" | "global" }>,
-  skills: Array<{ id: SkillId; source: string }>,
+  scopeChanges: Map<SkillId, ScopeChange>,
+  skills: Pick<SkillConfig, "id" | "source">[],
   marketplace: string,
   projectDir: string,
 ): Promise<PluginScopeMigrationResult>;

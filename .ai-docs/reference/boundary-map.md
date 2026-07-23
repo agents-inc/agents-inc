@@ -6,12 +6,13 @@ related:
   - reference/architecture-overview.md
   - reference/type-system.md
   - reference/features/configuration.md
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # Boundary Map
 
-**Last Updated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 ## Overview
 
@@ -19,25 +20,25 @@ last_validated: 2026-04-21
 
 **Key Files:**
 
-| File                                               | Purpose                                                                 |
-| -------------------------------------------------- | ----------------------------------------------------------------------- |
-| `src/cli/base-command.ts`                          | Base `--source` flag definition, error handling                         |
-| `src/cli/hooks/init.ts`                            | Raw argv extraction of `--source` before oclif parsing                  |
-| `src/cli/utils/exec.ts`                            | Shell execution boundary, input validation                              |
-| `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits                                       |
-| `src/cli/lib/schemas.ts`                           | All Zod schemas (30+) for parse boundaries                              |
-| `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`)                              |
-| `src/cli/lib/configuration/config-loader.ts`       | jiti TypeScript config loading                                          |
-| `src/cli/lib/configuration/config-writer.ts`       | Config file generation                                                  |
-| `src/cli/lib/configuration/config-types-writer.ts` | Writer selection (project=import-from-global, global=standalone, D-228) |
-| `src/cli/lib/installation/local-installer.ts`      | Scoped config writes, propagation to registered projects                |
-| `src/cli/lib/stacks/stack-plugin-compiler.ts`      | Per-skill plugin ref derivation (D-217)                                 |
-| `src/cli/lib/compiler.ts`                          | Liquid template sanitization, agent output                              |
-| `src/cli/lib/skills/skill-copier.ts`               | Path traversal prevention                                               |
-| `src/cli/lib/plugins/plugin-settings.ts`           | Claude settings/registry JSON parsing                                   |
-| `src/cli/lib/plugins/plugin-finder.ts`             | Plugin manifest JSON parsing                                            |
-| `src/cli/lib/plugins/plugin-validator.ts`          | Plugin/skill/agent frontmatter validation                               |
-| `src/cli/consts.ts`                                | File size limit constants                                               |
+| File                                               | Purpose                                                                                               |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `src/cli/base-command.ts`                          | Base `--source` flag definition, error handling                                                       |
+| `src/cli/hooks/init.ts`                            | Raw argv extraction of `--source` before oclif parsing                                                |
+| `src/cli/utils/exec.ts`                            | Shell execution boundary, input validation                                                            |
+| `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits                                                                     |
+| `src/cli/lib/schemas.ts`                           | All Zod schemas (35 `export const *Schema`) for parse boundaries                                      |
+| `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`)                                                            |
+| `src/cli/lib/configuration/config-loader.ts`       | jiti TypeScript config loading                                                                        |
+| `src/cli/lib/configuration/config-writer.ts`       | Config file generation                                                                                |
+| `src/cli/lib/configuration/config-types-writer.ts` | Writer selection (project=import-from-global, global=standalone, D-228)                               |
+| `src/cli/lib/installation/local-installer.ts`      | Scoped config writes, propagation to registered projects                                              |
+| `src/cli/lib/stacks/stack-plugin-compiler.ts`      | Stack plugin compilation (`compileStackPlugin`)                                                       |
+| `src/cli/lib/compiler.ts`                          | Liquid template sanitization, agent output, per-skill pluginRef derivation (`derivePluginRef`, D-217) |
+| `src/cli/lib/skills/skill-copier.ts`               | Path traversal prevention                                                                             |
+| `src/cli/lib/plugins/plugin-settings.ts`           | Claude settings/registry JSON parsing                                                                 |
+| `src/cli/lib/plugins/plugin-finder.ts`             | Plugin manifest JSON parsing                                                                          |
+| `src/cli/lib/plugins/plugin-validator.ts`          | Plugin/skill/agent frontmatter validation                                                             |
+| `src/cli/consts.ts`                                | File size limit constants                                                                             |
 
 ---
 
@@ -53,7 +54,7 @@ last_validated: 2026-04-21
 | **Validation** | oclif `Flags.string()` (accepts any string), then `validateSourceFormat()` in `config.ts` |
 | **Schema**     | None (string flag); validated by `validateSourceFormat()`                                 |
 
-All commands inherit `baseFlags` via `...BaseCommand.baseFlags`. The `--source` (`-s`) flag is optional and accepts any string. Actual validation happens in `resolveSource()` in `config.ts`.
+Most commands inherit `baseFlags` (the `--source` / `-s` flag), which is optional and accepts any string. Actual validation happens in `resolveSource()` in `config.ts`. Three commands override `static baseFlags = {}` to drop `--source`: `doctor`, `search`, and `validate`.
 
 ### 1.2 Init Hook: Raw argv Extraction
 
@@ -71,24 +72,24 @@ The init hook runs before oclif parses flags. It manually extracts `--source` / 
 
 Every command extends `BaseCommand` and defines `static flags`. oclif handles type coercion, required validation, and enum constraints.
 
-| Command             | File                            | Flags (beyond `--source`)                                                                                                                                                                  |
-| ------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `init`              | `commands/init.tsx`             | `--refresh` (boolean)                                                                                                                                                                      |
-| `edit`              | `commands/edit.tsx`             | `--refresh` (boolean), `--agent-source` (string)                                                                                                                                           |
-| `compile`           | `commands/compile.ts`           | `--verbose` (boolean), `--agent-source` (string)                                                                                                                                           |
-| `list`              | `commands/list.tsx`             | (base only)                                                                                                                                                                                |
-| `eject`             | `commands/eject.ts`             | `--force` (boolean), `--output` (string), `--refresh` (boolean)                                                                                                                            |
-| `search`            | `commands/search.ts`            | `query` (positional, required); `baseFlags = {}` (inherits none)                                                                                                                           |
-| `update`            | `commands/update.tsx`           | `--yes` (boolean), `--no-recompile` (boolean)                                                                                                                                              |
-| `uninstall`         | `commands/uninstall.tsx`        | `--yes` (boolean), `--all` (boolean)                                                                                                                                                       |
-| `validate`          | `commands/validate.ts`          | `--verbose` (boolean), `--all` (boolean), `--plugins` (boolean)                                                                                                                            |
-| `doctor`            | `commands/doctor.ts`            | `--source` (string, own definition), `--verbose` (boolean)                                                                                                                                 |
-| `import skill`      | `commands/import/skill.ts`      | `--skill` (string), `--all` (boolean), `--list` (boolean), `--subdir` (string), `--force` (boolean), `--refresh` (boolean)                                                                 |
-| `new skill`         | `commands/new/skill.ts`         | `--author` (string), `--category` (string), `--domain` (string), `--force` (boolean), `--output` (string)                                                                                  |
-| `new agent`         | `commands/new/agent.tsx`        | `--purpose` (string), `--non-interactive` (boolean), `--refresh` (boolean)                                                                                                                 |
-| `new marketplace`   | `commands/new/marketplace.ts`   | `--force` (boolean), `--output` (string)                                                                                                                                                   |
-| `build plugins`     | `commands/build/plugins.ts`     | `--skills-dir` (string), `--agents-dir` (string), `--output-dir` (string), `--skill` (string), `--verbose` (boolean)                                                                       |
-| `build marketplace` | `commands/build/marketplace.ts` | `--plugins-dir` (string), `--output` (string), `--name` (string), `--version` (string), `--description` (string), `--owner-name` (string), `--owner-email` (string), `--verbose` (boolean) |
+| Command             | File                            | Flags (beyond `--source`)                                                                                           |
+| ------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `init`              | `commands/init.tsx`             | `--refresh` (boolean)                                                                                               |
+| `edit`              | `commands/edit.tsx`             | `--refresh` (boolean), `--project-setup` (boolean, hidden internal flag `EDIT_PROJECT_SETUP_FLAG`)                  |
+| `compile`           | `commands/compile.ts`           | `--verbose` (boolean)                                                                                               |
+| `list`              | `commands/list.tsx`             | (base only)                                                                                                         |
+| `eject`             | `commands/eject.ts`             | `--force` (boolean), `--output` (string), `--refresh` (boolean)                                                     |
+| `search`            | `commands/search.ts`            | `query` (positional, required); `baseFlags = {}` (inherits none)                                                    |
+| `update`            | `commands/update.tsx`           | `skill` (positional, optional); `--yes` (boolean)                                                                   |
+| `uninstall`         | `commands/uninstall.tsx`        | `--yes` (boolean), `--all` (boolean)                                                                                |
+| `validate`          | `commands/validate.ts`          | (none); `baseFlags = {}` (zero-flag command)                                                                        |
+| `doctor`            | `commands/doctor.ts`            | (none); `baseFlags = {}` (drops `--source`)                                                                         |
+| `import skill`      | `commands/import/skill.ts`      | `source` (positional, required); `--skill` (string), `--all` (boolean), `--list` (boolean), `--force` (boolean)     |
+| `new skill`         | `commands/new/skill.ts`         | `name` (positional, required); `--author` (string), `--category` (string), `--domain` (string), `--force` (boolean) |
+| `new agent`         | `commands/new/agent.tsx`        | `name` (positional, required); `--purpose` (string), `--force` (boolean)                                            |
+| `new marketplace`   | `commands/new/marketplace.ts`   | `name` (positional, required); `--force` (boolean)                                                                  |
+| `build plugins`     | `commands/build/plugins.ts`     | `--agents-dir` (string), `--output-dir` (string), `--skill` (string), `--verbose` (boolean)                         |
+| `build marketplace` | `commands/build/marketplace.ts` | `--name` (string), `--plugins-dir` (string), `--output` (string), `--verbose` (boolean)                             |
 
 **Validation pattern:** oclif validates flag types, required status, and enum `options` at parse time. String flags pass through without content validation -- downstream code validates semantics (e.g., `validateSourceFormat` for source strings).
 
@@ -138,19 +139,19 @@ Callers:
 
 ### 2.4 JSON Parse Boundaries (Production)
 
-| File                          | What Is Parsed                                     | Validation After Parse                                     |
-| ----------------------------- | -------------------------------------------------- | ---------------------------------------------------------- |
-| `utils/exec.ts`               | Claude CLI JSON stdout (`marketplace list --json`) | `Array.isArray()` check, cast to `MarketplaceInfo[]`       |
-| `plugins/plugin-finder.ts`    | `plugin.json` manifest                             | `pluginManifestSchema.parse()` (throws on failure)         |
-| `plugins/plugin-validator.ts` | `plugin.json` for validation                       | `pluginManifestValidationSchema.safeParse()`               |
-| `plugins/plugin-validator.ts` | `plugin.json` as raw Record                        | Type assertion only (`loadManifestForValidation()`)        |
-| `plugins/plugin-settings.ts`  | `.claude/settings.json`                            | `pluginSettingsSchema.safeParse()`                         |
-| `plugins/plugin-settings.ts`  | `~/.claude/plugins/installed_plugins.json`         | `installedPluginsSchema.safeParse()`                       |
-| `marketplace-generator.ts`    | `plugin.json` for marketplace build                | `pluginManifestSchema.parse()`                             |
-| `versioning.ts`               | `plugin.json` for version check                    | `pluginManifestSchema.parse()`                             |
-| `loading/source-fetcher.ts`   | `marketplace.json` from fetched source             | `validateNestingDepth()` + `marketplaceSchema.safeParse()` |
-| `commands/import/skill.ts`    | Imported skill metadata (YAML + JSON fallback)     | `importedSkillMetadataSchema.safeParse()`                  |
-| `schema-validator.ts`         | `plugin.json` in validation targets                | `pluginManifestSchema` via `safeParse()`                   |
+| File                          | What Is Parsed                                     | Validation After Parse                                                 |
+| ----------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------- |
+| `utils/exec.ts`               | Claude CLI JSON stdout (`marketplace list --json`) | `marketplaceInfoListSchema.safeParse()` (Zod; returns `[]` on failure) |
+| `plugins/plugin-finder.ts`    | `plugin.json` manifest                             | `pluginManifestSchema.parse()` (throws on failure)                     |
+| `plugins/plugin-validator.ts` | `plugin.json` for validation                       | `pluginManifestValidationSchema.safeParse()`                           |
+| `plugins/plugin-validator.ts` | `plugin.json` as raw Record                        | Type assertion only (`loadManifestForValidation()`)                    |
+| `plugins/plugin-settings.ts`  | `.claude/settings.json`                            | `pluginSettingsSchema.safeParse()`                                     |
+| `plugins/plugin-settings.ts`  | `~/.claude/plugins/installed_plugins.json`         | `installedPluginsSchema.safeParse()`                                   |
+| `marketplace-generator.ts`    | `plugin.json` for marketplace build                | `pluginManifestSchema.parse()`                                         |
+| `versioning.ts`               | `plugin.json` for version check                    | `pluginManifestSchema.parse()`                                         |
+| `loading/source-fetcher.ts`   | `marketplace.json` from fetched source             | `validateNestingDepth()` + `marketplaceSchema.safeParse()`             |
+| `commands/import/skill.ts`    | Imported skill metadata (YAML + JSON fallback)     | `importedSkillMetadataSchema.safeParse()`                              |
+| `schema-validator.ts`         | `plugin.json` in validation targets                | `pluginManifestSchema` via `safeParse()`                               |
 
 ### 2.5 File Size Enforcement
 
@@ -222,10 +223,10 @@ Template root resolution in `createLiquidEngine()` in `compiler.ts`: checks loca
 
 ### 3.6 Per-Skill Source Propagation (D-217)
 
-| Function                     | File                              | Input                            | Output                                     |
-| ---------------------------- | --------------------------------- | -------------------------------- | ------------------------------------------ |
-| `derivePluginRef()`          | `stacks/stack-plugin-compiler.ts` | `Skill.source` (per-skill field) | `${id}:${id}` when non-eject/non-undefined |
-| `buildSkillRefsFromConfig()` | `resolver/*`                      | `SkillConfig.source` per entry   | `SkillReference` with `source` propagated  |
+| Function                     | File                                   | Input                            | Output                                     |
+| ---------------------------- | -------------------------------------- | -------------------------------- | ------------------------------------------ |
+| `derivePluginRef()`          | `compiler.ts` (internal, non-exported) | `Skill.source` (per-skill field) | `${id}:${id}` when non-eject/non-undefined |
+| `buildSkillRefsFromConfig()` | `resolver.ts`                          | `SkillConfig.source` per entry   | `SkillReference` with `source` propagated  |
 
 **Contract (D-217):** `SkillConfig.source` on each skill config entry is authoritative for that skill's install mode. A skill renders a plugin reference (`${id}:${id}`) only when `skill.source` is defined and not `"eject"`. `undefined` source (user-authored local skills) and `"eject"` both fall through to bare id. There is no agent-level `installMode` override -- removing that dead plumbing from wrappers is covered in the D-217 finding.
 
@@ -265,17 +266,19 @@ All three validate: non-empty, length limit, no control characters (`[\x00-\x08\
 
 **Execution method:** `spawn()` with args array (not shell string interpolation). The `stdio` is `["ignore", "pipe", "pipe"]` -- stdin is ignored, stdout/stderr are captured.
 
+**Composite wrappers (no new shell string):** `claudePluginMarketplaceExists(name)` delegates to `claudePluginMarketplaceList()` and matches on `name` in JS (no user input in the executed args). `claudePluginUninstallBestEffort(pluginRef, primaryScope, projectDir)` calls `claudePluginUninstall()` (which runs `validatePluginName()`) for the primary scope then the fallback scope, swallowing each attempt's error. Both reuse the validated boundary functions above rather than executing their own commands.
+
 ---
 
 ## 5. Security Boundaries
 
 ### 5.1 Source Format Validation
 
-| Property         | Value                                                                    |
-| ---------------- | ------------------------------------------------------------------------ |
-| **Location**     | `src/cli/lib/configuration/config.ts`                                    |
-| **Entry points** | `resolveSource()`, `resolveAllSources()`                                 |
-| **Applied to**   | `--source` flag, `AGENTS_INC_SOURCE` env var, config file `source` field |
+| Property         | Value                                                                                              |
+| ---------------- | -------------------------------------------------------------------------------------------------- |
+| **Location**     | `src/cli/lib/configuration/config.ts`                                                              |
+| **Entry points** | `resolveSource()`, `resolveAllSources()`                                                           |
+| **Applied to**   | `--source` flag, `CC_SOURCE` env var (`SOURCE_ENV_VAR` in `config.ts`), config file `source` field |
 
 **Checks performed:**
 
@@ -451,11 +454,12 @@ Used for validation commands and build-time checks. Reject unknown fields via `.
 
 ### Helper Functions
 
-| Function                 | File         | Purpose                            |
-| ------------------------ | ------------ | ---------------------------------- |
-| `formatZodErrors()`      | `schemas.ts` | Format Zod issues to string        |
-| `validateNestingDepth()` | `schemas.ts` | Check JSON nesting depth           |
-| `warnUnknownFields()`    | `schemas.ts` | Log warnings for unexpected fields |
+| Function                 | File                  | Purpose                            |
+| ------------------------ | --------------------- | ---------------------------------- |
+| `formatZodErrors()`      | `schema-validator.ts` | Format Zod issues to string array  |
+| `formatZodIssue()`       | `schema-validator.ts` | Format a single Zod issue          |
+| `validateNestingDepth()` | `schemas.ts`          | Check JSON nesting depth           |
+| `warnUnknownFields()`    | `schemas.ts`          | Log warnings for unexpected fields |
 
 ---
 
@@ -470,7 +474,7 @@ CLI flags --> oclif type checking --> downstream semantic validation (validateSo
 YAML files --> readFileSafe(sizeLimit) --> parseYaml() --> schema.safeParse()
 JSON files --> readFileSafe(sizeLimit) --> JSON.parse() --> schema.safeParse() or schema.parse()
 TS configs --> fileExists() --> jiti.import() --> optional schema.safeParse()
-Shell output --> JSON.parse(stdout) --> Array.isArray() / type assertion
+Shell output --> JSON.parse(stdout) --> marketplaceInfoListSchema.safeParse() (Zod)
 ```
 
 ### Data OUT: Generation Chain
@@ -482,11 +486,10 @@ Skill files --> validateSkillPath() (traversal check) --> copy()
 Shell commands --> validate{PluginPath|PluginName|MarketplaceSource}() --> spawn() with args array
 ```
 
-### Unvalidated Boundaries (Potential Gaps)
+### Shell-Output Boundaries (Now Zod-Validated)
 
-| Location                                     | Issue                                                                                                     |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `claudePluginMarketplaceList()` in `exec.ts` | JSON.parse of Claude CLI stdout, only `Array.isArray()` check, no Zod schema, cast to `MarketplaceInfo[]` |
-| Same function                                | Array elements cast as `MarketplaceInfo[]` without per-element validation                                 |
+| Location                                     | Handling                                                                                                                                          |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claudePluginMarketplaceList()` in `exec.ts` | JSON.parse of Claude CLI stdout, then `marketplaceInfoListSchema.safeParse()` (`z.ZodType<MarketplaceInfo[]>`); returns `[]` and warns on failure |
 
-These are low-risk since the data comes from the locally-installed Claude CLI binary (trusted source), not from user or network input.
+The prior gap (only `Array.isArray()`, no schema) is closed — the Claude CLI marketplace-list output is now validated per-element by a Zod array schema. This boundary is low-risk regardless since the data comes from the locally-installed Claude CLI binary (trusted source), not from user or network input.

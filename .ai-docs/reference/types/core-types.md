@@ -16,18 +16,25 @@ keywords:
     Skill,
     type-guards,
     typedEntries,
+    SkillScope,
+    ClaudePluginScope,
+    SourceEntry,
+    BrandingConfig,
+    CompileAgentConfig,
+    SourceRowContext,
   ]
 related:
   - reference/types/operations-types.md
   - reference/types/zod-schemas.md
   - reference/architecture/overview.md
-last_validated: 2026-04-21
+  - reference/store-map.md
+last_validated: 2026-07-23
 ---
 
 # Core Types
 
-**Last Updated:** 2026-04-21
-**Last Validated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 > **Split from:** `reference/type-system.md`. See also: [operations-types.md](./operations-types.md), [zod-schemas.md](./zod-schemas.md).
 
@@ -64,7 +71,7 @@ export type SkillId = (typeof SKILL_MAP)[SkillSlug];
 ```
 
 - Derived from `SKILL_MAP` constant (slug-to-ID mapping), not a template literal
-- Runtime validation uses `skillIdSchema` in `schemas.ts` with `.refine()` against `SKILL_IDS` array
+- No dedicated `skillIdSchema` exists. At parse boundaries `SkillId` is validated with a lenient `z.string() as z.ZodType<SkillId>` cast (see `skillFrontmatterLoaderSchema`, `boundSkillSchema` in `src/cli/lib/schemas.ts`) — intentionally permissive because local/custom skills carry non-builtin IDs
 - 222 skill IDs, 222 skill slugs
 - Re-exported from `src/cli/types/skills.ts`
 - Examples: `"web-framework-react"`, `"meta-methodology-research-methodology"`, `"api-database-drizzle"`, `"ai-provider-anthropic-sdk"`, `"desktop-framework-electron"`
@@ -156,20 +163,27 @@ type CategoryPath = Category | "local";
 
 ### ModelName (`src/cli/types/matrix.ts`)
 
+Derived from the `MODEL_NAMES` const array (same array consumed by `modelNameSchema`):
+
 ```typescript
-type ModelName = "sonnet" | "opus" | "haiku" | "inherit";
+export const MODEL_NAMES = ["sonnet", "opus", "haiku", "inherit"] as const;
+export type ModelName = (typeof MODEL_NAMES)[number];
 ```
 
 ### PermissionMode (`src/cli/types/matrix.ts`)
 
+Derived from the `PERMISSION_MODES` const array (same array consumed by `permissionModeSchema`):
+
 ```typescript
-type PermissionMode =
-  | "default"
-  | "acceptEdits"
-  | "dontAsk"
-  | "bypassPermissions"
-  | "plan"
-  | "delegate";
+export const PERMISSION_MODES = [
+  "default",
+  "acceptEdits",
+  "dontAsk",
+  "bypassPermissions",
+  "plan",
+  "delegate",
+] as const;
+export type PermissionMode = (typeof PERMISSION_MODES)[number];
 ```
 
 ## Named Aliases (Composite Types)
@@ -180,7 +194,6 @@ type PermissionMode =
 | `ResolvedCategorySkills` | `Partial<Record<Category, SkillId>>`                                                               | `skills.ts` |
 | `DomainSelections`       | `Partial<Record<Domain, Partial<Record<Category, SkillId[]>>>>`                                    | `matrix.ts` |
 | `CategoryMap`            | `Partial<Record<Category, CategoryDefinition>>`                                                    | `matrix.ts` |
-| `CategoryDomainMap`      | `Partial<Record<Category, { domain?: Domain }>>`                                                   | `matrix.ts` |
 | `SkillSlugMap`           | `{ slugToId: Partial<Record<SkillSlug, SkillId>>; idToSlug: Partial<Record<SkillId, SkillSlug>> }` | `matrix.ts` |
 | `StackAgentConfig`       | `Partial<Record<Category, SkillAssignment[]>>`                                                     | `stacks.ts` |
 | `PluginSkillRef`         | `` `${SkillId}:${SkillId}` ``                                                                      | `skills.ts` |
@@ -248,6 +261,38 @@ Per-agent configuration entry used inside `ProjectConfig.agents` (mirrors `Skill
 - `scope: "project" | "global"`
 - `excluded?: boolean`
 
+### SkillScope & ClaudePluginScope (`src/cli/types/config.ts`)
+
+Two distinct scope unions — do NOT conflate them:
+
+```typescript
+export type SkillScope = "project" | "global"; // cc-side install target
+export type ClaudePluginScope = "project" | "user"; // Claude CLI --project/--user flag
+```
+
+- `SkillScope` — the cc scope stored on every `SkillConfig.scope` / `AgentScopeConfig.scope` / `ScopedEntry.scope`. `"global"` installs live under `~/.claude/`; `"project"` under `<projectDir>/.claude/`. Used throughout scope-splitting (`filter(s => s.scope === "global")`) before any path-dependent op.
+- `ClaudePluginScope` — the value passed to the underlying `claude plugin install/uninstall --project|--user` command. Converted from a `SkillScope` by `toClaudePluginScope(scope)` in `src/cli/lib/plugins/plugin-ref.ts`: `"global"` → `"user"`, everything else (including `undefined`) → `"project"`. Consumed at the exec boundary in `src/cli/utils/exec.ts` and by the plugin install/uninstall operations.
+
+### SourceEntry (`src/cli/types/config.ts`)
+
+An additional skills source (private marketplace / custom repo) listed in `ProjectConfig.sources`:
+
+- `name: string`
+- `url: string` — e.g. `"github:acme-corp/skills"`
+- `description?: string`
+- `ref?: string` — git ref/branch pin
+
+Re-exported from `src/cli/lib/configuration/config.ts` and `src/cli/lib/configuration/index.ts`.
+
+### BrandingConfig (`src/cli/types/config.ts`)
+
+White-label overrides stored in `ProjectConfig.branding`:
+
+- `name?: string` — custom CLI name (e.g. `"Acme Dev Tools"`)
+- `tagline?: string` — custom tagline shown in the wizard header
+
+Re-exported from `src/cli/lib/configuration/config.ts` and `src/cli/lib/configuration/index.ts`.
+
 ### SkillReference (`src/cli/types/skills.ts`)
 
 Skill reference used in agent config (stack → agent → skills mapping):
@@ -282,6 +327,16 @@ Compile configuration derived from stack:
 - `name`, `description`
 - `stack?: string`
 - `agents: Record<string, CompileAgentConfig>`
+
+### CompileAgentConfig (`src/cli/types/config.ts`)
+
+Per-agent skills mapping — the value type of `CompileConfig.agents` and of the `Record<string, CompileAgentConfig>` maps assembled in `src/cli/lib/agents/agent-recompiler.ts` and `src/cli/lib/resolver.ts`:
+
+```typescript
+export type CompileAgentConfig = {
+  skills?: SkillReference[];
+};
+```
 
 ### CompileContext (`src/cli/types/config.ts`)
 
@@ -322,45 +377,64 @@ Skill metadata extracted from SKILL.md frontmatter + metadata.yaml before matrix
 
 ### Wizard/UI Types in `matrix.ts`
 
-| Type                  | Purpose                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------ |
-| `OptionState`         | Discriminated union for skill advisory state (normal/recommended/discouraged/incompatible) |
-| `SkillOption`         | Skill as displayed in wizard (advisoryState/selected/unmetRequirements state)              |
-| `SelectionValidation` | Result of validating skill selections                                                      |
-| `ValidationError`     | Blocking validation error                                                                  |
-| `ValidationWarning`   | Non-blocking validation warning                                                            |
-| `SkillSource`         | Source from which a skill can be obtained                                                  |
-| `SkillSourceType`     | `"public" \| "private" \| "local"`                                                         |
-| `BoundSkill`          | Foreign skill bound to category via search                                                 |
-| `BoundSkillCandidate` | Search result candidate before binding                                                     |
-| `ResolvedStack`       | Stack with resolved skill IDs; `group?: string` for UI grouping                            |
-| `SuggestedStack`      | Pre-configured stack from stacks.ts (before resolution); `group?: string` for UI grouping  |
+| Type                  | Purpose                                                                                               |
+| --------------------- | ----------------------------------------------------------------------------------------------------- |
+| `OptionState`         | Discriminated union for skill advisory state (normal/recommended/discouraged/incompatible)            |
+| `SkillOption`         | Skill as displayed in wizard (advisoryState/selected/unmetRequirements state)                         |
+| `SelectionValidation` | Result of validating skill selections                                                                 |
+| `ValidationError`     | Advisory validation error (non-blocking); `type: conflict \| missingRequirement \| categoryExclusive` |
+| `ValidationWarning`   | Non-blocking validation warning; `type: missing_recommendation`                                       |
+| `SkillSource`         | Source from which a skill can be obtained                                                             |
+| `SkillSourceType`     | `"public" \| "private" \| "local"`                                                                    |
+| `BoundSkill`          | Foreign skill bound to category via search                                                            |
+| `BoundSkillCandidate` | Search result candidate before binding                                                                |
+| `ResolvedStack`       | Stack with resolved skill IDs; `group?: string` for UI grouping                                       |
+
+### SourceRowContext (`src/cli/stores/wizard-store.ts`)
+
+Module-internal helper type (not exported) passed to `classifySkillSourceRows()` when the store builds the source-grid rows for one skill:
+
+```typescript
+type SourceRowContext = {
+  configEntry: SkillConfig | undefined; // saved config entry (scope/source/excluded probe)
+  installedSkillConfigs: SkillConfig[] | null; // on-disk installed configs, used to detect a locked global row
+  isEditingFromGlobalScope: boolean; // true when the edit session targets the global roster
+};
+```
+
+Steers whether a skill renders as a single editable `SourceRow`, a locked global row (`readOnly: true`) for excluded-global entries, or a locked-global + editable-project pair when a skill was re-scoped global→project this session. `SourceRow` / `SourceOption` are exported from `src/cli/components/wizard/source-grid.tsx`.
 
 ## Type Narrowing Rules
 
 **From CLAUDE.md and memory:**
 
 1. Union types are generated from source (`bun run generate:types`) for finite sets
-2. Skill ID validation uses `skillIdSchema` with `.refine()` against the generated `SKILL_IDS` array
+2. `SkillId`, `Domain`, `Category`, and `AgentName` have NO standalone Zod schema in `schemas.ts` — they are accepted as lenient `z.string() as z.ZodType<...>` casts at parse boundaries, and narrowed at runtime with the `isSkillId()`/`isCategory()`/`isDomain()`/`isAgentName()` type guards. Only `SkillSlug`, `ModelName`, and `PermissionMode` have `z.enum(...)` bridge schemas; `CategoryPath` uses a `z.string().refine()`
 3. Boundary casts only at data entry points (YAML parse, JSON parse, CLI args) with comments
 4. Use `typedEntries()` / `typedKeys()` from `src/cli/utils/typed-object.ts` instead of raw `Object.entries()`/`Object.keys()`
 5. Zod schemas at parse boundaries; post-safeParse `as T` casts are intentional (`.passthrough()` widens type)
-6. Use type guards (`isCategory()`, `isDomain()`, `isAgentName()`, `isCategoryPath()`) from `src/cli/utils/type-guards.ts` for runtime narrowing
+6. Use type guards (`isCategory()`, `isDomain()`, `isAgentName()`, `isCategoryPath()`, `isSkillId()`, `isSkillSlug()`, `isRecord()`, `isSkillAssignment()`) from `src/cli/utils/type-guards.ts` for runtime narrowing (full table below)
 
 ## Type Guards (`src/cli/utils/type-guards.ts`)
 
-| Function           | Signature                                  | Purpose                                       |
-| ------------------ | ------------------------------------------ | --------------------------------------------- |
-| `isCategory()`     | `(value: string) => value is Category`     | Validates against generated CATEGORIES array  |
-| `isDomain()`       | `(value: string) => value is Domain`       | Validates against generated DOMAINS array     |
-| `isAgentName()`    | `(value: string) => value is AgentName`    | Validates against generated AGENT_NAMES array |
-| `isCategoryPath()` | `(value: string) => value is CategoryPath` | Validates: `"local"` or valid Category        |
+| Function              | Signature                                              | Purpose                                                                              |
+| --------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `isRecord()`          | `(value: unknown) => value is Record<string, unknown>` | Narrows parse output to a plain object (rejects arrays/primitives)                   |
+| `isCategory()`        | `(value: string) => value is Category`                 | Validates against generated CATEGORIES array                                         |
+| `isDomain()`          | `(value: string) => value is Domain`                   | Validates against generated DOMAINS array                                            |
+| `isAgentName()`       | `(value: string) => value is AgentName`                | Validates against generated AGENT_NAMES array                                        |
+| `isCategoryPath()`    | `(value: string) => value is CategoryPath`             | Validates: `"local"` or valid Category                                               |
+| `isSkillId()`         | `(value: string) => value is SkillId`                  | Validates against generated SKILL_IDS array                                          |
+| `isSkillSlug()`       | `(value: string) => value is SkillSlug`                | Validates against generated SKILL_SLUGS array                                        |
+| `isSkillAssignment()` | `(value: unknown) => value is SkillAssignment`         | Structural check for `{ id, preloaded? }` (id-ness is structural, not union-checked) |
 
-All guards import from `src/cli/types/generated/source-types.ts` and check against the generated const arrays.
+`isCategory`, `isDomain`, `isAgentName`, `isCategoryPath`, `isSkillId`, and `isSkillSlug` import the generated const arrays from `src/cli/types/generated/source-types.ts`. `isRecord` and `isSkillAssignment` are structural guards (no union lookup).
 
 ## Typed Object Helpers (`src/cli/utils/typed-object.ts`)
 
-| Function         | Signature                                                       | Purpose                                         |
-| ---------------- | --------------------------------------------------------------- | ----------------------------------------------- |
-| `typedEntries()` | `<K extends string, V>(obj: Partial<Record<K, V>>) => [K, V][]` | Type-safe `Object.entries` preserving key types |
-| `typedKeys()`    | `<K extends string>(obj: Partial<Record<K, unknown>>) => K[]`   | Type-safe `Object.keys` preserving key types    |
+| Function             | Signature                                                                            | Purpose                                                               |
+| -------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `typedEntries()`     | `<K extends string, V>(obj: Partial<Record<K, V>>) => [K, V][]`                      | Type-safe `Object.entries` preserving key types                       |
+| `typedKeys()`        | `<K extends string>(obj: Partial<Record<K, unknown>>) => K[]`                        | Type-safe `Object.keys` preserving key types                          |
+| `typedFromEntries()` | `<K extends string, V>(entries: Iterable<readonly [K, V]>) => Partial<Record<K, V>>` | Type-safe `Object.fromEntries` preserving key types                   |
+| `typedValues()`      | `<K extends string, V>(obj: Partial<Record<K, V>>) => V[]`                           | Type-safe `Object.values` filtering out the Partial's undefined slots |

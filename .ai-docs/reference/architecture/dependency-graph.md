@@ -6,10 +6,12 @@ related:
   - reference/architecture/overview.md
   - reference/architecture/boundary-map.md
   - reference/features/operations-layer.md
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # Dependency Graph
+
+**Last Validated:** 2026-07-23
 
 > **Reorganized from:** `reference/dependency-graph.md`. The original file is preserved during migration.
 

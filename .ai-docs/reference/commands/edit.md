@@ -16,13 +16,13 @@ related:
   - reference/concepts/scope-system.md
   - reference/concepts/tombstone-pattern.md
   - reference/config/config-writer.md
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # Edit Command (Detailed)
 
-**Last Updated:** 2026-04-21
-**Last Validated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 > **Extracted from:** `reference/commands/index.md` (edit section) and `reference/type-system.md` (edit command types). See [commands/index.md](./index.md) for the full commands reference.
 
@@ -32,31 +32,38 @@ last_validated: 2026-04-21
 
 ## Flags
 
-| Flag           | Type    | Description                                       |
-| -------------- | ------- | ------------------------------------------------- |
-| --refresh      | boolean | Force refresh from remote sources                 |
-| --agent-source | string  | Remote agent partials source (default: local CLI) |
-| --source       | string  | Skills source path or URL                         |
+`static flags` extends `BaseCommand.baseFlags` (which supplies `--source`).
+
+| Flag            | Type    | Hidden | Description                                                                                                                                                                                      |
+| --------------- | ------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| --source (-s)   | string  | no     | Skills source path or URL (from `baseFlags`)                                                                                                                                                     |
+| --refresh       | boolean | no     | Force refresh from remote sources                                                                                                                                                                |
+| --project-setup | boolean | yes    | Internal: this run continues an `init` project setup (materialise + register even on no-change). Key = `EDIT_PROJECT_SETUP_FLAG` (`"project-setup"`); set only by `init`'s dashboard delegation. |
+
+There is no `--agent-source` flag.
 
 ## Flow
 
 The `run()` method in `edit.tsx` orchestrates private methods in this order:
 
-1. `loadContext(flags)` -- **Operation: `detectProject()`** + **Operation: `loadSource()`** + `discoverAllPluginSkills()`. Merges plugin-discovered skill ids with project config skills (excluded entries filtered out), returns `EditContext`.
-2. `runEditWizard(context, cwd)` -- hydrates wizard store (`initialStep: "build"`, `installedSkillIds`, `installedSkillConfigs`, `installedAgentConfigs`, `isEditingFromGlobalScope`, `initialDomains`, `initialAgents`) and renders `<Wizard>`. Returns `WizardResultV2 | null`; `null` exits with `EXIT_CODES.CANCELLED`.
+1. Render a loading `<Spinner>`, then `loadContext(flags)` -- **Operation: `detectProject()`** + **Operation: `loadSource()`** + `discoverAllPluginSkills()`. Merges plugin-discovered skill ids with project config skills (excluded entries filtered out), returns `EditContext`. Clears/unmounts the spinner.
+2. `runEditWizard(context, cwd)` -- calls `runWizardSession()`, hydrating the wizard store (`initialStep: "build"`, `installedSkillIds`, `installedSkillConfigs`, `installedAgentConfigs`, `isEditingFromGlobalScope: isHomeDirectory(cwd)`, `initialDomains`, `initialAgents`). Returns `WizardResultV2 | null`; `null` exits with `EXIT_CODES.CANCELLED`.
 3. `reportValidationErrors(result)` -- emits `this.warn(...)` for each `result.validation.errors` entry.
-4. Excluded-entry filter and `ProjectConfig` rewrite (in `run()`): builds `activeNewSkills`, `activeNewAgents`, `activeOldSkills`, `activeOldAgents`, constructs `filteredResult: WizardResultV2` and `filteredOldConfig: ProjectConfig | null`. All downstream methods see only non-excluded entries.
-5. `detectConfigChanges(filteredOldConfig, filteredResult)` -- returns `ConfigChanges`.
-6. **No-change exit** (in `run()`, guarded by `hasAnyChanges(changes)`): when no added/removed skills, agents, source changes, scope changes, or agent-scope changes exist, emits `"No changes made."` and returns before any migration/scope/plugin/config/compile work. This path skips `writeConfigAndCompile` entirely -- no config.ts or config-types.ts is written.
-7. `logChangeSummary(changes, filteredResult.skills, filteredOldConfig?.skills ?? [])` -- styled diff using display names from matrix; `[G]`/`[P]` scope labels; global-to-project scope changes render with green `+` prefix (not `~`).
-8. `applyMigrations(changes, filteredResult, activeOldSkills, context, cwd)` -- `detectMigrations()` + `executeMigration()` for eject-to-plugin and plugin-to-eject mode switches. Returns `Set<SkillId>` of migrated ids.
-9. `applyScopeChanges(changes, filteredResult, context, cwd)` -- `migrateLocalSkillScope()` for `source === "eject"` skills in `scopeChanges`; `requireMarketplace()` then `migratePluginSkillScopes()` only when at least one non-eject skill has a scope change.
-10. `applySourceChanges(changes, activeOldSkills, context, cwd, migratedSkillIds)` -- for non-migration `sourceChanges` entries where `from === "eject"`, calls `deleteLocalSkill()` on the old scope's directory (`os.homedir()` for global, `cwd` for project). Skips ids in `migratedSkillIds`.
-11. `applyPluginChanges(changes, filteredResult, activeOldSkills, context, cwd)` -- **Operation: `installPluginSkills()`** for added non-eject skills and **Operation: `uninstallPluginSkills()`** for removed non-eject skills (marketplace lazily resolved via `requireMarketplace()`). **Hard-error interrupt**: if `installPluginSkills` returns any entries in `pluginResult.failed`, calls `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE proceeding to `copyNewLocalSkills` and `writeConfigAndCompile`. See Invariants.
-12. `copyNewLocalSkills(changes, filteredResult, context, cwd)` -- **Operation: `copyLocalSkills()`** for added `source === "eject"` skills.
-13. `writeConfigAndCompile(result, activeNewSkills, context, flags, cwd)` -- **Operation: `loadAgentDefs()`** + **Operation: `writeProjectConfig()`** + **Operation: `discoverInstalledSkills()`** + **Operation: `compileAgents()`**. In a project context (`realpath(cwd) !== realpath(os.homedir())`) runs `compileAgents` twice -- once with `scopeFilter: "global"` writing to `~/.claude/agents`, once with `scopeFilter: "project"` writing to `<cwd>/.claude/agents` -- and merges results. In home context runs once without `scopeFilter`. Failures are logged via `this.warn()`; they do not abort the command.
-14. `cleanupStaleAgentFiles(changes, cwd)` -- removes `<cwd>/.claude/agents/<name>.md` for each `agentScopeChanges` entry where `change.from !== "global"` (P to G direction only). G to P is treated as an override so the global copy is preserved.
-15. `logCompletionSummary(changes)` -- prints `"\u2713 Done"` in success color.
+4. Excluded-entry filter (in `run()`): builds `activeNewSkills`, `activeNewAgents`, `activeOldSkills`, `activeOldAgents`, constructs `filteredResult: WizardResultV2` and `filteredOldConfig: ProjectConfig | null`. All downstream methods see only non-excluded entries; the raw `result` / `projectConfig` are retained for tombstone persistence.
+5. `detectConfigChanges(filteredOldConfig, filteredResult, fullEntries)` -- returns `ConfigChanges`. The `fullEntries` third argument carries the unfiltered (tombstone-inclusive) lists used only to classify dual-scope transitions.
+6. `isProjectSetup = flags[EDIT_PROJECT_SETUP_FLAG] && !isHomeDirectory(cwd)`.
+7. **No-change branch** (`!hasAnyChanges(changes)`): emits `"No changes made."`. If `isProjectSetup` is false, returns immediately -- no migration/scope/plugin/config/compile work, no config.ts or config-types.ts written. If `isProjectSetup` is true (an `init`-originated dashboard Edit in a project directory), it still runs `writeConfigAndCompile()` + `logCompletionSummary()` so the project is materialised and registered even with an empty roster delta. See Invariants.
+8. `logChangeSummary(changes, filteredResult.skills, filteredOldConfig?.skills ?? [])` -- styled diff using display names from matrix; `[G]`/`[P]` scope labels; global-to-project scope changes render with green `+` prefix (not `~`); dual-scope `[P]` add/remove lines via `formatDualScopeTransition()`.
+9. `applyMigrations(changes, filteredResult, activeOldSkills, context, cwd)` -- `detectMigrations()` + `executeMigration()` for eject-to-plugin and plugin-to-eject mode switches. Plugin-side migrations require the marketplace (`requireMarketplaceOrExit()`); a `failedPluginInstalls` result hard-errors via `pluginInstallFailureError`. Returns `Set<SkillId>` of migrated ids.
+10. `recordGlobalSourceMigrations(migratedSkillIds, filteredResult.skills, cwd)` -- in a project-context run, rewrites `source` on the active-global entries this run migrated (via `applyMigratedGlobalSources()`), writing the global config so it matches the filesystem/plugin registry. No-op at the home root.
+11. `applyScopeChanges(changes, filteredResult, context, cwd)` -- `migrateLocalSkillScope()` for `source === "eject"` skills in `scopeChanges`; `requireMarketplaceOrExit()` then `migratePluginSkillScopes()` only when at least one non-eject skill has a scope change.
+12. `applySourceChanges(changes, activeOldSkills, cwd, migratedSkillIds)` -- for non-migration `sourceChanges` entries where `from === "eject"`, calls `deleteLocalSkill()` on the old scope's directory resolved via `installBaseDir(cwd, oldSkill?.scope)`. Skips ids in `migratedSkillIds`.
+13. `applyPluginChanges(changes, filteredResult, activeOldSkills, context, cwd)` -- **Operation: `installPluginSkills()`** for added non-eject skills and **Operation: `uninstallPluginSkills()`** for removed non-eject skills (marketplace resolved via `requireMarketplaceOrExit()`). **Hard-error interrupt**: if `installPluginSkills` returns any entries in `pluginResult.failed`, calls `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` BEFORE proceeding to `copyNewLocalSkills` and `writeConfigAndCompile`. See Invariants.
+14. `copyNewLocalSkills(changes, filteredResult, context, cwd)` -- **Operation: `copyLocalSkills()`** for added `source === "eject"` skills.
+15. `removeDeletedLocalSkills(changes, activeOldSkills, cwd)` -- for fully-deselected eject-mode skills, `deleteLocalSkill()` on the scope the skill was installed at (`installBaseDir(cwd, oldSkill.scope)`). No-op when the directory is absent (D-233).
+16. `writeConfigAndCompile(result, context, flags, cwd)` -- **Operation: `loadAgentDefs()`** + **Operation: `writeProjectConfig()`** (with `authoritativeScope: isHomeDirectory(cwd) ? "all" : "owned"`) + **Operation: `discoverInstalledSkills()`** + **Operation: `compileAgentsAllScopes()`** (single home-root pass, or split global+project passes in a project context). Failures are logged via `this.warn()`; they do not abort the command.
+17. `cleanupStaleAgentFiles(changes, activeOldAgents, cwd)` -- for `agentScopeChanges` entries where `change.from !== "global"` (P to G direction only) removes the stale project-scope `<name>.md`; for `removedAgents` removes the compiled `.md` from the scope the agent was installed at (D-233). G to P is treated as an override so the global copy is preserved.
+18. `logCompletionSummary(changes)` -- prints `"\u2713 Done"` in success color.
 
 ### Writer Selection Inside `writeProjectConfig`
 
@@ -70,8 +77,8 @@ See `reference/config/config-writer.md` for the full writer-selection matrix.
 ## Invariants
 
 - **No orphan config entries on plugin failure.** `applyPluginChanges` hard-errors via `this.error(..., { exit: EXIT_CODES.ERROR })` when `installPluginSkills` reports any failures. This fires before `copyNewLocalSkills` and `writeConfigAndCompile`, so `config.ts` is never written claiming a skill was installed that did not install. Error message instructs: verify skill id matches marketplace, re-run with `--refresh`, or switch affected skills to eject mode.
-- **Plugin install intent is inviolable.** There is no silent fallback from plugin to eject. Marketplace resolution failure in `requireMarketplace()` also hard-errors.
-- **No-change flows skip all writes.** When `hasAnyChanges(changes)` is false, `run()` returns after logging `"No changes made."` -- no config write, no recompile, no agent file cleanup. Consumers that depend on `config.ts` being regenerated on every edit invocation must trigger an actual change.
+- **Plugin install intent is inviolable.** There is no silent fallback from plugin to eject. Marketplace resolution failure in `requireMarketplaceOrExit()` (BaseCommand, wrapping the `requireMarketplace` operation) also hard-errors.
+- **No-change flows skip all writes -- except an init-originated project setup.** When `hasAnyChanges(changes)` is false, `run()` logs `"No changes made."` and returns without config write, recompile, or agent cleanup -- UNLESS `isProjectSetup` (`flags[EDIT_PROJECT_SETUP_FLAG] && !isHomeDirectory(cwd)`) is true, in which case it still runs `writeConfigAndCompile()` to materialise `<project>/.claude-src/config.ts` + `config-types.ts` and register the project in the global `projects[]`. This intent is passed explicitly by `init`'s dashboard delegation (`dashboardCommandArgv()` appends `--project-setup` only for an `init`-originated Edit); it is NOT re-derived from `cwd`/config state. A bare `cc edit` (and a bare-`cc` `"standalone"` dashboard Edit) carries no flag, so a no-change pass stays a read-only inspection. See `.ai-docs/agent-findings/2026-07-20-command-delegation-must-carry-caller-intent.md` and `2026-07-20-edit-hasanychanges-gate-blocks-project-materialisation.md`.
 - **Excluded entries are filtered once.** The `activeNewSkills` / `activeOldSkills` split happens once in `run()`; every downstream private method receives only non-excluded entries. Excluded skills remain in the raw `result` / `projectConfig` for persistence by `writeProjectConfig` so tombstones survive.
 
 ## Exported Types and Functions
@@ -80,6 +87,8 @@ All marked `@internal` (exported for testing).
 
 ### ConfigChanges (in `edit.tsx`)
 
+`ScopeChange` is `{ from: SkillScope; to: SkillScope }`.
+
 ```typescript
 type ConfigChanges = {
   addedSkills: SkillId[];
@@ -87,8 +96,13 @@ type ConfigChanges = {
   addedAgents: AgentName[];
   removedAgents: AgentName[];
   sourceChanges: Map<SkillId, { from: string; to: string }>;
-  scopeChanges: Map<SkillId, { from: "project" | "global"; to: "project" | "global" }>;
-  agentScopeChanges: Map<AgentName, { from: "project" | "global"; to: "project" | "global" }>;
+  scopeChanges: Map<SkillId, ScopeChange>;
+  agentScopeChanges: Map<AgentName, ScopeChange>;
+  // Skill/agent ids whose scopeChanges entry is a dual-scope add/remove (the project half
+  // of a [P][G] pair toggled while the global half persists) rather than a true migration.
+  // Steers only the change-summary display, not the disk-side scope work.
+  dualScopeSkillTransitions: Set<SkillId>;
+  dualScopeAgentTransitions: Set<AgentName>;
 };
 ```
 
@@ -98,10 +112,22 @@ type ConfigChanges = {
 function detectConfigChanges(
   oldConfig: ProjectConfig | null,
   wizardResult: WizardResultV2,
+  fullEntries?: FullScopeEntries,
 ): ConfigChanges;
 ```
 
-Compares old project config against wizard result. Uses `remeda.difference()` for added/removed and `remeda.indexBy()` for property change detection (source, scope, agent scope).
+`oldConfig` / `wizardResult` carry the ACTIVE (tombstone-filtered) entries used for add/remove/source/scope diffing. `fullEntries` (`{ newSkills, oldSkills, newAgents, oldAgents }`), when provided, carries the unfiltered lists (including excluded tombstones) used ONLY to tell a genuine scope migration apart from a dual-scope add/remove (`detectDualScopeTransitions()`). When omitted, every scope change is treated as a migration (pre-dual-scope behaviour). Uses `remeda.difference()` for added/removed and `remeda.indexBy()` for property change detection (source, scope, agent scope).
+
+### applyMigratedGlobalSources (in `edit.tsx`)
+
+```typescript
+function applyMigratedGlobalSources(
+  globalSkills: SkillConfig[],
+  migratedSources: ReadonlyMap<SkillId, string>,
+): { skills: SkillConfig[]; changed: boolean };
+```
+
+Rewrites `source` on exactly the active-global entries listed in `migratedSources`, returning every other entry identical by reference. `changed` is false when nothing needed rewriting, so the caller (`recordGlobalSourceMigrations`) can skip the global write entirely.
 
 ### PluginScopeMigrationResult (in `edit.tsx`)
 
@@ -116,8 +142,8 @@ type PluginScopeMigrationResult = {
 
 ```typescript
 async function migratePluginSkillScopes(
-  scopeChanges: Map<SkillId, { from: "project" | "global"; to: "project" | "global" }>,
-  skills: Array<{ id: SkillId; source: string }>,
+  scopeChanges: Map<SkillId, ScopeChange>,
+  skills: Pick<SkillConfig, "id" | "source">[],
   marketplace: string,
   projectDir: string,
 ): Promise<PluginScopeMigrationResult>;
@@ -127,7 +153,9 @@ Handles plugin-mode skill scope migrations. Skips `source === "eject"` skills (h
 
 ## Key Dependencies
 
-- `src/cli/lib/operations/index.ts` -- `detectProject`, `loadSource`, `ensureMarketplace`, `installPluginSkills`, `uninstallPluginSkills`, `copyLocalSkills`, `writeProjectConfig`, `compileAgents`, `discoverInstalledSkills`, `loadAgentDefs`
-- `src/cli/lib/installation/index.ts` -- `detectMigrations`, `executeMigration`, `deriveInstallMode`
-- `src/cli/lib/plugins/index.ts` -- `discoverAllPluginSkills`
+- `src/cli/lib/operations/index.ts` -- `detectProject`, `loadSource`, `installPluginSkills`, `pluginInstallFailureError`, `uninstallPluginSkills`, `copyLocalSkills`, `writeProjectConfig`, `compileAgentsAllScopes`, `discoverInstalledSkills`, `loadAgentDefs`
+- `src/cli/base-command.ts` -- `requireMarketplaceOrExit` (marketplace resolution; no `ensureMarketplace` fallback)
+- `src/cli/lib/installation/index.ts` -- `detectMigrations`, `executeMigration`, `isHomeDirectory`, `installBaseDir`, `resolveInstallPaths`, `writeConfigFile`
+- `src/cli/lib/plugins/index.ts` -- `discoverAllPluginSkills`, `buildMarketplacePluginRef`, `toClaudePluginScope`
 - `src/cli/lib/skills/index.ts` -- `deleteLocalSkill`, `migrateLocalSkillScope`
+- `src/cli/components/wizard/run-wizard-session.tsx` -- `runWizardSession`

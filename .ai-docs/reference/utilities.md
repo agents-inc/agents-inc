@@ -6,30 +6,41 @@ related:
   - reference/architecture-overview.md
   - reference/dependency-graph.md
   - reference/test-infrastructure.md
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # Utilities Reference
 
-**Last Updated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 ## Utility Files
 
 All utilities in `src/cli/utils/`.
 
-| File              | Path                            | Purpose                                |
-| ----------------- | ------------------------------- | -------------------------------------- |
-| `errors.ts`       | `src/cli/utils/errors.ts`       | Error message extraction               |
-| `exec.ts`         | `src/cli/utils/exec.ts`         | Shell command execution                |
-| `frontmatter.ts`  | `src/cli/utils/frontmatter.ts`  | YAML frontmatter extraction            |
-| `fs.ts`           | `src/cli/utils/fs.ts`           | File system wrappers                   |
-| `logger.ts`       | `src/cli/utils/logger.ts`       | Logging: log, warn, verbose            |
-| `messages.ts`     | `src/cli/utils/messages.ts`     | User-facing message constants          |
-| `string.ts`       | `src/cli/utils/string.ts`       | String manipulation utilities          |
-| `type-guards.ts`  | `src/cli/utils/type-guards.ts`  | Runtime type narrowing for union types |
-| `typed-object.ts` | `src/cli/utils/typed-object.ts` | Type-safe Object.entries/keys          |
+| File              | Path                            | Purpose                                     |
+| ----------------- | ------------------------------- | ------------------------------------------- |
+| `errors.ts`       | `src/cli/utils/errors.ts`       | Error message extraction                    |
+| `exec.ts`         | `src/cli/utils/exec.ts`         | Shell command execution + Claude CLI wraps  |
+| `frontmatter.ts`  | `src/cli/utils/frontmatter.ts`  | YAML frontmatter extraction                 |
+| `fs.ts`           | `src/cli/utils/fs.ts`           | File system wrappers + path containment     |
+| `logger.ts`       | `src/cli/utils/logger.ts`       | Logging: log, warn, verbose, buffering      |
+| `messages.ts`     | `src/cli/utils/messages.ts`     | User-facing message constants               |
+| `string.ts`       | `src/cli/utils/string.ts`       | `truncateText`, `toTitleCase`               |
+| `terminal.ts`     | `src/cli/utils/terminal.ts`     | Clear terminal screen + scrollback          |
+| `type-guards.ts`  | `src/cli/utils/type-guards.ts`  | Runtime type narrowing for union types      |
+| `typed-object.ts` | `src/cli/utils/typed-object.ts` | Type-safe Object.entries/keys/values        |
+| `yaml-schema.ts`  | `src/cli/utils/yaml-schema.ts`  | yaml-language-server schema comment helpers |
 
 Exit codes live outside `utils/`: `src/cli/lib/exit-codes.ts` (`EXIT_CODES` constant). Base-command and commands import from there, not from `utils/`.
+
+| `EXIT_CODES` key | Value |
+| ---------------- | ----- |
+| `SUCCESS`        | 0     |
+| `ERROR`          | 1     |
+| `INVALID_ARGS`   | 2     |
+| `NETWORK_ERROR`  | 3     |
+| `CANCELLED`      | 4     |
 
 ## Error Handling
 
@@ -66,20 +77,21 @@ Spawns a child process with stdio piped. Returns `{ stdout, stderr, exitCode }`.
 
 ### Claude CLI Wrappers
 
-All validate inputs before execution (injection prevention via `validatePluginPath`, `validateMarketplaceSource`, `validatePluginName`):
+Wrappers that pass a user-controlled argument to the `claude` subprocess validate it first (injection prevention via `validatePluginPath`, `validateMarketplaceSource`, `validatePluginName`). `claudePluginMarketplaceList()`, `claudePluginMarketplaceExists()`, and `isClaudeCLIAvailable()` pass no user value to the shell and perform no validation:
 
-| Function                          | Purpose                                                       |
-| --------------------------------- | ------------------------------------------------------------- |
-| `claudePluginInstall()`           | Install a plugin via `claude plugin install`                  |
-| `claudePluginUninstall()`         | Uninstall via `claude plugin uninstall`                       |
-| `claudePluginMarketplaceList()`   | List marketplaces via `claude plugin marketplace list --json` |
-| `claudePluginMarketplaceExists()` | Check if marketplace is registered                            |
-| `claudePluginMarketplaceAdd()`    | Register marketplace via `claude plugin marketplace add`      |
-| `claudePluginMarketplaceRemove()` | Remove marketplace via `claude plugin marketplace remove`     |
-| `claudePluginMarketplaceUpdate()` | Update marketplace via `claude plugin marketplace update`     |
-| `isClaudeCLIAvailable()`          | Check if `claude` CLI is available                            |
+| Function                            | Purpose                                                                 |
+| ----------------------------------- | ----------------------------------------------------------------------- |
+| `claudePluginInstall()`             | Install a plugin via `claude plugin install`                            |
+| `claudePluginUninstall()`           | Uninstall via `claude plugin uninstall`                                 |
+| `claudePluginUninstallBestEffort()` | Uninstall trying both scopes (primary then fallback), swallowing errors |
+| `claudePluginMarketplaceList()`     | List marketplaces via `claude plugin marketplace list --json`           |
+| `claudePluginMarketplaceExists()`   | Check if marketplace is registered                                      |
+| `claudePluginMarketplaceAdd()`      | Register marketplace via `claude plugin marketplace add`                |
+| `claudePluginMarketplaceRemove()`   | Remove marketplace via `claude plugin marketplace remove`               |
+| `claudePluginMarketplaceUpdate()`   | Update marketplace via `claude plugin marketplace update`               |
+| `isClaudeCLIAvailable()`            | Check if `claude` CLI is available                                      |
 
-**Total: 8 functions.** Install/Uninstall take `scope: "project" | "user"` and `projectDir`. `resolvePluginCwd()` picks `os.homedir()` for `"user"` scope so Claude writes settings to `~/.claude/settings.json`.
+**Total: 9 functions.** Install/Uninstall take `scope: ClaudePluginScope` (`"project" | "user"`, from `src/cli/types/config.ts`) and `projectDir`. `resolvePluginCwd()` picks `os.homedir()` for `"user"` scope so Claude writes settings to `~/.claude/settings.json`. `claudePluginUninstallBestEffort(pluginRef, primaryScope, projectDir)` is used when the registered scope is ambiguous (re-scoped skill, cleanup) — it uninstalls from `primaryScope` then the opposite scope, ignoring each failure; the ref must be marketplace-qualified (`skill-id@marketplace`). Callers: `src/cli/lib/installation/mode-migrator.ts`, `src/cli/commands/uninstall.tsx`.
 
 ### Internal Helpers (not exported)
 
@@ -98,7 +110,7 @@ All validate inputs before execution (injection prevention via `validatePluginPa
 function extractFrontmatter(content: string): unknown | null;
 ```
 
-Extracts YAML frontmatter from `---\n...\n---` delimited content. Returns parsed YAML object or null.
+Extracts YAML frontmatter delimited by a leading `---` fence and a closing `---` (regex `/^---\r?\n([\s\S]*?)\r?\n---/`, so CRLF line endings are tolerated). Returns the parsed YAML object, or `null` when no frontmatter fence is present or the body fails to parse.
 
 **Note:** For SKILL.md parsing, use `parseFrontmatter()` from `src/cli/lib/loading/loader.ts` instead -- it adds Zod validation.
 
@@ -108,19 +120,22 @@ Extracts YAML frontmatter from `---\n...\n---` delimited content. Returns parsed
 
 Wraps `fs-extra` and `fast-glob`:
 
-| Function             | Signature                                     | Purpose                               |
-| -------------------- | --------------------------------------------- | ------------------------------------- |
-| `readFile()`         | `(filePath: string) => Promise<string>`       | Read file as UTF-8                    |
-| `readFileSafe()`     | `(filePath, maxSizeBytes) => Promise<string>` | Read with size limit (DoS prevention) |
-| `readFileOptional()` | `(filePath, fallback?) => Promise<string>`    | Read or return fallback               |
-| `fileExists()`       | `(filePath: string) => Promise<boolean>`      | Check file/dir existence              |
-| `directoryExists()`  | `(dirPath: string) => Promise<boolean>`       | Check directory existence             |
-| `listDirectories()`  | `(dirPath: string) => Promise<string[]>`      | List subdirectories                   |
-| `glob()`             | `(pattern, cwd) => Promise<string[]>`         | Fast-glob file matching               |
-| `writeFile()`        | `(filePath, content) => Promise<void>`        | Write file (ensures parent dir)       |
-| `ensureDir()`        | `(dirPath: string) => Promise<void>`          | Create directory recursively          |
-| `remove()`           | `(filePath: string) => Promise<void>`         | Remove file/directory                 |
-| `copy()`             | `(src, dest) => Promise<void>`                | Copy file/directory                   |
+| Function             | Signature                                     | Purpose                                           |
+| -------------------- | --------------------------------------------- | ------------------------------------------------- |
+| `readFile()`         | `(filePath: string) => Promise<string>`       | Read file as UTF-8                                |
+| `readFileSafe()`     | `(filePath, maxSizeBytes) => Promise<string>` | Read with size limit (DoS prevention)             |
+| `readFileOptional()` | `(filePath, fallback?) => Promise<string>`    | Read or return fallback                           |
+| `fileExists()`       | `(filePath: string) => Promise<boolean>`      | Check file/dir existence                          |
+| `directoryExists()`  | `(dirPath: string) => Promise<boolean>`       | Check directory existence                         |
+| `listDirectories()`  | `(dirPath: string) => Promise<string[]>`      | List subdirectories                               |
+| `glob()`             | `(pattern, cwd) => Promise<string[]>`         | Fast-glob file matching                           |
+| `writeFile()`        | `(filePath, content) => Promise<void>`        | Write file (ensures parent dir)                   |
+| `ensureDir()`        | `(dirPath: string) => Promise<void>`          | Create directory recursively                      |
+| `remove()`           | `(filePath: string) => Promise<void>`         | Remove file/directory                             |
+| `copy()`             | `(src, dest) => Promise<void>`                | Copy file/directory                               |
+| `isPathWithin()`     | `(child: string, parent: string) => boolean`  | Lexical containment check (no symlink resolution) |
+
+`isPathWithin()` is a pure/synchronous path helper (does not touch the filesystem). Callers: `src/cli/lib/skills/skill-copier.ts`, `src/cli/lib/skills/source-switcher.ts`.
 
 ## Logger
 
@@ -146,7 +161,7 @@ The `warn()` function accepts an optional second parameter. When `suppressInTest
 
 ### Startup Message Buffering
 
-Before Ink takes over the terminal, `warn()` messages would be overwritten. Buffering captures them for display in Ink's `<Static>` component.
+Before Ink takes over the terminal, `warn()` output written to the console would be cleared by Ink's screen reset. Buffer mode captures those messages into an in-memory `StartupMessage[]` array instead of writing to stderr, so the caller can hand them to the wizard.
 
 | Function              | Purpose                                   |
 | --------------------- | ----------------------------------------- |
@@ -157,7 +172,7 @@ Before Ink takes over the terminal, `warn()` messages would be overwritten. Buff
 
 **Type:** `StartupMessage = { level: "info" | "warn" | "error"; text: string }`
 
-**Used by:** `init.tsx` and `edit.tsx` to capture loading messages before wizard renders.
+**Used by:** `src/cli/lib/operations/source/load-source.ts` (when its `captureStartupMessages` option is set) calls `enableBuffering()` to capture `warn()` output during skill loading, then `drainBuffer()` + `disableBuffering()` to return the captured messages as `startupMessages: StartupMessage[]`. `src/cli/commands/init.tsx` and `src/cli/commands/edit.tsx` receive that array and thread it through `src/cli/components/wizard/wizard.tsx` to the `WizardLayout` `startupMessages` prop (`src/cli/components/wizard/wizard-layout.tsx`). No Ink `<Static>` block currently renders the prop, and `pushBufferMessage()` has no production callers (test-only).
 
 **Style guide** (from logger.ts comments):
 
@@ -182,20 +197,50 @@ Truncates text to `maxLength` characters, appending an ellipsis character (U+202
 
 - `src/cli/commands/search.ts` -- truncate skill descriptions in search results
 
+### `toTitleCase()` (`src/cli/utils/string.ts`)
+
+```typescript
+function toTitleCase(kebabCase: string): string;
+```
+
+Converts a kebab-case string to a space-separated Title Case string (`"web-framework"` -> `"Web Framework"`).
+
+**Used by:**
+
+- `src/cli/lib/skills/generators.ts`
+- `src/cli/lib/matrix/skill-resolution.ts`
+- `src/cli/components/wizard/step-agents.tsx`
+- `src/cli/commands/new/skill.ts`
+- `src/cli/commands/import/skill.ts`
+
+## Terminal
+
+### `clearTerminalScreen()` (`src/cli/utils/terminal.ts`)
+
+```typescript
+function clearTerminalScreen(): void;
+```
+
+Writes ANSI escape sequences that clear the screen, clear scrollback, and move the cursor home. Shared by `BaseCommand.clearTerminal` (`src/cli/base-command.ts`) and the init dashboard (`src/cli/commands/init.tsx`).
+
 ## Type Guards
 
 ### `src/cli/utils/type-guards.ts`
 
-Runtime type narrowing functions for generated union types. Imports union arrays from `types/generated/source-types.ts`.
+Runtime type narrowing functions for generated union types. Imports union arrays (`CATEGORIES`, `DOMAINS`, `AGENT_NAMES`, `SKILL_IDS`, `SKILL_SLUGS`) from `types/generated/source-types.ts`.
 
-| Function           | Signature                                  | Purpose                              |
-| ------------------ | ------------------------------------------ | ------------------------------------ |
-| `isCategory()`     | `(value: string) => value is Category`     | Check if string is a valid Category  |
-| `isDomain()`       | `(value: string) => value is Domain`       | Check if string is a valid Domain    |
-| `isAgentName()`    | `(value: string) => value is AgentName`    | Check if string is a valid AgentName |
-| `isCategoryPath()` | `(value: string) => value is CategoryPath` | Check Category or `"local"` literal  |
+| Function              | Signature                                              | Purpose                                                      |
+| --------------------- | ------------------------------------------------------ | ------------------------------------------------------------ |
+| `isRecord()`          | `(value: unknown) => value is Record<string, unknown>` | Narrow unknown to a plain object (rejects arrays/primitives) |
+| `isCategory()`        | `(value: string) => value is Category`                 | Check if string is a valid Category                          |
+| `isDomain()`          | `(value: string) => value is Domain`                   | Check if string is a valid Domain                            |
+| `isAgentName()`       | `(value: string) => value is AgentName`                | Check if string is a valid AgentName                         |
+| `isCategoryPath()`    | `(value: string) => value is CategoryPath`             | Check Category or `"local"` literal                          |
+| `isSkillId()`         | `(value: string) => value is SkillId`                  | Check if string is a valid SkillId                           |
+| `isSkillSlug()`       | `(value: string) => value is SkillSlug`                | Check if string is a valid SkillSlug                         |
+| `isSkillAssignment()` | `(value: unknown) => value is SkillAssignment`         | Structural check for `{ id, preloaded? }`                    |
 
-**Mandatory:** Use these instead of `as` casts for runtime narrowing at data boundaries (YAML/JSON parse, CLI args).
+**Mandatory:** Use these instead of `as` casts for runtime narrowing at data boundaries (YAML/JSON parse, CLI args). `isSkillAssignment()` is structural (checks `id` is a string) — it does NOT union-check the id, since assignments flow from runtime sources whose skills may not be in the generated union.
 
 ## Type-Safe Object Utilities
 
@@ -204,13 +249,28 @@ Runtime type narrowing functions for generated union types. Imports union arrays
 ```typescript
 function typedEntries<K extends string, V>(obj: Partial<Record<K, V>>): [K, V][];
 function typedKeys<K extends string>(obj: Partial<Record<K, unknown>>): K[];
+function typedFromEntries<K extends string, V>(
+  entries: Iterable<readonly [K, V]>,
+): Partial<Record<K, V>>;
+function typedValues<K extends string, V>(obj: Partial<Record<K, V>>): V[];
 ```
 
-**Mandatory** (per CLAUDE.md -- Type Safety): use these instead of raw `Object.entries()` / `Object.keys()` on records keyed by union types (`SkillId`, `Category`, `Domain`, etc.) to preserve key-type information and avoid `as [K, V][]` boundary casts. Raw `Object.entries/keys` widens to `string`, forcing downstream casts.
+**Mandatory** (per CLAUDE.md -- Type Safety): use these instead of raw `Object.entries()` / `Object.keys()` / `Object.fromEntries()` / `Object.values()` on records keyed by union types (`SkillId`, `Category`, `Domain`, etc.) to preserve key-type information and avoid `as [K, V][]` boundary casts. Raw `Object.entries/keys` widens to `string`, forcing downstream casts. `typedValues()` filters the `undefined` slots the `Partial` type admits, so it yields only present values.
 
 ## YAML Loading
 
 Production code imports `parse as parseYaml` from the `yaml` package directly. There is no `src/cli/utils/yaml.ts` module. Frontmatter extraction goes through `extractFrontmatter()` (see above) or the Zod-validated `parseFrontmatter()` in `src/cli/lib/loading/loader.ts`.
+
+### `src/cli/utils/yaml-schema.ts`
+
+Helpers for the `# yaml-language-server: $schema=...` header on generated YAML files:
+
+| Function                   | Signature                                                             | Purpose                                                     |
+| -------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `yamlSchemaComment()`      | `(schemaPath: string) => string`                                      | Build a `# yaml-language-server: $schema=<path>` comment    |
+| `stripYamlSchemaComment()` | `(content: string) => { schemaComment: string; yamlContent: string }` | Split a leading schema comment from the parseable YAML body |
+
+**Callers:** `src/cli/lib/skills/skill-plugin-compiler.ts`, `src/cli/lib/skills/skill-metadata.ts`, `src/cli/commands/new/skill.ts`, `src/cli/commands/import/skill.ts`.
 
 ## User-Facing Messages
 
@@ -218,33 +278,44 @@ Production code imports `parse as parseYaml` from the `yaml` package directly. T
 
 All user-facing strings centralized in constant objects:
 
-| Object             | Count | Examples                                                                                                                                           |
-| ------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ERROR_MESSAGES`   | 10    | UNKNOWN_ERROR, NO_INSTALLATION, NO_LOCAL_SKILLS, NO_SKILLS_FOUND, VALIDATION_FAILED, FAILED_RESOLVE_SOURCE, FAILED_COMPILE_AGENTS, SKILL_NOT_FOUND |
-| `SUCCESS_MESSAGES` | 4     | UNINSTALL_COMPLETE, INIT_SUCCESS, PLUGIN_COMPILE_COMPLETE, ALL_SKILLS_UP_TO_DATE                                                                   |
-| `STATUS_MESSAGES`  | 11    | LOADING_SKILLS, LOADING_MARKETPLACE_SOURCE, RECOMPILING_AGENTS, COMPILING_AGENTS, FETCHING_REPOSITORY, COPYING_SKILLS, UPDATING_PLUGIN_SKILLS      |
-| `INFO_MESSAGES`    | 6     | NO_CHANGES_MADE, RUN_COMPILE, NO_AGENTS_TO_RECOMPILE, NO_PLUGIN_INSTALLATION, NO_LOCAL_INSTALLATION, NOT_INSTALLED                                 |
+Each row lists every key in that object (exhaustive, in source order).
+
+| Object             | Count | Keys                                                                                                                                                                                                                                      |
+| ------------------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERROR_MESSAGES`   | 10    | UNKNOWN_ERROR, UNKNOWN_ERROR_SHORT, NO_INSTALLATION, NO_LOCAL_SKILLS, NO_SKILLS_FOUND, VALIDATION_FAILED, FAILED_RESOLVE_SOURCE, FAILED_LOAD_AGENT_PARTIALS, FAILED_COMPILE_AGENTS, SKILL_NOT_FOUND                                       |
+| `SUCCESS_MESSAGES` | 4     | UNINSTALL_COMPLETE, INIT_SUCCESS, PLUGIN_COMPILE_COMPLETE, ALL_SKILLS_UP_TO_DATE                                                                                                                                                          |
+| `STATUS_MESSAGES`  | 11    | LOADING_SKILLS, LOADING_MARKETPLACE_SOURCE, RECOMPILING_AGENTS, COMPILING_AGENTS, DISCOVERING_SKILLS, RESOLVING_SOURCE, RESOLVING_MARKETPLACE_SOURCE, LOADING_AGENT_PARTIALS, FETCHING_REPOSITORY, COPYING_SKILLS, UPDATING_PLUGIN_SKILLS |
+| `INFO_MESSAGES`    | 6     | NO_CHANGES_MADE, RUN_COMPILE, NO_AGENTS_TO_RECOMPILE, NO_PLUGIN_INSTALLATION, NO_LOCAL_INSTALLATION, NOT_INSTALLED                                                                                                                        |
 
 ## Constants Reference (`src/cli/consts.ts`)
 
 ### Paths
 
-| Constant                | Value                        | Purpose                       |
-| ----------------------- | ---------------------------- | ----------------------------- |
-| `PROJECT_ROOT`          | CLI package root             | Base for template resolution  |
-| `GLOBAL_INSTALL_ROOT`   | `os.homedir()`               | Root for global installations |
-| `CLAUDE_DIR`            | `.claude`                    | Claude config directory       |
-| `CLAUDE_SRC_DIR`        | `.claude-src`                | Source config directory       |
-| `PLUGINS_SUBDIR`        | `plugins`                    | Plugins subdirectory          |
-| `PLUGIN_MANIFEST_DIR`   | `.claude-plugin`             | Plugin manifest directory     |
-| `PLUGIN_MANIFEST_FILE`  | `plugin.json`                | Plugin manifest filename      |
-| `DEFAULT_PLUGIN_NAME`   | `agents-inc`                 | Default plugin name           |
-| `CACHE_DIR`             | `~/.cache/agents-inc`        | Source cache directory        |
-| `SKILL_CATEGORIES_PATH` | `config/skill-categories.ts` | Skill categories config file  |
-| `SKILL_RULES_PATH`      | `config/skill-rules.ts`      | Skill rules config file       |
-| `STACKS_FILE_PATH`      | `config/stacks.ts`           | Stacks config file            |
-| `SKILLS_DIR_PATH`       | `src/skills`                 | Skills source directory       |
-| `LOCAL_SKILLS_PATH`     | `.claude/skills`             | Local skills directory        |
+| Constant                  | Value                        | Purpose                                              |
+| ------------------------- | ---------------------------- | ---------------------------------------------------- |
+| `PROJECT_ROOT`            | CLI package root             | Base for template resolution                         |
+| `GLOBAL_INSTALL_ROOT`     | `os.homedir()`               | Root for global installations                        |
+| `CLAUDE_DIR`              | `.claude`                    | Claude config directory                              |
+| `CLAUDE_SRC_DIR`          | `.claude-src`                | Source config directory                              |
+| `PLUGINS_SUBDIR`          | `plugins`                    | Plugins subdirectory                                 |
+| `PLUGIN_MANIFEST_DIR`     | `.claude-plugin`             | Plugin manifest directory                            |
+| `PLUGIN_MANIFEST_FILE`    | `plugin.json`                | Plugin manifest filename                             |
+| `MARKETPLACE_JSON`        | `marketplace.json`           | Marketplace manifest filename                        |
+| `PLUGINS_DIST_PATH`       | `dist/plugins`               | Compiled plugin output dir (marketplace-relative)    |
+| `DEFAULT_PLUGIN_NAME`     | `agents-inc`                 | Default plugin name                                  |
+| `CACHE_DIR`               | `~/.cache/agents-inc`        | Source cache directory                               |
+| `SKILL_CATEGORIES_PATH`   | `config/skill-categories.ts` | Skill categories config file                         |
+| `SKILL_RULES_PATH`        | `config/skill-rules.ts`      | Skill rules config file                              |
+| `STACKS_FILE_PATH`        | `config/stacks.ts`           | Stacks config file                                   |
+| `SOURCE_SRC_DIR`          | `src`                        | Source root dir inside a marketplace/source repo     |
+| `SKILLS_DIR_PATH`         | `src/skills`                 | Skills source directory (`${SOURCE_SRC_DIR}/skills`) |
+| `LOCAL_SKILLS_PATH`       | `.claude/skills`             | Local skills directory                               |
+| `EJECT_SOURCE`            | `eject`                      | Synthetic source name for ejected (copied) skills    |
+| `LOCAL_PSEUDO_CATEGORY`   | `local`                      | Pseudo-category for local skills (not a `Category`)  |
+| `GLOBAL_CONFIG_NAME`      | `global`                     | `name` field written into a global-scope config      |
+| `EDIT_PROJECT_SETUP_FLAG` | `project-setup`              | Hidden `edit` flag marking the setup half of `init`  |
+
+Helper: `marketplaceManifestPath(dir: string): string` joins `dir` + `PLUGIN_MANIFEST_DIR` + `MARKETPLACE_JSON`.
 
 ### Directory Constants
 
@@ -275,32 +346,42 @@ All user-facing strings centralized in constant objects:
 | `STANDARD_FILES.CONFIG_TS`                | `config.ts`                |
 | `STANDARD_FILES.CONFIG_TYPES_TS`          | `config-types.ts`          |
 | `STANDARD_FILES.CLAUDE_MD`                | `CLAUDE.md`                |
+| `STANDARD_FILES.README_MD`                | `README.md`                |
 | `STANDARD_FILES.REFERENCE_MD`             | `reference.md`             |
 | `STANDARD_FILES.IDENTITY_MD`              | `identity.md`              |
 | `STANDARD_FILES.PLAYBOOK_MD`              | `playbook.md`              |
 | `STANDARD_FILES.OUTPUT_MD`                | `output.md`                |
 | `STANDARD_FILES.CRITICAL_REQUIREMENTS_MD` | `critical-requirements.md` |
 | `STANDARD_FILES.CRITICAL_REMINDERS_MD`    | `critical-reminders.md`    |
+| `STANDARD_FILES.SETTINGS_JSON`            | `settings.json`            |
+| `STANDARD_FILES.SETTINGS_LOCAL_JSON`      | `settings.local.json`      |
 
 `STANDARD_DIRS` constant:
 
-| Constant                 | Value      |
-| ------------------------ | ---------- |
-| `STANDARD_DIRS.EXAMPLES` | `examples` |
-| `STANDARD_DIRS.SCRIPTS`  | `scripts`  |
-| `STANDARD_DIRS.SKILLS`   | `skills`   |
+| Constant                  | Value       |
+| ------------------------- | ----------- |
+| `STANDARD_DIRS.EXAMPLES`  | `examples`  |
+| `STANDARD_DIRS.SCRIPTS`   | `scripts`   |
+| `STANDARD_DIRS.SKILLS`    | `skills`    |
+| `STANDARD_DIRS.AGENTS`    | `agents`    |
+| `STANDARD_DIRS.COMMANDS`  | `commands`  |
+| `STANDARD_DIRS.TEMPLATES` | `templates` |
 
 ### Branding and Naming
 
-| Constant                     | Value                           | Purpose                                                                                                                                           |
-| ---------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLI_INVOKE_COMMAND`         | `npx @agents-inc/cli`           | Promoted invocation prefix shown in user-facing messages (registered global bin name is still `agentsinc` — see `package.json` `bin`/`oclif.bin`) |
-| `DEFAULT_BRANDING.NAME`      | `Agents Inc.`                   | Default product name                                                                                                                              |
-| `DEFAULT_BRANDING.TAGLINE`   | `AI-powered development tools`  | Default tagline                                                                                                                                   |
-| `DEFAULT_PUBLIC_SOURCE_NAME` | `agents-inc`                    | Fallback marketplace name                                                                                                                         |
-| `SOURCE_DISPLAY_NAMES`       | `{ public, eject, agents-inc }` | Human-readable source type labels                                                                                                                 |
-| `DEFAULT_VERSION`            | `1.0.0`                         | Default skill version                                                                                                                             |
-| `DEFAULT_DISPLAY_VERSION`    | `0.0.0`                         | Indicates no version explicitly set                                                                                                               |
+| Constant                     | Value                                                              | Purpose                                                                                                                                           |
+| ---------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLI_INVOKE_COMMAND`         | `npx @agents-inc/cli`                                              | Promoted invocation prefix shown in user-facing messages (registered global bin name is still `agentsinc` — see `package.json` `bin`/`oclif.bin`) |
+| `DEFAULT_BRANDING.NAME`      | `Agents Inc.`                                                      | Default product name                                                                                                                              |
+| `DEFAULT_BRANDING.TAGLINE`   | `AI-powered development tools`                                     | Default tagline                                                                                                                                   |
+| `DEFAULT_PUBLIC_SOURCE_NAME` | `agents-inc` (= `DEFAULT_PLUGIN_NAME`)                             | Fallback marketplace/source name                                                                                                                  |
+| `PUBLIC_SOURCE_NAME`         | `public`                                                           | Canonical name of the built-in public source                                                                                                      |
+| `SOURCE_DISPLAY_NAMES`       | `{ public: "Public", eject: "Eject", "agents-inc": "Agents Inc" }` | Inline human-readable source type labels                                                                                                          |
+| `SOURCE_HEADER_NAMES`        | `{ eject: "Local", "agents-inc": "Plugin", public: "Public" }`     | Column-header labels for the source grid (distinct from inline labels)                                                                            |
+| `DEFAULT_VERSION`            | `1.0.0`                                                            | Default skill version                                                                                                                             |
+| `DEFAULT_DISPLAY_VERSION`    | `0.0.0`                                                            | Indicates no version explicitly set                                                                                                               |
+
+Helper: `formatSourceDisplayName(source: string): string` resolves a source name to its `SOURCE_DISPLAY_NAMES` label, falling back to the raw name.
 
 ### Versioning and Hashing
 
@@ -332,34 +413,38 @@ All user-facing strings centralized in constant objects:
 
 `UI_SYMBOLS`, `CLI_COLORS`, and `SCROLL_VIEWPORT` are defined in `src/cli/consts.ts`. (No `UI_LAYOUT` or `UI_MESSAGES` objects — those names are not defined.)
 
-`UI_SYMBOLS` includes: `CHECKBOX_CHECKED`, `CHECKBOX_UNCHECKED`, `CHEVRON`, `CHEVRON_SPACER`, `SELECTED`, `UNSELECTED`, `CURRENT`, `SKIPPED`, `DISCOURAGED`, `DISABLED`, `LOCK`, `EJECT`, `BULLET`, `SCROLL_UP`, `SCROLL_DOWN`, `CHECK`, `CROSS`.
+`UI_SYMBOLS` has exactly 17 members (exhaustive): `CHECKBOX_CHECKED`, `CHECKBOX_UNCHECKED`, `CHEVRON`, `CHEVRON_SPACER`, `SELECTED`, `UNSELECTED`, `CURRENT`, `SKIPPED`, `DISCOURAGED`, `DISABLED`, `LOCK`, `EJECT`, `BULLET`, `SCROLL_UP`, `SCROLL_DOWN`, `CHECK`, `CROSS`. (`SELECTED`/`CHECK` share one checkmark glyph; `SKIPPED`/`DISABLED` share one en-dash glyph.)
 
-These are documented in detail in `reference/component-patterns.md`.
+`SCROLL_VIEWPORT` keys: `SCROLL_INDICATOR_HEIGHT`, `CATEGORY_NAME_LINES`, `CATEGORY_MARGIN_LINES`, `MIN_VIEWPORT_ROWS`, `MIN_TERMINAL_HEIGHT`.
+
+`UI_SYMBOLS` and `CLI_COLORS` values are documented in detail in `reference/component-patterns.md`.
 
 ### Schema Paths
 
-`SCHEMA_PATHS` object. JSON Schema URLs for yaml-language-server `$schema` comments:
+`SCHEMA_PATHS` object. Full `raw.githubusercontent.com/.../src/schemas/<suffix>` URLs for yaml-language-server `$schema` comments:
 
 | Key                   | Schema URL suffix                   |
 | --------------------- | ----------------------------------- |
 | `agent`               | `agent.schema.json`                 |
 | `metadata`            | `metadata.schema.json`              |
+| `customMetadata`      | `custom-metadata.schema.json`       |
 | `marketplace`         | `marketplace.schema.json`           |
 | `projectConfig`       | `project-config.schema.json`        |
 | `projectSourceConfig` | `project-source-config.schema.json` |
 | `stacks`              | `stacks.schema.json`                |
 
-Helper: `yamlSchemaComment(schemaPath: string): string` generates a `# yaml-language-server: $schema=...` comment.
+Helper: `yamlSchemaComment(schemaPath: string): string` generates a `# yaml-language-server: $schema=...` comment. It now lives in `src/cli/utils/yaml-schema.ts` (see YAML Loading above), not in `consts.ts`.
 
 ### Source Resolution
 
-| Constant                      | Value                             | Purpose                            |
-| ----------------------------- | --------------------------------- | ---------------------------------- |
-| `GITHUB_SOURCE.HTTPS_PREFIX`  | `https://github.com/`             | GitHub HTTPS URL prefix            |
-| `GITHUB_SOURCE.GITHUB_PREFIX` | `github:`                         | GitHub shorthand prefix            |
-| `GITHUB_SOURCE.GH_PREFIX`     | `gh:`                             | GitHub short prefix                |
-| `DEFAULT_SKILLS_SUBDIR`       | `skills`                          | Default skills subdirectory name   |
-| `KEBAB_CASE_PATTERN`          | `/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/` | Strict kebab-case validation regex |
+| Constant                      | Value                               | Purpose                            |
+| ----------------------------- | ----------------------------------- | ---------------------------------- |
+| `GITHUB_SOURCE.HTTPS_PREFIX`  | `https://github.com/`               | GitHub HTTPS URL prefix            |
+| `GITHUB_SOURCE.GITHUB_PREFIX` | `github:`                           | GitHub shorthand prefix            |
+| `GITHUB_SOURCE.GH_PREFIX`     | `gh:`                               | GitHub short prefix                |
+| `DEFAULT_SKILLS_SUBDIR`       | `skills` (= `STANDARD_DIRS.SKILLS`) | Default skills subdirectory name   |
+| `KEBAB_CASE_PATTERN`          | `/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/`   | Strict kebab-case validation regex |
+| `AUTHOR_HANDLE_PATTERN`       | `/^@[a-z][a-z0-9-]*$/`              | Author handle format (`@` + slug)  |
 
 ### Domain Configuration
 
@@ -367,26 +452,30 @@ Helper: `yamlSchemaComment(schemaPath: string): string` generates a `# yaml-lang
 | ------------------------- | ----------------------------------------------------------------------------- |
 | `BUILT_IN_DOMAIN_ORDER`   | `["web", "api", "ai", "mobile", "desktop", "cli", "infra", "meta", "shared"]` |
 | `DEFAULT_SCRATCH_DOMAINS` | `["web", "api", "mobile"]`                                                    |
+| `FALLBACK_DOMAIN`         | `"web"` — used when no active domain resolves from wizard state               |
 
 ## Remeda Utilities (External)
 
-Used across 20+ files. Key functions:
+Imported by 26 files (`import { ... } from "remeda"`; no namespace `* as R` imports). The named imports actually in use across `src/cli/`:
 
-| Function       | Usage                     |
-| -------------- | ------------------------- |
-| `unique()`     | Deduplicate arrays        |
-| `uniqueBy()`   | Deduplicate by key        |
-| `sortBy()`     | Sort with comparators     |
-| `indexBy()`    | Index array into object   |
-| `mapToObj()`   | Transform array to object |
-| `pipe()`       | Functional pipeline       |
-| `flatMap()`    | Flat map                  |
-| `filter()`     | Type-safe filter          |
-| `mapValues()`  | Transform record values   |
-| `difference()` | Set difference            |
-| `groupBy()`    | Group array by key        |
-| `countBy()`    | Count occurrences         |
-| `sumBy()`      | Sum by accessor           |
+| Function        | Usage                       |
+| --------------- | --------------------------- |
+| `unique()`      | Deduplicate arrays          |
+| `uniqueBy()`    | Deduplicate by key          |
+| `sortBy()`      | Sort with comparators       |
+| `indexBy()`     | Index array into object     |
+| `pipe()`        | Functional pipeline         |
+| `flatMap()`     | Flat map                    |
+| `filter()`      | Type-safe filter            |
+| `mapValues()`   | Transform record values     |
+| `difference()`  | Set difference              |
+| `groupBy()`     | Group array by key          |
+| `countBy()`     | Count occurrences           |
+| `partition()`   | Split into pass/fail arrays |
+| `zip()`         | Pair two arrays elementwise |
+| `isDeepEqual()` | Structural equality check   |
+
+(`mapToObj` and `sumBy` are no longer imported anywhere in `src/cli/`.)
 
 ## Test Mocks
 

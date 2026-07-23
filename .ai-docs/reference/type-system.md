@@ -6,13 +6,13 @@ related:
   - reference/types/core-types.md
   - reference/types/operations-types.md
   - reference/types/zod-schemas.md
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # Type System (Pointer)
 
-**Last Updated:** 2026-04-21
-**Last Validated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 > This file was **split** in Phase 2+3 of the documentation restructure. All content now lives in the three files below. This pointer exists because inbound links (CLAUDE.md, agent findings, older docs) still reference `reference/type-system.md` — do NOT delete without sweeping those references first.
 

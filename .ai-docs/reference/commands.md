@@ -5,13 +5,13 @@ keywords: [commands, pointer, migration]
 related:
   - reference/commands/index.md
   - reference/commands/edit.md
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # Commands Reference (Pointer)
 
-**Last Updated:** 2026-04-21
-**Last Validated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 > This file was **migrated** to `reference/commands/` as part of the documentation restructure cleanup. Canonical content now lives in the subdirectory. This pointer exists because inbound links (CLAUDE.md, agent findings, other reference docs) still reference `reference/commands.md` — do NOT delete without sweeping those references first.
 

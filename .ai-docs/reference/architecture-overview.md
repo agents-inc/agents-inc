@@ -22,19 +22,21 @@ related:
   - reference/concepts/tombstone-pattern.md
   - reference/concepts/scope-system.md
   - reference/commands/index.md
-last_validated: 2026-04-21
+  - reference/component-patterns.md
+last_validated: 2026-07-23
 ---
 
 # Architecture Overview
 
-**Last Updated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 ## Project Identity
 
 | Field       | Value                                                                                                                                                                     |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Package     | `@agents-inc/cli`                                                                                                                                                         |
-| Version     | 0.141.0                                                                                                                                                                   |
+| Version     | 0.144.1                                                                                                                                                                   |
 | Binary      | `agentsinc` (registered global bin, `package.json` `bin`/`oclif.bin`); user-facing messages promote `npx @agents-inc/cli` via `CLI_INVOKE_COMMAND` in `src/cli/consts.ts` |
 | Type        | ESM (`"type": "module"` in package.json)                                                                                                                                  |
 | Entry Point | `src/cli/index.ts` (runs oclif with `run()`)                                                                                                                              |
@@ -81,8 +83,7 @@ src/cli/
     validate.ts             # Validate installation
   components/               # Ink React components
     common/                 # Shared UI: confirm, message, select-list, spinner
-    hooks/                  # React hooks for wizard behavior
-    skill-search/           # Skill search modal
+    hooks/                  # React hooks for wizard behavior (hook table: reference/component-patterns.md)
     themes/                 # Ink theme (CLI_COLORS -> theme)
     wizard/                 # Wizard step components + utilities
   hooks/
@@ -91,30 +92,38 @@ src/cli/
     agents/                 # Agent fetching, compilation, recompilation
     configuration/          # Config loader/saver/merger/writer/generator/source-manager/config-types-writer/project-config/default-*
     installation/           # Install mode detection, local installer, mode migrator
+      installation.ts       # detectInstallation(), detectProjectInstallation(), detectGlobalInstallation(), deriveInstallMode()
+      install-base-dir.ts   # resolveInstallPaths(projectDir, scope), installBaseDir() — scope-aware base dir
+      is-home-directory.ts  # isHomeDirectory() — symlink-safe global-install-root check
+      local-installer.ts    # writeScopedConfigs(), installEject(), propagateGlobalChangesToProjects()
+      mode-migrator.ts      # detectMigrations(), executeMigration() — install-mode migration
     loading/                # YAML/frontmatter loading, source fetching, multi-source
     matrix/                 # Skills matrix loading, resolving, health checks
       matrix-provider.ts    # getSkillById(), getSkillBySlug() asserting lookups
       skill-resolution.ts   # synthesizeCategory(), mergeMatrixWithSkills() — resolveRelationships is internal
     operations/             # Composable building blocks for CLI commands
-      source/               # loadSource(), ensureMarketplace()
-      skills/               # discoverSkills(), copyLocalSkills(), installPluginSkills(), uninstallPluginSkills(), compareSkills()
-      project/              # detectProject(), detectBothInstallations(), writeProjectConfig(), compileAgents(), loadAgentDefs()
+      source/               # loadSource(), ensureMarketplace(), requireMarketplace()
+      skills/               # discoverSkills(), copyLocalSkills(), installPluginSkills(), uninstallPluginSkills(), pluginInstallFailureError(), compareSkills(), collectScopedSkillDirs(), findSkillMatch()
+      project/              # detectProject(), detectBothInstallations(), writeProjectConfig(), compileAgents(), compileAgentsAllScopes(), loadAgentDefs()
     plugins/                # Plugin discovery, validation, manifest, settings
     skills/                 # Skill fetching, copying, metadata, source switching, local loader, plugin compiler
     stacks/                 # Stack loading, installing, plugin compilation
     wizard/                 # Build step logic (pure functions)
+    assert-dir-overwritable.ts # Guards fresh-write dirs (assertDirOverwritable)
     compiler.ts             # Liquid template engine, agent/skill compilation
     exit-codes.ts           # Named EXIT_CODES constants
-    feature-flags.ts        # Runtime feature flags (SOURCE_SEARCH, SOURCE_CHOICE, INFO_PANEL, *_COMMAND gates)
+    feature-flags.ts        # Runtime feature flags (SOURCE_SEARCH, SOURCE_CHOICE, INFO_PANEL, NEW_SKILL_COMMAND, NEW_AGENT_COMMAND, NEW_MARKETPLACE_COMMAND) + featureDisabledError()
+    marketplace-generator.ts # Marketplace.json generation
     metadata-keys.ts        # Metadata key constants
     output-validator.ts     # Compiled agent output validation
     permission-checker.tsx  # Claude Code permissions check
     resolver.ts             # Skill/agent reference resolution
-    schema-validator.ts     # JSON Schema validation
+    schema-validator.ts     # Zod error formatting (formatZodErrors, formatZodIssue)
     schemas.ts              # ALL Zod schemas
     source-validator.ts     # Source directory validation
+    validate-kebab-name.ts  # Kebab-case entity name validation (validateKebabCaseName)
+    validation-result.ts    # ValidationResult factories (validResult, invalidResult, mergeValidationResults)
     versioning.ts           # Content hashing for versioning
-    marketplace-generator.ts # Marketplace.json generation
     __tests__/              # Integration + journey tests + shared factories / helpers / fixtures / mock-data
   stores/
     wizard-store.ts         # Zustand wizard state + actions
@@ -136,9 +145,11 @@ src/cli/
     fs.ts                   # File system wrappers (fs-extra + fast-glob)
     logger.ts               # log(), warn(), verbose(), setVerbose()
     messages.ts             # All user-facing message constants
-    string.ts               # truncateText() string utility
-    type-guards.ts          # isCategory(), isDomain(), isAgentName(), isCategoryPath()
-    typed-object.ts         # typedEntries(), typedKeys()
+    string.ts               # truncateText(), toTitleCase() string utilities
+    terminal.ts             # clearTerminalScreen()
+    type-guards.ts          # isCategory(), isDomain(), isAgentName(), isCategoryPath(), isSkillId(), isSkillSlug(), isSkillAssignment(), isRecord()
+    typed-object.ts         # typedEntries(), typedKeys(), typedValues(), typedFromEntries()
+    yaml-schema.ts          # yamlSchemaComment(), stripYamlSchemaComment()
     __mocks__/              # Vitest mocks for fs and logger
 ```
 
@@ -153,14 +164,17 @@ oclif init hook (hooks/init.ts)
   |
   v
 Command.run() (commands/init.tsx)
-  -> loadSkillsMatrixFromSource() -> SourceLoadResult (matrix + sourceConfig)
-  -> render(<Wizard projectDir={...} marketplaceLabel={...} />)
+  -> loadSource() operation (wraps loadSkillsMatrixFromSource()) -> SourceLoadResult (matrix + sourceConfig)
+  -> runWizardSession({ hydrate, props }) (components/wizard/run-wizard-session.tsx)
+       -> render(<Wizard version logo projectDir installedSkillIds initialAgents startupMessages />)
   |
   v
 Wizard (Ink/React UI)
   -> Imports matrix from matrix-provider.ts (not via props)
   -> Zustand store (useWizardStore) manages step-by-step state
-  -> Steps: stack -> domains -> build -> sources -> agents -> confirm
+  -> Steps: stack -> domains -> build -> sources -> agents -> confirm (WizardStep / WIZARD_STEP_ORDER in wizard-store.ts)
+  -> Settings is an overlay, NOT a linear step: opened from the sources step via HOTKEY_SETTINGS,
+     renders StepSettings (components/wizard/step-settings.tsx) while store.showSettings is true (store.toggleSettings())
   -> Returns WizardResultV2
   |
   v
@@ -187,9 +201,14 @@ Every command extends `BaseCommand` in `src/cli/base-command.ts`.
 
 ```
 BaseCommand provides:
-  - baseFlags: --source
+  - baseFlags: --source (doctor, search, validate override baseFlags to `{}`)
+  - init() lifecycle -> super.init() + ensureTerminalSize()
+      (blocks until the terminal meets the 80x15 minimum; uses
+       clearTerminal() -> clearTerminalScreen() from utils/terminal.ts)
   - sourceConfig getter (from init hook)
   - handleError() -> this.error() with EXIT_CODES.ERROR
+  - requireMarketplaceOrExit() -> requireMarketplace() (operations/source/require-marketplace.ts)
+  - ensureDirOverwritable() -> assertDirOverwritable() (lib/assert-dir-overwritable.ts)
   - logSuccess(), logWarning(), logInfo()
 ```
 
@@ -245,7 +264,7 @@ Production code calls `parseYaml()` + `schema.safeParse()` directly at individua
 
 Union types (`SkillId`, `SkillSlug`, `Category`, `Domain`, `AgentName`) are auto-generated from the skills source into `src/cli/types/generated/source-types.ts`. Run `bun run generate:types` to regenerate.
 
-Runtime type guards in `src/cli/utils/type-guards.ts` (`isCategory()`, `isDomain()`, `isAgentName()`, `isCategoryPath()`) validate strings against these generated arrays.
+Runtime type guards in `src/cli/utils/type-guards.ts` (`isCategory()`, `isDomain()`, `isAgentName()`, `isCategoryPath()`, `isSkillId()`, `isSkillSlug()`) validate strings against these generated arrays. The same file also exports `isSkillAssignment()` and `isRecord()` for structural checks.
 
 The `src/cli/types/generated/matrix.ts` file contains the full `BUILT_IN_MATRIX` constant with all category and skill data.
 
@@ -292,7 +311,7 @@ Skills and agents can exist at two scopes:
 | `project` | `{projectDir}/.claude/skills/` | `{projectDir}/.claude/agents/` | `{projectDir}/.claude-src/config.ts` |
 | `global`  | `~/.claude/skills/`            | `~/.claude/agents/`            | `~/.claude-src/config.ts`            |
 
-**Path resolution:** `resolveInstallPaths(projectDir, scope)` in `src/cli/lib/installation/local-installer.ts` returns the correct base directory (`os.homedir()` for global, `projectDir` for project).
+**Path resolution:** `resolveInstallPaths(projectDir, scope)` in `src/cli/lib/installation/install-base-dir.ts` returns the correct base directory (`os.homedir()` for global, `projectDir` for project).
 
 **Config splitting:** `writeScopedConfigs()` in `src/cli/lib/installation/local-installer.ts` splits a unified `ProjectConfig` into separate global and project config files. Project config imports from and extends the global config.
 
@@ -325,9 +344,9 @@ When a project needs to override (disable) a globally-installed skill or agent w
 The authoritative plugin-reference format is **per-skill**, not per-agent.
 
 - `SkillConfig.source: string` in `src/cli/types/config.ts` is the source of truth: `"eject"` means local filesystem; any other value is a marketplace name (e.g., `"agents-inc"`).
-- Compiled agent skill refs are derived per-skill as `${source}:${skillId}` — not from any whole-agent `installMode`.
-- There is no agent-level install mode. Mixed installs are expressed by different `source` values across the skills of a single agent.
-- Plugin install shell commands still use the registration form `{skillId}@{marketplace}`; only the compiled-agent body uses `${source}:${skillId}`.
+- Compiled agent skill refs are derived per-skill by `derivePluginRef()` (an internal function in `src/cli/lib/compiler.ts`) as `${id}:${id}`, emitted only when the skill's own `source` is a marketplace name (not `undefined` and not `"eject"`). The per-skill `source` gates whether a plugin ref is emitted — it is not part of the ref string. There is no whole-agent `installMode`.
+- Mixed installs are expressed by different `source` values across the skills of a single agent.
+- Plugin install shell commands still use the registration form `{skillId}@{marketplace}`; the compiled-agent body uses the `${id}:${id}` pluginRef form.
 - Hard-error contract: if `installPluginSkills` returns non-empty `failed`, the command MUST hard-error before writing config (`init.tsx::installPluginsStep`, `edit.tsx::applyPluginChanges`) — no silent plugin→eject fallback (D-229).
 
 ### 14. Projects Array Lifecycle (Global Config Only)
@@ -336,7 +355,9 @@ The authoritative plugin-reference format is **per-skill**, not per-agent.
 
 - Only meaningful in the GLOBAL config (`~/.claude-src/config.ts`). Project configs never carry `projects`.
 - A project init appends the project directory; uninstall removes it.
-- `propagateGlobalChangesToProjects()` in `local-installer.ts` iterates `projects` to rewrite each project's `config-types.ts` when the global unions change. Each per-project rewrite goes through `regenerateConfigTypes()` (per the writer-selection rule above).
+- `propagateGlobalChangesToProjects()` in `local-installer.ts` iterates `projects` to rewrite each registered project's `config.ts` (via `writeConfigFile`) and `config-types.ts` (via `regenerateConfigTypes()`, per the writer-selection rule above) when the global unions change.
+
+**Known Limitation (D-240 / D-256, active in `todo/TODO.md`):** `propagateGlobalChangesToProjects()` is config-only — it rewrites each registered project's `config.ts` / `config-types.ts` but does NOT recompile that project's agents. A registered project's already-compiled `.claude/agents/<name>.md` keeps referencing a removed or re-scoped global skill until the project is next edited/installed/compiled directly (which runs `compileAndWriteAgents`). D-240 (propagate agent recompilation to registered projects) and D-256 (global plugin→eject recompile) track closing this gap.
 
 ### 15. Stack Grouping System
 
@@ -346,4 +367,4 @@ Stacks can be organized into visual groups in the stack selection screen.
 
 **UI grouping:** `groupStacks()` in `src/cli/components/wizard/stack-selection.tsx` sorts stacks into `StackGroup[]` objects. Groups are ordered by `GROUP_ORDER` (React first, then CLI, then alphabetical). Ungrouped stacks go into an "Other Frameworks" section. If no stacks have a `group` field, the list renders flat without headers.
 
-**Agent preselection from stacks:** `populateFromStack()` in `wizard-store.ts` now derives `selectedAgents` and `agentConfigs` from the stack's agent keys (via `Object.keys(stack.agents).filter(isAgentName)`), ensuring agent selection matches the stack definition.
+**Agent preselection from stacks:** Selecting a stack is a two-step flow. `selectStack(stackId)` in `wizard-store.ts` resets the stack-scoped state (wipes `selectedAgents`, `agentConfigs`, `skillConfigs`, `domainSelections`). The `stack-selection.tsx` component then derives the stack's agent keys via `typedKeys<AgentName>(focusedStack.skills)` and calls `preselectAgentsFromStack(stackAgents)`, which sets `selectedAgents` and `agentConfigs` (merging stack agents with any `globalAgentPreselections` and preserving dual-scope tombstones, D-227), ensuring agent selection matches the stack definition.

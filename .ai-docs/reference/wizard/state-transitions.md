@@ -25,12 +25,13 @@ related:
   - reference/concepts/tombstone-pattern.md
   - reference/concepts/guard-pattern.md
   - reference/concepts/scope-system.md
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # State Transitions
 
-**Last Updated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 ## Overview
 
@@ -52,7 +53,7 @@ last_validated: 2026-04-21
 type WizardStep = "stack" | "domains" | "build" | "sources" | "agents" | "confirm";
 ```
 
-**Canonical order** (from `WIZARD_STEPS` in `src/cli/components/wizard/wizard-tabs.tsx`):
+**Canonical order** (source of truth: `WIZARD_STEP_ORDER` in `src/cli/stores/wizard-store.ts`; `WIZARD_STEPS` in `src/cli/components/wizard/wizard-tabs.tsx` is derived from it via `.map()`):
 
 | Index | Step        | Label   | Purpose                                           |
 | ----- | ----------- | ------- | ------------------------------------------------- |
@@ -121,6 +122,8 @@ type WizardStep = "stack" | "domains" | "build" | "sources" | "agents" | "confir
                                          skips build/sources/agents)
 ```
 
+**Stack-item population detail** (in `stack-selection.tsx` `handleSelect`): after `selectStack(id)` + `setStackAction("customize")`, agents are derived via `preselectAgentsFromStack(typedKeys(stack.skills))` and skills via `populateFromSkillIds(mergedIds, globalPreselections)` (the removed `populateFromStack` no longer exists). The scratch path restores `globalAgentPreselections` and merges `globalPreselections` before toggling `DEFAULT_SCRATCH_DOMAINS`.
+
 **Backward navigation:** Every step uses `goBack()` (ESC key), which pops from `history[]` to return to the previous step.
 
 ## Forward Navigation Transitions
@@ -148,7 +151,7 @@ type WizardStep = "stack" | "domains" | "build" | "sources" | "agents" | "confir
 | `agents`  | `sources`           | ESC                                                      | Pops from `history`                                        |
 | `confirm` | `agents`            | ESC                                                      | Pops from `history`                                        |
 
-**`goBack()` implementation** in `wizard-store.ts`: Pops from `history[]`, sets `step` to the popped value. Falls back to `"stack"` if history is empty.
+**`goBack()` implementation** in `wizard-store.ts`: Pops from `history[]`, sets `step` to the popped value. Returns unchanged (no-op) when `history` is empty — it does NOT fall back to `"stack"` (the edit flow enters mid-wizard with an empty `history`, so `goBack` intentionally does nothing there).
 
 ## Accept-Defaults Shortcut
 
@@ -163,8 +166,8 @@ When a stack is selected and the user presses `A` during the build step:
 
 ## Hydration (Edit and Init Entry Points)
 
-**Function:** `hydrateWizardStore(options)` in `src/cli/stores/wizard-store.ts`
-**Callers:** `runEditWizard()` in `commands/edit.tsx`, `runWizard()` in `commands/init.tsx`
+**Function:** `hydrateWizardStore(options)` in `src/cli/stores/wizard-store.ts` (delegates to non-exported `hydrateForEdit` / `hydrateForInit`)
+**Callers:** `runWizardSession()` in `components/wizard/run-wizard-session.tsx`, invoked by `commands/init.tsx` and `commands/edit.tsx`'s `runEditWizard()`; also called directly by `commands/list.tsx` (dashboard, snapshot-only)
 
 Hydration MUST run synchronously **before** `render(<Wizard />)` so React's first commit captures the intended step. A render-phase hook would flash the default `"stack"` step for one frame before the jump committed.
 
@@ -179,6 +182,7 @@ Hydration MUST run synchronously **before** `render(<Wizard />)` so React's firs
 7. If `initialAgents` AND `installedAgentConfigs`: restores `agentConfigs` (preserves scope)
 8. If `installedSkillConfigs` or `installedAgentConfigs`: snapshots into `installedSkillConfigs`/`installedAgentConfigs` for guard checks and diff rendering
 9. If `isEditingFromGlobalScope`: sets flag (disables scope toggles)
+10. `seedFocusedSkillForActiveDomain()` -- synchronously seeds `focusedSkillId` before the first frame
 
 **Init mode** (no `initialStep`):
 
@@ -186,7 +190,8 @@ Hydration MUST run synchronously **before** `render(<Wizard />)` so React's firs
 2. `setState({ isInitMode: true })`
 3. **Does NOT call `populateFromSkillIds`** -- stack-selection runs first; user chooses stack or scratch
 4. If `installedSkillConfigs`: stashes into `globalPreselections` (merged by `stack-selection.tsx` after stack/scratch choice)
-5. If `initialAgents` or `installedAgentConfigs`: stashes into `globalAgentPreselections.agents`/`.configs` (restored after `selectStack()` wipes agents)
+5. If `initialAgents` or `installedAgentConfigs`: stashes into `globalAgentPreselections.agents`/`.configs` (restored via `preselectAgentsFromStack` / the scratch path after `selectStack()` wipes agents)
+6. `seedFocusedSkillForActiveDomain()` -- runs at the end of init hydration too (seeds `null` when no domains are selected yet)
 
 > **Note:** Older versions of this doc referenced `src/cli/components/hooks/use-wizard-initialization.ts`. That hook has been removed -- hydration lives in the store itself.
 
@@ -206,42 +211,43 @@ The wizard store is module-level singleton state, so a fresh `hydrateWizardStore
 
 ### Navigation Actions
 
-| Action                     | State Modified       | Side Effects                                                                          |
-| -------------------------- | -------------------- | ------------------------------------------------------------------------------------- |
-| `setStep(step)`            | `step`, `history`    | Pushes current `step` onto `history`, sets new `step`                                 |
-| `goBack()`                 | `step`, `history`    | Pops last entry from `history`, sets `step` to that value (or `"stack"` if empty)     |
-| `nextDomain()`             | `currentDomainIndex` | Increments by 1 if not at last domain. Returns `true` if advanced, `false` if at end. |
-| `prevDomain()`             | `currentDomainIndex` | Decrements by 1 if not at first domain. Returns `true` if moved, `false` if at start. |
-| `setCurrentDomainIndex(n)` | `currentDomainIndex` | Sets directly if valid (0 <= n < selectedDomains.length), no-op otherwise             |
+| Action                     | State Modified                         | Side Effects                                                                                                                    |
+| -------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `setStep(step)`            | `step`, `history`, `focusedSkillId`    | Pushes current `step` onto `history`, sets new `step`. When `step === "build"`, also calls `seedFocusedSkillForActiveDomain()`. |
+| `goBack()`                 | `step`, `history`                      | Pops last entry from `history`, sets `step` to that value. No-op if `history` is empty (no fallback to `"stack"`).              |
+| `nextDomain()`             | `currentDomainIndex`, `focusedSkillId` | Increments by 1 if not at last domain, then `seedFocusedSkillForActiveDomain()`. Returns `true` if advanced, `false` if at end. |
+| `prevDomain()`             | `currentDomainIndex`, `focusedSkillId` | Decrements by 1 if not at first domain, then `seedFocusedSkillForActiveDomain()`. Returns `true` if moved, `false` if at start. |
+| `setCurrentDomainIndex(n)` | `currentDomainIndex`, `focusedSkillId` | Sets directly if valid (0 <= n < selectedDomains.length), then `seedFocusedSkillForActiveDomain()`; no-op otherwise             |
 
 ### Approach/Stack Actions
 
-| Action                   | State Modified                                                                                                                                                                           | Side Effects                                                                                                                                                                            |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setApproach(approach)`  | `approach`                                                                                                                                                                               | None                                                                                                                                                                                    |
-| `selectStack(stackId)`   | `selectedStackId`, `domainSelections`, `_stackDomainSelections`, `selectedDomains`, `skillConfigs`, `selectedAgents`, `agentConfigs`, `boundSkills`, `currentDomainIndex`, `stackAction` | **Full reset** -- see Reset Matrix. Note: `selectedAgents` and `agentConfigs` are cleared here but repopulated by `populateFromStack()` which derives them from the stack's agent keys. |
-| `setStackAction(action)` | `stackAction`                                                                                                                                                                            | None                                                                                                                                                                                    |
+| Action                   | State Modified                                                                                                                                                                           | Side Effects                                                                                                                                                                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `setApproach(approach)`  | `approach`                                                                                                                                                                               | None                                                                                                                                                                                                                                       |
+| `selectStack(stackId)`   | `selectedStackId`, `domainSelections`, `_stackDomainSelections`, `selectedDomains`, `skillConfigs`, `selectedAgents`, `agentConfigs`, `boundSkills`, `currentDomainIndex`, `stackAction` | **Full reset** -- see Reset Matrix. Note: `selectedAgents` and `agentConfigs` are cleared here but repopulated by `preselectAgentsFromStack()` (derives agents from the stack's agent keys) after `stack-selection.tsx` selects the stack. |
+| `setStackAction(action)` | `stackAction`                                                                                                                                                                            | None                                                                                                                                                                                                                                       |
 
 ### Selection Actions
 
-| Action                                           | State Modified                                        | Side Effects                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------------------------------------------------ | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `toggleDomain(domain)`                           | `selectedDomains`, `domainSelections`, `skillConfigs` | **Remove:** drops domain selections + their skill configs. **Add:** restores from `_stackDomainSelections` snapshot if available, creates default skill configs for restored skills.                                                                                                                                                                                                                                        |
-| `toggleTechnology(domain, cat, tech, exclusive)` | `domainSelections`, `skillConfigs`, `toastMessage`    | **Guard:** if skill is installed globally and not in global-scope edit or init mode, returns toast. Single-skill categories block deselection with toast. Exclusive mode: blocks swap if current selection is globally installed. Uses `reconcileSkillConfigs()` for add/remove (marks global as excluded tombstone, restores tombstoned on re-add).                                                                        |
-| `toggleAgent(agent)`                             | `selectedAgents`, `agentConfigs`, `toastMessage`      | **Guard:** if agent is installed globally and not in global-scope edit or init mode, returns toast instead of toggling. **Tombstone logic:** uses `applyAgentToggle()` -- toggling off a globally-installed agent sets `excluded: true` (keeps agent in `selectedAgents`); toggling on a tombstoned agent clears `excluded`. Fresh agents are simply added/removed with hard-coded `scope: "global"` (see known bug below). |
-| `preselectAgentsFromDomains()`                   | `selectedAgents`, `agentConfigs`                      | Collects agents from `DOMAIN_AGENTS` for selected domains, merges with existing `agentConfigs` (preserves scope, clears `excluded` on matched), preserves excluded entries not in the new list. All new agents scoped as `"global"` (see known bug below).                                                                                                                                                                  |
+| Action                                           | State Modified                                                                       | Side Effects                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toggleDomain(domain)`                           | `selectedDomains`, `domainSelections`, `skillConfigs`                                | **Remove:** drops domain selections + their skill configs. **Add:** restores from `_stackDomainSelections` snapshot if available, creates default skill configs for restored skills.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `toggleTechnology(domain, cat, tech, exclusive)` | `domainSelections`, `skillConfigs`, `_sessionRebuiltScopePairSkills`, `toastMessage` | **Guard:** if skill is installed globally (active global, or a snapshot tombstone paired with a live active global) and not in global-scope edit or init mode, returns `GLOBAL_SKILLS_LOCKED` toast. Single-skill `exclusive && required` categories block deselection (`ONLY_SKILL_IN_CATEGORY`). Exclusive mode: blocks swap if current selection is globally installed. Uses `reconcileSkillConfigs()` for add/remove (marks global as excluded tombstone, restores tombstoned on re-add). A dual-scope deselect that collapses to a still-active inherited-global entry keeps the skill in the domain selection (`stillActiveAfterRemoval`); a spacebar re-select that rebuilds a `[P][G]` pair records the id in `_sessionRebuiltScopePairSkills`. |
+| `toggleAgent(agent)`                             | `selectedAgents`, `agentConfigs`, `_sessionRebuiltScopePairAgents`, `toastMessage`   | **Dual-scope (D-233):** deselecting a `[P][G]` pair collapses it to inherited-global via `collapseDualScopeAgent` (agent stays in `selectedAgents`); re-selecting an inherited-global row rebuilds the pair via `restoreDualScopeAgent` (records id in `_sessionRebuiltScopePairAgents`). **Guard:** an active global agent (or a snapshot tombstone paired with a live active global) not in global-scope edit or init mode returns `GLOBAL_AGENTS_LOCKED` toast. **Tombstone logic:** `applyAgentToggle()` -- toggling off a globally-installed agent sets `excluded: true` (keeps agent in `selectedAgents`); toggling on a tombstoned agent clears `excluded`. Genuinely-new agents are added/removed with `scope: "global"` (see known bug below). |
+| `preselectAgentsFromDomains()`                   | `selectedAgents`, `agentConfigs`                                                     | Collects agents from `DOMAIN_AGENTS` for selected domains and rebuilds `agentConfigs` via `buildAgentConfigForName` (prefers a saved project-scoped active entry over global), then re-appends ALL excluded tombstones via `collectTombstones` (D-227). Agents with no saved config default to `scope: "global"` (see known bug below).                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
-**Known bug — newly-toggled agents default to global scope.** `applyAgentToggle` (else-branch) and `preselectAgentsFromDomains` both hard-code `scope: "global"` for every new agent, with no inspection of the surrounding project's scope convention. In an edit flow where existing skills and agents are all project-scoped, a freshly-toggled-on agent lands global-scoped. Downstream, `config-generator.ts::isScopeCompatible` enforces "project skills never reach global agents", so the new agent receives zero stack assignments — `buildAgentStack` returns undefined and `stack[newAgent]` is never emitted, breaking the seeding contract asserted by `e2e/lifecycle/stack-per-agent-curation.e2e.test.ts`. Source: `.ai-docs/agent-findings/2026-04-20-newly-toggled-agent-defaults-global-breaks-project-scope-stack.md`. Proposed rule (not yet codified): newly-toggled agents inherit scope from the dominant scope of existing non-excluded `agentConfigs` (or from `skillConfigs` if no active agent exists); a fresh init with zero agents continues to default to `"global"`.
+**Known bug (OPEN) — newly-toggled agents default to global scope.** `applyAgentToggle`'s else-branch (a genuinely-new agent) and `buildAgentConfigForName`'s fallback (used by `preselectAgentsFromDomains` / `preselectAgentsFromStack` for an agent with no saved config) both default to `scope: "global"`, with no inspection of the surrounding project's scope convention. (`buildAgentConfigForName` DOES now inherit the saved scope for an agent that already has a config.) In an edit flow where existing skills and agents are all project-scoped, a freshly-toggled-on agent lands global-scoped. Downstream, `config-generator.ts::isScopeCompatible` enforces "project skills never reach global agents", so the new agent receives zero stack assignments — `buildAgentStack` returns undefined and `stack[newAgent]` is never emitted, breaking the seeding contract asserted by `e2e/lifecycle/stack-per-agent-curation.e2e.test.ts`. Source: `.ai-docs/agent-findings/2026-04-20-newly-toggled-agent-defaults-global-breaks-project-scope-stack.md`. Proposed rule (not yet codified): newly-toggled agents inherit scope from the dominant scope of existing non-excluded `agentConfigs` (or from `skillConfigs` if no active agent exists); a fresh init with zero agents continues to default to `"global"`.
 
 ### Skill/Agent Config Actions
 
-| Action                         | State Modified                 | Side Effects                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------ | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `toggleSkillScope(skillId)`    | `skillConfigs`, `toastMessage` | Toggles `scope` between `"project"` and `"global"`. No-op if `isEditingFromGlobalScope`. **Guard:** project eject to global blocked when global eject already installed -- returns toast unless an excluded tombstone entry exists (allows undo). **Tombstone management:** moving global-installed to project adds excluded global entry; moving back to global removes it. |
-| `setSkillSource(skillId, src)` | `skillConfigs`                 | Updates `source` field for matching skill config entry.                                                                                                                                                                                                                                                                                                                      |
-| `toggleAgentScope(agentName)`  | `agentConfigs`                 | Toggles `scope` between `"project"` and `"global"`. No-op if `isEditingFromGlobalScope`. **Tombstone management:** moving global-installed to project adds excluded global entry; moving back to global removes it.                                                                                                                                                          |
-| `setFocusedSkillId(id)`        | `focusedSkillId`               | Sets or clears the focused skill (for `S` hotkey scope toggle in build step). **Seeded asynchronously** -- see "Focus Seeding" below.                                                                                                                                                                                                                                        |
-| `setFocusedAgentId(id)`        | `focusedAgentId`               | Sets or clears the focused agent (for `S` hotkey scope toggle in agents step). Same async seeding pattern as `focusedSkillId`.                                                                                                                                                                                                                                               |
+| Action                              | State Modified                                                   | Side Effects                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toggleSkillScope(skillId)`         | `skillConfigs`, `_sessionRebuiltScopePairSkills`, `toastMessage` | Toggles `scope` between `"project"` and `"global"`. No-op if `isEditingFromGlobalScope`. **Guard 1 (persisted pair):** a `[P][G]` pair whose global tombstone is in `installedSkillConfigs` and NOT yet in `_sessionRebuiltScopePairSkills` is a guarded no-op → `INSTALLED_AT_BOTH_SCOPES` toast (space, not `s`, changes the project half). **Guard 2:** project eject → global blocked when global eject already installed → `ALREADY_EJECTED_AT_GLOBAL` toast unless an excluded tombstone allows the undo. **Tombstone management:** G→P adds an excluded global entry (gated on `wasInstalledGlobally`) and records the id in `_sessionRebuiltScopePairSkills`; P→G unconditionally drops any global tombstone. |
+| `setSkillSource(skillId, src)`      | `skillConfigs`                                                   | Updates `source` field for matching skill config entry.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `toggleAgentScope(agentName)`       | `agentConfigs`, `_sessionRebuiltScopePairAgents`                 | Toggles `scope` between `"project"` and `"global"`. No-op if `isEditingFromGlobalScope`. Mirrors `toggleSkillScope`: persisted-pair guard → `INSTALLED_AT_BOTH_SCOPES` toast; G→P adds the excluded global entry and records the name in `_sessionRebuiltScopePairAgents`; P→G drops it.                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `setFocusedSkillId(id)`             | `focusedSkillId`                                                 | Sets or clears the focused skill (for `S` hotkey scope toggle in build step). Navigation-driven (CategoryGrid dispatches on move); initial seeding is done synchronously by `seedFocusedSkillForActiveDomain` -- see "Focus Seeding" below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `seedFocusedSkillForActiveDomain()` | `focusedSkillId`                                                 | Synchronously sets `focusedSkillId` to the active domain's first grid option (via `buildCategoriesForDomain`), or `null` if the domain has no skills. Called by `setStep("build")`, `nextDomain`, `prevDomain`, `setCurrentDomainIndex`, and both hydration paths.                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `setFocusedAgentId(id)`             | `focusedAgentId`                                                 | Sets or clears the focused agent (for `S` hotkey scope toggle in agents step). Still seeded by a post-mount `useEffect` in `step-agents.tsx` (async — no synchronous store seed on the agent path).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ### Source Management Actions
 
@@ -265,10 +271,10 @@ The wizard store is module-level singleton state, so a fresh `hydrateWizardStore
 
 ### Population Actions
 
-| Action                                          | State Modified                                                                                                    | Side Effects                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `populateFromStack(stack)`                      | `domainSelections`, `_stackDomainSelections`, `selectedDomains`, `skillConfigs`, `selectedAgents`, `agentConfigs` | Iterates stack agents' skill assignments, builds domain selections, snapshots to `_stackDomainSelections`, creates default skill configs. Derives `selectedAgents` and `agentConfigs` from stack agent keys (`Object.keys(stack.agents).filter(isAgentName)`). Sorts domains canonically. |
-| `populateFromSkillIds(skillIds, savedConfigs?)` | `domainSelections`, `_stackDomainSelections`, `selectedDomains`, `skillConfigs`                                   | Resolves each skill's category/domain via `resolveSkillForPopulation()`. Warns for unresolvable skills. Restores `scope`/`source` from `savedConfigs` if provided. Snapshots to `_stackDomainSelections`.                                                                                 |
+| Action                                          | State Modified                                                                                          | Side Effects                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `preselectAgentsFromStack(stackAgents)`         | `selectedAgents`, `agentConfigs`                                                                        | Merges the stack's agent keys with `globalAgentPreselections`, building each config via `buildAgentConfigForName` and re-appending excluded tombstones via `collectTombstones` (D-227). Replaces the removed `populateFromStack`; stack SKILL population is done separately by `populateFromSkillIds`.                                                           |
+| `populateFromSkillIds(skillIds, savedConfigs?)` | `domainSelections`, `_stackDomainSelections`, `selectedDomains`, `skillConfigs`, `unresolvableSkillIds` | Resolves each skill's category/domain via `resolveSkillForPopulation()`. Unresolvable IDs are collected into `unresolvableSkillIds` (with a warning) rather than dropped silently (D-233 Scenario C). Restores `scope`/`source` from `savedConfigs` and preserves excluded tombstones. Orders domains via `orderDomains`. Snapshots to `_stackDomainSelections`. |
 
 ### Reset Action
 
@@ -290,7 +296,7 @@ Which actions trigger which resets:
 | `toggleDomain(on)`             |      partial       |            --            |      partial      |    partial     |        --        |       --       |      --       |          --          |      --       |
 | `toggleTechnology()`           |      partial       |            --            |        --         |    partial     |        --        |       --       |      --       |          --          |      --       |
 | `toggleFilterIncompatible()`   |      partial       |            --            |        --         |    partial     |        --        |       --       |      --       |          --          |      --       |
-| `populateFromStack()`          |        SET         |           SET            |        SET        |      SET       |       SET        |      SET       |      --       |          --          |      --       |
+| `preselectAgentsFromStack()`   |         --         |            --            |        --         |       --       |       SET        |      SET       |      --       |          --          |      --       |
 | `populateFromSkillIds()`       |        SET         |           SET            |        SET        |      SET       |        --        |       --       |      --       |          --          |      --       |
 | `preselectAgentsFromDomains()` |         --         |            --            |        --         |       --       |       SET        |      SET       |      --       |          --          |      --       |
 
@@ -369,7 +375,7 @@ The "defaults" shortcut case: `approach === "stack" && selectedStackId && stackA
 
 ## Hotkey -> Action Mapping
 
-**Hotkey registry:** `src/cli/components/wizard/hotkeys.ts`
+**Hotkey registry:** `src/cli/components/wizard/hotkeys.ts`. Exactly nine `HOTKEY_*` constants exist there -- `HOTKEY_INFO`, `HOTKEY_ACCEPT_DEFAULTS`, `HOTKEY_SCOPE`, `HOTKEY_SETTINGS` (the last two deliberately share the `s` key -- context-gated so both are never active at once), `HOTKEY_TOGGLE_LABELS`, `HOTKEY_FILTER_INCOMPATIBLE`, `HOTKEY_SET_ALL_LOCAL`, `HOTKEY_SET_ALL_PLUGIN`, and `HOTKEY_ADD_SOURCE` -- all enumerated in the tables below. No other `HOTKEY_*` constants exist.
 
 ### Global Hotkeys (wizard.tsx)
 
@@ -411,36 +417,39 @@ When `showSettings === true`, all input is blocked except `S` (to close settings
 
 **File:** `wizard-store.ts` (`createInitialState()`)
 
-| Field                      | Initial Value |
-| -------------------------- | ------------- |
-| `step`                     | `"stack"`     |
-| `approach`                 | `null`        |
-| `selectedStackId`          | `null`        |
-| `stackAction`              | `null`        |
-| `selectedDomains`          | `[]`          |
-| `currentDomainIndex`       | `0`           |
-| `domainSelections`         | `{}`          |
-| `_stackDomainSelections`   | `null`        |
-| `showLabels`               | `false`       |
-| `filterIncompatible`       | `false`       |
-| `skillConfigs`             | `[]`          |
-| `focusedSkillId`           | `null`        |
-| `customizeSources`         | `false`       |
-| `showSettings`             | `false`       |
-| `showInfo`                 | `false`       |
-| `enabledSources`           | `{}`          |
-| `selectedAgents`           | `[]`          |
-| `agentConfigs`             | `[]`          |
-| `focusedAgentId`           | `null`        |
-| `boundSkills`              | `[]`          |
-| `installedSkillConfigs`    | `null`        |
-| `installedAgentConfigs`    | `null`        |
-| `isInitMode`               | `false`       |
-| `isEditingFromGlobalScope` | `false`       |
-| `toastMessage`             | `null`        |
-| `globalPreselections`      | `null`        |
-| `globalAgentPreselections` | `null`        |
-| `history`                  | `[]`          |
+| Field                            | Initial Value |
+| -------------------------------- | ------------- |
+| `step`                           | `"stack"`     |
+| `approach`                       | `null`        |
+| `selectedStackId`                | `null`        |
+| `stackAction`                    | `null`        |
+| `selectedDomains`                | `[]`          |
+| `currentDomainIndex`             | `0`           |
+| `domainSelections`               | `{}`          |
+| `_stackDomainSelections`         | `null`        |
+| `showLabels`                     | `false`       |
+| `filterIncompatible`             | `false`       |
+| `skillConfigs`                   | `[]`          |
+| `focusedSkillId`                 | `null`        |
+| `unresolvableSkillIds`           | `[]`          |
+| `customizeSources`               | `false`       |
+| `showSettings`                   | `false`       |
+| `showInfo`                       | `false`       |
+| `enabledSources`                 | `{}`          |
+| `selectedAgents`                 | `[]`          |
+| `agentConfigs`                   | `[]`          |
+| `focusedAgentId`                 | `null`        |
+| `boundSkills`                    | `[]`          |
+| `installedSkillConfigs`          | `null`        |
+| `installedAgentConfigs`          | `null`        |
+| `_sessionRebuiltScopePairSkills` | `new Set()`   |
+| `_sessionRebuiltScopePairAgents` | `new Set()`   |
+| `isInitMode`                     | `false`       |
+| `isEditingFromGlobalScope`       | `false`       |
+| `toastMessage`                   | `null`        |
+| `globalPreselections`            | `null`        |
+| `globalAgentPreselections`       | `null`        |
+| `history`                        | `[]`          |
 
 ---
 
@@ -466,13 +475,13 @@ When "Start from scratch" is selected, these domains are pre-toggled:
 const DEFAULT_SCRATCH_DOMAINS: readonly Domain[] = ["web", "api", "mobile"];
 ```
 
-## Focus Seeding (Async Transition)
+## Focus Seeding (Synchronous for Skills, Async for Agents)
 
-**`focusedSkillId` is NOT set synchronously on step entry.** When the wizard transitions into `build`, `focusedSkillId` stays at whatever its previous value was (often `null` after hydration). It is seeded by a mount-phase `useEffect` inside `CategoryGrid` that fires `onFocusedSkillChange(firstSkill.id)` on first commit, which dispatches `setFocusedSkillId` through `step-build.tsx`'s `handleFocusedSkillChange` callback.
+**Skill path — synchronous (D-233 "Fix A", finding `2026-07-19-async-post-mount-seed-read-by-sync-input-handler.md`).** `focusedSkillId` IS now set synchronously on build-step entry by the store action `seedFocusedSkillForActiveDomain()`, which derives the active domain's first grid option via `buildCategoriesForDomain` (reused, not re-implemented). It is invoked at every point where the build grid mounts fresh at row 0 / col 0: `hydrateWizardStore` (both paths), `setStep("build")`, and the domain transitions `nextDomain` / `prevDomain` / `setCurrentDomainIndex`. CategoryGrid's former fire-once post-mount seed effect was **deleted**, and the E2E `FOCUS_EFFECT_FLUSH_MS` blind delay with it. The Scenario B `null` race for `focusedSkillId` no longer applies; navigation-driven updates still flow through `setFocusedSkillId` as the user moves.
 
-**Consequence -- the Scenario B race:** a fast `S` keypress that arrives between the `build` step's first commit and the mount effect sees `focusedSkillId === null`. The hotkey dispatcher's `HOTKEY_SCOPE` guard bails silently (no toast), so the keystroke is swallowed. E2E tests must call `waitForWizardFooter()` before any keypress — but only on screens rendered by `WizardLayout`, since it matches the single footer string `"select"` that only `WizardLayout` paints; on a footer-less screen it hangs for the full timeout instead of settling. See `../concepts/guard-pattern.md` "Silent Guards and Race Surfaces" and findings `2026-04-21-e2e-build-step-keypress-missing-stable-render.md` / `2026-04-21-e2e-keypress-rule-coverage-gap-sibling-steps.md` / `2026-07-20-waitforstablerender-is-a-wizard-footer-sentinel-not-a-generic-primitive.md`.
+**Agent path — still async.** `focusedAgentId` is STILL seeded by a post-mount `useEffect` in `step-agents.tsx` (`setFocusedAgentId(focusedId)`), so the agents-step `S` scope hotkey retains the async-seed race the skill path eliminated.
 
-A synchronous-seeding fix in `hydrateWizardStore` would eliminate the race class but has not been applied.
+**E2E keypress ordering (general):** independent of focus seeding, E2E tests must call `waitForWizardFooter()` (renamed from `waitForStableRender`, finding `2026-07-20-waitforstablerender-renamed-to-waitforwizardfooter.md`) before any keypress — but only on screens rendered by `WizardLayout`, since it matches the single footer string `"select"` that only `WizardLayout` paints; on a footer-less screen it hangs for the full timeout instead of settling. See `../concepts/guard-pattern.md` "Silent Guards and Race Surfaces".
 
 ## Tombstone Lifecycle Transitions
 
@@ -491,9 +500,9 @@ Agent tombstones follow the identical pattern via `applyAgentToggle()` and `togg
 
 ## Diff Projection (Derived View)
 
-**Not a store transition -- a read-only projection.** `SkillAgentSummary` (info panel) and `step-confirm` compare the live `skillConfigs` / `agentConfigs` arrays against the `installedSkillConfigs` / `installedAgentConfigs` snapshots captured at hydration time.
+**Not a store transition -- a read-only projection.** `SkillAgentSummary` (rendered by `components/wizard/info-panel.tsx`, `components/wizard/step-confirm.tsx`, and the dashboard `commands/list.tsx`) compares the live `skillConfigs` / `agentConfigs` arrays against the `installedSkillConfigs` / `installedAgentConfigs` snapshots captured at hydration time.
 
-The snapshot is the **pre-filter baseline** (includes excluded tombstones) so the diff can render removals, source changes, and scope changes correctly. See finding `2026-04-21-d230-d232-diff-baseline-pre-filter-drift.md` for the baseline-drift failure mode (D-230/D-232) and `components/wizard/skill-agent-summary.tsx` for the projection code.
+The snapshot is the **pre-filter baseline** (includes excluded tombstones) so the diff can render removals, source changes, and scope changes correctly. The projection code is `computeScopeDiff()` in `src/cli/lib/wizard/scope-diff.ts` (four `DiffRowStatus` classes: `added`/`removed`/`source-changed`/`unchanged`), which `SkillAgentSummary` calls. See `../concepts/tombstone-pattern.md` "Role in the Info-Panel Diff (D-230 / D-232)" for the baseline-drift failure mode (D-230/D-232) -- the standalone `d230-d232-diff-baseline-pre-filter-drift` finding was consolidated into that concept doc.
 
 Because the snapshot is captured once in `hydrateWizardStore`, the diff remains stable across all subsequent store transitions -- it reflects "changes since entry," not "changes since last keystroke."
 
@@ -507,10 +516,10 @@ Guards prevent project-scope edits from modifying globally-installed skills/agen
 
 **Actions with global-installed guards:**
 
-| Action                       | Guard Behavior                                                                                                           |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `toggleTechnology()`         | Toast if skill is installed globally. Also toasts if exclusive swap would deselect a globally-installed skill.           |
-| `toggleSkillScope()`         | No-op if `isEditingFromGlobalScope`. Toast if project eject to global and global eject already installed (no tombstone). |
-| `toggleAgent()`              | Toast if agent is installed globally (not in global edit or init mode).                                                  |
-| `toggleAgentScope()`         | No-op if `isEditingFromGlobalScope`.                                                                                     |
-| `toggleFilterIncompatible()` | Skips skills with `excluded` flag when finding incompatible web skills (protects tombstoned globals).                    |
+| Action                       | Guard Behavior                                                                                                                                                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toggleTechnology()`         | `GLOBAL_SKILLS_LOCKED` toast if skill is installed globally. Also toasts if an exclusive swap would deselect a globally-installed skill.                                                                                                           |
+| `toggleFilterIncompatible()` | `GLOBAL_SKILLS_LOCKED` toast (whole op refused) if any incompatible skill to remove is globally installed; also skips `excluded` entries when finding incompatible web skills (protects tombstoned globals).                                       |
+| `toggleSkillScope()`         | No-op if `isEditingFromGlobalScope`. `INSTALLED_AT_BOTH_SCOPES` toast on a persisted dual-scope pair (unless session-rebuilt). `ALREADY_EJECTED_AT_GLOBAL` toast if project eject → global and a global eject is already installed (no tombstone). |
+| `toggleAgent()`              | `GLOBAL_AGENTS_LOCKED` toast if agent is installed globally (not in global edit or init mode).                                                                                                                                                     |
+| `toggleAgentScope()`         | No-op if `isEditingFromGlobalScope`. `INSTALLED_AT_BOTH_SCOPES` toast on a persisted dual-scope pair (unless session-rebuilt).                                                                                                                     |

@@ -22,13 +22,13 @@ related:
   - reference/config/configuration.md
   - reference/concepts/scope-system.md
   - reference/concepts/tombstone-pattern.md
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # Config Scope Split Contract
 
-**Last Updated:** 2026-04-21
-**Last Validated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 > How a merged `ProjectConfig` is partitioned into global and project halves for writing, and the delta sets the stack builder consumes for per-agent curation preservation. Feeds `mergeGlobalConfigs` and the project config writer (see [config-writer.md](./config-writer.md), [config-merger.md](./config-merger.md)).
 
@@ -47,6 +47,8 @@ The delta helpers do not partition the config — they compute the sets that `sh
 
 **Signature:** `splitConfigByScope(config: ProjectConfig): SplitConfigResult`
 where `SplitConfigResult = { global: ProjectConfig; project: ProjectConfig }`.
+
+Skills and agents are partitioned with `partition(list, e => isActiveAt(e, "global"))` from `scope-predicates.ts`: active-global entries go to the global half, everything else (project-scoped, plus excluded-global tombstones) goes to the project half.
 
 ### Skills
 
@@ -94,14 +96,14 @@ Excluded global entries (both skills and agents) route to the **project** split,
 - If tombstones routed to the global split, `mergeGlobalConfigs` would either ignore them (its `!excluded` guard — see [config-merger.md](./config-merger.md) `mergeGlobalConfigs` row) or worse, propagate a suppression that only this project intended.
 - Routing them to the project split means the tombstone is inlined into `<projectDir>/.claude-src/config.ts` via `generateProjectConfigWithInlinedGlobal`, where it participates in the suppression rule documented in [config-writer.md](./config-writer.md) ("Excluded global entries replace their active global counterparts in the global section while the active project entry appears separately in the project section").
 
-The tombstone routing is also what makes the D-224 failure mode tractable: the symptom ("only the tombstone survives the write pipeline") is now isolated to either the merger (drops the active) or the generator (never emits the active), because the split itself routes tombstones cleanly. See `.ai-docs/agent-findings/2026-04-17-d224-ptog-tombstone-not-cleared.md`.
+The tombstone routing is also what makes the D-224 failure mode tractable: the symptom ("only the tombstone survives the write pipeline") is now isolated to either the merger (drops the active) or the generator (never emits the active), because the split itself routes tombstones cleanly (task D-224 P→G tombstone-not-cleared).
 
 ## Interaction with `mergeConfigs` and `mergeGlobalConfigs`
 
 Order in the `cc edit` project-context pipeline:
 
 1. Wizard emits `newConfig` with dual-scope pairs when scope toggles produce tombstones.
-2. `mergeConfigs(newConfig, existingProjectConfig)` reconciles via compound keys. `newConfig` is authoritative for every referenced name/id. Output: `finalConfig` carrying both active and tombstone rows where applicable.
+2. `mergeConfigs(newConfig, existingProjectConfig, { authoritativeScope: "owned", unresolvableSkillIds })` reconciles via compound keys. `newConfig` is authoritative for every referenced name/id; under `"owned"` authority a project-owned entry that is absent from `newConfig` was deselected and is dropped (unresolvable skills exempt — see [config-merger.md](./config-merger.md)). Output: `finalConfig` carrying both active and tombstone rows where applicable.
 3. `splitConfigByScope(finalConfig)` → `{ globalSplit, projectSplit }`. Active globals and active global agents to `globalSplit`; everything else (project, tombstones) to `projectSplit`.
 4. `mergeGlobalConfigs(existingGlobalConfig, globalSplit)` is **additive** — existing wins, incoming only appends. `globalSplit` carries only actives, so no tombstones reach this call (which is why `mergeGlobalConfigs` does not need tombstone-handling logic).
 5. The merger's output `effectiveGlobalConfig` is written to `~/.claude-src/config.ts`. The PROJECT split is written to `<projectDir>/.claude-src/config.ts` with `globalConfig: effectiveGlobalConfig` passed to the writer so the inlined-global preamble reflects the merged global state.
@@ -152,15 +154,16 @@ The OMIT branch is the load-bearing D-220 semantic: a user who previously remove
 
 ## Anchors
 
-- `splitConfigByScope`, `scopeEligibilityKey`, `SplitConfigResult`, `generateProjectConfigFromSkills`, `buildStackForSelection`, `buildAgentStack`, `shouldIncludeTriple`, `isScopeCompatible`, `getScopeOrThrow`, `extractCategoryFromPath` — `src/cli/lib/configuration/config-generator.ts`.
-- `computeNewlyAddedSkillIds`, `computeScopeEligibilityGained`, `buildScopeLookup`, `buildAgentScopeLookup` — `src/cli/lib/installation/local-installer.ts`.
+- `splitConfigByScope`, `scopeEligibilityKey`, `SplitConfigResult`, `generateProjectConfigFromSkills`, `buildStackForSelection`, `buildAgentStack`, `shouldIncludeTriple`, `isScopePairCompatible` (exported) / `isScopeCompatible` (private), `getScopeOrThrow`, `extractCategoryFromPath`, `buildSkillScopeMap` — `src/cli/lib/configuration/config-generator.ts`.
+- `computeNewlyAddedSkillIds`, `computeScopeEligibilityGained` — `src/cli/lib/installation/local-installer.ts`.
+- `isActiveAt`, `activeAgentScopeMap`, `activeSkillScopeMap`, `effectivelyExcludedSkillIds` — `src/cli/lib/configuration/scope-predicates.ts` (shared predicates consumed by the generator and the delta helpers).
 - Call site threading split into writes: `writeScopedConfigs` project-context branch in `local-installer.ts`.
 - Unit tests: `config-generator.test.ts` (generator + split), `local-installer.test.ts` (delta helpers + scope-split behavior in `writeScopedConfigs`).
 
 ## Findings That Shaped This Doc
 
-| Finding                                                    | Contribution                                                                                                 |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `2026-04-17-d224-ptog-tombstone-not-cleared.md`            | Tombstone-routing-to-project is correct; active-entry drop is upstream (merger/generator), not in the split. |
-| `2026-04-17-merge-global-configs-per-agent-update-loss.md` | Per-agent update loss that motivated the delta-set opt-in model.                                             |
-| Changelog `0.137.0.md` D-220 entry                         | Source of the `newlyAddedSkillIds` + `scopeEligibilityGained` design.                                        |
+| Finding                                                             | Contribution                                                                                                 |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Task D-224 (P→G tombstone-not-cleared)                              | Tombstone-routing-to-project is correct; active-entry drop is upstream (merger/generator), not in the split. |
+| merge-global-configs-per-agent-update-loss _(archived, 2026-04-17)_ | Per-agent update loss that motivated the delta-set opt-in model.                                             |
+| Changelog `0.137.0.md` D-220 entry                                  | Source of the `newlyAddedSkillIds` + `scopeEligibilityGained` design.                                        |

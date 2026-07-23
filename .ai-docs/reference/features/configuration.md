@@ -15,15 +15,16 @@ keywords:
 related:
   - reference/architecture-overview.md
   - reference/type-system.md
-  - ../wizard/state-transitions.md
+  - reference/wizard/state-transitions.md
   - reference/boundary-map.md
   - reference/config/scope-split.md
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # Configuration System
 
-**Last Updated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 ## Overview
 
@@ -43,6 +44,7 @@ last_validated: 2026-04-21
 | `config-types-writer.ts` | `src/cli/lib/configuration/config-types-writer.ts` | Generate config-types.ts type files             |
 | `config-loader.ts`       | `src/cli/lib/configuration/config-loader.ts`       | Load TypeScript config via jiti                 |
 | `project-config.ts`      | `src/cli/lib/configuration/project-config.ts`      | Load and validate project config                |
+| `scope-predicates.ts`    | `src/cli/lib/configuration/scope-predicates.ts`    | Shared scope/tombstone predicates (see below)   |
 | `source-manager.ts`      | `src/cli/lib/configuration/source-manager.ts`      | Add/remove extra sources                        |
 | `define-config.ts`       | `src/cli/lib/configuration/define-config.ts`       | Type-safe `defineConfig()` helper               |
 | `default-categories.ts`  | `src/cli/lib/configuration/default-categories.ts`  | Default skill category definitions              |
@@ -120,10 +122,28 @@ type AgentScopeConfig = {
 ```typescript
 type ResolvedConfig = {
   source: string;
-  sourceOrigin: "flag" | "env" | "project" | "default";
+  sourceOrigin: "flag" | "env" | "project" | "global" | "default";
   marketplace?: string;
 };
 ```
+
+## Scope Predicates
+
+**File:** `src/cli/lib/configuration/scope-predicates.ts`
+
+Shared predicates over scoped config entries (`{ scope?, excluded? }`), consumed by the merger, generator, writer, and installer so scope/tombstone logic has a single definition.
+
+| Export                          | Purpose                                                                                                    |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `isActiveAt(entry, scope)`      | Non-excluded entry at the given scope                                                                      |
+| `isGlobalTombstone(entry)`      | `scope === "global"` + `excluded` (tombstone masking a global install)                                     |
+| `isProjectOwned(entry)`         | Project-scoped entry OR the project's own global tombstone (inherited global-active entries are not owned) |
+| `activeProjectAgentNames()`     | Names of active project-scoped agents                                                                      |
+| `activeSkillScopeMap()`         | `Map<SkillId, SkillScope>` of active (non-excluded) skills                                                 |
+| `activeAgentScopeMap()`         | `Map<AgentName, SkillScope>` of active (non-excluded) agents                                               |
+| `effectivelyExcludedSkillIds()` | Ids whose every entry is excluded (a dual-scope excluded-global + active-project pair is NOT excluded)     |
+
+`ScopedEntry` is the shared `{ scope?: SkillScope; excluded?: boolean }` shape. `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, and `effectivelyExcludedSkillIds` are re-exported from `index.ts`.
 
 ## Source Resolution
 
@@ -196,41 +216,45 @@ const saved =
   savedConfigs?.find((sc) => sc.id === id && !sc.excluded);
 ```
 
-Falls back to: `scope: "global"`, `source: primarySource ?? DEFAULT_PUBLIC_SOURCE_NAME`.
+Falls back to `scope: saved?.scope ?? "global"` and `source: resolveEffectiveSource(saved?.source, primarySource)`, where `primarySource = primarySourceName(skill)` from the matrix entry.
 
 ## Config Merging
 
-**Function:** `mergeWithExistingConfig()` in `src/cli/lib/configuration/config-merger.ts`
+> **Full merge contract, compound keys, D-233 authoritative-scope, and tombstone flow:** see [../config/config-merger.md](../config/config-merger.md).
 
-When `edit` command modifies skills:
+**Function:** `mergeWithExistingConfig(newConfig, context: MergeContext)` in `src/cli/lib/configuration/config-merger.ts`
 
-- Loads existing config
-- Merges new selections with existing via `mergeConfigs()`
-- Preserves user customizations (author, source, etc.)
+`MergeContext = { projectDir; authoritativeScope?: "all" | "owned"; unresolvableSkillIds?: readonly SkillId[] }`. When `edit` command modifies skills:
 
-**Pure merge function:** `mergeConfigs()` in `src/cli/lib/configuration/config-merger.ts`
+- Loads existing full config; when present, calls `mergeConfigs()` with the context's `authoritativeScope` / `unresolvableSkillIds`
+- Preserves user customizations (author, source, marketplace, agentsSource) and the global `projects` registry
+- Falls back to copying `author`/`agentsSource` from a legacy source stub when no full config exists (`merged: false`, no `mergeConfigs` call)
 
-- Existing values take precedence for identity fields (name, description, source, author)
-- Agents are unioned by name
-- Skills are merged by ID (new overrides existing, keeps the rest)
-- Stack is deep-merged by agent
+**Pure merge function:** `mergeConfigs(newConfig, existingConfig, options?)` in `src/cli/lib/configuration/config-merger.ts`
+
+- **Replace-on-match**: `newConfig` is authoritative for every `name`/`id` it references; identity fields (name, description, author, marketplace, agentsSource) are carried from existing, and `source` is preserved only when `newConfig.source` is undefined
+- Agents and skills are keyed by a **compound key** (`id:scope[:excluded]`), so dual-scope active/tombstone pairs coexist and scope migrations drop stale rows
+- Stack: `newConfig.stack` wins whenever defined; existing stack is kept only when `newConfig.stack` is undefined
+- `authoritativeScope` (D-233 Scenario C): a full `cc edit` drops in-authority entries that are absent from `newConfig` (deselections); `unresolvableSkillIds` exempts skills the wizard could not resolve
+- `existingConfig.projects` is preserved when `newConfig` carries none (the drop bug is fixed; see finding `2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`)
 
 ## Config I/O
 
-| Function                      | Purpose                                 | File                |
-| ----------------------------- | --------------------------------------- | ------------------- |
-| `loadProjectSourceConfig()`   | Load .claude-src/config.ts (partial)    | `config.ts`         |
-| `loadGlobalSourceConfig()`    | Load ~/.claude-src/config.ts (partial)  | `config.ts`         |
-| `loadProjectConfig()`         | Load + validate with global fallback    | `project-config.ts` |
-| `loadProjectConfigFromDir()`  | Load + validate from specific dir only  | `project-config.ts` |
-| `validateProjectConfig()`     | Validate project config structure       | `project-config.ts` |
-| `generateConfigSource()`      | Generate TypeScript source string       | `config-writer.ts`  |
-| `saveSourceToProjectConfig()` | Save source field to config file        | `config-saver.ts`   |
-| `loadConfig()`                | Generic TypeScript config loader (jiti) | `config-loader.ts`  |
-| `defineConfig()`              | Type-safe config helper (identity fn)   | `define-config.ts`  |
-| `getProjectConfigPath()`      | Build absolute path to project config   | `config.ts`         |
-| `resolveAllSources()`         | Resolve primary + extra sources         | `config.ts`         |
-| `resolveAuthor()`             | Resolve author from effective config    | `config.ts`         |
+| Function                      | Purpose                                  | File                                               |
+| ----------------------------- | ---------------------------------------- | -------------------------------------------------- |
+| `loadProjectSourceConfig()`   | Load .claude-src/config.ts (partial)     | `config.ts`                                        |
+| `loadGlobalSourceConfig()`    | Load ~/.claude-src/config.ts (partial)   | `config.ts`                                        |
+| `loadProjectConfig()`         | Load + validate with global fallback     | `project-config.ts`                                |
+| `loadProjectConfigFromDir()`  | Load + validate from specific dir only   | `project-config.ts`                                |
+| `validateProjectConfig()`     | Validate project config structure        | `project-config.ts`                                |
+| `generateConfigSource()`      | Generate TypeScript source string        | `config-writer.ts`                                 |
+| `saveSourceToProjectConfig()` | Save source field to config file         | `config-saver.ts`                                  |
+| `loadConfig()`                | Generic TypeScript config loader (jiti)  | `config-loader.ts`                                 |
+| `defineConfig()`              | Type-safe config helper (identity fn)    | `define-config.ts`                                 |
+| `getProjectConfigPath()`      | Build absolute path to project config    | `install-base-dir.ts` (re-exported by `config.ts`) |
+| `resolveAllSources()`         | Resolve primary + extra sources          | `config.ts`                                        |
+| `resolveAuthor()`             | Resolve author from effective config     | `config.ts`                                        |
+| `writePartialProjectConfig()` | Write a partial config, filling defaults | `config-writer.ts`                                 |
 
 ## Config Writer
 
@@ -238,13 +262,14 @@ When `edit` command modifies skills:
 
 Replaced the former `writeProjectSourceConfig()`. Generates TypeScript source strings from `ProjectConfig`.
 
-| Function                                 | Purpose                                                    |
-| ---------------------------------------- | ---------------------------------------------------------- |
-| `generateConfigSource()`                 | Main entry: generates config.ts source string              |
-| `generateBlankGlobalConfigSource()`      | Blank global config (empty arrays)                         |
-| `generateBlankGlobalConfigTypesSource()` | Blank config-types.ts (all types = `never`)                |
-| `ensureBlankGlobalConfig()`              | Creates blank global config at `~/.claude-src/` if missing |
-| `getGlobalConfigImportPath()`            | Returns absolute path to `~/.claude-src/`                  |
+| Function                                 | Purpose                                                                                                                |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `generateConfigSource()`                 | Main entry: generates config.ts source string                                                                          |
+| `writePartialProjectConfig()`            | Writes a `Partial<ProjectConfig>`, filling `skills`/`agents` defaults (used by `config-saver.ts`, `source-manager.ts`) |
+| `generateBlankGlobalConfigSource()`      | Blank global config (empty arrays)                                                                                     |
+| `generateBlankGlobalConfigTypesSource()` | Blank config-types.ts (all types = `never`)                                                                            |
+| `ensureBlankGlobalConfig()`              | Creates blank global config at `~/.claude-src/` if missing                                                             |
+| `getGlobalConfigImportPath()`            | Returns absolute path to `~/.claude-src/`                                                                              |
 
 The `generateConfigSource()` function accepts an optional `ConfigSourceOptions` parameter:
 
@@ -277,7 +302,7 @@ In `local-installer.ts`:
 - `writeScopedConfigs` global-root / global-config branches → `writeStandaloneConfigTypes(globalConfigPath, ...)`.
 - `propagateGlobalChangesToProjects` per-project loop → `regenerateConfigTypes(projectPath, ...)`.
 
-Helpers `buildConfigTypesBackgroundData(matrix, agents)` and `buildProjectTypesExtras(finalConfig, matrix)` (both in `local-installer.ts`) feed already-loaded matrix/agent data into `regenerateConfigTypes` without re-loading. See finding `.ai-docs/agent-findings/2026-04-20-d228-writeStandaloneConfigTypes-project-branch.md`.
+Helpers `buildConfigTypesBackgroundData(matrix, agents)` and `buildProjectTypesExtras(finalConfig, matrix)` (both in `local-installer.ts`) feed already-loaded matrix/agent data into `regenerateConfigTypes` without re-loading. This rule was hardened under task D-228; the detailed call-site table and rationale live in [../config/config-writer.md](../config/config-writer.md).
 
 ## Scope-Aware Config Splitting
 
@@ -343,16 +368,16 @@ Schema URLs defined in `SCHEMA_PATHS` in `src/cli/consts.ts`.
 
 The operations layer provides `writeProjectConfig()` as a high-level orchestrator that runs the full config pipeline:
 
-1. `buildAndMergeConfig()` -- generates config from wizard result, merges with existing
-2. `loadAllAgents()` -- loads agent definitions for config-types generation
+1. `buildAndMergeConfig()` -- generates config from wizard result, merges with existing (threads `authoritativeScope` and `wizardResult.unresolvableSkillIds` into `mergeWithExistingConfig`)
+2. Agent load -- uses pre-loaded `options.agents` when provided, otherwise `loadMergedAgents(sourceResult.sourcePath)` for config-types generation
 3. `ensureBlankGlobalConfig()` -- ensures global config exists (when in project context)
 4. `writeScopedConfigs()` -- writes config.ts and config-types.ts split by scope
 
-| Type                   | Name                  | Purpose                                                                           |
-| ---------------------- | --------------------- | --------------------------------------------------------------------------------- |
-| `ConfigWriteOptions`   | Input options type    | wizardResult, sourceResult, projectDir, sourceFlag, agents                        |
-| `ConfigWriteResult`    | Return type           | config, configPath, globalConfigPath, wasMerged, existingConfigPath, filesWritten |
-| `writeProjectConfig()` | Orchestrator function | Builds, merges, and writes project config (init/edit)                             |
+| Type                   | Name                  | Purpose                                                                                                    |
+| ---------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `ConfigWriteOptions`   | Input options type    | wizardResult, sourceResult, projectDir, sourceFlag, agents, authoritativeScope                             |
+| `ConfigWriteResult`    | Return type           | config, configPath, globalConfigPath, wasMerged, existingConfigPath, filesWritten                          |
+| `writeProjectConfig()` | Orchestrator function | Builds, merges, and writes project config (init/edit); `filesWritten` is 4 in a project context, 2 at home |
 
 Used by `init.tsx` and `edit.tsx` commands. Replaces inlined config writing logic with a single operation call.
 
@@ -360,4 +385,6 @@ Used by `init.tsx` and `edit.tsx` commands. Replaces inlined config writing logi
 
 Plugin install intent is inviolable: when `installPluginSkills` returns a non-empty `failed` array, both `init.tsx::installPluginsStep` and `edit.tsx::applyPluginChanges` emit per-skill warnings and then hard-error via `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. This prevents `config.ts` from being written with orphan entries that claim skills are installed when `claude plugin install` rejected them.
 
-Uninstall failures are diagnostic-only — they do not produce orphan state and do not trigger a hard-error. See finding `.ai-docs/agent-findings/2026-04-20-d229-plugin-install-failure-orphan-config.md`.
+The same guard covers the eject→plugin scope-migration path (D-252): `edit.tsx::applyScopeChanges` runs `executeMigration()` (`mode-migrator.ts`), which returns `failedPluginInstalls` for any skill whose plugin install failed mid-migration; when that array is non-empty, `edit.tsx` hard-errors via `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` before `writeConfigAndCompile`, matching the added-skill path.
+
+Uninstall failures are diagnostic-only — they do not produce orphan state and do not trigger a hard-error. This is the "No Plugin-to-Eject Fallback" / orphan-config invariant codified in CLAUDE.md (Data Integrity) and tasks D-229 / D-252.

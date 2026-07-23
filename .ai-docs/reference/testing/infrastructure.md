@@ -7,13 +7,13 @@ related:
   - reference/testing/factories.md
   - reference/testing/mock-data.md
   - reference/testing/e2e-infrastructure.md
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # Test Infrastructure
 
-**Last Updated:** 2026-04-21
-**Last Validated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 > **Split from:** `reference/test-infrastructure.md`. See also: [factories.md](./factories.md), [mock-data.md](./mock-data.md), [e2e-infrastructure.md](./e2e-infrastructure.md).
 
@@ -28,7 +28,7 @@ Vitest is configured with 3 test projects:
 
 | Project       | Include Pattern                                                                                            | Purpose           | Retry |
 | ------------- | ---------------------------------------------------------------------------------------------------------- | ----------------- | ----- |
-| `unit`        | `src/**/*.test.{ts,tsx}`, `scripts/**/*.test.ts` (excluding integration/commands)                          | Unit + component  | 0     |
+| `unit`        | `src/**/*.test.{ts,tsx}`, `scripts/**/*.test.ts` (excluding integration/user-journeys/commands)            | Unit + component  | 0     |
 | `integration` | `src/cli/lib/__tests__/integration/**/*.test.{ts,tsx}`, `src/cli/lib/__tests__/user-journeys/**/*.test.ts` | Integration tests | 0     |
 | `commands`    | `src/cli/lib/__tests__/commands/**/*.test.ts`                                                              | CLI command tests | 1     |
 
@@ -83,14 +83,21 @@ src/cli/lib/__tests__/
   helpers/                           # Test utility functions (split from former helpers.ts)
     index.ts                         # Barrel re-export + parseTestFrontmatter
     cli-runner.ts                    # CLI_ROOT, runCliCommand
-    config-io.ts                     # readTestYaml, readTestTsConfig, writeTestTsConfig, writeTestPackageJson
-    disk-writers.ts                  # writeTestSkill, writeSourceSkill, writeTestAgent
-    isolated-home.ts                 # setupIsolatedHome (chdirs to tempDir/project, points HOME at tempDir/fakehome)
+    config-io.ts                     # readTestYaml, readTestJson, readTestTsConfig, writeTestTsConfig, writeTestPackageJson
+    config-comparison.ts             # normalizeGlobalConfig (order-insensitive config-text normalizer: strips projects line, sorts lines)
+    config-source-sections.ts        # extractNamedSection, extractScopeSections (config.ts section extractors)
+    disk-writers.ts                  # writeTestSkill, writeSourceSkill, writeTestAgent, writeSourceAgent, createImportSource, writeTestPluginManifest
+    isolated-home.ts                 # setupIsolatedHome, useFakeHome (chdirs to tempDir/project, points HOME at tempDir/fakehome)
+    silence-console.ts               # silenceConsole (suppresses console output during a test body)
     test-dir-setup.ts                # createTestDirs, cleanupTestDirs, PluginTestDirs type
-    wizard-simulation.ts             # buildSkillConfigs, simulateSkillSelections, buildWizardResultFromStore, extractSkillIdsFromAssignment
+    wizard-simulation.ts             # buildSkillConfig, buildSkillConfigs, simulateSkillSelections, buildWizardResultFromStore, extractSkillIdsFromAssignment
+    config-comparison.test.ts        # Tests for normalizeGlobalConfig
+    config-source-sections.test.ts   # Tests for the section extractors
+    index.test.ts                    # Tests for parseTestFrontmatter
   assertions/                        # Test assertion helpers (split from former helpers.ts)
     index.ts                         # Barrel re-export of all assertions
     agent-assertions.ts              # parseCompiledAgent, expectAgentCompilation, expectValidAgentMarkdown, expectCompiledAgents
+    agent-assertions.test.ts         # Tests for the agent assertion helpers
     config-assertions.ts             # expectConfigSkills, expectConfigAgents, expectFullConfig, assertConfigIntegrity, etc.
     install-assertions.ts            # expectInstallResult
   mock-data/                         # Extracted test fixtures (shared across test files)
@@ -138,7 +145,6 @@ src/cli/lib/__tests__/
     source-switching.integration.test.ts
     wizard-flow.integration.test.tsx
   user-journeys/
-    _diagnostic.test.ts
     compile-flow.test.ts
     config-precedence.test.ts
     edit-recompile.test.ts
@@ -223,6 +229,7 @@ src/cli/lib/stacks/stacks-loader.test.ts
 src/cli/lib/versioning.test.ts
 src/cli/lib/wizard/build-step-logic.test.ts
 src/cli/stores/wizard-store.test.ts
+src/cli/stores/d227-same-scope-tombstone-duplicate.test.ts
 src/cli/utils/errors.test.ts
 src/cli/utils/exec.test.ts
 src/cli/utils/frontmatter.test.ts
@@ -238,17 +245,14 @@ Component tests:
 src/cli/components/common/confirm.test.tsx
 src/cli/components/hooks/use-section-scroll.test.ts
 src/cli/components/hooks/use-terminal-dimensions.test.ts
-src/cli/components/hooks/use-virtual-scroll.test.ts
 src/cli/components/wizard/category-grid.test.tsx
 src/cli/components/wizard/checkbox-grid.test.tsx
 src/cli/components/wizard/hotkeys.test.ts
 src/cli/components/wizard/search-modal.test.tsx
-src/cli/components/wizard/section-progress.test.tsx
 src/cli/components/wizard/source-grid.test.tsx
 src/cli/components/wizard/step-agents.test.tsx
 src/cli/components/wizard/step-build.test.tsx
 src/cli/components/wizard/step-confirm.test.tsx
-src/cli/components/wizard/step-refine.test.tsx
 src/cli/components/wizard/step-settings.test.tsx
 src/cli/components/wizard/step-sources.test.tsx
 src/cli/components/wizard/step-stack.test.tsx
@@ -302,6 +306,29 @@ afterEach(async () => {
 
 `setupIsolatedHome(prefix)` returns `{ tempDir, projectDir, fakeHome, cleanup }`. It creates a temp dir, `chdir`s to `<tempDir>/project`, and sets `process.env.HOME` to `<tempDir>/fakehome`. The global `os.homedir()` mock in `vitest.setup.ts` respects this override.
 
+**Isolation mechanism — `process.env.HOME` vs `os.homedir()`:** `setupIsolatedHome` and `useFakeHome` isolate production code that reads the home directory via `process.env.HOME`. They do NOT isolate code that calls `os.homedir()` — that path reads the OS-level home and ignores `process.env.HOME`. `os.homedir()` callers are covered instead by the global spy in `vitest.setup.ts` (`vi.spyOn(os, "homedir")`), which returns the per-run test home dir UNLESS a test has pointed `process.env.HOME` at a value other than the real home (then it echoes that value). The two mechanisms are NOT interchangeable: a test asserting on `os.homedir()`-based resolution that must diverge from `process.env.HOME` needs its own `vi.spyOn(os, "homedir")`.
+
+### Fake Home Hook (`useFakeHome`)
+
+Hook-registering sibling of `setupIsolatedHome` (both in `src/cli/lib/__tests__/helpers/isolated-home.ts`). Unlike `setupIsolatedHome`, it does NOT `chdir` or create a `projectDir` — it only manages `process.env.HOME`.
+
+Signature: `useFakeHome(getTempDir: () => string, options?: { setHome?: boolean }): { readonly dir: string }`.
+
+- Registers a `beforeEach` that points `process.env.HOME` at `<tempDir>/fake-home` (created fresh per test) and an `afterEach` that restores the original HOME — or unsets it when it was originally undefined.
+- `getTempDir` — lazy accessor for the owning temp dir. Evaluated inside `beforeEach`, so it can reference a `let` assigned by an outer hook.
+- `options.setHome` — defaults to `true`. Pass `setHome: false` when the test itself decides when to point HOME at the fake home: the hook still creates the dir and exposes `.dir`, but leaves `process.env.HOME` untouched until the test sets it.
+- Returns a live view `{ readonly dir }` of the fake home directory (getter, so `.dir` reflects the per-test path).
+
+### Console Silencing (`silenceConsole`)
+
+`silenceConsole(methods?)` in `src/cli/lib/__tests__/helpers/silence-console.ts`. Call once at the top of a describe block.
+
+Signature: `silenceConsole(methods: ConsoleMethod[] = ["log", "warn", "error"]): Partial<Record<ConsoleMethod, MockInstance>>` where `ConsoleMethod = "log" | "warn" | "error" | "info" | "debug"`.
+
+- Registers a `beforeEach` that replaces each requested console method with a no-op `vi.spyOn` spy and an `afterEach` that restores them via `mockRestore`. It only restores the spies it created — it does NOT call `vi.restoreAllMocks()`, so unrelated spies survive.
+- `methods` — which console methods to silence. Defaults to `["log", "warn", "error"]`; `"info"` / `"debug"` are opt-in.
+- Returns a live spy map. Only the requested methods get an entry (the rest stay `undefined`). Because entries are populated in `beforeEach`, read them (e.g. `spies.log?.mock.calls`) inside test bodies, not at module scope.
+
 ## Test Constants (`src/cli/lib/__tests__/test-constants.ts`)
 
 ### Keyboard Escape Sequences
@@ -334,9 +361,10 @@ afterEach(async () => {
 
 ### Utility
 
-| Export      | Purpose                                    |
-| ----------- | ------------------------------------------ |
-| `delay(ms)` | Promise-based delay helper for test timing |
+| Export            | Purpose                                           |
+| ----------------- | ------------------------------------------------- |
+| `delay(ms)`       | Promise-based delay helper for test timing        |
+| `TEST_SOURCE_URL` | Canonical source URL (`github:agents-inc/skills`) |
 
 ## Error Handling in Tests
 
@@ -347,16 +375,16 @@ All `try/catch/finally` blocks have been removed from unit and integration test 
 - **Fire-and-forget with expected errors:** `await Command.run(args).catch(() => {})`
 - **No `try/finally` for cleanup in test bodies** -- `afterEach` is sufficient
 
-This applies to all test files in `src/cli/` and `scripts/` (~125 files). Zero `try {` blocks remain in test code.
+This applies to unit and integration test files across `src/cli/` and `scripts/` (~127 test files total). Two command tests retain a local `try` block for deliberate error-path handling: `commands/edit.test.ts` (captures a thrown oclif `CLIError` to assert on `oclif.exit` and message) and `commands/search.test.ts`.
 
-### Config-Writer Test Helpers
+### Config Section Extractors
 
-Two local extraction helpers in `src/cli/lib/configuration/__tests__/config-writer.test.ts` for asserting on generated config sections:
+Two shared helpers in `src/cli/lib/__tests__/helpers/config-source-sections.ts` for asserting on generated config sections (previously file-local in `config-writer.test.ts`, now extracted and exported; imported directly, not via the `helpers/index.ts` barrel):
 
-- `extractNamedSection(source, name)` -- Extracts a named `const` block (skills, agents, stack) from generated config source
+- `extractNamedSection(source, name)` -- Extracts a named `const` block (`"skills" | "agents" | "stack"`) from generated config source
 - `extractScopeSections(section)` -- Splits a section into `{ global, project }` parts using `// global` / `// project` comment markers
 
-These are file-local (not exported) and specific to config-writer test assertions.
+Used by `src/cli/lib/configuration/__tests__/config-writer.test.ts`. A separate order-INSENSITIVE normalizer, `normalizeGlobalConfig()` in `helpers/config-comparison.ts` (strips the `"projects"` line and sorts the remaining lines), is exported via the barrel for config-text comparison.
 
 ## Test Anti-Patterns (From CLAUDE.md)
 

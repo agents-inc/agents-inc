@@ -5,82 +5,245 @@ keywords: [findings, agent-findings, impact, cross-reference]
 related:
   - reference/architecture-overview.md
   - reference/test-infrastructure.md
-last_validated: 2026-04-21
+  - reference/concepts/tombstone-pattern.md
+  - reference/config/config-writer.md
+  - reference/testing/e2e-infrastructure.md
+last_validated: 2026-07-23
 ---
 
 # Agent Findings Impact Report
 
-**Generated:** 2026-03-28 (original); last full regeneration 2026-04-21 (Ralph iter 92); status rollup refresh 2026-04-21 post residual-cleanup sweep (8 findings lacking explicit `status:` classified)
-**Total Findings Catalogued:** 109 (excluding `README.md` and `TEMPLATE.md`)
-**Date Range:** 2026-04-03 to 2026-04-21 (the original 2026-03-21..2026-03-28 snapshot findings have since been moved or superseded; counts below reflect current directory contents)
+**Generated:** 2026-03-28 (original); prior full regeneration 2026-04-21 (Ralph iter 92); **this full regeneration 2026-07-23** (rebuilt from the 95 finding files currently on disk).
+**Total Findings Catalogued:** 95 (excluding `README.md` and `TEMPLATE.md`; no `audits/` subdirectory exists — every finding lives at the directory root).
+**Date Range:** 2026-04-17 to 2026-07-23 (latest finding filed 2026-07-20; window closed at the 2026-07-23 regeneration). The 2026-03-21..2026-04-16 findings referenced by earlier regenerations have since been moved, superseded, or archived off-disk; the rollups below reflect only the 95 files present now.
 
-> **Regeneration Policy:** Per `documentation-bible.md` rule (iter 40, incorporated iter 49), the report is fully regenerated when "Incremental Updates" exceeds ~10 entries OR when a Ralph sweep iter explicitly regenerates it. Iter 92 (this regeneration) folds iter-40/43/61 and earlier batches into the rollup tables and resets "Incremental Updates" to empty. The original 2026-03-28 snapshot tables are preserved verbatim under "Original Snapshot" for historical reference.
+> **Regeneration Policy:** Per `documentation-bible.md` ("Findings Impact Report Regeneration"), the report is fully regenerated when "Incremental Updates" exceeds ~10 entries, when the oldest un-aggregated finding is >30 days old, or when a major release bundle ships. This 2026-07-23 regeneration rebuilds every primary table from scratch against on-disk frontmatter, consolidates systemic patterns (re-lettered A..M), preserves the 2026-03-28 "Original Snapshot" verbatim for history, and resets "Incremental Updates" to empty.
 
 ---
 
-## Rollups (iter 92 regeneration, 109 findings on disk; post residual-cleanup sweep 2026-04-21)
+## Rollups (2026-07-23 regeneration — 95 findings on disk)
+
+Counts are computed directly from the YAML frontmatter of the 95 finding files (`root_cause`, `severity`, `category`, `domain`, `status`, `date`). `README.md` and `TEMPLATE.md` are excluded.
 
 ### By Status
 
-| Status       | Count | Share |
-| ------------ | ----- | ----- |
-| `resolved`   | 90    | 82.6% |
-| `partial`    | 7     | 6.4%  |
-| `open`       | 10    | 9.2%  |
-| `superseded` | 2     | 1.8%  |
-| **Total**    | 109   | 100%  |
+| Status     | Count | Share |
+| ---------- | ----- | ----- |
+| `open`     | 60    | 63.2% |
+| `partial`  | 17    | 17.9% |
+| `resolved` | 18    | 18.9% |
+| **Total**  | 95    | 100%  |
 
-"Open" means frontmatter has `status: open` or was absent (per README default). `partial` is a new enum value introduced in the 2026-04-21 3-batch status classification sweep for findings where the remedy landed for some call sites but coverage is incomplete. `superseded` is set via the `superseded_by:` frontmatter link.
+- `open` = 26 files with explicit `status: open` + 34 files with no `status:` field (README default is `open`).
+- `partial` = docs/standards side landed, load-bearing code-side fix still pending (`partial_note:` present).
+- `resolved` = anti-pattern fixed or standard fully updated (`resolved_by:` present).
+- No file carries `status: superseded`. One file (`2026-07-18-dual-scope-agent-s-toggle-guarded-noop-not-collapse.md`) has a `superseded_by:` link without the paired `status: superseded`, so it counts as `open` here — a minor frontmatter inconsistency, not a separate bucket.
 
-Residual-cleanup sweep 2026-04-21 classified 8 findings that had no explicit `status:` (7 from 2026-04-20 + 1 from 2026-04-18). Outcomes: 4 `resolved` (D-228, D-229 — both shipped in 0.141.0; e2e-fixture-preload-drift — 0.140.0 realism trim; d217-test-prereq-already-satisfied — closed 2026-04-21 by `standards/e2e/test-data.md § Before Extending Fixtures`), 1 `superseded` (new-agent-toggle-defaults-global-scope → newly-toggled-agent sibling), 3 `open` (mergeConfigs-drops-projects-field — still unfixed in `config-merger.ts`; d217-installmode-plumbing-dead-in-wrappers — dead plumbing still on wrappers per 0.140.0 note; newly-toggled-agent — `wizard-store.ts` still hard-codes `scope: "global"`).
+**Open vs closed:** closed (`resolved`) = 18 (18.9%). Not closed (`open` + `partial`) = 77 (81.1%).
 
 ### By Date (filing day)
 
-| Date       | Count | Notes                                                                                                                                                |
-| ---------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-04-03 | 4     | Skill content accuracy sweep                                                                                                                         |
-| 2026-04-05 | 1     | ENOENT catch-all                                                                                                                                     |
-| 2026-04-06 | 5     | Init/edit semantics, agent cross-contamination                                                                                                       |
-| 2026-04-07 | 2     | E2E retry isolation, re-scoped skill duplicate rows                                                                                                  |
-| 2026-04-08 | 1     | Toggle technology scope guard                                                                                                                        |
-| 2026-04-09 | 13    | Assertion-quality sweep (D-160s)                                                                                                                     |
-| 2026-04-13 | 6     | E2E anti-pattern audit D-168                                                                                                                         |
-| 2026-04-14 | 5     | HOME isolation, inline error extraction, marketplace flag drift                                                                                      |
-| 2026-04-15 | 2     | Stack ownership model, silent scope fallbacks                                                                                                        |
-| 2026-04-16 | 1     | Silent plugin install skip on missing marketplace                                                                                                    |
-| 2026-04-17 | 7     | D-224 tombstone / init partial state cluster                                                                                                         |
-| 2026-04-18 | 1     | `mergeConfigs` drops `projects` field                                                                                                                |
-| 2026-04-20 | 7     | D-217 / D-228 / D-229 wave                                                                                                                           |
-| 2026-04-21 | 54    | Ralph docs-sweep iters 11..91 + post-sweep filings + 0.42.1 orphan release + eject-success-log-stale-partial-names + pre-impl-design-docs-historical |
-| **Total**  | 109   |                                                                                                                                                      |
+| Date       | Count | Theme of the batch                                                                                                                   |
+| ---------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-04-17 | 1     | Shared config/stack parser duplication                                                                                               |
+| 2026-04-18 | 1     | `mergeConfigs` drops `projects` field                                                                                                |
+| 2026-04-20 | 2     | D-217 installMode dead plumbing; newly-toggled agent defaults to global scope                                                        |
+| 2026-04-21 | 13    | Dual-scope/tombstone cluster, E2E keypress rule, findings-system self-governance                                                     |
+| 2026-04-22 | 6     | Edit-mode scope-awareness audit, tombstone/checkbox, mode-migrator, plugin-uninstall asymmetry                                       |
+| 2026-07-09 | 1     | Marketplace schema stricter-than-contract                                                                                            |
+| 2026-07-17 | 4     | D-167 task-ID lint guard, D-227 preselect/tombstone reachability, E2E helper test home                                               |
+| 2026-07-18 | 10    | Dual-scope collapse doc-vs-code, propagation recompile, scope guards read stale hydration snapshot                                   |
+| 2026-07-19 | 11    | Config-as-text vs structural load, union-sweep type safety, Ink post-mount race, parser dedup                                        |
+| 2026-07-20 | 46    | Pass-8 shared-infra adoption sweep: fixtures, config normalizers, scope authority, renderer determinism, toast + page-object hygiene |
+| **Total**  | 95    |                                                                                                                                      |
 
 ### By Root Cause
 
 | Root Cause                  | Count | Canonical remedy                                   |
 | --------------------------- | ----- | -------------------------------------------------- |
-| `convention-undocumented`   | 55    | Add rule to standards doc; cite in CLAUDE.md       |
-| `rule-not-specific-enough`  | 18    | Tighten rule wording with enumerated cases         |
-| `enforcement-gap`           | 18    | Add lint/check or coverage-as-policy requirement   |
-| `rule-not-visible`          | 11    | Cross-link rule from other docs; move to prominent |
-| `missing-rule`              | 3     | New rule needs to be authored from scratch         |
-| `scope-discipline-deferred` | 1     | Knowingly left; track as TODO                      |
+| `convention-undocumented`   | 37    | Add rule to standards doc; cite in CLAUDE.md       |
+| `rule-not-specific-enough`  | 29    | Tighten rule wording with enumerated cases         |
+| `enforcement-gap`           | 15    | Add lint/typecheck/coverage-as-policy requirement  |
+| `missing-rule`              | 9     | Author a new rule from scratch                     |
+| `scope-discipline-deferred` | 3     | Knowingly left in-scope; track as TODO             |
+| `rule-not-visible`          | 2     | Cross-link rule from other docs; move to prominent |
+| **Total**                   | 95    |                                                    |
 
 ### By Severity
 
-| Severity | Count |
-| -------- | ----- |
-| high     | 22    |
-| medium   | 59    |
-| low      | 25    |
+| Severity  | Count | Share |
+| --------- | ----- | ----- |
+| high      | 19    | 20.0% |
+| medium    | 50    | 52.6% |
+| low       | 26    | 27.4% |
+| **Total** | 95    | 100%  |
 
 ### By Category
 
 | Category     | Count |
 | ------------ | ----- |
-| architecture | 61    |
-| testing      | 33    |
-| dry          | 11    |
-| typescript   | 1     |
+| testing      | 42    |
+| architecture | 34    |
+| dry          | 9     |
+| typescript   | 8     |
+| complexity   | 2     |
+| **Total**    | 95    |
+
+### By Domain
+
+| Domain    | Count |
+| --------- | ----- |
+| e2e       | 46    |
+| cli       | 40    |
+| shared    | 6     |
+| infra     | 3     |
+| **Total** | 95    |
+
+---
+
+## Per-Reference-Doc Impact (2026-07-23)
+
+Reference docs named in the `affected_files:` / `standards_docs:` frontmatter of the 95 findings. This is the report's core cross-reference: a reference doc appearing here has at least one finding touching the behavior it documents and should be re-validated per `documentation-bible.md` "Re-Validation Triggers." Counts are frontmatter references, not distinct findings.
+
+| Reference Doc                             | References | Priority |
+| ----------------------------------------- | ---------- | -------- |
+| `reference/concepts/tombstone-pattern.md` | 6          | HIGH     |
+| `reference/testing/e2e-infrastructure.md` | 4          | MED      |
+| `reference/config/config-writer.md`       | 3          | HIGH     |
+| `reference/concepts/scope-system.md`      | 2          | HIGH     |
+| `reference/config/config-merger.md`       | 2          | HIGH     |
+| `reference/features/operations-layer.md`  | 2          | MED      |
+| `reference/features/plugin-system.md`     | 1          | MED      |
+| `reference/wizard/store-map.md`           | 1          | MED      |
+| `reference/concepts/guard-pattern.md`     | 1          | MED      |
+| `reference/features/skills-and-matrix.md` | 1          | LOW      |
+| `reference/commands/edit.md`              | 1          | HIGH     |
+
+> **Scope note:** most of these 95 findings name `.ai-docs/standards/**` docs (convention-keeper's domain), not reference docs. Top standards targets, for prioritization only: `standards/e2e/anti-patterns.md` (27), `standards/e2e/README.md` (23), `standards/e2e/page-objects.md` (6), `standards/clean-code-standards.md` (5), `standards/e2e/assertions.md` (4). Those are out of scope for this reference-doc report but drive the same underlying patterns below.
+
+## Per-Source-File Churn (2026-07-23)
+
+Source / E2E files most frequently named in `affected_files:` (>= 5 findings). High churn signals which reference doc needs the tightest validation cadence.
+
+| Source File                                   | Findings | Reference doc(s) to re-validate                                                     |
+| --------------------------------------------- | -------- | ----------------------------------------------------------------------------------- |
+| `src/cli/stores/wizard-store.ts`              | 16       | `wizard/store-map.md`, `concepts/tombstone-pattern.md`, `concepts/guard-pattern.md` |
+| `src/cli/lib/installation/local-installer.ts` | 15       | `features/plugin-system.md`, `config/config-writer.md`                              |
+| `src/cli/commands/edit.tsx`                   | 9        | `commands/edit.md`                                                                  |
+| `e2e/pages/steps/build-step.ts`               | 7        | `testing/e2e-infrastructure.md`                                                     |
+| `e2e/fixtures/dual-scope-helpers.ts`          | 6        | `testing/e2e-infrastructure.md`                                                     |
+| `e2e/fixtures/expected-values.ts`             | 6        | `testing/e2e-infrastructure.md`                                                     |
+| `src/cli/lib/configuration/config-merger.ts`  | 5        | `config/config-merger.md`                                                           |
+| `src/cli/lib/installation/mode-migrator.ts`   | 5        | `features/plugin-system.md`                                                         |
+| `src/cli/commands/init.tsx`                   | 5        | `commands/index.md`                                                                 |
+| `e2e/pages/steps/agents-step.ts`              | 5        | `testing/e2e-infrastructure.md`                                                     |
+| `e2e/pages/steps/confirm-step.ts`             | 5        | `testing/e2e-infrastructure.md`                                                     |
+| `e2e/helpers/test-utils.ts`                   | 5        | `testing/e2e-infrastructure.md`                                                     |
+
+## Systemic Patterns (2026-07-23 regeneration)
+
+Consolidated from the 95 on-disk findings, re-lettered A..M (the pre-2026-07-23 numbered patterns are preserved in the Original Snapshot below; they described the 2026-03/04 finding set, most of which is now archived off-disk). Each pattern lists representative finding slugs (date prefixes omitted for brevity), the shared root cause, and the remedy plus the reference doc that should absorb it.
+
+### Pattern A — Scope authority decided in several disagreeing places (project vs global)
+
+- Findings: `scope-authority-must-follow-work-performed`, `project-context-edit-lacked-scope-authority-gate`, `project-materialisation-rode-on-stale-global-config-diff`, `edit-hasanychanges-gate-blocks-project-materialisation`, `single-scope-path-reported-for-scope-split-artifacts`, `edit-mode-scope-awareness-systemic-audit`, `newly-toggled-agent-defaults-global-breaks-project-scope-stack`.
+- Root cause: "who may write global state / which scope owns this artifact" is decided independently in `edit.tsx`, `wizard-store.ts` guards, and installer paths, and the copies disagree — a project-context run could perform a destructive global change or report a single path for scope-split artifacts.
+- Remedy: centralize the scope-authority gate; CLAUDE.md "Scope Awareness (project vs global)" rules (several already added). Reference docs: `concepts/scope-system.md`, `commands/edit.md`.
+
+### Pattern B — Multiple functions produce/normalize the same config with divergent contracts
+
+- Findings: `config-merge-functions-disagree-on-source-identity`, `two-config-normalisers-sorted-vs-order-preserving`, `near-duplicate-config-normalizers-block-shared-adoption`, `empty-union-string-fallback-disables-generated-type-safety`, `mergeConfigs-drops-projects-field`, `mergeconfigs-projects-drop-fixed-docs-stale`, `d233-projects-normalization-asymmetry`.
+- Root cause: `config-merger.ts` / `config-writer.ts` / `config-generator.ts` each treat source-identity metadata, the `projects` field, sort order, and empty-install state differently; no single documented contract.
+- Remedy: document the merge/normalize contract and source-identity handling. Reference docs: `config/config-merger.md`, `config/config-writer.md`.
+
+### Pattern C — E2E reads config.ts as raw text or softens a null load instead of structural load + strict assert
+
+- Findings: `config-text-regex-extraction-vs-structural-load`, `config-text-line-scanner-survives-behaviour-preserving-sweep`, `e2e-regex-config-extractors-block-structural-load-adoption`, `structural-config-load-erases-writer-compaction`, `e2e-unretirable-extractors-and-package-json-author-double-cast`, `config-load-null-fallback-hides-vacuous-assertions`, `e2e-config-load-null-check-silent-fallbacks`.
+- Root cause: specs `.match()` / `split('\n')` over raw `config.ts` text, or `?? {}` a `LoadedProjectConfig | null`, producing vacuous passes that survive behaviour-preserving sweeps.
+- Remedy: "Never soften a config load" + structural `loadProjectConfigFromDir`. Standards: `standards/e2e/anti-patterns.md` (convention-keeper). Reference: `testing/e2e-infrastructure.md`.
+
+### Pattern D — Page-object keypress-before-render rule + footer-specific sentinel under-enforced
+
+- Findings: `waitforstablerender-renamed-to-waitforwizardfooter`, `waitforstablerender-is-a-wizard-footer-sentinel-not-a-generic-primitive`, `e2e-keypress-guard-sweep-landed-sync-abort-carveout`, `e2e-build-step-keypress-missing-stable-render`, `e2e-keypress-rule-coverage-gap-sibling-steps`, `page-object-adoption-must-not-silently-change-sentinel-or-budget`, `confirmstep-hardcoded-sentinel-and-timeout-blocks-migration`, `page-object-speculative-api-and-misleading-method-names`.
+- Root cause: keypress methods must call `waitForWizardFooter()` first, but coverage-as-policy is incomplete and the sentinel is wizard-footer-specific (hangs on footer-less screens); sentinel/timeout hard-coded in page objects blocks reuse.
+- Remedy: enumerated coverage list in `standards/e2e/page-objects.md` (convention-keeper). Reference: `testing/e2e-infrastructure.md`.
+
+### Pattern E — Shared-fixture/constant DRY adoption boundary unclear; readonly-const friction at mutable option sites
+
+- Findings: `e2e-shared-fixture-literals-scope-boundary`, `shared-fixture-const-vs-file-local-const-adoption-boundary`, `e2e-skill-constant-adoption-boundary`, `fixture-inlining-trades-one-local-helper-for-ten-copies`, `readonly-const-fixtures-unadoptable-at-mutable-matcher-options`, `shared-mutable-constants-and-false-dry`, `matcher-augmentation-inline-shape-defeats-drift-guard`, `step-text-constants-must-mirror-asserted-string-not-rendered-string`, `shared-config-stack-parser`.
+- Root cause: "always use shared fixtures" collides with "keep a file-local const when file-scoped"; `as const` readonly tuples don't fit mutable matcher option bags; `STEP_TEXT` ambiguity (asserted vs rendered string).
+- Remedy: fixtures/test-data rules in `standards/e2e/README.md`; widen matcher option element types to `readonly string[]`. Reference: `testing/e2e-infrastructure.md`.
+
+### Pattern F — Deterministic renderer can't express the fixture shape → inline-template carve-outs
+
+- Findings: `rendermetadatayaml-cannot-omit-contenthash`, `rendermetadatayaml-fixed-field-order-changes-emitted-bytes`, `invalid-by-design-metadata-fixture-is-permanent-renderer-carveout`, `writetestpackagejson-override-type-inferred-from-fixture-value`.
+- Root cause: `renderMetadataYaml()` (`content-generators.ts`) can't omit `contentHash` or vary field order, forcing byte-exact tests to hand-write template strings CLAUDE.md bans.
+- Remedy: renderer-adoption rule + carve-out note in `standards/e2e/test-data.md` (convention-keeper). Reference: `testing/e2e-infrastructure.md`.
+
+### Pattern G — Assertions pin state the test's own action did not produce (coverage / vacuous)
+
+- Findings: `setup-owned-state-pinned-by-action-scoped-assertions`, `live-in-session-selected-state-uncovered-badge-only-assertions`, `toggle-selection-array-diverges-from-reconciled-active-state`, `init-dashboard-plugin-test-vacuous-project-scope`, `d228-e2e-vacuous-pass-via-home-edit`, `d227-preselect-fix-not-e2e-reachable`.
+- Root cause: absolute assertions on setup-owned state; badge-only assertions miss live selection; "project scope" tests sharing `HOME=projectDir` pass vacuously.
+- Remedy: "Assert on what your action changed" in `standards/e2e/anti-patterns.md` (convention-keeper). Reference: `testing/e2e-infrastructure.md`.
+
+### Pattern H — Field name ≠ field contents; derived slug/category/display hides the wrong value
+
+- Findings: `field-name-meaning-mismatch-marketplace-display-name`, `filesystem-listings-must-print-on-disk-names`, `project-builder-derived-slug-hid-wrong-category`, `fixture-category-literals-unvalidated-against-categories-union`, `e2e-agent-name-vs-display-constant-gap`.
+- Root cause: a field named for one concept is populated from another and rendered as a third; test fixtures derive `category`/`slug` by string-splitting IDs, yielding categories absent from the `CATEGORIES` union.
+- Remedy: "Field Names Must Match Field Contents" in `standards/clean-code-standards.md`; validate fixture literals against the union. Reference: `features/skills-and-matrix.md`.
+
+### Pattern I — Mechanical union/const refactor sweeps lack carve-outs; `scripts/` untypechecked
+
+- Findings: `type-position-vs-emitted-code-string-in-union-sweeps`, `untypechecked-scripts-hid-phantom-tags-and-invalid-skillids`, `as-const-satisfies-on-object-with-getter-widens-return`, `empty-union-string-fallback-disables-generated-type-safety`, `aggressive-regex-corrupts-structured-test-fixtures`.
+- Root cause: "replace every inline union / add `as const satisfies`" ledgers applied blindly corrupt template strings, widen getter return types, and disable generated type safety; `scripts/` is never type-checked.
+- Remedy: type-narrowing carve-outs ("TYPE-position only; skip template strings"); add `typecheck:scripts`; ban greedy multi-line regex on structured fixtures. Reference: `type-system.md` (in `related:` chain).
+
+### Pattern J — `local-installer.ts` grows return channels / swallows errors without a caller contract
+
+- Findings: `propagation-skipped-observability-gap`, `registerProjectPath-sweep-observability-gap`, `propagation-skips-agent-recompile`, `error-swallowing-systemic-gap`, `d233-projects-normalization-asymmetry`, `installer-consuming-operations-layer-cycle`.
+- Root cause: new `skipped` / sweep return values that no production caller inspects; disk-write/registry failures logged via `warn()`/`verbose()` and swallowed; a lib module statically importing the operations layer inverts dependency direction.
+- Remedy: caller-inspection contract in `config/config-writer.md`; dependency-direction rule in `features/operations-layer.md`.
+
+### Pattern K — Tombstone / dual-scope collapse behavior documented at the wrong layer or incompletely
+
+- Findings: `dual-scope-agent-s-toggle-guarded-noop-not-collapse`, `dual-scope-s-toggle-persisted-pair-doc-vs-code`, `d233-agent-collapse-fix-in-toggleagent-action-not-helper`, `sourceById-collapse-unreachable-in-production`, `agent-toggle-checkbox-ignores-excluded-tombstone`, `excluded-agent-tombstone-vs-selected-agents-mismatch`, `d227-same-scope-active-tombstone-duplicate`.
+- Root cause: tombstone/collapse semantics live in the store action, but docs point at a private helper (`applyAgentToggle`) → repeated "wrong-layer" misdiagnosis; guarded no-op vs collapse distinction not called out.
+- Remedy: name the authoritative layer and the guarded-no-op case in `concepts/tombstone-pattern.md` and `wizard/store-map.md` Internal Helpers.
+
+### Pattern L — A synchronous Ink input handler reads async-seeded / stale-hydration state
+
+- Findings: `async-post-mount-seed-read-by-sync-input-handler`, `scope-guards-read-stale-hydration-snapshot`, `module-load-time-homedir-capture-latent-mock-bug`, `ink-prompt-closure-lets-hang-anti-pattern`.
+- Root cause: a synchronous `useInput` handler reads state seeded asynchronously post-mount (or a stale immutable hydration snapshot); `os.homedir()` captured at module-load defeats test mocks.
+- Remedy: seed sync-read state synchronously in the store; guard-authoring rule in `concepts/guard-pattern.md`; resolve scope base dirs at call time.
+
+### Pattern M — Rules live in prose with no lint/typecheck enforcement; migration/plugin preconditions unstated
+
+- Findings: `d167-task-id-recurrence-no-lint-guard`, `task-ids-in-test-names-sweep-needed`, `agent-findings-frontmatter-drift-iter45`, `todo-id-collisions-in-completed`, `changelog-0.42.1-orphan-release-file`, `ralph76-memory-md-stale-phase-entries`, `r73-atomicity-bible-drift`, `e2e-helper-tests-have-no-runnable-home`, `e2e-spec-files-accumulate-unused-imports-unenforced`, `command-delegation-must-carry-caller-intent`, `migration-path-missing-marketplace-precondition`, `plugin-uninstall-bare-id-asymmetry-with-install`, `mode-migrator-single-scope-uninstall-cwd-ambiguity`, `marketplace-schema-name-laxer-than-claude-code`, `parsefrontmatter-crlf-and-invalid-yaml-null`.
+- Root cause: rules exist only in prose (task-IDs in test names, findings frontmatter, unused imports, delegation caller-intent, marketplace precondition before `claudePluginInstall`), so drift recurs; two parsers diverge on the same on-disk shape.
+- Remedy: add ESLint/typecheck gates (`e2e/tsconfig.json`, task-ID lint rule, `typecheck:scripts`); one extractor per on-disk concern; document plugin/migration marketplace preconditions and bare-id/qualified-id symmetry.
+
+## Priority Actions (2026-07-23 regeneration)
+
+19 findings are `high` severity: 5 `resolved`, 14 still open/partial. The open high-severity set is dominated by `cli`/`architecture` scope-authority and config-merge work (Patterns A, B, J) plus one high `e2e` toast-assertion finding (Pattern G).
+
+### HIGH priority
+
+1. **Pattern A closure (scope authority)** — 6 open high-severity findings (`scope-authority-must-follow-work-performed`, `project-context-edit-lacked-scope-authority-gate`, `single-scope-path-reported-for-scope-split-artifacts`, `edit-mode-scope-awareness-systemic-audit`, `excluded-agent-tombstone-vs-selected-agents-mismatch`, `agent-toggle-checkbox-ignores-excluded-tombstone`). Centralize the project→global authority gate; then re-validate `concepts/scope-system.md`, `commands/edit.md`.
+2. **Pattern B closure (config merge contract)** — `config-merge-functions-disagree-on-source-identity` (high, partial). Land the source-identity contract; refresh `config/config-merger.md` + `config/config-writer.md`.
+3. **Pattern J / migration preconditions** — `migration-path-missing-marketplace-precondition`, `plugin-uninstall-bare-id-asymmetry-with-install`, `error-swallowing-systemic-gap` (all high, open). Establish marketplace precondition + caller-inspection contract; refresh `features/plugin-system.md`, `features/operations-layer.md`.
+4. **Pattern D sentinel** — `waitforstablerender-is-a-wizard-footer-sentinel-not-a-generic-primitive` (high, partial). Complete the enumerated keypress coverage list; refresh `testing/e2e-infrastructure.md`.
+5. **`command-delegation-must-carry-caller-intent`** (high, open) — `init.tsx` delegates with no argv/context; codify caller-intent plumbing, cross-ref `commands/edit.md`.
+
+### MEDIUM priority
+
+6. **Pattern K (tombstone doc-layer)** — refresh `concepts/tombstone-pattern.md` (6 references, most-referenced reference doc) and `wizard/store-map.md` Internal Helpers to name the authoritative collapse layer.
+7. **Patterns C / E / G (E2E hygiene)** — 17 partial findings await code-side landing; re-validate `testing/e2e-infrastructure.md` after the shared-infra adoption sweep settles.
+8. **Pattern L (Ink hydration race)** — add the guard-authoring rule to `concepts/guard-pattern.md`.
+
+### LOW priority
+
+9. **Findings-system self-audit** — run the ~10-iter findings-directory self-audit (frontmatter completeness, the one `superseded_by:`-without-`status:` inconsistency noted under By Status).
+10. **`scripts/` typecheck gate** — `untypechecked-scripts-hid-phantom-tags-and-invalid-skillids` (Pattern I); add `typecheck:scripts`.
 
 ---
 
@@ -460,10 +623,6 @@ Root cause: the findings directory grew past ~50 entries before anyone audited i
 
 ## Incremental Updates
 
-_Reset iter 92 (2026-04-21). Next regeneration trigger: >10 entries accumulated here, OR a Ralph sweep iter explicitly regenerates._
+_Reset 2026-07-23 (full regeneration — 95 findings rebuilt into the primary tables above). Next regeneration trigger: >10 entries accumulated here, OR the oldest un-aggregated finding exceeds 30 days, OR a major release bundle ships._
 
-- 2026-04-21 — `2026-04-21-changelog-summary-bullet-coverage-gap.md` → resolved. Added forward-applying Release Checklist bullet to `.ai-docs/standards/commit-protocol.md` requiring every `### D-xxx` subheading in `changelogs/{version}.md` to have ≥1 bullet in the corresponding `CHANGELOG.md` summary block (mechanically checkable via grep/diff). By Status: open 9→8, resolved 82→83.
-- 2026-04-21 — micro-sync: one partial finding flipped to resolved. By Status: partial 9→8, resolved 87→88. Non-closed 16→15.
-- 2026-04-21 — residual close: `file-path-canonicalization-mixed-forms.md` → resolved by `documentation-bible.md § File-Path Conventions in Docs` (three accepted forms + one-doc-one-form rule). By Status: partial 8→7, resolved 88→89. Non-closed 15→14.
-- 2026-04-21 — filed `2026-04-21-eject-success-log-stale-partial-names.md` (convention-drift, low, architecture/cli, convention-undocumented, open). `src/cli/commands/eject.ts` success-log string references stale partial vocabulary ("templates, agent intro, workflow, and examples") not matching the actual partials (`identity.md`, `playbook.md`, `critical-requirements.md`, `critical-reminders.md`, `output.md`). Total 107→108. By Status: open 9→10. Non-closed 16→17.
-- 2026-04-21 — filed `2026-04-21-pre-implementation-design-docs-unmarked-as-historical.md` (convention-drift, low, architecture/shared, convention-undocumented, resolved). Added `HISTORICAL DESIGN NOTE` banner to `docs/excluded-skills-design.md` + `docs/excluded-skills-edge-cases.md` pointing to `.ai-docs/reference/concepts/tombstone-pattern.md`. Total 108→109. By Status: resolved 89→90.
+_(none yet)_

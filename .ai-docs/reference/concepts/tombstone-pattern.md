@@ -13,8 +13,11 @@ keywords:
     skill-agent-summary,
     slot-occupancy,
     dual-scope,
+    persisted-dual-scope-pair,
+    _sessionRebuiltScopePair,
     D-223,
     D-224,
+    D-227,
     D-230,
     D-232,
     D-233,
@@ -28,15 +31,15 @@ related:
   - reference/config/config-merger.md
   - reference/config/config-writer.md
   - reference/architecture/overview.md
-last_validated: 2026-07-17
+last_validated: 2026-07-23
 ---
 
 # Excluded Tombstone Pattern
 
-**Last Updated:** 2026-07-17
-**Last Validated:** 2026-07-17
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
-> **Cross-cutting concept.** Consolidates tombstone documentation from: `architecture-overview.md` (Section 12), `state-transitions.md` (`applySkillRemoval`, `applyAgentToggle`), `wizard-flow.md` (Scope Toggle Eject Guard), `configuration.md` (excluded entries in config writer), `config-merger.md` (compound-key reconciliation), `scope-split.md` (tombstone routing), and `skill-agent-summary.tsx` (slot-occupancy diff baseline).
+> **Cross-cutting concept.** Consolidates tombstone documentation from: `architecture-overview.md` (Section 12), `state-transitions.md` (`applySkillRemoval`, `applyAgentToggle`), `wizard-flow.md` (Scope Toggle Eject Guard), `configuration.md` (excluded entries in config writer), `config-merger.md` (compound-key reconciliation), `scope-split.md` (tombstone routing), and `scope-diff.ts` / `skill-agent-summary.tsx` (slot-occupancy diff baseline).
 
 ## Overview
 
@@ -67,6 +70,8 @@ It means: **the global install of X is still on disk** (tombstone says so), **an
 
 The dual-scope pair is the only legitimate case where the same `id` appears twice in `skillConfigs`. Everywhere else the invariant is **"no active + tombstone at the same (id, scope)"** — enforced by `toggleSkillScope` P→G cleanup (see below).
 
+> **Known limitation (D-227, open):** preselection can transiently break the same-scope half of this invariant. When the ONLY saved entry for a name/id is a global-scope excluded tombstone and it is then re-included by preselection, `buildSkillConfigForId` / `buildAgentConfigForName` emit a fresh `{ scope: "global" }` **active** entry while `collectTombstones` also preserves the `{ scope: "global", excluded: true }` tombstone — a same-scope active + tombstone pair. `mergeConfigs`'s compound key keys them distinctly, so both survive to `config.ts`. Not yet collapsed downstream. See `.ai-docs/agent-findings/2026-07-17-d227-same-scope-active-tombstone-duplicate.md`.
+
 ## Lifecycle
 
 ### 1. Creation
@@ -89,7 +94,7 @@ On wizard reopen, `populateFromSkillIds(skillIds, savedConfigs)` must preserve t
 
 1. Resolves each `skillId` into the domain/category grid via `resolveSkillForPopulation`.
 2. Builds `skillConfigs` from `savedConfigs` via `buildSkillConfigForId` (**preferring project-scoped entries over global when duplicates exist**).
-3. Appends `savedConfigs.filter((sc) => sc.excluded)` to the result.
+3. Appends every excluded tombstone via `collectTombstones(savedConfigs ?? [])` (`configs.filter((entry) => entry.excluded)`) to the result.
 
 The final `skillConfigs` therefore carries both halves of every dual-scope pair. Without this preservation step, reopening a project with `[P][G]` state would strip the tombstone and collapse the dual-scope rendering to just `[P]`.
 
@@ -123,21 +128,24 @@ Tombstones must survive every hop from wizard-store to disk:
 
 ## Role in the Info-Panel Diff (D-230 / D-232)
 
-`src/cli/components/wizard/skill-agent-summary.tsx` computes a diff between `installedSkillConfigs` / `installedAgentConfigs` (baseline) and the current `skillConfigs` / `agentConfigs`. The rendering uses three classes: `+` (new), `-` (removed), `~` (source changed), `•` (unchanged).
+`computeScopeDiff()` in `src/cli/lib/wizard/scope-diff.ts` computes a diff between `installedSkillConfigs` / `installedAgentConfigs` (baseline) and the current `skillConfigs` / `agentConfigs`; `skill-agent-summary.tsx` calls it and renders the rows. The diff uses four `DiffRowStatus` classes: `+` (`added`), `-` (`removed`), `~` (`source-changed`), `•` (`unchanged`).
 
-**Tombstones are first-class baseline entries.** The baseline is NOT pre-filtered on `!excluded`:
+**Tombstones are first-class baseline entries.** The baseline (`installedSkillConfigs`) is NOT pre-filtered on `!excluded` when building the previous-key set:
 
 ```ts
-const skillDiffBaseline = installedSkillConfigs ?? null;
-const prevSkillKeySet = new Set(skillDiffBaseline.map((s) => `${s.id}:${s.scope}`));
+const prevSkillKeySet = installedSkillConfigs
+  ? new Set(installedSkillConfigs.map((s) => `${s.id}:${s.scope}`))
+  : null;
 ```
 
 **Slot-occupancy match for `removedSkills`.** A baseline entry is considered removed only if **nothing** — active OR tombstone — occupies that slot in current:
 
 ```ts
-const removedSkills = skillDiffBaseline.filter(
-  (s) => !currentSkills.some((c) => c.id === s.id && c.scope === s.scope),
-);
+const removedSkills = installedSkillConfigs
+  ? installedSkillConfigs.filter(
+      (s) => !currentSkills.some((c) => c.id === s.id && c.scope === s.scope),
+    )
+  : [];
 ```
 
 A current tombstone at the same `(id, scope)` keeps the slot occupied — dual-scope indicator, not a removal.
@@ -153,19 +161,25 @@ A current tombstone at the same `(id, scope)` keeps the slot occupied — dual-s
 - `inheritedGlobalSkills` filters to active baseline entries — a tombstone in baseline isn't an install.
 - `uniqueExcludedGlobalSkills` dedups the current tombstone row against `inheritedGlobalSkills` so the Global section never shows two rows for the same skill.
 
-See finding `.ai-docs/agent-findings/2026-04-21-d230-d232-diff-baseline-pre-filter-drift.md` for the full derivation.
+The standalone D-230/D-232 finding file was removed in a findings cleanup; its derivation is retained in this section and mirrored in [`component-patterns.md`](../component-patterns.md) (the "Diff baseline (D-230 / D-232)" and "Slot-occupancy removal match" notes). `reference/findings-impact-report.md` carries only the aggregate rollup for the surrounding tombstone finding cluster, not the derivation.
 
 ## UI Indicators
 
 When a tombstone coexists with an active entry of a different scope, dual-scope badges are shown:
 
-- **Build step** (`CategoryGrid` / `CategoryOption`): `CategoryOption.secondaryScope` renders a second `[G]` / `[P]` badge next to the primary scope badge.
-- **Agents step** (`StepAgents`): Computes `secondaryScope` from excluded entries with different scope from the active agent entry.
+- **Build step** (`CategoryGrid` / `CategoryOption`): `CategoryOption.secondaryScope` renders a second `G` / `P` badge next to the primary scope badge.
+- **Agents step** (`StepAgents`): derives the secondary badge via `deriveScopeBadges(agentConfig, excludedConfig)` + `formatScopeTag()` from `src/cli/lib/wizard/scope-diff.ts` — a tombstone at the other scope renders as the secondary badge.
 - **Confirm step** (`SkillAgentSummary`): renders tombstone as `•` in the Global section alongside the project `+` — the D-223/D-230 dual-scope diff shape.
 
-## `toggleSkillScope` Undo Path
+## `toggleSkillScope` / `toggleAgentScope` — Persisted vs Within-Session
 
-`toggleSkillScope` checks for existing excluded entries to allow undo of prior scope overrides. When an excluded tombstone exists for a skill, the scope-toggle guard bypasses the "project eject → global would overwrite" block (`"Already exists as ejected skill at global scope"`) because the tombstone indicates the toggle is undoing a prior G→P rather than creating a new collision.
+Whether `s` (scope toggle) collapses a dual-scope pair depends on whether that pair was reconstructed this session. The two paths behave OPPOSITELY, so the general "P→G drops the tombstone" rule must not be read as "`s` always collapses a `[P][G]` pair":
+
+1. **Persisted dual-scope pair reopened for edit** — the hydration snapshot (`installedSkillConfigs` / `installedAgentConfigs`) holds the excluded global tombstone. `s` is a **guarded no-op that emits the toast** `"Installed at both scopes — use space to change project scope"`; the `[P][G]` pair is left intact. The guard predicate is `!_sessionRebuiltScopePair{Skills,Agents}.has(id) && hasGlobalTombstone(installed*Configs, id) && isDualScopePair(*Configs, id)`. Repeated `s` on a persisted pair would corrupt it (`[P][G] → [G] → [P]`, losing `[G]`), so **SPACE** (`toggleTechnology` / `toggleAgent` → `applySkillRemoval` / `collapseDualScopeAgent`) is the only sanctioned way to change the project half. (Verified empirically in `e2e/lifecycle/dual-scope-same-source-{eject,plugin}.e2e.test.ts` and `dual-scope-agent-badge-and-s-inert.e2e.test.ts`.)
+
+2. **Within-session G↔P round-trip** — a pair collapsed then rebuilt this session is recorded in `_sessionRebuiltScopePairSkills` / `_sessionRebuiltScopePairAgents` (populated by the G→P tombstone-creation branch and the spacebar/agent restore path). For ids in that set the persisted-pair guard suppresses itself, so `s` performs the P→G collapse and **unconditionally drops the tombstone** (D-224). A within-session G→P where the snapshot still holds an ACTIVE global entry (no tombstone yet) is likewise unaffected by the persisted-pair guard.
+
+**Eject-collision undo bypass (separate guard):** the `"Already exists as ejected skill at global scope"` block has its own undo path — when an excluded tombstone for the same skill id is present in `skillConfigs`, the guard allows the project-eject→global toggle because the tombstone proves the toggle is undoing a prior G→P rather than creating a new collision. The persisted-pair guard runs first, so this bypass only applies to session-authored pairs.
 
 ## `toggleFilterIncompatible` Interaction
 
@@ -184,6 +198,8 @@ The "Globally-installed item" column depends on the editing context. Editing FRO
 | Scope: P→G           | Flip to global + drop any tombstone (unconditional) | Flip to global + drop tombstone              | N/A (scope toggle disabled at global scope) | Flip to global                 |
 | Re-select tombstoned | N/A                                                 | Clear `excluded` flag                        | N/A (no tombstone was created)              | N/A                            |
 
+> **Persisted `[P][G]` pairs:** the "Scope: G→P" / "Scope: P→G" rows describe a WITHIN-SESSION toggle. On a persisted dual-scope pair reopened for edit (snapshot holds the tombstone, id absent from `_sessionRebuiltScopePair*`), `s` is instead a guarded no-op with the `"Installed at both scopes"` toast — SPACE (deselect) is the collapse path. See "`toggleSkillScope` / `toggleAgentScope` — Persisted vs Within-Session" above. Skills and agents behave identically.
+
 ## D-233 — Dual-Scope Spacebar + Scope-Aware Removal (Resolved)
 
 Two related behaviors, now implemented in `applySkillRemoval` / `reconcileSkillConfigs` and their agent equivalents:
@@ -197,20 +213,27 @@ The merge layer needs no tombstone-specific handling for either behavior: a full
 ## Anchors
 
 - `applySkillRemoval`, `applyAgentToggle`, `reconcileSkillConfigs`, `restoreSkillConfigs`, `buildSkillConfigForId`, `populateFromSkillIds`, `toggleSkillScope`, `toggleAgentScope`, `toggleAgent`, `toggleTechnology`, `toggleFilterIncompatible` — `src/cli/stores/wizard-store.ts`.
-- `SkillAgentSummary`, `skillDiffBaseline`, `prevSkillKeySet`, `removedSkills`, `uniqueExcludedGlobalSkills`, `inheritedGlobalSkills` — `src/cli/components/wizard/skill-agent-summary.tsx`.
+- `computeScopeDiff`, `prevSkillKeySet`, `prevSourceMap`, `removedSkills`, `uniqueExcludedGlobalSkills`, `inheritedGlobalSkills`, `deriveScopeBadges`, `formatScopeTag` — `src/cli/lib/wizard/scope-diff.ts`.
+- `SkillAgentSummary` (renders `computeScopeDiff` output) — `src/cli/components/wizard/skill-agent-summary.tsx`.
 - `mergeConfigs` compound keys — `src/cli/lib/configuration/config-merger.ts`.
 - `splitConfigByScope` tombstone routing — `src/cli/lib/configuration/config-generator.ts`.
 - `generateProjectConfigWithInlinedGlobal` — `src/cli/lib/configuration/config-writer.ts`.
 
 ## Findings That Shaped This Doc
 
-| Finding                                                  | Contribution                                                   |
-| -------------------------------------------------------- | -------------------------------------------------------------- |
-| `2026-04-06-excluded-tombstones-block-scope-toggle.md`   | Undo path in `toggleSkillScope`.                               |
-| `2026-04-06-agent-merge-key-mismatch-with-skills.md`     | Compound-key alignment between skills and agents.              |
-| `2026-04-07-re-scoped-skill-duplicate-rows.md`           | Dual-scope row-collision rules in the renderer.                |
-| `2026-04-17-d224-ptog-tombstone-not-cleared.md`          | Empirically established "unconditional P→G cleanup" invariant. |
-| `2026-04-17-merger-authoritative-for-names-semantic.md`  | `mergeConfigs` authoritative-on-name semantic.                 |
-| `2026-04-21-d230-d232-diff-baseline-pre-filter-drift.md` | Slot-occupancy matching in `skill-agent-summary.tsx`.          |
+The pre-2026-07 finding files below were removed in a findings cleanup and consolidated into `reference/findings-impact-report.md`; they are listed here for provenance only (the standalone paths no longer resolve). The 2026-07 findings are still standalone files.
+
+| Finding                                                                  | Contribution                                                                                                             | Status        |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------- |
+| `2026-04-06-excluded-tombstones-block-scope-toggle.md`                   | Undo path in `toggleSkillScope`.                                                                                         | consolidated  |
+| `2026-04-06-agent-merge-key-mismatch-with-skills.md`                     | Compound-key alignment between skills and agents.                                                                        | consolidated  |
+| `2026-04-07-re-scoped-skill-duplicate-rows.md`                           | Dual-scope row-collision rules in the renderer.                                                                          | consolidated  |
+| `2026-04-17-d224-ptog-tombstone-not-cleared.md`                          | Empirically established "unconditional P→G cleanup" invariant.                                                           | consolidated  |
+| `2026-04-17-merger-authoritative-for-names-semantic.md`                  | `mergeConfigs` authoritative-on-name semantic.                                                                           | consolidated  |
+| `2026-04-21-d230-d232-diff-baseline-pre-filter-drift.md`                 | Slot-occupancy matching in `skill-agent-summary.tsx`.                                                                    | consolidated  |
+| `2026-07-17-d227-same-scope-active-tombstone-duplicate.md`               | Same-scope active + tombstone preselection duplicate (known limitation).                                                 | open file     |
+| `2026-07-18-scope-guards-read-stale-hydration-snapshot.md`               | Live-config tombstone arm on blanket guards; `wasInstalledGlobally` counts tombstones; `_sessionRebuiltScopePair*` sets. | resolved file |
+| `2026-07-18-dual-scope-s-toggle-persisted-pair-doc-vs-code.md`           | Persisted-vs-within-session `s` distinction (guarded no-op toast on a reopened pair).                                    | drift file    |
+| `2026-07-18-d233-agent-collapse-fix-in-toggleagent-action-not-helper.md` | Agent dual-scope collapse/restore lives in the `toggleAgent` action, not `applyAgentToggle`.                             | drift file    |
 
 > **See also:** [concepts/scope-system.md](./scope-system.md) for full scope system documentation; [config/scope-split.md](../config/scope-split.md) for tombstone routing; [config/config-merger.md](../config/config-merger.md) for compound-key reconciliation.

@@ -20,12 +20,14 @@ related:
   - reference/features/wizard-flow.md
   - reference/concepts/tombstone-pattern.md
   - reference/concepts/guard-pattern.md
-last_validated: 2026-04-21
+  - reference/commands.md
+last_validated: 2026-07-23
 ---
 
 # Component Patterns
 
-**Last Updated:** 2026-04-21
+**Last Updated:** 2026-07-23
+**Last Validated:** 2026-07-23
 
 ## Rendering Library
 
@@ -40,12 +42,12 @@ last_validated: 2026-04-21
 ```
 src/cli/components/
   common/                    # Shared UI components
-    confirm.tsx              # Y/N confirmation prompt
+    confirm.tsx              # Y/N confirmation prompt (Confirm)
     confirm.test.tsx
-    message.tsx              # Styled message display
-    select-list.tsx          # Generic keyboard-navigable list
+    prompt-confirm.tsx       # Imperative confirm/value prompt helper (used by the dashboard)
+    select-list.tsx          # Generic keyboard-navigable list (SelectList)
     spinner.tsx              # Loading spinner
-  hooks/                     # React hooks (14 hooks, 3 test files)
+  hooks/                     # React hooks (13 hooks, 2 test files)
     use-build-step-props.ts
     use-category-grid-input.ts
     use-focused-list-item.ts
@@ -59,30 +61,27 @@ src/cli/components/
     use-source-operations.ts
     use-terminal-dimensions.ts
     use-text-input.ts
-    use-virtual-scroll.ts
   themes/
     default.ts               # CLI theme configuration
-  wizard/                    # Wizard step components (24 source files, 15 test files)
+  wizard/                    # Wizard step components (22 source files, 13 test files)
     wizard.tsx               # Main wizard orchestrator
-    wizard-layout.tsx        # Layout wrapper (tabs + content + info panel)
+    wizard-layout.tsx        # Layout wrapper (tabs + content + info panel + footer)
     wizard-tabs.tsx          # Step progress indicator tabs
+    run-wizard-session.tsx   # runWizardSession(): hydrate store, render <Wizard>, await exit
     step-stack.tsx           # Stack selection step
     step-build.tsx           # Technology selection step
     step-sources.tsx         # Source selection step
     step-agents.tsx          # Agent selection step
     step-confirm.tsx         # Confirmation step (scrollable, delegates to SkillAgentSummary)
     step-settings.tsx        # Settings overlay
-    step-refine.tsx          # Refine sub-step component
-    category-grid.tsx        # Category grid layout
-    checkbox-grid.tsx        # Skill toggle grid
+    category-grid.tsx        # Category grid layout (internal CategorySection + SkillTag)
+    checkbox-grid.tsx        # Generic checkbox grid (used by DomainSelection)
     domain-selection.tsx     # Domain tab selector
-    section-progress.tsx     # Category completion progress
-    selection-card.tsx       # Selected item card
+    selection-card.tsx       # Selected item card (used by StepSources choice view)
     skill-agent-summary.tsx  # 2-box skill/agent listing with scope labels (used by StepConfirm and InfoPanel)
     source-grid.tsx          # Per-skill source picker (inline layout with column headers)
-    search-modal.tsx         # Bound skill search modal
-    stack-selection.tsx      # Stack list component
-    menu-item.tsx            # Menu item component
+    search-modal.tsx         # Bound skill search modal (rendered by SourceGrid)
+    stack-selection.tsx      # Grouped stack list component
     info-panel.tsx           # Marketplace/stack header + scrollable SkillAgentSummary
     toast.tsx                # Toast notification component (styled text block)
     hotkeys.ts               # Centralized hotkey registry
@@ -147,23 +146,25 @@ export const StepBuild: React.FC<StepBuildProps> = ({ matrix }) => {
 
 ## UI Symbols (UI_SYMBOLS in `src/cli/consts.ts`)
 
-| Symbol               | Value           | Usage                               |
-| -------------------- | --------------- | ----------------------------------- |
-| `CHECKBOX_CHECKED`   | `[x]`           | Selected checkbox                   |
-| `CHECKBOX_UNCHECKED` | `[ ]`           | Unselected checkbox                 |
-| `CHEVRON`            | unicode chevron | Navigation indicator                |
-| `CHEVRON_SPACER`     | space           | Non-focused spacer                  |
-| `SELECTED`           | checkmark       | Selected item                       |
-| `UNSELECTED`         | circle          | Unselected item                     |
-| `CURRENT`            | filled circle   | Current focus                       |
-| `SKIPPED`            | dash            | Skipped step                        |
-| `DISABLED`           | dash            | Disabled item                       |
-| `DISCOURAGED`        | `!`             | Warning indicator                   |
-| `LOCK`               | lock emoji      | Locked/read-only items              |
-| `EJECT`              | eject symbol    | Local/ejected skill indicator       |
-| `BULLET`             | bullet dot      | List item marker in confirm/summary |
-| `SCROLL_UP`          | triangle up     | Scroll indicator                    |
-| `SCROLL_DOWN`        | triangle down   | Scroll indicator                    |
+| Symbol               | Value           | Usage                                    |
+| -------------------- | --------------- | ---------------------------------------- |
+| `CHECKBOX_CHECKED`   | `[x]`           | Selected checkbox                        |
+| `CHECKBOX_UNCHECKED` | `[ ]`           | Unselected checkbox                      |
+| `CHEVRON`            | unicode chevron | Navigation indicator                     |
+| `CHEVRON_SPACER`     | space           | Non-focused spacer                       |
+| `SELECTED`           | checkmark       | Selected item                            |
+| `UNSELECTED`         | circle          | Unselected item                          |
+| `CURRENT`            | filled circle   | Current focus                            |
+| `SKIPPED`            | dash            | Skipped step                             |
+| `DISABLED`           | dash            | Disabled item                            |
+| `DISCOURAGED`        | `!`             | Warning indicator                        |
+| `LOCK`               | lock emoji      | Locked/read-only items                   |
+| `EJECT`              | eject symbol    | Local/ejected skill indicator            |
+| `BULLET`             | bullet dot      | List item marker in confirm/summary      |
+| `SCROLL_UP`          | triangle up     | Scroll indicator                         |
+| `SCROLL_DOWN`        | triangle down   | Scroll indicator                         |
+| `CHECK`              | checkmark       | Success glyph (same glyph as `SELECTED`) |
+| `CROSS`              | ✗               | Failure/cross glyph                      |
 
 ## SelectList Component (`src/cli/components/common/select-list.tsx`)
 
@@ -173,13 +174,28 @@ Generic keyboard-navigable list component. Consumed by `src/cli/commands/init.ts
 type SelectListItem<T> = { value: T; label: string };
 
 type SelectListProps<T> = {
-  items: SelectListItem<T>[];
+  items: readonly SelectListItem<T>[];
   onSelect: (value: T) => void;
   onCancel?: () => void;
   renderItem?: (item: SelectListItem<T>, isFocused: boolean) => React.ReactNode;
   active?: boolean;
 };
 ```
+
+## Prompt Helpers (`src/cli/components/common/prompt-confirm.tsx`)
+
+Imperative bridge for rendering a one-shot Ink prompt from a command's `run()` and awaiting the user's choice as a promise. Resolution is **first-wins**: the first of a build callback or the app-exit fallback settles the promise; later resolves are ignored. The element is unmounted at the resolution site (optionally cleared first). Callers own exit policy (exit codes, logging).
+
+**Exports:**
+
+| Export                           | Kind     | Purpose                                                                                                                                                                                            |
+| -------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `promptValue<T>(build, options)` | async fn | Renders `build(resolve)` and resolves with the callback's value, or `options.onExit` when the app exits before any callback fires (Ctrl+C / render failure).                                       |
+| `promptConfirm(build)`           | async fn | Thin wrapper over `promptValue` resolving `"confirmed" \| "cancelled"`; app-exit without a choice resolves as `"cancelled"`.                                                                       |
+| `ConfirmHandlers`                | type     | `{ onConfirm: () => void; onCancel: () => void }` — passed to the `promptConfirm` build callback.                                                                                                  |
+| `PromptValueOptions<T>`          | type     | `{ onExit: T; clearOnResolve?: boolean }` — `onExit` is the app-exit fallback value; `clearOnResolve` calls `instance.clear()` before unmount to repaint a clean terminal (used by the dashboard). |
+
+**Consumers:** `promptValue` — `src/cli/commands/init.tsx` (project dashboard, uses `clearOnResolve`), `src/cli/commands/new/agent.tsx`. `promptConfirm` — `src/cli/commands/uninstall.tsx`, `src/cli/commands/update.tsx`.
 
 ## Grid Types
 
@@ -224,39 +240,37 @@ type CategoryRow = {
 };
 ```
 
-**Consumers:** `category-grid.tsx` (defines both types), `use-category-grid-input.ts` (imports both), `use-framework-filtering.ts` (imports `CategoryRow` only), `src/cli/lib/wizard/build-step-logic.ts` (imports both). Note: `checkbox-grid.tsx` does NOT use these types -- it has its own `CheckboxItem<T>` / `CheckboxGridProps<T>`.
+**Consumers:** `category-grid.tsx` (defines both types), `use-category-grid-input.ts` (imports `CategoryRow` only), `use-framework-filtering.ts` (imports `CategoryRow` only), `src/cli/lib/wizard/build-step-logic.ts` (imports both). Note: `checkbox-grid.tsx` does NOT use these types -- it has its own `CheckboxItem<T>` / `CheckboxGridProps<T>` (consumed by `domain-selection.tsx`, with the `CheckboxItem` type reused by `step-agents.tsx`).
 
 ### SkillTag Rendering (in `src/cli/components/wizard/category-grid.tsx`)
 
 Internal component within `category-grid.tsx` that renders a single skill option as a bordered tag.
 
-**Scope badges:** When `option.scope` is set, renders a primary badge (`G` or `P` with background). When `option.secondaryScope` is also set, renders a second badge immediately after the primary one -- used for dual-scope display (e.g., after G->P toggle, excluded tombstone still showing original scope).
+**Scope badges:** When `option.scope` is set, `SkillTag` iterates `[option.scope, option.secondaryScope].filter(Boolean)` and renders each as a space-padded background badge (`G`/`P`, `CLI_COLORS.WARNING` on `CLI_COLORS.LABEL_BG`). The secondary badge covers dual-scope display (e.g., after a G->P toggle where an excluded tombstone still holds the original scope).
 
-**Lock icon:** When `option.installed && option.scope === "global"`, appends `UI_SYMBOLS.LOCK` after the display name -- indicates globally installed skills that are read-only in project context.
+**No lock icon / eject icon in `SkillTag`:** `SkillTag` no longer renders `UI_SYMBOLS.LOCK` or `UI_SYMBOLS.EJECT`. `UI_SYMBOLS.LOCK` now renders in `source-grid.tsx` on read-only rows; `UI_SYMBOLS.EJECT` renders in `skill-agent-summary.tsx` (`EjectIcon`).
 
-**Eject icon:** When `option.source === "eject"`, renders `UI_SYMBOLS.EJECT` before the display name.
+**Compatibility labels:** `getCompatibilityLabel()` returns labels shown on focus (with labels mode) or always for requiredBy/unmetRequirements. Labels include: `(required by X)`, `(incompatible)`, `(recommended)`, `(discouraged)`, or the unmet-requirements reason.
 
-**Compatibility labels:** Shown on focus (with labels mode) or always for requiredBy/unmetRequirements. Labels include: `(required by X)`, `(incompatible)`, `(recommended)`, `(discouraged)`, or unmet requirements reason.
-
-**Mount-effect focus seeding:** `CategoryGrid` uses a `mountedRef` + `useEffect(() => {...}, [])` that fires `onFocusedSkillChange` with the initial focused cell's `SkillId` once on mount — seeds `focusedSkillId` in the wizard store so the info panel / help text has a focus target before any key press. Parent-side consumers must not read `focusedSkillId` synchronously after wizard step transition (Scenario B race — see `reference/wizard/state-transitions.md`).
+**Focus seeding (synchronous, store-driven):** `CategoryGrid` has no post-mount effect. `focusedSkillId` is seeded synchronously in the store by `seedFocusedSkillForActiveDomain()` — called by `setStep("build")`, `nextDomain`, `prevDomain`, and `setCurrentDomainIndex` — so the `s` scope hotkey resolves the visually-focused skill with no dependency on a render-phase effect. `CategoryGrid` additionally reports focus movement through `onFocusedSkillChange` (fired by its internal `handleFocusChange` on focus change).
 
 ### StepAgents Dual Scope Badges (in `src/cli/components/wizard/step-agents.tsx`)
 
 **Store access:** Reads `selectedAgents`, `agentConfigs`, and `installedAgentConfigs` from wizard store.
 
-**Secondary scope computation:** For each agent row, finds both the active config (`!excluded`) and the excluded config. When an excluded config exists with a different scope than the active config, displays a `secondaryScope` badge -- mirrors the `secondaryScope` pattern in `CategoryOption`/`SkillTag`.
+**Secondary scope computation:** For each agent row, finds the active config (`!excluded`) and the excluded config, then calls `deriveScopeBadges(activeConfig, excludedConfig)` (from `src/cli/lib/wizard/scope-diff.ts`). A `secondaryScope` badge is emitted only when the excluded tombstone has a different scope than the active entry.
 
-**Rendering:** Scope badges use `[G]`/`[P]` text labels (not background badges like `SkillTag`). Primary scope badge always shown; secondary badge only when computed.
+**Rendering:** Scope badges use `[G]`/`[P]` bracket labels via `formatScopeTag()` (not the space-padded background badges `SkillTag` uses). Primary scope badge always shown; secondary badge only when `deriveScopeBadges` returns one.
 
 ### StackSelection Grouping (in `src/cli/components/wizard/stack-selection.tsx`)
 
-**`groupStacks()` function:** Groups stacks using the `stack.group` field from `ResolvedStack`. Stacks with a `group` string are bucketed together; stacks without `group` go to an "Other Frameworks" section. When no stacks have a `group`, returns a single group with an empty label (no header).
+**`groupStacks()` function:** Groups stacks using the `stack.group` field from `ResolvedStack` (via `remeda` `groupBy`). Stacks with a `group` string are bucketed together; stacks without `group` go to an "Other Frameworks" section (`OTHER_FRAMEWORKS_LABEL`). When no stacks have a `group`, returns a single group with an empty label (`[{ label: "", items }]`), so no header renders.
 
-**`GROUP_ORDER` constant:** Defines sort order for group labels: `["React", "CLI"]`. Groups in this list appear first in order; unlisted groups sort alphabetically after.
+**`GROUP_ORDER` constant:** Defines sort order for group labels: `["React", "CLI"]`. Groups in this list appear first in order; unlisted groups sort alphabetically after (see `compareGroupLabels()`).
 
-**`StackSection` component:** Conditionally renders the section title -- when `title` is empty string, the header `<Box>` is omitted entirely (flat list with no visual grouping).
+**Row-based rendering:** `buildStackRows()` flattens groups into a `StackListRow` union (`header | spacer | stack | scratch`). A header row is only emitted when `group.label` is a non-empty string, so an empty-label group renders as a flat list with no visual grouping. `StackRow`/`ScratchRow` render individual rows. (There is no `StackSection` component.)
 
-**Agent preselection:** When a stack is selected, derives agent preselection from stack agent keys (`typedKeys(focusedStack.skills)`), merges with `globalAgentPreselections`, and sets both `selectedAgents` and `agentConfigs` in the store. Preserves excluded entries not in the merged list.
+**Agent preselection:** On stack select, derives `stackAgents` from `typedKeys<AgentName>(focusedStack.skills)` and calls the store's `preselectAgentsFromStack(stackAgents)`, which merges with `globalAgentPreselections`, sorts, builds `agentConfigs` via `buildAgentConfigForName`, and preserves excluded tombstones (`collectTombstones`).
 
 ## Hotkeys Registry (`src/cli/components/wizard/hotkeys.ts`)
 
@@ -276,7 +290,9 @@ Centralized hotkey definitions. Each hotkey has a `key` (for matching) and `labe
 | `HOTKEY_SET_ALL_PLUGIN`      | P   | Sources step (customize view)    |
 | `HOTKEY_ADD_SOURCE`          | A   | Settings step                    |
 
-**Structural key labels** (display-only, for footer hints): `KEY_LABEL_ENTER`, `KEY_LABEL_ESC`, `KEY_LABEL_SPACE`, `KEY_LABEL_TAB`, `KEY_LABEL_DEL`, `KEY_LABEL_ARROWS`, `KEY_LABEL_ARROWS_VERT`, `KEY_LABEL_VIM`, `KEY_LABEL_VIM_VERT`.
+**Structural key labels** (display-only, for footer hints): `KEY_LABEL_ENTER`, `KEY_LABEL_ESC`, `KEY_LABEL_SPACE`, `KEY_LABEL_DEL`, `KEY_LABEL_ARROWS_VERT` (`↑/↓`). Also exported: `KEY_SPACE` (the literal `" "` input character used for space-key matching, not a display label).
+
+**No other `KEY_LABEL_*` constants exist.** Previously-documented `KEY_LABEL_TAB`, `KEY_LABEL_ARROWS`, `KEY_LABEL_VIM`, and `KEY_LABEL_VIM_VERT` have been removed.
 
 Helper: `isHotkey(input, hotkey)` for case-insensitive matching.
 
@@ -296,38 +312,52 @@ Scrollable panel showing marketplace/stack header and a skill/agent summary. Tog
 
 ## SkillAgentSummary (`src/cli/components/wizard/skill-agent-summary.tsx`)
 
-Two-column (skills | agents) summary component with scope labels (Project/Global), eject icons for local skills, diff markers (+/- for added/removed items in edit mode), and source change markers (~). Uses `UI_SYMBOLS.BULLET` for existing items, `SOURCE_DISPLAY_NAMES` for human-readable source labels.
+Two-column (skills | agents) summary component with scope labels (Project/Global), eject icons for local skills, diff markers (+/- for added/removed items in edit mode), and source change markers (~). The component is a thin renderer: it reads baseline state from the store, delegates all diff computation to `computeScopeDiff()` in `src/cli/lib/wizard/scope-diff.ts`, and renders the returned row buckets. Uses `UI_SYMBOLS.BULLET` for unchanged items and `formatSourceDisplayName()` (from `consts.ts`) for human-readable source labels.
 
-**Exports:**
+**Exports:** only `SkillAgentSummaryProps` (`{ skillConfigs: SkillConfig[]; agentConfigs: AgentScopeConfig[] }` — both required) and `SkillAgentSummary` (React.FC). `TableHeader`, `ScopeLabel`, `EjectIcon`, `SkillRow`, and `AgentRow` are module-internal (not exported).
 
-- `SkillAgentSummaryProps` type -- `{ skillConfigs?: SkillConfig[]; agentConfigs?: AgentScopeConfig[] }`
-- `SkillAgentSummary` (React.FC) -- main summary component
-- `TableHeader` (React.FC) -- bold yellow section header
-- `ScopeLabel` (React.FC) -- white-on-LABEL_BG scope badge
-- `EjectIcon` (React.FC) -- yellow eject symbol for local/ejected skills
+**Store access:** Reads `installedSkillConfigs`, `installedAgentConfigs`, and `isInitMode` from the wizard store and passes them (with the `skillConfigs`/`agentConfigs` props) to `computeScopeDiff()`. Renders `null` when `diff.hasContent` is false.
 
-**Store access:** Reads `installedSkillConfigs`, `installedAgentConfigs`, and `isInitMode` from wizard store to compute diffs (new/removed items) and source change detection.
+**Diff computation (`computeScopeDiff` in `scope-diff.ts`):** returns `projectSkillRows`, `globalSkillRows`, `projectAgentRows`, `globalAgentRows`, `hasContent`. Each row carries a `DiffRowStatus` = `"added" | "source-changed" | "removed" | "unchanged"`. The following invariants live in `computeScopeDiff`, not the component:
 
-**Diff baseline (D-230 / D-232):** Baseline is NOT pre-filtered. Tombstones remain first-class entries in `prevSkillKeySet` and the `removedSkills` match. A tombstone occupies the `(id, scope)` slot and signals "global install silenced at project scope" (D-223 dual-scope). Only `prevSourceMap` filters to active (`!excluded`) baseline entries — tombstones don't represent a live install source.
+- **Diff baseline (D-230 / D-232):** Baseline is NOT pre-filtered. Tombstones remain first-class entries in `prevSkillKeySet` and the `removedSkills` match; a tombstone occupies the `(id, scope)` slot ("global install silenced at project scope", D-223). Only `prevSourceMap` filters to active (`!excluded`) baseline entries — tombstones don't represent a live install source.
+- **Slot-occupancy removal match:** A baseline entry is removed ONLY if nothing (active OR tombstone) occupies that slot in current state — prevents a spurious `-` at Global on G→P toggle (D-230) and a spurious `+` at Global on re-edit of the stored tombstone (D-232).
+- **Tombstone dedup (`uniqueExcludedGlobalSkills`):** Dedups current tombstone rows against inherited-global entries by `id` only — the Global section never shows two rows for the same skill.
+- **Source change detection:** `computeScopeDiff()` builds `prevSourceMap` from active (non-excluded) baseline entries keyed by `"${id}:${scope}"` and passes it to `classifyDiffRow()` (a module-internal helper), which emits `"source-changed"` (with `prevSource`) when `!isNew && prevSource != null && prevSource !== skill.source`.
+- **Init mode gating:** When `isInitMode` is true, `removedGlobalSkills` / `removedGlobalAgents` are suppressed (empty arrays).
 
-**Slot-occupancy removal match:** A baseline entry is considered removed ONLY if nothing (active OR tombstone) occupies that slot in current state. A current tombstone at the same `(id, scope)` keeps the slot occupied — prevents a spurious `-` at Global on G→P toggle (D-230) and a spurious `+` at Global on re-edit of the stored tombstone (D-232).
+**Scope-badge helpers (also in `scope-diff.ts`):** `formatScopeTag(scope)` returns `[G]`/`[P]`; `deriveScopeBadges(active, excluded)` derives the primary + secondary badges from an active entry and its tombstone (used by `StepAgents`).
 
-**Tombstone dedup (`uniqueExcludedGlobalSkills`):** Deduplicates current tombstone rows against inherited-global entries by `id` only — the Global section never shows two rows for the same skill. Under slot-occupancy, no dedup against `removedGlobalSkills` needed.
+**Diff markers** (`DIFF_PREFIX` / `DIFF_COLOR` in the component):
 
-**Source change detection:** Builds a `prevSourceMap` from active (non-excluded) `installedSkillConfigs` entries (keyed by `"${id}:${scope}"`). When a skill's source differs from the previous source, renders a `~` prefix with `CLI_COLORS.WARNING` and a transition label (e.g., "Public -> Eject") using `SOURCE_DISPLAY_NAMES` from `consts.ts`.
-
-**Init mode gating:** When `isInitMode` is true, `removedGlobalSkills` / `removedGlobalAgents` are suppressed (empty arrays) — no pre-existing global baseline to diff against on first install.
-
-**Diff markers:**
-
-- `+ ` (green) -- newly added skill/agent
-- `- ` (red) -- removed skill/agent
-- `~ ` (yellow) -- source mode changed (with "from -> to" label)
+- `+ ` (green, `SUCCESS`) -- newly added skill/agent
+- `- ` (red, `ERROR`) -- removed skill/agent
+- `~ ` (yellow, `WARNING`) -- source mode changed (with "from → to" label)
 - `BULLET` (neutral) -- unchanged item
 
 **Consumers:** `step-confirm.tsx`, `info-panel.tsx`
 
 ## Hook Patterns
+
+### Hook Reference (`src/cli/components/hooks/`)
+
+All 13 hooks (2 co-located `*.test.ts` files excluded). Detailed sections for the scroll hooks and terminal dimensions appear below; this table is the index.
+
+| Hook (file)                       | Purpose                                                                                                                                                                                                   |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `use-build-step-props.ts`         | Derives `StepBuildProps` from the wizard store: resolves the active domain and wires domain-aware `onToggle` / `onContinue` / `onBack` callbacks (`nextDomain`/`prevDomain`).                             |
+| `use-category-grid-input.ts`      | Registers a stable `useInput` handler for the build-step category grid (space to toggle, Tab / Shift+Tab, arrow/vim movement, label & filter hotkeys) via a ref to survive domain-remount stale closures. |
+| `use-focused-list-item.ts`        | 2D grid focus state `(row, col)` with wrapping, column clamping, disabled-column skipping, and an optional row-skip predicate; also exports the `Direction` type.                                         |
+| `use-framework-filtering.ts`      | Memoizes `buildCategoriesForDomain()` into `CategoryRow[]` for the current domain, selections, installed skills, and incompatible-filter flag.                                                            |
+| `use-keyboard-navigation.ts`      | Single-axis (vertical) list navigation: focused-index state with wrap, vim keys, Enter/Escape handlers, and `isActive` gating.                                                                            |
+| `use-measured-height.ts`          | Measures a Box's computed height via Ink's Yoga `measureElement`, retrying on early renders (Yoga returns 0 pre-layout) and re-measuring on terminal resize.                                              |
+| `use-modal-state.ts`              | Generic modal open/close lifecycle with typed context (`open(ctx)` sets `isOpen`; `close()` resets).                                                                                                      |
+| `use-row-scroll.ts`               | Row-based scroll offset for uniform 1-line lists (delegates to `computeRowScrollTop`) — see Scrolling section.                                                                                            |
+| `use-section-scroll.ts`           | Pixel-offset scroll for variable-height sections; also exports the pure `computeRowScrollTop()` helper — see Scrolling section.                                                                           |
+| `use-source-grid-search-modal.ts` | Manages the bound-skill search modal for `SourceGrid` (search trigger, results, bind, close) with alias lookup via `matrix.slugMap`.                                                                      |
+| `use-source-operations.ts`        | Add/remove source operations (`addSource` / `removeSource` from `source-manager.ts`) with success/error `statusMessage` state for the settings step.                                                      |
+| `use-terminal-dimensions.ts`      | Reactive terminal `columns` / `rows` with an 80x24 non-TTY fallback; re-renders on resize.                                                                                                                |
+| `use-text-input.ts`               | Text input state with backspace/delete handling and printable-ASCII (char codes 32-126) filtering.                                                                                                        |
 
 ### Store Access
 
@@ -380,14 +410,12 @@ step-build.test.tsx
 Test files use:
 
 - `ink-testing-library` for rendering
-- `createMockSkill()`, `createMockMatrix()`, `createMockCategory()` from `helpers.ts`
-- Test constants from `test-constants.ts` (keyboard escape sequences, timing delays)
+- `createMockSkill()`, `createMockMatrix()`, `createMockCategory()` from `src/cli/lib/__tests__/factories/` (`skill-factories.ts`, `matrix-factories.ts`, `category-factories.ts`)
+- Test constants from `src/cli/lib/__tests__/test-constants.ts` (keyboard escape sequences, timing delays)
 
-## Virtual Scrolling
+## Scrolling
 
-**File:** `src/cli/components/hooks/use-virtual-scroll.ts`
-
-For long skill lists that exceed terminal height. Constants in `SCROLL_VIEWPORT` in `src/cli/consts.ts`:
+Long lists that exceed terminal height are handled by two scroll hooks (there is no `use-virtual-scroll.ts`): `use-section-scroll.ts` for variable-height sections (category grid) and `use-row-scroll.ts` for uniform 1-line rows (agent/source/stack lists). Shared constants live in `SCROLL_VIEWPORT` in `src/cli/consts.ts`:
 
 | Constant                  | Value | Purpose                                    |
 | ------------------------- | ----- | ------------------------------------------ |

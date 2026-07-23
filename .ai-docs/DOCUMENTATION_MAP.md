@@ -1,15 +1,15 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-07-23
 ---
 
 # Documentation Map
 
-**Last Updated:** 2026-04-21
+**Last Updated:** 2026-07-23
 **Total Areas:** 32 (18 original + 14 new from restructure)
 **Documented:** 32 (100%)
 **In Progress:** 0
 **Needs Validation:** 0
-**Last Validated:** 2026-04-21 (iter 87 re-ran iter-50's 5-invariant audit: (1) header counts 32/18/14 match table rows ✓; (2) no duplicate dashboard rows ✓; (3) cross-surface sync — all 32 Reference-table `Last Validated` = 2026-04-21, all 32 dashboard Days Stale = 0, all 41 disk frontmatter `last_validated: 2026-04-21` ✓; (4) disk-vs-map 41 files = 32 tracked + 9 pointers ✓; (5) date basis = today ✓. No fixes required. Previous: iter 50 first formal audit, iter 43 ad-hoc.)
+**Last Validated:** 2026-07-23 (two-pass codex-keeper sweep on product 0.144.1: pass 1+2 per-area validation fixed 227 stale claims across the reference set, then a gap-fill pass folded in new source-of-truth modules the now-accurate docs still omitted. Re-ran the 5-invariant Map Self-Consistency Audit: (1) header counts 32/18/14 match table rows ✓; (2) no duplicate dashboard rows ✓; (3) cross-surface sync — all 32 Reference-table `Last Updated`/`Last Validated` = 2026-07-23, all 32 dashboard Days Stale = 0, all 41 disk frontmatter `last_validated: 2026-07-23` ✓; (4) disk-vs-map 41 files = 32 tracked + 9 pointers, unchanged this session (gap-fill edited existing files only; none added or removed) ✓; (5) date basis = today ✓. No structural fixes required. Previous: iter 87/50 formal audits, iter 43 ad-hoc.)
 
 ## Status Legend
 
@@ -50,7 +50,7 @@ Machine-readable staleness tracker. Thresholds from `standards/documentation-bib
 | boundary-map.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter33: fixed search.tsx→search.ts filename + flags (query positional, baseFlags={}); added config-types-writer.ts + local-installer.ts + stack-plugin-compiler.ts to Key Files; rewrote Section 3.2 Config Types Writer to distinguish D-228 writer selection boundary (project path → regenerateConfigTypes with import-from-global branch; global path → writeStandaloneConfigTypes standalone); added generateConfigTypesSource, generateProjectConfigTypesSource, loadConfigTypesDataInBackground; added propagateGlobalChangesToProjects row to Section 3.4; added Section 3.6 Per-Skill Source Propagation (D-217) documenting derivePluginRef contract + SkillConfig.source authoritativeness + no agent-level installMode; renumbered Skill Metadata Injection 3.6→3.7 -->
 
 | state-transitions.md | 0 | 14 | OK | <!-- re-validated 2026-04-21 iter13: removed stale reference to deleted `src/cli/components/hooks/use-wizard-initialization.ts`; rewrote Hydration section against actual `hydrateWizardStore()` in wizard-store.ts (empty history + direct jump, not step walk); documented that `focusedSkillId` is seeded asynchronously by CategoryGrid mount effect (Scenario B race); added Tombstone Lifecycle Transitions (active-project↔dual-scope↔global-only per D-223/D-224), Diff Projection section (D-230/D-232 pre-filter baseline), and Cancellation/Exit transitions -->
-| findings-impact-report.md | 0 | 30 | OK | <!-- FULL REGENERATION 2026-04-21 iter40: replaced 2026-03-28 snapshot + incremental sections with consolidated 2026-04-03..2026-04-21 report (55 findings aggregated); Incremental Updates reset to empty; primary tables: root-cause, severity, category, domain, per-reference-doc impact, per-source-file churn, per-test-area churn; 10 systemic patterns (A-J, replacing old 1-8); 64 deduplicated standards proposals; timeline rollup; open vs closed status (37 closed, 18 open); next full regeneration triggered when >10 entries accumulate in Incremental Updates per documentation-bible rule -->
+| findings-impact-report.md | 0 | 30 | OK | <!-- FULL REGENERATION 2026-07-23: rebuilt rollups over the 95 findings currently on disk (72 filed in July 2026); window 2026-04-17..2026-07-23; primary tables refreshed (root-cause, severity, category, domain, per-reference-doc impact, per-source-file churn, per-test-area churn); systemic patterns re-lettered A..M; Incremental Updates reset to empty; open vs closed + severity rollups refreshed; next full regeneration triggered when >10 entries accumulate in Incremental Updates per documentation-bible rule -->
 
 ### New Files (from Phases 2+3 restructure)
 
@@ -73,7 +73,7 @@ Machine-readable staleness tracker. Thresholds from `standards/documentation-bib
 | config/scope-split.md | 0 | 14 | OK | <!-- created 2026-04-21 iter5 (splitConfigByScope partition rules, tombstone-to-project routing, scopeEligibilityKey, D-220 delta pipeline: computeNewlyAddedSkillIds + computeScopeEligibilityGained, shouldIncludeTriple decision table) -->
 
 **Status values:** `OK` = within threshold, `DUE` = at or past threshold, `OVERDUE` = at or past 2x threshold.
-**Date basis:** 2026-04-21. All rows reflect Last Validated dates in the Reference tables below. New Files count is 14 (12 from Pass 20 + config-merger.md and scope-split.md added iter 4-5). Two pointer-only files (`type-system.md`, `test-infrastructure.md`) share a single dashboard row each — the body content lives in the split children (types/_, testing/_).
+**Date basis:** 2026-07-23. All rows reflect Last Validated dates in the Reference tables below. New Files count is 14 (12 from Pass 20 + config-merger.md and scope-split.md added iter 4-5). Two pointer-only files (`type-system.md`, `test-infrastructure.md`) share a single dashboard row each — the body content lives in the split children (types/_, testing/_).
 
 ## Reference Documentation
 
@@ -128,45 +128,45 @@ reference/
 
 ### Original Files (preserved, authoritative)
 
-| Area                  | Status | File                                                                                                   | Last Updated | Last Validated | Next Action                                                                                                    |
-| --------------------- | ------ | ------------------------------------------------------------------------------------------------------ | ------------ | -------------- | -------------------------------------------------------------------------------------------------------------- |
-| Architecture Overview | [DONE] | `reference/architecture-overview.md`                                                                   | 2026-04-13   | 2026-04-21     | Validate in 30 days                                                                                            |
-| Commands Reference    | [DONE] | `reference/commands/index.md` (canonical; `reference/commands.md` is now a pointer)                    | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Type System           | [DONE] | `reference/type-system.md`                                                                             | 2026-04-13   | 2026-04-21     | Validate in 14 days                                                                                            |
-| State Management      | [DONE] | `reference/store-map.md`                                                                               | 2026-04-21   | 2026-04-21     | Validate in 7 days                                                                                             |
-| Compilation Pipeline  | [DONE] | `reference/features/compilation-pipeline.md`                                                           | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Configuration System  | [DONE] | `reference/features/configuration.md`                                                                  | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Wizard Flow           | [DONE] | `reference/features/wizard-flow.md`                                                                    | 2026-04-13   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Skills & Matrix       | [DONE] | `reference/features/skills-and-matrix.md`                                                              | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Plugin System         | [DONE] | `reference/features/plugin-system.md`                                                                  | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Component Patterns    | [DONE] | `reference/component-patterns.md`                                                                      | 2026-04-13   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Utilities Reference   | [DONE] | `reference/utilities.md`                                                                               | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Test Infrastructure   | [DONE] | `reference/test-infrastructure.md`                                                                     | 2026-04-13   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Operations Layer      | [DONE] | `reference/features/operations-layer.md`                                                               | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Agent System          | [DONE] | `reference/features/agent-system.md`                                                                   | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Dependency Graph      | [DONE] | `reference/dependency-graph.md`                                                                        | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Boundary Map          | [DONE] | `reference/boundary-map.md`                                                                            | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
-| State Transitions     | [DONE] | `reference/wizard/state-transitions.md` (canonical; `reference/state-transitions.md` is now a pointer) | 2026-04-21   | 2026-04-21     | Validate in 14 days                                                                                            |
-| Findings Impact       | [DONE] | `reference/findings-impact-report.md`                                                                  | 2026-04-21   | 2026-04-21     | Regenerated iter 92 (106 findings; rollups refreshed; Incremental Updates reset); next trigger >10 new entries |
+| Area                  | Status | File                                                                                                   | Last Updated | Last Validated | Next Action                                                                                                                                                       |
+| --------------------- | ------ | ------------------------------------------------------------------------------------------------------ | ------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Architecture Overview | [DONE] | `reference/architecture-overview.md`                                                                   | 2026-07-23   | 2026-07-23     | Validate in 30 days                                                                                                                                               |
+| Commands Reference    | [DONE] | `reference/commands/index.md` (canonical; `reference/commands.md` is now a pointer)                    | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Type System           | [DONE] | `reference/type-system.md`                                                                             | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| State Management      | [DONE] | `reference/store-map.md`                                                                               | 2026-07-23   | 2026-07-23     | Validate in 7 days                                                                                                                                                |
+| Compilation Pipeline  | [DONE] | `reference/features/compilation-pipeline.md`                                                           | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Configuration System  | [DONE] | `reference/features/configuration.md`                                                                  | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Wizard Flow           | [DONE] | `reference/features/wizard-flow.md`                                                                    | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Skills & Matrix       | [DONE] | `reference/features/skills-and-matrix.md`                                                              | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Plugin System         | [DONE] | `reference/features/plugin-system.md`                                                                  | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Component Patterns    | [DONE] | `reference/component-patterns.md`                                                                      | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Utilities Reference   | [DONE] | `reference/utilities.md`                                                                               | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Test Infrastructure   | [DONE] | `reference/test-infrastructure.md`                                                                     | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Operations Layer      | [DONE] | `reference/features/operations-layer.md`                                                               | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Agent System          | [DONE] | `reference/features/agent-system.md`                                                                   | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Dependency Graph      | [DONE] | `reference/dependency-graph.md`                                                                        | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Boundary Map          | [DONE] | `reference/boundary-map.md`                                                                            | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| State Transitions     | [DONE] | `reference/wizard/state-transitions.md` (canonical; `reference/state-transitions.md` is now a pointer) | 2026-07-23   | 2026-07-23     | Validate in 14 days                                                                                                                                               |
+| Findings Impact       | [DONE] | `reference/findings-impact-report.md`                                                                  | 2026-07-23   | 2026-07-23     | Regenerated 2026-07-23 (95 findings on disk, 72 filed in July; rollups + systemic patterns A..M rebuilt; Incremental Updates reset); next trigger >10 new entries |
 
 ### New Files (Phase 2+3 restructure, 2026-04-13)
 
 | Area                    | Status | File                                      | Last Updated | Last Validated | Next Action         |
 | ----------------------- | ------ | ----------------------------------------- | ------------ | -------------- | ------------------- |
-| Test Infrastructure     | [DONE] | `reference/testing/infrastructure.md`     | 2026-04-13   | 2026-04-21     | Validate in 14 days |
-| Test Factories          | [DONE] | `reference/testing/factories.md`          | 2026-04-21   | 2026-04-21     | Validate in 14 days |
-| Test Mock Data          | [DONE] | `reference/testing/mock-data.md`          | 2026-04-21   | 2026-04-21     | Validate in 14 days |
-| E2E Infrastructure      | [DONE] | `reference/testing/e2e-infrastructure.md` | 2026-04-21   | 2026-04-21     | Validate in 14 days |
-| Core Types              | [DONE] | `reference/types/core-types.md`           | 2026-04-21   | 2026-04-21     | Validate in 14 days |
-| Operations Types        | [DONE] | `reference/types/operations-types.md`     | 2026-04-13   | 2026-04-21     | Validate in 14 days |
-| Zod Schemas             | [DONE] | `reference/types/zod-schemas.md`          | 2026-04-13   | 2026-04-21     | Validate in 14 days |
-| Scope System            | [DONE] | `reference/concepts/scope-system.md`      | 2026-04-21   | 2026-04-21     | Validate in 14 days |
-| Tombstone Pattern       | [DONE] | `reference/concepts/tombstone-pattern.md` | 2026-04-21   | 2026-04-21     | Validate in 14 days |
-| Guard Pattern           | [DONE] | `reference/concepts/guard-pattern.md`     | 2026-04-21   | 2026-04-21     | Validate in 14 days |
-| Edit Command (Detailed) | [DONE] | `reference/commands/edit.md`              | 2026-04-21   | 2026-04-21     | Validate in 14 days |
-| Config Writer (Detail)  | [DONE] | `reference/config/config-writer.md`       | 2026-04-21   | 2026-04-21     | Validate in 14 days |
-| Config Merger Contract  | [DONE] | `reference/config/config-merger.md`       | 2026-04-21   | 2026-04-21     | Validate in 14 days |
-| Config Scope Split      | [DONE] | `reference/config/scope-split.md`         | 2026-04-21   | 2026-04-21     | Validate in 14 days |
+| Test Infrastructure     | [DONE] | `reference/testing/infrastructure.md`     | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| Test Factories          | [DONE] | `reference/testing/factories.md`          | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| Test Mock Data          | [DONE] | `reference/testing/mock-data.md`          | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| E2E Infrastructure      | [DONE] | `reference/testing/e2e-infrastructure.md` | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| Core Types              | [DONE] | `reference/types/core-types.md`           | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| Operations Types        | [DONE] | `reference/types/operations-types.md`     | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| Zod Schemas             | [DONE] | `reference/types/zod-schemas.md`          | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| Scope System            | [DONE] | `reference/concepts/scope-system.md`      | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| Tombstone Pattern       | [DONE] | `reference/concepts/tombstone-pattern.md` | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| Guard Pattern           | [DONE] | `reference/concepts/guard-pattern.md`     | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| Edit Command (Detailed) | [DONE] | `reference/commands/edit.md`              | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| Config Writer (Detail)  | [DONE] | `reference/config/config-writer.md`       | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| Config Merger Contract  | [DONE] | `reference/config/config-merger.md`       | 2026-07-23   | 2026-07-23     | Validate in 14 days |
+| Config Scope Split      | [DONE] | `reference/config/scope-split.md`         | 2026-07-23   | 2026-07-23     | Validate in 14 days |
 
 ## Standards Documentation
 
@@ -195,8 +195,8 @@ Forward-looking proposals (may or may not land). See [`agent-suggestions/README.
 
 ## Coverage Metrics
 
-**Source Files:** 328 TypeScript files in `src/cli/` (203 production + 125 co-located tests) -- verified 2026-04-21
-**E2E Suite:** 140 TypeScript files in `e2e/` (107 `*.test.ts` + 33 helpers/fixtures/pages)
+**Source Files:** 344 TypeScript files in `src/cli/` — 181 production (excludes `*.test.*`, `__tests__/`, `__mocks__/`) + 126 co-located test specs (`*.test.*`) + 35 non-spec `__tests__/` support files + 2 `__mocks__/`. (The `__tests__/` directories hold 79 files total: 44 specs + 35 support.) Verified 2026-07-23.
+**E2E Suite:** 174 TypeScript files in `e2e/` (138 `*.test.ts(x)` + 36 helpers/fixtures/pages) -- verified 2026-07-23
 **All major systems documented:** Yes
 
 **Technical Areas:**
@@ -227,6 +227,46 @@ Forward-looking proposals (may or may not land). See [`agent-suggestions/README.
 - Guard Pattern: [DONE] (`concepts/guard-pattern.md`)
 
 ## Validation History
+
+### 2026-07-23 -- Full reference re-validation (two-pass sweep) + gap-fill + findings regeneration
+
+Product version 0.144.1. Whole `reference/` set re-validated and re-stamped `2026-07-23`.
+
+**Pass 1+2 (per-area codex-keeper validation):** 227 stale claims corrected across the reference docs (file paths, exported symbol names, type shapes, counts) and every touched doc re-stamped. All 41 disk frontmatter now read `last_validated: 2026-07-23`.
+
+**Gap-fill pass (new source-of-truth modules the now-accurate docs still omitted):** folded coverage for the following verified modules into the existing doc structure (no new reference files created):
+
+- `src/cli/lib/wizard/scope-diff.ts`
+- `src/cli/lib/installation/install-base-dir.ts`
+- `src/cli/lib/configuration/scope-predicates.ts`
+- `src/cli/components/wizard/run-wizard-session.tsx`
+- `src/cli/components/wizard/step-settings.tsx`
+- `src/cli/lib/stacks/stack-plugin-compiler.ts`
+- `src/cli/lib/plugins/plugin-ref.ts`
+- `src/cli/lib/agents/list-compiled-agents.ts`
+- `src/cli/lib/operations/project/compile-agents-all-scopes.ts`
+- The full 16-command surface, including `import/skill`, `new/agent`, `list`, `uninstall`, `update` (leaf files under `src/cli/commands/`: build/marketplace, build/plugins, compile, doctor, edit, eject, import/skill, init, list, new/agent, new/marketplace, new/skill, search, uninstall, update, validate).
+- Refreshed agent inventory (agent-system.md).
+
+**Findings-impact-report regeneration:** `reference/findings-impact-report.md` fully regenerated over the 95 findings on disk (72 filed in July 2026); window 2026-04-17..2026-07-23; systemic patterns re-lettered A..M; Incremental Updates reset to empty. Map's dashboard annotation and Findings Impact table row updated to match.
+
+**Map reconciliation applied this session:**
+
+1. Header `Last Updated` / `Last Validated` / frontmatter `last_validated` → 2026-07-23; header narrative rewritten for the two-pass sweep.
+2. Staleness dashboard: every reference row's Days Stale confirmed `0` (thresholds unchanged); `Date basis` note → 2026-07-23.
+3. Reference Documentation tables (Original 18 + New 14 = 32 rows): every row's `Last Updated` and `Last Validated` → 2026-07-23.
+4. Coverage Metrics recomputed and independently re-verified with `find`: `src/cli` totals 344 `.ts(x)` files = 181 production (excl. `*.test.*`, `__tests__/`, `__mocks__/`) + 126 co-located test specs + 35 non-spec `__tests__/` support + 2 `__mocks__/` (the `__tests__/` dirs hold 79 files: 44 specs + 35 support); `e2e/` 174 files = 138 specs + 36 support. Prior headline was 203 production / 140 e2e.
+5. Findings row/date/count synced to the 2026-07-23 regeneration (95 findings).
+
+**5-invariant Map Self-Consistency Audit (re-run):**
+
+- **Invariant 1 (header counts == table rows):** PASS. Total Areas 32 = 18 original + 14 new; staleness dashboard 18 + 14 = 32 rows; Reference tables 18 + 14 = 32 rows.
+- **Invariant 2 (no duplicate rows):** PASS. No doc name appears in more than one dashboard row.
+- **Invariant 3 (cross-surface sync):** PASS. All 32 Reference-table `Last Updated`/`Last Validated` = 2026-07-23; all 32 dashboard Days Stale = 0; all 41 disk frontmatter `last_validated: 2026-07-23`.
+- **Invariant 4 (disk vs map):** PASS. `find .ai-docs/reference -name "*.md" | wc -l` = 41 = 32 tracked + 9 pointers. Unchanged this session — gap-fill edited existing files only; no reference `.md` added or removed.
+- **Invariant 5 (header date freshness):** PASS. Date basis = 2026-07-23 = today.
+
+No structural fixes required beyond the date/count reconciliation above.
 
 ### 2026-04-21 Ralph iter 50 -- first formal Map Self-Consistency Audit
 
