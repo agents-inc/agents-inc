@@ -156,6 +156,10 @@ export const UI_SYMBOLS = {
   SCROLL_DOWN: "\u25BC",
   CHECK: CHECK_GLYPH,
   CROSS: "\u2717",
+  /** Removed/pending-removal diff marker (ASCII hyphen). Info panel + Sources tab share it. */
+  REMOVED: "-",
+  /** Added/newly-selected diff marker (ASCII plus). Info panel + Sources tab share it. */
+  ADDED: "+",
 } as const;
 
 export const GITHUB_SOURCE = {

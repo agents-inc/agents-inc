@@ -607,12 +607,16 @@ describe("WizardStore", () => {
       expect(useWizardStore.getState().focusedSkillId).toBe("web-framework-react");
     });
 
-    it("seeds null when the active domain has no focusable skills", () => {
+    it("seeds the fallback domain's first grid option when no domains are selected", () => {
       const store = useWizardStore.getState();
 
+      // getCurrentDomain() is null with no domains selected, but the build-step
+      // renderer falls back to FALLBACK_DOMAIN ("web") and highlights its first
+      // cell. The seed must resolve that same cell — never null — or the cold `s`
+      // scope toggle desyncs from the visually focused skill.
       store.seedFocusedSkillForActiveDomain();
 
-      expect(useWizardStore.getState().focusedSkillId).toBeNull();
+      expect(useWizardStore.getState().focusedSkillId).toBe("web-framework-react");
     });
   });
 
@@ -832,7 +836,7 @@ describe("WizardStore", () => {
       );
     });
 
-    describe("dual-scope spacebar toggle", () => {
+    describe("dual-scope selection toggle", () => {
       const dualScopeConfigs = (): SkillConfig[] => [
         ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
         ...buildSkillConfigs(["web-framework-react"], {
@@ -842,7 +846,7 @@ describe("WizardStore", () => {
         }),
       ];
 
-      it("collapses a dual-scope skill to inherited-global when deselected and keeps it selected (still active via global)", () => {
+      it("leaves a dual-scope skill untouched when the selection key is pressed and emits the global-locked toast", () => {
         const store = useWizardStore.getState();
         useWizardStore.setState({
           domainSelections: { web: { "web-framework": ["web-framework-react"] } },
@@ -855,15 +859,29 @@ describe("WizardStore", () => {
         store.toggleTechnology("web", "web-framework", "web-framework-react", true);
 
         const { skillConfigs, domainSelections, toastMessage } = useWizardStore.getState();
-        expect(toastMessage).toBeNull();
-        // The project half is dropped but the skill stays active via the inherited-global
-        // entry, so it must remain in the domain selection — the grid derives its selected
-        // state from domainSelections, matching what a save-and-reopen re-derives.
+        // Space is inert on a `[P][G]` row — `s` is the only key that changes a dual-scope pair.
+        expect(toastMessage).toBe("Global skills cannot be changed from project scope");
         expect(domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
-        // Single inherited-global entry so the [G] badge keeps rendering; no lingering tombstone.
-        expect(skillConfigs).toStrictEqual(
-          buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
-        );
+        expect(skillConfigs).toStrictEqual(dualScopeConfigs());
+      });
+
+      it("leaves a dual-scope skill untouched when an exclusive-category sibling would replace it", () => {
+        const store = useWizardStore.getState();
+        useWizardStore.setState({
+          domainSelections: { web: { "web-framework": ["web-framework-react"] } },
+          skillConfigs: dualScopeConfigs(),
+          installedSkillConfigs: dualScopeConfigs(),
+          isEditingFromGlobalScope: false,
+          isInitMode: false,
+        });
+
+        // A radio swap to another framework would implicitly drop the `[P][G]` pair.
+        store.toggleTechnology("web", "web-framework", "web-framework-vue-composition-api", true);
+
+        const { skillConfigs, domainSelections, toastMessage } = useWizardStore.getState();
+        expect(toastMessage).toBe("Global skills cannot be changed from project scope");
+        expect(domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
+        expect(skillConfigs).toStrictEqual(dualScopeConfigs());
       });
 
       it("restores [P][G] when re-selecting an inherited-global row (fresh project entry AND tombstone)", () => {
@@ -897,16 +915,16 @@ describe("WizardStore", () => {
           isInitMode: false,
         });
 
-        // Spacebar collapses [P][G] -> single inherited-global [G]; react stays selected.
-        store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+        // `s` collapses [P][G] -> single inherited-global [G]; react stays selected.
+        store.toggleSkillScope("web-framework-react");
         expect(useWizardStore.getState().skillConfigs).toStrictEqual(
           buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
         );
 
         // Simulate save-and-reopen: the persisted single-global entry becomes the installed
-        // snapshot. Re-selection via spacebar on the collapsed [G] row is a guarded no-op
-        // (installedSkillConfigs now holds an ACTIVE global entry) — `s` is the sanctioned
-        // restore path, mirroring dual-scope-spacebar-reselect-restore.e2e.test.ts.
+        // snapshot. Re-selection via the selection key on the collapsed [G] row is a guarded
+        // no-op (installedSkillConfigs now holds an ACTIVE global entry) — `s` is the
+        // sanctioned restore path.
         useWizardStore.setState({
           skillConfigs: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
@@ -1143,12 +1161,10 @@ describe("WizardStore", () => {
       expect(afterPtoG.toastMessage).toBeNull();
     });
 
-    it("makes s a no-op (with a toast) on an already dual-scope skill row, both presses", () => {
-      // Reopened session on a persisted [P][G] pair: the snapshot carries only the
-      // EXCLUDED global tombstone (never an active global entry), so the legacy
-      // `wasInstalledGlobally` derivation is structurally false and the G→P
-      // re-add-tombstone branch never fires. `s` had no well-defined single target
-      // and used to corrupt the pair ([P][G] → [G] → [P]). It must now be inert.
+    it("round-trips a persisted dual-scope skill row with `s`: collapse to [G], then restore [P][G]", () => {
+      // Reopened session on a persisted [P][G] pair: the snapshot carries only the EXCLUDED
+      // global tombstone (never an active global entry). `s` is the SOLE dual-scope toggle —
+      // P→G drops the tombstone (collapse), G→P re-adds it (restore), with no toast either way.
       const dualScope = (): SkillConfig[] => [
         ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
         ...buildSkillConfigs(["web-framework-react"], {
@@ -1168,14 +1184,18 @@ describe("WizardStore", () => {
 
       store.toggleSkillScope("web-framework-react");
       const first = useWizardStore.getState();
-      expect(first.skillConfigs).toStrictEqual(dualScope());
-      expect(first.toastMessage).not.toBeNull();
+      expect(first.skillConfigs).toStrictEqual(
+        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+      );
+      expect(first.toastMessage).toBeNull();
 
       store.toggleSkillScope("web-framework-react");
-      expect(useWizardStore.getState().skillConfigs).toStrictEqual(dualScope());
+      const second = useWizardStore.getState();
+      expect(second.skillConfigs).toStrictEqual(dualScope());
+      expect(second.toastMessage).toBeNull();
     });
 
-    it("runs the full in-session collapse → blocked-space → s-restore → s-flip sequence on a persisted [P][G] skill", () => {
+    it("runs the full in-session blocked-space → s-collapse → blocked-space → s-restore sequence on a persisted [P][G] skill", () => {
       // Single wizard session on a persisted dual-scope pair: the hydration snapshot stays a
       // frozen [P][G] (project-active + global tombstone) throughout, while the live config is
       // mutated by each keypress. Exercises the state machine the E2E suite drives end-to-end.
@@ -1200,9 +1220,22 @@ describe("WizardStore", () => {
         toastMessage: null,
       });
 
-      // Step 1 — spacebar collapses [P][G] to a single active inherited-global entry; the
-      // skill stays selected (still active via global).
+      // Step 1 — spacebar on the live [P][G] row is BLOCKED: only `s` may change a dual-scope
+      // pair. Live config and selection unchanged, toast shown.
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      const afterBlockedSpace = useWizardStore.getState();
+      expect(afterBlockedSpace.skillConfigs).toStrictEqual(dualScope());
+      expect(afterBlockedSpace.domainSelections.web!["web-framework"]).toStrictEqual([
+        "web-framework-react",
+      ]);
+      expect(afterBlockedSpace.toastMessage).toBe(
+        "Global skills cannot be changed from project scope",
+      );
+
+      // Step 2 — `s` collapses [P][G] to a single active inherited-global entry; the skill
+      // stays selected (still active via global).
+      useWizardStore.setState({ toastMessage: null });
+      store.toggleSkillScope("web-framework-react");
       const afterCollapse = useWizardStore.getState();
       expect(afterCollapse.skillConfigs).toStrictEqual(plainGlobal());
       expect(afterCollapse.domainSelections.web!["web-framework"]).toStrictEqual([
@@ -1210,69 +1243,29 @@ describe("WizardStore", () => {
       ]);
       expect(afterCollapse.toastMessage).toBeNull();
 
-      // Step 2 — a second spacebar on the collapsed row is BLOCKED (would otherwise tombstone
-      // the still-real global install). Live config unchanged, toast shown.
-      useWizardStore.setState({ toastMessage: null });
+      // Step 3 — spacebar on the collapsed row is BLOCKED too (would otherwise tombstone the
+      // still-real global install). Live config unchanged, toast shown.
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
       const afterBlocked = useWizardStore.getState();
       expect(afterBlocked.skillConfigs).toStrictEqual(plainGlobal());
       expect(afterBlocked.toastMessage).toBe("Global skills cannot be changed from project scope");
 
-      // Step 3 — `s` restores a fresh [P][G] pair (active project entry + global tombstone).
+      // Step 4 — `s` restores a fresh [P][G] pair (active project entry + global tombstone).
       useWizardStore.setState({ toastMessage: null });
       store.toggleSkillScope("web-framework-react");
       const afterRestore = useWizardStore.getState();
       expect(afterRestore.skillConfigs).toStrictEqual(dualScope());
       expect(afterRestore.toastMessage).toBeNull();
 
-      // Step 4 — `s` again freely flips the reconstructed pair back to plain global (the
-      // persisted-pair guard no longer fires: the pair is session-authored, not pristine).
+      // Step 5 — `s` again freely flips the reconstructed pair back to plain global.
       store.toggleSkillScope("web-framework-react");
       const afterFlip = useWizardStore.getState();
       expect(afterFlip.skillConfigs).toStrictEqual(plainGlobal());
       expect(afterFlip.toastMessage).toBeNull();
 
-      // Step 4b — and back to [P][G], proving a free P↔G round-trip within the session.
+      // Step 5b — and back to [P][G], proving a free P↔G round-trip within the session.
       store.toggleSkillScope("web-framework-react");
       expect(useWizardStore.getState().skillConfigs).toStrictEqual(dualScope());
-    });
-
-    it("keeps `s` inert on a genuinely global-only skill's collapsed pair only until it is rebuilt this session", () => {
-      // Baseline guard-preservation: a persisted [P][G] that is NOT touched this session keeps
-      // `s` inert (guarded no-op). The prior test proves the rebuilt pair is exempt; this one
-      // pins that an untouched pair from the same snapshot still fires the guard.
-      const dualScope = (): SkillConfig[] => [
-        ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
-        ...buildSkillConfigs(["web-framework-react"], {
-          scope: "global",
-          source: "agents-inc",
-          excluded: true,
-        }),
-      ];
-      const store = useWizardStore.getState();
-      useWizardStore.setState({
-        skillConfigs: dualScope(),
-        installedSkillConfigs: dualScope(),
-        isEditingFromGlobalScope: false,
-        isInitMode: false,
-        toastMessage: null,
-      });
-
-      store.toggleSkillScope("web-framework-react");
-      expect(useWizardStore.getState().skillConfigs).toStrictEqual(dualScope());
-      expect(useWizardStore.getState().toastMessage).toBe(
-        "Installed at both scopes — use space to change project scope",
-      );
-    });
-
-    it("should update source via setSkillSource", () => {
-      const store = useWizardStore.getState();
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-
-      store.setSkillSource("web-framework-react", "eject");
-
-      const { skillConfigs } = useWizardStore.getState();
-      expect(skillConfigs[0].source).toBe("eject");
     });
 
     it("should set and clear focusedSkillId", () => {
@@ -1289,7 +1282,7 @@ describe("WizardStore", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
 
-      store.setSourceSelection("web-framework-react", "eject");
+      store.setSourceSelection("web-framework-react", "eject", "global");
 
       const { skillConfigs } = useWizardStore.getState();
       expect(skillConfigs[0].source).toBe("eject");
@@ -1540,7 +1533,7 @@ describe("WizardStore", () => {
     it("should set all sources to plugin via setAllSourcesPlugin", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.setSourceSelection("web-framework-react", "eject");
+      store.setSourceSelection("web-framework-react", "eject", "global");
 
       initializeMatrix(
         createMockMatrix({
@@ -1553,6 +1546,68 @@ describe("WizardStore", () => {
 
       const { skillConfigs } = useWizardStore.getState();
       expect(skillConfigs[0].source).toBe("Acme Corp");
+    });
+
+    it("flips the active entry but leaves an excluded global tombstone's source intact via setAllSourcesEject", () => {
+      // Dual-scope pair: active project entry + masked global tombstone. The bulk set-all is a
+      // project-scope action, so the tombstone (which records the masked global install's source)
+      // must keep its marketplace source rather than inherit the eject switch.
+      const store = useWizardStore.getState();
+      useWizardStore.setState({
+        skillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+            excluded: true,
+          }),
+        ],
+      });
+
+      store.setAllSourcesEject();
+
+      const { skillConfigs } = useWizardStore.getState();
+      expect(skillConfigs).toStrictEqual([
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+        ...buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+          excluded: true,
+        }),
+      ]);
+    });
+
+    it("flips the active entry but leaves an excluded global tombstone's source intact via setAllSourcesPlugin", () => {
+      const store = useWizardStore.getState();
+      useWizardStore.setState({
+        skillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+            excluded: true,
+          }),
+        ],
+      });
+
+      initializeMatrix(
+        createMockMatrix({
+          ...SKILLS.react,
+          availableSources: [{ name: "Acme Corp", type: "private", installed: false }],
+        }),
+      );
+
+      store.setAllSourcesPlugin();
+
+      const { skillConfigs } = useWizardStore.getState();
+      expect(skillConfigs).toStrictEqual([
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "Acme Corp" }),
+        ...buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+          excluded: true,
+        }),
+      ]);
     });
   });
 
@@ -2089,6 +2144,136 @@ describe("WizardStore", () => {
       expect(vitestRows[0].scope).toBe("global");
       expect(vitestRows[0].readOnly).toBe(true);
     });
+
+    it("should keep a deselected saved project skill visible as a disabled row", () => {
+      const store = useWizardStore.getState();
+      // Don't toggle any technology — the saved project skill was deselected, and a project
+      // entry is dropped outright (no tombstone), so skillConfigs no longer holds it.
+      useWizardStore.setState({
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          source: "eject",
+        }),
+        skillConfigs: [],
+      });
+
+      const rows = store.buildSourceRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].skillId).toBe("web-framework-react");
+      expect(rows[0].disabled).toBe(true);
+      // A lock would read as "installed globally"; this row is pending removal instead.
+      expect(rows[0].readOnly).toBeUndefined();
+      expect(rows[0].scope).toBe("project");
+    });
+
+    it("should show the persisted source on a deselected saved project skill", () => {
+      const store = useWizardStore.getState();
+      useWizardStore.setState({
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          source: "eject",
+        }),
+        skillConfigs: [],
+      });
+
+      const rows = store.buildSourceRows();
+      expect(rows[0].options.filter((o) => o.selected).map((o) => o.id)).toStrictEqual(["eject"]);
+    });
+
+    it("should not surface a never-saved skill as a disabled row during init", () => {
+      const store = useWizardStore.getState();
+      // Init has no hydration snapshot, so a skill deselected before saving must not linger.
+      useWizardStore.setState({ installedSkillConfigs: null, skillConfigs: [] });
+
+      expect(store.buildSourceRows()).toStrictEqual([]);
+    });
+
+    it("should not surface a deselected saved skill as a disabled row when editing from global scope", () => {
+      const store = useWizardStore.getState();
+      // In a global-context edit a removal is a genuine uninstall, not a project-overlay change.
+      useWizardStore.setState({
+        isEditingFromGlobalScope: true,
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          source: "eject",
+        }),
+        skillConfigs: [],
+      });
+
+      expect(store.buildSourceRows()).toStrictEqual([]);
+    });
+
+    it("should skip a saved skill the marketplace no longer carries instead of throwing", () => {
+      const store = useWizardStore.getState();
+      initializeMatrix(createMockMatrix(SKILLS.react));
+      // A config referencing a removed/renamed skill: present in the snapshot, absent from the
+      // matrix. Rendering a row for it would throw in getSkillById.
+      useWizardStore.setState({
+        installedSkillConfigs: buildSkillConfigs(["web-testing-vitest"], {
+          scope: "project",
+          source: "eject",
+        }),
+        skillConfigs: [],
+      });
+
+      expect(store.buildSourceRows()).toStrictEqual([]);
+    });
+
+    it("should render a collapsed dual-scope skill as a locked global row, not a disabled row", () => {
+      const store = useWizardStore.getState();
+      // Deselecting a dual-scope skill collapses [P][G] to one inherited-global entry, so the
+      // skill still has a config entry and must not ALSO surface as a pending-removal row.
+      useWizardStore.setState({
+        installedSkillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "project",
+            source: "agents-inc",
+          }),
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+        ],
+        skillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+      });
+
+      const rows = store.buildSourceRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].readOnly).toBe(true);
+      expect(rows[0].disabled).toBeUndefined();
+    });
+
+    it("should render a pending-removal row inline after the still-selected rows of its scope", () => {
+      const store = useWizardStore.getState();
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      useWizardStore.setState({
+        installedSkillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "project",
+            source: "eject",
+          }),
+          ...buildSkillConfigs(["web-testing-vitest"], { scope: "project", source: "eject" }),
+        ],
+        skillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          source: "eject",
+        }),
+      });
+
+      const rows = store.buildSourceRows();
+      // The removed row is not sunk into a separate section: it shares the project scope and simply
+      // trails the still-selected project row, matching the info panel's active-then-removed order.
+      expect(rows.map((r) => r.skillId)).toStrictEqual([
+        "web-framework-react",
+        "web-testing-vitest",
+      ]);
+      expect(rows.map((r) => r.scope)).toStrictEqual(["project", "project"]);
+      expect(rows[0].disabled).toBeUndefined();
+      expect(rows[1].disabled).toBe(true);
+    });
   });
 
   describe("agent selection", () => {
@@ -2255,9 +2440,9 @@ describe("WizardStore", () => {
       );
     });
 
-    it("makes s a no-op (with a toast) on an already dual-scope agent row, both presses", () => {
-      // Agent mirror of the skill dual-scope no-op guard. A persisted [P][G] agent
-      // pair reopened for edit must not be corrupted by repeated scope toggles.
+    it("round-trips a persisted dual-scope agent row with `s`: collapse to [G], then restore [P][G]", () => {
+      // Agent mirror of the skill `s` round-trip: `s` is the SOLE dual-scope toggle, so a
+      // persisted [P][G] agent pair collapses on the first press and is restored on the second.
       const dualScope = (): AgentScopeConfig[] => [
         ...buildAgentConfigs(["web-developer"], { scope: "project" }),
         ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
@@ -2273,14 +2458,18 @@ describe("WizardStore", () => {
 
       store.toggleAgentScope("web-developer");
       const first = useWizardStore.getState();
-      expect(first.agentConfigs).toStrictEqual(dualScope());
-      expect(first.toastMessage).not.toBeNull();
+      expect(first.agentConfigs).toStrictEqual(
+        buildAgentConfigs(["web-developer"], { scope: "global" }),
+      );
+      expect(first.toastMessage).toBeNull();
 
       store.toggleAgentScope("web-developer");
-      expect(useWizardStore.getState().agentConfigs).toStrictEqual(dualScope());
+      const second = useWizardStore.getState();
+      expect(second.agentConfigs).toStrictEqual(dualScope());
+      expect(second.toastMessage).toBeNull();
     });
 
-    it("runs the full in-session collapse → blocked-toggle → s-restore → s-flip sequence on a persisted [P][G] agent", () => {
+    it("runs the full in-session blocked-toggle → s-collapse → blocked-toggle → s-restore sequence on a persisted [P][G] agent", () => {
       // Agent mirror of the skill in-session sequence. The hydration snapshot stays a frozen
       // [P][G] throughout while the live agentConfigs is mutated by each keypress.
       const dualScope = (): AgentScopeConfig[] => [
@@ -2300,59 +2489,47 @@ describe("WizardStore", () => {
         toastMessage: null,
       });
 
-      // Step 1 — toggle collapses [P][G] to a single active inherited-global entry; the agent
-      // stays selected (still active via global).
+      // Step 1 — the selection key on the live [P][G] row is BLOCKED: only `s` may change a
+      // dual-scope pair. Live config and selection unchanged, toast shown.
       store.toggleAgent("web-developer");
+      const afterBlockedToggle = useWizardStore.getState();
+      expect(afterBlockedToggle.agentConfigs).toStrictEqual(dualScope());
+      expect(afterBlockedToggle.selectedAgents).toStrictEqual(["web-developer"]);
+      expect(afterBlockedToggle.toastMessage).toBe(
+        "Global agents cannot be changed from project scope",
+      );
+
+      // Step 2 — `s` collapses [P][G] to a single active inherited-global entry; the agent
+      // stays selected (still active via global).
+      useWizardStore.setState({ toastMessage: null });
+      store.toggleAgentScope("web-developer");
       const afterCollapse = useWizardStore.getState();
       expect(afterCollapse.agentConfigs).toStrictEqual(plainGlobal());
       expect(afterCollapse.selectedAgents).toStrictEqual(["web-developer"]);
       expect(afterCollapse.toastMessage).toBeNull();
 
-      // Step 2 — a second toggle on the collapsed row is BLOCKED. Live config unchanged, toast.
-      useWizardStore.setState({ toastMessage: null });
+      // Step 3 — the selection key on the collapsed row is BLOCKED too. Live config unchanged.
       store.toggleAgent("web-developer");
       const afterBlocked = useWizardStore.getState();
       expect(afterBlocked.agentConfigs).toStrictEqual(plainGlobal());
       expect(afterBlocked.toastMessage).toBe("Global agents cannot be changed from project scope");
 
-      // Step 3 — `s` restores a fresh [P][G] pair.
+      // Step 4 — `s` restores a fresh [P][G] pair.
       useWizardStore.setState({ toastMessage: null });
       store.toggleAgentScope("web-developer");
       const afterRestore = useWizardStore.getState();
       expect(afterRestore.agentConfigs).toStrictEqual(dualScope());
       expect(afterRestore.toastMessage).toBeNull();
 
-      // Step 4 — `s` again freely flips the reconstructed pair back to plain global.
+      // Step 5 — `s` again freely flips the reconstructed pair back to plain global.
       store.toggleAgentScope("web-developer");
       const afterFlip = useWizardStore.getState();
       expect(afterFlip.agentConfigs).toStrictEqual(plainGlobal());
       expect(afterFlip.toastMessage).toBeNull();
 
-      // Step 4b — and back to [P][G], proving a free P↔G round-trip within the session.
+      // Step 5b — and back to [P][G], proving a free P↔G round-trip within the session.
       store.toggleAgentScope("web-developer");
       expect(useWizardStore.getState().agentConfigs).toStrictEqual(dualScope());
-    });
-
-    it("keeps `s` inert on an untouched persisted [P][G] agent pair (baseline guard preserved)", () => {
-      const dualScope = (): AgentScopeConfig[] => [
-        ...buildAgentConfigs(["web-developer"], { scope: "project" }),
-        ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
-      ];
-      const store = useWizardStore.getState();
-      useWizardStore.setState({
-        selectedAgents: ["web-developer"],
-        agentConfigs: dualScope(),
-        installedAgentConfigs: dualScope(),
-        isEditingFromGlobalScope: false,
-        isInitMode: false,
-        toastMessage: null,
-      });
-
-      store.toggleAgentScope("web-developer");
-      expect(useWizardStore.getState().agentConfigs).toStrictEqual(dualScope());
-      expect(useWizardStore.getState().toastMessage).toBe(
-        "Installed at both scopes — use space to change project scope",
-      );
     });
 
     it("should set and clear focusedAgentId", () => {
@@ -2450,13 +2627,13 @@ describe("WizardStore", () => {
       );
     });
 
-    describe("dual-scope spacebar toggle (agents)", () => {
+    describe("dual-scope selection toggle (agents)", () => {
       const dualScopeAgents = () => [
         ...buildAgentConfigs(["web-developer"], { scope: "project" }),
         ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
       ];
 
-      it("collapses a dual-scope agent to inherited-global when deselected and keeps it selected (still active via global)", () => {
+      it("leaves a dual-scope agent untouched when the selection key is pressed and emits the global-locked toast", () => {
         const store = useWizardStore.getState();
         useWizardStore.setState({
           selectedAgents: ["web-developer"],
@@ -2469,14 +2646,10 @@ describe("WizardStore", () => {
         store.toggleAgent("web-developer");
 
         const { selectedAgents, agentConfigs, toastMessage } = useWizardStore.getState();
-        expect(toastMessage).toBeNull();
-        // The project half is dropped but the agent stays active via the inherited-global
-        // entry, so it must remain in selectedAgents — the agents grid derives its checkbox
-        // from selectedAgents, matching what a save-and-reopen re-derives.
+        // The selection key is inert on a `[P][G]` row — `s` alone changes a dual-scope pair.
+        expect(toastMessage).toBe("Global agents cannot be changed from project scope");
         expect(selectedAgents).toStrictEqual(["web-developer"]);
-        expect(agentConfigs).toStrictEqual(
-          buildAgentConfigs(["web-developer"], { scope: "global" }),
-        );
+        expect(agentConfigs).toStrictEqual(dualScopeAgents());
       });
 
       it("restores [P][G] when re-selecting an inherited-global agent row (fresh project entry AND tombstone)", () => {
@@ -2507,8 +2680,8 @@ describe("WizardStore", () => {
           isInitMode: false,
         });
 
-        // Spacebar collapses [P][G] -> single inherited-global [G]; the agent stays selected.
-        store.toggleAgent("web-developer");
+        // `s` collapses [P][G] -> single inherited-global [G]; the agent stays selected.
+        store.toggleAgentScope("web-developer");
         expect(useWizardStore.getState().agentConfigs).toStrictEqual(
           buildAgentConfigs(["web-developer"], { scope: "global" }),
         );
@@ -2858,8 +3031,8 @@ describe("WizardStore", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
       store.toggleTechnology("api", "api-api", "api-framework-hono", true);
-      store.setSourceSelection("web-framework-react", "eject");
-      store.setSourceSelection("api-framework-hono", "eject");
+      store.setSourceSelection("web-framework-react", "eject", "global");
+      store.setSourceSelection("api-framework-hono", "eject", "global");
 
       const result = store.deriveInstallMode();
       expect(result).toBe("eject");
@@ -2869,8 +3042,8 @@ describe("WizardStore", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
       store.toggleTechnology("api", "api-api", "api-framework-hono", true);
-      store.setSourceSelection("web-framework-react", "eject");
-      store.setSourceSelection("api-framework-hono", "agents-inc");
+      store.setSourceSelection("web-framework-react", "eject", "global");
+      store.setSourceSelection("api-framework-hono", "agents-inc", "global");
 
       const result = store.deriveInstallMode();
       expect(result).toBe("mixed");
@@ -2886,7 +3059,7 @@ describe("WizardStore", () => {
     it("should handle single skill as local", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.setSourceSelection("web-framework-react", "eject");
+      store.setSourceSelection("web-framework-react", "eject", "global");
 
       const result = store.deriveInstallMode();
       expect(result).toBe("eject");
@@ -3286,10 +3459,10 @@ describe("WizardStore", () => {
       expect(useWizardStore.getState().focusedSkillId).toBe("web-framework-react");
     });
 
-    it("seeds focusedSkillId to null when no domains are selected", () => {
+    it("seeds focusedSkillId to the fallback domain's first grid option when no domains are selected", () => {
       hydrateWizardStore({});
 
-      expect(useWizardStore.getState().focusedSkillId).toBeNull();
+      expect(useWizardStore.getState().focusedSkillId).toBe("web-framework-react");
     });
   });
 });

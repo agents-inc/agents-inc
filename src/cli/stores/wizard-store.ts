@@ -1,6 +1,6 @@
 import { flatMap } from "remeda";
 import { create } from "zustand";
-import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../consts.js";
+import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, FALLBACK_DOMAIN } from "../consts.js";
 import type { InstallMode } from "../lib/installation/index.js";
 import { deriveInstallMode as sharedDeriveInstallMode } from "../lib/installation/installation.js";
 import type { AgentScopeConfig, SkillConfig, SkillScope } from "../types/config.js";
@@ -31,7 +31,6 @@ import { typedEntries, typedFromEntries, typedKeys, typedValues } from "../utils
 const TOAST_MESSAGES = {
   GLOBAL_SKILLS_LOCKED: "Global skills cannot be changed from project scope",
   ONLY_SKILL_IN_CATEGORY: "Cannot deselect the only skill in this category",
-  INSTALLED_AT_BOTH_SCOPES: "Installed at both scopes — use space to change project scope",
   ALREADY_EJECTED_AT_GLOBAL: "Already exists as ejected skill at global scope",
   GLOBAL_AGENTS_LOCKED: "Global agents cannot be changed from project scope",
 } as const;
@@ -110,6 +109,61 @@ function hasGlobalTombstone(configs: SkillConfig[], id: SkillId): boolean {
  */
 function isDualScopePair(configs: SkillConfig[], id: SkillId): boolean {
   return hasProjectActive(configs, id) && hasGlobalTombstone(configs, id);
+}
+
+/**
+ * True when a SELECTED skill must not be deselected (or radio-swapped away) at project scope.
+ * Three arms: an active global entry in the hydration snapshot (genuinely global-only — the
+ * long-standing read-only behaviour); a snapshot tombstone paired with a LIVE plain active
+ * global entry (the stale state a persisted `[P][G]` reaches after an in-session collapse,
+ * whose deselect would silently tombstone the still-real global install); and a live `[P][G]`
+ * dual-scope pair, which only `s` may collapse or restore. A skill freshly added this session
+ * (absent from the snapshot) matches none of the arms and stays freely deselectable.
+ */
+function isGloballyLockedSkill(
+  installed: SkillConfig[],
+  liveConfigs: SkillConfig[],
+  id: SkillId,
+): boolean {
+  return (
+    hasGlobalActive(installed, id) ||
+    (hasGlobalTombstone(installed, id) && hasGlobalActive(liveConfigs, id)) ||
+    isDualScopePair(liveConfigs, id)
+  );
+}
+
+/**
+ * True when re-scoping this project-eject entry to global would overwrite an ejected global
+ * install that the live config does not already override with a tombstone.
+ */
+function wouldOverwriteGlobalEject(
+  config: SkillConfig,
+  liveConfigs: SkillConfig[],
+  installedSkillConfigs: SkillConfig[] | null,
+): boolean {
+  if (config.scope !== "project" || config.source !== EJECT_SOURCE) return false;
+  const globalEjectInstalled = installedSkillConfigs?.some(
+    (sc) =>
+      sc.id === config.id && sc.scope === "global" && sc.source === EJECT_SOURCE && !sc.excluded,
+  );
+  if (!globalEjectInstalled) return false;
+  return !liveConfigs.some((sc) => sc.id === config.id && sc.excluded);
+}
+
+/**
+ * Rewrites the source of the ACTIVE entry at (id, scope), leaving every other entry untouched —
+ * in particular a dual-scope skill's excluded global tombstone, which keeps describing the
+ * masked global install (D-262).
+ */
+function withActiveEntrySource(
+  configs: SkillConfig[],
+  id: SkillId,
+  scope: SkillScope | undefined,
+  source: string,
+): SkillConfig[] {
+  return configs.map((sc) =>
+    sc.id === id && !sc.excluded && sc.scope === scope ? { ...sc, source } : sc,
+  );
 }
 
 /**
@@ -279,36 +333,13 @@ function applyAgentToggle(
 }
 
 /**
- * D-233: collapses a dual-scope agent (active project entry + global tombstone) to a single
- * inherited-global entry on deselect — dropping BOTH the project entry and the tombstone,
- * mirroring the skill path in applySkillRemoval. The agent is STILL active globally, so it
- * stays in selectedAgents (what a save-and-reopen re-derives); the grid reads its checkbox
- * from selectedAgents, so dropping it would render the still-active agent as unselected.
- */
-function collapseDualScopeAgent(
-  selectedAgents: AgentName[],
-  agentConfigs: AgentScopeConfig[],
-  agent: AgentName,
-) {
-  return {
-    selectedAgents: selectedAgents.includes(agent) ? selectedAgents : [...selectedAgents, agent],
-    agentConfigs: [
-      ...agentConfigs.filter((ac) => ac.name !== agent),
-      { name: agent, scope: "global" as const },
-    ],
-  };
-}
-
-/**
  * D-233: restores the `[P][G]` pair when re-selecting an inherited-global agent row whose
  * global install is recorded as a tombstone in the project snapshot — mirrors
- * reconcileSkillConfigs' restore branch. The rebuilt pair is session-authored, so the agent
- * is recorded in _sessionRebuiltScopePairAgents.
+ * reconcileSkillConfigs' restore branch.
  */
 function restoreDualScopeAgent(
   selectedAgents: AgentName[],
   agentConfigs: AgentScopeConfig[],
-  sessionRebuilt: ReadonlySet<AgentName>,
   agent: AgentName,
 ) {
   return {
@@ -318,8 +349,24 @@ function restoreDualScopeAgent(
       { name: agent, scope: "project" as const },
       { name: agent, scope: "global" as const, excluded: true },
     ],
-    _sessionRebuiltScopePairAgents: new Set([...sessionRebuilt, agent]),
   };
+}
+
+/**
+ * Next selectedAgents after a toggle. A toggle-off of a globally-installed agent keeps it
+ * listed — it gains an excluded tombstone in agentConfigs but must remain in selectedAgents so
+ * SelectedAgentName stays correct for other projects sharing the global config. A plain
+ * deselect drops it; re-enabling a tombstoned agent is already listed; a fresh add appends.
+ */
+function nextSelectedAgents(
+  selectedAgents: AgentName[],
+  agent: AgentName,
+  flags: { isSelected: boolean; isInList: boolean; isExcludedToggleOff: boolean },
+): AgentName[] {
+  if (flags.isExcludedToggleOff) return selectedAgents;
+  if (flags.isSelected) return selectedAgents.filter((a) => a !== agent);
+  if (flags.isInList) return selectedAgents;
+  return [...selectedAgents, agent];
 }
 
 /** Builds a SkillConfig for a resolved skill ID, preferring saved config values. */
@@ -486,23 +533,100 @@ function buildSkillSourceOptions(
   return [...withEject, ...buildBoundSkillOptions(boundSkills, skill.slug, selectedSource)];
 }
 
+/**
+ * D-257: skills the hydration snapshot still holds but this session has deselected — active in
+ * `installedSkillConfigs`, yet absent from BOTH the current selection and `skillConfigs`.
+ * Deselecting a PROJECT skill drops it outright (applySkillRemoval leaves no tombstone, unlike
+ * the global case), so without this set its Sources row would vanish and the user would lose
+ * sight of what saving is about to remove. Keyed by id so a skill with several snapshot entries
+ * still yields exactly one row. Empty during init (no snapshot) and when editing from global
+ * scope, where a removal is a genuine uninstall rather than a project-overlay change.
+ */
+function collectRemovedInstalledEntries(
+  installedSkillConfigs: SkillConfig[] | null,
+  skillConfigs: SkillConfig[],
+  selectedIds: ReadonlySet<SkillId>,
+  isEditingFromGlobalScope: boolean,
+): Map<SkillId, SkillConfig> {
+  if (isEditingFromGlobalScope || !installedSkillConfigs) return new Map();
+  const configuredIds = new Set(skillConfigs.map((sc) => sc.id));
+  const removed = installedSkillConfigs.filter(
+    (sc) =>
+      !sc.excluded &&
+      !selectedIds.has(sc.id) &&
+      !configuredIds.has(sc.id) &&
+      // A skill the marketplace no longer carries has nothing to render — hydration already
+      // skipped it into unresolvableSkillIds, and getSkillById would throw on it downstream.
+      !!matrix.skills[sc.id],
+  );
+  return new Map(removed.map((sc) => [sc.id, sc]));
+}
+
+/**
+ * D-258: skills selected/active this session but absent from the hydration snapshot — the inverse
+ * of the D-257 removed set. Keyed by id so the Sources tab can flag such a row with the info
+ * panel's added-diff marker (`+`). Gated only on snapshot presence: empty during init (no snapshot
+ * to diff against, so nothing is "added vs. snapshot"), which keeps init from flagging every row.
+ * Unlike the D-257 removed set this is NOT gated on `isEditingFromGlobalScope` — an addition is an
+ * addition regardless of edit context, exactly as the info panel's `computeScopeDiff` classifies
+ * it (it diffs against `installedSkillConfigs` directly, without a global-scope gate).
+ */
+function collectAddedSkillIds(
+  installedSkillConfigs: SkillConfig[] | null,
+  activeSkillIds: ReadonlySet<SkillId>,
+): Set<SkillId> {
+  if (!installedSkillConfigs) return new Set();
+  const installedIds = new Set(installedSkillConfigs.map((sc) => sc.id));
+  return new Set([...activeSkillIds].filter((id) => !installedIds.has(id)));
+}
+
+/** Copy of the options with exactly `sourceId` marked selected — for rows pinned to a persisted source. */
+function withSelectedSource(options: SourceOption[], sourceId: string | undefined): SourceOption[] {
+  return options.map((option) => ({ ...option, selected: option.id === sourceId }));
+}
+
 type SourceRowContext = {
   configEntry: SkillConfig | undefined;
   installedSkillConfigs: SkillConfig[] | null;
   isEditingFromGlobalScope: boolean;
+  /** Snapshot entry of a saved skill deselected this session (D-257); undefined otherwise. */
+  removedInstalledEntry: SkillConfig | undefined;
+  /** D-258: skill selected this session but absent from the snapshot — flags the added marker. */
+  isAddedThisSession: boolean;
 };
 
 /**
- * Classifies one skill into its source-grid rows: a locked global row for
- * excluded-global entries, locked global + editable project rows for skills
- * re-scoped global→project this session, or a single row otherwise.
+ * Classifies one skill into its source-grid rows: a disabled row for a saved skill deselected
+ * this session, a locked global row for excluded-global entries, locked global + editable
+ * project rows for skills re-scoped global→project this session, or a single row otherwise.
  */
 function classifySkillSourceRows(
   skillId: SkillId,
   options: SourceOption[],
   context: SourceRowContext,
 ): SourceRow[] {
-  const { configEntry, installedSkillConfigs, isEditingFromGlobalScope } = context;
+  const {
+    configEntry,
+    installedSkillConfigs,
+    isEditingFromGlobalScope,
+    removedInstalledEntry,
+    isAddedThisSession,
+  } = context;
+
+  // D-257: the deselection dropped every config entry for this skill, so there is nothing left to
+  // edit — render one inert row carrying the PERSISTED scope and source so the row stays visible
+  // and shows what saving removes. Deliberately NOT readOnly: that renders a lock, which reads as
+  // "installed globally" rather than "about to be removed".
+  if (removedInstalledEntry) {
+    return [
+      {
+        skillId,
+        options: withSelectedSource(options, removedInstalledEntry.source),
+        scope: removedInstalledEntry.scope,
+        disabled: true,
+      },
+    ];
+  }
 
   const isExcludedGlobal = configEntry?.excluded && configEntry?.scope === "global";
   if (isExcludedGlobal && !isEditingFromGlobalScope) {
@@ -510,11 +634,14 @@ function classifySkillSourceRows(
       installedSkillConfigs?.find(
         (sc) => sc.id === skillId && sc.scope === "global" && !sc.excluded,
       )?.source ?? configEntry.source;
-    const excludedOptions = options.map((o) => ({
-      ...o,
-      selected: o.id === installedSource,
-    }));
-    return [{ skillId, options: excludedOptions, scope: "global" as const, readOnly: true }];
+    return [
+      {
+        skillId,
+        options: withSelectedSource(options, installedSource),
+        scope: "global" as const,
+        readOnly: true,
+      },
+    ];
   }
 
   const installedGlobalConfig = installedSkillConfigs?.find(
@@ -523,12 +650,13 @@ function classifySkillSourceRows(
 
   if (!isEditingFromGlobalScope && installedGlobalConfig && configEntry?.scope === "project") {
     // Skill toggled from global to project — emit locked global copy + editable project copy
-    const globalOptions = options.map((o) => ({
-      ...o,
-      selected: o.id === installedGlobalConfig.source,
-    }));
     return [
-      { skillId, options: globalOptions, scope: "global" as const, readOnly: true },
+      {
+        skillId,
+        options: withSelectedSource(options, installedGlobalConfig.source),
+        scope: "global" as const,
+        readOnly: true,
+      },
       { skillId, options, scope: "project" as const },
     ];
   }
@@ -540,11 +668,18 @@ function classifySkillSourceRows(
       options,
       scope: configEntry?.scope,
       ...(readOnly ? { readOnly: true as const } : {}),
+      ...(isAddedThisSession ? { added: true as const } : {}),
     },
   ];
 }
 
-/** Visual grouping order in source-grid: global readOnly, global editable, then project. */
+/**
+ * Visual grouping order in source-grid: global readOnly, global editable, then project. A
+ * pending-removal (disabled) row is NOT a separate tier — it sorts by its own scope so it renders
+ * inline with the other rows of that scope, matching the info panel, which shows removals in place
+ * rather than in a dedicated section. Its trailing position within a scope section falls out of
+ * being appended last in `allSkillIds`, which the stable sort preserves.
+ */
 function sourceRowSortTier(row: SourceRow): number {
   if (row.scope === "global" && row.readOnly) return 0;
   if (row.scope === "global") return 1;
@@ -636,19 +771,6 @@ export type WizardState = {
   /** Snapshot of configs that were installed before the wizard opened, used for diff rendering */
   installedSkillConfigs: SkillConfig[] | null;
   installedAgentConfigs: AgentScopeConfig[] | null;
-
-  /**
-   * Skill ids whose dual-scope `[P][G]` pair was (re)established by a store action THIS
-   * session — via `s` (toggleSkillScope G→P re-adding the global tombstone) or a spacebar
-   * re-select that rebuilds the pair. Such a pair is session-authored, not the pristine pair
-   * carried in `installedSkillConfigs` from hydration. The "persisted dual-scope pair" guard
-   * in toggleSkillScope consults this set so it lets `s` freely round-trip a reconstructed
-   * pair instead of locking it: a snapshot/shape comparison alone cannot tell a pristine
-   * reopened pair apart from one collapsed and rebuilt within the same session.
-   */
-  _sessionRebuiltScopePairSkills: Set<SkillId>;
-  /** Agent-name equivalent of `_sessionRebuiltScopePairSkills` (toggleAgentScope / toggleAgent restore). */
-  _sessionRebuiltScopePairAgents: Set<AgentName>;
 
   /** True when running init (first-time setup), false when editing an existing installation */
   isInitMode: boolean;
@@ -774,14 +896,6 @@ export type WizardState = {
    */
   toggleSkillScope: (skillId: SkillId) => void;
   /**
-   * Update the source for a specific skill in skillConfigs.
-   * @param skillId - Skill to update
-   * @param source - Source identifier (e.g., "eject", marketplace name)
-   *
-   * Side effects: updates `skillConfigs` entry for the skill
-   */
-  setSkillSource: (skillId: SkillId, source: string) => void;
-  /**
    * Set the currently focused skill ID in the build step (for S hotkey).
    * @param id - Skill ID to focus, or null to clear
    *
@@ -802,10 +916,12 @@ export type WizardState = {
    * Set which source provides a specific skill.
    * @param skillId - Skill to configure the source for
    * @param sourceId - Source identifier (e.g., "public", "eject", marketplace name)
+   * @param scope - Acting scope from the Sources row: only the active entry at this scope is
+   *   updated; a masked global tombstone for the same id keeps its source.
    *
-   * Side effects: updates `skillConfigs` entry for the skill. No-op with warning if either param is empty.
+   * Side effects: updates the active `skillConfigs` entry for the skill at `scope`. No-op with warning if either param is empty.
    */
-  setSourceSelection: (skillId: SkillId, sourceId: string) => void;
+  setSourceSelection: (skillId: SkillId, sourceId: string, scope: SkillScope | undefined) => void;
   /**
    * Enable or disable source customization on the sources step.
    * @param customize - true to show per-skill source pickers
@@ -958,8 +1074,6 @@ type WizardStateData = Pick<
   | "boundSkills"
   | "installedSkillConfigs"
   | "installedAgentConfigs"
-  | "_sessionRebuiltScopePairSkills"
-  | "_sessionRebuiltScopePairAgents"
   | "isInitMode"
   | "isEditingFromGlobalScope"
   | "toastMessage"
@@ -993,8 +1107,6 @@ export const createInitialState = (overrides?: Partial<WizardStateData>): Wizard
   boundSkills: [],
   installedSkillConfigs: null,
   installedAgentConfigs: null,
-  _sessionRebuiltScopePairSkills: new Set(),
-  _sessionRebuiltScopePairAgents: new Set(),
   isInitMode: false,
   isEditingFromGlobalScope: false,
   toastMessage: null,
@@ -1127,22 +1239,14 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       const currentSelections = state.domainSelections[domain]?.[category] || [];
       const isSelected = currentSelections.includes(technology);
 
-      // Block a globally-installed skill from being changed at project scope. An active global
-      // entry in the hydration snapshot (genuinely global-only) blocks both directions, matching
-      // the long-standing read-only behaviour. The tombstone arm additionally blocks a DESELECT
-      // of the stale-snapshot state a persisted `[P][G]` reaches after an in-session spacebar
-      // collapse (installed still shows the tombstone; the live config now shows a plain active
-      // global), whose deselect would silently tombstone the still-real global install. It is
-      // gated on `isSelected` so the sanctioned re-select restore path (reconcileSkillConfigs
-      // rebuilds `[P][G]`) still runs, does NOT fire while the live config still holds the full
-      // `[P][G]` pair (so the FIRST collapse spacebar is allowed), and never touches a skill
-      // freshly added this session (absent from the snapshot).
-      const isActiveGlobal =
-        hasGlobalActive(installed, technology) ||
-        (isSelected &&
-          hasGlobalTombstone(installed, technology) &&
-          hasGlobalActive(state.skillConfigs, technology));
-      if (isActiveGlobal && !state.isEditingFromGlobalScope && !state.isInitMode) {
+      // Block a globally-installed skill from being changed at project scope. On a SELECT only
+      // the active-global arm applies (an inherited-global row is read-only in both directions);
+      // the other lock arms are deselect guards, kept behind isSelected so the re-select restore
+      // path (reconcileSkillConfigs rebuilds `[P][G]`) still runs.
+      const isGlobalLocked = isSelected
+        ? isGloballyLockedSkill(installed, state.skillConfigs, technology)
+        : hasGlobalActive(installed, technology);
+      if (isGlobalLocked && !state.isEditingFromGlobalScope && !state.isInitMode) {
         return { toastMessage: TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED };
       }
 
@@ -1158,16 +1262,14 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         }
       }
 
-      // In exclusive mode, selecting a new skill replaces the current one.
-      // Block if that would implicitly deselect a globally-installed skill.
+      // In exclusive mode, selecting a new skill replaces the current one. Block if that would
+      // implicitly deselect a globally-locked skill (a radio swap must never tombstone a global
+      // install or collapse a live `[P][G]` pair — only `s` may change one).
       if (exclusive && !isSelected) {
-        const hasGlobalSelection = currentSelections.some(
-          (selectedId) =>
-            hasGlobalActive(installed, selectedId) ||
-            (hasGlobalTombstone(installed, selectedId) &&
-              hasGlobalActive(state.skillConfigs, selectedId)),
+        const wouldDropLockedSkill = currentSelections.some((selectedId) =>
+          isGloballyLockedSkill(installed, state.skillConfigs, selectedId),
         );
-        if (hasGlobalSelection && !state.isEditingFromGlobalScope && !state.isInitMode) {
+        if (wouldDropLockedSkill && !state.isEditingFromGlobalScope && !state.isInitMode) {
           return { toastMessage: TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED };
         }
       }
@@ -1205,17 +1307,8 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         ? [...newSelections, technology]
         : newSelections;
 
-      // A spacebar re-select that rebuilds a dual-scope `[P][G]` pair marks the id as
-      // session-authored, so the toggleSkillScope persisted-pair guard lets `s` round-trip it.
-      const rebuiltPairSkills = added.filter((id) => isDualScopePair(skillConfigs, id));
-      const nextRebuiltScopePairSkills =
-        rebuiltPairSkills.length > 0
-          ? new Set([...state._sessionRebuiltScopePairSkills, ...rebuiltPairSkills])
-          : state._sessionRebuiltScopePairSkills;
-
       return {
         skillConfigs,
-        _sessionRebuiltScopePairSkills: nextRebuiltScopePairSkills,
         domainSelections: {
           ...state.domainSelections,
           [domain]: {
@@ -1312,39 +1405,9 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       const config = state.skillConfigs.find((sc) => sc.id === skillId && !sc.excluded);
       if (!config) return state;
 
-      // A PERSISTED dual-scope pair ([P][G]) reopened for edit and UNTOUCHED this session:
-      // the saved snapshot carries the excluded global tombstone, so `s` has no well-defined
-      // single target (space is the sanctioned way to change the project half — it drops or
-      // restores both). No-op with a toast. Suppressed once the pair has been reconstructed by
-      // a store action this session (`_sessionRebuiltScopePairSkills`): a pair collapsed and
-      // then rebuilt in-session is session-authored, so `s` must round-trip it normally even
-      // though its shape now matches the pristine snapshot. Within-session G↔P round-trips —
-      // where the snapshot still holds an ACTIVE global entry — are unaffected either way.
-      if (
-        !state._sessionRebuiltScopePairSkills.has(skillId) &&
-        hasGlobalTombstone(state.installedSkillConfigs ?? [], skillId) &&
-        isDualScopePair(state.skillConfigs, skillId)
-      ) {
-        return { toastMessage: TOAST_MESSAGES.INSTALLED_AT_BOTH_SCOPES };
-      }
-
       // Guard: block project eject → global when global eject already exists (would overwrite)
-      if (config.scope === "project" && config.source === EJECT_SOURCE) {
-        const globalEjectInstalled = state.installedSkillConfigs?.some(
-          (sc) =>
-            sc.id === skillId &&
-            sc.scope === "global" &&
-            sc.source === EJECT_SOURCE &&
-            !sc.excluded,
-        );
-        if (globalEjectInstalled) {
-          const hasExcludedEntry = state.skillConfigs.some(
-            (sc) => sc.id === skillId && sc.excluded,
-          );
-          if (!hasExcludedEntry) {
-            return { toastMessage: TOAST_MESSAGES.ALREADY_EJECTED_AT_GLOBAL };
-          }
-        }
+      if (wouldOverwriteGlobalEject(config, state.skillConfigs, state.installedSkillConfigs)) {
+        return { toastMessage: TOAST_MESSAGES.ALREADY_EJECTED_AT_GLOBAL };
       }
 
       // A real global install exists when the snapshot carries EITHER an active global entry
@@ -1358,61 +1421,43 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         false;
       const newScope = config.scope === "project" ? ("global" as const) : ("project" as const);
 
-      let updatedConfigs = state.skillConfigs.map((sc) =>
+      const rescoped = state.skillConfigs.map((sc) =>
         sc.id === skillId && !sc.excluded ? { ...sc, scope: newScope } : sc,
       );
 
-      let pairRebuilt = false;
       if (newScope === "project") {
-        // Moving global → project: add excluded global entry if not already there.
+        // Moving global → project: add the excluded global tombstone if not already there.
         // Gated on wasInstalledGlobally so fresh init toggles don't create spurious tombstones.
-        if (
-          wasInstalledGlobally &&
-          !updatedConfigs.some((sc) => sc.id === skillId && sc.excluded)
-        ) {
-          updatedConfigs = [
-            ...updatedConfigs,
-            { id: skillId, scope: "global" as const, excluded: true, source: config.source },
-          ];
-          pairRebuilt = true;
-        }
-      } else {
-        // Moving project → global: always drop any excluded global tombstone for this id.
-        // An active entry at global scope supersedes any tombstone at the same scope — the
-        // invariant "no active + tombstone at the same (id, scope)" must hold. Unconditional
-        // removal (not gated on wasInstalledGlobally) heals the D-224 case where the prior
-        // G→P produced a tombstone that installedSkillConfigs-derived wasInstalledGlobally
-        // cannot see (because its `!sc.excluded` filter ignores the tombstone itself).
-        updatedConfigs = updatedConfigs.filter((sc) => !(sc.id === skillId && sc.excluded));
+        const needsTombstone =
+          wasInstalledGlobally && !rescoped.some((sc) => sc.id === skillId && sc.excluded);
+        return {
+          skillConfigs: needsTombstone
+            ? [
+                ...rescoped,
+                { id: skillId, scope: "global" as const, excluded: true, source: config.source },
+              ]
+            : rescoped,
+        };
       }
 
-      // Mark a freshly (re)built `[P][G]` pair as session-authored so a subsequent `s` is not
-      // blocked by the persisted-pair guard above — the pair now flips P↔G freely this session.
-      return pairRebuilt
-        ? {
-            skillConfigs: updatedConfigs,
-            _sessionRebuiltScopePairSkills: new Set([
-              ...state._sessionRebuiltScopePairSkills,
-              skillId,
-            ]),
-          }
-        : { skillConfigs: updatedConfigs };
+      // Moving project → global: always drop any excluded global tombstone for this id.
+      // An active entry at global scope supersedes any tombstone at the same scope — the
+      // invariant "no active + tombstone at the same (id, scope)" must hold. Unconditional
+      // removal (not gated on wasInstalledGlobally) heals the D-224 case where the prior
+      // G→P produced a tombstone that installedSkillConfigs-derived wasInstalledGlobally
+      // cannot see (because its `!sc.excluded` filter ignores the tombstone itself).
+      return { skillConfigs: rescoped.filter((sc) => !(sc.id === skillId && sc.excluded)) };
     }),
-
-  setSkillSource: (skillId, source) =>
-    set((state) => ({
-      skillConfigs: state.skillConfigs.map((sc) => (sc.id === skillId ? { ...sc, source } : sc)),
-    })),
 
   setFocusedSkillId: (id) => set({ focusedSkillId: id }),
 
   seedFocusedSkillForActiveDomain: () => {
     const state = get();
-    const domain = state.getCurrentDomain();
-    if (!domain) {
-      set({ focusedSkillId: null });
-      return;
-    }
+    // Mirror the build-step renderer's domain fallback (use-build-step-props.ts):
+    // when no domain is selected the grid still renders FALLBACK_DOMAIN and
+    // highlights a cell, so the seed must resolve that same domain — never null
+    // while a cell is visibly focused — or the cold `s` toggle no-ops on a desync.
+    const domain = state.getCurrentDomain() ?? FALLBACK_DOMAIN;
     const categories = buildCategoriesForDomain(
       domain,
       state.getAllSelectedTechnologies(),
@@ -1424,7 +1469,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
     set({ focusedSkillId: categories[0]?.options[0]?.id ?? null });
   },
 
-  setSourceSelection: (skillId, sourceId) =>
+  setSourceSelection: (skillId, sourceId, scope) =>
     set((state) => {
       if (!skillId) {
         warn("Ignoring setSourceSelection call with empty skillId");
@@ -1435,9 +1480,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         return state;
       }
       return {
-        skillConfigs: state.skillConfigs.map((sc) =>
-          sc.id === skillId ? { ...sc, source: sourceId } : sc,
-        ),
+        skillConfigs: withActiveEntrySource(state.skillConfigs, skillId, scope, sourceId),
       };
     }),
 
@@ -1485,10 +1528,13 @@ export const useWizardStore = create<WizardState>((set, get) => ({
     set((state) => {
       const installed = state.installedAgentConfigs ?? [];
 
-      const isDualScopeDeselect =
+      // A live dual-scope `[P][G]` row is locked to `s`: the selection key is inert on it and
+      // emits the same global-locked toast an inherited-global row shows. Mirrors the skill-side
+      // dual-scope arm in toggleTechnology — `s` alone collapses and restores the pair.
+      const isDualScopePairRow =
         !state.isEditingFromGlobalScope && isDualScopeAgentPair(state.agentConfigs, agent);
-      if (isDualScopeDeselect) {
-        return collapseDualScopeAgent(state.selectedAgents, state.agentConfigs, agent);
+      if (isDualScopePairRow) {
+        return { toastMessage: TOAST_MESSAGES.GLOBAL_AGENTS_LOCKED };
       }
 
       const isInheritedGlobalReselect =
@@ -1498,12 +1544,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         !state.selectedAgents.includes(agent) &&
         agentHasGlobalTombstone(installed, agent);
       if (isInheritedGlobalReselect) {
-        return restoreDualScopeAgent(
-          state.selectedAgents,
-          state.agentConfigs,
-          state._sessionRebuiltScopePairAgents,
-          agent,
-        );
+        return restoreDualScopeAgent(state.selectedAgents, state.agentConfigs, agent);
       }
 
       // Block a globally-installed agent from being changed at project scope. Mirrors the
@@ -1545,22 +1586,17 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         effectiveInstalledConfigs,
       );
 
-      // When toggling off a globally-installed agent, keep it in selectedAgents.
-      // It gets an excluded tombstone in agentConfigs but must remain in selectedAgents
-      // so SelectedAgentName stays correct for other projects sharing the global config.
       const wasInstalledGlobal =
         effectiveInstalledConfigs?.some((ac) => ac.name === agent && ac.scope === "global") ??
         false;
       const isExcludedToggleOff = isSelected && wasInstalledGlobal;
 
       return {
-        selectedAgents: isExcludedToggleOff
-          ? state.selectedAgents
-          : isSelected
-            ? state.selectedAgents.filter((a) => a !== agent)
-            : isInList
-              ? state.selectedAgents
-              : [...state.selectedAgents, agent],
+        selectedAgents: nextSelectedAgents(state.selectedAgents, agent, {
+          isSelected,
+          isInList,
+          isExcludedToggleOff,
+        }),
         agentConfigs: updatedAgentConfigs,
       };
     }),
@@ -1572,19 +1608,6 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       const config = state.agentConfigs.find((ac) => ac.name === agentName && !ac.excluded);
       if (!config) return state;
 
-      // Persisted dual-scope pair reopened for edit and UNTOUCHED this session — mirrors
-      // toggleSkillScope. Suppressed once the pair has been reconstructed by a store action
-      // this session (`_sessionRebuiltScopePairAgents`) so a collapse→`s` rebuild flips P↔G
-      // freely. Within-session G↔P round-trips (snapshot still holds an ACTIVE global entry)
-      // keep working regardless.
-      if (
-        !state._sessionRebuiltScopePairAgents.has(agentName) &&
-        agentHasGlobalTombstone(state.installedAgentConfigs ?? [], agentName) &&
-        isDualScopeAgentPair(state.agentConfigs, agentName)
-      ) {
-        return { toastMessage: TOAST_MESSAGES.INSTALLED_AT_BOTH_SCOPES };
-      }
-
       // Counts a global tombstone as "installed globally" (a tombstone means a real global
       // install this project overrides), so an in-session collapse→`s` restores a genuine
       // `[P][G]` pair.
@@ -1593,41 +1616,25 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         false;
       const newScope = config.scope === "project" ? ("global" as const) : ("project" as const);
 
-      let updatedConfigs = state.agentConfigs.map((ac) =>
+      const rescoped = state.agentConfigs.map((ac) =>
         ac.name === agentName && !ac.excluded ? { ...ac, scope: newScope } : ac,
       );
 
-      let pairRebuilt = false;
       if (newScope === "project") {
-        // Moving global → project: add excluded global entry if not already there.
+        // Moving global → project: add the excluded global tombstone if not already there.
         // Gated on wasInstalledGlobally so fresh init toggles don't create spurious tombstones.
-        if (
-          wasInstalledGlobally &&
-          !updatedConfigs.some((ac) => ac.name === agentName && ac.excluded)
-        ) {
-          updatedConfigs = [
-            ...updatedConfigs,
-            { name: agentName, scope: "global" as const, excluded: true },
-          ];
-          pairRebuilt = true;
-        }
-      } else {
-        // Moving project → global: always drop any excluded global tombstone for this name.
-        // Symmetric with toggleSkillScope — see its comment for the invariant.
-        updatedConfigs = updatedConfigs.filter((ac) => !(ac.name === agentName && ac.excluded));
+        const needsTombstone =
+          wasInstalledGlobally && !rescoped.some((ac) => ac.name === agentName && ac.excluded);
+        return {
+          agentConfigs: needsTombstone
+            ? [...rescoped, { name: agentName, scope: "global" as const, excluded: true }]
+            : rescoped,
+        };
       }
 
-      // Mark a freshly (re)built `[P][G]` pair as session-authored so a subsequent `s` is not
-      // blocked by the persisted-pair guard above.
-      return pairRebuilt
-        ? {
-            agentConfigs: updatedConfigs,
-            _sessionRebuiltScopePairAgents: new Set([
-              ...state._sessionRebuiltScopePairAgents,
-              agentName,
-            ]),
-          }
-        : { agentConfigs: updatedConfigs };
+      // Moving project → global: always drop any excluded global tombstone for this name.
+      // Symmetric with toggleSkillScope — see its comment for the invariant.
+      return { agentConfigs: rescoped.filter((ac) => !(ac.name === agentName && ac.excluded)) };
     }),
 
   setFocusedAgentId: (id) => set({ focusedAgentId: id }),
@@ -1704,13 +1711,21 @@ export const useWizardStore = create<WizardState>((set, get) => ({
 
   setAllSourcesEject: () => {
     set((state) => ({
-      skillConfigs: state.skillConfigs.map((sc) => ({ ...sc, source: EJECT_SOURCE })),
+      // Never touch tombstones — a dual-scope skill's excluded global tombstone keeps describing
+      // the masked global install. The bulk set-all applies only to active entries, mirroring the
+      // D-262 per-skill setSkillSource/setSourceSelection guard (D-265).
+      skillConfigs: state.skillConfigs.map((sc) =>
+        sc.excluded ? sc : { ...sc, source: EJECT_SOURCE },
+      ),
     }));
   },
 
   setAllSourcesPlugin: () => {
     set((state) => ({
+      // Never touch tombstones (see setAllSourcesEject) — the excluded global tombstone keeps its
+      // marketplace source describing the masked global install (D-265).
       skillConfigs: state.skillConfigs.map((sc) => {
+        if (sc.excluded) return sc;
         const marketplaceSource = getSkillById(sc.id).availableSources?.find(
           (source) => source.type !== "local",
         );
@@ -1733,7 +1748,24 @@ export const useWizardStore = create<WizardState>((set, get) => ({
     const excludedGlobalIds = skillConfigs
       .filter((sc) => sc.excluded && sc.scope === "global" && !allActiveIds.has(sc.id))
       .map((sc) => sc.id);
-    const allSkillIds = [...inheritedSkillIds, ...selectedTechnologies, ...excludedGlobalIds];
+    // D-257: saved skills deselected this session. Disjoint from the three sets above by
+    // construction — every id here is absent from skillConfigs, which is what those are derived
+    // from — so no skill can render twice.
+    const removedInstalledEntries = collectRemovedInstalledEntries(
+      state.installedSkillConfigs,
+      skillConfigs,
+      selectedSet,
+      state.isEditingFromGlobalScope,
+    );
+    // D-258: additions vs. the snapshot. Keyed off the active selection (inherited + selected) so
+    // excluded-global and pending-removal ids — never active — cannot be flagged added.
+    const addedSkillIds = collectAddedSkillIds(state.installedSkillConfigs, allActiveIds);
+    const allSkillIds = [
+      ...inheritedSkillIds,
+      ...selectedTechnologies,
+      ...excludedGlobalIds,
+      ...removedInstalledEntries.keys(),
+    ];
 
     const rows: SourceRow[] = allSkillIds.flatMap((tech) => {
       const skill = getSkillById(tech);
@@ -1750,11 +1782,15 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         configEntry,
         installedSkillConfigs: state.installedSkillConfigs,
         isEditingFromGlobalScope: state.isEditingFromGlobalScope,
+        removedInstalledEntry: removedInstalledEntries.get(skillId),
+        isAddedThisSession: addedSkillIds.has(skillId),
       });
     });
 
-    // Stable sort: global readOnly first, global editable second, project last.
-    // Matches visual grouping in source-grid so navigation indices align with render order.
+    // Stable sort by scope tier: global readOnly, global editable, then project. Pending-removal
+    // rows carry no dedicated tier — they sort by their own scope and, being appended last, trail
+    // inline within that scope section. Matches source-grid grouping so navigation indices align
+    // with render order.
     rows.sort((a, b) => sourceRowSortTier(a) - sourceRowSortTier(b));
 
     return rows;

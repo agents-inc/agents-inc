@@ -4,7 +4,7 @@ import type { SkillId } from "../../types";
 import type { SkillConfig, SkillScope } from "../../types/config";
 import type { SourceLoadResult } from "../loading";
 import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
-import { claudePluginInstall, claudePluginUninstallBestEffort } from "../../utils/exec";
+import { claudePluginInstall, claudePluginUninstall } from "../../utils/exec";
 import { buildMarketplacePluginRef, toClaudePluginScope } from "../plugins/plugin-ref";
 import { installBaseDir, resolveInstallPaths } from "./install-base-dir";
 import { verbose, warn } from "../../utils/logger";
@@ -130,9 +130,14 @@ export async function executeMigration(
             verbose(`Keeping global plugin for ${migration.id} (migrated to project-eject)`);
             continue;
           }
+          // Scope-precise uninstall keyed to this migration's own scope. A best-effort
+          // both-scopes sweep would also drop a same-id plugin registered at the OTHER Claude
+          // scope (e.g. a project→eject switch uninstalling the still-needed global/user-scope
+          // plugin). The registered scope is unambiguous here, so target it exactly.
+          // claudePluginUninstall still swallows "not installed" / "not found".
           const pluginScope = toClaudePluginScope(migration.oldScope);
           const pluginRef = buildMarketplacePluginRef(migration.id, sourceResult.marketplace);
-          await claudePluginUninstallBestEffort(pluginRef, pluginScope, projectDir);
+          await claudePluginUninstall(pluginRef, pluginScope, projectDir);
           verbose(`Uninstalled plugin for ${migration.id}`);
         }
       }

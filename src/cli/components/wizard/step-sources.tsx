@@ -9,7 +9,7 @@ import type { BoundSkillCandidate, SkillAlias, SkillId } from "../../types/index
 import { useMeasuredHeight } from "../hooks/use-measured-height.js";
 import { HOTKEY_SET_ALL_LOCAL, HOTKEY_SET_ALL_PLUGIN, isHotkey } from "./hotkeys.js";
 import { SelectionCard } from "./selection-card.js";
-import { SourceGrid } from "./source-grid.js";
+import { isRowInert, SourceGrid } from "./source-grid.js";
 
 export type StepSourcesProps = {
   projectDir?: string;
@@ -30,7 +30,14 @@ export const StepSources: React.FC<StepSourcesProps> = ({ projectDir, onContinue
 
   const handleGridSelect = useCallback(
     (skillId: SkillId, sourceId: string) => {
-      store.setSourceSelection(skillId, sourceId);
+      // Thread the acting scope from the editable Sources row: a dual-scope skill renders only
+      // its project row here, so the switch targets the project entry and leaves the masked
+      // global tombstone untouched. SourceGrid only fires onSelect for non-inert rows, so the
+      // sole editable row for this skill carries the acting scope.
+      const actingRow = store
+        .buildSourceRows()
+        .find((row) => row.skillId === skillId && !isRowInert(row));
+      store.setSourceSelection(skillId, sourceId, actingRow?.scope);
     },
     [store],
   );

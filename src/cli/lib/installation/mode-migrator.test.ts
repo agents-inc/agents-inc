@@ -186,7 +186,7 @@ describe("mode-migrator", () => {
         expect.stringContaining(".claude/skills"),
         sourceResult,
       );
-      expect(claudePluginUninstallBestEffort).toHaveBeenCalledWith(
+      expect(claudePluginUninstall).toHaveBeenCalledWith(
         "web-framework-react@https://marketplace.example.com",
         "project",
         tempDir,
@@ -450,7 +450,7 @@ describe("mode-migrator", () => {
 
         const result = await executeMigration(plan, tempDir, sourceResult);
 
-        expect(claudePluginUninstallBestEffort).toHaveBeenCalledWith(
+        expect(claudePluginUninstall).toHaveBeenCalledWith(
           "web-framework-react@https://marketplace.example.com",
           "project",
           tempDir,
@@ -479,7 +479,7 @@ describe("mode-migrator", () => {
 
         const result = await executeMigration(plan, tempDir, sourceResult);
 
-        expect(claudePluginUninstallBestEffort).toHaveBeenCalledWith(
+        expect(claudePluginUninstall).toHaveBeenCalledWith(
           "web-framework-react@https://marketplace.example.com",
           "user",
           tempDir,
