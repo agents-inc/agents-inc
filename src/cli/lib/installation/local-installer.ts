@@ -52,6 +52,7 @@ import {
 import {
   isActiveAt,
   isGlobalTombstone,
+  activeProjectAgentNames,
   activeSkillScopeMap,
   activeAgentScopeMap,
   effectivelyExcludedSkillIds,
@@ -73,6 +74,7 @@ import {
   CLAUDE_DIR,
   DEFAULT_PLUGIN_NAME,
   GLOBAL_CONFIG_NAME,
+  LOCAL_PSEUDO_CATEGORY,
   LOCAL_SKILLS_PATH,
   PROJECT_ROOT,
   STANDARD_FILES,
@@ -653,91 +655,241 @@ function globalHasActiveAgent(globalConfig: ProjectConfig, name: AgentName): boo
 }
 
 /**
- * Synthesizes the global tombstone a project needs when it OWNS a skill at project
- * scope while that same id is now ACTIVE at global scope (D-268). Without the
- * tombstone, `partitionInlinedConfigEntries` re-inlines the global copy as a SECOND
- * active entry, leaving the id active at BOTH scopes; the tombstone masks the global
- * install so hydration renders the proper dual-scope `[P][G]` pair. The tombstone is
- * spread from the global entry so it carries the global install's `source`. A skill the
- * project merely inherits (no active project-scope entry) is intentionally skipped — it
- * stays a single active global entry. A skill the project already tombstones is skipped
- * so no duplicate is produced. `retainedSkills` is the post-retention split, so its
- * project-scoped entries signal ownership and its live tombstones signal "already masked".
- */
-function synthesizeGlobalTombstonesForOwnedSkills(
-  retainedSkills: SkillConfig[],
-  globalConfig: ProjectConfig,
-): SkillConfig[] {
-  const ownsAtProject = (id: SkillId): boolean =>
-    retainedSkills.some((s) => s.id === id && isActiveAt(s, "project"));
-  const alreadyTombstoned = (id: SkillId): boolean =>
-    retainedSkills.some((s) => s.id === id && isGlobalTombstone(s));
-  return globalConfig.skills
-    .filter(
-      (globalEntry) =>
-        isActiveAt(globalEntry, "global") &&
-        ownsAtProject(globalEntry.id) &&
-        !alreadyTombstoned(globalEntry.id),
-    )
-    .map((globalEntry) => ({ ...globalEntry, excluded: true }));
-}
-
-/** Agent mirror of {@link synthesizeGlobalTombstonesForOwnedSkills} (D-259). */
-function synthesizeGlobalTombstonesForOwnedAgents(
-  retainedAgents: AgentScopeConfig[],
-  globalConfig: ProjectConfig,
-): AgentScopeConfig[] {
-  const ownsAtProject = (name: AgentName): boolean =>
-    retainedAgents.some((a) => a.name === name && isActiveAt(a, "project"));
-  const alreadyTombstoned = (name: AgentName): boolean =>
-    retainedAgents.some((a) => a.name === name && isGlobalTombstone(a));
-  return globalConfig.agents
-    .filter(
-      (globalEntry) =>
-        isActiveAt(globalEntry, "global") &&
-        ownsAtProject(globalEntry.name) &&
-        !alreadyTombstoned(globalEntry.name),
-    )
-    .map((globalEntry) => ({ ...globalEntry, excluded: true }));
-}
-
-/**
- * Keeps a project's own entries when re-inlining fresh global data, dropping tombstones
- * that no longer correspond to a real global install, and synthesizing a global tombstone
- * for any project-owned entry that just became active at global scope.
+ * Keeps a project's own skill entries when re-inlining fresh global data, dropping
+ * tombstones that no longer correspond to a real global install.
  *
  * A tombstone (`scope === "global" && excluded`) only has meaning while the global entry
- * it masks still exists. Once the skill/agent has been removed from the global config,
- * the tombstone is stale — carrying it forward would leave the project showing a masked
+ * it masks still exists. Once the skill has been removed from the global config, the
+ * tombstone is stale — carrying it forward would leave the project showing a masked
  * global item that no longer exists. Project-scoped entries are always retained.
- *
- * When a project owns an id at project scope AND that id is now active at global scope,
- * a `{ scope: "global", excluded: true }` tombstone is appended so the pair renders as
- * dual-scope `[P][G]` instead of being active at both scopes (D-268 / D-259).
  */
-function retainReconciledSkills(skills: SkillConfig[], globalConfig: ProjectConfig): SkillConfig[] {
-  const retained = skills.filter(
+function retainProjectOwnedSkills(
+  skills: SkillConfig[],
+  globalConfig: ProjectConfig,
+): SkillConfig[] {
+  return skills.filter(
     (entry) =>
       isProjectScopedEntry(entry) ||
       (isGlobalTombstone(entry) && globalHasActiveSkill(globalConfig, entry.id)),
   );
-  return [...retained, ...synthesizeGlobalTombstonesForOwnedSkills(retained, globalConfig)];
 }
 
-function retainReconciledAgents(
+/** Agent mirror of {@link retainProjectOwnedSkills}. */
+function retainProjectOwnedAgents(
   agents: AgentScopeConfig[],
   globalConfig: ProjectConfig,
 ): AgentScopeConfig[] {
-  const retained = agents.filter(
+  return agents.filter(
     (entry) =>
       isProjectScopedEntry(entry) ||
       (isGlobalTombstone(entry) && globalHasActiveAgent(globalConfig, entry.name)),
   );
-  return [...retained, ...synthesizeGlobalTombstonesForOwnedAgents(retained, globalConfig)];
 }
 
 /**
- * Prunes a project's inlined `selectedAgents[]` symmetrically with `retainReconciledAgents`.
+ * Category a skill belongs to according to the MERGED matrix. `undefined` when the
+ * matrix has no entry for the id (a user-authored local skill carries no matrix
+ * record) or when the entry sits in the `local` pseudo-category — neither
+ * participates in category rules, and neither may throw.
+ */
+function categoryOfSkill(id: SkillId, matrix: MergedSkillsMatrix): Category | undefined {
+  const category = matrix.skills[id]?.category;
+  if (category === undefined || category === LOCAL_PSEUDO_CATEGORY) return undefined;
+  return category;
+}
+
+/**
+ * True when the merged matrix DECLARES this category as holding at most one skill.
+ * Read from the matrix passed in rather than `defaultCategories` so a source repo's
+ * category overrides are honoured.
+ *
+ * A category the matrix does not declare is deliberately NOT treated as exclusive.
+ * The wizard's renderer defaults an undeclared category to exclusive
+ * (`build-step-logic.ts` uses `cat.exclusive ?? true`), but a rule that MASKS
+ * persisted entries must only fire on a flag the data actually carries.
+ */
+function isExclusiveCategory(category: Category, matrix: MergedSkillsMatrix): boolean {
+  return matrix.categories[category]?.exclusive === true;
+}
+
+/** Categories occupied by an active project-scoped skill, per the merged matrix. */
+function activeProjectCategories(
+  projectOwnedSkills: SkillConfig[],
+  matrix: MergedSkillsMatrix,
+): Set<Category> {
+  return new Set(
+    projectOwnedSkills
+      .filter((s) => isActiveAt(s, "project"))
+      .map((s) => categoryOfSkill(s.id, matrix))
+      .filter((category): category is Category => category !== undefined),
+  );
+}
+
+/**
+ * The collision that justifies masking a live global skill. Two kinds, both read from the
+ * project's OWN entries: IDENTITY — the project owns the same id at project scope; CATEGORY —
+ * the project owns a different active skill in the same category and the matrix declares that
+ * category exclusive.
+ *
+ * Shared by the mask producer ({@link maskCollidingGlobalSkills}) and the self-heal that
+ * removes a mask once its collision clears ({@link dropOrphanedDerivedMasks}), so the two can
+ * never disagree about what a mask means.
+ */
+function buildProjectCollisionTest(
+  projectOwnedSkills: SkillConfig[],
+  matrix: MergedSkillsMatrix,
+): (id: SkillId) => boolean {
+  const ownedIds = new Set(
+    projectOwnedSkills.filter((s) => isActiveAt(s, "project")).map((s) => s.id),
+  );
+  const occupiedExclusiveCategories = new Set(
+    [...activeProjectCategories(projectOwnedSkills, matrix)].filter((category) =>
+      isExclusiveCategory(category, matrix),
+    ),
+  );
+
+  return (id) => {
+    if (ownedIds.has(id)) return true;
+    const category = categoryOfSkill(id, matrix);
+    return category !== undefined && occupiedExclusiveCategories.has(category);
+  };
+}
+
+/**
+ * Drops a derived mask that no longer masks anything, so the global install becomes
+ * visible again once the collision that produced it is gone.
+ *
+ * A derived mask and a user-authored tombstone are BYTE-IDENTICAL in config.ts — both are
+ * `{ id, scope: "global", excluded: true }` — but since D-277 the wizard can no longer mint
+ * the second kind on its own: a project-scope deselect of a globally-installed skill is
+ * refused, and a domain deselect only drops what the project owns. The one user route to a
+ * global tombstone is the `s` scope toggle (G→P), which always pairs the tombstone with an
+ * active project entry for the same id — an IDENTITY collision. So every bare mask is
+ * machine-derived, and a single retention test suffices: keep it iff the collision that
+ * would re-derive it is still there, in `required` and optional categories alike.
+ */
+function dropOrphanedDerivedMasks(
+  projectOwnedSkills: SkillConfig[],
+  matrix: MergedSkillsMatrix,
+): SkillConfig[] {
+  const collidesWithProjectOwnership = buildProjectCollisionTest(projectOwnedSkills, matrix);
+  return projectOwnedSkills.filter(
+    (entry) => !isGlobalTombstone(entry) || collidesWithProjectOwnership(entry.id),
+  );
+}
+
+/**
+ * Agent mirror of {@link dropOrphanedDerivedMasks}, identity collisions only (D-277): agents
+ * have no categories, so the project-scoped sibling with the same name is the only thing a
+ * mask can be justified by.
+ */
+function dropOrphanedDerivedAgentMasks(projectOwnedAgents: AgentScopeConfig[]): AgentScopeConfig[] {
+  const ownedNames = new Set(activeProjectAgentNames(projectOwnedAgents));
+  return projectOwnedAgents.filter(
+    (entry) => !isGlobalTombstone(entry) || ownedNames.has(entry.name),
+  );
+}
+
+/**
+ * Builds the tombstones that mask live global skills this project cannot show
+ * alongside what it already owns at project scope. Two collision kinds, both keyed
+ * against the SAME live global config:
+ *
+ * 1. IDENTITY — the project owns the same id at project scope (D-268). Without the
+ *    mask, `partitionInlinedConfigEntries` re-inlines the global copy as a SECOND
+ *    active entry, leaving one id active at BOTH scopes instead of rendering the
+ *    dual-scope `[P][G]` pair.
+ * 2. CATEGORY — the project owns a DIFFERENT active skill in the same category and
+ *    the matrix declares that category exclusive. Reconciliation keyed on identity
+ *    alone cannot see this, so a project owning Vue plus a global install of React
+ *    ends up with two active skills in a category that permits one.
+ *
+ * The project-owned skill wins locally. This is DELIBERATELY ASYMMETRIC with D-260,
+ * where a user-initiated radio swap in `toggleTechnology` refuses to displace a
+ * globally-locked skill: there the user is actively trying to drop a shared install,
+ * whereas here the collision is PUSHED IN by a global install landing on pre-existing
+ * project state. Letting global win would silently uninstall the user's own skill.
+ *
+ * Tombstones are spread from the global entry so they carry the global install's
+ * `source`. A skill the project merely inherits (no active project-scope entry, no
+ * exclusive-category collision) is skipped — it stays a single active global entry.
+ * A skill the project already tombstones is skipped so re-running is idempotent.
+ */
+function maskCollidingGlobalSkills(
+  projectOwnedSkills: SkillConfig[],
+  globalConfig: ProjectConfig,
+  matrix: MergedSkillsMatrix,
+): SkillConfig[] {
+  const collidesWithProjectOwnership = buildProjectCollisionTest(projectOwnedSkills, matrix);
+  const alreadyTombstoned = new Set(projectOwnedSkills.filter(isGlobalTombstone).map((s) => s.id));
+
+  return globalConfig.skills
+    .filter(
+      (globalEntry) =>
+        isActiveAt(globalEntry, "global") &&
+        collidesWithProjectOwnership(globalEntry.id) &&
+        !alreadyTombstoned.has(globalEntry.id),
+    )
+    .map((globalEntry) => ({ ...globalEntry, excluded: true }));
+}
+
+/**
+ * Agent mirror of {@link maskCollidingGlobalSkills}, identity collisions only (D-259).
+ * Agents have no categories, so there is no grouping dimension to reconcile.
+ */
+function maskCollidingGlobalAgents(
+  projectOwnedAgents: AgentScopeConfig[],
+  globalConfig: ProjectConfig,
+): AgentScopeConfig[] {
+  const ownedNames = new Set(activeProjectAgentNames(projectOwnedAgents));
+  const alreadyTombstoned = new Set(
+    projectOwnedAgents.filter(isGlobalTombstone).map((a) => a.name),
+  );
+
+  return globalConfig.agents
+    .filter(
+      (globalEntry) =>
+        isActiveAt(globalEntry, "global") &&
+        ownedNames.has(globalEntry.name) &&
+        !alreadyTombstoned.has(globalEntry.name),
+    )
+    .map((globalEntry) => ({ ...globalEntry, excluded: true }));
+}
+
+/**
+ * Reconciles a project's OWN entries against the live global config, immediately
+ * before the inlining writer merges the two.
+ *
+ * Applied at BOTH sites that write a project `config.ts` with `globalConfig` inlined:
+ * `propagateGlobalChangesToProjects` (a global change fanning out to registered
+ * projects) and the project-scope save branch of `writeScopedConfigs` (an ordinary
+ * project `init`/`edit` performed while the colliding skill is already active
+ * globally). Either site alone can produce the malformed shape, so both must run it.
+ *
+ * Self-heal runs BEFORE masking on BOTH axes so a mask whose collision has cleared is
+ * removed rather than immediately re-derived, and so masking's `alreadyTombstoned` guard
+ * only sees tombstones that are still warranted.
+ *
+ * Masking is PROJECT-LOCAL: it is applied to the project split only. The global
+ * config passed in is read, never rewritten — tombstones never belong in
+ * `~/.claude-src/config.ts`.
+ */
+function reconcileProjectSplitAgainstGlobal(
+  projectSplit: ProjectConfig,
+  globalConfig: ProjectConfig,
+  matrix: MergedSkillsMatrix,
+): ProjectConfig {
+  const healedSkills = dropOrphanedDerivedMasks(projectSplit.skills, matrix);
+  const healedAgents = dropOrphanedDerivedAgentMasks(projectSplit.agents);
+  return {
+    ...projectSplit,
+    skills: [...healedSkills, ...maskCollidingGlobalSkills(healedSkills, globalConfig, matrix)],
+    agents: [...healedAgents, ...maskCollidingGlobalAgents(healedAgents, globalConfig)],
+  };
+}
+
+/**
+ * Prunes a project's inlined `selectedAgents[]` symmetrically with `retainProjectOwnedAgents`.
  *
  * A registered project's stored `selectedAgents` is a flat name union that legitimately
  * contains global agent names — the inlined writer emits `union(global, project)`. Carried
@@ -879,18 +1031,22 @@ export async function propagateGlobalChangesToProjects(
         projectConfig.skills,
         globalConfig,
       );
-      const reconciledAgents = retainReconciledAgents(projectConfig.agents, globalConfig);
-      const projectSplit: ProjectConfig = {
-        ...projectConfig,
-        skills: retainReconciledSkills(projectConfig.skills, globalConfig),
-        agents: reconciledAgents,
-        stack: retainReconciledStack(projectConfig.stack, removedGlobalSkillIds),
-        selectedAgents: retainReconciledSelectedAgents(
-          projectConfig.selectedAgents,
-          reconciledAgents,
-          globalConfig,
-        ),
-      };
+      const retainedAgents = retainProjectOwnedAgents(projectConfig.agents, globalConfig);
+      const projectSplit = reconcileProjectSplitAgainstGlobal(
+        {
+          ...projectConfig,
+          skills: retainProjectOwnedSkills(projectConfig.skills, globalConfig),
+          agents: retainedAgents,
+          stack: retainReconciledStack(projectConfig.stack, removedGlobalSkillIds),
+          selectedAgents: retainReconciledSelectedAgents(
+            projectConfig.selectedAgents,
+            retainedAgents,
+            globalConfig,
+          ),
+        },
+        globalConfig,
+        matrix,
+      );
 
       // Update config.ts with re-inlined global data
       await writeConfigFile(projectSplit, projectConfigPath, {
@@ -1083,16 +1239,26 @@ export async function writeScopedConfigs(
     }
   }
 
+  // Reconcile the project's own entries against the global config this write inlines.
+  // Without it this branch hands the raw split straight to the inlining writer, so a
+  // skill/agent the project owns at project scope AND a colliding live global install
+  // both land as active entries in the same project config.
+  const reconciledProjectConfig = reconcileProjectSplitAgainstGlobal(
+    projectSplitConfig,
+    effectiveGlobalConfig,
+    matrix,
+  );
+
   // Write project config if the project installation already exists OR if there are project-scoped items.
   // Skip only when no existing project installation AND no project-scoped items — creating an empty
   // project config with just `import globalConfig` and `{ ...globalConfig }` is pointless.
   const hasProjectItems =
-    projectSplitConfig.skills.length > 0 || projectSplitConfig.agents.length > 0;
+    reconciledProjectConfig.skills.length > 0 || reconciledProjectConfig.agents.length > 0;
 
   if (projectInstallationExists || hasProjectItems) {
     // Write project config with import from global
     await ensureDir(path.dirname(projectConfigPath));
-    await writeConfigFile(projectSplitConfig, projectConfigPath, {
+    await writeConfigFile(reconciledProjectConfig, projectConfigPath, {
       isProjectConfig: true,
       globalConfig: effectiveGlobalConfig,
     });

@@ -61,6 +61,7 @@ import { fileExists } from "../../utils/fs";
 import { expectInstallResult } from "../__tests__/assertions/index.js";
 import { SKILLS } from "../__tests__/test-fixtures";
 import {
+  CATEGORY_EXCLUSIVITY_MATRIX,
   EMPTY_MATRIX,
   FULLSTACK_PAIR_MATRIX,
   FULLSTACK_TRIO_MATRIX,
@@ -2428,15 +2429,19 @@ describe("local-installer", () => {
       expect(parsedConfig.skills.some((s) => s.id === "web-testing-vitest")).toBe(true);
     });
 
-    it("preserves a skill tombstone when the global skill still exists", async () => {
+    it("preserves the dual-scope pair's tombstone while the global skill still exists", async () => {
       const projectDir = path.join(tempDir, "target-project");
       const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
       await mkdir(configDir, { recursive: true });
 
+      // Dual-scope [P][G] pair: the active project-scoped react entry is the identity
+      // collision that justifies masking the live global install of the same id. A bare
+      // tombstone with no such collision is orphaned by definition and gets self-healed.
       const projectConfig = buildProjectConfig({
         name: "target",
         skills: [
           ...buildSkillConfigs(["web-testing-vitest"]),
+          ...buildSkillConfigs(["web-framework-react"]),
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "global",
             source: "agents-inc",
@@ -2467,11 +2472,13 @@ describe("local-installer", () => {
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
       expect(
-        parsedConfig.skills.some(
-          (s) => s.id === "web-framework-react" && s.scope === "global" && s.excluded === true,
-        ),
-      ).toBe(true);
-      expect(parsedConfig.skills.some((s) => s.id === "web-testing-vitest")).toBe(true);
+        parsedConfig.skills,
+        "a tombstone whose global entry still exists must survive the write",
+      ).toStrictEqual([
+        { id: "web-framework-react", scope: "global", source: "agents-inc", excluded: true },
+        { id: "web-testing-vitest", scope: "project", source: "eject" },
+        { id: "web-framework-react", scope: "project", source: "eject" },
+      ]);
     });
 
     it("drops an agent tombstone when the global agent has been removed", async () => {
@@ -2509,16 +2516,19 @@ describe("local-installer", () => {
       expect(parsedConfig.agents.some((a) => a.name === "web-reviewer")).toBe(true);
     });
 
-    it("preserves an agent tombstone when the global agent still exists", async () => {
+    it("preserves the dual-scope pair's tombstone while the global agent still exists", async () => {
       const projectDir = path.join(tempDir, "target-project");
       const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
       await mkdir(configDir, { recursive: true });
 
+      // Dual-scope [P][G] pair: agents have no categories, so the active project-scoped
+      // sibling of the same name is the only collision an agent mask can rest on.
       const projectConfig = buildProjectConfig({
         name: "target",
         skills: [],
         agents: [
           ...buildAgentConfigs(["web-reviewer"]),
+          ...buildAgentConfigs(["web-developer"]),
           ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
         ],
       });
@@ -2541,11 +2551,13 @@ describe("local-installer", () => {
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
       expect(
-        parsedConfig.agents.some(
-          (a) => a.name === "web-developer" && a.scope === "global" && a.excluded === true,
-        ),
-      ).toBe(true);
-      expect(parsedConfig.agents.some((a) => a.name === "web-reviewer")).toBe(true);
+        parsedConfig.agents,
+        "a tombstone whose global entry still exists must survive the write",
+      ).toStrictEqual([
+        { name: "web-developer", scope: "global", excluded: true },
+        { name: "web-reviewer", scope: "project" },
+        { name: "web-developer", scope: "project" },
+      ]);
     });
   });
 
@@ -2779,6 +2791,626 @@ describe("local-installer", () => {
       );
 
       expect(result).toStrictEqual({ updated: [], skipped: [ghostDir] });
+    });
+  });
+
+  /**
+   * Category exclusivity ("at most one skill selected in this category") must
+   * hold on the persisted project config, not only inside the build step's
+   * keypress handler. Both cross-scope write paths reconcile on identity alone
+   * (skill id / agent name), so a project owning ONE skill of an exclusive
+   * category while a DIFFERENT skill of that same category is active at global
+   * scope ends up with two active skills in one exclusive category. The global
+   * side must be masked with a `{ scope: "global", excluded: true }` tombstone —
+   * the project's own skill wins locally and the pair renders dual-scope.
+   *
+   * The two write paths are covered separately because either one alone
+   * reproduces the malformed shape:
+   *   - `propagateGlobalChangesToProjects` — a global install/edit fanning out
+   *     to an already-registered project.
+   *   - the project-scope save branch of `writeScopedConfigs` — an ordinary
+   *     project `init`/`edit` performed while the colliding skill is already
+   *     active globally, with the project NOT registered in `projects[]` so
+   *     propagation never runs.
+   */
+  describe("cross-scope category exclusivity", () => {
+    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
+    // callees require Record<AgentName, AgentDefinition>.
+    const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
+
+    describe("propagateGlobalChangesToProjects", () => {
+      it("masks the global skill that collides with a project-owned skill in an exclusive category", async () => {
+        const projectDir = path.join(tempDir, "registered-project");
+        const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+        await mkdir(configDir, { recursive: true });
+        const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+
+        // The project owns Vue at project scope; web-framework is exclusive.
+        await writeConfigFile(
+          buildProjectConfig({
+            name: "target",
+            skills: buildSkillConfigs(["web-framework-vue-composition-api"]),
+            agents: [],
+          }),
+          configPath,
+        );
+
+        // A global install just made React active in that same exclusive category.
+        const globalConfig = buildProjectConfig({
+          name: "global",
+          skills: buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+          agents: [],
+          projects: [projectDir],
+        });
+
+        await propagateGlobalChangesToProjects(
+          globalConfig,
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+        );
+
+        const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+        expect(
+          parsedConfig.skills,
+          "an exclusive category must hold exactly one active skill per project",
+        ).toStrictEqual([
+          {
+            id: "web-framework-react",
+            scope: "global",
+            source: "agents-inc",
+            excluded: true,
+          },
+          { id: "web-framework-vue-composition-api", scope: "project", source: "eject" },
+        ]);
+      });
+
+      it("reactivates the masked global skill once the project owns nothing in that exclusive category", async () => {
+        const projectDir = path.join(tempDir, "registered-project");
+        const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+        await mkdir(configDir, { recursive: true });
+        const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+
+        // Post-masking state with the project's own framework skill removed:
+        // the mask has nothing left to mask, so it must not survive.
+        await writeConfigFile(
+          buildProjectConfig({
+            name: "target",
+            skills: buildSkillConfigs(["web-framework-react"], {
+              scope: "global",
+              source: "agents-inc",
+              excluded: true,
+            }),
+            agents: [],
+          }),
+          configPath,
+        );
+
+        const globalConfig = buildProjectConfig({
+          name: "global",
+          skills: buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+          agents: [],
+          projects: [projectDir],
+        });
+
+        await propagateGlobalChangesToProjects(
+          globalConfig,
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+        );
+
+        const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+        expect(
+          parsedConfig.skills,
+          "a mask must not outlive the collision that produced it",
+        ).toStrictEqual([{ id: "web-framework-react", scope: "global", source: "agents-inc" }]);
+      });
+
+      it("reactivates the masked global skill once the project owns nothing in an optional exclusive category", async () => {
+        const projectDir = path.join(tempDir, "registered-project");
+        const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+        await mkdir(configDir, { recursive: true });
+        const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+
+        // web-client-state is exclusive but NOT required. The project's own
+        // client-state skill is gone, so the mask no longer masks anything and
+        // must not survive the next reconciled write.
+        await writeConfigFile(
+          buildProjectConfig({
+            name: "target",
+            skills: buildSkillConfigs(["web-state-zustand"], {
+              scope: "global",
+              source: "agents-inc",
+              excluded: true,
+            }),
+            agents: [],
+          }),
+          configPath,
+        );
+
+        const globalConfig = buildProjectConfig({
+          name: "global",
+          skills: buildSkillConfigs(["web-state-zustand"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+          agents: [],
+          projects: [projectDir],
+        });
+
+        await propagateGlobalChangesToProjects(
+          globalConfig,
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+        );
+
+        const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+        expect(
+          parsedConfig.skills,
+          "a mask must not outlive its collision, exclusive category required or not",
+        ).toStrictEqual([{ id: "web-state-zustand", scope: "global", source: "agents-inc" }]);
+      });
+
+      it("retains the mask while the project still owns a colliding skill in an optional exclusive category", async () => {
+        const projectDir = path.join(tempDir, "registered-project");
+        const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+        await mkdir(configDir, { recursive: true });
+        const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+
+        // Pinia at project scope still collides with the global zustand install
+        // in the same exclusive category, so the mask is still warranted.
+        await writeConfigFile(
+          buildProjectConfig({
+            name: "target",
+            skills: [
+              ...buildSkillConfigs(["web-state-pinia"]),
+              ...buildSkillConfigs(["web-state-zustand"], {
+                scope: "global",
+                source: "agents-inc",
+                excluded: true,
+              }),
+            ],
+            agents: [],
+          }),
+          configPath,
+        );
+
+        const globalConfig = buildProjectConfig({
+          name: "global",
+          skills: buildSkillConfigs(["web-state-zustand"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+          agents: [],
+          projects: [projectDir],
+        });
+
+        await propagateGlobalChangesToProjects(
+          globalConfig,
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+        );
+
+        const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+        expect(
+          parsedConfig.skills,
+          "an exclusive category must hold exactly one active skill per project",
+        ).toStrictEqual([
+          { id: "web-state-zustand", scope: "global", source: "agents-inc", excluded: true },
+          { id: "web-state-pinia", scope: "project", source: "eject" },
+        ]);
+      });
+
+      it("drops an orphaned agent mask once the project no longer owns that agent", async () => {
+        const projectDir = path.join(tempDir, "registered-project");
+        const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+        await mkdir(configDir, { recursive: true });
+        const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+
+        // Agent mirror of the identity self-heal: the project-scoped sibling that
+        // justified the mask is gone, so the global agent must become visible again.
+        await writeConfigFile(
+          buildProjectConfig({
+            name: "target",
+            skills: [],
+            agents: buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
+          }),
+          configPath,
+        );
+
+        const globalConfig = buildProjectConfig({
+          name: "global",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+          projects: [projectDir],
+        });
+
+        await propagateGlobalChangesToProjects(
+          globalConfig,
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+        );
+
+        const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+        expect(
+          parsedConfig.agents,
+          "an agent mask must not outlive the project-owned sibling that produced it",
+        ).toStrictEqual([{ name: "web-developer", scope: "global" }]);
+      });
+
+      it("keeps exactly one tombstone when the same global change propagates twice", async () => {
+        const projectDir = path.join(tempDir, "registered-project");
+        const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+        await mkdir(configDir, { recursive: true });
+        const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+
+        await writeConfigFile(
+          buildProjectConfig({
+            name: "target",
+            skills: buildSkillConfigs(["web-framework-vue-composition-api"]),
+            agents: [],
+          }),
+          configPath,
+        );
+
+        const globalConfig = buildProjectConfig({
+          name: "global",
+          skills: buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+          agents: [],
+          projects: [projectDir],
+        });
+
+        await propagateGlobalChangesToProjects(
+          globalConfig,
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+        );
+        const afterFirstRun = await readFile(configPath, "utf-8");
+
+        await propagateGlobalChangesToProjects(
+          globalConfig,
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+        );
+        const afterSecondRun = await readFile(configPath, "utf-8");
+
+        expect(afterSecondRun, "propagation must be idempotent").toBe(afterFirstRun);
+
+        const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+        expect(parsedConfig.skills).toStrictEqual([
+          {
+            id: "web-framework-react",
+            scope: "global",
+            source: "agents-inc",
+            excluded: true,
+          },
+          { id: "web-framework-vue-composition-api", scope: "project", source: "eject" },
+        ]);
+      });
+
+      it("leaves a project-owned skill unmasked when the colliding global skill is in a non-exclusive category", async () => {
+        const projectDir = path.join(tempDir, "registered-project");
+        const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+        await mkdir(configDir, { recursive: true });
+        const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+
+        // web-styling is non-exclusive: SCSS at project scope and Tailwind at
+        // global scope coexist, so neither side may gain a tombstone.
+        await writeConfigFile(
+          buildProjectConfig({
+            name: "target",
+            skills: buildSkillConfigs(["web-styling-scss-modules"]),
+            agents: [],
+          }),
+          configPath,
+        );
+
+        const globalConfig = buildProjectConfig({
+          name: "global",
+          skills: buildSkillConfigs(["web-styling-tailwind"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+          agents: [],
+          projects: [projectDir],
+        });
+
+        await propagateGlobalChangesToProjects(
+          globalConfig,
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+        );
+        const afterFirstRun = await readFile(configPath, "utf-8");
+
+        await propagateGlobalChangesToProjects(
+          globalConfig,
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+        );
+
+        expect(await readFile(configPath, "utf-8")).toBe(afterFirstRun);
+
+        const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+        expect(
+          parsedConfig.skills,
+          "a non-exclusive category must keep both scopes active",
+        ).toStrictEqual([
+          { id: "web-styling-tailwind", scope: "global", source: "agents-inc" },
+          { id: "web-styling-scss-modules", scope: "project", source: "eject" },
+        ]);
+      });
+    });
+
+    /**
+     * The project-scope save branch performs no reconciliation at all: it splits
+     * `finalConfig` by scope and hands the project half straight to the inlining
+     * writer alongside the live global config. Propagation only escapes the bug
+     * because it pre-synthesizes tombstones before calling the same writer, so
+     * every case below is reproduced with the project deliberately absent from
+     * the global config's `projects[]` — propagation never runs.
+     */
+    describe("writeScopedConfigs — project-scope save", () => {
+      const fakeHomeHandle = useFakeHome(() => tempDir);
+
+      it("masks the live global skill that collides with the project's own skill in an exclusive category", async () => {
+        const globalConfigPath = path.join(
+          fakeHomeHandle.dir,
+          CLAUDE_SRC_DIR,
+          STANDARD_FILES.CONFIG_TS,
+        );
+        await mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await writeConfigFile(
+          buildProjectConfig({
+            name: "global",
+            skills: buildSkillConfigs(["web-framework-react"], {
+              scope: "global",
+              source: "agents-inc",
+            }),
+            agents: [],
+          }),
+          globalConfigPath,
+        );
+
+        const projectDir = path.join(tempDir, "project");
+        const projectConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+        await mkdir(path.dirname(projectConfigPath), { recursive: true });
+
+        await writeScopedConfigs(
+          buildProjectConfig({
+            name: "target",
+            skills: buildSkillConfigs(["web-framework-vue-composition-api"]),
+            agents: [],
+          }),
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+          projectDir,
+          projectConfigPath,
+          true,
+        );
+
+        const parsedConfig = await readTestTsConfig<ProjectConfig>(projectConfigPath);
+        expect(
+          parsedConfig.skills,
+          "an exclusive category must hold exactly one active skill per project",
+        ).toStrictEqual([
+          {
+            id: "web-framework-react",
+            scope: "global",
+            source: "agents-inc",
+            excluded: true,
+          },
+          { id: "web-framework-vue-composition-api", scope: "project", source: "eject" },
+        ]);
+      });
+
+      it("masks the live global install of a skill the project also owns at project scope", async () => {
+        const globalConfigPath = path.join(
+          fakeHomeHandle.dir,
+          CLAUDE_SRC_DIR,
+          STANDARD_FILES.CONFIG_TS,
+        );
+        await mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await writeConfigFile(
+          buildProjectConfig({
+            name: "global",
+            skills: buildSkillConfigs(["web-testing-vitest"], { scope: "global" }),
+            agents: [],
+          }),
+          globalConfigPath,
+        );
+
+        const projectDir = path.join(tempDir, "project");
+        const projectConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+        await mkdir(path.dirname(projectConfigPath), { recursive: true });
+
+        await writeScopedConfigs(
+          buildProjectConfig({
+            name: "target",
+            skills: buildSkillConfigs(["web-testing-vitest"]),
+            agents: [],
+          }),
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+          projectDir,
+          projectConfigPath,
+          true,
+        );
+
+        const parsedConfig = await readTestTsConfig<ProjectConfig>(projectConfigPath);
+        expect(
+          parsedConfig.skills,
+          "one id must never be active at both scopes in the same project",
+        ).toStrictEqual([
+          { id: "web-testing-vitest", scope: "global", source: "eject", excluded: true },
+          { id: "web-testing-vitest", scope: "project", source: "eject" },
+        ]);
+      });
+
+      it("masks the live global install of an agent the project also owns at project scope", async () => {
+        const globalConfigPath = path.join(
+          fakeHomeHandle.dir,
+          CLAUDE_SRC_DIR,
+          STANDARD_FILES.CONFIG_TS,
+        );
+        await mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await writeConfigFile(
+          buildProjectConfig({
+            name: "global",
+            skills: [],
+            agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+          }),
+          globalConfigPath,
+        );
+
+        const projectDir = path.join(tempDir, "project");
+        const projectConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+        await mkdir(path.dirname(projectConfigPath), { recursive: true });
+
+        await writeScopedConfigs(
+          buildProjectConfig({
+            name: "target",
+            skills: [],
+            agents: buildAgentConfigs(["web-developer"]),
+          }),
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+          projectDir,
+          projectConfigPath,
+          true,
+        );
+
+        const parsedConfig = await readTestTsConfig<ProjectConfig>(projectConfigPath);
+        expect(
+          parsedConfig.agents,
+          "one agent name must never be active at both scopes in the same project",
+        ).toStrictEqual([
+          { name: "web-developer", scope: "global", excluded: true },
+          { name: "web-developer", scope: "project" },
+        ]);
+      });
+
+      it("reconciles an unpaired ownership alongside an already-paired one in the same write", async () => {
+        const globalConfigPath = path.join(
+          fakeHomeHandle.dir,
+          CLAUDE_SRC_DIR,
+          STANDARD_FILES.CONFIG_TS,
+        );
+        await mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await writeConfigFile(
+          buildProjectConfig({
+            name: "global",
+            skills: [
+              ...buildSkillConfigs(["web-framework-react"], {
+                scope: "global",
+                source: "agents-inc",
+              }),
+              ...buildSkillConfigs(["web-testing-vitest"], { scope: "global" }),
+            ],
+            agents: [],
+          }),
+          globalConfigPath,
+        );
+
+        const projectDir = path.join(tempDir, "project");
+        const projectConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+        await mkdir(path.dirname(projectConfigPath), { recursive: true });
+
+        // React arrives already paired (an earlier scope toggle wrote its
+        // tombstone); vitest arrives owned at project scope with no tombstone.
+        await writeScopedConfigs(
+          buildProjectConfig({
+            name: "target",
+            skills: [
+              ...buildSkillConfigs(["web-framework-react"]),
+              ...buildSkillConfigs(["web-framework-react"], {
+                scope: "global",
+                source: "agents-inc",
+                excluded: true,
+              }),
+              ...buildSkillConfigs(["web-testing-vitest"]),
+            ],
+            agents: [],
+          }),
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+          projectDir,
+          projectConfigPath,
+          true,
+        );
+
+        const parsedConfig = await readTestTsConfig<ProjectConfig>(projectConfigPath);
+        expect(
+          parsedConfig.skills.filter((s) => s.id === "web-framework-react"),
+          "an already-paired entry must survive the write unchanged",
+        ).toStrictEqual([
+          {
+            id: "web-framework-react",
+            scope: "global",
+            source: "agents-inc",
+            excluded: true,
+          },
+          { id: "web-framework-react", scope: "project", source: "eject" },
+        ]);
+        expect(
+          parsedConfig.skills.filter((s) => s.id === "web-testing-vitest"),
+          "an unpaired ownership must be reconciled by the same write",
+        ).toStrictEqual([
+          { id: "web-testing-vitest", scope: "global", source: "eject", excluded: true },
+          { id: "web-testing-vitest", scope: "project", source: "eject" },
+        ]);
+      });
+
+      it("never writes a tombstone into the global config", async () => {
+        const globalConfigPath = path.join(
+          fakeHomeHandle.dir,
+          CLAUDE_SRC_DIR,
+          STANDARD_FILES.CONFIG_TS,
+        );
+        await mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await writeConfigFile(
+          buildProjectConfig({
+            name: "global",
+            skills: buildSkillConfigs(["web-framework-react"], {
+              scope: "global",
+              source: "agents-inc",
+            }),
+            agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+          }),
+          globalConfigPath,
+        );
+
+        const projectDir = path.join(tempDir, "project");
+        const projectConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+        await mkdir(path.dirname(projectConfigPath), { recursive: true });
+
+        await writeScopedConfigs(
+          buildProjectConfig({
+            name: "target",
+            skills: buildSkillConfigs(["web-framework-vue-composition-api"]),
+            agents: buildAgentConfigs(["web-developer"]),
+          }),
+          CATEGORY_EXCLUSIVITY_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+          projectDir,
+          projectConfigPath,
+          true,
+        );
+
+        const parsedGlobal = await readTestTsConfig<ProjectConfig>(globalConfigPath);
+        expect(
+          parsedGlobal.skills,
+          "masking is project-local — the global config must stay untouched",
+        ).toStrictEqual([{ id: "web-framework-react", scope: "global", source: "agents-inc" }]);
+        expect(parsedGlobal.agents).toStrictEqual([{ name: "web-developer", scope: "global" }]);
+      });
     });
   });
 });

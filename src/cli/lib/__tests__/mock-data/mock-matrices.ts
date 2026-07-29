@@ -68,6 +68,33 @@ export const REACT_ZUSTAND_HONO_MATRIX = createMockMatrix(
   SKILLS.hono,
 );
 
+/**
+ * Two frameworks in an exclusive + required category, two client-state skills in
+ * an exclusive but OPTIONAL one, two styling skills in a non-exclusive one, plus
+ * a non-exclusive testing category. Use when a test needs the category
+ * `exclusive` / `required` flags to be real — the default `createMockMatrix`
+ * categories map is empty, so every category reads as "undefined flags" and
+ * exclusivity rules can never fire. The exclusive+optional category is the one
+ * shape that separates "exclusive" from "exclusive AND required" rules.
+ */
+export const CATEGORY_EXCLUSIVITY_MATRIX = createMockMatrix(
+  SKILLS.react,
+  SKILLS.vue,
+  SKILLS.zustand,
+  SKILLS.pinia,
+  SKILLS.scss,
+  SKILLS.tailwind,
+  SKILLS.vitest,
+  {
+    categories: buildCategoryMap({
+      "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true, required: true },
+      "web-client-state": { ...TEST_CATEGORIES.clientState, exclusive: true, required: false },
+      "web-styling": { ...TEST_CATEGORIES.styling, exclusive: false },
+      "web-testing": { ...TEST_CATEGORIES.testing, exclusive: false },
+    }),
+  },
+);
+
 export const CATEGORY_GRID_MATRIX = createMockMatrix(
   ...CATEGORY_GRID_SKILLS.map(({ id, displayName, category }) =>
     createMockSkill(id, { displayName, category }),
