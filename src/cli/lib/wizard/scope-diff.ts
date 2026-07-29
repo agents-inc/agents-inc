@@ -55,13 +55,13 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
   const excludedGlobalAgents = currentAgents.filter((a) => a.scope === "global" && !!a.excluded);
 
   const prevSkillKeySet = installedSkillConfigs
-    ? new Set(installedSkillConfigs.map((s) => `${s.id}:${s.scope}`))
+    ? new Set(installedSkillConfigs.map((s) => skillSlotKey(s.id, s.scope)))
     : null;
   const prevSourceMap = installedSkillConfigs
     ? new Map(
         installedSkillConfigs
           .filter((s) => !s.excluded)
-          .map((s) => [`${s.id}:${s.scope}`, s.source]),
+          .map((s) => [skillSlotKey(s.id, s.scope), s.source]),
       )
     : null;
   const prevAgentKeySet = installedAgentConfigs
@@ -162,6 +162,16 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
   return { projectSkillRows, globalSkillRows, projectAgentRows, globalAgentRows, hasContent };
 }
 
+/**
+ * The `(id, scope)` SLOT key this module diffs on. Exported so every surface that computes its own
+ * session diff — notably the wizard store's Sources tab — keys on the same slot rather than on the
+ * id alone, which is what let one skill read as added on one surface and unchanged on the other
+ * (todo/D-271 secondary hardening).
+ */
+export function skillSlotKey(id: SkillId, scope: SkillScope | undefined): string {
+  return `${id}:${scope}`;
+}
+
 export type ScopeBadges = {
   scope: SkillScope | undefined;
   secondaryScope: SkillScope | undefined;
@@ -194,7 +204,7 @@ function classifyDiffRow(
   prevKeySet: Set<string> | null,
   prevSourceMap: Map<string, string> | null,
 ): SkillDiffRow {
-  const key = `${skill.id}:${skill.scope}`;
+  const key = skillSlotKey(skill.id, skill.scope);
   const isNew = prevKeySet === null || !prevKeySet.has(key);
   const prevSource = prevSourceMap?.get(key);
   const sourceChanged = !isNew && prevSource != null && prevSource !== skill.source;

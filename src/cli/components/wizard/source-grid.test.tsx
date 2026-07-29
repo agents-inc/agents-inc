@@ -1,9 +1,10 @@
+import chalk from "chalk";
 import { render } from "ink-testing-library";
 import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 import { SourceGrid, type SourceGridProps, type SourceRow, type SourceOption } from "./source-grid";
 import type { BoundSkillCandidate, SkillId, SkillScope } from "../../types";
-import { UI_SYMBOLS } from "../../consts";
-import { initializeMatrix } from "../../lib/matrix/matrix-provider";
+import { CLI_COLORS, UI_SYMBOLS } from "../../consts";
+import { getSkillById, initializeMatrix } from "../../lib/matrix/matrix-provider";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { createMockSkill } from "../../lib/__tests__/factories/skill-factories";
 import { createMockMatrix } from "../../lib/__tests__/factories/matrix-factories";
@@ -20,6 +21,9 @@ import {
   INPUT_DELAY_MS,
   delay,
 } from "../../lib/__tests__/test-constants";
+
+/** chalk's truecolor level — the 24-bit mode that emits the hex colours CLI_COLORS declares. */
+const TRUECOLOR_CHALK_LEVEL = 3;
 
 const createSourceOption = (id: string, overrides: Partial<SourceOption> = {}): SourceOption => ({
   id,
@@ -48,6 +52,16 @@ const createRemovedRow = (
 ): SourceRow => ({
   ...createSourceRow(skillId, options, scope),
   disabled: true,
+});
+
+/** A skill selected this session but absent from the saved config: visible, editable, marked added. */
+const createAddedRow = (
+  skillId: SkillId,
+  options: SourceOption[],
+  scope: SkillScope,
+): SourceRow => ({
+  ...createSourceRow(skillId, options, scope),
+  added: true,
 });
 
 const defaultRows: SourceRow[] = [
@@ -995,6 +1009,210 @@ describe("SourceGrid component", () => {
       cleanup = unmount;
 
       expect(lastFrame()).not.toContain(UI_SYMBOLS.CHEVRON);
+    });
+
+    /**
+     * A skill installed at BOTH scopes whose project copy is removed this session: the surviving
+     * global install renders as a locked row and the emptied project slot as a pending-removal
+     * row, so ONE skill occupies TWO rows — the shape the confirm step already prints as `-` at
+     * Project plus `•` at Global. Both rows are inert, and `groupRowsByScope` labels the sections
+     * because both scopes are present.
+     */
+    describe("collapsed dual-scope pair", () => {
+      const COLLAPSED_SKILL_ID: SkillId = "web-framework-react";
+      const UNTOUCHED_SKILL_ID: SkillId = "web-state-zustand";
+
+      const collapsedPairRows: SourceRow[] = [
+        createSourceRow(
+          COLLAPSED_SKILL_ID,
+          [createSourceOption("public", { selected: true })],
+          "global",
+          true,
+        ),
+        createRemovedRow(
+          COLLAPSED_SKILL_ID,
+          [createSourceOption("public", { selected: true })],
+          "project",
+        ),
+      ];
+
+      /**
+       * Ink colourises through chalk, and chalk disables itself on vitest's non-TTY stdout — the
+       * frame would come back stripped of colour, making a colour assertion unobservable. Forcing
+       * truecolor for the duration of these tests renders what a user sees in a real terminal.
+       */
+      let previousChalkLevel: typeof chalk.level;
+
+      beforeEach(() => {
+        previousChalkLevel = chalk.level;
+        chalk.level = TRUECOLOR_CHALK_LEVEL;
+      });
+
+      afterEach(() => {
+        chalk.level = previousChalkLevel;
+      });
+
+      it("should render the same skill in both scope sections, locked at global and pending removal at project", () => {
+        const { lastFrame, unmount } = renderGrid({ rows: collapsedPairRows });
+        cleanup = unmount;
+
+        const output = lastFrame()!;
+        const skillName = getSkillById(COLLAPSED_SKILL_ID).displayName;
+        // Both scope sections are labelled, and the skill name appears once under each — proven by
+        // its two distinct role prefixes rather than by counting occurrences.
+        expect(output).toContain("Global");
+        expect(output).toContain("Project");
+        expect(
+          output,
+          `the surviving global install must keep its lock. Frame:\n${JSON.stringify(output)}`,
+        ).toContain(`${UI_SYMBOLS.LOCK} ${skillName}`);
+        expect(
+          output,
+          `the emptied project slot must carry the removal marker. Frame:\n${JSON.stringify(output)}`,
+        ).toContain(`${UI_SYMBOLS.REMOVED} ${skillName}`);
+        // Neither half is an addition, and the removal half is not a second lock.
+        expect(output).not.toContain(`${UI_SYMBOLS.ADDED} ${skillName}`);
+      });
+
+      it("should render the project instance of the pair in the removed-diff colour", () => {
+        const { lastFrame, unmount } = renderGrid({ rows: collapsedPairRows });
+        cleanup = unmount;
+
+        const output = lastFrame()!;
+        const skillName = getSkillById(COLLAPSED_SKILL_ID).displayName;
+        // Same red the info panel prints removals in (DIFF_COLOR in skill-agent-summary.tsx), so
+        // the pair reads as "removed here, kept there" on both surfaces. Unfocused: focus seeds on
+        // the first FOCUSABLE row and every row here is inert, so no row paints its focus form.
+        expect(
+          output,
+          `the pending-removal row must render in the removed-diff colour. Frame:\n${JSON.stringify(output)}`,
+        ).toContain(chalk.hex(CLI_COLORS.ERROR)(`${UI_SYMBOLS.REMOVED} ${skillName}`));
+      });
+
+      it("should not fire onSelect when space is pressed on an all-inert collapsed pair", async () => {
+        const onSelect = vi.fn();
+        const { stdin, unmount } = renderGrid({
+          rows: collapsedPairRows,
+          defaultFocusedRow: 0,
+          defaultFocusedCol: 0,
+          onSelect,
+        });
+        cleanup = unmount;
+
+        await delay(RENDER_DELAY_MS);
+        stdin.write(SPACE);
+        await delay(INPUT_DELAY_MS);
+
+        expect(onSelect).not.toHaveBeenCalled();
+      });
+
+      it("should not show focus highlight on either row of the collapsed pair", () => {
+        const { lastFrame, unmount } = renderGrid({
+          rows: collapsedPairRows,
+          defaultFocusedRow: 0,
+          defaultFocusedCol: 0,
+        });
+        cleanup = unmount;
+
+        expect(lastFrame()).not.toContain(UI_SYMBOLS.CHEVRON);
+      });
+
+      it("should skip both rows of the collapsed pair and act on the editable row instead", async () => {
+        const onSelect = vi.fn();
+        const { stdin, unmount } = renderGrid({
+          rows: [
+            ...collapsedPairRows,
+            createSourceRow(
+              UNTOUCHED_SKILL_ID,
+              [createSourceOption("public", { selected: true })],
+              "project",
+            ),
+          ],
+          // The locked half of the pair — focus must fall through it AND the pending-removal row.
+          defaultFocusedRow: 0,
+          defaultFocusedCol: 0,
+          onSelect,
+        });
+        cleanup = unmount;
+
+        await delay(RENDER_DELAY_MS);
+        stdin.write(SPACE);
+        await delay(INPUT_DELAY_MS);
+
+        expect(onSelect).toHaveBeenCalledWith(UNTOUCHED_SKILL_ID, "public");
+        expect(onSelect).not.toHaveBeenCalledWith(COLLAPSED_SKILL_ID, "public");
+      });
+    });
+  });
+
+  describe("added rows", () => {
+    const ADDED_SKILL_ID: SkillId = "web-framework-react";
+
+    const addedRows: SourceRow[] = [
+      createAddedRow(ADDED_SKILL_ID, [createSourceOption("public", { selected: true })], "project"),
+      createSourceRow(
+        "web-state-zustand",
+        [createSourceOption("public", { selected: true })],
+        "project",
+      ),
+    ];
+
+    /**
+     * Ink colourises through chalk, and chalk disables itself on vitest's non-TTY stdout — every
+     * frame would come back stripped of colour, making a colour assertion unobservable. Forcing
+     * truecolor for the duration of these tests renders what a user sees in a real terminal.
+     */
+    let previousChalkLevel: typeof chalk.level;
+
+    beforeEach(() => {
+      previousChalkLevel = chalk.level;
+      chalk.level = TRUECOLOR_CHALK_LEVEL;
+    });
+
+    afterEach(() => {
+      chalk.level = previousChalkLevel;
+    });
+
+    it("should mark the added skill with the added marker", () => {
+      const { lastFrame, unmount } = renderGrid({
+        rows: addedRows,
+        defaultFocusedRow: 1,
+        defaultFocusedCol: 0,
+      });
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      // Same marker the info panel prints for additions, so both surfaces read consistently.
+      expect(output).toContain(`${UI_SYMBOLS.ADDED} ${getSkillById(ADDED_SKILL_ID).displayName}`);
+    });
+
+    it("should keep the added-diff colour on the added row while it is focused", () => {
+      const { lastFrame, unmount } = renderGrid({
+        rows: addedRows,
+        defaultFocusedRow: 0,
+        defaultFocusedCol: 0,
+      });
+      cleanup = unmount;
+
+      // The focused branch renders the status glyph (`+ `) followed by the focus-padded
+      // name (` React `), on the focus background.
+      const focusedLabel = `${UI_SYMBOLS.ADDED}  ${getSkillById(ADDED_SKILL_ID).displayName} `;
+      const output = lastFrame()!;
+
+      // Focus must stay visible (background highlight) AND the label must keep the added-diff
+      // green the info panel uses (DIFF_COLOR in skill-agent-summary.tsx) — focus is not a
+      // reason to lose the diff signal.
+      expect(
+        output,
+        `a focused added row must keep its added-diff colour. Frame:\n${JSON.stringify(output)}`,
+      ).toContain(chalk.bgHex(CLI_COLORS.LABEL_BG)(chalk.hex(CLI_COLORS.SUCCESS)(focusedLabel)));
+
+      // Today's rendering: focus overrides the label colour with plain white, so the row reads
+      // as an ordinary focused row and the addition becomes invisible in colour terms.
+      expect(
+        output,
+        "a focused added row must not fall back to the plain white label colour",
+      ).not.toContain(chalk.bgHex(CLI_COLORS.LABEL_BG)(chalk.hex(CLI_COLORS.WHITE)(focusedLabel)));
     });
   });
 });

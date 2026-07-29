@@ -413,7 +413,7 @@ describe("WizardStore", () => {
       expect(toastMessage).toBe("Global skills cannot be changed from project scope");
     });
 
-    it("should allow toggling globally installed skills during init mode (preselections)", () => {
+    it("should block toggling globally installed skills in init mode too, with the same toastMessage", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
       useWizardStore.setState({
@@ -424,9 +424,15 @@ describe("WizardStore", () => {
 
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
 
-      const { domainSelections, toastMessage } = useWizardStore.getState();
-      expect(domainSelections.web!["web-framework"]).toStrictEqual([]);
-      expect(toastMessage).toBeNull();
+      const { domainSelections, skillConfigs, toastMessage } = useWizardStore.getState();
+      expect(domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
+      expect(
+        skillConfigs,
+        "a blocked deselect must leave the global entry active — no tombstone",
+      ).toStrictEqual(
+        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+      );
+      expect(toastMessage).toBe("Global skills cannot be changed from project scope");
     });
 
     it("should block selecting a different skill in an exclusive category when it would implicitly deselect a global skill", () => {
@@ -1268,6 +1274,40 @@ describe("WizardStore", () => {
       expect(useWizardStore.getState().skillConfigs).toStrictEqual(dualScope());
     });
 
+    it("writes no tombstone when a project skill re-scoped to global in-session is then deselected", () => {
+      // The snapshot holds the skill at PROJECT scope only — nothing is installed globally.
+      // `s` rescopes it to global in-session, so the live entry now reads `scope: "global"`
+      // while the snapshot still says project. A deselect here has no global install to
+      // protect and no project override to record, so it must never mint a tombstone.
+      const store = useWizardStore.getState();
+      useWizardStore.setState({
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          source: "agents-inc",
+        }),
+        isEditingFromGlobalScope: false,
+        isInitMode: false,
+        toastMessage: null,
+      });
+
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      store.toggleSkillScope("web-framework-react");
+      expect(useWizardStore.getState().skillConfigs).toStrictEqual(
+        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+      );
+
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+
+      const { skillConfigs } = useWizardStore.getState();
+      expect(
+        skillConfigs.filter((sc) => sc.excluded),
+        "a skill never installed globally must not gain a global tombstone",
+      ).toStrictEqual([]);
+      expect(skillConfigs).toStrictEqual(
+        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+      );
+    });
+
     it("should set and clear focusedSkillId", () => {
       const store = useWizardStore.getState();
 
@@ -1505,6 +1545,77 @@ describe("WizardStore", () => {
 
       // Global-scope edit has no overlay: both skills are uninstalled cleanly, no tombstone.
       expect(useWizardStore.getState().skillConfigs).toStrictEqual([]);
+    });
+
+    it("leaves every globally installed entry untouched when a domain is deselected at project scope", () => {
+      // Deselecting a domain at project scope is a VIEW FILTER: it hides the domain and drops
+      // what the project owns there, but it has no authority over the global install.
+      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
+      const store = useWizardStore.getState();
+      store.toggleDomain("web");
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      store.toggleTechnology("web", "web-client-state", "web-state-zustand", false);
+      useWizardStore.setState({
+        skillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-state-zustand"], { scope: "project", source: "agents-inc" }),
+        ],
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+        isEditingFromGlobalScope: false,
+        isInitMode: false,
+      });
+      const globalEntriesBefore = useWizardStore
+        .getState()
+        .skillConfigs.filter((sc) => sc.scope === "global");
+
+      store.toggleDomain("web");
+
+      const { skillConfigs, selectedDomains, domainSelections } = useWizardStore.getState();
+      expect(
+        skillConfigs.filter((sc) => sc.scope === "global"),
+        "global entries must survive a project-scope domain deselect byte-identical",
+      ).toStrictEqual(globalEntriesBefore);
+      expect(skillConfigs, "only the domain's project-scoped entries are dropped").toStrictEqual(
+        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+      );
+      expect(selectedDomains).toStrictEqual([]);
+      expect(domainSelections.web).toBeUndefined();
+    });
+
+    it("collapses a dual-scope pair to one inherited global entry when its domain is deselected", () => {
+      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
+      const dualScope = (): SkillConfig[] => [
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+        ...buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+          excluded: true,
+        }),
+      ];
+      const store = useWizardStore.getState();
+      store.toggleDomain("web");
+      useWizardStore.setState({
+        domainSelections: { web: { "web-framework": ["web-framework-react"] } },
+        skillConfigs: dualScope(),
+        installedSkillConfigs: dualScope(),
+        isEditingFromGlobalScope: false,
+        isInitMode: false,
+      });
+
+      store.toggleDomain("web");
+
+      const { skillConfigs, selectedDomains, domainSelections } = useWizardStore.getState();
+      expect(
+        skillConfigs,
+        "both halves of the pair are dropped and the still-live global install re-surfaces",
+      ).toStrictEqual(
+        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+      );
+      expect(selectedDomains).toStrictEqual([]);
+      expect(domainSelections.web).toBeUndefined();
     });
 
     it("should reset skillConfigs and focusedSkillId on reset", () => {
@@ -1964,12 +2075,25 @@ describe("WizardStore", () => {
     it("should not mark project-scoped skills as readOnly when previously installed as project", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      // The live entry is set explicitly: toggleTechnology defaults its config entry to GLOBAL
+      // scope, which would make this a project→global migration — a different state, with a
+      // pending-removal row for the emptied project slot — rather than a skill that stays put.
       useWizardStore.setState({
-        installedSkillConfigs: buildSkillConfigs(["web-framework-react"]),
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          source: "eject",
+        }),
+        skillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          source: "eject",
+        }),
       });
 
       const rows = store.buildSourceRows();
+      // One row is the contract: the skill occupies the same (id, project) slot it was saved in, so
+      // no slot is emptied and nothing is pending removal.
       expect(rows).toHaveLength(1);
+      expect(rows[0].scope).toBe("project");
       expect(rows[0].readOnly).toBeUndefined();
     });
 
@@ -2188,19 +2312,30 @@ describe("WizardStore", () => {
       expect(store.buildSourceRows()).toStrictEqual([]);
     });
 
-    it("should not surface a deselected saved skill as a disabled row when editing from global scope", () => {
+    it("should surface a deselected saved skill as a disabled row when editing from global scope", () => {
       const store = useWizardStore.getState();
-      // In a global-context edit a removal is a genuine uninstall, not a project-overlay change.
+      // Deselecting while editing from global scope drops the skill outright — reconcileSkillConfigs
+      // passes null so applySkillRemoval leaves no tombstone — which makes the snapshot the only
+      // surviving record of what saving is about to remove. The confirm step's computeScopeDiff
+      // reports that removal with no global-scope gate, so the Sources tab must not gate it either.
+      // The snapshot entry is global-scoped because a global config only ever holds global-active
+      // entries (splitConfigByScope).
       useWizardStore.setState({
         isEditingFromGlobalScope: true,
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
-          scope: "project",
+          scope: "global",
           source: "eject",
         }),
         skillConfigs: [],
       });
 
-      expect(store.buildSourceRows()).toStrictEqual([]);
+      const rows = store.buildSourceRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].skillId).toBe("web-framework-react");
+      expect(rows[0].disabled).toBe(true);
+      expect(rows[0].scope).toBe("global");
+      // A global-scope edit owns every row, so nothing renders as locked-because-inherited.
+      expect(rows[0].readOnly).toBeUndefined();
     });
 
     it("should skip a saved skill the marketplace no longer carries instead of throwing", () => {
@@ -2219,10 +2354,13 @@ describe("WizardStore", () => {
       expect(store.buildSourceRows()).toStrictEqual([]);
     });
 
-    it("should render a collapsed dual-scope skill as a locked global row, not a disabled row", () => {
+    it("should render a collapsed dual-scope skill as a locked global row plus a project pending-removal row", () => {
       const store = useWizardStore.getState();
-      // Deselecting a dual-scope skill collapses [P][G] to one inherited-global entry, so the
-      // skill still has a config entry and must not ALSO surface as a pending-removal row.
+      // A skill installed at BOTH scopes that collapses [P][G] to [G] empties its PROJECT slot:
+      // saving deletes the project copy while the global install survives. Removal is a property
+      // of the (id, scope) slot, not of the id, so the surviving global entry must not hide the
+      // emptied project slot — the Sources tab shows the skill twice, exactly as the confirm step
+      // does (`-` at Project, `•` at Global).
       useWizardStore.setState({
         installedSkillConfigs: [
           ...buildSkillConfigs(["web-framework-react"], {
@@ -2241,9 +2379,20 @@ describe("WizardStore", () => {
       });
 
       const rows = store.buildSourceRows();
-      expect(rows).toHaveLength(1);
+      expect(rows.map((r) => r.skillId)).toStrictEqual([
+        "web-framework-react",
+        "web-framework-react",
+      ]);
+      expect(rows.map((r) => r.scope)).toStrictEqual(["global", "project"]);
+      // The surviving global install is locked-because-inherited, never pending removal.
       expect(rows[0].readOnly).toBe(true);
       expect(rows[0].disabled).toBeUndefined();
+      // The emptied project slot is inert and pending removal — a lock there would read as
+      // "installed globally" instead of "about to be removed".
+      expect(rows[1].disabled).toBe(true);
+      expect(rows[1].readOnly).toBeUndefined();
+      // Both slots come FROM the snapshot, so neither can be new this session.
+      expect(rows.map((r) => r.added)).toStrictEqual([undefined, undefined]);
     });
 
     it("should render a pending-removal row inline after the still-selected rows of its scope", () => {
@@ -2273,6 +2422,102 @@ describe("WizardStore", () => {
       expect(rows.map((r) => r.scope)).toStrictEqual(["project", "project"]);
       expect(rows[0].disabled).toBeUndefined();
       expect(rows[1].disabled).toBe(true);
+    });
+
+    it("should mark only the project half of an adopted global skill as added", () => {
+      const store = useWizardStore.getState();
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      // Adopting a global skill at project scope occupies a NEW (id, project) slot while the
+      // global install stays put, so the addition belongs to the editable project row alone.
+      useWizardStore.setState({
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+        skillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          source: "agents-inc",
+        }),
+      });
+
+      const rows = store.buildSourceRows();
+      expect(rows.map((r) => r.scope)).toStrictEqual(["global", "project"]);
+      expect(rows[0].added).toBeUndefined();
+      expect(rows[1].added).toBe(true);
+    });
+
+    it("should render a collapsed persisted dual-scope pair as an unmarked global row plus a project pending-removal row", () => {
+      const store = useWizardStore.getState();
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      // A persisted [P][G] pair — project entry plus global tombstone masking the global install —
+      // IS the both-scopes installation. Collapsing it back to [G] re-activates the slot the
+      // tombstone already occupied, so the surviving global row is unchanged rather than an
+      // addition, while the emptied PROJECT slot is what saving deletes and must stay visible.
+      useWizardStore.setState({
+        installedSkillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+            excluded: true,
+          }),
+        ],
+        skillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+      });
+
+      const rows = store.buildSourceRows();
+      expect(rows.map((r) => r.skillId)).toStrictEqual([
+        "web-framework-react",
+        "web-framework-react",
+      ]);
+      expect(rows.map((r) => r.scope)).toStrictEqual(["global", "project"]);
+      // The still-active global row survives the collapse — it is not swallowed by the emptied
+      // project slot — and carries neither diff marker: re-occupying a tombstoned slot is not an
+      // addition, and the global install is not what saving removes.
+      expect(rows[0].added).toBeUndefined();
+      expect(rows[0].disabled).toBeUndefined();
+      // The emptied project slot is inert and pending removal — a lock there would read as
+      // "installed globally" instead of "about to be removed".
+      expect(rows[1].disabled).toBe(true);
+      expect(rows[1].readOnly).toBeUndefined();
+      expect(rows[1].added).toBeUndefined();
+    });
+
+    it("should render a project-to-global migration as an added global row plus a project pending-removal row", () => {
+      const store = useWizardStore.getState();
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      // Re-scoping a saved project skill to global occupies a NEW (id, global) slot and empties the
+      // (id, project) one, with no tombstone involved. Both halves of that move must stay visible,
+      // exactly as the confirm step reports it (`-` at Project, `+` at Global).
+      useWizardStore.setState({
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          source: "agents-inc",
+        }),
+        skillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+      });
+
+      const rows = store.buildSourceRows();
+      expect(rows.map((r) => r.skillId)).toStrictEqual([
+        "web-framework-react",
+        "web-framework-react",
+      ]);
+      expect(rows.map((r) => r.scope)).toStrictEqual(["global", "project"]);
+      // The newly occupied global slot is the addition, and it is editable: no global install
+      // predates this session, so there is nothing inherited to lock against.
+      expect(rows[0].added).toBe(true);
+      expect(rows[0].disabled).toBeUndefined();
+      expect(rows[0].readOnly).toBeUndefined();
+      // The emptied project slot is what saving deletes — inert, and never new this session.
+      expect(rows[1].disabled).toBe(true);
+      expect(rows[1].added).toBeUndefined();
+      expect(rows[1].readOnly).toBeUndefined();
     });
   });
 
@@ -2308,7 +2553,7 @@ describe("WizardStore", () => {
       expect(toastMessage).toBe("Global agents cannot be changed from project scope");
     });
 
-    it("should allow toggling globally installed agents during init mode", () => {
+    it("should block toggling globally installed agents in init mode too, with the same toastMessage", () => {
       const store = useWizardStore.getState();
       store.toggleAgent("web-developer");
       useWizardStore.setState({
@@ -2320,12 +2565,12 @@ describe("WizardStore", () => {
       store.toggleAgent("web-developer");
 
       const { selectedAgents, agentConfigs, toastMessage } = useWizardStore.getState();
-      // With a pre-existing global config, tombstone creation works — agent stays in list with excluded flag
       expect(selectedAgents).toStrictEqual(["web-developer"]);
-      expect(agentConfigs).toStrictEqual(
-        buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
-      );
-      expect(toastMessage).toBeNull();
+      expect(
+        agentConfigs,
+        "a blocked agent toggle must leave the global entry active — no tombstone",
+      ).toStrictEqual(buildAgentConfigs(["web-developer"], { scope: "global" }));
+      expect(toastMessage).toBe("Global agents cannot be changed from project scope");
     });
 
     it("should allow toggling globally installed agents from global scope (clean removal, no toast)", () => {
@@ -2530,6 +2775,36 @@ describe("WizardStore", () => {
       // Step 5b — and back to [P][G], proving a free P↔G round-trip within the session.
       store.toggleAgentScope("web-developer");
       expect(useWizardStore.getState().agentConfigs).toStrictEqual(dualScope());
+    });
+
+    it("writes no tombstone when a project agent re-scoped to global in-session is then deselected", () => {
+      // Agent mirror of the skill case: the snapshot holds the agent at PROJECT scope only, so
+      // nothing is installed globally. `s` rescopes it to global in-session; the following
+      // deselect has no global install to mask and must not mint a tombstone.
+      const store = useWizardStore.getState();
+      useWizardStore.setState({
+        selectedAgents: ["web-developer"],
+        agentConfigs: buildAgentConfigs(["web-developer"], { scope: "project" }),
+        installedAgentConfigs: buildAgentConfigs(["web-developer"], { scope: "project" }),
+        isEditingFromGlobalScope: false,
+        isInitMode: false,
+        toastMessage: null,
+      });
+
+      store.toggleAgentScope("web-developer");
+      expect(useWizardStore.getState().agentConfigs).toStrictEqual(
+        buildAgentConfigs(["web-developer"], { scope: "global" }),
+      );
+
+      store.toggleAgent("web-developer");
+
+      const { agentConfigs, selectedAgents } = useWizardStore.getState();
+      expect(
+        agentConfigs.filter((ac) => ac.excluded),
+        "an agent never installed globally must not gain a global tombstone",
+      ).toStrictEqual([]);
+      expect(agentConfigs).toStrictEqual([]);
+      expect(selectedAgents).toStrictEqual([]);
     });
 
     it("should set and clear focusedAgentId", () => {
@@ -2876,6 +3151,32 @@ describe("WizardStore", () => {
       const { selectedAgents } = useWizardStore.getState();
       // preselectAgentsFromDomains replaces the array entirely
       expect(selectedAgents).not.toContain("codex-keeper");
+    });
+
+    it("should retain a globally installed agent that no selected domain rosters", () => {
+      const store = useWizardStore.getState();
+      // cli-developer is installed globally but belongs to the cli roster, not web's.
+      // Preselection rebuilds the roster — it must not silently drop the global install.
+      useWizardStore.setState({
+        agentConfigs: buildAgentConfigs(["cli-developer"], { scope: "global" }),
+        installedAgentConfigs: buildAgentConfigs(["cli-developer"], { scope: "global" }),
+        isEditingFromGlobalScope: false,
+        isInitMode: false,
+      });
+
+      store.toggleDomain("web");
+      store.preselectAgentsFromDomains();
+
+      const { agentConfigs, selectedAgents } = useWizardStore.getState();
+      expect(
+        agentConfigs.filter((ac) => ac.name === "cli-developer"),
+        "a globally installed agent outside the domain roster must survive preselection",
+      ).toStrictEqual(buildAgentConfigs(["cli-developer"], { scope: "global" }));
+      expect(
+        agentConfigs.filter((ac) => ac.name !== "cli-developer"),
+        "the domain roster is still preselected alongside the retained global agent",
+      ).toStrictEqual(EXPECTED_AGENTS.WEB.map((name) => ({ name, scope: "global" })));
+      expect(selectedAgents).toContain("web-developer");
     });
 
     it("should preserve excluded agent configs", () => {
@@ -3327,7 +3628,7 @@ describe("WizardStore", () => {
       );
     });
 
-    it("removes an incompatible global skill during init mode, where no global install is at risk", () => {
+    it("refuses to uninstall an actively-installed global skill in init mode too", () => {
       initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
       const store = useWizardStore.getState();
 
@@ -3341,13 +3642,19 @@ describe("WizardStore", () => {
         }),
         isInitMode: true,
       });
+      const skillConfigsBefore = [...useWizardStore.getState().skillConfigs];
 
       store.toggleFilterIncompatible();
 
       const state = useWizardStore.getState();
-      expect(state.toastMessage).toBeNull();
-      expect(state.filterIncompatible).toBe(true);
-      expect(state.domainSelections.web!["web-client-state"]).not.toContain("web-state-pinia");
+      expect(state.toastMessage).toBe("Global skills cannot be changed from project scope");
+      // The whole operation is refused: the filter stays off and nothing is removed.
+      expect(state.filterIncompatible).toBe(false);
+      expect(state.domainSelections.web!["web-client-state"]).toContain("web-state-pinia");
+      expect(
+        state.skillConfigs,
+        "a refused filter must leave skillConfigs untouched",
+      ).toStrictEqual(skillConfigsBefore);
     });
   });
 

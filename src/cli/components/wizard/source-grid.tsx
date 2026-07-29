@@ -74,11 +74,31 @@ function rowStatusGlyph(row: SourceRow): string {
   return "";
 }
 
-/** Skill-name colour matching the info panel's diff palette: red = pending removal, green = added. */
-function rowLabelColor(row: SourceRow): string {
+/**
+ * Diff colour for a row's skill name, matching the info panel's palette (DIFF_COLOR in
+ * skill-agent-summary.tsx): red = pending removal, green = added. `undefined` means the row carries
+ * no diff status, so each caller supplies its own default.
+ */
+function rowDiffColor(row: SourceRow): string | undefined {
   if (row.disabled) return CLI_COLORS.ERROR;
   if (row.added) return CLI_COLORS.SUCCESS;
-  return CLI_COLORS.NEUTRAL;
+  return undefined;
+}
+
+/** Skill-name colour for an unfocused row: its diff colour, or the neutral default. */
+function rowLabelColor(row: SourceRow): string {
+  return rowDiffColor(row) ?? CLI_COLORS.NEUTRAL;
+}
+
+/**
+ * Skill-name colour for the FOCUSED row, which renders on the dark LABEL_BG highlight. A diff row
+ * keeps its diff colour — focus is not a reason to lose the added/removed signal. An ordinary row
+ * deliberately stays plain WHITE rather than falling through to `rowLabelColor`: NEUTRAL grey on
+ * LABEL_BG is the low-contrast pairing, so reusing it here would dim every ordinary focused row to
+ * fix rows that have no diff to show in the first place.
+ */
+function focusedRowLabelColor(row: SourceRow): string {
+  return rowDiffColor(row) ?? CLI_COLORS.WHITE;
 }
 
 export type SourceGridProps = {
@@ -172,7 +192,7 @@ const SourceSection: React.FC<SourceSectionProps> = ({
     <Box flexDirection="row">
       <Box width={SKILL_NAME_WIDTH}>
         {effectiveFocused ? (
-          <Text color={CLI_COLORS.WHITE} backgroundColor={CLI_COLORS.LABEL_BG}>
+          <Text color={focusedRowLabelColor(row)} backgroundColor={CLI_COLORS.LABEL_BG}>
             {statusGlyph}
             {` ${getSkillById(row.skillId).displayName} `}
           </Text>

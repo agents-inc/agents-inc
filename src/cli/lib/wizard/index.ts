@@ -15,5 +15,6 @@ export {
   computeScopeDiff,
   deriveScopeBadges,
   formatScopeTag,
+  skillSlotKey,
 } from "./scope-diff";
 export { orderDomains } from "./domain-order";

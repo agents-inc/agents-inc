@@ -1194,28 +1194,35 @@ describe("Excluded Skills — Global/Project Interaction", () => {
     expectConfigAgents(projectConfig, ["api-developer"]);
   });
 
-  it("should route excluded global skill to project partition, not global partition", () => {
-    // Set up: react is selected globally, simulate project init with existing global installation
+  it("should route a global tombstone to the project partition, not the global partition", () => {
     const store = useWizardStore.getState();
+    store.toggleDomain("web");
+    store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+    store.toggleTechnology("web", "web-client-state", "web-state-zustand", false);
+
+    // React is installed globally. The scope toggle (`s`) G→P is the legitimate producer of a
+    // global tombstone: the project takes ownership of react and masks the live global install.
     useWizardStore.setState({
       installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
         scope: "global",
         source: "agents-inc",
       }),
-      isInitMode: true,
     });
-    store.toggleDomain("web");
-    store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-    store.toggleTechnology("web", "web-client-state", "web-state-zustand", false);
-
-    // Deselect react: marks as excluded (global skill, previously installed)
-    store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+    store.toggleSkillScope("web-framework-react");
 
     const { skillConfigs } = useWizardStore.getState();
-    const reactConfig = skillConfigs.find((sc) => sc.id === "web-framework-react");
-    expect(reactConfig?.excluded).toBe(true);
+    expect(
+      skillConfigs.filter((sc) => sc.id === "web-framework-react"),
+      "a G→P scope toggle pairs an active project entry with a global tombstone",
+    ).toStrictEqual([
+      ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+      ...buildSkillConfigs(["web-framework-react"], {
+        scope: "global",
+        source: "agents-inc",
+        excluded: true,
+      }),
+    ]);
 
-    // Build config with zustand still active + react excluded
     const config = buildProjectConfig({
       skills: skillConfigs,
       agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
@@ -1223,13 +1230,16 @@ describe("Excluded Skills — Global/Project Interaction", () => {
 
     const { global: globalConfig, project: projectConfig } = splitConfigByScope(config);
 
-    // Excluded react should NOT be in global partition; zustand remains
-    expectConfigSkills(globalConfig, ["web-state-zustand"]);
+    // Only active-global entries land in the global partition — never the tombstone.
+    expectSkillConfigs(globalConfig, [
+      { id: "web-state-zustand", scope: "global", source: "agents-inc" },
+    ]);
 
-    // Excluded react SHOULD be in project partition (excluded global routes to project)
-    expectConfigSkills(projectConfig, ["web-framework-react"]);
-    const projectReact = projectConfig.skills.find((s) => s.id === "web-framework-react");
-    expect(projectReact?.excluded).toBe(true);
+    // Both project-owned halves route to the project partition.
+    expectSkillConfigs(projectConfig, [
+      { id: "web-framework-react", scope: "project", source: "agents-inc" },
+      { id: "web-framework-react", scope: "global", source: "agents-inc", excluded: true },
+    ]);
   });
 
   it("should move skill cleanly to project partition when scope toggled from global to project", () => {
@@ -1326,19 +1336,18 @@ describe("Excluded Skills — Global/Project Interaction", () => {
     expect(skillConfigs[0].scope).toBe("global");
   });
 
-  it("should complete full exclusion lifecycle: select globally, exclude, re-edit deselected, re-select clears exclusion", () => {
+  it("should complete full masking lifecycle: select globally, mask via scope toggle, re-edit deselected, re-select clears the mask", () => {
     const store = useWizardStore.getState();
 
-    // Step 1: Select react globally, simulate project init with existing global installation
+    // Step 1: Select react globally, then simulate a project edit against an existing global
+    // installation of react.
     store.toggleDomain("web");
     store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-    // Set installed configs to simulate project init (react was previously installed globally)
     useWizardStore.setState({
       installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
         scope: "global",
         source: "agents-inc",
       }),
-      isInitMode: true,
     });
 
     const afterSelect = useWizardStore.getState();
@@ -1347,15 +1356,27 @@ describe("Excluded Skills — Global/Project Interaction", () => {
     expect(reactActive?.scope).toBe("global");
     expect(reactActive?.excluded).toBeUndefined();
 
-    // Step 2: Deselect react (marks as excluded since it was installed)
-    store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+    // Step 2: Take project ownership with the scope toggle (`s`) — the legitimate producer of a
+    // global tombstone. React stays selected, now as a `[P][G]` pair.
+    store.toggleSkillScope("web-framework-react");
 
-    const afterDeselect = useWizardStore.getState();
-    expect(afterDeselect.getAllSelectedTechnologies()).not.toContain("web-framework-react");
-    const reactExcluded = afterDeselect.skillConfigs.find((sc) => sc.id === "web-framework-react");
-    expect(reactExcluded?.excluded).toBe(true);
+    const afterScopeToggle = useWizardStore.getState();
+    expect(afterScopeToggle.getAllSelectedTechnologies()).toContain("web-framework-react");
+    expect(
+      afterScopeToggle.skillConfigs.filter((sc) => sc.id === "web-framework-react"),
+      "the project entry masks the still-live global install",
+    ).toStrictEqual([
+      ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+      ...buildSkillConfigs(["web-framework-react"], {
+        scope: "global",
+        source: "agents-inc",
+        excluded: true,
+      }),
+    ]);
 
-    // Step 3: Simulate re-edit — populateFromSkillIds with no active skills but excluded in savedConfigs
+    // Step 3: Simulate re-edit — a bare global mask with no project sibling (the shape a
+    // system-derived category mask leaves in a project config) renders react deselected while
+    // the mask itself is preserved.
     store.reset();
     initializeMatrix(matrix);
     const savedConfigs: SkillConfig[] = buildSkillConfigs(["web-framework-react"], {
@@ -1379,7 +1400,7 @@ describe("Excluded Skills — Global/Project Interaction", () => {
       })[0],
     );
 
-    // Step 4: Re-select react via toggleTechnology — clears exclusion
+    // Step 4: Re-select react via toggleTechnology — clears the mask
     store.toggleDomain("web");
     store.toggleTechnology("web", "web-framework", "web-framework-react", true);
 
