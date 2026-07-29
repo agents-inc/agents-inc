@@ -14,4 +14,9 @@ export {
   type CompileAllScopesOptions,
   compileAgentsAllScopes,
 } from "./compile-agents-all-scopes.js";
+export {
+  recompileRegisteredProjectAgents,
+  recompilePropagatedProjectAgents,
+  type PropagatedRecompileSummary,
+} from "./recompile-project-agents.js";
 export { loadAgentDefs, type AgentDefs } from "./load-agent-defs.js";

@@ -653,31 +653,87 @@ function globalHasActiveAgent(globalConfig: ProjectConfig, name: AgentName): boo
 }
 
 /**
+ * Synthesizes the global tombstone a project needs when it OWNS a skill at project
+ * scope while that same id is now ACTIVE at global scope (D-268). Without the
+ * tombstone, `partitionInlinedConfigEntries` re-inlines the global copy as a SECOND
+ * active entry, leaving the id active at BOTH scopes; the tombstone masks the global
+ * install so hydration renders the proper dual-scope `[P][G]` pair. The tombstone is
+ * spread from the global entry so it carries the global install's `source`. A skill the
+ * project merely inherits (no active project-scope entry) is intentionally skipped — it
+ * stays a single active global entry. A skill the project already tombstones is skipped
+ * so no duplicate is produced. `retainedSkills` is the post-retention split, so its
+ * project-scoped entries signal ownership and its live tombstones signal "already masked".
+ */
+function synthesizeGlobalTombstonesForOwnedSkills(
+  retainedSkills: SkillConfig[],
+  globalConfig: ProjectConfig,
+): SkillConfig[] {
+  const ownsAtProject = (id: SkillId): boolean =>
+    retainedSkills.some((s) => s.id === id && isActiveAt(s, "project"));
+  const alreadyTombstoned = (id: SkillId): boolean =>
+    retainedSkills.some((s) => s.id === id && isGlobalTombstone(s));
+  return globalConfig.skills
+    .filter(
+      (globalEntry) =>
+        isActiveAt(globalEntry, "global") &&
+        ownsAtProject(globalEntry.id) &&
+        !alreadyTombstoned(globalEntry.id),
+    )
+    .map((globalEntry) => ({ ...globalEntry, excluded: true }));
+}
+
+/** Agent mirror of {@link synthesizeGlobalTombstonesForOwnedSkills} (D-259). */
+function synthesizeGlobalTombstonesForOwnedAgents(
+  retainedAgents: AgentScopeConfig[],
+  globalConfig: ProjectConfig,
+): AgentScopeConfig[] {
+  const ownsAtProject = (name: AgentName): boolean =>
+    retainedAgents.some((a) => a.name === name && isActiveAt(a, "project"));
+  const alreadyTombstoned = (name: AgentName): boolean =>
+    retainedAgents.some((a) => a.name === name && isGlobalTombstone(a));
+  return globalConfig.agents
+    .filter(
+      (globalEntry) =>
+        isActiveAt(globalEntry, "global") &&
+        ownsAtProject(globalEntry.name) &&
+        !alreadyTombstoned(globalEntry.name),
+    )
+    .map((globalEntry) => ({ ...globalEntry, excluded: true }));
+}
+
+/**
  * Keeps a project's own entries when re-inlining fresh global data, dropping tombstones
- * that no longer correspond to a real global install.
+ * that no longer correspond to a real global install, and synthesizing a global tombstone
+ * for any project-owned entry that just became active at global scope.
  *
  * A tombstone (`scope === "global" && excluded`) only has meaning while the global entry
  * it masks still exists. Once the skill/agent has been removed from the global config,
  * the tombstone is stale — carrying it forward would leave the project showing a masked
  * global item that no longer exists. Project-scoped entries are always retained.
+ *
+ * When a project owns an id at project scope AND that id is now active at global scope,
+ * a `{ scope: "global", excluded: true }` tombstone is appended so the pair renders as
+ * dual-scope `[P][G]` instead of being active at both scopes (D-268 / D-259).
  */
 function retainReconciledSkills(skills: SkillConfig[], globalConfig: ProjectConfig): SkillConfig[] {
-  return skills.filter(
+  const retained = skills.filter(
     (entry) =>
       isProjectScopedEntry(entry) ||
       (isGlobalTombstone(entry) && globalHasActiveSkill(globalConfig, entry.id)),
   );
+  return [...retained, ...synthesizeGlobalTombstonesForOwnedSkills(retained, globalConfig)];
 }
 
 function retainReconciledAgents(
   agents: AgentScopeConfig[],
   globalConfig: ProjectConfig,
 ): AgentScopeConfig[] {
-  return agents.filter(
+  const retained = agents.filter(
     (entry) =>
       isProjectScopedEntry(entry) ||
       (isGlobalTombstone(entry) && globalHasActiveAgent(globalConfig, entry.name)),
   );
+  return [...retained, ...synthesizeGlobalTombstonesForOwnedAgents(retained, globalConfig)];
 }
 
 /**
@@ -864,6 +920,36 @@ export async function propagateGlobalChangesToProjects(
   return { updated, skipped };
 }
 
+/**
+ * Prunes CLI-inlined global-scoped entries from every registered project after a
+ * GLOBAL uninstall. Reuses {@link propagateGlobalChangesToProjects} with an
+ * emptied global config so every global skill/agent reads as removed: project-
+ * scoped entries are retained verbatim, inlined global rows and tombstones are
+ * dropped, `selectedAgents` and per-agent stack refs lose their global-only
+ * names/ids, and each project's config-types.ts is regenerated. `selectedAgents`
+ * is emptied alongside `skills`/`agents` because the project config writer
+ * re-unions the global `selectedAgents` into the project's — carrying it forward
+ * would resurrect the names the reconciliation just pruned.
+ *
+ * Call AFTER the global .claude-src manifest has been removed so the regenerated
+ * project types fall back to the standalone form instead of importing from the
+ * now-deleted global config-types.ts. Unreachable project dirs are reported in
+ * `skipped`, never thrown.
+ */
+export async function pruneGlobalEntriesFromRegisteredProjects(
+  globalConfig: ProjectConfig,
+  matrix: MergedSkillsMatrix,
+  agents: Record<AgentName, AgentDefinition>,
+): Promise<{ updated: string[]; skipped: string[] }> {
+  const emptiedGlobal: ProjectConfig = {
+    ...globalConfig,
+    skills: [],
+    agents: [],
+    selectedAgents: [],
+  };
+  return propagateGlobalChangesToProjects(emptiedGlobal, matrix, agents);
+}
+
 async function writeStandaloneConfigTypes(
   configPath: string,
   matrix: MergedSkillsMatrix,
@@ -919,6 +1005,15 @@ async function resolveEffectiveGlobalConfig(
   };
 }
 
+export type ScopedConfigWriteResult = {
+  /**
+   * Registered project directories whose `config.ts` / `config-types.ts` this
+   * write rewrote via propagation. Their compiled agents still reflect the
+   * pre-change global data, so the caller owns recompiling them.
+   */
+  propagatedProjects: string[];
+};
+
 export async function writeScopedConfigs(
   finalConfig: ProjectConfig,
   matrix: MergedSkillsMatrix,
@@ -926,7 +1021,7 @@ export async function writeScopedConfigs(
   projectDir: string,
   projectConfigPath: string,
   projectInstallationExists: boolean,
-): Promise<void> {
+): Promise<ScopedConfigWriteResult> {
   // Use os.homedir() at runtime (not GLOBAL_INSTALL_ROOT constant) so the path
   // agrees with getGlobalConfigImportPath() which also calls os.homedir() at runtime
   const homeDir = os.homedir();
@@ -936,13 +1031,13 @@ export async function writeScopedConfigs(
     await writeConfigFile(finalConfig, projectConfigPath);
     await writeStandaloneConfigTypes(projectConfigPath, matrix, agents, finalConfig);
     // Propagate to all registered projects
-    if (finalConfig.projects?.length) {
-      const result = await propagateGlobalChangesToProjects(finalConfig, matrix, agents);
-      if (result.updated.length > 0) {
-        verbose(`Propagated global changes to ${result.updated.length} project(s)`);
-      }
+    if (!finalConfig.projects?.length) return { propagatedProjects: [] };
+
+    const result = await propagateGlobalChangesToProjects(finalConfig, matrix, agents);
+    if (result.updated.length > 0) {
+      verbose(`Propagated global changes to ${result.updated.length} project(s)`);
     }
-    return;
+    return { propagatedProjects: result.updated };
   }
 
   // Installing from project — split by scope for project config generation.
@@ -974,6 +1069,7 @@ export async function writeScopedConfigs(
   }
 
   // Propagate to other registered projects when global data (skills/agents/stack/domains) changed
+  let propagatedProjects: string[] = [];
   if (globalDataChanged && effectiveGlobalConfig.projects?.length) {
     const propagation = await propagateGlobalChangesToProjects(
       effectiveGlobalConfig,
@@ -981,6 +1077,7 @@ export async function writeScopedConfigs(
       agents,
       projectDir,
     );
+    propagatedProjects = propagation.updated;
     if (propagation.updated.length > 0) {
       verbose(`Propagated global changes to ${propagation.updated.length} project(s)`);
     }
@@ -1016,6 +1113,8 @@ export async function writeScopedConfigs(
       "Skipped project config — no existing project installation and no project-scoped items",
     );
   }
+
+  return { propagatedProjects };
 }
 
 function buildConfigTypesBackgroundData(
@@ -1058,6 +1157,34 @@ function buildProjectTypesExtras(
     extraDomains: projectDomains,
     extraCategories: projectCategories,
   };
+}
+
+/**
+ * Regenerates a single scope's config-types.ts from its persisted config,
+ * matching the wizard write path exactly (D-228 writer selection):
+ * - global scope (home dir): standalone unions narrowed to the config's entries
+ *   via writeStandaloneConfigTypes
+ * - project scope: import-and-extend form via regenerateConfigTypes (falls back
+ *   to standalone when no global config-types.ts exists)
+ *
+ * Used by `compile` so a documented hand-edit of config.ts followed by compile
+ * refreshes the type unions instead of leaving them stale.
+ */
+export async function regenerateScopeConfigTypes(
+  projectDir: string,
+  config: ProjectConfig,
+  matrix: MergedSkillsMatrix,
+  agents: Record<AgentName, AgentDefinition>,
+): Promise<void> {
+  if (isHomeDirectory(projectDir)) {
+    await writeStandaloneConfigTypes(getProjectConfigPath(projectDir), matrix, agents, config);
+    return;
+  }
+  await regenerateConfigTypes(
+    projectDir,
+    Promise.resolve(buildConfigTypesBackgroundData(matrix, agents)),
+    buildProjectTypesExtras(config, matrix),
+  );
 }
 
 /**

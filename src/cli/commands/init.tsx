@@ -17,6 +17,7 @@ import {
   pluginInstallFailureError,
   writeProjectConfig,
   compileAgentsAllScopes,
+  recompilePropagatedProjectAgents,
   type CompilationResult,
   type SkillCopyResult,
   discoverInstalledSkills,
@@ -479,7 +480,27 @@ export default class Init extends BaseCommand {
     });
     this.log(`Compiled ${compileResult.compiled.length} agents\n`);
 
+    await this.recompilePropagatedProjects(configResult.propagatedProjects);
+
     return { configResult, compileResult, agentScopeMap };
+  }
+
+  /**
+   * Recompiles the agents of every OTHER registered project this run's global
+   * change was propagated into — see {@link recompilePropagatedProjectAgents}
+   * for the staleness rationale and per-project failure isolation.
+   */
+  private async recompilePropagatedProjects(projectDirs: string[]): Promise<void> {
+    if (projectDirs.length === 0) return;
+
+    const { recompiledCount, failedCount, warnings } =
+      await recompilePropagatedProjectAgents(projectDirs);
+    for (const warning of warnings) {
+      this.warn(warning);
+    }
+
+    const failureSuffix = failedCount > 0 ? ` (${failedCount} failed)` : "";
+    this.log(`Recompiled agents in ${recompiledCount} registered projects${failureSuffix}\n`);
   }
 
   private reportSuccess(

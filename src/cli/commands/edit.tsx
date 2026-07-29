@@ -27,7 +27,9 @@ import {
   loadAgentDefs,
   type AgentDefs,
   writeProjectConfig,
+  type ConfigWriteResult,
   compileAgentsAllScopes,
+  recompilePropagatedProjectAgents,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
 import { Spinner } from "../components/common/spinner.js";
@@ -714,8 +716,9 @@ export default class Edit extends BaseCommand {
     }
 
     // Persist wizard result to config.ts and config-types.ts (split by scope when in project context)
+    let configResult: ConfigWriteResult | undefined;
     try {
-      await writeProjectConfig({
+      configResult = await writeProjectConfig({
         wizardResult: result,
         sourceResult: context.sourceResult,
         projectDir: cwd,
@@ -760,6 +763,34 @@ export default class Edit extends BaseCommand {
       this.warn(`Agent recompilation failed: ${getErrorMessage(error)}`);
       this.log(`You can manually recompile with '${CLI_INVOKE_COMMAND} compile'.`);
     }
+
+    if (configResult) {
+      await this.recompilePropagatedProjects(configResult.propagatedProjects);
+    }
+  }
+
+  /**
+   * Recompiles the agents of every OTHER registered project this run's global
+   * change was propagated into — see {@link recompilePropagatedProjectAgents}
+   * for the staleness rationale and per-project failure isolation.
+   */
+  private async recompilePropagatedProjects(projectDirs: string[]): Promise<void> {
+    if (projectDirs.length === 0) return;
+
+    const { recompiledCount, failedCount, warnings } =
+      await recompilePropagatedProjectAgents(projectDirs);
+    for (const warning of warnings) {
+      this.warn(warning);
+    }
+
+    const summary = chalk.hex(CLI_COLORS.NEUTRAL)(
+      `Recompiled agents in ${recompiledCount} registered project(s)`,
+    );
+    this.log(
+      failedCount > 0
+        ? summary + chalk.hex(CLI_COLORS.WARNING)(` (${failedCount} failed)`)
+        : summary,
+    );
   }
 
   private async cleanupStaleAgentFiles(

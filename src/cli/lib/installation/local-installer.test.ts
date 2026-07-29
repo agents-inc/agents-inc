@@ -23,6 +23,8 @@ import {
   setConfigMetadata,
   deregisterProjectPath,
   propagateGlobalChangesToProjects,
+  pruneGlobalEntriesFromRegisteredProjects,
+  regenerateScopeConfigTypes,
   writeConfigFile,
 } from "./local-installer";
 import type {
@@ -51,12 +53,17 @@ import {
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
 import { readTestTsConfig } from "../__tests__/helpers/config-io";
 import { useFakeHome } from "../__tests__/helpers/isolated-home";
+import { createTestSource, cleanupTestSource } from "../__tests__/fixtures/create-test-source";
+import { DEFAULT_TEST_SKILLS } from "../__tests__/mock-data/mock-skills";
+import { loadSkillsFromAllSources } from "../loading";
+import { DEFAULT_SOURCE } from "../configuration";
 import { fileExists } from "../../utils/fs";
 import { expectInstallResult } from "../__tests__/assertions/index.js";
 import { SKILLS } from "../__tests__/test-fixtures";
 import {
   EMPTY_MATRIX,
   FULLSTACK_PAIR_MATRIX,
+  FULLSTACK_TRIO_MATRIX,
   SINGLE_REACT_MATRIX,
 } from "../__tests__/mock-data/mock-matrices";
 import {
@@ -1906,6 +1913,226 @@ describe("local-installer", () => {
     });
   });
 
+  // Compile-command wiring: after a compile pass, regenerateScopeConfigTypes must
+  // reproduce the wizard write path's config-types.ts for the scope it compiled —
+  // standalone narrowed unions at global scope, import-and-extend at project scope.
+  describe("regenerateScopeConfigTypes", () => {
+    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
+    // callees require Record<AgentName, AgentDefinition>.
+    const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
+    const fakeHomeHandle = useFakeHome(() => tempDir);
+
+    it("rewrites standalone unions narrowed to the config's entries at global scope", async () => {
+      const globalClaudeSrc = path.join(fakeHomeHandle.dir, CLAUDE_SRC_DIR);
+      await mkdir(globalClaudeSrc, { recursive: true });
+      const typesPath = path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS);
+      // Stale unions from before a hand-edit of config.ts: a removed skill is
+      // still present, the newly added react is absent.
+      await writeFile(typesPath, 'export type SkillId = "api-framework-hono";\n');
+
+      const config = buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+      });
+
+      await regenerateScopeConfigTypes(
+        fakeHomeHandle.dir,
+        config,
+        FULLSTACK_PAIR_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+      );
+
+      const typesContent = await readFile(typesPath, "utf-8");
+      // Standalone form: no import from a global types file
+      expect(typesContent).not.toContain("as GlobalSkillId");
+      // Unions narrowed to the config's entries — the added skill is in, the
+      // removed one is out even though the matrix still knows it
+      expect(typesContent).toContain('export type SkillId = "web-framework-react";');
+      expect(typesContent).toContain('export type AgentName = "web-developer";');
+      expect(typesContent).not.toContain('"api-framework-hono"');
+    });
+
+    describe("project scope with a global install present", () => {
+      let consts: typeof import("../../consts");
+
+      beforeEach(async () => {
+        // Point GLOBAL_INSTALL_ROOT at the fake home so getGlobalConfigTypesPath()
+        // detects the seeded global config-types.ts file inside the test's tempDir.
+        consts = await import("../../consts");
+        Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
+          value: fakeHomeHandle.dir,
+          writable: true,
+        });
+      });
+
+      afterEach(() => {
+        // Restore the default mocked GLOBAL_INSTALL_ROOT so other tests don't pick
+        // up the fake home after this block finishes.
+        Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
+          value: "/tmp/nonexistent-global-root",
+          writable: true,
+        });
+      });
+
+      it("writes the import-and-extend form and leaves config.ts untouched", async () => {
+        const globalClaudeSrc = path.join(fakeHomeHandle.dir, CLAUDE_SRC_DIR);
+        await mkdir(globalClaudeSrc, { recursive: true });
+        await writeFile(
+          path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
+          "// global config-types placeholder",
+        );
+
+        const projectDir = path.join(tempDir, "project");
+        const projectConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+        await mkdir(path.dirname(projectConfigPath), { recursive: true });
+
+        // The shape compile loads at project scope: project-scoped entries plus
+        // the inlined global-scoped rows the config writer emits.
+        const config = buildProjectConfig({
+          skills: [
+            ...buildSkillConfigs(["web-framework-react"], {
+              scope: "global",
+              source: "agents-inc",
+            }),
+            ...buildSkillConfigs(["web-testing-vitest"], { scope: "project" }),
+          ],
+          agents: [
+            ...buildAgentConfigs(["web-developer"], { scope: "global" }),
+            ...buildAgentConfigs(["web-reviewer"], { scope: "project" }),
+          ],
+        });
+        await writeConfigFile(config, projectConfigPath);
+        const configBefore = await readFile(projectConfigPath, "utf-8");
+
+        await regenerateScopeConfigTypes(
+          projectDir,
+          config,
+          FULLSTACK_TRIO_MATRIX,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+        );
+
+        const projectTypesPath = path.join(
+          projectDir,
+          CLAUDE_SRC_DIR,
+          STANDARD_FILES.CONFIG_TYPES_TS,
+        );
+        const typesContent = await readFile(projectTypesPath, "utf-8");
+
+        // Import-and-extend form — not the standalone/inlined form
+        expect(typesContent).toContain("import type {");
+        expect(typesContent).toContain("SkillId as GlobalSkillId");
+        expect(typesContent).toContain(
+          'export type SkillId = GlobalSkillId | "web-testing-vitest"',
+        );
+        expect(typesContent).toContain('export type AgentName = GlobalAgentName | "web-reviewer"');
+
+        // Global-scoped items flow through the GlobalSkillId / GlobalAgentName
+        // re-exports — they are not inlined
+        expect(typesContent).not.toContain('"web-framework-react"');
+        expect(typesContent).not.toContain('"web-developer"');
+
+        // Regeneration touches only config-types.ts — config.ts stays byte-identical
+        expect(await readFile(projectConfigPath, "utf-8")).toBe(configBefore);
+      });
+    });
+
+    it("falls back to standalone unions at project scope when no global types exist", async () => {
+      // GLOBAL_INSTALL_ROOT keeps its default mocked value (/tmp/nonexistent-global-root),
+      // so getGlobalConfigTypesPath() returns null and the standalone path runs.
+      const projectDir = path.join(tempDir, "project-standalone");
+      await mkdir(path.join(projectDir, CLAUDE_SRC_DIR), { recursive: true });
+
+      const config = buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      });
+
+      await regenerateScopeConfigTypes(
+        projectDir,
+        config,
+        SINGLE_REACT_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+      );
+
+      const typesContent = await readFile(
+        path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TYPES_TS),
+        "utf-8",
+      );
+      expect(typesContent).not.toContain("as GlobalSkillId");
+      expect(typesContent).toContain('"web-framework-react"');
+    });
+
+    // The compile/uninstall refresh paths load the matrix with
+    // skipExtraSources: true while the wizard write path uses the fully tagged
+    // multi-source matrix. Extra-source loading only annotates each skill's
+    // availableSources/activeSource (wizard UI tagging) — it never adds skills
+    // or categories — and the config-types writer never reads those
+    // annotations, so both matrices must emit byte-identical config-types.ts.
+    // This pins the parity claim documented at both skipExtraSources call sites.
+    it("emits byte-identical config-types from an untagged and a multi-source-tagged matrix", async () => {
+      // Extra source on disk sharing react/hono with the matrix, plus skills
+      // (zustand, vitest) the matrix does not know.
+      const extraDirs = await createTestSource({ skills: DEFAULT_TEST_SKILLS, agents: [] });
+      try {
+        const globalClaudeSrc = path.join(fakeHomeHandle.dir, CLAUDE_SRC_DIR);
+        await mkdir(globalClaudeSrc, { recursive: true });
+        const typesPath = path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS);
+
+        const config = buildProjectConfig({
+          skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+          sources: [{ name: "extra", url: extraDirs.sourceDir }],
+        });
+        // On disk so the extra source registers for resolveAllSources
+        await writeConfigFile(config, path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TS));
+
+        await regenerateScopeConfigTypes(
+          fakeHomeHandle.dir,
+          config,
+          createMockMatrix({ ...SKILLS.react }, { ...SKILLS.hono }),
+          emptyAgents as Record<AgentName, AgentDefinition>,
+        );
+        const untaggedTypes = await readFile(typesPath, "utf-8");
+        expect(untaggedTypes).toContain('"web-framework-react"');
+        expect(untaggedTypes).toContain('"api-framework-hono"');
+
+        // Tag a fresh copy of the same matrix exactly as the wizard load does
+        const taggedMatrix = createMockMatrix({ ...SKILLS.react }, { ...SKILLS.hono });
+        await loadSkillsFromAllSources(
+          taggedMatrix,
+          { source: DEFAULT_SOURCE, sourceOrigin: "default" },
+          fakeHomeHandle.dir,
+        );
+        const taggedReact = taggedMatrix.skills["web-framework-react"];
+        expect(
+          taggedReact?.availableSources?.map((s) => s.name),
+          "the extra source must resolve and annotate the shared skill — otherwise this test proves nothing",
+        ).toContain("extra");
+
+        await regenerateScopeConfigTypes(
+          fakeHomeHandle.dir,
+          config,
+          taggedMatrix,
+          emptyAgents as Record<AgentName, AgentDefinition>,
+        );
+        const taggedTypes = await readFile(typesPath, "utf-8");
+
+        expect(taggedTypes).toBe(untaggedTypes);
+        // Extra-source-only skills never widen the emitted unions
+        expect(taggedTypes).not.toContain('"web-state-zustand"');
+        expect(taggedTypes).not.toContain('"web-testing-vitest"');
+      } finally {
+        await cleanupTestSource(extraDirs);
+      }
+    });
+  });
+
   describe("deregisterProjectPath", () => {
     const fakeHomeHandle = useFakeHome(() => tempDir);
 
@@ -2403,6 +2630,155 @@ describe("local-installer", () => {
       // Global items are NOT inlined — they flow through GlobalSkillId / GlobalAgentName
       expect(typesContent).not.toContain('"web-framework-react"');
       expect(typesContent).not.toContain('"web-developer"');
+    });
+  });
+
+  // Global uninstall: every inlined global-scoped entry a registered project
+  // carries must be pruned (skills, agents, selectedAgents, stack refs) while
+  // project-scoped entries survive untouched. The mocked GLOBAL_INSTALL_ROOT
+  // points at a nonexistent path, matching the post-uninstall state where the
+  // global config-types.ts is already gone — regenerated project types must be
+  // the standalone form.
+  describe("pruneGlobalEntriesFromRegisteredProjects", () => {
+    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
+    // callees require Record<AgentName, AgentDefinition>.
+    const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
+
+    it("prunes inlined global skills, agents, selectedAgents, and stack refs while keeping project-scoped entries", async () => {
+      const projectDir = path.join(tempDir, "registered-project");
+      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+      await mkdir(configDir, { recursive: true });
+
+      const projectConfig = buildProjectConfig({
+        name: "target",
+        skills: [
+          ...buildSkillConfigs(["web-testing-vitest"]),
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+        ],
+        agents: [
+          ...buildAgentConfigs(["web-reviewer"]),
+          ...buildAgentConfigs(["web-developer"], { scope: "global" }),
+        ],
+        selectedAgents: ["web-developer", "web-reviewer"],
+        stack: {
+          "web-reviewer": {
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
+            "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
+          },
+        },
+      });
+      const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+      await writeConfigFile(projectConfig, configPath);
+
+      const globalConfig = buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        selectedAgents: ["web-developer"],
+        projects: [projectDir],
+      });
+
+      const result = await pruneGlobalEntriesFromRegisteredProjects(
+        globalConfig,
+        SINGLE_REACT_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+      );
+
+      expect(result).toStrictEqual({ updated: [projectDir], skipped: [] });
+
+      const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+      expect(parsedConfig.skills).toStrictEqual([
+        { id: "web-testing-vitest", scope: "project", source: "eject" },
+      ]);
+      expect(parsedConfig.agents).toStrictEqual([{ name: "web-reviewer", scope: "project" }]);
+      expect(parsedConfig.selectedAgents).toStrictEqual(["web-reviewer"]);
+      // The react ref is pruned from the stack; the emptied web-framework
+      // category is dropped; the project-owned vitest ref is kept.
+      expect(parsedConfig.stack).toStrictEqual({
+        "web-reviewer": { "web-testing": ["web-testing-vitest"] },
+      });
+
+      // config-types.ts is regenerated in standalone form — the global
+      // config-types.ts it previously imported from no longer exists.
+      const typesContent = await readFile(
+        path.join(configDir, STANDARD_FILES.CONFIG_TYPES_TS),
+        "utf-8",
+      );
+      expect(typesContent).toContain('"web-testing-vitest"');
+      expect(typesContent).not.toContain("GlobalSkillId");
+      expect(typesContent).not.toContain("GlobalAgentName");
+    });
+
+    it("collapses a dual-scope pair to project-only by dropping the global tombstone", async () => {
+      const projectDir = path.join(tempDir, "registered-project");
+      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+      await mkdir(configDir, { recursive: true });
+
+      // Dual-scope [P][G] pair: active project entry + global tombstone masking
+      // the (about to be uninstalled) global install of the same skill.
+      const projectConfig = buildProjectConfig({
+        name: "target",
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"]),
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+            excluded: true,
+          }),
+        ],
+        agents: buildAgentConfigs(["web-reviewer"]),
+      });
+      const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+      await writeConfigFile(projectConfig, configPath);
+
+      const globalConfig = buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+        agents: [],
+        projects: [projectDir],
+      });
+
+      await pruneGlobalEntriesFromRegisteredProjects(
+        globalConfig,
+        SINGLE_REACT_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+      );
+
+      const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+      expect(parsedConfig.skills).toStrictEqual([
+        { id: "web-framework-react", scope: "project", source: "eject" },
+      ]);
+    });
+
+    it("reports unreachable registered project dirs as skipped", async () => {
+      const ghostDir = path.join(tempDir, "deleted-project");
+
+      const globalConfig = buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+        agents: [],
+        projects: [ghostDir],
+      });
+
+      const result = await pruneGlobalEntriesFromRegisteredProjects(
+        globalConfig,
+        SINGLE_REACT_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+      );
+
+      expect(result).toStrictEqual({ updated: [], skipped: [ghostDir] });
     });
   });
 });

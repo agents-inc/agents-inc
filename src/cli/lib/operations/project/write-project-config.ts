@@ -34,6 +34,12 @@ export type ConfigWriteResult = {
   wasMerged: boolean;
   existingConfigPath?: string;
   filesWritten: number;
+  /**
+   * Registered project directories whose config was rewritten by propagation of
+   * this write's global changes. Their compiled agents are now stale — the
+   * caller recompiles them with `recompileRegisteredProjectAgents`.
+   */
+  propagatedProjects: string[];
 };
 
 /**
@@ -73,7 +79,7 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
     await ensureBlankGlobalConfig();
   }
 
-  await writeScopedConfigs(
+  const { propagatedProjects } = await writeScopedConfigs(
     finalConfig,
     sourceResult.matrix,
     agents,
@@ -88,5 +94,6 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
     wasMerged: mergeResult.merged,
     existingConfigPath: mergeResult.existingConfigPath,
     filesWritten: isProjectContext ? 4 : 2,
+    propagatedProjects,
   };
 }

@@ -23,6 +23,8 @@ export {
   buildAgentScopeMap,
   deregisterProjectPath,
   propagateGlobalChangesToProjects,
+  pruneGlobalEntriesFromRegisteredProjects,
+  regenerateScopeConfigTypes,
 } from "./local-installer";
 
 export { isHomeDirectory } from "./is-home-directory";

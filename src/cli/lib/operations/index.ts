@@ -46,6 +46,9 @@ export {
   type CompilationResult,
   compileAgentsAllScopes,
   type CompileAllScopesOptions,
+  recompileRegisteredProjectAgents,
+  recompilePropagatedProjectAgents,
+  type PropagatedRecompileSummary,
   loadAgentDefs,
   type AgentDefs,
 } from "./project/index.js";

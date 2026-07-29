@@ -98,7 +98,7 @@ describe("write-project-config", () => {
 
     mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
     mockEnsureBlankGlobalConfig.mockResolvedValue(false);
-    mockWriteScopedConfigs.mockResolvedValue(undefined);
+    mockWriteScopedConfigs.mockResolvedValue({ propagatedProjects: [] });
     mockEnsureDir.mockResolvedValue(undefined);
 
     // Default: project context (different from homedir)
@@ -138,6 +138,7 @@ describe("write-project-config", () => {
       wasMerged: false,
       existingConfigPath: undefined,
       filesWritten: 4,
+      propagatedProjects: [],
     });
   });
 
@@ -169,6 +170,7 @@ describe("write-project-config", () => {
       wasMerged: false,
       existingConfigPath: undefined,
       filesWritten: 2,
+      propagatedProjects: [],
     });
   });
 
@@ -240,6 +242,24 @@ describe("write-project-config", () => {
       wasMerged: true,
       existingConfigPath: "/test/project/.claude-src/config.ts.bak",
       filesWritten: 4,
+      propagatedProjects: [],
     });
+  });
+
+  it("surfaces the registered projects propagation rewrote", async () => {
+    mockWriteScopedConfigs.mockResolvedValue({
+      propagatedProjects: ["/other/project-a", "/other/project-b"],
+    });
+
+    const result = await writeProjectConfig({
+      wizardResult,
+      sourceResult,
+      projectDir,
+    });
+
+    expect(
+      result.propagatedProjects,
+      "propagated project dirs must reach the caller so it can recompile their agents",
+    ).toStrictEqual(["/other/project-a", "/other/project-b"]);
   });
 });
