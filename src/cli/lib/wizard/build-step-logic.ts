@@ -75,7 +75,14 @@ export function buildCategoriesForDomain(
 
     const isExclusive = cat.exclusive ?? true;
 
-    const options: CategoryOption[] = filteredOptions.map((skill) => {
+    // Sort options by displayName so the grid order is deterministic across
+    // machines and source types (readdir/insertion order is otherwise unstable).
+    // Lowercased ordinal comparison keeps the order locale-independent.
+    const sortedOptions = sortBy(filteredOptions, (skill) =>
+      getSkillById(skill.id).displayName.toLowerCase(),
+    );
+
+    const options: CategoryOption[] = sortedOptions.map((skill) => {
       const activeConfig = skillConfigs?.find((sc) => sc.id === skill.id && !sc.excluded);
       const excludedConfig = skillConfigs?.find((sc) => sc.id === skill.id && sc.excluded);
       const { secondaryScope } = deriveScopeBadges(activeConfig, excludedConfig);

@@ -363,6 +363,19 @@ describe("StepBuild component", () => {
 
       expect(onToggleLabels).toHaveBeenCalled();
     });
+
+    it("should not call onToggleFilterIncompatible when F is pressed while the feature flag is off", async () => {
+      // FEATURE_FLAGS.FILTER_INCOMPATIBLE defaults off, so the F hotkey is a no-op.
+      const onToggleFilterIncompatible = vi.fn();
+      const { stdin, unmount } = renderStepBuild({ onToggleFilterIncompatible });
+      cleanup = unmount;
+
+      await delay(RENDER_DELAY_MS);
+      stdin.write("f");
+      await delay(INPUT_DELAY_MS);
+
+      expect(onToggleFilterIncompatible).not.toHaveBeenCalled();
+    });
   });
 
   describe("edge cases", () => {

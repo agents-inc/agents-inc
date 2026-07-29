@@ -40,6 +40,16 @@ const createSourceRow = (
   ...(readOnly ? { readOnly } : {}),
 });
 
+/** A saved skill deselected this session: visible, inert, pending removal on save. */
+const createRemovedRow = (
+  skillId: SkillId,
+  options: SourceOption[],
+  scope: SkillScope,
+): SourceRow => ({
+  ...createSourceRow(skillId, options, scope),
+  disabled: true,
+});
+
 const defaultRows: SourceRow[] = [
   createSourceRow("web-framework-react", [createSourceOption("public", { selected: true })]),
   createSourceRow("web-state-zustand", [createSourceOption("public", { selected: true })]),
@@ -869,6 +879,122 @@ describe("SourceGrid component", () => {
       expect(reactMatches).toBe(2);
       // Global copy should have lock indicator
       expect(output).toContain(UI_SYMBOLS.LOCK);
+    });
+  });
+
+  describe("removed (disabled) rows", () => {
+    const removedRows: SourceRow[] = [
+      createSourceRow(
+        "web-framework-react",
+        [createSourceOption("public", { selected: true })],
+        "project",
+      ),
+      createRemovedRow(
+        "web-testing-vitest",
+        [createSourceOption("eject", { selected: true }), createSourceOption("public")],
+        "project",
+      ),
+    ];
+
+    it("should keep the removed skill visible", () => {
+      const { lastFrame, unmount } = renderGrid({ rows: removedRows });
+      cleanup = unmount;
+
+      expect(lastFrame()).toContain("Vitest");
+    });
+
+    it("should mark the removed skill with the pending-removal marker and no lock", () => {
+      const { lastFrame, unmount } = renderGrid({ rows: removedRows });
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      // Same marker the info panel prints for removals, so both surfaces read consistently.
+      expect(output).toContain(`${UI_SYMBOLS.REMOVED} Vitest`);
+      // A lock means "installed globally, not editable here" — the wrong message for a removal.
+      expect(output).not.toContain(UI_SYMBOLS.LOCK);
+    });
+
+    it("should show the persisted source indicator on the removed skill", () => {
+      const { lastFrame, unmount } = renderGrid({ rows: removedRows });
+      cleanup = unmount;
+
+      expect(lastFrame()).toContain(UI_SYMBOLS.SELECTED);
+    });
+
+    it("should not fire onSelect when space is pressed with a removed row focused", async () => {
+      const onSelect = vi.fn();
+      const { stdin, unmount } = renderGrid({
+        rows: [removedRows[1]],
+        defaultFocusedRow: 0,
+        defaultFocusedCol: 0,
+        onSelect,
+      });
+      cleanup = unmount;
+
+      await delay(RENDER_DELAY_MS);
+      stdin.write(SPACE);
+      await delay(INPUT_DELAY_MS);
+
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it("should skip removed rows during navigation", async () => {
+      const onFocusChange = vi.fn();
+      const { stdin, unmount } = renderGrid({
+        rows: removedRows,
+        defaultFocusedRow: 0,
+        defaultFocusedCol: 0,
+        onFocusChange,
+      });
+      cleanup = unmount;
+
+      await delay(RENDER_DELAY_MS);
+      // Row 1 is removed, so moving down wraps straight back to the editable row 0.
+      stdin.write(ARROW_DOWN);
+      await delay(INPUT_DELAY_MS);
+
+      expect(onFocusChange).toHaveBeenLastCalledWith(0, 0);
+    });
+
+    it("should not focus a removed row when it is the default focus target", async () => {
+      const onSelect = vi.fn();
+      const { stdin, unmount } = renderGrid({
+        rows: removedRows,
+        defaultFocusedRow: 1, // The removed row — focus must fall back to the editable row.
+        defaultFocusedCol: 0,
+        onSelect,
+      });
+      cleanup = unmount;
+
+      await delay(RENDER_DELAY_MS);
+      stdin.write(SPACE);
+      await delay(INPUT_DELAY_MS);
+
+      expect(onSelect).toHaveBeenCalledWith("web-framework-react", "public");
+    });
+
+    it("should not show search pill on removed rows", () => {
+      const mockSearch = vi.fn<(alias: string) => Promise<BoundSkillCandidate[]>>();
+      const { lastFrame, unmount } = renderGrid({
+        rows: [removedRows[1]],
+        onSearch: mockSearch,
+      });
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      expect(output).toContain("Vitest");
+      expect(output).not.toContain("Search");
+    });
+
+    it("should not show focus highlight on removed rows", () => {
+      const { lastFrame, unmount } = renderGrid({
+        rows: [removedRows[1]],
+        defaultFocusedRow: 0,
+        defaultFocusedCol: 0,
+      });
+      cleanup = unmount;
+
+      expect(lastFrame()).not.toContain(UI_SYMBOLS.CHEVRON);
     });
   });
 });

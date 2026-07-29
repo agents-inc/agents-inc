@@ -21,9 +21,12 @@ import {
 } from "../__tests__/mock-data/mock-matrices";
 import type { CategoryRow } from "../../components/wizard/category-grid";
 import type { SkillId, Category, CategorySelections } from "../../types";
-import { initializeMatrix } from "../matrix/matrix-provider";
+import { getSkillById, initializeMatrix } from "../matrix/matrix-provider";
 import { EXPECTED_SKILLS } from "../__tests__/expected-values";
 import { buildSkillConfigs } from "../__tests__/helpers";
+import { SKILLS } from "../__tests__/test-fixtures";
+import { buildCategoryMap, createMockMatrix } from "../__tests__/factories/matrix-factories";
+import { WEB_FRAMEWORK_CATEGORY } from "../__tests__/mock-data/mock-categories";
 
 describe("validateBuildStep", () => {
   const requiredCategory: CategoryRow = {
@@ -538,6 +541,25 @@ describe("buildCategoriesForDomain", () => {
 
       const result = buildCategoriesForDomain("web", [], {});
       expect(result[0].displayName).toBe("Web Framework");
+    });
+  });
+
+  describe("option ordering", () => {
+    it("sorts options alphabetically by displayName regardless of matrix insertion order", () => {
+      // Insert Vue before React so the matrix insertion order is NON-alphabetical.
+      // The sort must reorder to "React" before "Vue Composition Api" (ordinal,
+      // locale-independent), never leaving the raw readdir/insertion order.
+      initializeMatrix(
+        createMockMatrix(SKILLS.vue, SKILLS.react, {
+          categories: buildCategoryMap({ "web-framework": WEB_FRAMEWORK_CATEGORY }),
+        }),
+      );
+
+      const result = buildCategoriesForDomain("web", [], {});
+      const frameworkRow = result.find((r) => r.id === frameworkCategory);
+      const displayNames = frameworkRow!.options.map((o) => getSkillById(o.id).displayName);
+
+      expect(displayNames).toStrictEqual(["React", "Vue Composition Api"]);
     });
   });
 

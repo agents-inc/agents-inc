@@ -15,8 +15,6 @@ export type SkillDiffRow = {
   id: SkillId;
   source: string;
   status: DiffRowStatus;
-  /** Set when status is "source-changed". */
-  prevSource?: string;
 };
 
 export type AgentDiffRow = {
@@ -201,7 +199,7 @@ function classifyDiffRow(
   const prevSource = prevSourceMap?.get(key);
   const sourceChanged = !isNew && prevSource != null && prevSource !== skill.source;
   if (sourceChanged) {
-    return { id: skill.id, source: skill.source, status: "source-changed", prevSource };
+    return { id: skill.id, source: skill.source, status: "source-changed" };
   }
   return { id: skill.id, source: skill.source, status: isNew ? "added" : "unchanged" };
 }

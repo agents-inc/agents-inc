@@ -757,8 +757,9 @@ describe("SkillAgentSummary component", () => {
       const output = lastFrame()!;
       expect(output).toContain("~");
       expect(output).toContain("React");
-      expect(output).toContain("Agents Inc");
-      expect(output).toContain("Eject");
+      // The compact "~" marker alone signals the source change; the verbose
+      // "<old> → <new>" transition that overflowed the column is not rendered.
+      expect(output).not.toContain("→");
     });
 
     it("should show ~ prefix when skill source changes from eject to plugin", () => {
@@ -779,8 +780,9 @@ describe("SkillAgentSummary component", () => {
       const output = lastFrame()!;
       expect(output).toContain("~");
       expect(output).toContain("React");
-      expect(output).toContain("Eject");
-      expect(output).toContain("Agents Inc");
+      // The compact "~" marker alone signals the source change; the verbose
+      // "<old> → <new>" transition that overflowed the column is not rendered.
+      expect(output).not.toContain("→");
     });
 
     it("should not show ~ when skill source is unchanged", () => {

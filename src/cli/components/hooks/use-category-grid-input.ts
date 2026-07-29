@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useInput, type Key } from "ink";
 
 import type { Category, SkillId } from "../../types/index.js";
+import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
 import type { CategoryRow } from "../wizard/category-grid.js";
 import type { Direction } from "./use-focused-list-item.js";
 import {
@@ -78,7 +79,13 @@ export function useCategoryGridInput({
       return;
     }
 
-    if (isHotkey(input, HOTKEY_FILTER_INCOMPATIBLE) && onToggleFilterIncompatible) {
+    // Gated behind FEATURE_FLAGS.FILTER_INCOMPATIBLE (default off): pressing F is a
+    // no-op until the flag is flipped back on. The store action stays intact for re-enable.
+    if (
+      FEATURE_FLAGS.FILTER_INCOMPATIBLE &&
+      isHotkey(input, HOTKEY_FILTER_INCOMPATIBLE) &&
+      onToggleFilterIncompatible
+    ) {
       onToggleFilterIncompatible();
       return;
     }

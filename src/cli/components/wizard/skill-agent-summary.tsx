@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import React from "react";
-import { CLI_COLORS, EJECT_SOURCE, formatSourceDisplayName, UI_SYMBOLS } from "../../consts.js";
+import { CLI_COLORS, EJECT_SOURCE, UI_SYMBOLS } from "../../consts.js";
 import { getSkillDisplayName } from "../../lib/matrix/matrix-provider.js";
 import { computeScopeDiff } from "../../lib/wizard/index.js";
 import type { AgentDiffRow, DiffRowStatus, SkillDiffRow } from "../../lib/wizard/index.js";
@@ -27,9 +27,9 @@ const ScopeLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 const EjectIcon: React.FC = () => <Text color={CLI_COLORS.WARNING}> {UI_SYMBOLS.EJECT}</Text>;
 
 const DIFF_PREFIX: Record<DiffRowStatus, string> = {
-  added: "+ ",
+  added: `${UI_SYMBOLS.ADDED} `,
   "source-changed": "~ ",
-  removed: "- ",
+  removed: `${UI_SYMBOLS.REMOVED} `,
   unchanged: `${UI_SYMBOLS.BULLET} `,
 };
 
@@ -46,12 +46,6 @@ const SkillRow: React.FC<{ row: SkillDiffRow }> = ({ row }) => (
       {DIFF_PREFIX[row.status]}
       {getSkillDisplayName(row.id)}
     </Text>
-    {row.status === "source-changed" && row.prevSource != null && (
-      <Text dimColor>
-        {" "}
-        ({formatSourceDisplayName(row.prevSource)} → {formatSourceDisplayName(row.source)})
-      </Text>
-    )}
     {row.source === EJECT_SOURCE && <EjectIcon />}
   </Box>
 );

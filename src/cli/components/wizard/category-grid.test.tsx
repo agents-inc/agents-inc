@@ -502,6 +502,25 @@ describe("CategoryGrid component", () => {
     });
   });
 
+  describe("initial focus dispatch", () => {
+    it("dispatches onFocusedSkillChange for the initially focused cell on mount without navigation", async () => {
+      const onFocusedSkillChange = vi.fn();
+      const { unmount } = renderGrid({
+        categories: categoriesWithFramework,
+        defaultFocusedRow: 0,
+        defaultFocusedCol: 0,
+        onFocusedSkillChange,
+      });
+      cleanup = unmount;
+
+      await delay(RENDER_DELAY_MS);
+
+      // Row 0 / col 0 in categoriesWithFramework is web-framework-react — the store
+      // must learn the visually focused cell on mount, before any arrow key.
+      expect(onFocusedSkillChange).toHaveBeenCalledWith("web-framework-react");
+    });
+  });
+
   describe("focus indicator", () => {
     it("should render focused option with display name", () => {
       const { lastFrame, unmount } = renderGrid({

@@ -169,7 +169,7 @@ export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, child
             <DefinitionItem
               label="Filter incompatible"
               values={[HOTKEY_FILTER_INCOMPATIBLE.label]}
-              isVisible={store.step === "build"}
+              isVisible={store.step === "build" && FEATURE_FLAGS.FILTER_INCOMPATIBLE}
               isActive={store.filterIncompatible}
             />
             <DefinitionItem

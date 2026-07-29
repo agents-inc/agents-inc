@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 
 import { Box, Text } from "ink";
 
@@ -210,10 +210,8 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
     (row: number, col: number) => {
       if (showLabels) onToggleLabels();
       onFocusChange?.(row, col);
-      const skill = categories[row]?.options[col];
-      onFocusedSkillChange?.(skill?.id ?? null);
     },
-    [showLabels, onToggleLabels, onFocusChange, categories, onFocusedSkillChange],
+    [showLabels, onToggleLabels, onFocusChange],
   );
 
   const { focusedRow, focusedCol, setFocused, moveFocus } = useFocusedListItem(
@@ -238,6 +236,16 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
     onToggleLabels,
     onToggleFilterIncompatible,
   });
+
+  // Report the focused cell's skill on mount and whenever it changes — including
+  // category reshapes that shift the cell without a navigation event. useFocusedListItem
+  // only fires onChange during navigation, so the initially highlighted cell would
+  // otherwise never reach the store, leaving focusedSkillId out of sync with the visual
+  // focus and making the `s` scope hotkey no-op until the first arrow key.
+  const focusedSkillId = categories[focusedRow]?.options[focusedCol]?.id ?? null;
+  useEffect(() => {
+    onFocusedSkillChange?.(focusedSkillId);
+  }, [focusedSkillId, onFocusedSkillChange]);
 
   const { setSectionRef, scrollEnabled, scrollTopPx } = useSectionScroll({
     sectionCount: categories.length,

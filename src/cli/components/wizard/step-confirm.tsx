@@ -1,8 +1,9 @@
 import { Box, type DOMElement, measureElement, useInput } from "ink";
 import React, { useEffect, useRef, useState } from "react";
-import { CLI_COLORS, SCROLL_VIEWPORT } from "../../consts.js";
+import { CLI_COLORS } from "../../consts.js";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config.js";
 import { useMeasuredHeight } from "../hooks/use-measured-height.js";
+import { ScrollAffordance } from "./scroll-affordance.js";
 import { SkillAgentSummary } from "./skill-agent-summary.js";
 
 type StepConfirmProps = {
@@ -12,31 +13,37 @@ type StepConfirmProps = {
   onBack: () => void;
 };
 
-const BORDER_ROWS = 2;
-
 export const StepConfirm: React.FC<StepConfirmProps> = ({
   onComplete,
   skillConfigs,
   agentConfigs,
   onBack,
 }) => {
-  const { ref: scrollRef, measuredHeight } = useMeasuredHeight();
+  // Measured INSIDE the border and padding, so it is the height the summary
+  // actually gets — no border-row fudge factor.
+  const { ref: viewportRef, measuredHeight: viewportHeight } = useMeasuredHeight();
 
   const contentRef = useRef<DOMElement>(null);
   const [contentHeight, setContentHeight] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
 
   useEffect(() => {
-    if (contentRef.current) {
-      const { height } = measureElement(contentRef.current);
-      setContentHeight((prev) => (prev !== height ? height : prev));
-    }
+    if (!contentRef.current) return;
+    const { height } = measureElement(contentRef.current);
+    // Yoga under-reports a wrapped subtree measured inside a viewport too
+    // short to lay it out, and reports 0 inside a zero-height one, so the
+    // tallest reading is the trustworthy one. Believing a squeezed reading
+    // would shrink the hidden-line count until the affordance disappeared,
+    // which hands its row back and grows the count again — a render loop.
+    setContentHeight((prev) => Math.max(prev, height));
   });
 
-  const viewportHeight = Math.max(0, measuredHeight - BORDER_ROWS);
-  const scrollEnabled = measuredHeight >= SCROLL_VIEWPORT.MIN_VIEWPORT_ROWS;
-  const needsScroll = scrollEnabled && contentHeight > viewportHeight;
+  // contentHeight only ever sizes the scroll range and the affordance count.
+  // It must never gate the clip: a viewport that stops clipping when it looks
+  // too small grows to content height, which makes it look big enough to stop
+  // clipping — a stable wrong answer that paints the summary over the border.
   const maxScroll = Math.max(0, contentHeight - viewportHeight);
+  const hiddenBelow = Math.max(0, maxScroll - scrollOffset);
 
   useInput((_input, key) => {
     if (key.return) {
@@ -45,30 +52,31 @@ export const StepConfirm: React.FC<StepConfirmProps> = ({
     if (key.escape) {
       onBack();
     }
-    if (!needsScroll) return;
     if (key.upArrow) setScrollOffset((prev) => Math.max(0, prev - 1));
     if (key.downArrow) setScrollOffset((prev) => Math.min(maxScroll, prev + 1));
   });
 
   return (
-    <Box ref={scrollRef} flexDirection="column" flexGrow={1} flexBasis={0}>
-      <Box
-        flexDirection="column"
-        paddingX={1}
-        borderStyle="single"
-        borderColor={CLI_COLORS.NEUTRAL}
-        borderDimColor
-        {...(needsScroll && { flexGrow: 1, flexBasis: 0, overflow: "hidden" as const })}
-      >
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      flexBasis={0}
+      paddingX={1}
+      borderStyle="single"
+      borderColor={CLI_COLORS.NEUTRAL}
+      borderDimColor
+    >
+      <Box ref={viewportRef} flexDirection="column" flexGrow={1} flexBasis={0} overflow="hidden">
         <Box
           ref={contentRef}
           flexDirection="column"
+          flexShrink={0}
           marginTop={scrollOffset > 0 ? -scrollOffset : 0}
-          {...(needsScroll && { flexShrink: 0 })}
         >
           <SkillAgentSummary skillConfigs={skillConfigs} agentConfigs={agentConfigs} />
         </Box>
       </Box>
+      <ScrollAffordance hiddenAbove={scrollOffset} hiddenBelow={hiddenBelow} />
     </Box>
   );
 };
