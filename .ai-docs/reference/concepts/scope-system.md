@@ -30,13 +30,13 @@ related:
   - reference/wizard/component-patterns.md
   - reference/concepts/tombstone-pattern.md
   - reference/concepts/guard-pattern.md
-last_validated: 2026-07-23
+last_validated: 2026-07-24
 ---
 
 # Scope System (Project vs Global)
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-24
+**Last Validated:** 2026-07-24
 
 > **Cross-cutting concept.** Consolidates scope documentation from: `architecture-overview.md` (Section 11), `wizard-flow.md` (guards), `state-transitions.md` (scope actions), `configuration.md` (scope-aware splitting), `component-patterns.md` (dual-scope badges, lock icons).
 
@@ -170,19 +170,19 @@ Guards prevent project-scope edits from modifying globally-installed skills/agen
 
 **Actions with guards:**
 
-| Action                       | Guard Behavior                                                                                                                                                                                                                               |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `toggleTechnology()`         | Toast if skill is installed globally (snapshot active global, OR a snapshot tombstone paired with a live active-global entry on the `isSelected` deselect path). Also toasts if an exclusive swap would deselect a globally-installed skill. |
-| `toggleSkillScope()`         | No-op if `isEditingFromGlobalScope`. Toast `Installed at both scopes` if an untouched persisted `[P][G]` pair (snapshot holds the global tombstone). Toast if project eject to global and global eject already installed (no tombstone).     |
-| `toggleAgent()`              | Toast if agent is installed globally (same snapshot/tombstone shape as `toggleTechnology`), unless global edit or init mode.                                                                                                                 |
-| `toggleAgentScope()`         | No-op if `isEditingFromGlobalScope`. Toast `Installed at both scopes` for an untouched persisted `[P][G]` agent pair.                                                                                                                        |
-| `toggleFilterIncompatible()` | Skips skills with `excluded` flag when finding incompatible web skills (protects tombstoned globals); refuses the whole toggle with a toast if any target is a locked global.                                                                |
+| Action                       | Guard Behavior                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toggleTechnology()`         | Toast if skill is installed globally (snapshot active global, OR a snapshot tombstone paired with a live active-global entry on the `isSelected` deselect path). SPACE on a live `[P][G]` row is inert — dual-scope arm toasts and leaves badges unchanged (D-260). Also toasts if an exclusive swap would deselect a globally-installed skill or collapse a live `[P][G]` pair. |
+| `toggleSkillScope()`         | No-op if `isEditingFromGlobalScope`. Sole dual-scope toggle — `s` round-trips `[P][G]` → `[G]` → `[P][G]` (D-260). Toast if project eject to global and global eject already installed (no tombstone).                                                                                                                                                                           |
+| `toggleAgent()`              | Toast if agent is installed globally (same snapshot/tombstone shape as `toggleTechnology`), unless global edit or init mode. SPACE on a live `[P][G]` agent row is inert — dual-scope arm toasts, badges unchanged (D-260).                                                                                                                                                      |
+| `toggleAgentScope()`         | No-op if `isEditingFromGlobalScope`. Sole dual-scope toggle — `s` round-trips `[P][G]` → `[G]` → `[P][G]` (D-260).                                                                                                                                                                                                                                                               |
+| `toggleFilterIncompatible()` | Skips skills with `excluded` flag when finding incompatible web skills (protects tombstoned globals); refuses the whole toggle with a toast if any target is a locked global.                                                                                                                                                                                                    |
 
 > **Detailed documentation:** See [concepts/guard-pattern.md](./guard-pattern.md) for the full unified guard reference.
 
 ### Scope Toggle Eject Guard (D-199)
 
-`toggleSkillScope` in `wizard-store.ts` blocks project-eject to global-eject promotion when a non-excluded global eject entry already exists in `installedSkillConfigs` (source compared against the `EJECT_SOURCE` constant). However, if the current `skillConfigs` already contains an excluded tombstone for that skill ID, the guard allows the toggle (undo path). Note the persisted-dual-scope-pair guard (toast `Installed at both scopes`) runs BEFORE this eject-collision check, so an untouched reopened `[P][G]` pair never reaches the eject-collision path — see [concepts/guard-pattern.md](./guard-pattern.md).
+`toggleSkillScope` in `wizard-store.ts` blocks project-eject to global-eject promotion when a non-excluded global eject entry already exists in `installedSkillConfigs` (source compared against the `EJECT_SOURCE` constant). However, if the current `skillConfigs` already contains an excluded tombstone for that skill ID, the guard allows the toggle (undo path). Because a live `[P][G]` pair always carries the excluded global tombstone, a reopened dual-scope eject pair reaches this eject-collision check but is allowed via the undo path — `s` collapses it to `[G]`. (D-260 removed the pre-emptive persisted-pair guard that used to short-circuit before this check.) See [concepts/guard-pattern.md](./guard-pattern.md).
 
 > **Detailed documentation:** See [concepts/tombstone-pattern.md](./tombstone-pattern.md) for full tombstone lifecycle.
 

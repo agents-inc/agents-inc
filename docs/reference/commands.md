@@ -23,7 +23,7 @@ Every command available in the `agentsinc` CLI. Run `agentsinc <command> --help`
 | `doctor`                    | Diagnose installation, skills, agents, orphans                           | No          | (none — always verbose, no base)                                                          |
 | `list`                      | Show installation mode, source, skills, agents                           | No          | (base only)                                                                               |
 | `validate`                  | Validate registered sources, installed plugins, skills, agents           | No          | (none — no base)                                                                          |
-| `uninstall`                 | Remove CLI-managed files, optionally including `.claude-src/`            | Yes         | `--yes/-y`, `--all`                                                                       |
+| `uninstall`                 | Remove CLI-managed files and the `.claude-src/` config manifest          | Yes         | `--yes/-y`                                                                                |
 
 Interactive = renders an Ink UI. Hybrid = interactive only when prompting for confirmation (`update`).
 
@@ -291,9 +291,9 @@ Result: 0 error(s), 0 warning(s)
 
 **File:** `src/cli/commands/uninstall.tsx`
 
-Removes CLI-managed plugins and compiled agents. With `--all`, also removes `.claude-src/` (the config directory).
+Removes CLI-managed plugins, CLI-installed skills (matched by `forked-from` metadata), compiled agents, and the `.claude-src/` config manifest (`config.ts` + `config-types.ts`). Manifest removal is unconditional — there is no flag gating it (the former `--all` flag is removed). Empty `.claude/` and `.claude-src/` directories are cleaned up afterwards; user-created content is preserved. Also deregisters the project from the global config's project registry (best-effort). A global uninstall (run from the home directory) additionally updates each registered project's `config.ts`/`config-types.ts` to drop the removed global-scoped entries (best-effort — unreachable projects are warned and skipped).
 
-**Flags:** `--yes/-y` (skip confirm), `--all` (also remove `.claude-src/`), `--source` (base).
+**Flags:** `--yes/-y` (skip confirm), `--source` (base).
 
 ---
 
@@ -354,3 +354,11 @@ Running list of internal `.ai-docs/` references that lag behind the CLI's actual
   - Any other `.ai-docs/` with `skills-matrix.yaml` references — grep `grep -rn "skills-matrix" .ai-docs/` before touching.
   - Changelogs retain their period-correct mentions — leave alone.
 - [ ] **When `new skill` / `new agent` metadata generation is hardened** (see TODOs) — update any skill-loading or agent-loading reference docs that describe the current schema expectations.
+- [ ] **`uninstall --all` removed** — the `.claude-src/` config-manifest removal is now unconditional; the current flag surface is `--yes/-y` plus the inherited base `--source`. Stale references to sweep:
+  - `.ai-docs/reference/commands/index.md` — uninstall flag table still lists `--all` ("Also remove .claude-src/ config dir").
+  - `.ai-docs/reference/boundary-map.md` — uninstall row still lists `--all` (boolean).
+  - `.ai-docs/reference/config/config-writer.md` — two `cc uninstall --all` invocations (deregister trigger table + stale-projects prune prose); the command is now just `cc uninstall`.
+  - `.ai-docs/e2e-coverage-gaps.md` — "Config cleanup --all" row names the removed flag.
+  - `.ai-docs/standards/e2e/assertions.md` — `expectCleanUninstall(..., { removeConfig: true })` example annotated with a `// --all flag` comment.
+  - `e2e/TODO-E2E.md` — historical `uninstall --all` task entries; period-correct history, decide whether to prune or leave (same treatment as the `build stack` entries above).
+  - Period-correct mentions stay as-is: `.ai-docs/reference/features/plugin-system.md` D-246 narrative (describes pre-fix behavior of `uninstall --yes --all`) and dated agent findings/changelogs.

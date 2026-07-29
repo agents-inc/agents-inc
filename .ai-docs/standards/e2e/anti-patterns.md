@@ -399,6 +399,44 @@ expect(projectHonoSource![1]).not.toBe("eject");
 
 ---
 
+## Choosing the Wizard Launcher by Scope
+
+The E2E sandbox defaults `HOME` to a sibling temp dir distinct from `projectDir` (`terminal-session.ts`), so a wizard launched with `launch()` / `launchInProject()` runs at genuine PROJECT scope (`isEditingFromGlobalScope === false`). Because skills and agents default to GLOBAL scope, their installed content lands under that global `HOME` — exposed to tests as `wizard.globalHome`, not `projectDir`. `launchInGlobal()` instead models editing the GLOBAL install (`HOME === cwd === projectDir`), where every artifact collapses back onto `projectDir`. Pick the launcher by what the test does, not by habit.
+
+### Always match the launcher to the scope the test edits
+
+**What:** Reaching for `launchInProject` on every ported test, or leaving `launch()` where the test installs and then asserts global content against `projectDir`.
+
+**Why:** A project-scope edit installs global-default content under `wizard.globalHome`, not `projectDir`. A test that consumes or asserts that content against `projectDir` silently diverges from where the content actually landed.
+
+**Instead:** Fresh init/edit that only ASSERTS installed content → `launchInProject` + redirect `.claude/` content matchers to `{ dir: wizard.globalHome }` (config stays on `projectDir`). Edits that mutate global content, or flows with a cwd-resolving follow-up → `launchInGlobal` (see below). Output-only navigation tests need neither — keep `launch()`.
+
+### Never use `launchInProject` for a test that toggles a global skill's source
+
+**What:** Porting a source-switch test (plugin ↔ eject during `cc edit`) to `launchInProject`.
+
+**Why:** In a project edit, a globally-installed skill is rendered read-only in the Sources step (`source-grid.tsx` — "installed globally, not yours to change here"). The toggle is a silent no-op, the wizard exits `EDIT_UNCHANGED`, and the config never gains the new source — so the test fails downstream, not with an obvious error.
+
+**Instead:** Use `launchInGlobal` (`HOME === cwd === projectDir`) to edit the scope where the skills live and are editable. Every artifact collapses onto `projectDir`, so the assertions need no redirect or split. See `.ai-docs/agent-findings/2026-07-24-d226-phase2-wave1-source-switch-lock-and-global-stack.md`.
+
+### Never assert a global agent's stack on the project config
+
+**What:** Loading `config.stack` via `loadConfigOrFail(projectDir)` after a default (all-global) init.
+
+**Why:** `config-writer.ts` filters the stack to agents matching that config's scope. A default install's PROJECT config carries the flat skills/agents lists but NO stack for global agents — their stack is written to the GLOBAL config (`HOME/.claude-src/config.ts`).
+
+**Instead:** Read the stack from the global home (`wizard.globalHome`), not `projectDir`. The project config carries only the stack slice for PROJECT-scoped agents. Same finding as above.
+
+### Never use `launchInProject` when a follow-up command resolves its target from cwd
+
+**What:** Porting an `init → … → cc uninstall` flow (or an edit that runs `claude plugin install`) to `launchInProject` + a redirected shared home.
+
+**Why:** `cc uninstall` (`detectUninstallTarget`, cwd-only) and `claude plugin install` (writes `enabledPlugins` into HOME's `settings.json`) act on the content root at cwd/HOME. A default all-global install under `launchInProject` puts that content at `HOME ≠ projectDir`, so the follow-up silently no-ops ("not installed in this project", or plugin enablement in the wrong `settings.json`).
+
+**Instead:** Model the whole flow as the GLOBAL install with `launchInGlobal` (`HOME === cwd === projectDir`) — every artifact collapses onto `projectDir` and the follow-up finds it. Use `launchInProject` + redirect ONLY when the test merely ASSERTS content; `cc compile` is the one follow-up that IS HOME/scope-aware and can straddle the split. See `.ai-docs/agent-findings/2026-07-24-d226-phase2-wave2-uninstall-cwd-only-launcher.md`.
+
+---
+
 ## Rules Carried Forward from the Old Bible
 
 These rules from the original `e2e-testing-bible.md` remain valid:

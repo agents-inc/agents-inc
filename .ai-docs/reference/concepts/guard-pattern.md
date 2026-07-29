@@ -15,23 +15,22 @@ keywords:
     silent-no-op,
     focusedSkillId,
     scenario-b-race,
-    installed-at-both-scopes,
-    persisted-dual-scope-pair,
-    _sessionRebuiltScopePair,
+    dual-scope-inert-spacebar,
     D-233,
+    D-260,
   ]
 related:
   - reference/concepts/scope-system.md
   - reference/concepts/tombstone-pattern.md
   - reference/wizard/state-transitions.md
   - reference/wizard/flow.md
-last_validated: 2026-07-23
+last_validated: 2026-07-24
 ---
 
 # Guard Pattern
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-24
+**Last Validated:** 2026-07-24
 
 > **Cross-cutting concept.** Consolidates guard documentation from: `wizard-flow.md` (Global-Item Guards, Scope Toggle Eject Guard), `state-transitions.md` (guard tables in selection actions), and the hotkey dispatcher in `wizard.tsx`.
 
@@ -69,13 +68,14 @@ The scope-toggle guards (`toggleSkillScope`, `toggleAgentScope`) gate only on `i
 **Guard condition (`isActiveGlobal`, two arms):**
 
 - **Snapshot arm:** `hasGlobalActive(installedSkillConfigs, id)` — a genuinely global-only install in the hydration snapshot blocks both directions (long-standing read-only behaviour).
-- **Live tombstone arm (2026-07-18 hydration-snapshot fix):** `isSelected && hasGlobalTombstone(installedSkillConfigs, id) && hasGlobalActive(skillConfigs, id)` — blocks the DESELECT of the stale-snapshot state a persisted `[P][G]` pair reaches after an in-session spacebar collapse (the snapshot still shows the tombstone; the live config now holds a plain active global). Gated on `isSelected` so the sanctioned re-select restore path still runs, and it never fires while the live config still holds the full `[P][G]` pair (so the FIRST collapse spacebar is allowed) or on a skill freshly added this session (absent from the snapshot).
+- **Live tombstone arm (2026-07-18 hydration-snapshot fix):** `isSelected && hasGlobalTombstone(installedSkillConfigs, id) && hasGlobalActive(skillConfigs, id)` — blocks the DESELECT of the stale-snapshot state a `[P][G]` pair reaches after an in-session `s` collapse (the snapshot still shows the tombstone; the live config now holds a plain active global). Gated on `isSelected` so the sanctioned re-select restore path still runs, and it never fires on a skill freshly added this session (absent from the snapshot).
+- **Dual-scope arm (D-260):** `isSelected && isDualScopePair(skillConfigs, id)` — makes SPACE inert on a live `[P][G]` pair (active project + excluded global tombstone in the live config): the deselect returns the toast and leaves the badges unchanged, so only `s` (`toggleSkillScope`) can change a dual-scope row. Gated on `isSelected` so the re-select restore path (`reconcileSkillConfigs` rebuilds `[P][G]`) still runs.
 
-Both arms additionally require `!isEditingFromGlobalScope && !isInitMode`.
+All three arms additionally require `!isEditingFromGlobalScope && !isInitMode`.
 
 **Outcome:** Toast — `"Global skills cannot be changed from project scope"`.
 
-**Exclusive-mode replacement variant:** In an exclusive (radio) category, selecting a new skill when the current selection is a globally-installed one also trips the same guard (same two-arm condition) with the same toast. This prevents implicit deselect-by-replacement of a protected global.
+**Exclusive-mode replacement variant:** In an exclusive (radio) category, selecting a new skill when the current selection is a globally-installed one — or a live `[P][G]` pair — also trips the same guard (same arms) with the same toast. This prevents an implicit deselect-by-replacement (or collapse) of a protected global.
 
 ### 2. Only-Skill Deselect Guard (`toggleTechnology`)
 
@@ -97,7 +97,7 @@ Both arms additionally require `!isEditingFromGlobalScope && !isInitMode`.
 
 **Guard condition (`isActiveGlobal`):** mirrors the skill-path two-arm shape — `agentHasGlobalActive(installedAgentConfigs, agent)` OR (`agentHasGlobalTombstone(installedAgentConfigs, agent) && agentHasGlobalActive(agentConfigs, agent)`), AND neither `isEditingFromGlobalScope` nor `isInitMode` is true.
 
-**Two D-233 branches run BEFORE this guard** (so they are never blocked by it): a dual-scope deselect (`isDualScopeAgentPair(agentConfigs, agent)`) collapses the pair via `collapseDualScopeAgent`, and an inherited-global re-select (`agentHasGlobalActive(agentConfigs) && !agentHasProjectActive(agentConfigs) && !selectedAgents.includes(agent) && agentHasGlobalTombstone(installed)`) rebuilds it via `restoreDualScopeAgent`. See [tombstone-pattern.md](./tombstone-pattern.md).
+**Two dual-scope branches run BEFORE this guard** (D-233/D-260): (a) a live `[P][G]` pair (`isDualScopeAgentPair(agentConfigs, agent)`, gated on `!isEditingFromGlobalScope`) makes SPACE **inert** — it returns the `GLOBAL_AGENTS_LOCKED` toast and leaves the pair intact, so only `s` (`toggleAgentScope`) can change a dual-scope agent row; (b) an inherited-global re-select (`agentHasGlobalActive(agentConfigs) && !agentHasProjectActive(agentConfigs) && !selectedAgents.includes(agent) && agentHasGlobalTombstone(installed)`) rebuilds the pair via `restoreDualScopeAgent`. See [tombstone-pattern.md](./tombstone-pattern.md).
 
 **Outcome:** Toast — `"Global agents cannot be changed from project scope"`.
 
@@ -111,17 +111,17 @@ Both arms additionally require `!isEditingFromGlobalScope && !isInitMode`.
 
 > **Not previously documented** — this toast is emitted in the hotkey dispatcher, not the store. The store's `toggleSkillScope` / `toggleAgentScope` have a matching silent guard that catches direct action calls (e.g. tests, programmatic callers).
 
-### 5. Persisted Dual-Scope Pair Guard (`toggleSkillScope`, `toggleAgentScope`)
+### 5. Dual-Scope `s`/SPACE Contract (`toggleSkillScope`, `toggleAgentScope`, `toggleTechnology`, `toggleAgent`)
 
-**File:** `wizard-store.ts` — `toggleSkillScope` / `toggleAgentScope` actions (added by the 2026-07-18 hydration-snapshot fix).
+**File:** `wizard-store.ts` — the four toggle actions.
 
-**Trigger:** Pressing `S` on a reopened, untouched-this-session `[P][G]` dual-scope skill/agent.
+**Trigger:** Pressing `s` or SPACE on a live `[P][G]` dual-scope skill/agent.
 
-**Guard condition:** `!_sessionRebuiltScopePair{Skills,Agents}.has(id) && hasGlobalTombstone(installed*Configs, id) && isDualScopePair(*Configs, id)`. The hydration snapshot carries the excluded global tombstone (so the pair is pristine-from-disk, not reconstructed this session) and the live config still holds the full pair.
+**`s` is the sole dual-scope toggle (D-260).** `toggleSkillScope` / `toggleAgentScope` round-trip a pair both ways with **no blocking guard** — `[P][G]` → `[G]` (P→G drops the tombstone) → `[P][G]` (G→P re-adds the tombstone, because `wasInstalledGlobally` counts a snapshot global entry/tombstone as installed). The pre-D-260 persisted-pair guard and its session-rebuilt-pair state tracking were removed — a reopened-from-disk pair and a session-built pair behave identically.
 
-**Outcome:** Toast — `"Installed at both scopes — use space to change project scope"`. `s` has no well-defined single scope target on a persisted pair; SPACE (`toggleTechnology` / `toggleAgent`) is the sanctioned way to change the project half.
+**SPACE is inert on a live `[P][G]` row (D-260).** The dual-scope arms in `toggleTechnology` (`isSelected && isDualScopePair(skillConfigs, id)`, see guard #1) and `toggleAgent` (`isDualScopeAgentPair(agentConfigs, agent)`, see guard #3) return the global-locked toast and leave the badges unchanged, so a deselect can never collapse a dual-scope pair; only `s` may.
 
-**Session-authored exception:** a pair collapsed then rebuilt WITHIN the session is recorded in `_sessionRebuiltScopePairSkills` / `_sessionRebuiltScopePairAgents` (populated by the G→P tombstone-creation branch and the spacebar/agent restore path). For ids in that set the guard suppresses itself, so `s` round-trips the pair freely even though its shape now matches a pristine snapshot. Within-session G↔P round-trips — where the snapshot still holds an ACTIVE global entry, not a tombstone — are unaffected either way. This guard runs BEFORE the eject-collision guard (#6).
+**No dual-scope toast fires on `s`** — the pre-D-260 toast constant was removed together with the persisted-pair guard, so `s` over a dual-scope pair changes scope silently rather than emitting a toast.
 
 ### 6. Skill Scope Eject-Collision Guard (`toggleSkillScope`)
 
@@ -133,7 +133,7 @@ Both arms additionally require `!isEditingFromGlobalScope && !isInitMode`.
 
 **Outcome:** Toast — `"Already exists as ejected skill at global scope"`.
 
-**Undo path:** When an excluded tombstone for the same skill id is present, the guard allows the toggle. The tombstone proves this is an undo of a prior G→P, not a fresh collision. See [tombstone-pattern.md](./tombstone-pattern.md) "`toggleSkillScope` / `toggleAgentScope` — Persisted vs Within-Session". Note the persisted-dual-scope-pair guard (#5) fires first, so an untouched reopened `[P][G]` never reaches this eject-collision check.
+**Undo path:** When an excluded tombstone for the same skill id is present, the guard allows the toggle. The tombstone proves this is an undo of a prior G→P, not a fresh collision. See [tombstone-pattern.md](./tombstone-pattern.md) "`toggleSkillScope` / `toggleAgentScope` — `s` Is the Sole Dual-Scope Toggle". Because a live `[P][G]` pair always carries the excluded global tombstone, a reopened dual-scope eject pair reaches this check but is allowed via the undo path — `s` collapses it to `[G]` (D-260 removed the pre-emptive persisted-pair guard that used to short-circuit before this check).
 
 **Tombstone side effects** (on successful toggle, not part of the guard):
 
@@ -169,7 +169,7 @@ Both arms additionally require `!isEditingFromGlobalScope && !isInitMode`.
 
 **Behavior (predicate, not toast):** When removing a skill id, if `scope === "global"` AND the id is in `installedSkillConfigs`, the entry survives with `excluded: true` stamped on. Project-scoped entries and non-installed globals are dropped. When the caller passes `null` for `installedSkillConfigs` (editing FROM global scope), globals are dropped outright — no tombstone (D-233 Scenario C).
 
-**Dual-scope branch (D-233, resolved):** `applySkillRemoval` now recognises a dual-scope pair (`isDualScopePair`: active project entry + global tombstone). On removal it drops BOTH halves and re-surfaces a single inherited-global entry, so the `[G]` badge keeps rendering. The mirror restore (re-select rebuilds `[P][G]`) lives in `reconcileSkillConfigs`. Agents get the equivalent via `collapseDualScopeAgent` / `restoreDualScopeAgent` invoked from the `toggleAgent` action.
+**Dual-scope branch (D-233, resolved):** `applySkillRemoval` recognises a dual-scope pair (`isDualScopePair`: active project entry + global tombstone). On removal it drops BOTH halves and re-surfaces a single inherited-global entry, so the `[G]` badge keeps rendering. This branch is reached via the removal paths (`toggleDomain`, `toggleFilterIncompatible`) — **not** spacebar, which is inert on a live `[P][G]` row (D-260). The mirror restore (re-select rebuilds `[P][G]`) lives in `reconcileSkillConfigs`. On the agent path the collapse is `toggleAgentScope`'s `s` toggle (dropping the tombstone); the restore is `restoreDualScopeAgent`, invoked from the `toggleAgent` action.
 
 > Listed here as a guard-class predicate — it shapes the state without user feedback. See [tombstone-pattern.md](./tombstone-pattern.md) "D-233 — Dual-Scope Spacebar + Scope-Aware Removal (Resolved)".
 
@@ -226,7 +226,7 @@ These log to `warn()` and return the current state. They exist to catch bad call
 
 ## Known Gap — Ungated Source Setters
 
-The source setters `setSkillSource`, `setAllSourcesEject`, and `setAllSourcesPlugin` (`wizard-store.ts`) do **not** carry the `isEditingFromGlobalScope` / `isInitMode` gate that `toggleTechnology` / `toggleSkillScope` use. From a project-context edit they rewrite `source` on inherited global-active rows too, so the Sources step can show a source change the store will not legitimately own. The `edit.tsx` command boundary compensates: `recordGlobalSourceMigrations()` runs before `writeConfigAndCompile` and records `source` in the global config for exactly the skill ids `executeMigration` acted on that are active at global scope (nothing else). Bringing the same predicate into the wizard setters is the open remainder — see `.ai-docs/agent-findings/2026-07-20-project-context-edit-lacked-scope-authority-gate.md` and `2026-07-20-scope-authority-must-follow-work-performed.md`.
+The source setters `setSourceSelection`, `setAllSourcesEject`, and `setAllSourcesPlugin` (`wizard-store.ts`) do **not** carry the `isEditingFromGlobalScope` / `isInitMode` gate that `toggleTechnology` / `toggleSkillScope` use. From a project-context edit they rewrite `source` on inherited global-active rows too, so the Sources step can show a source change the store will not legitimately own. The `edit.tsx` command boundary compensates: `recordGlobalSourceMigrations()` runs before `writeConfigAndCompile` and records `source` in the global config for exactly the skill ids `executeMigration` acted on that are active at global scope (nothing else). Bringing the same predicate into the wizard setters is the open remainder — see `.ai-docs/agent-findings/2026-07-20-project-context-edit-lacked-scope-authority-gate.md` and `2026-07-20-scope-authority-must-follow-work-performed.md`.
 
 ## Guard vs Toast Flow
 
@@ -266,7 +266,7 @@ Normal action logic (compute newSelections, reconcileSkillConfigs, ...)
 | Only-skill deselect                | `toggleTechnology` / store                                                        | Toast          | "Cannot deselect the only skill in this category"                                                                      |
 | Global agent toggle                | `toggleAgent` / store                                                             | Toast          | "Global agents cannot be changed from project scope"                                                                   |
 | Scope toggle global-context        | `HOTKEY_SCOPE` / wizard.tsx                                                       | Toast          | "Scope toggle unavailable in global context"                                                                           |
-| Persisted dual-scope pair          | `toggleSkillScope` / `toggleAgentScope` / store                                   | Toast          | "Installed at both scopes — use space to change project scope" (untouched reopened `[P][G]`)                           |
+| Dual-scope inert spacebar (D-260)  | `toggleTechnology` / `toggleAgent` / store                                        | Toast          | Global-locked toast on SPACE over a live `[P][G]`; `s` is the sole dual-scope toggle                                   |
 | Skill scope eject collision        | `toggleSkillScope` / store                                                        | Toast          | "Already exists as ejected skill at global scope"                                                                      |
 | Scope silent (editing-from-global) | `toggleSkillScope` / `toggleAgentScope`                                           | Silent         | Covers direct action callers that bypass the hotkey toast                                                              |
 | Scope silent (missing config)      | `toggleSkillScope` / `toggleAgentScope`                                           | Silent         | Stale-id callers                                                                                                       |
@@ -278,7 +278,7 @@ Normal action logic (compute newSelections, reconcileSkillConfigs, ...)
 
 ## Anchors
 
-- `toggleTechnology`, `toggleAgent`, `toggleSkillScope`, `toggleAgentScope`, `toggleFilterIncompatible`, `applySkillRemoval`, `reconcileSkillConfigs`, `collapseDualScopeAgent`, `restoreDualScopeAgent`, `isDualScopePair`, `isDualScopeAgentPair`, `_sessionRebuiltScopePairSkills`, `_sessionRebuiltScopePairAgents`, `setSkillSource`, `setAllSourcesEject`, `setAllSourcesPlugin`, `setSourceSelection`, `setEnabledSources`, `bindSkill`, `populateFromSkillIds`, `goBack`, `setCurrentDomainIndex` — `src/cli/stores/wizard-store.ts`.
+- `toggleTechnology`, `toggleAgent`, `toggleSkillScope`, `toggleAgentScope`, `toggleFilterIncompatible`, `applySkillRemoval`, `reconcileSkillConfigs`, `restoreDualScopeAgent`, `isDualScopePair`, `isDualScopeAgentPair`, `setAllSourcesEject`, `setAllSourcesPlugin`, `setSourceSelection`, `setEnabledSources`, `bindSkill`, `populateFromSkillIds`, `goBack`, `setCurrentDomainIndex` — `src/cli/stores/wizard-store.ts`.
 - `HOTKEY_SCOPE` handler, `TOAST_DURATION_MS` effect — `src/cli/components/wizard/wizard.tsx`.
 - `shouldIncludeTriple`, `buildAgentStack` — `src/cli/lib/configuration/config-generator.ts`.
 - `recordGlobalSourceMigrations`, `logChangeSummary` — `src/cli/commands/edit.tsx`.

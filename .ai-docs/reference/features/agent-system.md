@@ -22,13 +22,13 @@ related:
   - reference/store-map.md
   - reference/concepts/guard-pattern.md
   - reference/concepts/tombstone-pattern.md
-last_validated: 2026-07-23
+last_validated: 2026-07-24
 ---
 
 # Agent System
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-24
+**Last Validated:** 2026-07-24
 
 ## Overview
 
@@ -656,7 +656,7 @@ The `changed` flag flips when either merged list differs from the existing list 
 - [Wizard Flow](./wizard-flow.md) -- How agents are selected in the wizard (DOMAIN_AGENTS, selection grid)
 - [Type System](../type-system.md) -- AgentName union type and generated types
 - [Store Map](../store-map.md) -- `toggleAgent` / `toggleAgentScope` actions, `agentConfigs` / `selectedAgents` / `installedAgentConfigs` state, agent scope predicates
-- [Guard Pattern](../concepts/guard-pattern.md) -- Global Agent Toggle Guard (`isActiveGlobal`) and the two D-233 branches (`collapseDualScopeAgent` / `restoreDualScopeAgent`) that run before it
+- [Guard Pattern](../concepts/guard-pattern.md) -- Global Agent Toggle Guard (`isActiveGlobal`) and the two dual-scope branches that run before it (D-233/D-260: SPACE is inert on a live `[P][G]`; `restoreDualScopeAgent` rebuilds the pair on re-select; `s`/`toggleAgentScope` is the sole collapse)
 - [Tombstone Pattern](../concepts/tombstone-pattern.md) -- `applyAgentToggle`, `collectTombstones`, dual-scope `[P][G]` collapse/restore mechanics
 
 ## Related Findings
@@ -668,4 +668,4 @@ The `changed` flag flips when either merged list differs from the existing list 
 - `agent-findings/2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md` -- `mergeConfigs` now preserves the global `projects` field.
 - `agent-findings/2026-04-21-d228-e2e-vacuous-pass-via-home-edit.md` -- D-222/D-228 E2E routing discipline.
 - `agent-findings/2026-07-18-propagation-skips-agent-recompile.md` -- propagation is config-only; registered projects' compiled agents are not recompiled (D-240).
-- `agent-findings/2026-07-18-d233-agent-collapse-fix-in-toggleagent-action-not-helper.md` -- dual-scope agent `[P][G] -> [G]` collapse lives in the `toggleAgent` action's guards, not the `applyAgentToggle` leaf helper.
+- `agent-findings/2026-07-18-d233-agent-collapse-fix-in-toggleagent-action-not-helper.md` -- (D-233) dual-scope agent collapse lived in the `toggleAgent` action, not the `applyAgentToggle` leaf helper. **Superseded by D-260:** SPACE on a live `[P][G]` agent is now inert, and the `[P][G] -> [G]` collapse is `toggleAgentScope`'s `s` toggle.

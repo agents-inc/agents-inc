@@ -96,3 +96,5 @@ Project-level `config-types.ts` imports and extends the global types when a glob
 ## After Editing
 
 Run `agentsinc compile` to rebuild your subagents with the updated configuration.
+
+Compile also regenerates `config-types.ts` from your edited config at every scope it compiles (global, project, or both), so the type unions always match the skills and agents currently listed in `config.ts` — a skill you added by hand becomes a valid `SkillId`, and a removed one becomes a type error.
