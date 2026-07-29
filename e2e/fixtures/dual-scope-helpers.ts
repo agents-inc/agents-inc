@@ -9,6 +9,7 @@ import type { DashboardSession } from "../pages/dashboard-session.js";
 import type { ConfirmStep } from "../pages/steps/confirm-step.js";
 import type { WizardResult } from "../pages/wizard-result.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
+import { E2E_SKILL } from "./expected-values.js";
 import type {
   AgentName,
   AgentScopeConfig,
@@ -72,17 +73,17 @@ export async function readConfigSkillIds(dir: string): Promise<SkillId[]> {
 }
 
 /**
- * Drive one `cc edit` session, applying the given action to the first-focused
- * skill (web-framework-react in the Web domain), then save through to
- * completion.
+ * Drive one `cc edit` session, applying the given action to web-framework-react
+ * in the Web domain (focused explicitly — the grid's first-alphabetical cell is
+ * Vue, not react), then save through to completion.
  *
- *   - "scope": press `s` (G->P toggle — produces the persisted dual-scope
- *     `[P][G]` pair)
- *   - "space": press space (toggle project-scope presence). On a persisted
- *     dual-scope pair this is the sanctioned P->G restoration: `s` is
- *     intentionally inert there (the dual-scope scope-toggle guard), and space
- *     collapses [P][G] -> [G], removing the tombstone and project override
- *     while leaving the global install untouched.
+ *   - "scope": press `s`, the SOLE dual-scope toggle. On a `[G]`-only row it is
+ *     the G->P toggle that produces the persisted dual-scope `[P][G]` pair; on a
+ *     persisted `[P][G]` pair it is the P->G collapse back to `[G]`, dropping the
+ *     tombstone and the project override while leaving the global install intact.
+ *   - "space": press space (toggle project-scope presence). Inert on any row
+ *     backed by a real global install — both a `[G]`-only inherited row and a
+ *     `[P][G]` pair emit the global-locked toast and change nothing.
  */
 export async function runEditWithFirstSkillAction(
   projectDir: string,
@@ -100,6 +101,7 @@ export async function runEditWithFirstSkillAction(
   });
 
   try {
+    await wizard.build.focusSkill(E2E_SKILL.react.display);
     if (action === "scope") {
       await wizard.build.toggleScopeOnFocusedSkill();
     } else {
@@ -480,7 +482,7 @@ export async function setupProjectOnlyMixedScope(
     const build = await domain.acceptDefaults();
 
     // Web domain: toggle web-testing-vitest to project scope (react stays global).
-    await build.focusSkill("vitest");
+    await build.focusSkill(E2E_SKILL.vitest.display);
     await build.toggleScopeOnFocusedSkill();
     await build.advanceDomain();
     // API domain: pass through (hono + api-framework stay global).

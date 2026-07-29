@@ -30,6 +30,25 @@ export class AgentsStep extends BaseStep {
     await this.navigateCursorToItem(agentName);
   }
 
+  /**
+   * Press Space on the focused agent and wait for `sentinel` in RAW PTY output
+   * emitted after the press.
+   *
+   * Use instead of `toggleAgent()` whenever the assertion is on a TOAST. Ink
+   * rewrites the absolutely-positioned toast row in place, so xterm's processed
+   * buffer (`getOutput()` / `getScreen()`) can already have lost the text by the
+   * time a test reads it; raw output IS append-only, so the toast survives
+   * there. Anchoring on a pre-press cursor is required because an earlier
+   * frame's residue would satisfy a non-anchored raw match. Mirrors
+   * BuildStep.toggleFocusedSkillAwaiting.
+   */
+  async toggleFocusedAgentAwaiting(sentinel: string): Promise<void> {
+    await this.waitForWizardFooter();
+    const cursor = this.getRawCursor();
+    await this.pressSpace();
+    await this.screen.waitForTextAfter(sentinel, cursor, this.defaultTimeout);
+  }
+
   /** Toggle scope on the currently focused agent (press "s"). */
   async toggleScopeOnFocusedAgent(): Promise<void> {
     await this.waitForWizardFooter();

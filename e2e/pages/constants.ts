@@ -32,7 +32,8 @@ export const STEP_TEXT = {
   DOMAIN_META: "Methodology",
   DOMAIN_MOBILE: "Mobile",
   BUILD: "Framework", // First category visible in build step
-  BUILD_FOOTER: "Filter incompatible", // Build-step-only footer hint — always rendered on first build frame
+  BUILD_FOOTER: "Labels", // Build-step-only footer hint (the Labels indicator) — always rendered on first build frame. (The "Filter incompatible" hint that previously anchored this sentinel is gated off behind FEATURE_FLAGS.FILTER_INCOMPATIBLE.)
+  SCOPE: "Scope", // Build/agents-step footer hotkey label — rendered only for genuine project-scope edits (hidden when isEditingFromGlobalScope is true).
   CATEGORY_FRAMEWORK: "Framework", // Category label passed as an argument, not a step sentinel like BUILD
   SOURCES: "Customize skill sources",
   AGENTS: "Select agents",
@@ -43,6 +44,8 @@ export const STEP_TEXT = {
   EDIT_SUCCESS: "Done",
   EDIT_UNCHANGED: "No changes made",
   COMPILE_SUCCESS: "Compiled",
+  COMPILE_COMPLETE: "compile complete", // Matches "Global/Project compile complete!" (case-sensitive)
+  CONFIG_LOAD_FAILED: "could not be loaded", // Corrupt-config error phrase from ConfigLoadError
   EJECT_SUCCESS: "Eject complete!",
   IMPORT_SUCCESS: "Import complete:",
   UNINSTALL_SUCCESS: "Uninstall complete!",
@@ -50,6 +53,12 @@ export const STEP_TEXT = {
   // Status / progress
   LOADING_SKILLS: "Loading skills",
   RECOMPILING: "Recompiling agents",
+  NO_AGENTS_TO_RECOMPILE: "No agents to recompile",
+  COMPILE_GLOBAL_SCOPE_HINT: "global-scoped — run", // Stable fragment of the project-context compile hint
+  CONFIG_TYPES_REFRESHED: "Refreshed config-types.ts", // Per-pass compile line after config-types regeneration
+  SKILL_NOT_FOUND_WARNING: "is configured but was not found", // Compile warning for a config-listed skill with no installed files
+  COMPILE_PASS_NO_SKILLS: "No skills found for", // Per-pass zero-skill line: "No skills found for global/project pass, skipping"
+  COMPILE_NO_SKILLS_ERROR: "No skills found. Add skills with", // Hard error when every compile pass discovered zero skills
   LOADED: "Loaded",
   LOADED_LOCAL: "Loaded from local:",
   LOADED_SKILL: "Loaded skill:", // Verbose loader line prefix
@@ -61,6 +70,9 @@ export const STEP_TEXT = {
   SEARCH: "Search Skills",
   UNINSTALL_PREVIEW: "The following will be removed", // Loose form for waitForText
   UNINSTALL_PREVIEW_HEADING: "The following will be removed:", // Exact rendered heading
+  UNINSTALL_CONFIG_SECTION: "Config:", // Removal-plan section header for the .claude-src/ manifest
+  UNINSTALL_PROJECTS_UPDATED_ONE: "Updated 1 registered project", // Global-uninstall summary after pruning one registered project's global entries
+  UNINSTALL_PROJECT_SKIPPED: "Could not update registered project at", // Warn prefix for an unreachable registered project during global uninstall
 
   // Sources step
   CONFIGURED_MARKETPLACES: "Configured marketplaces",
@@ -93,16 +105,27 @@ export const STEP_TEXT = {
   // Terminal size warnings
   TOO_NARROW: "too narrow",
   TOO_SHORT: "too short",
+
+  // Scroll overflow affordance (ScrollAffordance in src/cli/components/wizard/scroll-affordance.tsx).
+  // Text-only "N more below" / "N more above" hints painted when a viewport clips its content.
+  SCROLL_MORE_BELOW: "more below",
+  SCROLL_MORE_ABOVE: "more above",
 } as const;
 
 export const TIMEOUTS = {
-  WIZARD_LOAD: 15_000,
+  /**
+   * Spawn → first wizard frame (and the BaseStep default wait timeout).
+   * Sized like WIZARD_TRANSITION below, for the same reason: individual runs
+   * land in ~1–2s, but init against a real marketplace under full-suite
+   * parallel load can sit at "Loading skills..." well past 15s.
+   */
+  WIZARD_LOAD: 45_000,
   /**
    * Enter → next-wizard-view first-frame waits (e.g. init → dashboard render,
    * dashboard selectEdit → build step first frame, EditWizard.launch → build
-   * step first frame). Higher than WIZARD_LOAD to absorb full-suite
-   * parallelism load: individual runs land in ~1–2s, but contention can push
-   * these transitions past 15s. Do NOT use for intra-step waits.
+   * step first frame). Sized to absorb full-suite parallelism load:
+   * individual runs land in ~1–2s, but contention can push these transitions
+   * past 15s. Do NOT use for intra-step waits.
    */
   WIZARD_TRANSITION: 45_000,
   INSTALL: 30_000,
@@ -166,6 +189,12 @@ export const SOURCE_PATHS = {
 export const TERMINAL_SIZE = {
   /** Tall viewport used by wizard flows that need the full build grid visible. */
   TALL: { rows: 60, cols: 120 },
+  /**
+   * Smallest viewport that still clears the wizard's own minimum-size gate
+   * (80 cols / 15 rows). Wide enough to render normally, short enough that any
+   * step whose content exceeds the viewport must clip and signal the overflow.
+   */
+  SHORT: { rows: 16, cols: 100 },
 } as const;
 
 /** Which wizard a shared step page object is driving. */

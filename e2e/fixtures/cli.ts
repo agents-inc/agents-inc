@@ -14,7 +14,13 @@ export type CLIResult = {
 export class CLI {
   /**
    * Run a non-interactive CLI command against a project.
-   * HOME is set to project dir for isolation.
+   *
+   * HOME defaults to `project.globalHome` when the wizard that produced this
+   * handle installed content into an explicit global HOME (launchInProject /
+   * launchInGlobal), so the command reads the same "global" root the wizard
+   * wrote. It falls back to `project.dir` otherwise — byte-identical to the
+   * previous hardcoded default for handles that carry no globalHome. An
+   * explicit `options.env.HOME` still wins.
    */
   static async run(
     args: string[],
@@ -24,7 +30,11 @@ export class CLI {
     const result = await execa("node", [BIN_RUN, ...args], {
       cwd: project.dir,
       reject: false,
-      env: { HOME: project.dir, AGENTSINC_SOURCE: undefined, ...options?.env },
+      env: {
+        HOME: project.globalHome ?? project.dir,
+        AGENTSINC_SOURCE: undefined,
+        ...options?.env,
+      },
     });
 
     return {

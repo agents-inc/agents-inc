@@ -49,6 +49,7 @@ export const CLI_ROOT = path.resolve(__dirname, "../..");
 export const BIN_RUN = path.join(CLI_ROOT, "bin", "run.js");
 
 const E2E_TEMP_PREFIX = "ai-e2e-";
+const AUTO_HOME_PREFIX = "ai-e2e-home-";
 
 /**
  * Standard forkedFrom metadata block for E2E plugin/uninstall tests.
@@ -113,6 +114,20 @@ export async function writeProjectConfig(
   await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), renderConfigTs(resolved));
 }
 
+/**
+ * Write a minimal config-types.ts stub to the .claude-src/ directory of the given
+ * base dir. `writeProjectConfig` emits only config.ts; tests that assert on the
+ * companion config-types.ts (e.g. uninstall manifest removal) seed it with this.
+ */
+export async function writeConfigTypes(baseDir: string): Promise<void> {
+  const configDir = path.join(baseDir, CLAUDE_SRC_DIR);
+  await mkdir(configDir, { recursive: true });
+  await writeFile(
+    path.join(configDir, STANDARD_FILES.CONFIG_TYPES_TS),
+    "// AUTO-GENERATED\nexport type SkillId = string;\n",
+  );
+}
+
 /** Sub-path of a source cache entry inside CACHE_DIR (mirrors getCacheDir in source-fetcher.ts). */
 const SOURCE_CACHE_SUBDIR = "sources";
 
@@ -159,9 +174,13 @@ export function stripAnsi(text: string): string {
  * pattern used across all non-interactive E2E command tests. All output fields
  * are pre-stripped of ANSI escape sequences.
  *
- * HOME is set to cwd by default to isolate tests from the user's real global
- * config (~/.claude-src/config.ts). Tests that need a different HOME can
- * override via options.env.
+ * HOME defaults to a freshly-created sibling temp directory, distinct from
+ * cwd, so os.homedir() never collapses onto the project directory (which would
+ * silently force a project command into global scope) while still isolating
+ * tests from the user's real global config (~/.claude-src/config.ts). The
+ * auto-created directory is removed after the run. Callers that need a specific
+ * HOME override via options.env.HOME; an explicit value always wins and is
+ * never auto-removed.
  */
 export async function runCLI(
   args: string[],
@@ -173,17 +192,27 @@ export async function runCLI(
   stderr: string;
   combined: string;
 }> {
-  const result = await execa("node", [BIN_RUN, ...args], {
-    cwd,
-    reject: false,
-    env: { HOME: cwd, ...options?.env },
-  });
-  return {
-    exitCode: result.exitCode ?? 1,
-    stdout: stripAnsi(result.stdout),
-    stderr: stripAnsi(result.stderr),
-    combined: stripAnsi(result.stdout + result.stderr),
-  };
+  const explicitHome = options?.env?.HOME;
+  const autoHomeDir =
+    typeof explicitHome === "string" ? undefined : await createTempDirBase(AUTO_HOME_PREFIX);
+  const home = autoHomeDir ?? explicitHome;
+  try {
+    const result = await execa("node", [BIN_RUN, ...args], {
+      cwd,
+      reject: false,
+      env: { ...options?.env, HOME: home },
+    });
+    return {
+      exitCode: result.exitCode ?? 1,
+      stdout: stripAnsi(result.stdout),
+      stderr: stripAnsi(result.stderr),
+      combined: stripAnsi(result.stdout + result.stderr),
+    };
+  } finally {
+    if (autoHomeDir) {
+      await cleanupTempDir(autoHomeDir);
+    }
+  }
 }
 
 export async function listFiles(dirPath: string): Promise<string[]> {
@@ -282,19 +311,49 @@ export async function writeAgentStubs(projectDir: string, agents: string[]): Pro
 }
 
 /**
- * Creates the `.claude/settings.json` file with default allow permissions.
+ * Ensures `.claude/settings.json` grants the default allow permission.
  *
  * This works around the permission checker that renders a blocking Ink component
  * after install completes (see FINDINGS.md, Finding 7). Without this file,
  * the PTY process never exits because the permission prompt waits for input.
+ *
+ * MERGES rather than overwrites: when the file already exists (e.g. a plugin
+ * install wrote `enabledPlugins` / `extraKnownMarketplaces` before an
+ * EditWizard launch re-runs this helper), every existing field is preserved
+ * and only `permissions.allow` is ensured to contain "Read(*)". A file that
+ * already grants it is left byte-identical. Invalid JSON is a hard error —
+ * never silently clobber a corrupt settings file.
  */
+const DEFAULT_ALLOW_PERMISSION = "Read(*)";
+
 export async function createPermissionsFile(projectDir: string): Promise<void> {
   const claudeDir = path.join(projectDir, CLAUDE_DIR);
   await mkdir(claudeDir, { recursive: true });
-  await writeFile(
-    path.join(claudeDir, "settings.json"),
-    JSON.stringify({ permissions: { allow: ["Read(*)"] } }),
-  );
+  const settingsPath = path.join(claudeDir, STANDARD_FILES.SETTINGS_JSON);
+
+  const settings = await readSettingsOrEmpty(settingsPath);
+  const permissions = asRecord(settings.permissions);
+  const allow = asArray(permissions.allow);
+  if (allow.includes(DEFAULT_ALLOW_PERMISSION)) return;
+
+  settings.permissions = { ...permissions, allow: [...allow, DEFAULT_ALLOW_PERMISSION] };
+  await writeFile(settingsPath, JSON.stringify(settings));
+}
+
+/** Parses an existing settings.json, or starts from an empty object when the file is absent. */
+async function readSettingsOrEmpty(settingsPath: string): Promise<Record<string, unknown>> {
+  if (!(await fileExists(settingsPath))) return {};
+  return JSON.parse(await readFile(settingsPath, "utf-8")) as Record<string, unknown>;
+}
+
+/** Narrows an unknown settings field to a record, treating any other shape as absent. */
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+/** Narrows an unknown settings field to an array, treating any other shape as absent. */
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? (value as unknown[]) : [];
 }
 
 /** Returns the path to compiled agents dir in a project. */

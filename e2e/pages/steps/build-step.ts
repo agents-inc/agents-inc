@@ -1,11 +1,63 @@
+import { delay } from "../../helpers/test-utils.js";
 import { BaseStep } from "../base-step.js";
-import { INTERNAL_RETRIES, STEP_TEXT, TIMEOUTS, type WizardType } from "../constants.js";
+import {
+  INTERNAL_DELAYS,
+  INTERNAL_RETRIES,
+  STEP_TEXT,
+  TIMEOUTS,
+  type WizardType,
+} from "../constants.js";
 import { retryEnterUntil } from "../retry-enter.js";
 import type { WizardResult } from "../wizard-result.js";
 import { SearchModal } from "./search-modal.js";
 import { SourcesStep } from "./sources-step.js";
 
 const BOX_DRAWING_CHARS = ["│", "┌", "└", "┐", "┘", "─"];
+
+/**
+ * Bound on the closed-loop Tab-walk in focusSkill. Tab wraps, so one full
+ * cycle visits every category; 30 covers any realistic per-domain category
+ * count (real-marketplace domains included) plus swallowed-keystroke retries.
+ */
+const MAX_FOCUS_ATTEMPTS = 30;
+
+/** One visible category section parsed from the current viewport. */
+type VisibleCategory = {
+  /** Leading-space count of the header line — the focused header paints one deeper. */
+  indent: number;
+  /** Cell texts in option order; the flat index IS the grid column. */
+  cells: string[];
+};
+
+/**
+ * Trailing compatibility annotation SkillTag appends after the label
+ * (category-grid.tsx getCompatibilityLabel): "(requires X and Y)",
+ * "(required by X)", "(incompatible)", "(recommended)", "(discouraged)".
+ * Anchored to the end of the cell and greedy, so requirement names that
+ * themselves contain parentheses stay inside the match. Real display names
+ * ("Gel (EdgeDB)") keep their parentheses because they never open with one
+ * of these annotation keywords.
+ */
+const CELL_ANNOTATION = /\s*\((?:requires|required by|incompatible|recommended|discouraged)\b.*\)$/;
+
+/**
+ * Leading markers a rendered cell can paint before the label: single-letter
+ * P/G scope badges (SkillTag) and +/-/check/eject diff glyphs. Each token
+ * must be followed by whitespace, so display names beginning with a capital
+ * P/G word ("Pinia", "GraphQL") are never clipped.
+ */
+const CELL_LEADING_MARKERS = /^(?:(?:[PG]|[+\-✓✗⏏])\s+)+/;
+
+/**
+ * The EXACT rendered skill label of a │-delimited grid cell: scope badges,
+ * diff markers, and compatibility annotations stripped, whitespace trimmed.
+ * Matching labels via this (instead of `cell.includes(label)`) keeps labels
+ * that are substrings of other labels unambiguous — "React" must never match
+ * a "React Query" cell, nor "Vite" a "Vitest" cell.
+ */
+function cellLabel(cell: string): string {
+  return cell.trim().replace(CELL_LEADING_MARKERS, "").replace(CELL_ANNOTATION, "").trim();
+}
 
 /**
  * Category headers are non-empty text lines without box-drawing chars,
@@ -23,15 +75,18 @@ function isCategoryHeaderLine(line: string, nextLine: string | undefined): boole
 }
 
 export class BuildStep extends BaseStep {
-  /** Tracked grid position — row resets on domain change, col resets on Tab/DOWN */
-  private gridRow = 0;
+  /**
+   * Tracked grid column — a best-effort HINT consulted ONLY by the
+   * single-category fallback in focusSkill, where cell focus has no
+   * text-observable signal to close the loop on. Reset on domain change
+   * (the store seeds focus to (0,0)) and on Tab (the grid resets col to 0).
+   */
   private gridCol = 0;
 
   /** Advance current domain without changes (Enter). */
   async advanceDomain(): Promise<void> {
     await this.waitForWizardFooter();
     await this.pressEnterWaitNewFrame();
-    this.gridRow = 0;
     this.gridCol = 0;
   }
 
@@ -55,33 +110,174 @@ export class BuildStep extends BaseStep {
 
   /**
    * Navigate focus to a skill by label in the grid (without pressing Space).
+   * Use before `toggleScopeOnFocusedSkill()` or `toggleFocusedSkill()` when
+   * you need to act on a specific skill.
    *
-   * Parses the screen to find the skill's (row, col) position,
-   * navigates DOWN to the target category (which resets col to 0),
-   * then RIGHT to the target column. Use before `toggleScopeOnFocusedSkill()`
-   * or `toggleFocusedSkill()` when you need to act on a specific skill.
+   * `skillLabel` must be the EXACT rendered display title of the skill (see
+   * cellLabel) — substring matching is deliberately not supported, because a
+   * label like "React" would stop the walk on a "React Query" cell in an
+   * earlier category.
+   *
+   * CLOSED-LOOP: never dead-reckons rows and never assumes arrow-DOWN resets
+   * the column (the real grid PRESERVES/CLAMPS it — use-focused-list-item.ts),
+   * which made a second focusSkill in the same domain land on the wrong cell.
+   * Under NO_COLOR the focused CELL has no text signal (only border colors
+   * distinguish it, and those are stripped), but the focused CATEGORY header
+   * does: it paints with one extra leading space (the padding of its
+   * background highlight). Tab moves focus to the next category AND resets
+   * the column to 0 (use-category-grid-input.ts), unlike DOWN. So this
+   * method Tab-walks the category focus — re-reading the rendered screen
+   * after every press until the header of the category containing the target
+   * skill is the focused one — then presses RIGHT from the guaranteed col-0
+   * base to the target column. The RIGHT presses stay open-loop because cell
+   * focus is unobservable, but they start from a screen-verified (row, 0).
    */
   async focusSkill(skillLabel: string): Promise<void> {
     await this.waitForWizardFooter();
-    const { row, col, totalRows } = this.findSkillGridPosition(skillLabel);
 
-    // Navigate DOWN to target row (DOWN always resets col to 0)
-    // Normalize gridRow first — it may exceed totalRows after navigateToNextCategory calls
-    const currentRow = this.gridRow % totalRows;
-    const downs = (row - currentRow + totalRows) % totalRows;
-    for (let i = 0; i < downs; i++) {
-      await this.waitForWizardFooter();
-      await this.pressArrowDown();
+    const visible = await this.waitForVisibleCategories();
+    const screen = this.getScreen();
+    const isSingleCategoryGrid =
+      visible.length === 1 &&
+      !screen.includes(STEP_TEXT.SCROLL_MORE_ABOVE) &&
+      !screen.includes(STEP_TEXT.SCROLL_MORE_BELOW);
+
+    if (isSingleCategoryGrid) {
+      await this.focusColumnInSingleCategory(visible[0], skillLabel);
+      return;
     }
-    this.gridRow = row;
-    this.gridCol = 0;
 
-    // Navigate RIGHT to target column
-    for (let i = 0; i < col; i++) {
+    const focused = await this.tabToCategoryContaining(skillLabel);
+    const targetCol = focused.cells.findIndex((cell) => cellLabel(cell) === skillLabel);
+    // Arriving via Tab reset the column to 0 — walk right to the target.
+    for (let i = 0; i < targetCol; i++) {
       await this.waitForWizardFooter();
       await this.pressArrowRight();
     }
-    this.gridCol = col;
+    this.gridCol = targetCol;
+  }
+
+  /**
+   * Parse the CURRENT viewport (not scrollback — stale frames repeat the same
+   * headers) into category sections. Category headers are matched by
+   * isCategoryHeaderLine; each section's cells are the │-delimited segments
+   * of the lines up to the next header, flattened in option order.
+   */
+  private parseVisibleCategories(): VisibleCategory[] {
+    const lines = this.getScreen().split("\n");
+    const headerIdxs = lines
+      .map((line, i) => (isCategoryHeaderLine(line, lines[i + 1]) ? i : -1))
+      .filter((i) => i !== -1);
+
+    return headerIdxs.map((headerIdx, i) => {
+      const nextIdx = headerIdxs[i + 1] ?? lines.length;
+      const headerLine = lines[headerIdx];
+      return {
+        indent: headerLine.length - headerLine.trimStart().length,
+        cells: lines
+          .slice(headerIdx + 1, nextIdx)
+          .filter((line) => line.includes("│"))
+          .flatMap((line) => line.split("│").filter((segment) => segment.trim().length > 0)),
+      };
+    });
+  }
+
+  /** Poll the viewport until at least one category header is painted. */
+  private async waitForVisibleCategories(): Promise<VisibleCategory[]> {
+    const deadline = Date.now() + INTERNAL_RETRIES.INTERVAL_MS;
+    for (;;) {
+      const visible = this.parseVisibleCategories();
+      if (visible.length > 0) return visible;
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `focusSkill: no category headers found on screen.\nScreen:\n${this.getScreen()}`,
+        );
+      }
+      await delay(INTERNAL_DELAYS.KEYSTROKE);
+    }
+  }
+
+  /**
+   * Identify the focused category among the visible ones. The focused header
+   * renders as a single background-highlighted text with a leading padding
+   * space, so it sits exactly one column deeper than unfocused headers.
+   * A single visible header must be the focused one (section scroll always
+   * keeps the focused section in view). Returns null when the frame is
+   * ambiguous (e.g. mid-repaint) so the caller can re-read.
+   */
+  private findFocusedCategory(categories: VisibleCategory[]): VisibleCategory | null {
+    if (categories.length === 0) return null;
+    if (categories.length === 1) return categories[0];
+    const minIndent = Math.min(...categories.map((category) => category.indent));
+    const deeper = categories.filter((category) => category.indent === minIndent + 1);
+    return deeper.length === 1 ? deeper[0] : null;
+  }
+
+  /**
+   * Tab-walk the category focus until the focused category has a cell whose
+   * exact label (cellLabel) is `skillLabel`, verifying the focused header
+   * from the rendered screen after every press. Swallowed keystrokes and slow repaints self-correct: a press
+   * that produced no fresh frame within the retry interval is simply followed
+   * by a re-read, and Tab wraps, so the walk revisits every category each
+   * cycle. Always presses Tab at least once — entering the category via Tab
+   * is what guarantees the column reset to 0, even when the target category
+   * was already focused with a stale column from an earlier focusSkill.
+   */
+  private async tabToCategoryContaining(skillLabel: string): Promise<VisibleCategory> {
+    for (let attempt = 0; attempt < MAX_FOCUS_ATTEMPTS; attempt++) {
+      await this.waitForWizardFooter();
+      const cursor = this.getRawCursor();
+      await this.pressKey("\t");
+      try {
+        await this.waitForWizardFooterAfter(cursor, INTERNAL_RETRIES.INTERVAL_MS);
+      } catch {
+        // No fresh frame — the Tab may have been swallowed under load, or the
+        // repaint is slow. The re-read below decides; the next iteration
+        // presses again if focus did not move.
+      }
+      const focused = this.findFocusedCategory(this.parseVisibleCategories());
+      if (focused?.cells.some((cell) => cellLabel(cell) === skillLabel)) {
+        return focused;
+      }
+    }
+    throw new Error(
+      `focusSkill: category containing "${skillLabel}" was not focused after ` +
+        `${MAX_FOCUS_ATTEMPTS} Tab presses.\nScreen:\n${this.getScreen()}`,
+    );
+  }
+
+  /**
+   * Focus a column when the grid has a single category. Tab is a guarded
+   * no-op there (use-category-grid-input.ts skips setFocused when the next
+   * section equals the current), so the Tab-walk cannot reset the column.
+   * A single-cell category needs no navigation — the grid clamps the column
+   * to 0. Multi-cell categories fall back to the tracked column with the
+   * grid's real cyclic-wrap arithmetic; this is the one spot with no
+   * text-observable signal to close the loop on (single-category domains
+   * in the standard E2E source are all single-cell, so the fallback is
+   * effectively unreachable there).
+   */
+  private async focusColumnInSingleCategory(
+    category: VisibleCategory,
+    skillLabel: string,
+  ): Promise<void> {
+    const targetCol = category.cells.findIndex((cell) => cellLabel(cell) === skillLabel);
+    if (targetCol === -1) {
+      throw new Error(
+        `focusSkill: "${skillLabel}" not found in the only visible category.\n` +
+          `Screen:\n${this.getScreen()}`,
+      );
+    }
+    if (category.cells.length === 1) {
+      this.gridCol = 0;
+      return;
+    }
+    const rights = (targetCol - this.gridCol + category.cells.length) % category.cells.length;
+    for (let i = 0; i < rights; i++) {
+      await this.waitForWizardFooter();
+      await this.pressArrowRight();
+    }
+    this.gridCol = targetCol;
   }
 
   /**
@@ -190,9 +386,11 @@ export class BuildStep extends BaseStep {
    * Mobile has no E2E source skills ("No categories to display"), just advance.
    */
   async passThroughScratchDomains(): Promise<SourcesStep> {
-    // Web domain — select required skill
+    // Web domain — select the react framework. Options render alphabetically by
+    // displayName, so the first-focused cell is Vue, not react; focus react
+    // explicitly (its E2E display title is the id "web-framework-react").
     await this.screen.waitForText(STEP_TEXT.DOMAIN_WEB, TIMEOUTS.WIZARD_LOAD);
-    await this.waitForWizardFooter();
+    await this.focusSkill("web-framework-react");
     await this.pressSpace();
     await this.pressEnterWaitNewFrame();
 
@@ -254,7 +452,6 @@ export class BuildStep extends BaseStep {
   async navigateToNextCategory(): Promise<void> {
     await this.waitForWizardFooter();
     await this.pressKey("\t");
-    this.gridRow++;
     this.gridCol = 0;
     await this.waitForWizardFooter();
   }
@@ -395,44 +592,6 @@ export class BuildStep extends BaseStep {
     throw new Error(
       `getExclusiveCategorySelectedCount: no "(N of M)" counter for category ` +
         `"${categoryDisplayName}" found on screen.\nOutput:\n${output}`,
-    );
-  }
-
-  /** Parse the screen to find a skill's grid position (row, col). */
-  private findSkillGridPosition(label: string): { row: number; col: number; totalRows: number } {
-    const output = this.getOutput();
-    const lines = output.split("\n");
-
-    const categoryHeaders = lines
-      .map((line, i) => (isCategoryHeaderLine(line, lines[i + 1]) ? i : -1))
-      .filter((i) => i !== -1);
-
-    if (categoryHeaders.length === 0) {
-      throw new Error(
-        `findSkillGridPosition: no category headers found on screen.\n` +
-          `Output:\n${this.getOutput()}`,
-      );
-    }
-
-    for (let row = 0; row < categoryHeaders.length; row++) {
-      const headerIdx = categoryHeaders[row];
-      const nextHeaderIdx = categoryHeaders[row + 1] ?? lines.length;
-
-      // Flatten the category's │-delimited cells; the flat index IS the column.
-      const cells = lines
-        .slice(headerIdx + 1, nextHeaderIdx)
-        .filter((line) => line.includes("│"))
-        .flatMap((line) => line.split("│").filter((segment) => segment.trim().length > 0));
-
-      const col = cells.findIndex((cell) => cell.includes(label));
-      if (col !== -1) {
-        return { row, col, totalRows: categoryHeaders.length };
-      }
-    }
-
-    throw new Error(
-      `findSkillGridPosition: "${label}" not found in any category.\n` +
-        `Output:\n${this.getOutput()}`,
     );
   }
 }

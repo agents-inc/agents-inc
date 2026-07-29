@@ -37,6 +37,15 @@ export type EditableOptions = {
    * them instead of skipping them as user-created.
    */
   forkedFrom?: boolean;
+  /**
+   * Extra `scope: "global"` skill entries recorded in the project config. In a
+   * project-scope edit these render as inherited, locked (readOnly) Sources rows
+   * — the `installedSkillConfigs` snapshot IS `projectConfig.skills`, and a
+   * global entry viewed from a project edit is read-only (see
+   * `classifySkillSourceRows`). No disk copy is written: they model skills
+   * inherited from the global install, not project-local files.
+   */
+  globalSkills?: SkillId[];
 };
 
 /** Description and metadata.yaml body for one local skill written by a fixture. */
@@ -82,6 +91,8 @@ const SKILL_CATEGORY_SLUGS: Partial<Record<SkillId, { category: string; slug: st
     category: "meta-methodology",
     slug: "research-methodology",
   },
+  "meta-reviewing-cli-reviewing": { category: "meta-reviewing", slug: "cli-reviewing" },
+  "meta-reviewing-reviewing": { category: "meta-reviewing", slug: "reviewing" },
   "web-framework-react": { category: "web-framework", slug: "react" },
   "web-state-zustand": { category: "web-client-state", slug: "zustand" },
   "web-styling-tailwind": { category: "web-styling", slug: "tailwind" },
@@ -172,7 +183,18 @@ export class ProjectBuilder {
     await mkdir(skillsDir, { recursive: true });
     await mkdir(agentsDir, { recursive: true });
 
-    const skillConfigs = skills.map((id) => ({ id, scope: "project" as const, source: "eject" }));
+    const globalSkills = options?.globalSkills ?? [];
+    const projectSkillConfigs = skills.map((id) => ({
+      id,
+      scope: "project" as const,
+      source: "eject",
+    }));
+    const globalSkillConfigs = globalSkills.map((id) => ({
+      id,
+      scope: "global" as const,
+      source: "eject",
+    }));
+    const skillConfigs = [...projectSkillConfigs, ...globalSkillConfigs];
     const agentConfigs = agents.map((name) => ({ name, scope: "project" as const }));
 
     const config: ProjectConfig = {
@@ -658,6 +680,13 @@ export default {
    * It writes into the provided directory.
    */
   static async installation(dir: string): Promise<void> {
-    await writeProjectConfig(dir, { name: "test", domains: [] });
+    // Declares a skill so the config is a real installation: a config that
+    // declares neither skills nor agents is content-less and does not count as
+    // an installation.
+    await writeProjectConfig(dir, {
+      name: "test",
+      skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+      domains: [],
+    });
   }
 }

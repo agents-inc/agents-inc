@@ -3,6 +3,14 @@ import { TIMEOUTS } from "./constants.js";
 
 export type ProjectHandle = {
   dir: string;
+  /**
+   * The global HOME directory the wizard installed content into, when the
+   * wizard was launched with an explicit scope (launchInProject /
+   * launchInGlobal). CLI.run defaults its HOME to this so a follow-up command
+   * reads the same "global" root the wizard wrote. Undefined for plain
+   * launches, in which case CLI.run falls back to `dir`.
+   */
+  globalHome?: string;
 };
 
 export class WizardResult {
@@ -12,7 +20,7 @@ export class WizardResult {
     private session: TerminalSession,
     projectDir: string,
   ) {
-    this.project = { dir: projectDir };
+    this.project = { dir: projectDir, globalHome: session.globalHome };
   }
 
   /** Get the exit code (waits for process to exit). */

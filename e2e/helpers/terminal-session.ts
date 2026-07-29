@@ -1,12 +1,16 @@
+import { mkdtempSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import pty from "@lydell/node-pty";
 import { Terminal } from "@xterm/headless";
 import treeKill from "tree-kill";
-import { BIN_RUN, pollUntil } from "./test-utils.js";
+import { BIN_RUN, cleanupTempDir, pollUntil } from "./test-utils.js";
 import { TIMEOUTS } from "../pages/constants.js";
 
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 40;
+const AUTO_HOME_PREFIX = "ai-e2e-home-";
 
 function isDefinedEntry(entry: [string, string | undefined]): entry is [string, string] {
   return entry[1] !== undefined;
@@ -22,6 +26,13 @@ export type TerminalSessionOptions = {
   env?: Record<string, string | undefined>;
   /** Override the default timeout for waitForText, waitForExit, etc. */
   defaultTimeout?: number;
+  /**
+   * The global HOME directory this session's install content lands in, echoed
+   * back for assertions. Set by the wizard launchers (launchInProject /
+   * launchInGlobal) alongside an explicit env.HOME; left undefined for plain
+   * launches whose HOME is the internal auto-allocated dir.
+   */
+  globalHome?: string;
 };
 
 /**
@@ -32,9 +43,13 @@ export type TerminalSessionOptions = {
  * all ANSI escape sequences (cursor movement, clearing, etc.) and maintains a
  * proper screen buffer. getScreen() returns exactly what the user would see.
  *
- * HOME is set to cwd by default to isolate tests from the user's real global
- * config (~/.claude-src/config.ts). Tests that need a different HOME can
- * override via options.env.
+ * HOME defaults to a freshly-created sibling temp directory, distinct from
+ * cwd/projectDir, so os.homedir() never collapses onto the project directory —
+ * a project `edit`/`init` stays at project scope, and tests remain isolated
+ * from the user's real global config (~/.claude-src/config.ts). The auto-created
+ * directory is removed by destroy(). Callers that need a specific HOME (e.g. to
+ * model editing the GLOBAL installation) pass options.env.HOME; an explicit
+ * value always wins and is never auto-removed.
  */
 export class TerminalSession {
   private ptyProcess: pty.IPty;
@@ -42,22 +57,42 @@ export class TerminalSession {
   private rawChunks: string[] = [];
   private destroyed = false;
   private exitPromise: Promise<{ exitCode: number; signal?: number }>;
+  /** Auto-allocated HOME dir, removed on destroy(). Undefined when the caller supplied HOME. */
+  private autoHomeDir: string | undefined;
   readonly defaultTimeout: number;
+  /**
+   * The global HOME directory this session's install content lands in, exposed
+   * for filesystem assertions. Set only by the scope-explicit wizard launchers;
+   * undefined for plain launches (whose HOME is the internal autoHomeDir).
+   */
+  readonly globalHome: string | undefined;
 
   constructor(args: string[], cwd: string, options?: TerminalSessionOptions) {
     const cols = options?.cols ?? DEFAULT_COLS;
     const rows = options?.rows ?? DEFAULT_ROWS;
     this.defaultTimeout = options?.defaultTimeout ?? getDefaultTimeout();
+    this.globalHome = options?.globalHome;
 
     this.xterm = new Terminal({ allowProposedApi: true, cols, rows });
+
+    // Resolve HOME: an explicit env.HOME wins untouched; otherwise allocate a
+    // fresh sibling temp dir (removed in destroy()) so os.homedir() never
+    // collapses onto cwd/projectDir and silently forces a project edit/init
+    // into global scope.
+    const explicitHome = options?.env?.HOME;
+    if (typeof explicitHome !== "string") {
+      this.autoHomeDir = mkdtempSync(path.join(os.tmpdir(), AUTO_HOME_PREFIX));
+    }
+    const home = this.autoHomeDir ?? explicitHome;
 
     // Build env: merge process.env, defaults, and overrides.
     // node-pty converts `undefined` values to the string "undefined" instead of
     // removing them, so we must strip undefined entries before spawning.
+    // HOME is resolved last so the auto-allocated (or explicit) value always wins.
     const rawEnv: Record<string, string | undefined> = {
       ...process.env,
-      HOME: cwd,
       ...options?.env,
+      HOME: home,
       NO_COLOR: "1",
       FORCE_COLOR: "0",
     };
@@ -186,5 +221,9 @@ export class TerminalSession {
       treeKill(this.ptyProcess.pid, "SIGKILL", () => resolve());
     });
     this.xterm.dispose();
+
+    if (this.autoHomeDir) {
+      await cleanupTempDir(this.autoHomeDir);
+    }
   }
 }

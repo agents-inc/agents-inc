@@ -6,7 +6,21 @@ import { TerminalScreen } from "../terminal-screen.js";
 import { ConfirmStep } from "../steps/confirm-step.js";
 import { StackStep } from "../steps/stack-step.js";
 import type { WizardResult } from "../wizard-result.js";
+import { allocateProjectGlobalHome } from "./global-home.js";
 import { cleanupTempDir, createPermissionsFile, createTempDir } from "../../helpers/test-utils.js";
+
+/**
+ * How a spawned wizard resolves HOME, which decides where global-scoped
+ * install content (the default scope) lands:
+ *   - "auto": TerminalSession auto-allocates an internal, unexposed sibling
+ *     HOME. Used by the plain launch()/launchRaw() escape hatches.
+ *   - "project": a fresh (or caller-reused) dir distinct from projectDir.
+ *     Models a PROJECT install — os.homedir() !== cwd, so scope stays
+ *     project-side and global content is observable at the exposed globalHome.
+ *   - "global": HOME === cwd === projectDir. Models the GLOBAL install (the
+ *     intentional collapse).
+ */
+type HomeStrategy = "auto" | "project" | "global";
 
 export type InitWizardOptions = {
   /** Pre-created source directory. If not provided, creates one. */
@@ -26,6 +40,15 @@ export type InitWizardOptions = {
   loadTimeout?: number;
   /** Override the default timeout for the underlying TerminalSession. */
   defaultTimeout?: number;
+  /**
+   * Reuse an existing global HOME dir instead of allocating a fresh one
+   * (launchInProject only). When set, this dir becomes the spawned CLI's HOME,
+   * is stamped onto the WizardResult, and is exposed as `wizard.globalHome`, but
+   * the wizard does NOT own its cleanup — the allocator (the test) does. Use for
+   * multi-phase flows where a later phase must see an earlier phase's global
+   * content. Ignored by launch()/launchInGlobal().
+   */
+  globalHome?: string;
 };
 
 /**
@@ -46,22 +69,46 @@ export type InitWizardOptions = {
 export class InitWizard {
   readonly stack: StackStep;
   private cleanupDirs: string[] = [];
+  private readonly _globalHome: string | undefined;
 
   private constructor(
     private session: TerminalSession,
     private projectDir: string,
     stack: StackStep,
     cleanupDirs: string[],
+    globalHome: string | undefined,
   ) {
     this.stack = stack;
     this.cleanupDirs = cleanupDirs;
+    this._globalHome = globalHome;
   }
 
-  /** Shared setup for launch() and launchRaw(). */
-  private static async setupSession(options?: InitWizardOptions): Promise<{
+  /**
+   * The global HOME directory this wizard's install content lands in, exposed
+   * for filesystem assertions (e.g. `expect({ dir: wizard.globalHome })
+   * .toHaveCompiledAgents()`). Available only on wizards created via
+   * launchInProject()/launchInGlobal(); accessing it on a plain launch()
+   * wizard throws, because launch()'s auto-allocated HOME is internal.
+   */
+  get globalHome(): string {
+    if (this._globalHome === undefined) {
+      throw new Error(
+        "globalHome is only exposed on InitWizard.launchInProject()/launchInGlobal(); " +
+          "launch()/launchRaw() use an internal auto-allocated HOME.",
+      );
+    }
+    return this._globalHome;
+  }
+
+  /** Shared session setup for every launch path — see {@link HomeStrategy}. */
+  private static async setupSession(
+    options: InitWizardOptions | undefined,
+    homeStrategy: HomeStrategy,
+  ): Promise<{
     session: TerminalSession;
     projectDir: string;
     cleanupDirs: string[];
+    globalHome: string | undefined;
   }> {
     const cleanupDirs: string[] = [];
 
@@ -93,9 +140,22 @@ export class InitWizard {
 
     const args = sourceDir ? ["init", "--source", sourceDir] : ["init"];
 
+    // Resolve the global HOME per strategy. "auto" resolves to undefined: HOME
+    // stays unset so the TerminalSession auto-allocates (and owns cleanup of)
+    // an internal dir.
+    let globalHome: string | undefined;
+    if (homeStrategy === "project") {
+      const allocated = await allocateProjectGlobalHome(options?.globalHome);
+      globalHome = allocated.dir;
+      cleanupDirs.push(...allocated.cleanupDirs);
+    } else if (homeStrategy === "global") {
+      globalHome = projectDir;
+    }
+
     const env: Record<string, string | undefined> = {
       AGENTSINC_SOURCE: undefined,
       ...options?.env,
+      ...(globalHome !== undefined ? { HOME: globalHome } : {}),
     };
 
     const session = new TerminalSession(args, projectDir, {
@@ -103,28 +163,71 @@ export class InitWizard {
       rows: options?.rows,
       env,
       defaultTimeout: options?.defaultTimeout,
+      globalHome,
     });
 
-    return { session, projectDir, cleanupDirs };
+    return { session, projectDir, cleanupDirs, globalHome };
   }
 
-  /** Launch the init wizard. Returns an InitWizard with the StackStep ready. */
-  static async launch(options?: InitWizardOptions): Promise<InitWizard> {
-    const { session, projectDir, cleanupDirs } = await InitWizard.setupSession(options);
+  /** Shared launch path: set up the session, wait for the stack step, wrap it. */
+  private static async launchWith(
+    options: InitWizardOptions | undefined,
+    homeStrategy: HomeStrategy,
+  ): Promise<InitWizard> {
+    const { session, projectDir, cleanupDirs, globalHome } = await InitWizard.setupSession(
+      options,
+      homeStrategy,
+    );
 
     const stack = new StackStep(session, projectDir);
     await stack.waitForReady(options?.loadTimeout);
 
-    return new InitWizard(session, projectDir, stack, cleanupDirs);
+    return new InitWizard(session, projectDir, stack, cleanupDirs, globalHome);
+  }
+
+  /**
+   * Launch the init wizard. Returns an InitWizard with the StackStep ready.
+   *
+   * Escape hatch: HOME is an internal auto-allocated sibling dir that is NOT
+   * exposed (`wizard.globalHome` throws). Use launchInProject() when the test
+   * asserts on installed content (`.claude/skills`, compiled agents,
+   * settings.json) or runs a follow-up CLI.run against global content.
+   */
+  static async launch(options?: InitWizardOptions): Promise<InitWizard> {
+    return InitWizard.launchWith(options, "auto");
+  }
+
+  /**
+   * Launch `cc init` as a PROJECT install: HOME is a fresh dir distinct from
+   * projectDir, exposed as `wizard.globalHome`. Default-scope (global) install
+   * content lands at `<globalHome>/.claude/...` and is observable there; the
+   * project config.ts stays under projectDir. The returned WizardResult stamps
+   * globalHome onto its ProjectHandle so CLI.run reads the same HOME.
+   */
+  static async launchInProject(options?: InitWizardOptions): Promise<InitWizard> {
+    return InitWizard.launchWith(options, "project");
+  }
+
+  /**
+   * Launch `cc init` as the GLOBAL install: HOME === cwd === projectDir (the
+   * intentional collapse). `wizard.globalHome` equals projectDir.
+   */
+  static async launchInGlobal(options?: InitWizardOptions): Promise<InitWizard> {
+    return InitWizard.launchWith(options, "global");
   }
 
   /**
    * Launch the init wizard without waiting for the stack step.
    * Use when testing resize warnings or other pre-stack conditions.
    * Returns a raw InitWizard whose getScreen()/getOutput() can be called.
+   *
+   * Escape hatch: like launch(), HOME is internal and `globalHome` is unexposed.
    */
   static async launchRaw(options?: InitWizardOptions): Promise<InitWizard> {
-    const { session, projectDir, cleanupDirs } = await InitWizard.setupSession(options);
+    const { session, projectDir, cleanupDirs, globalHome } = await InitWizard.setupSession(
+      options,
+      "auto",
+    );
 
     // Wait for output to render (resize warning or wizard).
     // Use a polling loop to ensure we have non-empty output.
@@ -136,7 +239,7 @@ export class InitWizard {
     }
 
     const stack = new StackStep(session, projectDir);
-    return new InitWizard(session, projectDir, stack, cleanupDirs);
+    return new InitWizard(session, projectDir, stack, cleanupDirs, globalHome);
   }
 
   /**
