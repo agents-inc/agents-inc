@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { STEP_TEXT } from "../pages/constants.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { ensureBinaryExists } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 
@@ -59,7 +60,9 @@ describe("init wizard — UI elements", () => {
       const domain = await wizard.stack.selectFirstStack();
       const build = await domain.acceptDefaults();
 
-      // Press S to toggle focused skill's scope
+      // Focus react (a selected skill) and press S to toggle its scope — the grid's
+      // first-alphabetical cell is Vue, an unselected skill whose `s` is a no-op.
+      await build.focusSkill(E2E_SKILL.react.display);
       await build.toggleScopeOnFocusedSkill();
 
       const output = build.getOutput();

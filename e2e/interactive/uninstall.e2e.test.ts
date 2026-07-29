@@ -195,12 +195,13 @@ describe("uninstall interactive", () => {
 
       expect(await directoryExists(skillsDir)).toBe(false);
       expect(await directoryExists(agentsDir)).toBe(false);
-      expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(true);
+      // The config manifest is now removed by default, emptying .claude-src/
+      expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(false);
     });
   });
 
-  describe("--all flag", () => {
-    it("should show config removal in confirmation prompt with --all", async () => {
+  describe("config manifest in confirmation prompt", () => {
+    it("should show config manifest removal in the confirmation prompt by default", async () => {
       const project = await ProjectBuilder.editable({
         skills: ["web-framework-react"],
         agents: ["web-developer"],
@@ -210,12 +211,12 @@ describe("uninstall interactive", () => {
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      prompt = new InteractivePrompt(["uninstall", "--all"], projectDir);
+      prompt = new InteractivePrompt(["uninstall"], projectDir);
 
       await prompt.waitForText(STEP_TEXT.UNINSTALL_PREVIEW, TIMEOUTS.WIZARD_LOAD);
 
       const output = prompt.getOutput();
-      expect(output).toContain("Config:");
+      expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
       expect(output).toContain(DIRS.CLAUDE_SRC);
     });
   });

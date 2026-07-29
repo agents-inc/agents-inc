@@ -82,7 +82,14 @@ describe.skipIf(!claudeAvailable)(
           tempDir = await createTempDir();
           const projectDir = path.join(tempDir, "project");
 
-          initWizard = await InitWizard.launch({
+          // This test toggles react's SOURCE (plugin -> eject) during edit.
+          // Default-scope skills are GLOBAL, and a project edit renders global
+          // skills as locked (readOnly), so their source cannot be toggled from
+          // a project context. Both phases therefore model editing the GLOBAL
+          // install via launchInGlobal: HOME == cwd == projectDir, the skills
+          // are editable, and all content + config collapse onto projectDir
+          // (every assertion below reads projectDir / initResult.project).
+          initWizard = await InitWizard.launchInGlobal({
             source: { sourceDir: pluginSource!.sourceDir, tempDir: pluginSource!.tempDir },
             projectDir,
           });
@@ -102,7 +109,7 @@ describe.skipIf(!claudeAvailable)(
           // needed. The first row in the customize grid for this stack is
           // web-framework-react. After the toggle: react = eject, rest stay
           // plugin.
-          editWizard = await EditWizard.launch({
+          editWizard = await EditWizard.launchInGlobal({
             projectDir,
             source: { sourceDir: pluginSource!.sourceDir, tempDir: pluginSource!.tempDir },
             ...TERMINAL_SIZE.TALL,

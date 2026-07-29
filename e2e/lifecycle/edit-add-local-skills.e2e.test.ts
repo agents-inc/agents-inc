@@ -69,11 +69,17 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       const projectDir = tempDir;
       await createPermissionsFile(projectDir);
 
+      // This test switches a skill's SOURCE (plugin -> eject) during edit.
+      // Default-scope skills are GLOBAL, and a project edit renders global
+      // skills as locked (readOnly) — their source cannot be toggled from a
+      // project context. So both phases model editing the GLOBAL install via
+      // launchInGlobal: HOME == cwd == projectDir, the skills are editable, and
+      // all content + config collapse onto projectDir (asserted below).
       // ================================================================
       // Phase 1: Init with all defaults — all skills as plugin
       // ================================================================
 
-      const initWizard = await InitWizard.launch({
+      const initWizard = await InitWizard.launchInGlobal({
         source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         projectDir,
         ...TERMINAL_SIZE.TALL,
@@ -110,7 +116,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       // that switches from plugin to eject source.
       // ================================================================
 
-      const editWizard = await EditWizard.launch({
+      const editWizard = await EditWizard.launchInGlobal({
         projectDir,
         source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         ...TERMINAL_SIZE.TALL,
@@ -141,7 +147,8 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       // The switched skill should now have source "eject"
       expect(configAfterEdit).toContain('"source":"eject"');
 
-      // The eject-sourced skill should be copied to .claude/skills/
+      // The eject-sourced skill should be copied to .claude/skills/. Under the
+      // global-edit model HOME == projectDir, so global content lands here.
       // This validates the source migration path (plugin → eject) in edit.
       await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
       await expect({ dir: projectDir }).toHaveCompiledAgents();

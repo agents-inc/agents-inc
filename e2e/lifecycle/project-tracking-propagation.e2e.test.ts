@@ -27,7 +27,7 @@ import {
  * Verifies:
  * 1. Project paths are registered in global config's `projects` field after init
  * 2. Global config changes propagate config-types.ts to registered projects
- * 3. `uninstall --all` deregisters the project from global config
+ * 3. `uninstall` deregisters the project from global config
  * 4. Stale project paths are filtered during registration
  */
 
@@ -345,7 +345,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- deregistration on uninsta
   });
 
   it(
-    "should deregister project on uninstall --all",
+    "should deregister project on uninstall",
     { timeout: TIMEOUTS.LIFECYCLE, retry: 1 },
     async () => {
       const env = await createTestEnvironment();
@@ -389,9 +389,9 @@ describe.skipIf(!claudeAvailable)("project tracking -- deregistration on uninsta
         realProject2,
       );
 
-      // Phase D: Uninstall --all from project-2
+      // Phase D: Uninstall from project-2 (deregistration is now the default)
       const { exitCode, output } = await CLI.run(
-        ["uninstall", "--all", "--yes"],
+        ["uninstall", "--yes"],
         { dir: project2Dir },
         { env: { HOME: fakeHome } },
       );

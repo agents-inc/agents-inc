@@ -46,10 +46,12 @@ import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/t
  *   2. A separate, genuinely project-scoped agent whose stack references a
  *      skill ALSO referenced by the removed global agent is left completely
  *      untouched (no cross-contamination — the skill itself was not removed).
- *   3. The project's compiled `.claude/agents/<removed-agent>.md` file is NOT
- *      cleaned up (the known, already-tracked D-240 gap: propagation rewrites
- *      config.ts / config-types.ts but never recompiles or prunes a registered
- *      project's agent .md files).
+ *   3. The registered project's agents ARE recompiled after propagation — its
+ *      project-scoped agent is written to `.claude/agents/` — while the removed
+ *      global agent's stale `.md` is left on disk. A compile pass writes the
+ *      agents that remain and never prunes; deleting a deselected agent's
+ *      compiled file is the editing context's own job (`cleanupStaleAgentFiles`
+ *      resolves paths from cwd), so it never reaches another project's dir.
  */
 
 // The global (web-developer) agent's stack references react at global scope.
@@ -104,6 +106,7 @@ describe("global-scope agent removal propagates to registered projects", () => {
   let projectDir: string;
   let projectConfig: ProjectConfig;
   let compiledAgentMdExists: boolean;
+  let projectAgentMdExists: boolean;
   let editExitCode: number;
   let editRawOutput: string;
 
@@ -142,7 +145,8 @@ describe("global-scope agent removal propagates to registered projects", () => {
     await writeProjectConfig(projectDir, buildRegisteredProjectConfig("project-a"));
 
     // Seed a previously-compiled web-developer.md in the PROJECT's agents dir.
-    // Its survival after propagation is what demonstrates the D-240 gap.
+    // It is the only agent file present before the edit, so the api-developer.md
+    // that appears afterwards can only have come from the project's recompile.
     await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name, {
       frontmatter: true,
       body: "Stale compiled agent body\n",
@@ -171,6 +175,9 @@ describe("global-scope agent removal propagates to registered projects", () => {
 
     compiledAgentMdExists = await fileExists(
       path.join(agentsPath(projectDir), `${E2E_AGENT["web-developer"].name}.md`),
+    );
+    projectAgentMdExists = await fileExists(
+      path.join(agentsPath(projectDir), `${E2E_AGENT["api-developer"].name}.md`),
     );
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
@@ -232,13 +239,21 @@ describe("global-scope agent removal propagates to registered projects", () => {
     ).toContain(E2E_AGENT["api-developer"].name);
   });
 
-  // Assertion 3: KNOWN D-240 gap — propagation rewrites config.ts /
-  // config-types.ts but never touches the project's compiled agent .md files,
-  // so the stale web-developer.md is left on disk.
-  it("does not clean up the project's compiled agent .md (matches known D-240 gap)", () => {
+  // Assertion 3: propagation now recompiles each rewritten project, so the
+  // project's own api-developer.md is written (it was never seeded — only the
+  // stale web-developer.md was). That recompile writes the agents that remain
+  // and never prunes, and the editing context's stale-file cleanup resolves
+  // paths from cwd (the global home here), so the removed global agent's
+  // compiled .md survives in the project. Both facts belong together: without
+  // the first, the second would hold vacuously for lack of any recompile.
+  it("recompiles the project's own agent and leaves the removed global agent's .md in place", () => {
+    expect(
+      projectAgentMdExists,
+      "project .claude/agents/api-developer.md must be written by the project's recompile",
+    ).toBe(true);
     expect(
       compiledAgentMdExists,
-      "project .claude/agents/web-developer.md is expected to survive per known D-240 gap",
+      "project .claude/agents/web-developer.md survives — a compile pass writes surviving agents and never prunes",
     ).toBe(true);
   });
 });

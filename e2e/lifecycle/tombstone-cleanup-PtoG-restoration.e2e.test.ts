@@ -86,7 +86,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
 
       // Phase 3: toggle react P→G. D-224's failure point — must remove the
       // tombstone and collapse to a single global entry.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       // Config assertion: exactly ONE react entry, scope global, no tombstone.
       const reactEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);
@@ -170,7 +170,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
 
       // Phase 3: toggle P→G. Assert ONLY global active, no tombstone, no
       // project entry. This is the D-224 failure point.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       const entriesPhase3 = await readSkillEntries(projectDir, E2E_SKILL.react.id);
       expect(entriesPhase3).toHaveLength(1);
@@ -214,7 +214,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       }
 
       // Phase 4: toggle P→G. Must produce the same clean end-state as Scenario A.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       // Config assertion: exactly ONE react entry at global scope, no tombstone.
       const reactEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);

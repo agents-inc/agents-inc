@@ -94,7 +94,7 @@ describe("in-session deselect and re-select of a project-only eject skill", () =
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
-      await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
+      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
       await wizard.build.toggleFocusedSkill();
       // Web -> API domain.
       await wizard.build.advanceDomain();

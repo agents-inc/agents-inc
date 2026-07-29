@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import type { SourcesStep } from "../pages/steps/sources-step.js";
-import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { STEP_TEXT, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import { cleanupTempDir, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
 import {
@@ -31,7 +30,7 @@ describe("init wizard — source management", () => {
     wizard: InitWizard;
     sources: SourcesStep;
   }> {
-    const w = await InitWizard.launch(options);
+    const w = await InitWizard.launchInProject(options);
     const domain = await w.stack.selectFirstStack();
     const build = await domain.acceptDefaults();
     const sources = await build.passThroughAllDomains();
@@ -113,8 +112,8 @@ describe("init wizard — source management", () => {
           agents: ["web-developer"],
           source: "eject",
         });
-        await expect(result.project).toHaveCompiledAgent("web-developer");
-        await expect(result.project).toHaveSkillCopied("web-framework-react");
+        await expect({ dir: w.globalHome }).toHaveCompiledAgent("web-developer");
+        await expect({ dir: w.globalHome }).toHaveSkillCopied("web-framework-react");
       },
     );
 
@@ -147,12 +146,13 @@ describe("init wizard — source management", () => {
           const confirm = await agents.acceptDefaults("init");
           const result = await confirm.confirm();
 
-          await expectPhaseSuccess(result, {
+          expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+          await expect(result.project).toHaveConfig({
             skillIds: ["web-framework-react"],
             agents: ["web-developer"],
             source: "agents-inc",
-            compiledAgents: ["web-developer"],
           });
+          await expect({ dir: w.globalHome }).toHaveCompiledAgent("web-developer");
         },
       );
     });

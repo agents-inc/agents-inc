@@ -41,7 +41,8 @@ describe("uninstall command", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain("Remove");
     expect(stdout).toContain("--yes");
-    expect(stdout).toContain("--all");
+    // The --all flag was removed; the config manifest is now always uninstalled
+    expect(stdout).not.toContain("--all");
   });
 
   it("should warn when no installation is found", async () => {
@@ -81,20 +82,14 @@ describe("uninstall command", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-    // Skills and agents should be removed
-    await expectCleanUninstall(projectDir);
+    // Skills, agents, and the config manifest should all be removed by default
+    await expectCleanUninstall(projectDir, { removeConfig: true });
 
-    // Config should be preserved intact (uninstall --yes does not remove .claude-src/)
-    await expect({ dir: projectDir }).toHaveConfig({
-      skillIds: ["web-framework-react"],
-      agents: [E2E_AGENT["web-developer"].name],
-    });
-
-    // Config directory preserved (without --all)
-    expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(true);
+    // Config directory removed (config.ts was the only .claude-src content)
+    expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(false);
   });
 
-  it("should also remove config directory with --all --yes", async () => {
+  it("should also remove config directory by default with --yes", async () => {
     const project = await ProjectBuilder.editable();
     tempDir = path.dirname(project.dir);
     const projectDir = project.dir;
@@ -104,14 +99,14 @@ describe("uninstall command", () => {
     const configDir = path.join(projectDir, DIRS.CLAUDE_SRC);
     expect(await directoryExists(configDir)).toBe(true);
 
-    const { exitCode, stdout } = await CLI.run(["uninstall", "--all", "--yes"], {
+    const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], {
       dir: projectDir,
     });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-    // Config directory, skills, and agents should all be removed with --all
+    // Config directory, skills, and agents should all be removed by default
     await expectCleanUninstall(projectDir, { removeConfig: true });
   });
 
@@ -244,6 +239,9 @@ describe("uninstall command", () => {
     // --yes should print what will be removed (without interactive prompt)
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_PREVIEW_HEADING);
     expect(stdout).toContain("CLI-managed files:");
+    // The plan lists the .claude-src config manifest that is now always removed
+    expect(stdout).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
+    expect(stdout).toContain(DIRS.CLAUDE_SRC);
   });
 
   it("should report nothing to uninstall for empty directory with HOME override", async () => {
@@ -271,7 +269,7 @@ describe("uninstall command", () => {
     expect(output).toContain("Nothing to uninstall");
   });
 
-  it("should succeed with --yes --all when config dir exists but no skills", async () => {
+  it("should succeed with --yes when config dir exists but no skills", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
 
@@ -285,13 +283,13 @@ describe("uninstall command", () => {
     const configDir = path.join(projectDir, DIRS.CLAUDE_SRC);
     expect(await directoryExists(configDir)).toBe(true);
 
-    const { exitCode } = await CLI.run(["uninstall", "--all", "--yes"], {
+    const { exitCode } = await CLI.run(["uninstall", "--yes"], {
       dir: projectDir,
     });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    // Config dir, skills, and agents should all be removed with --all
+    // Config dir, skills, and agents should all be removed by default
     await expectCleanUninstall(projectDir, { removeConfig: true });
   });
 });

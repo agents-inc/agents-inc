@@ -59,19 +59,17 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
   });
 
   it(
-    "Scope toggle (s) is inert on a persisted dual-scope skill locked to a selected agent",
+    "Scope toggle (s) collapses a persisted dual-scope skill locked to a selected agent",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // api-framework-hono is a persisted dual-scope [P][G] pair AND a preloaded
-      // skill locked to the selected api-developer agent. `s` is intentionally
-      // inert on a persisted dual-scope pair, and space cannot deselect a
-      // skill locked to a selected agent — so neither key removes the project
-      // half. The pair must survive the edit untouched: config and filesystem
-      // unchanged at both scopes.
+      // skill locked to the selected api-developer agent. Space cannot deselect a
+      // skill locked to a selected agent, but `s` is the sole dual-scope toggle:
+      // it collapses [P][G] to the single inherited-global entry, dropping the
+      // project override while the global install survives.
       const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.hono.id);
       const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.hono.id);
       const projectConfigPath = configTsPath(projectDir);
-      const projectConfigBefore = await readTestFile(projectConfigPath);
 
       const wizard = await EditWizard.launch({
         projectDir,
@@ -84,7 +82,7 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
       // Build step -- Web domain (pass through)
       await wizard.build.advanceDomain();
 
-      // Build step -- API domain -- press `s` on api-framework-hono (must be inert)
+      // Build step -- API domain -- press `s` on api-framework-hono (collapses the pair)
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
 
@@ -93,28 +91,34 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
       const exitCode = await result.exitCode;
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Phase D: Assertions — the dual-scope pair is unchanged
+      // Phase D: Assertions — the pair collapsed to the global half
 
-      // D-1: Skill directory still exists at BOTH scopes (project override preserved)
+      // D-1: The global install is untouched; the project override is gone.
       expect(
         await directoryExists(globalSkillDir),
-        "api-framework-hono must remain at global scope (inert `s`)",
+        "api-framework-hono must remain at global scope (P→G leaves the global install intact)",
       ).toBe(true);
       expect(
         await directoryExists(projectSkillDir),
-        "api-framework-hono must remain at project scope — `s` is inert on a locked dual-scope pair",
-      ).toBe(true);
+        "api-framework-hono must be removed from project scope after the `s` collapse",
+      ).toBe(false);
 
-      // D-2: Project config still carries the dual-scope pair (project override + global tombstone)
+      // D-2: Project config no longer carries a project-scope entry or a tombstone for hono.
       const projectConfigAfter = await readTestFile(projectConfigPath);
-      expect(
-        projectConfigAfter,
-        "project config.ts must be unchanged after an inert scope toggle",
-      ).toBe(projectConfigBefore);
       const honoProjectLines = projectConfigAfter
         .split("\n")
         .filter((l: string) => l.includes(E2E_SKILL.hono.id) && l.includes('"scope":"project"'));
-      expect(honoProjectLines.length).toBeGreaterThan(0);
+      expect(
+        honoProjectLines,
+        "the collapsed pair must leave no project-scope api-framework-hono entry",
+      ).toStrictEqual([]);
+      const honoTombstoneLines = projectConfigAfter
+        .split("\n")
+        .filter((l: string) => l.includes(E2E_SKILL.hono.id) && l.includes('"excluded":true'));
+      expect(
+        honoTombstoneLines,
+        "the collapsed pair must leave no api-framework-hono tombstone",
+      ).toStrictEqual([]);
 
       // D-3: Agent files at both scopes still exist (unchanged)
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
@@ -142,10 +146,10 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
     const agents = await sources.advance();
 
     // Agents step -- restore api-developer to global scope. api-developer is a
-    // persisted dual-scope [P][G] agent, so `s` is intentionally inert on it.
-    // Space (deselect) is the sanctioned way to drop the project half — it
-    // collapses [P][G] → [G], the same P→G restoration end-state.
-    await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
+    // persisted dual-scope [P][G] agent and `s` is the sole dual-scope toggle:
+    // it collapses [P][G] → [G], the P→G restoration end-state.
+    await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
+    await agents.toggleScopeOnFocusedAgent();
     const confirm = await agents.advance("edit");
 
     // Confirm step
@@ -267,7 +271,9 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
       });
       testWizard = wizard;
 
-      // Build step -- Web domain: toggle first focused skill (web-framework-react) scope to project
+      // Build step -- Web domain: toggle web-framework-react scope to project
+      // (focus it explicitly — the first-alphabetical cell is Vue, not react).
+      await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
 

@@ -89,7 +89,7 @@ describe("edit wizard — excluded skills", () => {
         }),
       });
 
-      wizard = await EditWizard.launch({
+      wizard = await EditWizard.launchInProject({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         ...TERMINAL_SIZE.TALL,
@@ -126,7 +126,7 @@ describe("edit wizard — excluded skills", () => {
       const updatedConfig = await readTestFile(configPath);
       expect(updatedConfig).toContain('"excluded":true');
 
-      await expect(result.project).toHaveCompiledAgents();
+      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
     },
   );
 
@@ -161,7 +161,7 @@ describe("edit wizard — excluded skills", () => {
         }),
       });
 
-      wizard = await EditWizard.launch({
+      wizard = await EditWizard.launchInProject({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         ...TERMINAL_SIZE.TALL,
@@ -183,7 +183,7 @@ describe("edit wizard — excluded skills", () => {
       const updatedConfig = await readTestFile(configPath);
       expect(updatedConfig).toContain('"excluded":true');
 
-      await expect(result.project).toHaveCompiledAgents();
+      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
     },
   );
 
@@ -233,7 +233,7 @@ describe("edit wizard — excluded skills", () => {
         }),
       });
 
-      wizard = await EditWizard.launch({
+      wizard = await EditWizard.launchInProject({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         ...TERMINAL_SIZE.TALL,
@@ -265,7 +265,7 @@ describe("edit wizard — excluded skills", () => {
       const updatedConfig = await readTestFile(configPath);
       expect(updatedConfig).toContain('"excluded":true');
 
-      await expect(result.project).toHaveCompiledAgents();
+      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
     },
   );
 
@@ -316,7 +316,7 @@ describe("edit wizard — excluded skills", () => {
         }),
       });
 
-      wizard = await EditWizard.launch({
+      wizard = await EditWizard.launchInProject({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         ...TERMINAL_SIZE.TALL,
@@ -355,7 +355,7 @@ describe("edit wizard — excluded skills", () => {
       // The zustand local skill directory must still exist after save
       await expect({ dir: projectDir }).toHaveLocalSkills(["web-state-zustand"]);
 
-      await expect(result.project).toHaveCompiledAgents();
+      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
     },
   );
 
@@ -404,7 +404,7 @@ describe("edit wizard — excluded skills", () => {
         }),
       });
 
-      wizard = await EditWizard.launch({
+      wizard = await EditWizard.launchInProject({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
         ...TERMINAL_SIZE.TALL,
@@ -431,7 +431,7 @@ describe("edit wizard — excluded skills", () => {
       expect(updatedConfig).toContain('"scope":"global"');
       expect(updatedConfig).toContain('"scope":"project"');
 
-      await expect(result.project).toHaveCompiledAgents();
+      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
     },
   );
 });

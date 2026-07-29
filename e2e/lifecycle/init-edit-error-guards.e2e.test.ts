@@ -85,6 +85,8 @@ describe("init/edit error guards", () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
 
+      // A content-less config (no skills, no agents) is not a real installation,
+      // so compile fails gracefully with a not-installed error.
       await writeProjectConfig(projectDir, {
         name: "test-empty-skills",
         skills: [],
@@ -96,7 +98,7 @@ describe("init/edit error guards", () => {
       });
 
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
-      expect(combined).toContain(STEP_TEXT.NO_SKILLS_FOUND);
+      expect(combined).toContain(STEP_TEXT.NO_INSTALLATION);
     },
   );
 

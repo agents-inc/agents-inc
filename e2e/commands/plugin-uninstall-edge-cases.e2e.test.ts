@@ -153,17 +153,17 @@ describe("uninstall with plugin config but no installed plugins", () => {
     expect(settings.enabledPlugins?.["manual-plugin@some-marketplace"]).toBe(true);
   });
 
-  it("should also remove config with --all flag when no plugins exist", async () => {
+  it("should also remove config by default when no plugins exist", async () => {
     tempDir = await createTempDir();
     const { projectDir } = await createUninstallableProject(tempDir, {
-      configName: "all-flag-test",
+      configName: "config-removal-test",
       skillSource: "fake-marketplace",
     });
 
     const configDir = path.join(projectDir, DIRS.CLAUDE_SRC);
     expect(await directoryExists(configDir)).toBe(true);
 
-    const { exitCode, stdout } = await CLI.run(["uninstall", "--all", "--yes"], {
+    const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], {
       dir: projectDir,
     });
 

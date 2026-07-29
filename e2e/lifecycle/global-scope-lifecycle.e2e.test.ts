@@ -11,6 +11,7 @@ import {
   createTestEnvironment,
   type DualScopeEnv,
 } from "../fixtures/dual-scope-helpers.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Global scope lifecycle E2E tests -- regression coverage for scope-blind bugs.
@@ -170,7 +171,9 @@ describe("global scope lifecycle -- init wizard with scope toggling", () => {
       const domain = await wizard.stack.selectFirstStack();
       const build = await domain.acceptDefaults();
 
-      // Web domain -- toggle first skill to project scope
+      // Web domain -- toggle web-framework-react to project scope (focus it
+      // explicitly — the first-alphabetical cell is Vue, not react).
+      await build.focusSkill(E2E_SKILL.react.display);
       await build.toggleScopeOnFocusedSkill();
       await build.advanceDomain();
 

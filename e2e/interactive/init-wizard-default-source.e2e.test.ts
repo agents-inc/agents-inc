@@ -131,7 +131,7 @@ describe("init wizard — default source eject mode ENOENT", () => {
     "should complete init with default source without ENOENT",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      wizard = await InitWizard.launch({
+      wizard = await InitWizard.launchInProject({
         noSource: true,
         env: { CC_SOURCE: undefined },
       });
@@ -151,7 +151,8 @@ describe("init wizard — default source eject mode ENOENT", () => {
         agents: ["web-developer", "api-developer"],
       });
 
-      await expect(result.project).toHaveCompiledAgents();
+      // Compiled agents (default global scope) land under the wizard's global HOME.
+      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
     },
   );
 

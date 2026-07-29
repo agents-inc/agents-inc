@@ -81,7 +81,7 @@ describe.skipIf(!claudeAvailable)("init wizard — interactions", () => {
 
   describe("agent deselection", () => {
     it("should not compile a deselected agent", { timeout: TIMEOUTS.INTERACTIVE }, async () => {
-      wizard = await InitWizard.launch({
+      wizard = await InitWizard.launchInProject({
         source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
       });
 
@@ -97,12 +97,17 @@ describe.skipIf(!claudeAvailable)("init wizard — interactions", () => {
       const confirm = await agents.advance("init");
       const result = await confirm.confirm();
 
-      // api-developer should NOT be compiled (it was deselected)
-      await expectPhaseSuccess(result, {
+      // api-developer should NOT be compiled (it was deselected). Config lands
+      // under projectDir; the compiled agents (default global scope) land under
+      // the wizard's global HOME.
+      await expect(result.project).toHaveConfig({
         skillIds: [E2E_SKILL.react.id],
         agents: [...E2E_AGENTS.WEB],
-        compiledAgents: [...E2E_AGENTS.WEB],
       });
+      await expectPhaseSuccess(
+        { project: { dir: wizard.globalHome }, exitCode: result.exitCode },
+        { compiledAgents: [...E2E_AGENTS.WEB] },
+      );
     });
   });
 
@@ -133,7 +138,9 @@ describe.skipIf(!claudeAvailable)("init wizard — interactions", () => {
         const domain = await wizard.stack.selectFirstStack();
         const build = await domain.acceptDefaults();
 
-        // Press S to toggle scope of the focused skill (default is "global")
+        // Focus react (the grid's first-alphabetical cell is Vue, not react), then
+        // press S to toggle its scope (default is "global").
+        await build.focusSkill(E2E_SKILL.react.display);
         await build.toggleScopeOnFocusedSkill();
 
         // The scope badge should show "P" for project

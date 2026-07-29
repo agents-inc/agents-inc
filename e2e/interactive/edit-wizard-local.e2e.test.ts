@@ -68,7 +68,7 @@ describe("edit wizard — eject mode", () => {
         });
 
         // Select the vitest skill by name
-        await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
+        await wizard.build.selectSkill(E2E_SKILL.vitest.display);
 
         // Navigate through remaining steps with explicit eject source selection
         const sources = await wizard.build.advanceToSources();
@@ -119,11 +119,17 @@ describe("edit wizard — eject mode", () => {
           env: { HOME: project.dir },
         });
 
-        // Select an additional skill
-        await wizard.build.navigateDown();
-        await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
+        // Select an additional skill (selectSkill navigates to vitest by label).
+        await wizard.build.selectSkill(E2E_SKILL.vitest.display);
 
-        const result = await wizard.completeFromBuild();
+        // Eject the newly-added skill — the source has no marketplace, so the
+        // default plugin source would fail; setAllLocal ejects it instead.
+        const sources = await wizard.build.advanceToSources();
+        await sources.waitForReady();
+        await sources.setAllLocal();
+        const agents = await sources.advance();
+        const confirm = await agents.acceptDefaults("edit");
+        const result = await confirm.confirm();
 
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
@@ -154,11 +160,17 @@ describe("edit wizard — eject mode", () => {
           env: { HOME: project.dir },
         });
 
-        // Select an additional skill
-        await wizard.build.navigateDown();
-        await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
+        // Select an additional skill (selectSkill navigates to vitest by label).
+        await wizard.build.selectSkill(E2E_SKILL.vitest.display);
 
-        const result = await wizard.completeFromBuild();
+        // Eject the newly-added skill — the source has no marketplace, so the
+        // default plugin source would fail; setAllLocal ejects it instead.
+        const sources = await wizard.build.advanceToSources();
+        await sources.waitForReady();
+        await sources.setAllLocal();
+        const agents = await sources.advance();
+        const confirm = await agents.acceptDefaults("edit");
+        const result = await confirm.confirm();
 
         await expectPhaseSuccess(result, {
           compiledAgents: ["web-developer"],

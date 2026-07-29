@@ -190,7 +190,12 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
           domains: ["web"],
         });
 
-        wizard = await EditWizard.launch({
+        // Adding a plugin skill installs it via `claude plugin install`, which
+        // writes enabledPlugins into HOME's settings.json. Model the edit as the
+        // GLOBAL install (HOME === cwd === projectDir) so the plugin enablement
+        // and the config both collapse onto projectDir and settings.json is
+        // asserted where it lands.
+        wizard = await EditWizard.launchInGlobal({
           projectDir: project.dir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
           ...TERMINAL_SIZE.TALL,
@@ -246,7 +251,12 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
           omitMarketplaceField: true,
         });
 
-        wizard = await EditWizard.launch({
+        // Adding a plugin skill installs it via `claude plugin install`, which
+        // writes enabledPlugins into HOME's settings.json. Model the edit as the
+        // GLOBAL install (HOME === cwd === projectDir) so the plugin enablement
+        // and the config both collapse onto projectDir and settings.json is
+        // asserted where it lands.
+        wizard = await EditWizard.launchInGlobal({
           projectDir: project.dir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
           ...TERMINAL_SIZE.TALL,

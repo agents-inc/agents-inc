@@ -1,4 +1,5 @@
 import path from "path";
+import { realpathSync } from "fs";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
@@ -11,6 +12,7 @@ import {
   ensureBinaryExists,
   fileExists,
   listFiles,
+  loadConfigOrFail,
   readTestFile,
   runCLI,
   skillsPath,
@@ -75,8 +77,8 @@ describe("uninstall-reinit lifecycle", () => {
       // Snapshot Phase A config for later comparison
       const configAfterFirstInit = await readTestFile(globalConfigPath);
 
-      // Phase B: Uninstall with --all --yes
-      const uninstall = await runCLI(["uninstall", "--yes", "--all"], fakeHome, {
+      // Phase B: Uninstall (the config manifest is removed by default)
+      const uninstall = await runCLI(["uninstall", "--yes"], fakeHome, {
         env: { HOME: fakeHome },
       });
       expect(uninstall.exitCode, `Uninstall failed: ${uninstall.combined}`).toBe(
@@ -86,7 +88,7 @@ describe("uninstall-reinit lifecycle", () => {
       // Verify uninstall cleaned everything
       expect(
         await directoryExists(path.join(fakeHome, DIRS.CLAUDE_SRC)),
-        "Config dir must be removed after uninstall --all",
+        "Config dir must be removed after uninstall",
       ).toBe(false);
       expect(
         await directoryExists(globalSkillsDir),
@@ -188,14 +190,27 @@ describe("uninstall scope isolation", () => {
         "Project agents dir should be removed after uninstall",
       ).toBe(false);
 
-      // Verify global installation is completely preserved
+      // Verify global installation is preserved
       expect(await fileExists(globalConfigPath), "Global config must still exist").toBe(true);
       expect(await directoryExists(globalSkillsDir), "Global skills must still exist").toBe(true);
       expect(await directoryExists(globalAgentsDir), "Global agents must still exist").toBe(true);
 
-      // Verify global config content is unchanged
-      const globalConfigAfter = await readTestFile(globalConfigPath);
-      expect(globalConfigAfter).toBe(globalConfigBefore);
+      // The only global-config change from a project uninstall is deregistering
+      // this project from the tracked `projects` list.
+      const realProjectDir = realpathSync(projectDir);
+      expect(
+        globalConfigBefore,
+        "project must be registered in the global config before uninstall",
+      ).toContain(realProjectDir);
+
+      const globalAfter = await loadConfigOrFail(fakeHome);
+      expect(
+        globalAfter.projects ?? [],
+        "project must be deregistered from the global config after uninstall",
+      ).not.toContain(realProjectDir);
+      // Global skills/agents are otherwise untouched
+      expect(globalAfter.skills.length, "global skills must be preserved").toBeGreaterThan(0);
+      expect(globalAfter.agents.length, "global agents must be preserved").toBeGreaterThan(0);
     },
   );
 });

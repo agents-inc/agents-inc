@@ -82,7 +82,9 @@ describe("scope toggle config snapshot", () => {
       });
       testWizard = wizard;
 
-      // Build step -- Web domain: toggle first focused skill (web-framework-react) scope
+      // Build step -- Web domain: toggle web-framework-react scope (focus it
+      // explicitly — the first-alphabetical cell is Vue, not react).
+      await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
 
@@ -154,13 +156,14 @@ describe("scope toggle config snapshot", () => {
   );
 
   it(
-    "scope toggle (s) is inert on a persisted dual-scope skill locked to a selected agent — configs unchanged",
+    "scope toggle (s) collapses a persisted dual-scope skill locked to a selected agent — only the project config changes",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // api-framework-hono is a persisted dual-scope [P][G] pair AND locked to the
-      // selected api-developer agent, so neither `s` (dual-scope guard) nor space
-      // (agent lock) can drop the project half. Both config snapshots must be
-      // byte-identical after the edit.
+      // selected api-developer agent: space (agent lock) cannot drop the project
+      // half but `s` collapses the pair to its global half. Only the PROJECT config
+      // may change — the global config is not the wizard's to rewrite from a
+      // project-scope edit.
 
       // BEFORE: Snapshot both configs
       const globalConfigBefore = await readTestFile(configTsPath(fakeHome));
@@ -177,7 +180,7 @@ describe("scope toggle config snapshot", () => {
       // Build step -- Web domain (pass through)
       await wizard.build.advanceDomain();
 
-      // Build step -- API domain: press `s` on api-framework-hono (must be inert)
+      // Build step -- API domain: press `s` on api-framework-hono (collapses the pair)
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
 
@@ -185,32 +188,37 @@ describe("scope toggle config snapshot", () => {
       const result = await wizard.build.saveFromBuild("edit");
       const exitCode = await result.exitCode;
 
-      // AFTER assertions — configs and filesystem unchanged
+      // AFTER assertions — the project config lost the pair, the global one is untouched
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
       const projectConfigAfter = await readTestFile(configTsPath(projectDir));
+      expect(projectConfigAfter, "project config.ts must record the collapsed pair").not.toBe(
+        projectConfigBefore,
+      );
+      const honoProjectLines = projectConfigAfter
+        .split("\n")
+        .filter((l: string) => l.includes(E2E_SKILL.hono.id) && l.includes('"scope":"project"'));
       expect(
-        projectConfigAfter,
-        "project config.ts must be unchanged after an inert scope toggle",
-      ).toBe(projectConfigBefore);
+        honoProjectLines,
+        "the collapsed pair must leave no project-scope api-framework-hono entry",
+      ).toStrictEqual([]);
 
       const globalConfigAfter = await readTestFile(configTsPath(fakeHome));
-      expect(
-        globalConfigAfter,
-        "global config.ts must be unchanged after an inert scope toggle",
-      ).toBe(globalConfigBefore);
+      expect(globalConfigAfter, "global config.ts must be unchanged by a project-scope edit").toBe(
+        globalConfigBefore,
+      );
 
-      // Skill directory still present at BOTH scopes — the dual-scope pair survives
+      // The project override is gone; the global install survives.
       const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.hono.id);
       expect(
         await directoryExists(projectSkillDir),
-        "api-framework-hono must remain at project scope — `s` is inert on a locked dual-scope pair",
-      ).toBe(true);
+        "api-framework-hono must be removed from project scope after the `s` collapse",
+      ).toBe(false);
 
       const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.hono.id);
       expect(
         await directoryExists(globalSkillDir),
-        "api-framework-hono must remain at global scope (inert `s`)",
+        "api-framework-hono must remain at global scope (P→G leaves the global install intact)",
       ).toBe(true);
 
       await result.destroy();

@@ -6,6 +6,7 @@ import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT, TERMINAL_SIZE } from "../pages/c
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { cleanupTempDir, ensureBinaryExists, readTestFile, runCLI } from "../helpers/test-utils.js";
 import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Lifecycle E2E test: compile command after scope changes from edit wizard.
@@ -60,7 +61,9 @@ describe("compile after scope change", () => {
       });
       testWizard = wizard;
 
-      // Build step -- Web domain: toggle first focused skill (web-framework-react) scope to project
+      // Build step -- Web domain: toggle web-framework-react scope to project
+      // (focus it explicitly — the first-alphabetical cell is Vue, not react).
+      await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
 

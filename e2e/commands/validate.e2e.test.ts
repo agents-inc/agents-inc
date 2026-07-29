@@ -46,7 +46,7 @@ describe("validate command", () => {
         "should validate a registered source after `cc init` and exit 0",
         { timeout: TIMEOUTS.LIFECYCLE },
         async () => {
-          wizard = await InitWizard.launch();
+          wizard = await InitWizard.launchInProject();
           const result = await completeWithLocalSources(wizard);
           expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
@@ -56,6 +56,9 @@ describe("validate command", () => {
           expect(stdout).toContain("Validating sources");
           expect(stdout).toContain("Validating plugins");
           expect(stdout).toMatch(/Result: 0 error\(s\), \d+ warning\(s\)/);
+          // Human displayNames in id-named directories are the marketplace convention —
+          // the source pass must not warn about them (dirname is checked against the skill id)
+          expect(stdout).not.toContain("does not match");
         },
       );
     });
@@ -65,7 +68,7 @@ describe("validate command", () => {
         "should report valid installed skills with exit 0",
         { timeout: TIMEOUTS.LIFECYCLE },
         async () => {
-          wizard = await InitWizard.launch();
+          wizard = await InitWizard.launchInProject();
           const result = await completeWithLocalSources(wizard);
           expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
@@ -85,13 +88,14 @@ describe("validate command", () => {
         "should exit 1 when an installed skill has broken metadata.yaml",
         { timeout: TIMEOUTS.LIFECYCLE },
         async () => {
-          wizard = await InitWizard.launch();
+          wizard = await InitWizard.launchInProject();
           const result = await completeWithLocalSources(wizard);
           expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
           // Corrupt one installed skill's metadata.yaml so the installed-skill
-          // validator rejects it.
-          const installedSkillsDir = path.join(result.project.dir, DIRS.CLAUDE, DIRS.SKILLS);
+          // validator rejects it. Default-scope installs eject to the wizard's
+          // global HOME, so the installed skills live under globalHome/.claude.
+          const installedSkillsDir = path.join(wizard.globalHome, DIRS.CLAUDE, DIRS.SKILLS);
           const skillDirs = await readdir(installedSkillsDir);
           expect(skillDirs.length).toBeGreaterThan(0);
           const corruptedMetadata = path.join(
@@ -113,7 +117,7 @@ describe("validate command", () => {
         "should report the Validating agents section with an agent count",
         { timeout: TIMEOUTS.LIFECYCLE },
         async () => {
-          wizard = await InitWizard.launch();
+          wizard = await InitWizard.launchInProject();
           const result = await completeWithLocalSources(wizard);
           expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
@@ -129,7 +133,7 @@ describe("validate command", () => {
         "should emit all four section headers (sources, plugins, skills, agents) in a fully installed project",
         { timeout: TIMEOUTS.LIFECYCLE },
         async () => {
-          wizard = await InitWizard.launch();
+          wizard = await InitWizard.launchInProject();
           const result = await completeWithLocalSources(wizard);
           expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 

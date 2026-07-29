@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
@@ -40,14 +39,18 @@ import type { AgentName, Category } from "../../src/cli/types/index.js";
  * { "id": "...", "preloaded": true } and preloaded: false skills as bare
  * string IDs; the loader normalizes both, so the object-form find below
  * matches exactly the preloaded entries.
+ *
+ * The stack for an agent is written to that agent's SCOPE config: a default
+ * init scopes every agent global, so the stack lands in the GLOBAL config at
+ * HOME/.claude-src — pass the shared global home here, not projectDir.
  */
 async function assertPreloadedInStack(
-  projectDir: string,
+  configDir: string,
   agentName: AgentName,
   category: Category,
   skillId: string,
 ): Promise<void> {
-  const { stack } = await loadConfigOrFail(projectDir);
+  const { stack } = await loadConfigOrFail(configDir);
   expect(stack, "Expected config.ts to contain a stack").toBeDefined();
 
   const agentConfig = stack?.[agentName];
@@ -85,11 +88,16 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
 
   describe("init and edit passthrough", () => {
     let tempDir: string | undefined;
+    let sharedHome: string | undefined;
 
     afterEach(async () => {
       if (tempDir) {
         await cleanupTempDir(tempDir);
         tempDir = undefined;
+      }
+      if (sharedHome) {
+        await cleanupTempDir(sharedHome);
+        sharedHome = undefined;
       }
     });
 
@@ -100,42 +108,49 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
         tempDir = await createTempDir();
         const projectDir = tempDir;
 
+        // Default init/edit content is GLOBAL-scoped (compiled agents land in
+        // HOME). Thread ONE shared HOME through both phases so the edit sees the
+        // init's global content; config.ts stays under projectDir. The afterEach
+        // owns cleanup (reuse-param launches do not).
+        sharedHome = await createTempDir();
+
         // ================================================================
         // Phase A: Stack-picked init
         // ================================================================
 
-        const initWizard = await InitWizard.launch({
+        const initWizard = await InitWizard.launchInProject({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
           projectDir,
+          globalHome: sharedHome,
         });
         const initResult = await initWizard.completeWithDefaults();
         await initResult.destroy();
 
-        await expectPhaseSuccess(
-          { project: { dir: projectDir }, exitCode: initResult.exitCode },
-          {
-            skillIds: ["web-framework-react"],
-            agents: ["web-developer"],
-            source: fixture.marketplaceName,
-          },
-        );
+        expect(await initResult.exitCode).toBe(EXIT_CODES.SUCCESS);
+        await expect({ dir: projectDir }).toHaveConfig({
+          skillIds: ["web-framework-react"],
+          agents: ["web-developer"],
+          source: fixture.marketplaceName,
+        });
+        await expect({ dir: sharedHome }).toHaveCompiledAgent("web-developer");
 
         // Verify preloaded flags in config after init
         await assertPreloadedInStack(
-          projectDir,
+          sharedHome,
           "web-developer",
           "web-framework",
           "web-framework-react",
         );
-        await assertPreloadedInStack(projectDir, "api-developer", "api-api", "api-framework-hono");
+        await assertPreloadedInStack(sharedHome, "api-developer", "api-api", "api-framework-hono");
 
         // ================================================================
         // Phase B: Edit passthrough (no changes)
         // ================================================================
 
-        const editWizard = await EditWizard.launch({
+        const editWizard = await EditWizard.launchInProject({
           projectDir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          globalHome: sharedHome,
         });
         const editResult = await editWizard.passThrough();
         await editResult.destroy();
@@ -144,12 +159,12 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
 
         // Verify preloaded flags survive edit passthrough
         await assertPreloadedInStack(
-          projectDir,
+          sharedHome,
           "web-developer",
           "web-framework",
           "web-framework-react",
         );
-        await assertPreloadedInStack(projectDir, "api-developer", "api-api", "api-framework-hono");
+        await assertPreloadedInStack(sharedHome, "api-developer", "api-api", "api-framework-hono");
       },
     );
   });

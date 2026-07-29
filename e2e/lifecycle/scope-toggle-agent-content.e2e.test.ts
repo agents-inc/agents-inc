@@ -13,7 +13,7 @@ import {
   skillsPath,
 } from "../helpers/test-utils.js";
 import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
-import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
+import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Dual-scope edit lifecycle E2E test -- compiled agent content after scope toggle.
@@ -77,7 +77,9 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       });
       testWizard = wizard;
 
-      // Build step -- Web domain: toggle first focused skill (web-framework-react) scope to project
+      // Build step -- Web domain: toggle web-framework-react scope to project
+      // (focus it explicitly — the first-alphabetical cell is Vue, not react).
+      await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
 
@@ -121,7 +123,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
   );
 
   it(
-    "scope toggle (s) is inert on a persisted dual-scope skill locked to a selected agent, leaving the agent untouched",
+    "scope toggle (s) collapses a persisted dual-scope skill locked to a selected agent, leaving the agent untouched",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // BEFORE: Verify project api-developer contains api-framework-hono
@@ -130,9 +132,9 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       });
 
       // api-framework-hono is a persisted dual-scope [P][G] pair AND locked to the
-      // selected api-developer agent, so `s` is inert (dual-scope guard) and space
-      // cannot deselect it (agent lock). Pressing `s` must leave both the skill
-      // (still dual-scope) and the agent untouched.
+      // selected api-developer agent: space cannot deselect it (agent lock), but `s`
+      // collapses the pair to its global half. The agent itself must stay put at
+      // project scope — only the skill's project override goes away.
       const wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir, tempDir: sourceTempDir },
@@ -144,7 +146,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       // Build step -- Web domain (pass through)
       await wizard.build.advanceDomain();
 
-      // Build step -- API domain: press `s` on api-framework-hono (must be inert)
+      // Build step -- API domain: press `s` on api-framework-hono (collapses the pair)
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
 
@@ -153,7 +155,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       const exitCode = await result.exitCode;
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // AFTER assertions — nothing moved
+      // AFTER assertions — only the skill's project half moved
 
       // api-developer.md STILL exists at project scope (agent untouched)
       const projectApiDevPath = path.join(agentsPath(projectDir), "api-developer.md");
@@ -162,19 +164,23 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
         "api-developer.md must still exist at project scope",
       ).toBe(true);
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
+      // The agent still references the skill — it is now resolved from the global install.
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
+        contains: ["api-framework-hono"],
+      });
 
-      // Skill directory still present at BOTH scopes — the dual-scope pair survives
+      // The global install survives; the project override is gone.
       const globalSkillDir = path.join(skillsPath(fakeHome), "api-framework-hono");
       expect(
         await directoryExists(globalSkillDir),
-        "api-framework-hono must remain at global scope (inert `s`)",
+        "api-framework-hono must remain at global scope (P→G leaves the global install intact)",
       ).toBe(true);
 
       const projectSkillDir = path.join(skillsPath(projectDir), "api-framework-hono");
       expect(
         await directoryExists(projectSkillDir),
-        "api-framework-hono must remain at project scope — `s` is inert on a locked dual-scope pair",
-      ).toBe(true);
+        "api-framework-hono must be removed from project scope after the `s` collapse",
+      ).toBe(false);
 
       await result.destroy();
     },
@@ -206,9 +212,10 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       const agents = await sources.advance();
 
       // Agents step -- restore api-developer to global scope. It is a persisted
-      // dual-scope [P][G] agent, so `s` is inert on it; space (deselect)
-      // collapses [P][G] → [G], the sanctioned P→G restoration path.
-      await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
+      // dual-scope [P][G] agent and `s` collapses [P][G] → [G], the P→G
+      // restoration path.
+      await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
+      await agents.toggleScopeOnFocusedAgent();
       const confirm = await agents.advance("edit");
 
       // Confirm step

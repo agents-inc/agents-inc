@@ -13,7 +13,12 @@ import "../matchers/setup.js";
  * pressing F with React selected deselects pinia.
  */
 
-describe("init wizard — filter incompatible deselection", () => {
+// D-269: the F hotkey (filter incompatible) is gated behind
+// FEATURE_FLAGS.FILTER_INCOMPATIBLE (default false). E2E tests spawn the CLI
+// binary as a separate process, so vi.mock cannot override the flag. Un-skip
+// once the flag flips back to true (or once the feature-flags module supports an
+// env-var override the E2E harness can set).
+describe.skip("init wizard — filter incompatible deselection", () => {
   let wizard: InitWizard | undefined;
   let source: E2ESource;
 
@@ -58,7 +63,7 @@ describe("init wizard — filter incompatible deselection", () => {
       await build.navigateToNextCategory();
 
       // Select pinia (navigates to its column in the grid and presses Space)
-      await build.selectSkill(E2E_SKILL.pinia.slug);
+      await build.selectSkill(E2E_SKILL.pinia.display);
 
       // Verify pinia appears on screen
       const output = build.getOutput();

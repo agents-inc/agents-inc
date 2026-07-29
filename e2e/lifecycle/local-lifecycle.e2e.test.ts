@@ -1,11 +1,10 @@
-import path from "path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { CLI } from "../fixtures/cli.js";
 import {
@@ -13,7 +12,6 @@ import {
   cleanupTempDir,
   completeWithLocalSources,
   ensureBinaryExists,
-  directoryExists,
 } from "../helpers/test-utils.js";
 
 /**
@@ -54,7 +52,12 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
       // Phase 1: Init -- run wizard, verify config + agents + skills
       // ================================================================
 
-      const wizard = await InitWizard.launch({
+      // Eject mode installs to the default (global) scope. Model it as the
+      // GLOBAL install (HOME === cwd === projectDir) so every artifact — config,
+      // compiled agents, ejected skills — collapses onto projectDir and the
+      // follow-up compile/uninstall commands (which resolve targets from cwd)
+      // find the same content.
+      const wizard = await InitWizard.launchInGlobal({
         source: { sourceDir, tempDir: sourceTempDir },
         projectDir,
       });
@@ -140,11 +143,8 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
       // Phase 4: Verify clean state
       // ================================================================
 
-      // Skills and agents directories should be fully removed
-      await expectCleanUninstall(projectDir);
-
-      // Config directory should still exist (uninstall without --all preserves it)
-      expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(true);
+      // Skills, agents, and the config manifest should all be removed by default
+      await expectCleanUninstall(projectDir, { removeConfig: true });
     },
   );
 });

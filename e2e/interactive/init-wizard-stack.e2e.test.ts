@@ -6,7 +6,7 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   cleanupTempDir,
   completeWithLocalSources,
@@ -77,21 +77,24 @@ describe("init wizard — stack flow", () => {
       "should complete a full stack-based init flow with defaults",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
-        wizard = await InitWizard.launch({
+        wizard = await InitWizard.launchInProject({
           source: { sourceDir: pluginSource!.sourceDir, tempDir: pluginSource!.tempDir },
         });
         const result = await wizard.completeWithDefaults();
 
-        await expectPhaseSuccess(
-          { project: result.project, exitCode: result.exitCode },
-          {
-            skillIds: ["web-framework-react"],
-            agents: E2E_AGENTS.WEB_AND_API,
-            source: pluginSource!.marketplaceName,
-            compiledAgents: E2E_AGENTS.WEB_AND_API,
-          },
-        );
-        await expect(result.project).toHaveAgentFrontmatter("web-developer", {
+        // config.ts (skills + marketplace source) stays under the project dir;
+        // compiled agents land in the wizard's global HOME.
+        expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+        await expect(result.project).toHaveConfig({
+          skillIds: ["web-framework-react"],
+          agents: E2E_AGENTS.WEB_AND_API,
+          source: pluginSource!.marketplaceName,
+        });
+        const globalProject = { dir: wizard.globalHome };
+        for (const agent of E2E_AGENTS.WEB_AND_API) {
+          await expect(globalProject).toHaveCompiledAgent(agent);
+        }
+        await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
           skills: ["web-framework-react:web-framework-react"],
         });
       },
@@ -101,7 +104,7 @@ describe("init wizard — stack flow", () => {
       "should display completion details after install",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
-        wizard = await InitWizard.launch({
+        wizard = await InitWizard.launchInProject({
           source: { sourceDir: pluginSource!.sourceDir, tempDir: pluginSource!.tempDir },
         });
         const result = await wizard.completeWithDefaults();
@@ -112,8 +115,9 @@ describe("init wizard — stack flow", () => {
         expect(output).toContain(STEP_TEXT.AGENTS_COMPILED_TO);
         expect(output).toContain(STEP_TEXT.CONFIGURATION_LABEL);
         await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
-        await expect(result.project).toHaveCompiledAgents();
-        await expect(result.project).toHaveCompiledAgentContent("web-developer", {
+        const globalProject = { dir: wizard.globalHome };
+        await expect(globalProject).toHaveCompiledAgents();
+        await expect(globalProject).toHaveCompiledAgentContent("web-developer", {
           contains: ["web-framework-react"],
         });
       },
@@ -125,14 +129,17 @@ describe("init wizard — stack flow", () => {
       "should copy skills to .claude/skills/ directory",
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
-        wizard = await InitWizard.launch();
+        wizard = await InitWizard.launchInProject();
         const result = await completeWithLocalSources(wizard);
 
+        // Default-scope installs eject skills and compile agents into the
+        // wizard's global HOME, so installed-content assertions read there.
+        const globalProject = { dir: wizard.globalHome };
         await expectPhaseSuccess(
-          { project: result.project, exitCode: result.exitCode },
+          { project: globalProject, exitCode: result.exitCode },
           { copiedSkills: ["web-framework-react"] },
         );
-        await expect(result.project).toHaveCompiledAgents();
+        await expect(globalProject).toHaveCompiledAgents();
       },
     );
 
@@ -140,7 +147,7 @@ describe("init wizard — stack flow", () => {
       "should not produce archive warnings during first install",
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
-        wizard = await InitWizard.launch();
+        wizard = await InitWizard.launchInProject();
         const result = await completeWithLocalSources(wizard);
 
         await result.exitCode;
@@ -148,7 +155,7 @@ describe("init wizard — stack flow", () => {
         const output = result.output;
         expect(output).not.toContain("Failed to archive");
         expect(output).not.toContain("ENOENT");
-        await expect(result.project).toHaveCompiledAgents();
+        await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
       },
     );
 
@@ -156,22 +163,24 @@ describe("init wizard — stack flow", () => {
       "should produce SkillConfig[] with id, scope, and source in config",
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
-        wizard = await InitWizard.launch();
+        wizard = await InitWizard.launchInProject();
         const result = await completeWithLocalSources(wizard);
 
         await result.exitCode;
 
+        // config.ts stays under the project dir; compiled agents land in the
+        // wizard's global HOME.
         await expect(result.project).toHaveConfig({
           skillIds: ["web-framework-react"],
           agents: ["web-developer"],
           source: "eject",
         });
-        await expect(result.project).toHaveCompiledAgents();
+        await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
       },
     );
 
     it("should list copied skills in output", { timeout: TIMEOUTS.INTERACTIVE }, async () => {
-      wizard = await InitWizard.launch();
+      wizard = await InitWizard.launchInProject();
       const result = await completeWithLocalSources(wizard);
 
       await result.exitCode;
@@ -180,7 +189,7 @@ describe("init wizard — stack flow", () => {
       expect(output).toContain(STEP_TEXT.SKILLS_COPIED_TO);
       expect(output).toContain(".claude/skills");
       await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
-      await expect(result.project).toHaveCompiledAgents();
+      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
     });
   });
 
@@ -232,7 +241,7 @@ describe("init wizard — stack flow", () => {
       const build = await domain.advance();
 
       // Select required skill in Web domain and advance
-      await build.selectSkill(E2E_SKILL.react.slug);
+      await build.selectSkill(E2E_SKILL.react.display);
       await build.advanceDomain();
 
       // In scratch flow, no stack snapshot exists — API domain should have 0 selected skills

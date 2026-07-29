@@ -186,19 +186,20 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       const configPath = configTsPath(fakeHome);
       const originalConfig = await readTestFile(configPath);
 
-      // Remove api-framework-hono from the skills array (but stack refs remain).
+      // Remove every api-framework-hono entry from both the skills array and the
+      // stack. `[^{}]*` (not `[^}]*`) keeps each match inside the innermost object
+      // so the surrounding stack/agent braces stay balanced — the result is a
+      // structurally VALID config in which the "api" domain simply has no skills.
       const modifiedConfig = originalConfig.replace(
-        /\{[^}]*"id"\s*:\s*"api-framework-hono"[^}]*\},?\s*/g,
+        /\{[^{}]*"id"\s*:\s*"api-framework-hono"[^{}]*\},?\s*/g,
         "",
       );
 
       await writeFile(configPath, modifiedConfig);
 
-      // Verify modification: config should still have domains with "api"
-      // but the skills array should not contain api-framework-hono as an id.
-      // NOTE: raw-text check on purpose — this config was just hand-mangled by
-      // the regex surgery above and may not pass the structural loader's
-      // validation; the CLI's own tolerance for it is what Phase C exercises.
+      // The config must remain loadable — a corrupt config is (correctly) rejected
+      // by edit, so a broken fixture would fail Phase C for the wrong reason.
+      // domains still lists "api"; no skills entry references api-framework-hono.
       const verifyConfig = await readTestFile(configPath);
       expect(verifyConfig).toContain('"api"');
       const skillsMatch = verifyConfig.match(/const skills[\s\S]*?\];/);

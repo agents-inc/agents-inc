@@ -1,0 +1,60 @@
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { STEP_TEXT } from "../pages/constants.js";
+import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
+import "../matchers/setup.js";
+
+/**
+ * The build grid must render a category's skills in a deterministic,
+ * machine-independent order (alphabetical by displayName), not in matrix
+ * readdir/insertion order. In the E2E source the web-framework category holds
+ * two skills whose titles sort Vue before react ("Vue Composition Api" < the
+ * "web-framework-react" title), so Vue must render first in the row.
+ */
+describe("build step — deterministic category ordering", () => {
+  let source: E2ESource;
+  let wizard: InitWizard | undefined;
+
+  beforeAll(async () => {
+    await ensureBinaryExists();
+    source = await createE2ESource();
+  });
+
+  afterAll(async () => {
+    if (source) await cleanupTempDir(source.tempDir);
+  });
+
+  afterEach(async () => {
+    await wizard?.destroy();
+    wizard = undefined;
+  });
+
+  it("renders web-framework options alphabetically by displayName (Vue before react)", async () => {
+    wizard = await InitWizard.launch({
+      source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
+    });
+
+    const domain = await wizard.stack.selectFirstStack();
+    const build = await domain.acceptDefaults();
+
+    // acceptDefaults() anchors on the build step's first frame, so the web
+    // domain's web-framework row is already painted here.
+    expect(build.getOutput()).toContain(STEP_TEXT.BUILD);
+
+    const output = build.getOutput();
+    const vueIndex = output.indexOf(E2E_SKILL["vue-composition-api"].display);
+    const reactIndex = output.indexOf(E2E_SKILL.react.display);
+
+    expect(
+      vueIndex,
+      `"${E2E_SKILL["vue-composition-api"].display}" must render in the web-framework row`,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      reactIndex,
+      `"${E2E_SKILL.react.display}" must render in the web-framework row`,
+    ).toBeGreaterThanOrEqual(0);
+    expect(vueIndex).toBeLessThan(reactIndex);
+  });
+});

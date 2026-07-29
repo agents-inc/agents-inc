@@ -88,7 +88,7 @@ describe("eject skill directory cleanup on deselect", () => {
         ...TERMINAL_SIZE.TALL,
       });
       // Web domain: deselect web-testing-vitest.
-      await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
+      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
       await wizard.build.advanceDomain();
       // API domain: pass through.
       await wizard.build.advanceDomain();
@@ -149,7 +149,7 @@ describe("eject skill directory cleanup on deselect", () => {
         ...TERMINAL_SIZE.TALL,
       });
       // Web domain: deselect web-testing-vitest.
-      await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
+      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
       await wizard.build.advanceDomain();
       // API domain: pass through.
       await wizard.build.advanceDomain();

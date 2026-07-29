@@ -39,15 +39,22 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
   let projectDir: string;
   let wizard: InitWizard | undefined;
   let initOutput: string;
+  // Default-scope install content (compiled agents) lands in HOME. Thread ONE
+  // shared HOME through the init and every follow-up CLI.run so they resolve the
+  // same global root; config.ts stays under projectDir. The afterAll owns
+  // cleanup (the reuse-param launch does not).
+  let sharedHome: string;
 
   beforeAll(async () => {
     await ensureBinaryExists();
 
     projectDir = await createTempDir();
+    sharedHome = await createTempDir();
 
-    wizard = await InitWizard.launch({
+    wizard = await InitWizard.launchInProject({
       source: { sourceDir: SKILLS_SOURCE, tempDir: "" },
       projectDir,
+      globalHome: sharedHome,
       loadTimeout: TIMEOUTS.INSTALL,
     });
     // Real source has variable domains (Web, API, CLI, Shared), use generic path
@@ -69,6 +76,9 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
 
     if (projectDir) {
       await cleanupTempDir(projectDir);
+    }
+    if (sharedHome) {
+      await cleanupTempDir(sharedHome);
     }
   });
 
@@ -92,7 +102,7 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
     });
 
     it("should have compiled agents with real content", async () => {
-      await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
+      await expect({ dir: sharedHome }).toHaveCompiledAgent("web-developer");
     });
 
     it("should have displayed completion details", () => {
@@ -105,14 +115,14 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
     it("should compile agents to project output directory", async () => {
       const { exitCode } = await CLI.run(
         ["compile"],
-        { dir: projectDir },
+        { dir: projectDir, globalHome: sharedHome },
         {
           env: { AGENTSINC_SOURCE: undefined },
         },
       );
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
+      await expect({ dir: sharedHome }).toHaveCompiledAgent("web-developer");
     });
   });
 
@@ -127,8 +137,9 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
     });
 
     it("should show the build step with pre-selected skills", async () => {
-      editWizard = await EditWizard.launch({
+      editWizard = await EditWizard.launchInProject({
         projectDir,
+        globalHome: sharedHome,
         cols: 120,
         rows: 40,
       });
@@ -140,7 +151,10 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
 
   describe("list after real install", () => {
     it("should show installed skills and agents", async () => {
-      const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
+      const { exitCode, stdout } = await CLI.run(["list"], {
+        dir: projectDir,
+        globalHome: sharedHome,
+      });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).not.toContain(STEP_TEXT.NO_INSTALLATION);

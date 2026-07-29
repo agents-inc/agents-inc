@@ -78,7 +78,7 @@ describe("scope change deselect integrity", () => {
       await wizard.build.advanceDomain();
 
       // API domain -- deselect api-framework-hono
-      await wizard.build.selectSkill(E2E_SKILL.hono.slug);
+      await wizard.build.selectSkill(E2E_SKILL.hono.display);
       await wizard.build.advanceDomain();
 
       // Methodology domain -> Sources -> Agents -> Confirm (all pass through)
@@ -187,7 +187,7 @@ describe("scope change deselect integrity", () => {
       await wizard.build.advanceDomain();
 
       // API domain -- deselect api-framework-hono
-      await wizard.build.selectSkill(E2E_SKILL.hono.slug);
+      await wizard.build.selectSkill(E2E_SKILL.hono.display);
       await wizard.build.advanceDomain();
 
       // Methodology domain -> Sources -> Agents -> Confirm (all pass through)

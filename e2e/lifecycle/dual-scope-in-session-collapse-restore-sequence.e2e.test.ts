@@ -26,16 +26,17 @@ import {
  * (project-active + global tombstone) shape.
  *
  * The sequence (all within one live session, before any save):
- *   1. spacebar collapses the persisted `[P][G]` to a single inherited-global
- *      `[G]` — the skill stays selected (still active via global).
- *   2. a SECOND spacebar on the collapsed row is BLOCKED (toast: "Global skills
- *      cannot be changed from project scope") — it must NOT silently tombstone
- *      the still-real global install. Badge + selected count stay put.
- *   3. `s` on the collapsed row restores a fresh `[P][G]` pair (active project
+ *   1. spacebar on the persisted `[P][G]` row is BLOCKED (toast: "Global skills
+ *      cannot be changed from project scope") — only `s` may change a dual-scope
+ *      pair. Badges + selected count stay put.
+ *   2. `s` collapses the persisted `[P][G]` to a single inherited-global `[G]` —
+ *      the skill stays selected (still active via global).
+ *   3. spacebar on the collapsed row is BLOCKED too — it must NOT silently
+ *      tombstone the still-real global install.
+ *   4. `s` on the collapsed row restores a fresh `[P][G]` pair (active project
  *      entry + global tombstone).
- *   4. `s` again freely flips the reconstructed pair back to a plain global `[G]`
- *      — the persisted-pair guard no longer treats it as pristine-from-disk.
- *   4b. `s` once more round-trips it back to `[P][G]`.
+ *   5. `s` again flips the reconstructed pair back to a plain global `[G]`.
+ *   5b. `s` once more round-trips it back to `[P][G]`.
  *
  * The persisted config.ts on disk (seeded by the setup save) must stay
  * byte-identical throughout — the whole sequence is a live edit that is aborted,
@@ -44,7 +45,7 @@ import {
 
 const REACT_SKILL_ID = "web-framework-react";
 
-describe("dual-scope in-session collapse → blocked-space → s-restore → s-flip", () => {
+describe("dual-scope in-session blocked-space → s-collapse → s-restore → s-flip", () => {
   let sourceDir: string;
   let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
@@ -66,7 +67,7 @@ describe("dual-scope in-session collapse → blocked-space → s-restore → s-f
   });
 
   it(
-    "collapses, blocks a second spacebar, then s-restores and freely flips the pair — all in one session",
+    "blocks spacebar on the pair, collapses on `s`, blocks spacebar again, then restores and flips the pair — all in one session",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
@@ -91,6 +92,10 @@ describe("dual-scope in-session collapse → blocked-space → s-restore → s-f
       });
 
       try {
+        // Focus react explicitly — the grid's first-alphabetical cell is Vue, and
+        // every step below acts on the focused skill (focus persists across `s`/space).
+        await wizard.build.focusSkill(REACT_SKILL_ID);
+
         // Baseline: persisted dual-scope row renders both badges, react is the one
         // selected framework.
         expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["P", "G"]);
@@ -98,21 +103,33 @@ describe("dual-scope in-session collapse → blocked-space → s-restore → s-f
           await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
         ).toBe(1);
 
-        // Step 1 — spacebar collapses [P][G] to a single inherited-global [G]; react
+        // Step 1 — spacebar on the live [P][G] row must be BLOCKED with a toast:
+        // only `s` may change a dual-scope pair. The toast is awaited on the
+        // append-only raw surface anchored to a pre-press cursor: Ink rewrites the
+        // absolutely-positioned toast row in place, so xterm's processed buffer can
+        // lose it before the test reads it, and an unanchored raw match would accept
+        // a toast this same session already emitted. Then assert the row is unchanged.
+        await wizard.build.toggleFocusedSkillAwaiting(STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
+        expect(
+          (await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).slice().sort(),
+        ).toStrictEqual(["G", "P"]);
+        expect(
+          await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
+          "blocked spacebar must leave react selected (1 of 1) — the pair is untouched",
+        ).toBe(1);
+
+        // Step 2 — `s` collapses [P][G] to a single inherited-global [G]; react
         // stays active (and selected).
-        await wizard.build.toggleFocusedSkill();
+        await wizard.build.toggleScopeOnFocusedSkill();
         expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["G"]);
         expect(
           await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
           "collapsed-but-still-global react must render as selected (1 of 1)",
         ).toBe(1);
 
-        // Step 2 — a second spacebar on the collapsed [G] row must be BLOCKED with
-        // a toast. The toast is awaited on the append-only raw surface anchored to
-        // a pre-press cursor: Ink rewrites the absolutely-positioned toast row in
-        // place, so xterm's processed buffer can lose it before the test reads it,
-        // and an unanchored raw match would accept the toast this same session
-        // already emitted. Then assert the row itself is unchanged.
+        // Step 3 — spacebar on the collapsed [G] row must be BLOCKED too, on the
+        // same anchored raw surface. It must NOT silently tombstone the still-real
+        // global install.
         await wizard.build.toggleFocusedSkillAwaiting(STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
         expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["G"]);
         expect(
@@ -120,17 +137,17 @@ describe("dual-scope in-session collapse → blocked-space → s-restore → s-f
           "blocked spacebar must leave react selected (1 of 1) — no silent tombstone",
         ).toBe(1);
 
-        // Step 3 — `s` restores a fresh [P][G] pair.
+        // Step 4 — `s` restores a fresh [P][G] pair.
         await wizard.build.toggleScopeOnFocusedSkill();
         expect(
           (await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).slice().sort(),
         ).toStrictEqual(["G", "P"]);
 
-        // Step 4 — `s` again freely flips the reconstructed pair back to plain global.
+        // Step 5 — `s` again flips the reconstructed pair back to plain global.
         await wizard.build.toggleScopeOnFocusedSkill();
         expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["G"]);
 
-        // Step 4b — `s` once more round-trips back to [P][G].
+        // Step 5b — `s` once more round-trips back to [P][G].
         await wizard.build.toggleScopeOnFocusedSkill();
         expect(
           (await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).slice().sort(),

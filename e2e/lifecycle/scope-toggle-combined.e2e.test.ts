@@ -13,7 +13,7 @@ import {
   skillsPath,
 } from "../helpers/test-utils.js";
 import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
-import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
+import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
 
 /**
@@ -69,7 +69,9 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
       });
       testWizard = wizard;
 
-      // Build step -- Web domain: toggle web-framework-react scope (G->P)
+      // Build step -- Web domain: toggle web-framework-react scope (G->P). Focus it
+      // explicitly — the first-alphabetical cell is Vue, not react.
+      await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
 
@@ -146,14 +148,14 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
   );
 
   it(
-    "Inert skill scope toggle on a locked dual-scope pair alongside a working agent G->P",
+    "Skill scope collapse on a locked dual-scope pair alongside a working agent G->P",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // api-framework-hono is a persisted dual-scope [P][G] pair locked to the
-      // selected api-developer agent, so `s` is inert on it (and space can't
-      // deselect it). web-developer is a plain global agent, so `s` G->P on it
-      // still works. This exercises both an inert scope toggle and a live one in
-      // the same edit.
+      // selected api-developer agent: space can't deselect it, but `s` collapses
+      // the pair P->G. web-developer is a plain global agent, so `s` G->P on it
+      // moves the other way. This exercises both scope-toggle directions in the
+      // same edit.
       const projectSkillDir = path.join(skillsPath(projectDir), "api-framework-hono");
       const projectConfigBefore = await readTestFile(configTsPath(projectDir));
 
@@ -168,7 +170,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
       // Build step -- Web domain (pass through)
       await wizard.build.advanceDomain();
 
-      // Build step -- API domain: press `s` on api-framework-hono (must be inert)
+      // Build step -- API domain: press `s` on api-framework-hono (collapses the pair)
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
 
@@ -188,23 +190,26 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
 
       // Phase D: Assertions
 
-      // D-1: api-framework-hono still present at BOTH scopes (inert `s` — pair survives)
+      // D-1: api-framework-hono collapsed to its global half — project override gone
       expect(
         await directoryExists(projectSkillDir),
-        "api-framework-hono must remain at project scope — `s` is inert on a locked dual-scope pair",
-      ).toBe(true);
+        "api-framework-hono must be removed from project scope after the `s` collapse",
+      ).toBe(false);
       const globalSkillDir = path.join(skillsPath(fakeHome), "api-framework-hono");
       expect(
         await directoryExists(globalSkillDir),
         "api-framework-hono must remain at global scope",
       ).toBe(true);
 
-      // D-2: Project config still carries api-framework-hono at project scope
+      // D-2: Project config no longer carries api-framework-hono at project scope
       const projectConfig = await readTestFile(configTsPath(projectDir));
       const honoProjectLines = projectConfig
         .split("\n")
         .filter((l: string) => l.includes("api-framework-hono") && l.includes('"scope":"project"'));
-      expect(honoProjectLines.length).toBeGreaterThan(0);
+      expect(
+        honoProjectLines,
+        "the collapsed pair must leave no project-scope api-framework-hono entry",
+      ).toStrictEqual([]);
 
       // D-3: web-developer G->P worked — compiled at project scope AND still at global (additive)
       await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");

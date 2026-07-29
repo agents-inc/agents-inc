@@ -6,6 +6,7 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
@@ -71,7 +72,9 @@ describe.skipIf(!claudeAvailable)(
         const domain = await wizard.stack.selectFirstStack();
         const build = await domain.acceptDefaults();
 
-        // Web domain -- toggle web-framework-react to global scope
+        // Web domain -- toggle web-framework-react to global scope (focus it
+        // explicitly — the first-alphabetical cell is Vue, not react).
+        await build.focusSkill(E2E_SKILL.react.display);
         await build.toggleScopeOnFocusedSkill();
         await build.advanceDomain();
 

@@ -49,7 +49,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin source name in config.
     "records the local source's marketplace name as every skill's source",
     { timeout: TIMEOUTS.PLUGIN_TEST },
     async () => {
-      wizard = await InitWizard.launch({
+      wizard = await InitWizard.launchInProject({
         source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
       });
       const result = await wizard.completeWithDefaults();
@@ -61,9 +61,11 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin source name in config.
       // What the CLI told the user it installed.
       expect(result.output).toContain(`Installed ${reactPluginKey}`);
 
-      // Filesystem: Claude's own records agree with that log line.
-      await expect(result.project).toHavePlugin(reactPluginKey);
-      await expect(result.project).toHavePluginInRegistry(reactPluginKey);
+      // Filesystem: Claude's own records agree with that log line. A default
+      // (global-scope) install writes settings.json and the plugin registry
+      // under the global HOME, not the project dir.
+      await expect({ dir: wizard.globalHome }).toHavePlugin(reactPluginKey);
+      await expect({ dir: wizard.globalHome }).toHavePluginInRegistry(reactPluginKey);
 
       // Proof the marketplace resolved at all: config.ts's own top-level
       // `marketplace` field carries the real name. Without this the per-skill

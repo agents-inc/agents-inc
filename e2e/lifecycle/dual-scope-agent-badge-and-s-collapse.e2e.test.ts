@@ -7,18 +7,16 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   agentsPath,
   cleanupTempDir,
-  configTsPath,
   ensureBinaryExists,
   fileExists,
   readAgentEntriesFor,
-  readTestFile,
 } from "../helpers/test-utils.js";
 import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 
 /**
- * Dual-scope AGENT flow — badge rendering and the guarded-no-op `s` toggle.
+ * Dual-scope AGENT flow — badge rendering and the `s` collapse.
  *
  * `createDualScopeEnv` installs every agent globally, then toggles api-developer
  * to project scope inside the project, producing the persisted dual-scope pair:
@@ -30,17 +28,16 @@ import type { AgentName } from "../../src/cli/types/index.js";
  *   1. The project config carries the dual-scope pair (active project entry +
  *      global excluded tombstone).
  *   2. Re-opening the wizard renders BOTH [P] and [G] badges on the agents step.
- *   3. Pressing `s` (scope toggle) on the persisted dual-scope agent is a
- *      guarded no-op: badges stay [P][G] and the on-disk config is unchanged.
- *      (Unlike the task's stated assumption, `s` does NOT collapse a persisted
- *      dual-scope agent to global — the collapse is driven by SPACE. That
- *      collapse end-state is proven in
- *      agent-scope-toggle-agents-array.e2e.test.ts Scenario A.)
+ *   3. Pressing `s` (scope toggle) on the persisted dual-scope agent COLLAPSES it
+ *      to a single inherited-global row: the badge drops to [G], and saving the
+ *      edit drops both the project entry and the tombstone from config.ts while
+ *      the global install (and its compiled agent) survives. `s` is the sole
+ *      dual-scope toggle — the selection key is inert on a `[P][G]` row.
  */
 
 const API_DEVELOPER: AgentName = "api-developer";
 
-describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () => {
+describe("dual-scope agent — [P][G] badge and `s` collapse", () => {
   let sourceDir: string;
   let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
@@ -120,15 +117,23 @@ describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () =>
   );
 
   it(
-    "Check 3: `s` on a persisted dual-scope agent is a guarded no-op (badges + config unchanged)",
+    "Check 3: `s` on a persisted dual-scope agent collapses [P][G] to a single inherited-global [G]",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       env = await createDualScopeEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
 
-      const projectConfigPath = configTsPath(projectDir);
-      const configBefore = await readTestFile(projectConfigPath);
+      const projectAgentFile = path.join(agentsPath(projectDir), "api-developer.md");
+      const globalAgentFile = path.join(agentsPath(fakeHome), "api-developer.md");
       const rowsBefore = await readAgentEntriesFor(projectDir, API_DEVELOPER);
+      expect(
+        rowsBefore.filter((row) => !row.excluded),
+        "setup must persist exactly one active project agent entry",
+      ).toStrictEqual([{ name: API_DEVELOPER, scope: "project" }]);
+      expect(
+        rowsBefore.filter((row) => row.excluded === true),
+        "setup must persist exactly one global agent tombstone",
+      ).toStrictEqual([{ name: API_DEVELOPER, scope: "global", excluded: true }]);
 
       wizard = await EditWizard.launch({
         projectDir,
@@ -141,35 +146,37 @@ describe("dual-scope agent — [P][G] badge and guarded-no-op `s` toggle", () =>
       await sources.waitForReady();
       const agents = await sources.advance();
 
-      // Focus api-developer and press `s`. The scope-toggle guard makes this
-      // inert on a persisted dual-scope agent (toast: "use space to change
-      // project scope"), so the badges must remain [P][G].
+      // Focus api-developer and press `s`. `s` is the sole dual-scope toggle, so
+      // it collapses the persisted pair to the single inherited-global entry.
       await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
       await agents.toggleScopeOnFocusedAgent();
 
       const badgesAfterS = await agents.getScopeBadgesForAgent(E2E_AGENT_DISPLAY["api-developer"]);
-      expect(
-        [...badgesAfterS].sort(),
-        "`s` must not change the dual-scope agent's badges (guarded no-op)",
-      ).toStrictEqual(["G", "P"]);
+      expect(badgesAfterS, "`s` must collapse the dual-scope agent's badges to [G]").toStrictEqual([
+        "G",
+      ]);
 
-      // Complete the edit so the config is re-written, then assert it is
-      // byte-identical and the api-developer rows are structurally unchanged.
+      // Save the edit: the collapse must persist as a single global row — both the
+      // project entry and the global tombstone are gone.
       const confirm = await agents.advance("edit");
       const result = await confirm.confirm();
       expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
       await result.destroy();
 
-      const configAfter = await readTestFile(projectConfigPath);
-      expect(configAfter, "project config.ts must be unchanged after an inert `s` toggle").toBe(
-        configBefore,
-      );
-
-      const rowsAfter = await readAgentEntriesFor(projectDir, API_DEVELOPER);
       expect(
-        rowsAfter,
-        "api-developer dual-scope rows must be unchanged after an inert `s` toggle",
-      ).toStrictEqual(rowsBefore);
+        await readAgentEntriesFor(projectDir, API_DEVELOPER),
+        "a saved `s` collapse must leave exactly one active global api-developer row",
+      ).toStrictEqual([{ name: API_DEVELOPER, scope: "global" }]);
+
+      // Filesystem: the project override is uninstalled, the global install stays.
+      expect(
+        await fileExists(projectAgentFile),
+        "the project-scope compiled agent must be removed by the collapse",
+      ).toBe(false);
+      expect(
+        await fileExists(globalAgentFile),
+        "the global-scope compiled agent must survive the collapse",
+      ).toBe(true);
     },
   );
 });

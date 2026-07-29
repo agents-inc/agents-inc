@@ -6,6 +6,7 @@ import { DashboardSession } from "../pages/dashboard-session.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
   createTempDir,
@@ -65,8 +66,12 @@ describe("init wizard — existing projects", () => {
       tempDir = await createTempDir();
       source = await createE2ESource();
 
+      // A real installation: the project config declares a skill and an agent,
+      // so detectInstallation treats it as installed and init shows the dashboard.
       await writeProjectConfig(tempDir, {
         name: "test-project",
+        skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 
       dashboard = await InitWizard.launchForDashboard({
@@ -185,8 +190,13 @@ describe("init wizard — existing projects", () => {
       source = await createE2ESource();
       tempDir = await createTempDir();
 
+      // A real global installation: the global config declares a skill and an
+      // agent, so detectGlobalInstallation treats it as installed and init in a
+      // project without its own config falls back to it and shows the dashboard.
       await writeProjectConfig(tempDir, {
         name: "global-test",
+        skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 
       const workDir = path.join(tempDir, "work");
@@ -204,6 +214,51 @@ describe("init wizard — existing projects", () => {
 
       const exitCode = await dashboard.waitForExit();
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+    });
+  });
+
+  describe("setup wizard when only a blank global config exists", () => {
+    // RED counterpart to "dashboard when only global config exists": a global
+    // config that declares no skills and no agents is content-less and must NOT
+    // count as an installation, so `init` in a fresh, uninitialized project
+    // routes to the setup wizard (stack selection), never the dashboard.
+    //
+    // detectInstallationInDir currently treats ANY .claude-src/config.ts as an
+    // installation without inspecting its skills/agents, so detectInstallation
+    // falls back to the blank global config and runDashboardFlow shows the
+    // dashboard. The wait for the stack screen therefore times out today,
+    // dumping the dashboard frame — this test goes green once the mis-routing
+    // is fixed.
+    it("should show the setup wizard, not the dashboard, when the global config declares no skills or agents", async () => {
+      source = await createE2ESource();
+      tempDir = await createTempDir();
+
+      // Content-less global config at <fakeHome>/.claude-src/config.ts.
+      await writeProjectConfig(tempDir, {
+        name: "blank-global",
+        skills: [],
+        agents: [],
+      });
+
+      // Fresh, uninitialized project directory with no config of its own.
+      const projectDir = path.join(tempDir, "work");
+      await mkdir(projectDir, { recursive: true });
+
+      // launchForDashboard is the raw-launch entry — it spawns `init` and
+      // returns a screen wrapper; it does NOT force the dashboard. Using it
+      // keeps the session assigned for afterEach cleanup even when the
+      // stack-screen wait times out under the current bug.
+      dashboard = await InitWizard.launchForDashboard({
+        projectDir,
+        source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
+        env: { HOME: tempDir },
+      });
+
+      await dashboard.waitForText(STEP_TEXT.STACK, TIMEOUTS.WIZARD_LOAD);
+
+      const output = dashboard.getOutput();
+      expect(output).toContain(STEP_TEXT.STACK);
+      expect(output).not.toContain(STEP_TEXT.DASHBOARD);
     });
   });
 

@@ -98,9 +98,11 @@ describe("edit wizard — navigation and hotkeys", () => {
       wizard = await EditWizard.launch({ projectDir: project.dir, cols: 120, rows: 40 });
 
       const output = wizard.build.getOutput();
-      // The build step footer shows these hotkey indicators
-      expect(output).toContain("Labels");
+      // The build step footer shows the Labels hotkey indicator.
       expect(output).toContain(STEP_TEXT.BUILD_FOOTER);
+      // The Filter-incompatible (F) hint is gated behind FEATURE_FLAGS.FILTER_INCOMPATIBLE
+      // (default off), so it must not render in the footer.
+      expect(output).not.toContain("Filter incompatible");
     });
 
     it("should toggle focused skill scope with S key", async () => {
@@ -126,8 +128,10 @@ describe("edit wizard — navigation and hotkeys", () => {
       // The "S" badge with "Scope" label should be visible in the build step footer
       expect(buildOutput).toContain("Scope");
 
-      // The first skill (web-framework-react) is focused and pre-selected.
-      // Press "s" to toggle its scope from "project" (default) to "global".
+      // Focus React (the pre-selected project skill) and press "s" to toggle its
+      // scope from "project" (default) to "global". The grid's first-alphabetical
+      // cell is Angular Standalone (unselected), not react, so focus explicitly.
+      await wizard.build.focusSkill("React");
       await wizard.build.toggleScopeOnFocusedSkill();
 
       // Navigate to the confirm step to verify the scope change is reflected.

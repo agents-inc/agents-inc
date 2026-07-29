@@ -33,7 +33,12 @@ import "../matchers/setup.js";
  * every skill global; the edit under test then runs from the project dir.
  */
 
-describe("global skill filter-incompatible guard from project scope", () => {
+// D-269: the F hotkey (filter incompatible) is gated behind
+// FEATURE_FLAGS.FILTER_INCOMPATIBLE (default false). E2E tests spawn the CLI
+// binary as a separate process, so vi.mock cannot override the flag. Un-skip
+// once the flag flips back to true (or once the feature-flags module supports an
+// env-var override the E2E harness can set).
+describe.skip("global skill filter-incompatible guard from project scope", () => {
   let source: E2ESource;
 
   beforeAll(async () => {
@@ -71,7 +76,7 @@ describe("global skill filter-incompatible guard from project scope", () => {
       const domain = await globalWizard.stack.selectFirstStack();
       const globalBuild = await domain.acceptDefaults();
       await globalBuild.navigateToNextCategory();
-      await globalBuild.selectSkill(E2E_SKILL.pinia.slug);
+      await globalBuild.selectSkill(E2E_SKILL.pinia.display);
       const globalSources = await globalBuild.passThroughAllDomains();
       await globalSources.waitForReady();
       await globalSources.setAllLocal();

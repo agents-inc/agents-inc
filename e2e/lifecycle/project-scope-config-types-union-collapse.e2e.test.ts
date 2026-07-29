@@ -93,9 +93,10 @@ async function initSingleSkillProject(options: {
     await domain.toggleDomain(STEP_TEXT.DOMAIN_MOBILE);
     const build = await domain.advance();
 
-    await build.selectSkill(E2E_SKILL.react.slug);
+    await build.selectSkill(E2E_SKILL.react.display);
     if (options.skillScope === "project") {
-      await build.focusSkill(E2E_SKILL.react.slug);
+      // selectSkill already left focus on react — a second focusSkill would wrap
+      // onto the first-alphabetical cell (Vue), so toggle the already-focused react.
       await build.toggleScopeOnFocusedSkill();
     }
 

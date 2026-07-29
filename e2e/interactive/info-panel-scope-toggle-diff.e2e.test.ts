@@ -129,11 +129,11 @@ describe("info panel — scope-toggle diff symmetry", () => {
         ...TERMINAL_SIZE.TALL,
       });
 
-      // Web domain: react is a persisted [P][G] pair, so `s` is now inert on it
-      // (dual-scope scope-toggle guard). Space (deselect) is the sanctioned way to
-      // drop the project half — it collapses [P][G] → [G], the same P→G restoration
-      // end-state the scope toggle used to produce.
-      await wizard.build.toggleFocusedSkill();
+      // Web domain: react is a persisted [P][G] pair — `s` is the sole dual-scope
+      // toggle and collapses it to [G], the P→G restoration end-state. Focus react
+      // explicitly: the grid's first-alphabetical cell is Vue, not react.
+      await wizard.build.focusSkill(E2E_SKILL.react.display);
+      await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
       // API + Methodology: pass through.
       await wizard.build.advanceDomain();
@@ -182,7 +182,9 @@ describe("info panel — scope-toggle diff symmetry", () => {
         ...TERMINAL_SIZE.TALL,
       });
 
-      // Web domain: react is at global — toggle G→P.
+      // Web domain: react is at global — toggle G→P. Focus react explicitly:
+      // the grid's first-alphabetical cell is Vue, not react.
+      await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
       await wizard.build.advanceDomain();
@@ -236,10 +238,10 @@ describe("info panel — scope-toggle diff symmetry", () => {
       const sources = await wizard.build.passThroughAllDomains();
       await sources.waitForReady();
       const agentsStep = await sources.advance();
-      // web-developer is a persisted [P][G] pair, so `s` is now inert on it.
-      // Space (deselect) is the sanctioned way to drop the project half — it
-      // collapses [P][G] → [G], the same P→G restoration end-state.
-      await agentsStep.toggleAgent(E2E_AGENT_DISPLAY["web-developer"]);
+      // web-developer is a persisted [P][G] pair — `s` collapses it to [G], the
+      // P→G restoration end-state.
+      await agentsStep.navigateCursorToAgent(E2E_AGENT_DISPLAY["web-developer"]);
+      await agentsStep.toggleScopeOnFocusedAgent();
       const confirm = await agentsStep.advance("edit");
       await confirm.waitForReady();
 
@@ -284,11 +286,12 @@ describe("info panel — scope-toggle diff symmetry", () => {
         ...TERMINAL_SIZE.TALL,
       });
 
-      // Web domain: react is a persisted [P][G] pair, so `s` is now inert on it.
-      // Space (deselect) collapses [P][G] → [G] — the same P→G restoration
-      // end-state (tombstone stripped, global goes active). Open the info panel
-      // overlay (`i`) to inspect the live-diff path.
-      await wizard.build.toggleFocusedSkill();
+      // Web domain: react is a persisted [P][G] pair — `s` collapses it to [G],
+      // the P→G restoration end-state (tombstone stripped, global goes active).
+      // Focus react explicitly: the grid's first-alphabetical cell is Vue, not react.
+      // Open the info panel overlay (`i`) to inspect the live-diff path.
+      await wizard.build.focusSkill(E2E_SKILL.react.display);
+      await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.toggleInfoPanel();
 
       const skillEntries = await wizard.build.getSummaryDiffEntries(E2E_SKILL.react.display);

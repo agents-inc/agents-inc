@@ -12,6 +12,7 @@ import {
   skillsPath,
   addForkedFromMetadata,
   writeAgentFile,
+  configTsPath,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
@@ -21,16 +22,16 @@ import type { AgentName } from "../../src/cli/types/index.js";
 /**
  * Uninstall preservation E2E tests.
  *
- * Tests that `uninstall --yes` preserves user-authored content while removing
- * CLI-managed artifacts, and that `uninstall --all --yes` removes everything
- * including .claude-src/.
+ * Tests that `uninstall --yes` removes CLI-managed artifacts — including the
+ * .claude-src/ config manifest (config.ts + config-types.ts) — while preserving
+ * user-authored content. The manifest is always removed; user content in
+ * .claude-src/ (e.g. ejected templates) keeps the directory alive.
  *
- * Gap 10 from e2e-test-gaps.md:
- * - 10a: Ejected templates preserved by --yes, removed by --all
- * - 10b: --all removes .claude-src entirely including ejected content
- * - 10c: Custom agent source in .claude-src preserved by --yes
- * - 10d: Only config-tracked agents removed, non-config agents preserved
- * - 10e: .claude/ directory preserved when it contains non-CLI content
+ * - Ejected templates preserved while the config manifest is removed
+ * - .claude-src/ directory survives when it still holds ejected content
+ * - Custom agent source in .claude-src preserved
+ * - Only config-tracked agents removed, non-config agents preserved
+ * - .claude/ directory preserved when it contains non-CLI content
  */
 
 describe("uninstall preservation behavior", () => {
@@ -64,14 +65,17 @@ describe("uninstall preservation behavior", () => {
     );
     expect(await fileExists(templatePath)).toBe(true);
 
-    // Run uninstall --yes (without --all)
+    // Run uninstall --yes
     const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-    // .claude-src/ (including ejected templates) should be preserved
+    // The ejected template (user content) is preserved
     expect(await fileExists(templatePath)).toBe(true);
+
+    // The config manifest is removed even though ejected content is preserved
+    expect(await fileExists(configTsPath(projectDir))).toBe(false);
 
     // Compiled artifacts should be removed
     const agentsDir = agentsPath(projectDir);
@@ -81,7 +85,7 @@ describe("uninstall preservation behavior", () => {
     expect(await directoryExists(skillsDir)).toBe(false);
   });
 
-  it("should remove .claude-src entirely with --all including ejected content", async () => {
+  it("should keep .claude-src/ when it still holds ejected content after uninstall", async () => {
     const project = await ProjectBuilder.editable();
     tempDir = path.dirname(project.dir);
     const projectDir = project.dir;
@@ -94,16 +98,19 @@ describe("uninstall preservation behavior", () => {
     const claudeSrcDir = path.join(projectDir, DIRS.CLAUDE_SRC);
     expect(await directoryExists(claudeSrcDir)).toBe(true);
 
-    // Run uninstall --all --yes
-    const { exitCode, stdout } = await CLI.run(["uninstall", "--all", "--yes"], {
+    const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], {
       dir: projectDir,
     });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-    // .claude-src/ should be removed entirely
-    expect(await directoryExists(claudeSrcDir)).toBe(false);
+    // The config manifest is removed, but the directory survives because the
+    // ejected templates still live under it (only-empty dirs are removed).
+    expect(await fileExists(configTsPath(projectDir))).toBe(false);
+    expect(await directoryExists(claudeSrcDir)).toBe(true);
+    const templatePath = path.join(claudeSrcDir, "agents", "_templates", "agent.liquid");
+    expect(await fileExists(templatePath)).toBe(true);
   });
 
   it("should preserve custom agent source in .claude-src/agents after uninstall --yes", async () => {
@@ -151,7 +158,9 @@ describe("uninstall preservation behavior", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-    // Custom agent SOURCE in .claude-src/ should be preserved (--yes does not touch .claude-src/)
+    // The config manifest is removed, but the user's custom agent SOURCE under
+    // .claude-src/agents/ is preserved (uninstall removes only config.ts + config-types.ts).
+    expect(await fileExists(configTsPath(projectDir))).toBe(false);
     expect(await directoryExists(customAgentSrcDir)).toBe(true);
     expect(await fileExists(path.join(customAgentSrcDir, FILES.METADATA_YAML))).toBe(true);
     expect(await fileExists(path.join(customAgentSrcDir, FILES.IDENTITY_MD))).toBe(true);

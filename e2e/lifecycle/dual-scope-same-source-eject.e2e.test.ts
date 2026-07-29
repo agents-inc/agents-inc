@@ -116,7 +116,7 @@ describe("dual-scope same-source (both eject)", () => {
   });
 
   it(
-    "config dual-scope shape, bare agent ref, [P][G] badges, and s-toggle is a guarded no-op",
+    "config dual-scope shape, bare agent ref, [P][G] badges, and s-toggle collapses the pair",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       env = await createDualScopeEnv(sourceDir, sourceTempDir);
@@ -165,13 +165,16 @@ describe("dual-scope same-source (both eject)", () => {
       const badgesBefore = await wizard.build.getScopeBadgesForSkill(E2E_SKILL.hono.display);
       expect([...badgesBefore].sort()).toStrictEqual(["G", "P"]);
 
-      // --- Check 4: pressing `s` on a PERSISTED dual-scope pair is an
-      // intentional guarded no-op (toggleSkillScope guard in wizard-store.ts) —
-      // it does NOT collapse to a single global entry. Space is the sanctioned
-      // collapse mechanism. The dual-scope badges remain unchanged. ---
+      // --- Check 4: pressing `s` on a PERSISTED dual-scope pair collapses it to
+      // the single inherited-global entry. `s` is the sole dual-scope toggle, and
+      // the collapse is not blocked by the eject-collision guard: the snapshot's
+      // global entry is the pair's tombstone (excluded), not an active global
+      // eject install. The badges drop to a single `G`. ---
       await wizard.build.toggleScopeOnFocusedSkill();
       const badgesAfter = await wizard.build.getScopeBadgesForSkill(E2E_SKILL.hono.display);
-      expect([...badgesAfter].sort()).toStrictEqual(["G", "P"]);
+      expect(badgesAfter, "`s` must collapse the persisted [P][G] pair to [G]").toStrictEqual([
+        "G",
+      ]);
 
       wizard.abort();
       await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);

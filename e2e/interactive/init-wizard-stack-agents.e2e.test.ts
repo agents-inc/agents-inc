@@ -33,7 +33,7 @@ describe.skipIf(!claudeAvailable)("init wizard — stack agent preselection", ()
     "should preselect agents from the selected stack",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
-      wizard = await InitWizard.launch({ source });
+      wizard = await InitWizard.launchInProject({ source });
 
       // Select the first stack (E2E Test Stack)
       const domain = await wizard.stack.selectFirstStack();
@@ -67,7 +67,7 @@ describe.skipIf(!claudeAvailable)("init wizard — stack agent preselection", ()
       expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
       await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
-      await expect(result.project).toHaveCompiledAgents();
+      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
     },
   );
 });

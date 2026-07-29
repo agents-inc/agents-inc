@@ -69,7 +69,9 @@ describe("scope toggle roundtrip", () => {
       });
       testWizard = wizardC;
 
-      // Build step -- Web domain: toggle first focused skill (web-framework-react) scope
+      // Build step -- Web domain: toggle web-framework-react scope (focus it
+      // explicitly — the first-alphabetical cell is Vue, not react).
+      await wizardC.build.focusSkill(E2E_SKILL.react.display);
       await wizardC.build.toggleScopeOnFocusedSkill();
       await wizardC.build.advanceDomain();
 

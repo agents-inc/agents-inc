@@ -143,8 +143,8 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
       await expectCleanUninstall(projectDir);
     });
 
-    it("should preserve config directory (without --all)", async () => {
-      expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(true);
+    it("should remove the config manifest directory by default", async () => {
+      expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(false);
     });
   });
 });

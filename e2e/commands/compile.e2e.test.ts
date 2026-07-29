@@ -94,7 +94,13 @@ describe("compile command", () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "empty-project");
     await mkdir(projectDir, { recursive: true });
-    await writeProjectConfig(projectDir, { name: "empty", skills: [], agents: [] });
+    // Declare an agent so the project is a detected installation; compile then
+    // reaches the no-skills-found failure because no skills exist on disk.
+    await writeProjectConfig(projectDir, {
+      name: "empty",
+      skills: [],
+      agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
+    });
 
     const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
@@ -113,7 +119,16 @@ describe("compile command", () => {
     it("should compile with multiple local skills", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
-      await writeProjectConfig(projectDir, { name: "e2e-test", skills: [], agents: [] });
+      // Declare the agents so the project is a detected installation; the local
+      // skills under test are discovered from disk independently of the config.
+      await writeProjectConfig(projectDir, {
+        name: "e2e-test",
+        skills: [],
+        agents: [
+          { name: E2E_AGENT["web-developer"].name, scope: "project" },
+          { name: E2E_AGENT["api-developer"].name, scope: "project" },
+        ],
+      });
 
       await createLocalSkill(projectDir, "web-testing-react-testing-library", {
         description: "First test skill",
@@ -159,7 +174,16 @@ describe("compile command", () => {
     it("should list compiled agent files in verbose mode", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
-      await writeProjectConfig(projectDir, { name: "e2e-test", skills: [], agents: [] });
+      // Declare the agents so the project is a detected installation; the local
+      // skill under test is discovered from disk independently of the config.
+      await writeProjectConfig(projectDir, {
+        name: "e2e-test",
+        skills: [],
+        agents: [
+          { name: E2E_AGENT["web-developer"].name, scope: "project" },
+          { name: E2E_AGENT["api-developer"].name, scope: "project" },
+        ],
+      });
 
       await createLocalSkill(projectDir, "web-forms-zod-validation", {
         description: "Skill for compile listing verification",
@@ -211,7 +235,16 @@ describe("compile command", () => {
     it("should skip skill with missing metadata.yaml", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
-      await writeProjectConfig(projectDir, { name: "e2e-test", skills: [], agents: [] });
+      // Declare the agents so the project is a detected installation; the local
+      // skills under test are discovered from disk independently of the config.
+      await writeProjectConfig(projectDir, {
+        name: "e2e-test",
+        skills: [],
+        agents: [
+          { name: E2E_AGENT["web-developer"].name, scope: "project" },
+          { name: E2E_AGENT["api-developer"].name, scope: "project" },
+        ],
+      });
 
       // Create a valid skill
       await createLocalSkill(projectDir, "web-state-jotai", {
@@ -264,7 +297,13 @@ describe("compile command", () => {
       const projectDir = path.join(tempDir, "project");
       // Create project with .claude/ but no skills/ subdirectory
       await mkdir(path.join(projectDir, DIRS.CLAUDE), { recursive: true });
-      await writeProjectConfig(projectDir, { name: "empty", skills: [], agents: [] });
+      // Declare an agent so the project is a detected installation; compile then
+      // reaches the no-skills-found failure because no skills/ directory exists.
+      await writeProjectConfig(projectDir, {
+        name: "empty",
+        skills: [],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
+      });
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
@@ -412,7 +451,16 @@ describe("compile command", () => {
     it("should compile using --source flag to override source resolution", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
-      await writeProjectConfig(projectDir, { name: "e2e-test", skills: [], agents: [] });
+      // Declare the agents so the project is a detected installation; the local
+      // skill under test is discovered from disk independently of the config.
+      await writeProjectConfig(projectDir, {
+        name: "e2e-test",
+        skills: [],
+        agents: [
+          { name: E2E_AGENT["web-developer"].name, scope: "project" },
+          { name: E2E_AGENT["api-developer"].name, scope: "project" },
+        ],
+      });
 
       // Create a local skill in the project
       await createLocalSkill(projectDir, "web-state-pinia", {

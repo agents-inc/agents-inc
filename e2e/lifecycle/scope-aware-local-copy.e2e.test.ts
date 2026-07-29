@@ -78,7 +78,9 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
         const domain = await initWizard.stack.selectFirstStack();
         const build = await domain.acceptDefaults();
 
-        // Web domain -- toggle first skill to project scope, leave second at global
+        // Web domain -- toggle web-framework-react to project scope, leave the rest
+        // at global (focus it explicitly — the first-alphabetical cell is Vue).
+        await build.focusSkill(E2E_SKILL.react.display);
         await build.toggleScopeOnFocusedSkill();
         await build.advanceDomain();
 

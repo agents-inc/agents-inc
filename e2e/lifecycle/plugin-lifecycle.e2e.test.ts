@@ -1,4 +1,3 @@
-import path from "path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
@@ -7,7 +6,7 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { CLI } from "../fixtures/cli.js";
 import {
@@ -15,7 +14,6 @@ import {
   createTempDir,
   cleanupTempDir,
   ensureBinaryExists,
-  directoryExists,
 } from "../helpers/test-utils.js";
 
 /**
@@ -57,7 +55,12 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
       // Phase 1: Plugin Init -- install skills as Claude CLI plugins
       // ================================================================
 
-      const wizard = await InitWizard.launch({
+      // A default plugin-mode init installs to the global scope. Model it as the
+      // GLOBAL install (HOME === cwd === projectDir) so the plugin registry,
+      // settings.json and compiled agents collapse onto projectDir and the
+      // follow-up uninstall command (which resolves its target from cwd) finds
+      // the same content.
+      const wizard = await InitWizard.launchInGlobal({
         source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         projectDir,
       });
@@ -104,8 +107,7 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
       expect(uninstallResult.exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(uninstallResult.stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-      await expectCleanUninstall(projectDir);
-      expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(true);
+      await expectCleanUninstall(projectDir, { removeConfig: true });
     },
   );
 });

@@ -5,6 +5,7 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
@@ -49,7 +50,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       "should complete plugin-mode init and install plugins",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
-        wizard = await InitWizard.launch({
+        wizard = await InitWizard.launchInProject({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         });
         const result = await wizard.completeWithDefaults();
@@ -64,7 +65,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         expect(output).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
 
         await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
-        await expect(result.project).toHaveCompiledAgents();
+        await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
       },
     );
 
@@ -72,7 +73,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       "should generate config.ts with marketplace source",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
-        wizard = await InitWizard.launch({
+        wizard = await InitWizard.launchInProject({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         });
         const result = await wizard.completeWithDefaults();
@@ -83,26 +84,27 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
           compiledAgents: [],
         });
 
-        await expect(result.project).toHaveCompiledAgents();
+        await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
       },
     );
 
     it("should compile agents", { timeout: TIMEOUTS.PLUGIN_TEST }, async () => {
-      wizard = await InitWizard.launch({
+      wizard = await InitWizard.launchInProject({
         source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
       });
       const result = await wizard.completeWithDefaults();
 
-      await expectPhaseSuccess(result, {
-        compiledAgents: ["web-developer"],
-      });
+      await expectPhaseSuccess(
+        { project: { dir: wizard.globalHome }, exitCode: result.exitCode },
+        { compiledAgents: ["web-developer"] },
+      );
     });
 
     it(
       "should display completion details after install",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
-        wizard = await InitWizard.launch({
+        wizard = await InitWizard.launchInProject({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         });
         const result = await wizard.completeWithDefaults();
@@ -113,7 +115,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         expect(output).toContain(STEP_TEXT.CONFIGURATION_LABEL);
 
         await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
-        await expect(result.project).toHaveCompiledAgents();
+        await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
       },
     );
   });
@@ -123,7 +125,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       "should register or skip marketplace without error",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
-        wizard = await InitWizard.launch({
+        wizard = await InitWizard.launchInProject({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         });
         const result = await wizard.completeWithDefaults();
@@ -134,7 +136,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
         expect(output).not.toContain("Failed to");
 
-        await expect(result.project).toHaveCompiledAgents();
+        await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
       },
     );
   });
@@ -217,7 +219,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       "should install plugin skills with correct scope routing",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
-        wizard = await InitWizard.launch({
+        wizard = await InitWizard.launchInProject({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         });
         const result = await wizard.completeWithDefaults();
@@ -233,8 +235,8 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         await expect(result.project).toHaveConfig({
           skillIds: ["web-framework-react", "web-testing-vitest"],
         });
-        await expect(result.project).toHaveCompiledAgent("web-developer");
-        await expect(result.project).toHaveCompiledAgent("api-developer");
+        await expect({ dir: wizard.globalHome }).toHaveCompiledAgent("web-developer");
+        await expect({ dir: wizard.globalHome }).toHaveCompiledAgent("api-developer");
       },
     );
 
@@ -242,7 +244,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       "should install project-scoped plugins correctly in mixed scope mode",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
-        wizard = await InitWizard.launch({
+        wizard = await InitWizard.launchInProject({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         });
 
@@ -250,7 +252,9 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         const domain = await wizard.stack.selectFirstStack();
         const build = await domain.acceptDefaults();
 
-        // Toggle first skill (web-framework-react) to project scope
+        // Toggle web-framework-react to project scope (focus it explicitly — the
+        // first-alphabetical cell is Vue, not react).
+        await build.focusSkill(E2E_SKILL.react.display);
         await build.toggleScopeOnFocusedSkill();
         const sources = await build.passThroughAllDomains();
         const agents = await sources.acceptDefaults();
@@ -267,7 +271,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         await expect(result.project).toHaveConfig({
           skillIds: ["web-framework-react"],
         });
-        await expect(result.project).toHaveCompiledAgent("web-developer");
+        await expect({ dir: wizard.globalHome }).toHaveCompiledAgent("web-developer");
       },
     );
   });
@@ -277,7 +281,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       "should install plugin skills as plugins and local skills locally in mixed mode",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
-        wizard = await InitWizard.launch({
+        wizard = await InitWizard.launchInProject({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         });
 
@@ -297,8 +301,9 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         const output = result.output;
         expect(output).toContain(STEP_TEXT.INSTALLING_PLUGINS_ELLIPSIS);
 
-        // The local-sourced skill should be copied locally
-        await expect(result.project).toHaveSkillCopied("web-framework-react");
+        // The local-sourced skill should be copied locally. A default
+        // (global-scope) install writes it under the global HOME.
+        await expect({ dir: wizard.globalHome }).toHaveSkillCopied("web-framework-react");
 
         // Config should reflect the selected skills
         await expect(result.project).toHaveConfig({
@@ -306,7 +311,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         });
 
         // Agents should still be compiled
-        await expect(result.project).toHaveCompiledAgent("web-developer");
+        await expect({ dir: wizard.globalHome }).toHaveCompiledAgent("web-developer");
       },
     );
   });

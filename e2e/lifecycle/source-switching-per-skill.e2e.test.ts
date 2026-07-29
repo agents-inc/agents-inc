@@ -71,8 +71,14 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- per-skill s
         tempDir = await createTempDir();
         const projectDir = path.join(tempDir, "project");
 
+        // This test switches ONE skill's SOURCE (eject -> plugin) mid-edit.
+        // Default-scope skills are GLOBAL, and a project edit renders global
+        // skills as locked (readOnly), refusing the toggle. Both phases
+        // therefore model editing the GLOBAL install via launchInGlobal: HOME ==
+        // cwd == projectDir, the skills are editable, and all content + config
+        // collapse onto projectDir (every assertion below reads it).
         // Phase 1: Init in eject mode using page objects
-        const initWizard = await InitWizard.launch({
+        const initWizard = await InitWizard.launchInGlobal({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
           projectDir,
         });
@@ -90,7 +96,7 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- per-skill s
         await injectMarketplaceIntoConfig(projectDir, fixture.marketplaceName);
 
         // Phase 2: Edit -- switch ONLY the first skill to plugin mode.
-        editWizard = await EditWizard.launch({
+        editWizard = await EditWizard.launchInGlobal({
           projectDir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
           ...TERMINAL_SIZE.TALL,

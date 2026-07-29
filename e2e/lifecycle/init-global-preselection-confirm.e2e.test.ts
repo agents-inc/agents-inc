@@ -76,7 +76,7 @@ describe.skipIf(!claudeAvailable)("init global preselection confirm step", () =>
       const build = await dashboard.selectEdit();
 
       // Deselect React (pre-selected from global) on the Web domain
-      await build.selectSkill(E2E_SKILL.react.slug);
+      await build.selectSkill(E2E_SKILL.react.display);
 
       // Advance through remaining domains to the sources step
       const sources = await build.passThroughAllDomainsGeneric();

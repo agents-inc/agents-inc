@@ -28,9 +28,9 @@ import { EJECT_SOURCE } from "../../src/cli/consts.js";
  * the plugin was actually registered under. Only the `config.marketplace`
  * variant key produces `<id>@<marketplace>`, which is the key the Claude plugin
  * registry uses. When the global config omits `marketplace`, no key matches: a
- * global `uninstall --yes --all` finds no CLI-owned plugins, skips the plugin
- * branch entirely, and then deletes `.claude-src/` — destroying the only record
- * of plugins that remain registered and enabled.
+ * global `uninstall --yes` finds no CLI-owned plugins, skips the plugin branch
+ * entirely, and then removes the `.claude-src/` config manifest — destroying the
+ * only record of plugins that remain registered and enabled.
  *
  * The A/B control (init run FROM the home root) writes the config directly and
  * is expected to carry `marketplace` and `source`, isolating the defect to the
@@ -110,7 +110,7 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
       ).toBeDefined();
 
       const uninstall = await CLI.run(
-        ["uninstall", "--yes", "--all"],
+        ["uninstall", "--yes"],
         { dir: fakeHome },
         { env: { HOME: fakeHome } },
       );

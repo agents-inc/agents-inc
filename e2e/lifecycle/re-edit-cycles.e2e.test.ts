@@ -4,7 +4,7 @@ import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
@@ -59,11 +59,16 @@ describe("re-edit cycles: config stability across multiple edits", () => {
 
   describe("idempotent no-change edits", () => {
     let tempDir: string | undefined;
+    let sharedHome: string | undefined;
 
     afterEach(async () => {
       if (tempDir) {
         await cleanupTempDir(tempDir);
         tempDir = undefined;
+      }
+      if (sharedHome) {
+        await cleanupTempDir(sharedHome);
+        sharedHome = undefined;
       }
     });
 
@@ -74,6 +79,14 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         tempDir = await createTempDir();
         const projectDir = tempDir;
 
+        // Default init/edit content is GLOBAL-scoped, so compiled agents land in
+        // HOME rather than projectDir. Thread ONE shared HOME through all three
+        // launches so each edit sees the init's global content; config.ts stays
+        // under projectDir. Reuse-param launches do NOT own its cleanup — the
+        // afterEach does.
+        sharedHome = await createTempDir();
+        const globalProject = { dir: sharedHome };
+
         // ================================================================
         // Phase 1: Init via wizard
         // ================================================================
@@ -81,26 +94,26 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // Explicit eject: press "l" on the sources step so new skills are
         // eject-sourced. Without this, the wizard defaults to plugin mode and
         // hard-errors when the source has no marketplace (no silent fallback).
-        const initWizard = await InitWizard.launch({
+        const initWizard = await InitWizard.launchInProject({
           source: { sourceDir, tempDir: sourceTempDir },
           projectDir,
+          globalHome: sharedHome,
         });
         const initResult = await completeWithLocalSources(initWizard);
         await initResult.destroy();
 
         // --- Phase 1 verification ---
-        await expectPhaseSuccess(
-          { project: { dir: projectDir }, exitCode: initResult.exitCode },
-          {
-            skillIds: ["web-framework-react"],
-            agents: ["web-developer"],
-            source: "eject",
-          },
-        );
-        await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
+        expect(await initResult.exitCode).toBe(EXIT_CODES.SUCCESS);
+        await expect({ dir: projectDir }).toHaveConfig({
+          skillIds: ["web-framework-react"],
+          agents: ["web-developer"],
+          source: "eject",
+        });
+        await expect(globalProject).toHaveCompiledAgent("web-developer");
+        await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
           name: "web-developer",
         });
-        await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
+        await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
           skills: ["web-framework-react"],
         });
 
@@ -113,26 +126,26 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // Phase 2: First edit -- navigate through without changes
         // ================================================================
 
-        const edit1Wizard = await EditWizard.launch({
+        const edit1Wizard = await EditWizard.launchInProject({
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
+          globalHome: sharedHome,
         });
         const edit1Result = await edit1Wizard.passThrough();
         await edit1Result.destroy();
 
         // --- Phase 2 verification ---
-        await expectPhaseSuccess(
-          { project: { dir: projectDir }, exitCode: edit1Result.exitCode },
-          {
-            skillIds: ["web-framework-react"],
-            agents: ["web-developer"],
-            source: "eject",
-          },
-        );
-        await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
+        expect(await edit1Result.exitCode).toBe(EXIT_CODES.SUCCESS);
+        await expect({ dir: projectDir }).toHaveConfig({
+          skillIds: ["web-framework-react"],
+          agents: ["web-developer"],
+          source: "eject",
+        });
+        await expect(globalProject).toHaveCompiledAgent("web-developer");
+        await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
           name: "web-developer",
         });
-        await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
+        await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
           skills: ["web-framework-react"],
         });
 
@@ -148,26 +161,26 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // Phase 3: Second edit -- navigate through without changes again
         // ================================================================
 
-        const edit2Wizard = await EditWizard.launch({
+        const edit2Wizard = await EditWizard.launchInProject({
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
+          globalHome: sharedHome,
         });
         const edit2Result = await edit2Wizard.passThrough();
         await edit2Result.destroy();
 
         // --- Phase 3 verification ---
-        await expectPhaseSuccess(
-          { project: { dir: projectDir }, exitCode: edit2Result.exitCode },
-          {
-            skillIds: ["web-framework-react"],
-            agents: ["web-developer"],
-            source: "eject",
-          },
-        );
-        await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
+        expect(await edit2Result.exitCode).toBe(EXIT_CODES.SUCCESS);
+        await expect({ dir: projectDir }).toHaveConfig({
+          skillIds: ["web-framework-react"],
+          agents: ["web-developer"],
+          source: "eject",
+        });
+        await expect(globalProject).toHaveCompiledAgent("web-developer");
+        await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
           name: "web-developer",
         });
-        await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
+        await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
           skills: ["web-framework-react"],
         });
 
@@ -191,11 +204,16 @@ describe("re-edit cycles: config stability across multiple edits", () => {
 
   describe("edit with skill addition persists across cycles", () => {
     let tempDir: string | undefined;
+    let sharedHome: string | undefined;
 
     afterEach(async () => {
       if (tempDir) {
         await cleanupTempDir(tempDir);
         tempDir = undefined;
+      }
+      if (sharedHome) {
+        await cleanupTempDir(sharedHome);
+        sharedHome = undefined;
       }
     });
 
@@ -222,6 +240,13 @@ describe("re-edit cycles: config stability across multiple edits", () => {
 
         await createPermissionsFile(projectDir);
 
+        // This project is PROJECT-scoped (ProjectBuilder.editable), so its
+        // compiled agents and config both stay under projectDir — every
+        // assertion below reads projectDir. A shared HOME is still threaded
+        // through both edits so the wizards resolve HOME identically across
+        // phases; it holds no content here. The afterEach owns its cleanup.
+        sharedHome = await createTempDir();
+
         // Verify initial state via matcher and detailed parsing
         await expect({ dir: projectDir }).toHaveConfig({
           skillIds: ["web-framework-react"],
@@ -234,9 +259,10 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // Phase 2: First edit -- add a skill
         // ================================================================
 
-        const edit1Wizard = await EditWizard.launch({
+        const edit1Wizard = await EditWizard.launchInProject({
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
+          globalHome: sharedHome,
           ...TERMINAL_SIZE.TALL,
         });
 
@@ -289,9 +315,10 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // Phase 3: Second edit -- navigate through without changes
         // ================================================================
 
-        const edit2Wizard = await EditWizard.launch({
+        const edit2Wizard = await EditWizard.launchInProject({
           projectDir,
           source: { sourceDir, tempDir: sourceTempDir },
+          globalHome: sharedHome,
           ...TERMINAL_SIZE.TALL,
         });
 

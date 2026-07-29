@@ -32,6 +32,12 @@ import {
  * These tests require the Claude CLI for plugin install/uninstall operations.
  *
  * Note: isClaudeCLIAvailable is re-exported from test-utils for skip detection.
+ *
+ * Both tests switch the SOURCE of default-scope (global) skills mid-edit. A
+ * project edit renders global skills as locked (readOnly) and refuses the
+ * toggle, so both phases model editing the GLOBAL install via launchInGlobal:
+ * HOME == cwd == projectDir, the skills are editable, and all content + config
+ * collapse onto projectDir (which every assertion below reads).
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -66,7 +72,7 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- bulk mode s
         const projectDir = path.join(tempDir, "project");
 
         // Phase 1: Init in eject mode using page objects
-        const initWizard = await InitWizard.launch({
+        const initWizard = await InitWizard.launchInGlobal({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
           projectDir,
         });
@@ -85,7 +91,7 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- bulk mode s
         await injectMarketplaceIntoConfig(projectDir, fixture.marketplaceName);
 
         // Phase 2: Edit -- switch ALL to plugin via "p" hotkey
-        const editWizard = await EditWizard.launch({
+        const editWizard = await EditWizard.launchInGlobal({
           projectDir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         });
@@ -120,7 +126,7 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- bulk mode s
         const projectDir = path.join(tempDir, "project");
 
         // Phase 1: Init in plugin mode
-        const initWizard = await InitWizard.launch({
+        const initWizard = await InitWizard.launchInGlobal({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
           projectDir,
         });
@@ -134,7 +140,7 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- bulk mode s
         await initResult.destroy();
 
         // Phase 2: Edit -- switch ALL to eject via "l" hotkey
-        const editWizard = await EditWizard.launch({
+        const editWizard = await EditWizard.launchInGlobal({
           projectDir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         });

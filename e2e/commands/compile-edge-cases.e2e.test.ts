@@ -88,7 +88,16 @@ describe("compile command edge cases", () => {
     it("should skip skill with invalid YAML frontmatter and compile remaining skills", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
-      await writeProjectConfig(projectDir, { name: "e2e-broken-yaml", skills: [], agents: [] });
+      // Declare the agents so the project is a detected installation; the local
+      // skills under test are discovered from disk independently of the config.
+      await writeProjectConfig(projectDir, {
+        name: "e2e-broken-yaml",
+        skills: [],
+        agents: [
+          { name: E2E_AGENT["web-developer"].name, scope: "project" },
+          { name: E2E_AGENT["api-developer"].name, scope: "project" },
+        ],
+      });
 
       // Create a valid skill
       await createLocalSkill(projectDir, "web-testing-e2e-valid" as SkillId, {
@@ -138,7 +147,16 @@ This skill has invalid YAML frontmatter.
     it("should skip skill with completely malformed metadata.yaml", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
-      await writeProjectConfig(projectDir, { name: "e2e-bad-metadata", skills: [], agents: [] });
+      // Declare the agents so the project is a detected installation; the local
+      // skills under test are discovered from disk independently of the config.
+      await writeProjectConfig(projectDir, {
+        name: "e2e-bad-metadata",
+        skills: [],
+        agents: [
+          { name: E2E_AGENT["web-developer"].name, scope: "project" },
+          { name: E2E_AGENT["api-developer"].name, scope: "project" },
+        ],
+      });
 
       // Create a valid skill
       await createLocalSkill(projectDir, "web-testing-e2e-good" as SkillId, {

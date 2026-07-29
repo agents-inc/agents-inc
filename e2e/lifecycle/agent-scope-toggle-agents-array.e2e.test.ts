@@ -108,10 +108,10 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         await sources.waitForReady();
         const agents = await sources.advance();
 
-        // api-developer is a persisted dual-scope [P][G] agent — `s` is inert on
-        // it. Space (deselect) collapses [P][G] → [G], the sanctioned P→G
-        // restoration path.
-        await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
+        // api-developer is a persisted dual-scope [P][G] agent — `s` is the sole
+        // dual-scope toggle and collapses [P][G] → [G], the P→G migration path.
+        await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
+        await agents.toggleScopeOnFocusedAgent();
         const confirm = await agents.advance("edit");
 
         const result = await confirm.confirm();
@@ -205,9 +205,10 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         const sources1 = await wizard1.build.passThroughAllDomains();
         await sources1.waitForReady();
         const agents1 = await sources1.advance();
-        // api-developer is a persisted dual-scope [P][G] agent — `s` is inert;
-        // space (deselect) collapses [P][G] → [G], restoring it to global.
-        await agents1.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
+        // api-developer is a persisted dual-scope [P][G] agent — `s` collapses
+        // [P][G] → [G], restoring it to global.
+        await agents1.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
+        await agents1.toggleScopeOnFocusedAgent();
         const confirm1 = await agents1.advance("edit");
         const result1 = await confirm1.confirm();
         expect(await result1.exitCode).toBe(EXIT_CODES.SUCCESS);

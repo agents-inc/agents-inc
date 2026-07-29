@@ -49,7 +49,7 @@ describe("init wizard — scratch flow", () => {
       const build = await domain.acceptDefaults();
 
       // Select required Framework skill before advancing
-      await build.selectSkill(E2E_SKILL.react.slug);
+      await build.selectSkill(E2E_SKILL.react.display);
 
       // Advance to next domain (API)
       await build.advanceDomain();
@@ -79,7 +79,7 @@ describe("init wizard — scratch flow", () => {
     });
 
     it("should complete a full scratch-based init flow through to install", async () => {
-      wizard = await InitWizard.launch();
+      wizard = await InitWizard.launchInProject();
 
       const domain = await wizard.stack.selectScratch();
       const build = await domain.acceptDefaults();
@@ -89,17 +89,21 @@ describe("init wizard — scratch flow", () => {
       const confirm = await agents.acceptDefaults("init");
       const result = await confirm.confirm();
 
+      // Config lands under projectDir; the compiled agents and ejected skills
+      // (default global scope) land under the wizard's global HOME.
+      await expect(result.project).toHaveConfig({
+        skillIds: ["web-framework-react", "api-framework-hono"],
+        agents: E2E_AGENTS.WEB_AND_API,
+        source: "eject",
+      });
       await expectPhaseSuccess(
-        { project: result.project, exitCode: result.exitCode },
+        { project: { dir: wizard.globalHome }, exitCode: result.exitCode },
         {
-          skillIds: ["web-framework-react", "api-framework-hono"],
-          agents: E2E_AGENTS.WEB_AND_API,
-          source: "eject",
           compiledAgents: E2E_AGENTS.WEB_AND_API,
           copiedSkills: ["web-framework-react", "api-framework-hono"],
         },
       );
-      await expect(result.project).toHaveAgentFrontmatter("web-developer", {
+      await expect({ dir: wizard.globalHome }).toHaveAgentFrontmatter("web-developer", {
         noSkills: true,
       });
     });

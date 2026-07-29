@@ -16,7 +16,7 @@ import {
   readTestFile,
 } from "../helpers/test-utils.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
-import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
+import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * SelectedAgentName excluded global agent E2E test.
@@ -85,8 +85,11 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName includes excluded global ag
       // "Edit" is the first (default) dashboard option — press Enter to launch it.
       const build = await dashboard.selectEdit();
 
-      // Establish project scope by toggling scope on a skill in the first domain.
-      // Without this, no project-level .claude-src/config-types.ts is generated.
+      // Establish project scope by toggling scope on web-framework-react in the
+      // first domain (focus it explicitly — the first-alphabetical cell is Vue, an
+      // unselected skill whose `s` is a silent no-op). Without a project-scoped
+      // skill, no project-level .claude-src/config-types.ts is generated.
+      await build.focusSkill(E2E_SKILL.react.display);
       await build.toggleScopeOnFocusedSkill();
 
       // Pass through remaining domains, then sources.

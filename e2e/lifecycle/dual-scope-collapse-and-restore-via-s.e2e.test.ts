@@ -18,21 +18,21 @@ import {
 } from "../fixtures/dual-scope-helpers.js";
 
 /**
- * D-233 — spacebar collapse of a persisted dual-scope `[P][G]` skill, and the
- * sanctioned `s` restore of the resulting inherited-global `[G]` row.
+ * D-233/D-260 — `s` collapse of a persisted dual-scope `[P][G]` skill, and the
+ * `s` restore of the resulting inherited-global `[G]` row, save-and-reopen at
+ * every step.
  *
- * The sibling suite `tombstone-cleanup-PtoG-restoration.e2e.test.ts` also
- * exercises the COLLAPSE half via `cc edit` (persisted `[P][G]` + spacebar ->
- * inherited-global `[G]`). This suite drives the same real wizard pipeline and
- * asserts the full round-trip end-to-end:
+ * `s` is the SOLE dual-scope toggle: it drives BOTH directions, and the spacebar
+ * never changes a row backed by a real global install. This suite drives the real
+ * wizard pipeline and asserts the full round-trip end-to-end:
  *
- *   Test 1 — collapse: seed global react, `s` G->P (persisted `[P][G]`),
- *     spacebar collapse. Project config drops to a single inherited-global
- *     entry `[{scope:"global"}]` and the re-opened row renders a single `G`.
+ *   Test 1 — collapse: seed global react, `s` G->P (persisted `[P][G]`), then `s`
+ *     again to collapse. Project config drops to a single inherited-global entry
+ *     `[{scope:"global"}]` and the re-opened row renders a single `G`.
  *
  *   Test 2 — restore: once a `[P][G]` skill is collapsed to a plain
  *     inherited-global `[G]` entry and saved, the project-scope presence is
- *     genuinely deleted (not "paused"). The correct, user-confirmed behaviour is:
+ *     genuinely deleted (not "paused"). The behaviour is:
  *       (a) SPACEBAR on the collapsed `[G]`-only row is a NO-OP (a pure
  *           global-inherited row has no project override to deselect) — badges
  *           and on-disk config stay unchanged; and
@@ -49,7 +49,7 @@ import {
 
 /**
  * Establish the collapsed inherited-global state:
- *   global react install -> `s` G->P (dual-scope) -> spacebar collapse -> `[G]`.
+ *   global react install -> `s` G->P (dual-scope) -> `s` P->G collapse -> `[G]`.
  * Returns after asserting the collapsed config is a single inherited-global entry.
  */
 async function collapseToInheritedGlobal(
@@ -65,14 +65,14 @@ async function collapseToInheritedGlobal(
     { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
   ]);
 
-  // Spacebar: collapse dual-scope pair to a single inherited-global entry.
-  await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
+  // `s` again: collapse the dual-scope pair to a single inherited-global entry.
+  await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
   expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
     { id: E2E_SKILL.react.id, scope: "global", source: "eject" },
   ]);
 }
 
-describe("D-233 — spacebar dual-scope collapse and re-select restoration", () => {
+describe("dual-scope collapse and restoration driven by `s`", () => {
   let sourceDir: string;
   let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
@@ -94,7 +94,7 @@ describe("D-233 — spacebar dual-scope collapse and re-select restoration", () 
   });
 
   it(
-    "collapses a persisted [P][G] to a single inherited-global [G] on spacebar",
+    "collapses a persisted [P][G] to a single inherited-global [G] on `s`",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);

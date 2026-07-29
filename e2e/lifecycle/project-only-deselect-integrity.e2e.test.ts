@@ -17,6 +17,7 @@ import {
   setupProjectOnlyMixedScope,
 } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
+import { UI_SYMBOLS } from "../../src/cli/consts.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -163,7 +164,7 @@ describe("project-only deselection integrity", () => {
         ...TERMINAL_SIZE.TALL,
       });
       // Web domain: deselect web-testing-vitest.
-      await wizard.build.selectSkill(E2E_SKILL.vitest.slug);
+      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
       await wizard.build.advanceDomain();
       // API domain: pass through.
       await wizard.build.advanceDomain();
@@ -197,6 +198,60 @@ describe("project-only deselection integrity", () => {
         normalizeGlobalConfig(globalConfigAfter),
         "global config must be unchanged by a project-scope skill deselect",
       ).toStrictEqual(normalizeGlobalConfig(globalConfigBefore));
+    },
+  );
+
+  it(
+    "keeps a deselected project-only skill visible on the Sources tab so the user can see what will be removed",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
+      testTempDir = tempDir;
+      await setupProjectOnlyMixedScope(sourceDir, sourceTempDir, fakeHome, projectDir);
+
+      // Setup proof: vitest is genuinely a saved project skill before the edit, so an
+      // absent Sources row later is the vanished-row bug, not a setup miss.
+      const projectConfigBefore = await readTestFile(configTsPath(projectDir));
+      expect(projectConfigBefore).toContain(E2E_SKILL.vitest.id);
+
+      wizard = await EditWizard.launch({
+        projectDir,
+        source: { sourceDir, tempDir: sourceTempDir },
+        env: { HOME: fakeHome },
+        ...TERMINAL_SIZE.TALL,
+      });
+
+      // Web domain: deselect the pre-selected vitest (do NOT re-select it).
+      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
+      // Pass through the remaining domains (Web -> API -> Methodology), then Methodology -> Sources.
+      await wizard.build.advanceDomain();
+      await wizard.build.advanceDomain();
+      const sources = await wizard.build.advanceToSources();
+      await sources.waitForReady();
+
+      const sourcesFrame = sources.getOutput();
+      // Positive shape: the inherited global react row proves the Sources grid rendered
+      // (non-empty, correct screen), so a missing vitest row is the vanished-row bug.
+      expect(
+        sourcesFrame,
+        `Sources grid must render the inherited global skill. Screen:\n${sources.getScreen()}`,
+      ).toContain(E2E_SKILL.react.display);
+      // The bug under test: a deselected saved project skill must remain visible (rendered
+      // disabled) on the Sources tab so the user can see what they are about to remove.
+      expect(
+        sourcesFrame,
+        `a deselected saved project skill must remain visible on the Sources tab. Screen:\n${sources.getScreen()}`,
+      ).toContain(E2E_SKILL.vitest.display);
+
+      // ...and is rendered as pending-removal rather than as an ordinary editable row, using the
+      // same removal marker the info panel prints for removed skills so both surfaces read
+      // consistently. The wizard runs with NO_COLOR in E2E, so the red colour carries no signal
+      // here — the marker is what a user (and this assertion) can actually see. A lock glyph would
+      // be wrong: that means "installed globally, not editable from this project".
+      expect(
+        sourcesFrame,
+        `the deselected skill must be marked pending-removal. Screen:\n${sources.getScreen()}`,
+      ).toContain(`${UI_SYMBOLS.REMOVED} ${E2E_SKILL.vitest.display}`);
     },
   );
 });

@@ -10,7 +10,12 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
-import { ensureBinaryExists, cleanupTempDir, isClaudeCLIAvailable } from "../helpers/test-utils.js";
+import {
+  ensureBinaryExists,
+  cleanupTempDir,
+  createTempDir,
+  isClaudeCLIAvailable,
+} from "../helpers/test-utils.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
@@ -36,6 +41,7 @@ describe("POM Framework Smoke Tests", () => {
   describe.skipIf(!claudeAvailable)("InitWizard.completeWithDefaults", () => {
     let result: WizardResult | undefined;
     let pluginFixture: E2EPluginSource | undefined;
+    let sharedHome: string | undefined;
 
     beforeAll(async () => {
       pluginFixture = await createE2EPluginSource({ marketplaceName: "agents-inc" });
@@ -48,22 +54,35 @@ describe("POM Framework Smoke Tests", () => {
     afterEach(async () => {
       await result?.destroy();
       result = undefined;
+      if (sharedHome) {
+        await cleanupTempDir(sharedHome);
+        sharedHome = undefined;
+      }
     });
 
     it(
       "should complete init with defaults and produce config + compiled agents",
       async () => {
-        const wizard = await InitWizard.launch({
+        // Default-scope compiled agents land in HOME, so drive the init as a
+        // project install with an explicit global HOME: config.ts stays under
+        // result.project, the compiled agents are read from sharedHome. The
+        // afterEach owns cleanup (the reuse-param launch does not).
+        sharedHome = await createTempDir();
+        const wizard = await InitWizard.launchInProject({
           source: { sourceDir: pluginFixture!.sourceDir, tempDir: pluginFixture!.tempDir },
+          globalHome: sharedHome,
         });
         result = await wizard.completeWithDefaults();
 
-        await expectPhaseSuccess(result, {
+        expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+        await expect(result.project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer", "api-developer"],
           source: "agents-inc",
-          compiledAgents: ["web-developer", "api-developer"],
         });
+        const globalProject = { dir: sharedHome };
+        await expect(globalProject).toHaveCompiledAgent("web-developer");
+        await expect(globalProject).toHaveCompiledAgent("api-developer");
       },
       TIMEOUTS.INTERACTIVE,
     );
