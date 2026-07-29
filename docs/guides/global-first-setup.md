@@ -35,4 +35,10 @@ Project config lives at `.claude-src/config.ts` in the project directory. Projec
 
 ## Editing
 
-`agentsinc edit` from a project directory shows both global and project skills. Global items appear as locked — edit them from any directory without a project-scoped installation, or from `~/`.
+`agentsinc edit` from a project directory shows both global and project skills. Global items appear as locked and **cannot be removed from a project** — space is inert on those rows and the wizard says `Global skills cannot be changed from project scope`. The global install is shared by every project, so one project must not uninstall it for the others.
+
+To change a global item, edit at global scope: run `agentsinc edit` from `~/` (or from any directory without a project-scoped installation).
+
+**Don't want a global skill in this project?** Don't deselect it — just don't hand it to this project's agents. Remove it from the agent's entry in the project's `stack` (see [Editing Your Config](./editing-config.md)) and run `agentsinc compile`. The skill stays installed globally; it simply isn't part of any prompt here.
+
+**Want your own version instead?** Press `s` (scope hotkey) on the row to add a project-scoped copy alongside the global install — the row then shows both `[P]` and `[G]`.

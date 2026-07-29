@@ -22,13 +22,13 @@ related:
   - reference/store-map.md
   - reference/concepts/guard-pattern.md
   - reference/concepts/tombstone-pattern.md
-last_validated: 2026-07-24
+last_validated: 2026-07-30
 ---
 
 # Agent System
 
-**Last Updated:** 2026-07-24
-**Last Validated:** 2026-07-24
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 ## Overview
 
@@ -615,9 +615,10 @@ The `changed` flag flips when either merged list differs from the existing list 
 
 1. Loads `existingProject.config`.
 2. Reconciles the project's own entries against the now-current global data into a `projectSplit`:
-   - `retainReconciledSkills` / `retainReconciledAgents` keep project-scoped entries and keep a global tombstone (`scope === "global" && excluded`) only while the masked global entry is still active — stale tombstones for a since-removed global item are dropped (D-233 Scenario C).
+   - `retainProjectOwnedSkills` / `retainProjectOwnedAgents` keep project-scoped entries and keep a global tombstone (`scope === "global" && excluded`) only while the masked global entry is still active — stale tombstones for a since-removed global item are dropped (D-233 Scenario C).
    - `retainReconciledStack` prunes stack assignments that reference a global skill removed at global scope (ids from `computeRemovedGlobalSkillIds`).
    - `retainReconciledSelectedAgents` drops `selectedAgents[]` names no longer backed by an active project- or global-scoped agent.
+   - `reconcileProjectSplitAgainstGlobal` then self-heals and re-masks on BOTH axes. `dropOrphanedDerivedAgentMasks` (the D-277 agent mirror of `dropOrphanedDerivedMasks`) runs FIRST and drops a global agent tombstone that no longer has an active project-scoped agent of the same name to justify it, so the global agent becomes visible again instead of staying masked forever. `maskCollidingGlobalAgents` then re-derives a mask for every live global agent the project DOES own at project scope, producing the `[P][G]` pair. Self-heal before mask means a cleared collision is removed rather than immediately re-derived, and the producer's `alreadyTombstoned` guard only sees warranted tombstones. Agents have no categories, so identity is the only collision kind (skills additionally collide on exclusive categories).
 3. Rewrites the project's `config.ts` with re-inlined global data via `writeConfigFile(projectSplit, projectConfigPath, { isProjectConfig: true, globalConfig })`.
 4. Regenerates the project's `config-types.ts` via `regenerateConfigTypes()` with `buildConfigTypesBackgroundData(matrix, agents)` and `buildProjectTypesExtras(projectSplit, matrix)` -- emits `import type { SkillId as GlobalSkillId, ... }` rather than the standalone-inlined form.
 

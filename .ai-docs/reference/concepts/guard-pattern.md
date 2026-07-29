@@ -18,19 +18,20 @@ keywords:
     dual-scope-inert-spacebar,
     D-233,
     D-260,
+    D-277,
   ]
 related:
   - reference/concepts/scope-system.md
   - reference/concepts/tombstone-pattern.md
   - reference/wizard/state-transitions.md
   - reference/wizard/flow.md
-last_validated: 2026-07-24
+last_validated: 2026-07-30
 ---
 
 # Guard Pattern
 
-**Last Updated:** 2026-07-24
-**Last Validated:** 2026-07-24
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 > **Cross-cutting concept.** Consolidates guard documentation from: `wizard-flow.md` (Global-Item Guards, Scope Toggle Eject Guard), `state-transitions.md` (guard tables in selection actions), and the hotkey dispatcher in `wizard.tsx`.
 
@@ -46,16 +47,13 @@ No guard currently throws. Throws in the wizard (`handleComplete` stack lookup) 
 
 ## Guard Preconditions
 
-The three global-item guards in `toggleTechnology` / `toggleAgent` share these bypass preconditions:
+The three global-item guards in `toggleTechnology` / `toggleAgent` share a single bypass precondition:
 
-| Field                      | Bypass When | Purpose                                                  |
-| -------------------------- | ----------- | -------------------------------------------------------- |
-| `isEditingFromGlobalScope` | `true`      | Editing from `~/.claude/` — guard is not meaningful      |
-| `isInitMode`               | `true`      | Init wizard (first-time setup) has no installed baseline |
+| Field                      | Bypass When | Purpose                                             |
+| -------------------------- | ----------- | --------------------------------------------------- |
+| `isEditingFromGlobalScope` | `true`      | Editing from `~/.claude/` — guard is not meaningful |
 
-When either is `true`, the global-installed guard does not trigger.
-
-The scope-toggle guards (`toggleSkillScope`, `toggleAgentScope`) gate only on `isEditingFromGlobalScope` — they run in init mode too.
+**`isInitMode` is no longer a bypass (D-277).** Every global-item guard, and the scope-toggle guards (`toggleSkillScope`, `toggleAgentScope`), now gate on `isEditingFromGlobalScope` alone: a globally-installed skill or agent is immutable from project scope in every flow. Removing the init arm was a production no-op — a real `cc init` can never see a global preselection (`Init.run` routes to the dashboard → `edit` whenever `detectInstallation` / `detectGlobalInstallation` finds one, so `isInitMode === true` implies `installedSkillConfigs === null`) — but it closes the bypass at store level so no future caller can reach through it.
 
 ## Guard Registry
 
@@ -71,7 +69,7 @@ The scope-toggle guards (`toggleSkillScope`, `toggleAgentScope`) gate only on `i
 - **Live tombstone arm (2026-07-18 hydration-snapshot fix):** `isSelected && hasGlobalTombstone(installedSkillConfigs, id) && hasGlobalActive(skillConfigs, id)` — blocks the DESELECT of the stale-snapshot state a `[P][G]` pair reaches after an in-session `s` collapse (the snapshot still shows the tombstone; the live config now holds a plain active global). Gated on `isSelected` so the sanctioned re-select restore path still runs, and it never fires on a skill freshly added this session (absent from the snapshot).
 - **Dual-scope arm (D-260):** `isSelected && isDualScopePair(skillConfigs, id)` — makes SPACE inert on a live `[P][G]` pair (active project + excluded global tombstone in the live config): the deselect returns the toast and leaves the badges unchanged, so only `s` (`toggleSkillScope`) can change a dual-scope row. Gated on `isSelected` so the re-select restore path (`reconcileSkillConfigs` rebuilds `[P][G]`) still runs.
 
-All three arms additionally require `!isEditingFromGlobalScope && !isInitMode`.
+All three arms additionally require `!isEditingFromGlobalScope`.
 
 **Outcome:** Toast — `"Global skills cannot be changed from project scope"`.
 
@@ -95,7 +93,7 @@ All three arms additionally require `!isEditingFromGlobalScope && !isInitMode`.
 
 **Trigger:** Toggling an agent in the agents step.
 
-**Guard condition (`isActiveGlobal`):** mirrors the skill-path two-arm shape — `agentHasGlobalActive(installedAgentConfigs, agent)` OR (`agentHasGlobalTombstone(installedAgentConfigs, agent) && agentHasGlobalActive(agentConfigs, agent)`), AND neither `isEditingFromGlobalScope` nor `isInitMode` is true.
+**Guard condition (`isActiveGlobal`):** mirrors the skill-path two-arm shape — `agentHasGlobalActive(installedAgentConfigs, agent)` OR (`agentHasGlobalTombstone(installedAgentConfigs, agent) && agentHasGlobalActive(agentConfigs, agent)`), AND `!isEditingFromGlobalScope`.
 
 **Two dual-scope branches run BEFORE this guard** (D-233/D-260): (a) a live `[P][G]` pair (`isDualScopeAgentPair(agentConfigs, agent)`, gated on `!isEditingFromGlobalScope`) makes SPACE **inert** — it returns the `GLOBAL_AGENTS_LOCKED` toast and leaves the pair intact, so only `s` (`toggleAgentScope`) can change a dual-scope agent row; (b) an inherited-global re-select (`agentHasGlobalActive(agentConfigs) && !agentHasProjectActive(agentConfigs) && !selectedAgents.includes(agent) && agentHasGlobalTombstone(installed)`) rebuilds the pair via `restoreDualScopeAgent`. See [tombstone-pattern.md](./tombstone-pattern.md).
 
@@ -159,17 +157,19 @@ All three arms additionally require `!isEditingFromGlobalScope && !isInitMode`.
 
 **Guard (tombstone protection):** `findIncompatibleWebSkills` ignores skills whose `skillConfigs` entry has `excluded === true`. This preserves tombstones — enabling the filter cannot inadvertently clear a shadowed global.
 
-**Guard (locked-global refusal, toast):** if any incompatible target is a locked global (`hasGlobalActive(installed, id)` OR the tombstone-arm `hasGlobalTombstone(installed, id) && hasGlobalActive(skillConfigs, id)`) and `!isEditingFromGlobalScope && !isInitMode`, the WHOLE toggle is refused with `"Global skills cannot be changed from project scope"` — the filter is not applied and no subset is silently removed.
+**Guard (locked-global refusal, toast):** if any incompatible target is a locked global (`hasGlobalActive(installed, id)` OR the tombstone-arm `hasGlobalTombstone(installed, id) && hasGlobalActive(skillConfigs, id)`) and `!isEditingFromGlobalScope`, the WHOLE toggle is refused with `"Global skills cannot be changed from project scope"` — the filter is not applied and no subset is silently removed.
 
 **Outcome:** Silent removal of incompatible non-tombstoned web skills via `applySkillRemoval` (tombstones stay); OR toast refusal when a locked global would be uninstalled.
 
-### 9. Tombstone-Aware Skill Removal (`applySkillRemoval`)
+### 9. Ownership-Aware Skill Removal (`applySkillRemoval`)
 
 **File:** `wizard-store.ts` — helper used by `toggleTechnology`, `toggleDomain`, `toggleFilterIncompatible` (and, indirectly, `reconcileSkillConfigs`).
 
-**Behavior (predicate, not toast):** When removing a skill id, if `scope === "global"` AND the id is in `installedSkillConfigs`, the entry survives with `excluded: true` stamped on. Project-scoped entries and non-installed globals are dropped. When the caller passes `null` for `installedSkillConfigs` (editing FROM global scope), globals are dropped outright — no tombstone (D-233 Scenario C).
+**Behavior (predicate, not toast) — D-277:** removal is scoped to what the project **owns**. An entry is dropped when `isProjectOwned(entry)` (project-scoped, or the project's own global tombstone), or when the id is absent from `installedSkillConfigs` (added this session, so nobody's install yet — an accidental add stays undoable). An entry that is neither — an **inherited** global-active entry present in the snapshot — survives **byte-identical**. It is never stamped `excluded`: `applySkillRemoval` is no longer a tombstone producer. When the caller passes `null` for `installedSkillConfigs` (editing FROM global scope) nothing is inherited, so every removed id is dropped outright (D-233 Scenario C).
 
 **Dual-scope branch (D-233, resolved):** `applySkillRemoval` recognises a dual-scope pair (`isDualScopePair`: active project entry + global tombstone). On removal it drops BOTH halves and re-surfaces a single inherited-global entry, so the `[G]` badge keeps rendering. This branch is reached via the removal paths (`toggleDomain`, `toggleFilterIncompatible`) — **not** spacebar, which is inert on a live `[P][G]` row (D-260). The mirror restore (re-select rebuilds `[P][G]`) lives in `reconcileSkillConfigs`. On the agent path the collapse is `toggleAgentScope`'s `s` toggle (dropping the tombstone); the restore is `restoreDualScopeAgent`, invoked from the `toggleAgent` action.
+
+**`toggleDomain` is a view filter, not a tombstone path (D-277).** Deselecting a domain hides it and drops the project-scoped entries the project owns in it; inherited global entries are untouched. It carries no toast because it refuses nothing — it simply has no authority over the global install. This is a store invariant with no reachable UI surface (the DOMAINS step is init-only; `cc edit` hydrates at `build` with empty history), pinned at unit level — see `.ai-docs/agent-findings/2026-07-30-domain-deselect-has-no-reachable-ui-surface-in-edit.md`.
 
 > Listed here as a guard-class predicate — it shapes the state without user feedback. See [tombstone-pattern.md](./tombstone-pattern.md) "D-233 — Dual-Scope Spacebar + Scope-Aware Removal (Resolved)".
 
@@ -226,7 +226,7 @@ These log to `warn()` and return the current state. They exist to catch bad call
 
 ## Known Gap — Ungated Source Setters
 
-The source setters `setSourceSelection`, `setAllSourcesEject`, and `setAllSourcesPlugin` (`wizard-store.ts`) do **not** carry the `isEditingFromGlobalScope` / `isInitMode` gate that `toggleTechnology` / `toggleSkillScope` use. From a project-context edit they rewrite `source` on inherited global-active rows too, so the Sources step can show a source change the store will not legitimately own. The `edit.tsx` command boundary compensates: `recordGlobalSourceMigrations()` runs before `writeConfigAndCompile` and records `source` in the global config for exactly the skill ids `executeMigration` acted on that are active at global scope (nothing else). Bringing the same predicate into the wizard setters is the open remainder — see `.ai-docs/agent-findings/2026-07-20-project-context-edit-lacked-scope-authority-gate.md` and `2026-07-20-scope-authority-must-follow-work-performed.md`.
+The source setters `setSourceSelection`, `setAllSourcesEject`, and `setAllSourcesPlugin` (`wizard-store.ts`) do **not** carry the `isEditingFromGlobalScope` gate that `toggleTechnology` / `toggleSkillScope` use. From a project-context edit they rewrite `source` on inherited global-active rows too, so the Sources step can show a source change the store will not legitimately own. The `edit.tsx` command boundary compensates: `recordGlobalSourceMigrations()` runs before `writeConfigAndCompile` and records `source` in the global config for exactly the skill ids `executeMigration` acted on that are active at global scope (nothing else). Bringing the same predicate into the wizard setters is the open remainder — see `.ai-docs/agent-findings/2026-07-20-project-context-edit-lacked-scope-authority-gate.md` and `2026-07-20-scope-authority-must-follow-work-performed.md`.
 
 ## Guard vs Toast Flow
 

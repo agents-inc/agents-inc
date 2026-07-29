@@ -21,13 +21,13 @@ related:
   - reference/concepts/tombstone-pattern.md
   - reference/concepts/guard-pattern.md
   - reference/commands.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
 
 # Component Patterns
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 ## Rendering Library
 
@@ -146,25 +146,27 @@ export const StepBuild: React.FC<StepBuildProps> = ({ matrix }) => {
 
 ## UI Symbols (UI_SYMBOLS in `src/cli/consts.ts`)
 
-| Symbol               | Value           | Usage                                    |
-| -------------------- | --------------- | ---------------------------------------- |
-| `CHECKBOX_CHECKED`   | `[x]`           | Selected checkbox                        |
-| `CHECKBOX_UNCHECKED` | `[ ]`           | Unselected checkbox                      |
-| `CHEVRON`            | unicode chevron | Navigation indicator                     |
-| `CHEVRON_SPACER`     | space           | Non-focused spacer                       |
-| `SELECTED`           | checkmark       | Selected item                            |
-| `UNSELECTED`         | circle          | Unselected item                          |
-| `CURRENT`            | filled circle   | Current focus                            |
-| `SKIPPED`            | dash            | Skipped step                             |
-| `DISABLED`           | dash            | Disabled item                            |
-| `DISCOURAGED`        | `!`             | Warning indicator                        |
-| `LOCK`               | lock emoji      | Locked/read-only items                   |
-| `EJECT`              | eject symbol    | Local/ejected skill indicator            |
-| `BULLET`             | bullet dot      | List item marker in confirm/summary      |
-| `SCROLL_UP`          | triangle up     | Scroll indicator                         |
-| `SCROLL_DOWN`        | triangle down   | Scroll indicator                         |
-| `CHECK`              | checkmark       | Success glyph (same glyph as `SELECTED`) |
-| `CROSS`              | ✗               | Failure/cross glyph                      |
+| Symbol               | Value           | Usage                                                                       |
+| -------------------- | --------------- | --------------------------------------------------------------------------- |
+| `CHECKBOX_CHECKED`   | `[x]`           | Selected checkbox                                                           |
+| `CHECKBOX_UNCHECKED` | `[ ]`           | Unselected checkbox                                                         |
+| `CHEVRON`            | unicode chevron | Navigation indicator                                                        |
+| `CHEVRON_SPACER`     | space           | Non-focused spacer                                                          |
+| `SELECTED`           | checkmark       | Selected item                                                               |
+| `UNSELECTED`         | circle          | Unselected item                                                             |
+| `CURRENT`            | filled circle   | Current focus                                                               |
+| `SKIPPED`            | dash            | Skipped step                                                                |
+| `DISABLED`           | dash            | Disabled item                                                               |
+| `DISCOURAGED`        | `!`             | Warning indicator                                                           |
+| `LOCK`               | lock emoji      | Locked/read-only items                                                      |
+| `EJECT`              | eject symbol    | Local/ejected skill indicator                                               |
+| `BULLET`             | bullet dot      | List item marker in confirm/summary                                         |
+| `SCROLL_UP`          | triangle up     | Scroll indicator                                                            |
+| `SCROLL_DOWN`        | triangle down   | Scroll indicator                                                            |
+| `CHECK`              | checkmark       | Success glyph (same glyph as `SELECTED`)                                    |
+| `CROSS`              | ✗               | Failure/cross glyph                                                         |
+| `ADDED`              | `+`             | Added-diff marker (info panel, confirm step, Sources tab)                   |
+| `REMOVED`            | `-`             | Removed/pending-removal diff marker (info panel, confirm step, Sources tab) |
 
 ## SelectList Component (`src/cli/components/common/select-list.tsx`)
 
@@ -254,6 +256,23 @@ Internal component within `category-grid.tsx` that renders a single skill option
 
 **Focus seeding (synchronous, store-driven):** `CategoryGrid` has no post-mount effect. `focusedSkillId` is seeded synchronously in the store by `seedFocusedSkillForActiveDomain()` — called by `setStep("build")`, `nextDomain`, `prevDomain`, and `setCurrentDomainIndex` — so the `s` scope hotkey resolves the visually-focused skill with no dependency on a render-phase effect. `CategoryGrid` additionally reports focus movement through `onFocusedSkillChange` (fired by its internal `handleFocusChange` on focus change).
 
+### SourceGrid Row States (in `src/cli/components/wizard/source-grid.tsx`)
+
+A `SourceRow` renders in one of four states, driven by its optional flags:
+
+| State           | Flag       | Marker before the name          | Name colour          | Interactive?                         |
+| --------------- | ---------- | ------------------------------- | -------------------- | ------------------------------------ |
+| Ordinary        | —          | none                            | `CLI_COLORS.NEUTRAL` | Yes                                  |
+| Locked global   | `readOnly` | `UI_SYMBOLS.LOCK`               | dimmed               | No (inert)                           |
+| Pending removal | `disabled` | `UI_SYMBOLS.REMOVED` (red `- `) | `CLI_COLORS.ERROR`   | No (inert)                           |
+| Added           | `added`    | `UI_SYMBOLS.ADDED` (green `+ `) | `CLI_COLORS.SUCCESS` | Yes — added rows stay fully editable |
+
+**Inertness is the interaction contract.** `isRowInert(row)` (`readOnly || disabled`) is consulted in three places, so an inert row can never be acted on: focus seeding and arrow navigation skip inert rows (`firstFocusableRowIndex` and the focus walk), the SPACE handler returns immediately on them, and the render drops the selection chevron and search pill. A pending-removal row therefore shows its **persisted** source purely as information — the skill that is going away cannot also have its source changed. `disabled` and `readOnly` are deliberately distinct flags: the lock means "installed globally, not yours to change here"; the removal marker means "saving will remove this".
+
+**The diff palette is shared with the confirm step by design.** `rowStatusGlyph` / `rowLabelColor` mirror `DIFF_PREFIX` / `DIFF_COLOR` in `skill-agent-summary.tsx` (both built on `UI_SYMBOLS.ADDED` / `UI_SYMBOLS.REMOVED` and `CLI_COLORS.SUCCESS` / `CLI_COLORS.ERROR`), so an added or pending-removal skill reads identically on the Sources tab and the confirm step. The marker (not the colour) carries the meaning in no-color terminals. On a **focused** row, `focusedRowLabelColor` keeps the diff colour for added/removed rows while ordinary focused rows stay `CLI_COLORS.WHITE` on the focus background — focus styling must never erase diff information.
+
+**Session-diff flags come from the store, not the component.** `buildSourceRows` (see `store-map.md`, "Sources-tab session diff") decides `disabled`/`added` against the hydration snapshot per `(id, scope)` slot, using the same `skillSlotKey` as the confirm step's `computeScopeDiff`. Because removal is per slot, one skill can occupy two rows: a collapsed dual-scope `[P][G]` pair renders a surviving global row plus a Project pending-removal row, both inert (keyed `${skillId}-${scope}`, so the two rows never collide).
+
 ### StepAgents Dual Scope Badges (in `src/cli/components/wizard/step-agents.tsx`)
 
 **Store access:** Reads `selectedAgents`, `agentConfigs`, and `installedAgentConfigs` from wizard store.
@@ -324,7 +343,7 @@ Two-column (skills | agents) summary component with scope labels (Project/Global
 - **Slot-occupancy removal match:** A baseline entry is removed ONLY if nothing (active OR tombstone) occupies that slot in current state — prevents a spurious `-` at Global on G→P toggle (D-230) and a spurious `+` at Global on re-edit of the stored tombstone (D-232).
 - **Tombstone dedup (`uniqueExcludedGlobalSkills`):** Dedups current tombstone rows against inherited-global entries by `id` only — the Global section never shows two rows for the same skill.
 - **Source change detection:** `computeScopeDiff()` builds `prevSourceMap` from active (non-excluded) baseline entries keyed by `"${id}:${scope}"` and passes it to `classifyDiffRow()` (a module-internal helper), which emits `"source-changed"` (with `prevSource`) when `!isNew && prevSource != null && prevSource !== skill.source`.
-- **Init mode gating:** When `isInitMode` is true, `removedGlobalSkills` / `removedGlobalAgents` are suppressed (empty arrays).
+- **Init mode gating:** When `isInitMode` is true, `removedGlobalSkills` / `removedGlobalAgents` are suppressed (empty arrays). Since D-277 this suppression is **vestigial in practice**: a project-scope deselect of a globally-installed item is refused by the store guards (init included), and a real `cc init` can never carry a global baseline anyway (`Init.run` routes to the dashboard → `edit` when one is found). It is kept as a cheap invariant so an init-mode diff can never render a removed-global row. `computeScopeDiff` is now the only remaining consumer of `isInitMode` besides this component.
 
 **Scope-badge helpers (also in `scope-diff.ts`):** `formatScopeTag(scope)` returns `[G]`/`[P]`; `deriveScopeBadges(active, excluded)` derives the primary + secondary badges from an active entry and its tombstone (used by `StepAgents`).
 

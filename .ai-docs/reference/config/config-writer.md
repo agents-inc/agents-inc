@@ -29,13 +29,13 @@ related:
   - reference/config/scope-split.md
   - reference/concepts/scope-system.md
   - reference/concepts/tombstone-pattern.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
 
 # Config Writer (Detailed)
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 > **Extracted from:** `reference/features/configuration.md` (Config Writer and Config Types Writer sections).
 
@@ -198,10 +198,11 @@ The `projectInstallationExists` parameter is computed the same way as `isProject
 - **Skip if stale.** `fileExists(projectConfigPath)` guard — if `<projectPath>/.claude-src/config.ts` is missing, the project is pushed to `skipped` and verbose-logged (not deregistered; stale entries accumulate until `registerProjectPath` filters them on the next global write).
 - **Skip if load fails.** `loadProjectConfigFromDir(projectPath)` returning null (pushed, `continue`) or throwing (caught, pushed, verbose-logged) skips the project.
 - **Reconcile the project split against the new global data.** `projectSplit` is the loaded project config with four fields reconciled — it is NOT a simple project-owned filter:
-  - `skills`: `retainReconciledSkills` — keeps project-scoped entries and drops any global tombstone whose masked global is no longer active (`globalHasActiveSkill`).
-  - `agents`: `retainReconciledAgents` — same rule for agents (`globalHasActiveAgent`).
+  - `skills`: `retainProjectOwnedSkills` — keeps project-scoped entries and drops any global tombstone whose masked global is no longer active (`globalHasActiveSkill`).
+  - `agents`: `retainProjectOwnedAgents` — same rule for agents (`globalHasActiveAgent`).
   - `stack`: `retainReconciledStack` — prunes assignments referencing a global skill just removed at global scope (`computeRemovedGlobalSkillIds` from `projectConfig.skills` vs the new `globalConfig`); untouched projects get byte-identical output.
   - `selectedAgents`: `retainReconciledSelectedAgents` — drops names not backed by a project-owned active agent or a still-active global agent.
+- **Self-heal, then re-mask.** `reconcileProjectSplitAgainstGlobal(projectSplit, globalConfig, matrix)` drops masks whose collision has cleared (`dropOrphanedDerivedMasks` for skills, `dropOrphanedDerivedAgentMasks` for agents — D-277) and then re-derives masks for live global entries the project still collides with (`maskCollidingGlobalSkills` / `maskCollidingGlobalAgents`). Self-heal runs first on both axes so a cleared collision is removed rather than immediately re-derived.
 - **Overwrite config.ts.** `writeConfigFile(projectSplit, projectConfigPath, { isProjectConfig: true, globalConfig })` — re-inlines the new global data.
 - **Overwrite config-types.ts.** `regenerateConfigTypes(projectPath, Promise.resolve(buildConfigTypesBackgroundData(matrix, agents)), buildProjectTypesExtras(projectSplit, matrix))` — emits the import-from-global form with project-only extras.
 

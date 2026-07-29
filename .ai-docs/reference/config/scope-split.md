@@ -22,13 +22,13 @@ related:
   - reference/config/configuration.md
   - reference/concepts/scope-system.md
   - reference/concepts/tombstone-pattern.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
 
 # Config Scope Split Contract
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 > How a merged `ProjectConfig` is partitioned into global and project halves for writing, and the delta sets the stack builder consumes for per-agent curation preservation. Feeds `mergeGlobalConfigs` and the project config writer (see [config-writer.md](./config-writer.md), [config-merger.md](./config-merger.md)).
 
@@ -93,6 +93,7 @@ The `...config` spread copies every remaining scalar/array to BOTH splits — in
 Excluded global entries (both skills and agents) route to the **project** split, not the global split. This is intentional and load-bearing:
 
 - A tombstone (`scope: "global", excluded: true`) is a **project-level directive to suppress a shared global install for this project**. It is project-local state — other projects must not see it.
+- **Provenance (D-277):** only two things create one. The `s` scope toggle (G→P), which pairs it with an active project entry (`[P][G]`); and a system-derived conflict mask synthesized at write time by `maskCollidingGlobalSkills` / `maskCollidingGlobalAgents`. Deselection is NOT a source — a project-scope deselect of a globally-installed item is refused by the wizard guards, so no route mints a tombstone by removal. See [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md).
 - If tombstones routed to the global split, `mergeGlobalConfigs` would either ignore them (its `!excluded` guard — see [config-merger.md](./config-merger.md) `mergeGlobalConfigs` row) or worse, propagate a suppression that only this project intended.
 - Routing them to the project split means the tombstone is inlined into `<projectDir>/.claude-src/config.ts` via `generateProjectConfigWithInlinedGlobal`, where it participates in the suppression rule documented in [config-writer.md](./config-writer.md) ("Excluded global entries replace their active global counterparts in the global section while the active project entry appears separately in the project section").
 

@@ -19,13 +19,13 @@ related:
   - reference/wizard/state-transitions.md
   - reference/component-patterns.md
   - reference/commands/index.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
 
 # Wizard Flow
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 ## Overview
 
@@ -123,7 +123,7 @@ export type WizardProps = {
 
 **Why:** rendering the wizard first and then pushing state via props caused a one-frame flash of the default "stack" step before the jump to `initialStep` committed. Hydrating synchronously before render ensures React captures the correct initial snapshot.
 
-**Removed in 0.122.0:** `lockedSkillIds` and `lockedAgentNames` props are gone. Global-item locking is now handled inside the store via `isActiveGlobal` guards on `toggleAgent`/`toggleTechnology` (checks `installedSkillConfigs`/`installedAgentConfigs` + `isInitMode`).
+**Removed in 0.122.0:** `lockedSkillIds` and `lockedAgentNames` props are gone. Global-item locking is now handled inside the store via `isActiveGlobal` guards on `toggleAgent`/`toggleTechnology` (checks `installedSkillConfigs`/`installedAgentConfigs`, gated on `!isEditingFromGlobalScope` alone since D-277).
 
 **Note:** The wizard does NOT receive a `matrix` prop. It accesses the matrix singleton via `matrix-provider.ts` imports.
 
@@ -234,7 +234,7 @@ When `edit` command enters the wizard (see `runEditWizard` in `edit.tsx`):
 2. `installedSkillIds` and `installedSkillConfigs` are passed to `populateFromSkillIds(skillIds, savedConfigs)` inside hydrate to hydrate skill selections.
 3. `initialDomains` and `initialAgents` (from saved config) override defaults.
 4. `installedAgentConfigs` becomes `agentConfigs` (scope preserved) and is snapshotted into `installedAgentConfigs` for diff rendering.
-5. Global-item locking handled inside store: `toggleAgent`/`toggleTechnology` check `installedSkillConfigs`/`installedAgentConfigs` + `isInitMode` and show toast if blocked.
+5. Global-item locking handled inside store: `toggleAgent`/`toggleTechnology` check `installedSkillConfigs`/`installedAgentConfigs` and show toast if blocked — in every flow, init included (D-277).
 6. `isEditingFromGlobalScope` disables scope toggle (S key) when editing from the global install root.
 7. User modifies selections; `goBack` navigates through `history` (empty at start in edit mode, so ESC on build exits via `onCancel`).
 8. On confirm: `detectConfigChanges()` in `edit.tsx` produces `ConfigChanges` (`addedSkills`/`removedSkills`, `addedAgents`/`removedAgents`, `sourceChanges`, `scopeChanges`, `agentScopeChanges`, plus `dualScopeSkillTransitions`/`dualScopeAgentTransitions` sets that steer only the completion summary) and applies migrations, plugin install/uninstall, local-skill copy, config write, and agent recompile in order.
@@ -266,7 +266,7 @@ Hotkeys are centralized in `src/cli/components/wizard/hotkeys.ts`.
 Build step (in `hotkeys.ts`):
 
 - `D`: Toggle labels display (`HOTKEY_TOGGLE_LABELS`)
-- `F`: Toggle incompatible skill filtering (`HOTKEY_FILTER_INCOMPATIBLE`). Turning the filter on removes incompatible web skills; if any of those removals would uninstall a globally-installed skill during a project-scope edit, `toggleFilterIncompatible` in `wizard-store.ts` refuses the entire toggle (filter included) with the `GLOBAL_SKILLS_LOCKED` toast — the same lock `toggleTechnology` applies to spacebar (D-242, added 0.143.0; bypassed when `isEditingFromGlobalScope` or `isInitMode` is true).
+- `F`: Toggle incompatible skill filtering (`HOTKEY_FILTER_INCOMPATIBLE`). Turning the filter on removes incompatible web skills; if any of those removals would uninstall a globally-installed skill during a project-scope edit, `toggleFilterIncompatible` in `wizard-store.ts` refuses the entire toggle (filter included) with the `GLOBAL_SKILLS_LOCKED` toast — the same lock `toggleTechnology` applies to spacebar (D-242, added 0.143.0; bypassed only when `isEditingFromGlobalScope` is true — D-277 removed the init-mode bypass).
 
 Sources step (customize view, handled in `step-sources.tsx`):
 
@@ -381,11 +381,11 @@ export type StepSettingsProps = {
 
 > **Detailed documentation:** See [concepts/guard-pattern.md](../concepts/guard-pattern.md) for the unified guard reference, [concepts/scope-system.md](../concepts/scope-system.md) for scope system, and [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md) for tombstone lifecycle.
 
-Toggling a globally-installed agent from project scope is blocked in the `toggleAgent` store action in `wizard-store.ts` by an `isActiveGlobal` check — true when `installedAgentConfigs` holds an active global entry for the agent, or holds a global tombstone paired with a live active global entry in `agentConfigs` (the stale state a persisted `[P][G]` reaches after an in-session collapse). When triggered, the toast `TOAST_MESSAGES.GLOBAL_AGENTS_LOCKED` ("Global agents cannot be changed from project scope") is shown. The guard is bypassed when `isEditingFromGlobalScope` is true or when `isInitMode` is true.
+Toggling a globally-installed agent from project scope is blocked in the `toggleAgent` store action in `wizard-store.ts` by an `isActiveGlobal` check — true when `installedAgentConfigs` holds an active global entry for the agent, or holds a global tombstone paired with a live active global entry in `agentConfigs` (the stale state a persisted `[P][G]` reaches after an in-session collapse). When triggered, the toast `TOAST_MESSAGES.GLOBAL_AGENTS_LOCKED` ("Global agents cannot be changed from project scope") is shown. The guard is bypassed only when `isEditingFromGlobalScope` is true — D-277 removed the init-mode bypass, so a globally-installed agent is immutable from project scope in every flow.
 
 The same `isActiveGlobal` pattern guards `toggleTechnology` in `wizard-store.ts` (toast `GLOBAL_SKILLS_LOCKED`): globally-installed skills cannot be toggled from project scope. In exclusive (radio) categories, it also blocks selecting a new skill when the current selection is globally installed.
 
-**Key state field:** `isInitMode` (boolean, default `false`) distinguishes init wizard (first-time setup, no restrictions) from edit wizard (existing installation, global items locked).
+**Key state field:** `isInitMode` (boolean, default `false`) distinguishes init wizard from edit wizard. Since D-277 it gates **no** scope guard — global items are locked in both flows; its remaining readers are `computeScopeDiff` (suppresses removed-global diff rows) and `SkillAgentSummary`.
 
 ## Scope Toggle Eject Guard (D-199)
 

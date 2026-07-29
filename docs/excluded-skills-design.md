@@ -1,4 +1,10 @@
-> **HISTORICAL DESIGN NOTE** — This was a pre-implementation plan. The feature has shipped. Current authoritative documentation: `.ai-docs/reference/concepts/tombstone-pattern.md`.
+> **HISTORICAL DESIGN NOTE** — This was a pre-implementation plan. The feature has shipped, and its central premise has since been **superseded (D-277, 2026-07-30)**.
+>
+> This document assumes a user can opt out of a globally installed skill or agent by **deselecting** it in a project wizard, producing an excluded tombstone. That is no longer how it works: a globally installed item is **immutable from project scope** — the deselect is refused with a toast, and no removal path mints a tombstone. To keep a global skill out of a project, leave it out of the project's agent `stack`; to own a project copy, use the `s` scope toggle; to uninstall it, edit at global scope (`cd ~`).
+>
+> Excluded tombstones still exist, but only from two sources: the `s` scope toggle (G→P), which pairs the tombstone with an active project entry (`[P][G]`), and system-derived conflict masks written by the installer. Read the sections below as design history, not as behaviour.
+>
+> Current authoritative documentation: `.ai-docs/reference/concepts/tombstone-pattern.md`, `.ai-docs/reference/concepts/guard-pattern.md`, and `docs/guides/editing-config.md`.
 
 # Excluded Skills & Agents Design Document
 

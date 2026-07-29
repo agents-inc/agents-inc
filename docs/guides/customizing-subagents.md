@@ -33,4 +33,6 @@ Each subagent has five partials that can be customized:
 
 Skill-to-subagent mappings and load behavior (preloaded vs dynamic) are configured in `.claude-src/config.ts`. Use `agentsinc edit` to modify selections interactively, or edit the config file directly.
 
+**Keeping a globally installed skill out of a project is a stack decision, not a selection one.** A global install cannot be deselected from inside a project — the wizard locks those rows. Instead, leave the skill out of the relevant agent's `stack` entry: the skill stays installed and available, but no subagent in this project receives it. See [Editing Your Config](./editing-config.md) for the stack shape.
+
 After making changes, run `agentsinc compile` to rebuild your subagents.

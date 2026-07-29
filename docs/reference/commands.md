@@ -41,6 +41,8 @@ Greenfield setup. Detects if already installed (shows dashboard), otherwise open
 
 **When to use:** First run on a machine, or first run inside a project that needs a project-scoped config.
 
+**Global entries are read-only from a project.** If a global installation already exists, `init` inside a project routes to the dashboard (and from there to `edit`), where globally installed skills and agents are locked — see `edit` below.
+
 ---
 
 ### `edit`
@@ -52,6 +54,12 @@ Re-enters the wizard with the current selections pre-loaded. Diff is shown at th
 **Flags:** `--refresh`, `--source`.
 
 **When to use:** Change skills, agents, scope, or mode after `init`.
+
+**Global entries are read-only from a project.** Editing inside a project cannot remove a globally installed skill or agent — space is inert on those rows and the wizard shows `Global skills cannot be changed from project scope` (or `Global agents ...`). The global install is shared, so one project may not uninstall it for the others. Your options:
+
+- **Don't hand the skill to this project's agents** — curate `stack` in `.claude-src/config.ts`. See [Editing Your Config](../guides/editing-config.md).
+- **Take project ownership** — press `s` on the row to add a project-scoped copy alongside the global install (the row shows `[P][G]`).
+- **Really uninstall it** — run `agentsinc edit` from your home directory (`cd ~`), where the global config is the one being edited.
 
 ---
 

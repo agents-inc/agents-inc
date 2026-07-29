@@ -22,13 +22,13 @@ related:
   - reference/config/scope-split.md
   - reference/concepts/tombstone-pattern.md
   - reference/concepts/scope-system.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
 
 # Config Merger Contract
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 > Merge semantics for `ProjectConfig` — the invariants that `writeScopedConfigs`, `cc edit`, and cross-project propagation rely on. Two distinct merge functions live in two modules and obey two different policies. Mixing them up is the recurring source of data-loss bugs in the config pipeline (see D-220, D-221, D-222, and the agent findings under `.ai-docs/agent-findings/`).
 
@@ -64,6 +64,8 @@ For every existing entry, consult `newConfig` (`flatMap` over existing, then app
 3. **Name/id absent from new, but the existing config carried a global tombstone for that name/id this session** (dual-scope) → drop the lingering active entry AND the stale tombstone together (D-233 Scenario B full-deselect).
 4. **Name/id absent from new, and within the current edit's authority** (see `authoritativeScope` below) → drop the existing entry (it was deselected). Skills in `unresolvableSkillIds` are exempt.
 5. **Name/id absent from new otherwise** → preserve the existing entry verbatim.
+
+> **What an "absent" global entry means since D-277.** Rules 3 and 4 read absence as deselection. A project-scope edit can no longer produce that absence for a globally-installed item: the wizard guards refuse the deselect, and `applySkillRemoval` leaves an inherited global-active entry byte-identical rather than dropping it or tombstoning it. So under `authoritativeScope: "owned"` a global entry absent from `newConfig` reflects a global-scope change or a legacy config, never a project-scope deselection. Tombstones in `newConfig` come from the `s` scope toggle or a system-derived conflict mask only. See [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md).
 
 After reconciliation, new entries whose compound key was absent from existing are appended, and a final `uniqueBy(list, compoundKey)` collapses any pre-existing on-disk duplicate corruption rather than carrying it forward.
 

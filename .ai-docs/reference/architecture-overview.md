@@ -23,13 +23,13 @@ related:
   - reference/concepts/scope-system.md
   - reference/commands/index.md
   - reference/component-patterns.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
 
 # Architecture Overview
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 ## Project Identity
 
@@ -317,7 +317,7 @@ Skills and agents can exist at two scopes:
 
 **Skill/agent scope:** Each `SkillConfig` and `AgentScopeConfig` carries a `scope: "project" | "global"` field (in `src/cli/types/config.ts`). During installation, skills are split by scope before path-dependent operations (copy, delete, install).
 
-**Wizard enforcement:** When editing from project scope (`isEditingFromGlobalScope === false`), the wizard blocks changes to globally-installed skills/agents with a toast message. The `isInitMode` flag bypasses this guard during fresh initialization.
+**Wizard enforcement:** When editing from project scope (`isEditingFromGlobalScope === false`), the wizard blocks changes to globally-installed skills/agents with a toast message. This holds in **every** flow — D-277 removed the former `isInitMode` bypass, so `isEditingFromGlobalScope` is the only exemption. A domain deselect is a view filter rather than a refusal: it drops only project-owned entries and leaves inherited global entries byte-identical.
 
 ### 12. Excluded Tombstone Pattern
 

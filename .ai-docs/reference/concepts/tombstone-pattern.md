@@ -20,6 +20,7 @@ keywords:
     D-232,
     D-233,
     D-260,
+    D-277,
   ]
 related:
   - reference/concepts/scope-system.md
@@ -30,13 +31,13 @@ related:
   - reference/config/config-merger.md
   - reference/config/config-writer.md
   - reference/architecture/overview.md
-last_validated: 2026-07-24
+last_validated: 2026-07-30
 ---
 
 # Excluded Tombstone Pattern
 
-**Last Updated:** 2026-07-24
-**Last Validated:** 2026-07-24
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 > **Cross-cutting concept.** Consolidates tombstone documentation from: `architecture-overview.md` (Section 12), `state-transitions.md` (`applySkillRemoval`, `applyAgentToggle`), `wizard-flow.md` (Scope Toggle Eject Guard), `configuration.md` (excluded entries in config writer), `config-merger.md` (compound-key reconciliation), `scope-split.md` (tombstone routing), and `scope-diff.ts` / `skill-agent-summary.tsx` (slot-occupancy diff baseline).
 
@@ -44,13 +45,15 @@ last_validated: 2026-07-24
 
 A **tombstone** is a config entry with shape `{ id, scope: "global", excluded: true }` (or `{ name, scope: "global", excluded: true }` for agents). It is **project-local state** that suppresses or shadows a shared global install without mutating the global config that other projects read.
 
+A tombstone's provenance is not recorded on disk — both remaining routes emit the same byte-identical shape: the global half of a dual-scope `[P][G]` pair (wizard store, via the `s` scope toggle), or a **derived conflict mask** synthesized at write time when a live global entry collides with the project's own state (see "Creation outside the wizard" below). **Deselection is no longer a route (D-277):** a project-scope deselect of a globally-installed skill or agent is refused with a toast, so the wizard can no longer mint a tombstone by removal. Because the only user-authored route always pairs the tombstone with an active project entry for the same id, a **bare** tombstone (no active project sibling) is necessarily machine-derived — which is what lets the derived-mask self-heal key on one test: "does the collision that produced it still hold?"
+
 A tombstone is always:
 
 - At **`scope: "global"`** — project-scoped entries never need tombstones (they are just removed).
 - Stored in the **project** config (`<projectDir>/.claude-src/config.ts`), never in `~/.claude-src/config.ts`. See [scope-split.md](../config/scope-split.md).
 - A **slot occupant**: it holds the `(id, "global")` or `(name, "global")` slot in the config so the renderer and merger can distinguish "still installed globally, suppressed locally" from "removed entirely".
 
-**Tombstones are only created when editing FROM project scope** (`isEditingFromGlobalScope === false`). Because a tombstone is project-local state that shadows a global install for _this_ project, it is meaningless when the config being edited IS the global config. When editing FROM global scope (`cc edit` at `~/`, `isEditingFromGlobalScope === true`), there is no project overlay, so a deselect is a **genuine removal** — the skill/agent is dropped entirely, never tombstoned. This keeps the invariant "tombstones never appear in `~/.claude-src/config.ts`" true even during a global-context edit (D-233). Skills and agents behave symmetrically here: `applySkillRemoval` receives `null` for its installed-configs argument when editing from global scope (via `reconcileSkillConfigs` / `toggleDomain` / `toggleFilterIncompatible`), exactly as `toggleAgent` nulls `effectiveInstalledConfigs`.
+**Tombstones are only created when editing FROM project scope** (`isEditingFromGlobalScope === false`). Because a tombstone is project-local state that shadows a global install for _this_ project, it is meaningless when the config being edited IS the global config. When editing FROM global scope (`cc edit` at `~/`, `isEditingFromGlobalScope === true`), there is no project overlay, so a deselect is a **genuine removal** — the skill/agent is dropped entirely, never tombstoned. This keeps the invariant "tombstones never appear in `~/.claude-src/config.ts`" true even during a global-context edit (D-233). `applySkillRemoval` receives `null` for its installed-configs argument when editing from global scope (via `reconcileSkillConfigs` / `toggleDomain` / `toggleFilterIncompatible`), which makes every removed id droppable; at project scope the same argument identifies what the project merely inherits and may not touch.
 
 ## Type Definitions
 
@@ -69,7 +72,7 @@ It means: **the global install of X is still on disk** (tombstone says so), **an
 
 The dual-scope pair is the only legitimate case where the same `id` appears twice in `skillConfigs`. Everywhere else the invariant is **"no active + tombstone at the same (id, scope)"** — enforced by `toggleSkillScope` P→G cleanup (see below).
 
-> **Known limitation (D-227, open):** preselection can transiently break the same-scope half of this invariant. When the ONLY saved entry for a name/id is a global-scope excluded tombstone and it is then re-included by preselection, `buildSkillConfigForId` / `buildAgentConfigForName` emit a fresh `{ scope: "global" }` **active** entry while `collectTombstones` also preserves the `{ scope: "global", excluded: true }` tombstone — a same-scope active + tombstone pair. `mergeConfigs`'s compound key keys them distinctly, so both survive to `config.ts`. Not yet collapsed downstream. See `.ai-docs/agent-findings/2026-07-17-d227-same-scope-active-tombstone-duplicate.md`.
+> **Known limitation (D-227, resolved by side effect in D-277):** preselection can still transiently break the same-scope half of this invariant. When the ONLY saved entry for a name/id is a global-scope excluded tombstone and it is then re-included by preselection, `buildSkillConfigForId` / `buildAgentConfigForName` emit a fresh `{ scope: "global" }` **active** entry while the tombstone is also preserved — a same-scope active + tombstone pair. `mergeConfigs`'s compound key keys them distinctly, so both reach the writer. The pair now **collapses on the next reconciled project write**: the same-scope active entry is not an active _project_ entry, so it is no collision, and `dropOrphanedDerivedMasks` / `dropOrphanedDerivedAgentMasks` drop the tombstone. See `.ai-docs/agent-findings/2026-07-17-d227-same-scope-active-tombstone-duplicate.md`.
 
 ## Lifecycle
 
@@ -79,13 +82,31 @@ All creation rows below assume the wizard is editing **FROM project scope**. Edi
 
 | Trigger                                       | Function (`src/cli/stores/wizard-store.ts`) | Effect                                                                                                                                                    |
 | --------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Deselect a globally-installed skill           | `applySkillRemoval`                         | Filter keeps the entry iff `scope === "global" && installedIds.has(id)`; map stamps `excluded: true`.                                                     |
-| Toggle off a globally-installed agent         | `applyAgentToggle`                          | Map stamps `excluded: true` on the matching global entry; does NOT remove from `selectedAgents`.                                                          |
 | Scope toggle G→P on a globally-installed item | `toggleSkillScope` / `toggleAgentScope`     | Flips the existing entry's `scope` to `"project"`, then appends a new `{ scope: "global", excluded: true }` tombstone **only if `wasInstalledGlobally`**. |
 
 **Guard on G→P creation:** The tombstone is gated on `wasInstalledGlobally` (computed from `installedSkillConfigs` / `installedAgentConfigs`). Fresh `cc init` G→P toggles must not create tombstones — there is no global install to shadow.
 
-**Deselect creates only for globals, and only from project-scope edits.** `applySkillRemoval` does NOT tombstone project-scoped items — it removes them. `installedIds?.has(sc.id)` is the gate. When editing FROM global scope, `installedIds` is `null` (the caller passes `null` for the installed configs), so no branch tombstones — the skill is removed outright (D-233). The same holds for `applyAgentToggle`, which receives `null` for `effectiveInstalledConfigs` in a global-scope edit.
+**Deselection creates nothing (D-277).** The two former creation rows — "Deselect a globally-installed skill" (`applySkillRemoval`) and "Toggle off a globally-installed agent" (`applyAgentToggle`) — no longer exist. A project-scope deselect of a globally-installed item is **refused** by the guards in `toggleTechnology` / `toggleAgent` / `toggleFilterIncompatible`, and the removal helpers themselves no longer stamp `excluded`:
+
+- `applySkillRemoval` drops what the project **owns** (project-scoped entries, and the project's own global tombstone) and leaves an inherited global-active entry **byte-identical**. It never mints a tombstone.
+- `applyAgentToggle`'s deselect branch is now a plain removal — every deselect that reaches it is one the project owns.
+
+So the `s` scope toggle is the only wizard route to a tombstone, and it always pairs it with an active project entry. To keep a global skill out of a project, curate the agents' stacks instead of deselecting it — see [`docs/guides/editing-config.md`](../../../docs/guides/editing-config.md).
+
+### 1b. Creation outside the wizard — derived conflict masks
+
+The wizard-store rows above are no longer the only creation site. `reconcileProjectSplitAgainstGlobal` (`src/cli/lib/installation/local-installer.ts`) runs immediately before **both** project-config write sites — `propagateGlobalChangesToProjects` and the project-scope save branch of `writeScopedConfigs` — and synthesizes a tombstone (a **derived conflict mask**) when a live global entry collides with the project's own state:
+
+| Collision                                                                                                                  | Helper                                                    | Effect                                                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The project owns the **same id** active at project scope (skills and agents)                                               | `maskCollidingGlobalSkills` / `maskCollidingGlobalAgents` | Appends `{ ...globalEntry, excluded: true }` so the pair renders `[P][G]`.                                                                                 |
+| The project owns a **different** active skill in the same **exclusive** category (skills only — agents have no categories) | `maskCollidingGlobalSkills`                               | Masks the global entry; the project-owned skill wins locally. This mask has NO active project sibling — it is the one legitimately "bare" tombstone shape. |
+
+Masking is idempotent (an already-tombstoned id is skipped), reads `exclusive` from the **merged matrix** (strict `=== true`; undeclared flags never mask), never throws on custom/local skills without a matrix entry, and never writes into the global config.
+
+**Self-heal (generalised in D-277):** `dropOrphanedDerivedMasks` (skills) and `dropOrphanedDerivedAgentMasks` (agents) run **before** masking and drop a mask whose collision has cleared. Both key on the _same_ collision test the mask producer uses — `buildProjectCollisionTest` for skills (identity, or an active project skill in the same exclusive category), active-project-name identity for agents — so producer and self-heal can never disagree about what a mask means. The old `exclusive && required` narrowing is gone: with deselection no longer able to author a bare tombstone (see Creation above), there is no "deliberate exclusion" left to resurrect, so a mask is retained on exactly one test — the collision that would re-derive it. This supersedes the trade-off recorded in the finding `2026-07-29-derived-mask-and-user-tombstone-are-indistinguishable.md`.
+
+The project-owned-wins rule is deliberately asymmetric with the D-260 guard (where a user-initiated radio swap refuses to displace a globally-locked skill): a mask is applied when a global install lands on pre-existing project state, where letting the global win would silently uninstall the user's own skill.
 
 ### 2. Preservation (D-223)
 
@@ -169,6 +190,7 @@ When a tombstone coexists with an active entry of a different scope, dual-scope 
 - **Build step** (`CategoryGrid` / `CategoryOption`): `CategoryOption.secondaryScope` renders a second `G` / `P` badge next to the primary scope badge.
 - **Agents step** (`StepAgents`): derives the secondary badge via `deriveScopeBadges(agentConfig, excludedConfig)` + `formatScopeTag()` from `src/cli/lib/wizard/scope-diff.ts` — a tombstone at the other scope renders as the secondary badge.
 - **Confirm step** (`SkillAgentSummary`): renders tombstone as `•` in the Global section alongside the project `+` — the D-223/D-230 dual-scope diff shape.
+- **Sources step** (`SourceGrid`, rows from `buildSourceRows`): a **collapsed** `[P][G]` pair renders **two rows** for the same skill — the surviving global row (locked when the snapshot holds an active global entry) plus a red pending-removal row under Project for the slot the collapse emptied. Both rows are inert. This holds for both collapse shapes: a persisted project-entry-plus-global-tombstone pair, and an active entry at both scopes. It mirrors the confirm step's `-` at Project / `•` at Global, because both surfaces key removal on the `(id, scope)` slot. A snapshot **tombstone** whose slot is empty never produces a Sources removal row (dropping a mask deletes nothing) — deliberately narrower than `computeScopeDiff`.
 
 ## `toggleSkillScope` / `toggleAgentScope` — `s` Is the Sole Dual-Scope Toggle
 
@@ -186,22 +208,26 @@ When a tombstone coexists with an active entry of a different scope, dual-scope 
 
 ## `toggleFilterIncompatible` Interaction
 
-`toggleFilterIncompatible` (removes incompatible web skills when enabling the framework-first filter) operates via `applySkillRemoval`. When editing FROM project scope it preserves globally-installed skills as tombstones, so a filter toggle cannot inadvertently drop a shadowed global install. When editing FROM global scope it passes `null` for the installed configs, so incompatible global skills are removed outright (no tombstone), consistent with all other removal paths (D-233).
+`toggleFilterIncompatible` (removes incompatible web skills when enabling the framework-first filter) operates via `applySkillRemoval`. When editing FROM project scope, the whole toggle — filter included — is **refused** with the `GLOBAL_SKILLS_LOCKED` toast if any targeted removal would touch a locked global install; no subset is silently removed (D-242, D-277). When editing FROM global scope it passes `null` for the installed configs, so incompatible global skills are removed outright (no tombstone), consistent with all other removal paths (D-233).
 
 ## State Transition Summary
 
-The "Globally-installed item" column depends on the editing context. Editing FROM **project** scope shadows the shared global install with a tombstone; editing FROM **global** scope (`cc edit` at `~/`, `isEditingFromGlobalScope === true`) has no overlay, so the item is removed outright — never tombstoned (D-233). Skills and agents behave identically.
+The "Globally-installed item" column depends on the editing context. From **project** scope a globally-installed item is **immutable** (D-277): the removal is refused, and nothing in the config changes. Editing FROM **global** scope (`cc edit` at `~/`, `isEditingFromGlobalScope === true`) has no overlay, so the item is removed outright — never tombstoned (D-233). Skills and agents behave identically.
 
-| Operation            | Project-scoped item                                 | Globally-installed item (from project scope) | Globally-installed item (from global scope) | Not installed globally         |
-| -------------------- | --------------------------------------------------- | -------------------------------------------- | ------------------------------------------- | ------------------------------ |
-| Deselect skill       | Remove from configs                                 | Set `excluded: true` (tombstone)             | Remove from configs (clean uninstall)       | Remove from configs            |
-| Toggle agent off     | Remove normally                                     | Set `excluded: true` (tombstone)             | Remove from configs (clean uninstall)       | Remove from configs            |
-| Deselect domain      | Remove from configs                                 | Set `excluded: true` (tombstone)             | Remove from configs (clean uninstall)       | Remove from configs            |
-| Scope: G→P           | N/A                                                 | Flip to project + add tombstone              | N/A (scope toggle disabled at global scope) | Flip to project (no tombstone) |
-| Scope: P→G           | Flip to global + drop any tombstone (unconditional) | Flip to global + drop tombstone              | N/A (scope toggle disabled at global scope) | Flip to global                 |
-| Re-select tombstoned | N/A                                                 | Clear `excluded` flag                        | N/A (no tombstone was created)              | N/A                            |
+| Operation            | Project-scoped item                                 | Globally-installed item (from project scope)        | Globally-installed item (from global scope) | Not installed globally         |
+| -------------------- | --------------------------------------------------- | --------------------------------------------------- | ------------------------------------------- | ------------------------------ |
+| Deselect skill       | Remove from configs                                 | Unchanged — refused, `GLOBAL_SKILLS_LOCKED` toast   | Remove from configs (clean uninstall)       | Remove from configs            |
+| Toggle agent off     | Remove normally                                     | Unchanged — refused, `GLOBAL_AGENTS_LOCKED` toast   | Remove from configs (clean uninstall)       | Remove from configs            |
+| Deselect domain      | Remove from configs                                 | Unchanged — view filter only, entry survives intact | Remove from configs (clean uninstall)       | Remove from configs            |
+| Scope: G→P           | N/A                                                 | Flip to project + add tombstone                     | N/A (scope toggle disabled at global scope) | Flip to project (no tombstone) |
+| Scope: P→G           | Flip to global + drop any tombstone (unconditional) | Flip to global + drop tombstone                     | N/A (scope toggle disabled at global scope) | Flip to global                 |
+| Re-select tombstoned | N/A                                                 | Clear `excluded` flag (restores the `[P][G]` pair)  | N/A (no tombstone was created)              | N/A                            |
+
+> **Why "Deselect domain" differs from "Deselect skill".** A domain deselect is a **view filter**, not a refusal: it hides the domain and drops the project-scoped entries the project owns there, leaving every inherited global entry untouched. It has no toast because it is not refusing anything — it simply has no authority over the global install. This is a **store invariant**, not a user-visible flow: the DOMAINS step is init-only and unreachable from `cc edit` (which hydrates at `build` with empty history), and a project `cc init` that finds a global install routes to the dashboard → `edit`. So no keypress path exists where a domain deselect can see a globally-installed entry — the guarantee is pinned at unit level in `wizard-store.test.ts`. See `.ai-docs/agent-findings/2026-07-30-domain-deselect-has-no-reachable-ui-surface-in-edit.md`.
 
 > **Dual-scope `[P][G]` pairs:** the "Scope: G→P" / "Scope: P→G" rows apply uniformly — `s` round-trips a `[P][G]` pair both ways (D-260), whether it came from the snapshot or was built this session. SPACE (deselect) is **inert** on a live `[P][G]` row (emits the global-locked toast), so `s` is the only key that changes the project half. See "`toggleSkillScope` / `toggleAgentScope` — `s` Is the Sole Dual-Scope Toggle" above. Skills and agents behave identically.
+>
+> **What the P→G collapse renders:** dropping the project half empties the `(id, project)` slot, so the Sources tab and the confirm step both show the skill **twice** — surviving global row / `•` at Global, plus a pending-removal row / `-` at Project. The skill is not gone; only its project copy is.
 
 ## D-233 — Dual-Scope Spacebar + Scope-Aware Removal (Resolved)
 
@@ -209,7 +235,7 @@ Two related behaviors, now implemented in `applySkillRemoval` / `reconcileSkillC
 
 1. **Dual-scope removal branch.** `applySkillRemoval` recognises a `[P][G]` pair: with `configs = [{X, project}, {X, global, excluded: true}]` and `removed = {X}`, it drops **both** the active project entry and the stale tombstone, then re-surfaces a single inherited-global entry `{X, global}` so the row collapses to a read-only `[G]`. This fires on the paths that route through `applySkillRemoval` — domain-deselect (`toggleDomain`) and incompatible-filter (`toggleFilterIncompatible`). **Spacebar no longer triggers this branch** for a live `[P][G]` row: `toggleTechnology`'s dual-scope arm makes spacebar inert (D-260), and the sanctioned collapse is `s` (`toggleSkillScope` dropping the tombstone), not `applySkillRemoval`. The `reconcileSkillConfigs` restore branch still re-creates both the project entry and the tombstone when a globally-tombstoned skill is re-added, restoring `[P][G]`. This is the D-223 dual-scope pair's mirror on the removal path.
 
-2. **Scope-aware removal (no tombstone at global scope).** When editing FROM global scope, `reconcileSkillConfigs`, `toggleDomain`, and `toggleFilterIncompatible` pass `null` for the installed configs into `applySkillRemoval`, so a deselect (or domain-deselect, or incompatible-filter) removes the global skill outright instead of tombstoning it. This mirrors `toggleAgent`'s `effectiveInstalledConfigs = null` handling and preserves the invariant that tombstones never reach `~/.claude-src/config.ts`.
+2. **Scope-aware removal (no tombstone at global scope).** When editing FROM global scope, `reconcileSkillConfigs`, `toggleDomain`, and `toggleFilterIncompatible` pass `null` for the installed configs into `applySkillRemoval`, so a deselect (or domain-deselect, or incompatible-filter) removes the global skill outright. At project scope the same argument is the ownership test rather than a tombstone trigger (D-277): an entry present in the snapshot that the project does not own survives untouched. Either way, tombstones never reach `~/.claude-src/config.ts`.
 
 The merge layer needs no tombstone-specific handling for either behavior: a fully-absent skill is dropped by `mergeConfigs`'s presence/absence + authoritative-scope logic (`"all"` for a global-context edit, `"owned"` for a project-context edit). See `todo/D-233-dual-scope-spacebar-toggle.md`.
 
@@ -226,17 +252,17 @@ The merge layer needs no tombstone-specific handling for either behavior: a full
 
 The pre-2026-07 finding files below were removed in a findings cleanup and consolidated into `reference/findings-impact-report.md`; they are listed here for provenance only (the standalone paths no longer resolve). The 2026-07 findings are still standalone files.
 
-| Finding                                                                  | Contribution                                                                                                                                           | Status        |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- |
-| `2026-04-06-excluded-tombstones-block-scope-toggle.md`                   | Undo path in `toggleSkillScope`.                                                                                                                       | consolidated  |
-| `2026-04-06-agent-merge-key-mismatch-with-skills.md`                     | Compound-key alignment between skills and agents.                                                                                                      | consolidated  |
-| `2026-04-07-re-scoped-skill-duplicate-rows.md`                           | Dual-scope row-collision rules in the renderer.                                                                                                        | consolidated  |
-| `2026-04-17-d224-ptog-tombstone-not-cleared.md`                          | Empirically established "unconditional P→G cleanup" invariant.                                                                                         | consolidated  |
-| `2026-04-17-merger-authoritative-for-names-semantic.md`                  | `mergeConfigs` authoritative-on-name semantic.                                                                                                         | consolidated  |
-| `2026-04-21-d230-d232-diff-baseline-pre-filter-drift.md`                 | Slot-occupancy matching in `skill-agent-summary.tsx`.                                                                                                  | consolidated  |
-| `2026-07-17-d227-same-scope-active-tombstone-duplicate.md`               | Same-scope active + tombstone preselection duplicate (known limitation).                                                                               | open file     |
-| `2026-07-18-scope-guards-read-stale-hydration-snapshot.md`               | Live-config tombstone arm on blanket guards; `wasInstalledGlobally` counts tombstones. (Its session-rebuilt-pair tracking was later removed by D-260.) | resolved file |
-| `2026-07-18-dual-scope-s-toggle-persisted-pair-doc-vs-code.md`           | Documented the (now-removed) persisted-pair `s` no-op; **superseded by D-260**, which made `s` the sole dual-scope toggle and spacebar inert.          | superseded    |
-| `2026-07-18-d233-agent-collapse-fix-in-toggleagent-action-not-helper.md` | Agent dual-scope collapse/restore lives in the `toggleAgent` action, not `applyAgentToggle`.                                                           | drift file    |
+| Finding                                                                  | Contribution                                                                                                                                                                                                               | Status       |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `2026-04-06-excluded-tombstones-block-scope-toggle.md`                   | Undo path in `toggleSkillScope`.                                                                                                                                                                                           | consolidated |
+| `2026-04-06-agent-merge-key-mismatch-with-skills.md`                     | Compound-key alignment between skills and agents.                                                                                                                                                                          | consolidated |
+| `2026-04-07-re-scoped-skill-duplicate-rows.md`                           | Dual-scope row-collision rules in the renderer.                                                                                                                                                                            | consolidated |
+| `2026-04-17-d224-ptog-tombstone-not-cleared.md`                          | Empirically established "unconditional P→G cleanup" invariant.                                                                                                                                                             | consolidated |
+| `2026-04-17-merger-authoritative-for-names-semantic.md`                  | `mergeConfigs` authoritative-on-name semantic.                                                                                                                                                                             | consolidated |
+| `2026-04-21-d230-d232-diff-baseline-pre-filter-drift.md`                 | Slot-occupancy matching in `skill-agent-summary.tsx`.                                                                                                                                                                      | consolidated |
+| `2026-07-17-d227-same-scope-active-tombstone-duplicate.md`               | Same-scope active + tombstone preselection duplicate; **superseded by D-277** — the generalised self-heal collapses it on the next reconciled write.                                                                       | superseded   |
+| `2026-07-18-scope-guards-read-stale-hydration-snapshot.md`               | Live-config tombstone arm on blanket guards; `wasInstalledGlobally` counts tombstones. **Superseded by D-277** — the guards' init-mode bypass is gone, so the stale-snapshot deselect route it described no longer exists. | superseded   |
+| `2026-07-18-dual-scope-s-toggle-persisted-pair-doc-vs-code.md`           | Documented the (now-removed) persisted-pair `s` no-op; **superseded by D-260**, which made `s` the sole dual-scope toggle and spacebar inert.                                                                              | superseded   |
+| `2026-07-18-d233-agent-collapse-fix-in-toggleagent-action-not-helper.md` | Agent dual-scope collapse/restore lives in the `toggleAgent` action, not `applyAgentToggle`.                                                                                                                               | drift file   |
 
 > **See also:** [concepts/scope-system.md](./scope-system.md) for full scope system documentation; [config/scope-split.md](../config/scope-split.md) for tombstone routing; [config/config-merger.md](../config/config-merger.md) for compound-key reconciliation.
