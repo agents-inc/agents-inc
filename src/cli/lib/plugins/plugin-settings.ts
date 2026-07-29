@@ -1,12 +1,12 @@
 import path from "path";
-import os from "os";
 import { z } from "zod";
 import { fileExists, readFileSafe } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
 import { typedEntries } from "../../utils/typed-object";
-import { CLAUDE_DIR, PLUGINS_SUBDIR, MAX_CONFIG_FILE_SIZE, STANDARD_FILES } from "../../consts";
-import { getPluginManifestPath } from "./plugin-finder";
+import { CLAUDE_DIR, MAX_CONFIG_FILE_SIZE, STANDARD_FILES } from "../../consts";
+import { formatZodErrors } from "../schema-validator";
+import { getPluginManifestPath, getUserPluginsDir } from "./plugin-finder";
 
 /**
  * Plugin key format: "plugin-name@marketplace"
@@ -51,6 +51,38 @@ const installedPluginsSchema = z
 
 const SETTINGS_FILE = STANDARD_FILES.SETTINGS_JSON;
 const INSTALLED_PLUGINS_FILE = "installed_plugins.json";
+
+/** Absolute path of the claude CLI install registry inside a plugins directory. */
+export function getInstalledPluginsRegistryPath(pluginsDir: string): string {
+  return path.join(pluginsDir, INSTALLED_PLUGINS_FILE);
+}
+
+/**
+ * Lists every install recorded in a plugins directory's `installed_plugins.json`
+ * (v2 registry — claude CLI >=2.1.220 installs under `cache/<marketplace>/<plugin>/<version>/`),
+ * flattened to unique (pluginKey, installPath) pairs across all scopes.
+ *
+ * Throws when the registry is unreadable or fails schema validation — callers
+ * treat the registry as the source of truth for installed plugins, so a broken
+ * registry must surface as an error rather than an empty result.
+ */
+export async function listRegisteredPluginInstalls(pluginsDir: string): Promise<ResolvedPlugin[]> {
+  const registryPath = getInstalledPluginsRegistryPath(pluginsDir);
+  const content = await readFileSafe(registryPath, MAX_CONFIG_FILE_SIZE);
+  const raw: unknown = JSON.parse(content);
+  const result = installedPluginsSchema.safeParse(raw);
+
+  if (!result.success) {
+    throw new Error(
+      `Invalid ${INSTALLED_PLUGINS_FILE}: ${formatZodErrors(result.error).join("; ")}`,
+    );
+  }
+
+  return typedEntries(result.data.plugins).flatMap(([pluginKey, installations]) => {
+    const uniquePaths = [...new Set(installations.map((i) => i.installPath))];
+    return uniquePaths.map((installPath) => ({ pluginKey, installPath }));
+  });
+}
 
 /**
  * Read enabled plugin keys from project's .claude/settings.json
@@ -119,7 +151,7 @@ export async function resolvePluginInstallPaths(
     return [];
   }
 
-  const registryPath = path.join(os.homedir(), CLAUDE_DIR, PLUGINS_SUBDIR, INSTALLED_PLUGINS_FILE);
+  const registryPath = getInstalledPluginsRegistryPath(getUserPluginsDir());
 
   if (!(await fileExists(registryPath))) {
     verbose(`Plugin registry not found at '${registryPath}'`);

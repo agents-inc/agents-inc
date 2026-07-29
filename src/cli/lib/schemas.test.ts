@@ -16,6 +16,7 @@ import {
   projectSourceConfigSchema,
   skillMetadataLoaderSchema,
   skillCategoriesFileSchema,
+  splitMetadataValidationIssues,
   validateNestingDepth,
   warnUnknownFields,
 } from "./schemas";
@@ -414,6 +415,62 @@ describe("custom: true in schemas", () => {
   it("should accept valid category definition via skillCategoriesFileSchema", () => {
     const result = skillCategoriesFileSchema.safeParse(VALID_SKILL_CATEGORIES_FILE);
     expect(result.success).toBe(true);
+  });
+});
+
+describe("splitMetadataValidationIssues", () => {
+  /** Parses raw metadata with the strict schema and asserts it failed. */
+  function failStrictParse(rawMetadata: unknown): z.ZodError {
+    const result = metadataValidationSchema.safeParse(rawMetadata);
+    expect(result.success, "fixture must fail strict validation").toBe(false);
+    if (result.success) throw new Error("unreachable");
+    return result.error;
+  }
+
+  it("should route over-length cliDescription to warnings with the actual length", () => {
+    const rawMetadata = { ...VALID_EMBEDDED_SKILL_METADATA_FILE, cliDescription: "x".repeat(75) };
+
+    const { errors, warnings } = splitMetadataValidationIssues(
+      failStrictParse(rawMetadata),
+      rawMetadata,
+    );
+
+    expect(errors).toStrictEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("cliDescription");
+    expect(warnings[0]).toContain("75 characters");
+    expect(warnings[0]).toContain("60");
+  });
+
+  it("should keep empty cliDescription as an error", () => {
+    const rawMetadata = { ...VALID_EMBEDDED_SKILL_METADATA_FILE, cliDescription: "" };
+
+    const { errors, warnings } = splitMetadataValidationIssues(
+      failStrictParse(rawMetadata),
+      rawMetadata,
+    );
+
+    expect(warnings).toStrictEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("cliDescription");
+  });
+
+  it("should split mixed issues: hard failures stay errors while over-length stays a warning", () => {
+    const rawMetadata = {
+      ...VALID_EMBEDDED_SKILL_METADATA_FILE,
+      author: "no-at-sign",
+      cliDescription: "x".repeat(90),
+    };
+
+    const { errors, warnings } = splitMetadataValidationIssues(
+      failStrictParse(rawMetadata),
+      rawMetadata,
+    );
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("author");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("90 characters");
   });
 });
 

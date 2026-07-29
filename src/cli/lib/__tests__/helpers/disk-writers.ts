@@ -8,6 +8,8 @@ import {
   STANDARD_FILES,
 } from "../../../consts";
 import { matrix } from "../../matrix/matrix-provider";
+import { getInstalledPluginsRegistryPath } from "../../plugins/plugin-settings";
+import { typedEntries } from "../../../utils/typed-object";
 import { computeSkillFolderHash } from "../../versioning";
 import { renderSkillMd, renderAgentYaml } from "../content-generators";
 import type { SkillId } from "../../../types";
@@ -172,6 +174,37 @@ export async function createImportSource(
       );
     }
   }
+}
+
+/**
+ * Writes a claude CLI v2 plugin registry (`installed_plugins.json`) under
+ * pluginsDir. Each entry maps a `<plugin>@<marketplace>` key to one user-scoped
+ * install record per given installPath — the shape `claude plugin install`
+ * (>=2.1.220) writes for its cache layout.
+ */
+export async function writeTestInstalledPluginsRegistry(
+  pluginsDir: string,
+  installPathsByKey: Record<string, string[]>,
+): Promise<string> {
+  const registry = {
+    version: 2,
+    plugins: Object.fromEntries(
+      typedEntries(installPathsByKey).map(([pluginKey, installPaths]) => [
+        pluginKey,
+        installPaths.map((installPath) => ({
+          scope: "user",
+          installPath,
+          version: "1.0.0",
+          installedAt: "2026-01-01T00:00:00.000Z",
+        })),
+      ]),
+    ),
+  };
+
+  const registryPath = getInstalledPluginsRegistryPath(pluginsDir);
+  await mkdir(pluginsDir, { recursive: true });
+  await writeFile(registryPath, JSON.stringify(registry, null, 2));
+  return registryPath;
 }
 
 /**

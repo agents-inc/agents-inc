@@ -7,17 +7,20 @@ import { EXIT_CODES } from "../lib/exit-codes.js";
 import { ERROR_MESSAGES } from "../utils/messages.js";
 import {
   validateAllPlugins,
+  validatePlugin,
   printPluginValidationResult,
   validateSkillFrontmatter,
   validateAgentFrontmatter,
   getUserPluginsDir,
   getProjectPluginsDir,
+  getInstalledPluginsRegistryPath,
+  listRegisteredPluginInstalls,
+  type ResolvedPlugin,
 } from "../lib/plugins/index.js";
 import { validateSource } from "../lib/source-validator.js";
 import { isLocalSource, resolveAllSources, type SourceEntry } from "../lib/configuration/index.js";
 import { resolveInstallPaths, isHomeDirectory } from "../lib/installation/index.js";
-import { formatZodErrors } from "../lib/schema-validator.js";
-import { validateSkillMetadata } from "../lib/schemas.js";
+import { splitMetadataValidationIssues, validateSkillMetadata } from "../lib/schemas.js";
 import { PLUGIN_MANIFEST_DIR, STANDARD_FILES } from "../consts.js";
 import type { ValidationResult } from "../types/index.js";
 import { directoryExists, fileExists, listDirectories, readFile } from "../utils/fs.js";
@@ -183,6 +186,11 @@ export default class Validate extends BaseCommand {
       return NO_ISSUES;
     }
 
+    if (await fileExists(getInstalledPluginsRegistryPath(pluginsDir))) {
+      const registryCounts = await this.validateRegistryPlugins(pluginsDir, displayPath);
+      if (registryCounts !== undefined) return registryCounts;
+    }
+
     const pluginDirs = await findPluginDirectories(pluginsDir);
     if (pluginDirs.length === 0) {
       this.log(`  ${displayPath.padEnd(COL_PATH_WIDTH)} ${VALIDATE_STATUS.NO_PLUGINS}`);
@@ -196,6 +204,45 @@ export default class Validate extends BaseCommand {
     );
 
     return printAndSumResults(result.results);
+  }
+
+  /**
+   * Validates the installs recorded in the plugins directory's
+   * `installed_plugins.json` (claude CLI >=2.1.220 cache layout). Returns
+   * undefined when the registry records no installs so the caller can fall
+   * back to the direct-children scan (older/manual layouts).
+   */
+  private async validateRegistryPlugins(
+    pluginsDir: string,
+    displayPath: string,
+  ): Promise<AggregateCounts | undefined> {
+    let installs: ResolvedPlugin[];
+    try {
+      installs = await listRegisteredPluginInstalls(pluginsDir);
+    } catch (error) {
+      this.log(`  ${displayPath.padEnd(COL_PATH_WIDTH)} failed: ${getErrorMessage(error)}`);
+      return { errors: 1, warnings: 0 };
+    }
+
+    if (installs.length === 0) return undefined;
+
+    // A recorded installPath that no longer exists surfaces as an invalid
+    // plugin via validatePlugin's structure check, not a crash.
+    const results = await Promise.all(
+      installs.map(async ({ pluginKey, installPath }) => ({
+        name: pluginKey,
+        result: await validatePlugin(installPath),
+      })),
+    );
+
+    const invalidCount = results.filter((r) => !r.result.valid).length;
+    const warnCount = results.filter((r) => r.result.warnings.length > 0).length;
+
+    this.log(
+      `  ${displayPath.padEnd(COL_PATH_WIDTH)} ${results.length} plugin(s), ${invalidCount} invalid, ${warnCount} with warnings`,
+    );
+
+    return printAndSumResults(results);
   }
 
   private async validateInstalledSkillsDirectory(skillsDir: string): Promise<AggregateCounts> {
@@ -314,10 +361,12 @@ async function validateInstalledSkillMetadata(metadataPath: string): Promise<Val
     return { valid: true, errors: [], warnings: [] };
   }
 
+  // Over-length cliDescription is advisory — only hard schema violations invalidate the skill
+  const { errors, warnings } = splitMetadataValidationIssues(result.error, rawMetadata);
   return {
-    valid: false,
-    errors: formatZodErrors(result.error).map((e) => `${STANDARD_FILES.METADATA_YAML}: ${e}`),
-    warnings: [],
+    valid: errors.length === 0,
+    errors: errors.map((e) => `${STANDARD_FILES.METADATA_YAML}: ${e}`),
+    warnings: warnings.map((w) => `${STANDARD_FILES.METADATA_YAML}: ${w}`),
   };
 }
 

@@ -5,10 +5,14 @@ import { mkdir, writeFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
-import { writeTestPluginManifest } from "../helpers/disk-writers.js";
+import {
+  writeTestInstalledPluginsRegistry,
+  writeTestPluginManifest,
+} from "../helpers/disk-writers.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { validateSource } from "../../source-validator";
+import { getInstalledPluginsRegistryPath } from "../../plugins/plugin-settings";
 import { validatePlugin } from "../../plugins/plugin-validator";
 import {
   PLUGIN_MANIFEST_DIR,
@@ -160,7 +164,8 @@ async function buildValidSource(sourceDir: string): Promise<void> {
   const configDir = path.join(sourceDir, "config");
   await mkdir(configDir, { recursive: true });
 
-  await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
+  // Directory name equals the skill id (marketplace convention) so the source is warning-free
+  await writeValidSourceSkill(skillsDir, "web-framework-react", REACT_SOURCE_SKILL);
 
   await writeTestMatrix(configDir, {
     "web-framework": { domain: "web", displayName: "Framework" },
@@ -415,6 +420,132 @@ describe("validate command", () => {
     });
   });
 
+  describe("installed plugins registry pass", () => {
+    const userPluginsDir = () => path.join(fakeHome, CLAUDE_DIR, PLUGINS_SUBDIR);
+
+    it("should validate installs recorded in installed_plugins.json under the cache layout", async () => {
+      await setupValidatedProject(tempDir, projectDir);
+
+      const reactInstallPath = path.join(
+        userPluginsDir(),
+        "cache",
+        "acme-marketplace",
+        "web-framework-react",
+        "1.0.0",
+      );
+      const honoInstallPath = path.join(
+        userPluginsDir(),
+        "cache",
+        "other-marketplace",
+        "api-framework-hono",
+        "2.0.0",
+      );
+      await writeTestPluginManifest(
+        reactInstallPath,
+        { name: "web-framework-react", version: "1.0.0" },
+        { pretty: false },
+      );
+      await writeTestPluginManifest(
+        honoInstallPath,
+        { name: "api-framework-hono", version: "2.0.0" },
+        { pretty: false },
+      );
+      await writeTestInstalledPluginsRegistry(userPluginsDir(), {
+        "web-framework-react@acme-marketplace": [reactInstallPath],
+        "api-framework-hono@other-marketplace": [honoInstallPath],
+      });
+
+      const { stdout, error } = await runCliCommand(["validate"]);
+
+      expect(error).toBeUndefined();
+      const pluginsBlock = stdout.slice(
+        stdout.indexOf("Validating plugins"),
+        stdout.indexOf("Validating skills"),
+      );
+      expect(pluginsBlock).toContain("2 plugin(s), 0 invalid");
+      expect(pluginsBlock).not.toContain("— no plugins");
+    });
+
+    it("should report a registry record whose installPath no longer exists as an invalid plugin", async () => {
+      await setupValidatedProject(tempDir, projectDir);
+
+      const goneInstallPath = path.join(
+        userPluginsDir(),
+        "cache",
+        "acme-marketplace",
+        "gone-plugin",
+        "1.0.0",
+      );
+      await writeTestInstalledPluginsRegistry(userPluginsDir(), {
+        "gone-plugin@acme-marketplace": [goneInstallPath],
+      });
+
+      const { stdout, error } = await runCliCommand(["validate"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toContain("1 plugin(s), 1 invalid");
+      expect(stdout).toContain("gone-plugin@acme-marketplace");
+      expect(stdout).toContain("Plugin directory does not exist");
+    });
+
+    it("should fall back to the direct-children scan when the registry file is absent", async () => {
+      await setupValidatedProject(tempDir, projectDir);
+
+      await writeTestPluginManifest(
+        path.join(userPluginsDir(), "manual-plugin"),
+        { name: "manual-plugin", version: "1.0.0" },
+        { pretty: false },
+      );
+
+      const { stdout, error } = await runCliCommand(["validate"]);
+
+      expect(error).toBeUndefined();
+      const pluginsBlock = stdout.slice(
+        stdout.indexOf("Validating plugins"),
+        stdout.indexOf("Validating skills"),
+      );
+      expect(pluginsBlock).toContain("1 plugin(s), 0 invalid");
+      expect(pluginsBlock).toContain("manual-plugin");
+    });
+
+    it("should scan direct children when the registry records no installs", async () => {
+      await setupValidatedProject(tempDir, projectDir);
+
+      await writeTestInstalledPluginsRegistry(userPluginsDir(), {});
+      await writeTestPluginManifest(
+        path.join(userPluginsDir(), "manual-plugin"),
+        { name: "manual-plugin", version: "1.0.0" },
+        { pretty: false },
+      );
+
+      const { stdout, error } = await runCliCommand(["validate"]);
+
+      expect(error).toBeUndefined();
+      const pluginsBlock = stdout.slice(
+        stdout.indexOf("Validating plugins"),
+        stdout.indexOf("Validating skills"),
+      );
+      expect(pluginsBlock).toContain("1 plugin(s), 0 invalid");
+      expect(pluginsBlock).not.toContain("— no plugins");
+    });
+
+    it("should count an unreadable registry as an error instead of scanning around it", async () => {
+      await setupValidatedProject(tempDir, projectDir);
+
+      await mkdir(userPluginsDir(), { recursive: true });
+      await writeFile(getInstalledPluginsRegistryPath(userPluginsDir()), "{ not valid json !!!");
+
+      const { stdout, error } = await runCliCommand(["validate"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      const pluginsBlock = stdout.slice(
+        stdout.indexOf("Validating plugins"),
+        stdout.indexOf("Validating skills"),
+      );
+      expect(pluginsBlock).toContain("failed:");
+    });
+  });
+
   describe("installed skills pass", () => {
     it("should render Validating skills header in the output", async () => {
       const sourceDir = await setupValidatedProject(tempDir, projectDir);
@@ -459,6 +590,37 @@ describe("validate command", () => {
       expect(stdout).toContain("Validating skills");
       expect(stdout).toMatch(/1 skill\(s\), 0 invalid/);
       expect(stdout).toContain("Result: 0 error(s)");
+    });
+
+    it("should report over-length cliDescription as a warning and exit 0", async () => {
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+
+      const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
+      await writeValidInstalledSkill(globalSkillsDir, "web-framework-react", {
+        cliDescription: "x".repeat(75),
+      });
+
+      const { stdout, error } = await runCliCommand(["validate"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toMatch(/1 skill\(s\), 0 invalid, 1 with warnings/);
+      expect(stdout).toContain("75 characters");
+      expect(stdout).toContain("Result: 0 error(s), 1 warning(s)");
+    });
+
+    it("should exit ERROR when an installed skill has an empty cliDescription", async () => {
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+
+      const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
+      await writeValidInstalledSkill(globalSkillsDir, "web-framework-react", {
+        cliDescription: "",
+      });
+
+      const { stdout, error } = await runCliCommand(["validate"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toMatch(/1 skill\(s\), 1 invalid/);
+      expect(stdout).toContain("cliDescription");
     });
 
     it("should exit ERROR when an installed skill is missing SKILL.md", async () => {
@@ -699,7 +861,7 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
+    await writeValidSourceSkill(skillsDir, "web-framework-react", REACT_SOURCE_SKILL);
 
     await writeTestMatrix(configDir, {
       "web-framework": { domain: "web", displayName: "Framework" },
@@ -808,18 +970,14 @@ describe("source validation (validateSource)", () => {
     expect(snakeCaseIssues).toHaveLength(3);
   });
 
-  it("should report warning when displayName does not match directory name", async () => {
+  it("should report warning when directory name does not match the skill id", async () => {
     const sourceDir = path.join(tempDir, "source");
     const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    // Directory name is "react" but displayName is "react-v2"
-    await writeValidSourceSkill(skillsDir, "web/framework/react", {
-      ...REACT_SOURCE_SKILL,
-      displayName: "react-v2",
-      cliDescription: "React JavaScript framework v2",
-    });
+    // Directory name is "react" but the skill id (SKILL.md frontmatter name) is "web-framework-react"
+    await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
 
     await writeTestMatrix(configDir, {
       "web-framework": { domain: "web", displayName: "Framework" },
@@ -828,10 +986,33 @@ describe("source validation (validateSource)", () => {
     const result = await validateSource(sourceDir);
 
     const mismatchIssues = result.issues.filter((i) =>
-      i.message.includes("does not match directory name"),
+      i.message.includes("does not match skill id"),
     );
     expect(mismatchIssues.length).toBe(1);
     expect(mismatchIssues[0].severity).toBe("warning");
+    expect(mismatchIssues[0].message).toContain("'web-framework-react'");
+  });
+
+  it("should not warn about a human displayName when the directory name equals the skill id", async () => {
+    const sourceDir = path.join(tempDir, "source");
+    const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
+    const configDir = path.join(sourceDir, "config");
+    await mkdir(configDir, { recursive: true });
+
+    await writeValidSourceSkill(skillsDir, "web-framework-react", {
+      ...REACT_SOURCE_SKILL,
+      displayName: "React",
+    });
+
+    await writeTestMatrix(configDir, {
+      "web-framework": { domain: "web", displayName: "Framework" },
+    });
+
+    const result = await validateSource(sourceDir);
+
+    const mismatchIssues = result.issues.filter((i) => i.message.includes("does not match"));
+    expect(mismatchIssues).toStrictEqual([]);
+    expect(result.errorCount).toBe(0);
   });
 
   it("should drop unresolved skill references during resolution (no dangling refs in matrix)", async () => {
@@ -909,9 +1090,9 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
+    await writeValidSourceSkill(skillsDir, "web-framework-react", REACT_SOURCE_SKILL);
 
-    await writeValidSourceSkill(skillsDir, "api/api/hono", {
+    await writeValidSourceSkill(skillsDir, "api-framework-hono", {
       id: "api-framework-hono",
       description: "Hono framework",
       category: "api-api",
@@ -940,7 +1121,7 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
+    await writeValidSourceSkill(skillsDir, "web-framework-react", REACT_SOURCE_SKILL);
 
     await writeTestMatrix(configDir, {
       "web-framework": { domain: "web", displayName: "Framework" },
@@ -963,7 +1144,7 @@ describe("source validation (validateSource)", () => {
     await mkdir(skillsDir, { recursive: true });
 
     // Create a valid skill but with a malformed categories config to trigger Phase 3 failure
-    await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
+    await writeValidSourceSkill(skillsDir, "web-framework-react", REACT_SOURCE_SKILL);
 
     // Write a malformed categories file so loadSkillsMatrixFromSource throws
     const configDir = path.join(sourceDir, "config");
@@ -987,7 +1168,7 @@ describe("source validation (validateSource)", () => {
     await mkdir(configDir, { recursive: true });
 
     // Create a skill with custom: true and a non-standard category
-    const skillDir = path.join(skillsDir, "custom", "tools", "my-linter");
+    const skillDir = path.join(skillsDir, "custom-tools-my-linter");
     await mkdir(skillDir, { recursive: true });
 
     await writeFile(

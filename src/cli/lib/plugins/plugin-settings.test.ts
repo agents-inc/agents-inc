@@ -3,6 +3,8 @@ import path from "path";
 import os from "os";
 import {
   getEnabledPluginKeys,
+  getInstalledPluginsRegistryPath,
+  listRegisteredPluginInstalls,
   resolvePluginInstallPaths,
   getVerifiedPluginInstallPaths,
 } from "./plugin-settings";
@@ -357,6 +359,151 @@ describe("plugin-settings", () => {
       );
 
       expect(result).toStrictEqual([]);
+    });
+  });
+
+  describe("listRegisteredPluginInstalls", () => {
+    it("should read the registry from <pluginsDir>/installed_plugins.json", async () => {
+      mockReadFileSafe.mockResolvedValue(JSON.stringify({ version: 2, plugins: {} }));
+
+      const result = await listRegisteredPluginInstalls("/plugins-dir");
+
+      expect(result).toStrictEqual([]);
+      expect(mockReadFileSafe).toHaveBeenCalledWith(
+        getInstalledPluginsRegistryPath("/plugins-dir"),
+        expect.any(Number),
+      );
+    });
+
+    it("should flatten install records across plugins into (pluginKey, installPath) pairs", async () => {
+      mockReadFileSafe.mockResolvedValue(
+        JSON.stringify({
+          version: 2,
+          plugins: {
+            "web-framework-react@my-marketplace": [
+              {
+                scope: "user",
+                installPath: "/cache/my-marketplace/web-framework-react/1.0.0",
+                version: "1.0.0",
+                installedAt: "2024-01-01",
+              },
+            ],
+            "web-state-zustand@my-marketplace": [
+              {
+                scope: "user",
+                installPath: "/cache/my-marketplace/web-state-zustand/1.0.0",
+                version: "1.0.0",
+                installedAt: "2024-01-01",
+              },
+            ],
+          },
+        }),
+      );
+
+      const result = await listRegisteredPluginInstalls("/plugins-dir");
+
+      expect(result).toStrictEqual([
+        {
+          pluginKey: "web-framework-react@my-marketplace",
+          installPath: "/cache/my-marketplace/web-framework-react/1.0.0",
+        },
+        {
+          pluginKey: "web-state-zustand@my-marketplace",
+          installPath: "/cache/my-marketplace/web-state-zustand/1.0.0",
+        },
+      ]);
+    });
+
+    it("should list every distinct installPath of a plugin with multiple installations", async () => {
+      mockReadFileSafe.mockResolvedValue(
+        JSON.stringify({
+          version: 2,
+          plugins: {
+            "web-framework-react@my-marketplace": [
+              {
+                scope: "user",
+                installPath: "/cache/my-marketplace/web-framework-react/1.0.0",
+                version: "1.0.0",
+                installedAt: "2024-01-01",
+              },
+              {
+                scope: "project",
+                projectPath: "/project",
+                installPath: "/cache/my-marketplace/web-framework-react/2.0.0",
+                version: "2.0.0",
+                installedAt: "2024-01-02",
+              },
+            ],
+          },
+        }),
+      );
+
+      const result = await listRegisteredPluginInstalls("/plugins-dir");
+
+      expect(result).toStrictEqual([
+        {
+          pluginKey: "web-framework-react@my-marketplace",
+          installPath: "/cache/my-marketplace/web-framework-react/1.0.0",
+        },
+        {
+          pluginKey: "web-framework-react@my-marketplace",
+          installPath: "/cache/my-marketplace/web-framework-react/2.0.0",
+        },
+      ]);
+    });
+
+    it("should deduplicate installations sharing the same installPath", async () => {
+      mockReadFileSafe.mockResolvedValue(
+        JSON.stringify({
+          version: 2,
+          plugins: {
+            "web-framework-react@my-marketplace": [
+              {
+                scope: "user",
+                installPath: "/cache/my-marketplace/web-framework-react/1.0.0",
+                version: "1.0.0",
+                installedAt: "2024-01-01",
+              },
+              {
+                scope: "project",
+                projectPath: "/project",
+                installPath: "/cache/my-marketplace/web-framework-react/1.0.0",
+                version: "1.0.0",
+                installedAt: "2024-01-02",
+              },
+            ],
+          },
+        }),
+      );
+
+      const result = await listRegisteredPluginInstalls("/plugins-dir");
+
+      expect(result).toStrictEqual([
+        {
+          pluginKey: "web-framework-react@my-marketplace",
+          installPath: "/cache/my-marketplace/web-framework-react/1.0.0",
+        },
+      ]);
+    });
+
+    it("should throw when the registry is not valid JSON", async () => {
+      mockReadFileSafe.mockResolvedValue("{ not valid json !!!");
+
+      await expect(listRegisteredPluginInstalls("/plugins-dir")).rejects.toThrow();
+    });
+
+    it("should throw when the registry fails schema validation", async () => {
+      mockReadFileSafe.mockResolvedValue(JSON.stringify({ plugins: "not-a-record" }));
+
+      await expect(listRegisteredPluginInstalls("/plugins-dir")).rejects.toThrow(
+        /Invalid installed_plugins\.json/,
+      );
+    });
+
+    it("should throw when reading the registry fails", async () => {
+      mockReadFileSafe.mockRejectedValue(new Error("Read error"));
+
+      await expect(listRegisteredPluginInstalls("/plugins-dir")).rejects.toThrow("Read error");
     });
   });
 

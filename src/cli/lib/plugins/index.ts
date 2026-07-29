@@ -53,6 +53,8 @@ export {
   type PluginKey,
   type ResolvedPlugin,
   getEnabledPluginKeys,
+  getInstalledPluginsRegistryPath,
+  listRegisteredPluginInstalls,
   resolvePluginInstallPaths,
   getVerifiedPluginInstallPaths,
 } from "./plugin-settings";

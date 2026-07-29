@@ -3,7 +3,7 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
 import {
-  checkDisplayNameMatches,
+  checkDirNameMatchesSkillId,
   checkSnakeCaseKeys,
   isSnakeCase,
   validateSkillFilePairs,
@@ -124,25 +124,25 @@ describe("source-validator", () => {
     });
   });
 
-  describe("checkDisplayNameMatches", () => {
-    const REL_PATH = "src/skills/web/framework/react/metadata.yaml";
+  describe("checkDirNameMatchesSkillId", () => {
+    const REL_PATH = "src/skills/web-framework-react/SKILL.md";
 
-    it("should warn when displayName does not match directory name", () => {
-      const metadata = { displayName: "React.js" };
-
-      const issues = checkDisplayNameMatches(metadata, REL_PATH, "react");
+    it("should warn when directory name does not match skill id", () => {
+      const issues = checkDirNameMatchesSkillId("web-framework-react", REL_PATH, "react");
 
       expect(issues).toHaveLength(1);
       expect(issues[0]?.severity).toBe("warning");
-      expect(issues[0]?.message).toContain("React.js");
-      expect(issues[0]?.message).toContain("react");
+      expect(issues[0]?.message).toContain("web-framework-react");
+      expect(issues[0]?.message).toContain("'react'");
       expect(issues[0]?.file).toBe(REL_PATH);
     });
 
-    it("should return no issues when displayName matches directory name", () => {
-      const metadata = { displayName: "react" };
-
-      const issues = checkDisplayNameMatches(metadata, REL_PATH, "react");
+    it("should return no issues when directory name matches skill id", () => {
+      const issues = checkDirNameMatchesSkillId(
+        "web-framework-react",
+        REL_PATH,
+        "web-framework-react",
+      );
 
       expect(issues).toStrictEqual([]);
     });
@@ -273,6 +273,96 @@ describe("source-validator", () => {
       const yamlErrors = result.issues.filter((i) => i.message.includes("Failed to parse YAML"));
       expect(yamlErrors).toHaveLength(1);
       expect(yamlErrors[0]?.severity).toBe("error");
+    });
+
+    describe("cliDescription severity routing", () => {
+      it("should report over-length cliDescription as a warning carrying the actual length", async () => {
+        const skillDir = path.join(skillsDir, "web-framework-react");
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.SKILL_MD),
+          renderSkillMd("web-framework-react", "React"),
+        );
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+          stringifyYaml({ ...VALID_EMBEDDED_SKILL_METADATA_FILE, cliDescription: "x".repeat(75) }),
+        );
+
+        const result = await validateSource(sourceDir);
+
+        const cliDescriptionIssues = result.issues.filter((i) =>
+          i.message.includes("cliDescription"),
+        );
+        expect(cliDescriptionIssues).toHaveLength(1);
+        expect(cliDescriptionIssues[0]?.severity).toBe("warning");
+        expect(cliDescriptionIssues[0]?.message).toContain("75 characters");
+        expect(result.errorCount).toBe(0);
+      });
+
+      it("should report empty cliDescription as an error", async () => {
+        const skillDir = path.join(skillsDir, "web-framework-react");
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.SKILL_MD),
+          renderSkillMd("web-framework-react", "React"),
+        );
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+          stringifyYaml({ ...VALID_EMBEDDED_SKILL_METADATA_FILE, cliDescription: "" }),
+        );
+
+        const result = await validateSource(sourceDir);
+
+        const cliDescriptionIssues = result.issues.filter((i) =>
+          i.message.includes("cliDescription"),
+        );
+        expect(cliDescriptionIssues).toHaveLength(1);
+        expect(cliDescriptionIssues[0]?.severity).toBe("error");
+      });
+    });
+
+    describe("directory name vs skill id", () => {
+      it("should pass when directory name equals the skill id and displayName is a human name", async () => {
+        const skillDir = path.join(skillsDir, "web-framework-react");
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.SKILL_MD),
+          renderSkillMd("web-framework-react", "React"),
+        );
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+          stringifyYaml({ ...VALID_EMBEDDED_SKILL_METADATA_FILE, displayName: "React" }),
+        );
+
+        const result = await validateSource(sourceDir);
+
+        const dirNameIssues = result.issues.filter((i) => i.message.includes("does not match"));
+        expect(dirNameIssues).toStrictEqual([]);
+        expect(result.errorCount).toBe(0);
+      });
+
+      it("should warn when directory name does not equal the skill id", async () => {
+        const skillDir = path.join(skillsDir, "react");
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.SKILL_MD),
+          renderSkillMd("web-framework-react", "React"),
+        );
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+          stringifyYaml(VALID_EMBEDDED_SKILL_METADATA_FILE),
+        );
+
+        const result = await validateSource(sourceDir);
+
+        const dirNameIssues = result.issues.filter((i) =>
+          i.message.includes("does not match skill id"),
+        );
+        expect(dirNameIssues).toHaveLength(1);
+        expect(dirNameIssues[0]?.severity).toBe("warning");
+        expect(dirNameIssues[0]?.message).toContain("'react'");
+        expect(dirNameIssues[0]?.message).toContain("'web-framework-react'");
+      });
     });
 
     it("should not crash when source has skills dir but no agent directories", async () => {

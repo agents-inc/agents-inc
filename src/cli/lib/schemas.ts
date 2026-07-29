@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { partition } from "remeda";
 import type { LocalSkillMetadata } from "./skills/skill-metadata";
 import type { LocalRawMetadata } from "./skills/local-skill-loader";
 import { AUTHOR_HANDLE_PATTERN, KEBAB_CASE_PATTERN, LOCAL_PSEUDO_CATEGORY } from "../consts";
@@ -620,6 +621,14 @@ const forkedFromSchema = z.object({
 });
 
 /**
+ * Recommended upper bound for cliDescription in published skills. Exceeding it is
+ * advisory only — splitMetadataValidationIssues downgrades it to a warning because
+ * the runtime schemas accept any length and the value only feeds wizard description
+ * text. Empty (min(1)) remains a hard error.
+ */
+const CLI_DESCRIPTION_MAX_LENGTH = 60;
+
+/**
  * Fields shared by metadataValidationSchema (strict, built-in vocabulary) and
  * customMetadataValidationSchema (relaxed). Only `category` and `slug` differ
  * between the two variants — each adds those via .extend().
@@ -629,8 +638,8 @@ const skillMetadataBaseSchema = z.object({
   author: z.string().regex(AUTHOR_HANDLE_PATTERN),
   /** Short display name for the wizard grid (max 30 chars) */
   displayName: z.string().min(1).max(30),
-  /** One-line description for the wizard (max 60 chars) */
-  cliDescription: z.string().min(1).max(60),
+  /** One-line description for the wizard (max 60 chars recommended; over-length is a validation warning) */
+  cliDescription: z.string().min(1).max(CLI_DESCRIPTION_MAX_LENGTH),
   /** When an AI agent should invoke this skill (min 10 chars to ensure usefulness) */
   usageGuidance: z.string().min(10),
   /** 7-char hex SHA of skill content (for change detection) */
@@ -748,6 +757,56 @@ export function validateSkillMetadata(rawMetadata: unknown) {
     ? customMetadataValidationSchema
     : metadataValidationSchema;
   return schema.safeParse(rawMetadata);
+}
+
+export type MetadataIssueSplit = {
+  /** Hard schema violations — the metadata is broken and must be fixed */
+  errors: string[];
+  /** Advisory violations (over-length cliDescription) — worth fixing, never fatal */
+  warnings: string[];
+};
+
+/** True for the over-length `cliDescription` issue — the only advisory metadata violation. */
+function isOverLengthCliDescription(issue: z.ZodIssue): boolean {
+  return issue.code === "too_big" && issue.path.length === 1 && issue.path[0] === "cliDescription";
+}
+
+/** Reads `cliDescription` from raw parsed metadata when it is a string. */
+function readCliDescription(raw: unknown): string | undefined {
+  if (raw == null || typeof raw !== "object") return undefined;
+  // Boundary cast: raw comes straight from YAML parsing; the typeof check above narrows to object
+  const value = (raw as { cliDescription?: unknown }).cliDescription;
+  return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * Warning text for an over-length `cliDescription`, carrying the actual length.
+ * The too_big issue only fires when the value is a string, so the undefined
+ * branch is defensive — it falls back to the raw zod issue text.
+ */
+function formatOverLengthWarning(issue: z.ZodIssue, cliDescription: string | undefined): string {
+  if (cliDescription === undefined) return formatZodIssue(issue);
+  return `cliDescription is ${cliDescription.length} characters — exceeds the recommended maximum of ${CLI_DESCRIPTION_MAX_LENGTH}`;
+}
+
+/**
+ * Splits strict-metadata validation issues into hard errors and advisory warnings.
+ *
+ * Over-length `cliDescription` (> CLI_DESCRIPTION_MAX_LENGTH chars) is advisory: the
+ * runtime schemas accept any length and the value only feeds wizard description text,
+ * so validate reports it as a warning carrying the actual length. Empty/missing
+ * `cliDescription` and every other issue remain errors.
+ */
+export function splitMetadataValidationIssues(
+  error: z.ZodError,
+  rawMetadata: unknown,
+): MetadataIssueSplit {
+  const [overLength, hardFailures] = partition(error.issues, isOverLengthCliDescription);
+
+  const cliDescription = readCliDescription(rawMetadata);
+  const warnings = overLength.map((issue) => formatOverLengthWarning(issue, cliDescription));
+
+  return { errors: hardFailures.map(formatZodIssue), warnings };
 }
 
 /**

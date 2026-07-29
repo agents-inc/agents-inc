@@ -14,12 +14,14 @@ import {
 import {
   agentYamlGenerationSchema,
   metadataValidationSchema,
+  splitMetadataValidationIssues,
   validateSkillMetadata,
   skillCategoriesFileSchema,
   skillRulesFileSchema,
   stackConfigValidationSchema,
   stacksConfigSchema,
 } from "./schemas";
+import { parseFrontmatter } from "./loading/loader";
 import { loadConfig, loadProjectSourceConfig } from "./configuration";
 import { checkMatrixHealth } from "./matrix";
 import { loadSkillsMatrixFromSource } from "./loading/source-loader";
@@ -62,21 +64,63 @@ export function checkSnakeCaseKeys(rawMetadata: unknown, relPath: string): Sourc
 }
 
 /**
- * Warns when a skill's `displayName` does not match its directory name.
+ * Warns when a skill directory's name does not equal the skill's machine id
+ * (SKILL.md frontmatter `name`) — the key the loader registers the skill under.
+ * Warning, not error: the loader still loads the skill by its id, but the
+ * directory no longer signals which skill it contains.
  */
-export function checkDisplayNameMatches(
-  validatedMetadata: { displayName: string },
+export function checkDirNameMatchesSkillId(
+  skillId: string,
   relPath: string,
   dirName: string,
 ): SourceValidationIssue[] {
-  if (validatedMetadata.displayName === dirName) return [];
+  if (skillId === dirName) return [];
   return [
     {
       severity: "warning",
       file: relPath,
-      message: `displayName '${validatedMetadata.displayName}' does not match directory name '${dirName}'`,
+      message: `Directory name '${dirName}' does not match skill id '${skillId}'`,
     },
   ];
+}
+
+/**
+ * Reads a skill directory's SKILL.md frontmatter and checks the directory name
+ * against the skill's machine id. When the id cannot be read (unreadable file or
+ * missing/invalid frontmatter), reports that the check could not run.
+ */
+async function checkSkillDirName(
+  skillsDir: string,
+  skillsDirRelPath: string,
+  skillDir: string,
+): Promise<SourceValidationIssue[]> {
+  const dirName = path.basename(skillDir);
+  const skillMdRelPath = path.join(skillsDirRelPath, skillDir, STANDARD_FILES.SKILL_MD);
+
+  try {
+    const content = await readFile(path.join(skillsDir, skillDir, STANDARD_FILES.SKILL_MD));
+    const frontmatter = parseFrontmatter(content, skillMdRelPath);
+
+    if (frontmatter === null) {
+      return [
+        {
+          severity: "warning",
+          file: skillMdRelPath,
+          message: `Cannot verify directory name '${dirName}': missing or invalid ${STANDARD_FILES.SKILL_MD} frontmatter`,
+        },
+      ];
+    }
+
+    return checkDirNameMatchesSkillId(frontmatter.name, skillMdRelPath, dirName);
+  } catch (error) {
+    return [
+      {
+        severity: "warning",
+        file: skillMdRelPath,
+        message: `Cannot verify directory name '${dirName}': ${getErrorMessage(error)}`,
+      },
+    ];
+  }
 }
 
 /**
@@ -115,7 +159,8 @@ export function validateSkillFilePairs(
  *
  * Checks:
  * 1. Every metadata.yaml against the strict validation schema
- * 2. displayName format and directory name consistency
+ *    (over-length cliDescription is downgraded to a warning)
+ * 2. Directory name equals the skill's machine id (SKILL.md frontmatter name)
  * 3. Cross-references resolve to existing skill IDs (via checkMatrixHealth)
  * 4. camelCase key convention (no snake_case)
  * 5. Every skill directory has both SKILL.md and metadata.yaml
@@ -178,26 +223,19 @@ export async function validateSource(sourcePath: string): Promise<SourceValidati
       continue;
     }
 
+    issues.push(...checkSnakeCaseKeys(rawMetadata, relPath));
+
     const result = validateSkillMetadata(rawMetadata);
     if (!result.success) {
-      // Check for snake_case keys even on schema failure (useful diagnostics)
-      issues.push(...checkSnakeCaseKeys(rawMetadata, relPath));
-
+      const { errors, warnings } = splitMetadataValidationIssues(result.error, rawMetadata);
       issues.push(
-        ...formatZodErrors(result.error).map((message) => ({
-          severity: "error" as const,
-          file: relPath,
-          message,
-        })),
+        ...errors.map((message) => ({ severity: "error" as const, file: relPath, message })),
+        ...warnings.map((message) => ({ severity: "warning" as const, file: relPath, message })),
       );
-      continue;
     }
 
-    const metadata = result.data;
-    const dirName = path.basename(skillDir);
-
-    issues.push(...checkSnakeCaseKeys(rawMetadata, relPath));
-    issues.push(...checkDisplayNameMatches(metadata, relPath, dirName));
+    // Independent of metadata validity — the id lives in SKILL.md frontmatter
+    issues.push(...(await checkSkillDirName(skillsDir, skillsDirRelPath, skillDir)));
   }
 
   // Phase 3: Cross-reference validation via matrix health check
