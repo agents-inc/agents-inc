@@ -1,4 +1,5 @@
 import { recompileAgents } from "../../agents/index.js";
+import { pruneStaleCompiledAgents } from "../../agents/list-compiled-agents.js";
 import { loadProjectConfigFromDir } from "../../configuration/index.js";
 import { buildAgentScopeMap } from "../../installation/index.js";
 import type { AgentName, SkillDefinitionMap, SkillScope } from "../../../types/index.js";
@@ -61,9 +62,33 @@ export async function compileAgents(options: CompileAgentsOptions): Promise<Comp
     agentScopeMap: resolvedAgentScopeMap,
   });
 
+  await pruneStaleAgentsForPass(options, recompileResult);
+
   return {
     compiled: recompileResult.compiled,
     failed: recompileResult.failed,
     warnings: recompileResult.warnings,
   };
+}
+
+/**
+ * Compiled-agent writes are additive, so a deselected or stale agent's `.md`
+ * lingers after recompile. An authoritative, scope-UNfiltered pass owns its
+ * entire `outputDir` (its resolved roster is the full set for that directory),
+ * so it prunes built-in agents no longer compiled there. A scope-FILTERED pass
+ * (the hasBoth two-pass compile, or the D-240 registered-project recompile)
+ * sees only one scope's agents and must never delete another scope's files, so
+ * it skips pruning. Hand-authored agents are preserved by the prune predicate.
+ */
+async function pruneStaleAgentsForPass(
+  options: CompileAgentsOptions,
+  recompileResult: CompilationResult,
+): Promise<void> {
+  if (options.scopeFilter || !options.outputDir) return;
+
+  const compiledForDir = new Set<AgentName>([
+    ...recompileResult.compiled,
+    ...recompileResult.failed,
+  ]);
+  await pruneStaleCompiledAgents(options.outputDir, compiledForDir);
 }

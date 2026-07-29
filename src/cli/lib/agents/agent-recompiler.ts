@@ -61,7 +61,10 @@ async function resolveAgentNames(params: ResolveAgentNamesParams): Promise<Agent
     return specifiedAgents;
   }
 
-  if (projectConfig?.agents?.length) {
+  // A present config is authoritative over its agent roster — even when empty.
+  // `agents: []` means "no agents", so it must NOT fall through to the
+  // all-agents branch below; that branch exists only for the config-LESS case.
+  if (projectConfig) {
     const agentNames = projectConfig.agents.map((a) => a.name);
     verbose(`Using agents from config: ${agentNames.join(", ")}`);
     return agentNames;
