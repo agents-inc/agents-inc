@@ -7,6 +7,17 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.146.0] - 2026-07-30
+
+**Cross-scope rules: global items become immutable from project scope, colliding installs are masked, and the Sources tab agrees with the confirm step**
+
+- **Breaking:** a globally installed skill or agent can no longer be deselected from a project in any flow, including during `init` — four paths escaped that rule, one of which tombstoned a whole domain's global skills. Deselecting a domain is now a view filter that leaves global entries untouched. To keep a global skill out of a project, leave it out of that project's agent stacks (D-277)
+- Fixed a global install sitting **active beside** a project-owned skill in the same exclusive category — the wizard showed both selected and the next save compiled an agent told to load two frameworks, while `doctor` and `validate` both reported it clean. Colliding global entries are now masked, and a mask is dropped once its collision clears. Only one of the two project-config write paths reconciled at all; both do now (D-279)
+- Fixed three Sources-tab defects introduced in 0.145.0, all from the tab computing its session diff per skill id while the confirm step computes it per scope: a deselected global skill vanished entirely at global scope, adopting a global skill at project scope showed no `+`, and a focused row lost its diff colour. A collapsed dual-scope pair now shows both its surviving row and a red removal row for the scope it left. Both surfaces share one key, so they cannot drift again (D-278)
+- `prepublishOnly` now runs `typecheck` — its absence is how a broken typecheck reached 0.144.1
+
+See [changelogs/0.146.0.md](./changelogs/0.146.0.md) for full details.
+
 ## [0.145.0] - 2026-07-29
 
 **Wizard interaction contract, cross-scope propagation, uninstall, and the non-interactive command surface**
