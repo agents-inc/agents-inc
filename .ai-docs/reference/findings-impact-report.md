@@ -8,13 +8,13 @@ related:
   - reference/concepts/tombstone-pattern.md
   - reference/config/config-writer.md
   - reference/testing/e2e-infrastructure.md
-last_validated: 2026-07-23
+last_validated: 2026-07-24
 ---
 
 # Agent Findings Impact Report
 
-**Generated:** 2026-03-28 (original); prior full regeneration 2026-04-21 (Ralph iter 92); **this full regeneration 2026-07-23** (rebuilt from the 95 finding files currently on disk).
-**Total Findings Catalogued:** 95 (excluding `README.md` and `TEMPLATE.md`; no `audits/` subdirectory exists — every finding lives at the directory root).
+**Generated:** 2026-03-28 (original); prior full regeneration 2026-04-21 (Ralph iter 92); **last full regeneration 2026-07-23** (rebuilt from the 95 finding files then on disk); **2026-07-24 incremental append** — 4 D-226/D-219 E2E-harness findings added under "Incremental Updates" (primary tables intentionally unchanged per the append flow).
+**Total Findings Catalogued:** 99 on disk (excluding `README.md` and `TEMPLATE.md`; no `audits/` subdirectory exists — every finding lives at the directory root). The primary rollup tables below reflect the 95-finding 2026-07-23 regeneration snapshot; the 4 findings filed 2026-07-24 live in "Incremental Updates" until the next full regeneration.
 **Date Range:** 2026-04-17 to 2026-07-23 (latest finding filed 2026-07-20; window closed at the 2026-07-23 regeneration). The 2026-03-21..2026-04-16 findings referenced by earlier regenerations have since been moved, superseded, or archived off-disk; the rollups below reflect only the 95 files present now.
 
 > **Regeneration Policy:** Per `documentation-bible.md` ("Findings Impact Report Regeneration"), the report is fully regenerated when "Incremental Updates" exceeds ~10 entries, when the oldest un-aggregated finding is >30 days old, or when a major release bundle ships. This 2026-07-23 regeneration rebuilds every primary table from scratch against on-disk frontmatter, consolidates systemic patterns (re-lettered A..M), preserves the 2026-03-28 "Original Snapshot" verbatim for history, and resets "Incremental Updates" to empty.
@@ -625,4 +625,24 @@ Root cause: the findings directory grew past ~50 entries before anyone audited i
 
 _Reset 2026-07-23 (full regeneration — 95 findings rebuilt into the primary tables above). Next regeneration trigger: >10 entries accumulated here, OR the oldest un-aggregated finding exceeds 30 days, OR a major release bundle ships._
 
-_(none yet)_
+### 2026-07-24 — D-226 sandbox-HOME default + D-219 launcher sugar (4 findings)
+
+A single E2E-harness bundle. The sandbox stopped collapsing `HOME` onto `cwd`/`projectDir` (both `TerminalSession` and `runCLI` now default HOME to a sibling `ai-e2e-home-*` temp dir), and scope-explicit wizard launchers (`launchInProject`/`launchInGlobal`) plus a `globalHome` echo/reuse channel were added so tests target the scope they actually edit. All four findings are `domain: e2e`, `category: testing`, filed by `cli-tester`.
+
+**Findings → impacts:**
+
+| Finding                                                 | Sev / root_cause / status                      | Docs touched                                                                      | Impact                                                                                                                                                                |
+| ------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `d226-stepA-breaks-43-miscategorized-tests`             | high / scope-discipline-deferred / **partial** | `testing/e2e-infrastructure.md`; `standards/e2e/anti-patterns.md`; `todo/D-226-…` | Corrected the plan's "~0-5 breakers" estimate to ~43 tests / 21 files; `runCLI` sibling-HOME default landed; the 43-test port deferred to the D-219 launcher sugar.   |
+| `d226-phase1-launcher-sugar-and-multiphase-home`        | medium / scope-discipline-deferred / resolved  | `testing/e2e-infrastructure.md`                                                   | Added `launchInProject`/`launchInGlobal` + asserting `globalHome` getter, `ProjectHandle.globalHome` stamp, and `CLI.run` HOME precedence (`env > globalHome > dir`). |
+| `d226-phase2-wave1-source-switch-lock-and-global-stack` | medium / rule-not-specific-enough / resolved   | `standards/e2e/anti-patterns.md`; `testing/e2e-infrastructure.md`                 | Added the `globalHome?` reuse param; codified "a source-toggle edit needs `launchInGlobal`" and "a global agent's stack lives in the global config".                  |
+| `d226-phase2-wave2-uninstall-cwd-only-launcher`         | medium / rule-not-specific-enough / resolved   | `standards/e2e/anti-patterns.md`                                                  | Codified "a cwd-resolving follow-up (`cc uninstall`, `claude plugin install`) needs `launchInGlobal`, not `launchInProject` + redirect".                              |
+
+**Actions taken (this doc round):**
+
+- Updated `reference/testing/e2e-infrastructure.md`: `InitWizard`/`EditWizard` inventories now list `launchInProject`, `launchInGlobal`, the `globalHome` getter, and the `globalHome?` reuse option; `runCLI` and `CLI.run` HOME behaviour corrected; new "Scope & HOME model" section cross-links the anti-patterns launcher-selection rules.
+- The four launcher-selection rules landed as the "Choosing the Wizard Launcher by Scope" section of `standards/e2e/anti-patterns.md` (convention-keeper's domain), so `phase1`/`phase2-wave1`/`phase2-wave2` were flipped `partial → resolved`.
+
+**New systemic pattern (incremental, not yet promoted to the A..M table):**
+
+- **Pattern N — E2E launcher must match the scope the test edits.** When the sandbox HOME no longer collapses onto the project, a default (all-global) install lands under `wizard.globalHome`, not `projectDir`. Assertions, source toggles, and cwd-resolving follow-ups (`cc uninstall`, `claude plugin install`) that assume the old collapse silently diverge — locked read-only rows, scope-split config files, and no-op follow-ups rather than loud ENOENTs. Remedy: choose `launchInProject` (assert-only) vs `launchInGlobal` (mutates global content or runs a cwd-resolving follow-up) by what the test does. Reinforces Pattern A (scope authority decided in disagreeing places) and Pattern K (dual-scope collapse documented at the wrong layer).
