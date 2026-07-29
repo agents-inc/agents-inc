@@ -10,7 +10,9 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: convention-undocumented
-status: open
+status: superseded
+superseded_by: 2026-07-30-d277-global-immutability-collapses-tombstone-provenance.md
+resolved_by: "Resolved by side effect of D-277 section B: the generalised self-heal (dropOrphanedDerivedMasks / dropOrphanedDerivedAgentMasks in local-installer.ts) drops a global tombstone whose collision has cleared, and a same-scope ACTIVE global entry is not a project-scope collision — so the active+tombstone duplicate this finding describes collapses on the next reconciled project write instead of persisting across cycles."
 ---
 
 ## What Was Wrong

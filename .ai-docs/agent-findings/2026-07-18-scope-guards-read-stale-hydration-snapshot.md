@@ -10,8 +10,9 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
-status: resolved
-resolved_by: "toggleTechnology/toggleAgent blanket guards now also check live skillConfigs/agentConfigs (tombstone-arm gated on isSelected); toggleSkillScope wasInstalledGlobally counts tombstones; persisted-pair guards consult a session-scoped `_sessionRebuiltScopePair{Skills,Agents}` set so a collapsed-then-rebuilt pair is treated as session-authored, not pristine-from-disk."
+status: superseded
+superseded_by: 2026-07-30-d277-global-immutability-collapses-tombstone-provenance.md
+resolved_by: "toggleTechnology/toggleAgent blanket guards now also check live skillConfigs/agentConfigs (tombstone-arm gated on isSelected); toggleSkillScope wasInstalledGlobally counts tombstones; persisted-pair guards consult a session-scoped `_sessionRebuiltScopePair{Skills,Agents}` set so a collapsed-then-rebuilt pair is treated as session-authored, not pristine-from-disk. SUPERSEDED by D-277: the guards no longer have an isInitMode bypass, so the stale-snapshot deselect route this finding described is unreachable by construction rather than merely patched, and the bare tombstone it could produce no longer exists on any removal path."
 ---
 
 ## What Was Wrong
