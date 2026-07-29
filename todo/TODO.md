@@ -9,6 +9,7 @@
 
 | ID    | Task                                                                                                                                                                                                | Status        | Type     | Complexity |
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
+| D-276 | Exclusive category: allow selecting a skill that conflicts with a global one, defaulting it to project scope.                                                                                       | Ready for Dev | feature  | complex    |
 | D-266 | Shared scroll gates (`useRowScroll`/`useSectionScroll`) disable clipping below `MIN_VIEWPORT_ROWS`, so agents/domains/build/sources bleed at short terminal heights.                                | Ready for Dev | bug      | complex    |
 | D-239 | Web UI: extract shared matrix/config-types package for a new browser skill-picker repo. [Plan](./D-239-web-ui-shared-matrix-package.md)                                                             | Investigate   | feature  | complex    |
 | D-237 | Create a GIF demo for the README                                                                                                                                                                    | Ready for Dev | feature  | complex    |
@@ -62,6 +63,29 @@ See [docs/guides/agent-reminders.md](../docs/guides/agent-reminders.md) for the 
 ---
 
 ### Wizard UX
+
+---
+
+#### D-276: Exclusive category — allow a project skill to override a global one
+
+**Today:** in an exclusive (radio) category, selecting a different skill is refused outright when the current selection is a globally-installed skill. `toggleTechnology`'s exclusive-swap guard in `src/cli/stores/wizard-store.ts` computes `wouldDropLockedSkill` from `isGloballyLockedSkill` and returns `TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED`; the conflicting skill is never added. A project with a global React therefore cannot choose Angular from the wizard at all.
+
+**Wanted:** allow the selection. The newly chosen skill is added at **project** scope, and the global skill is masked in that project — exactly the derived conflict mask `maskCollidingGlobalSkills` / `reconcileProjectSplitAgainstGlobal` in `src/cli/lib/installation/local-installer.ts` already produces. That machinery works today but is only reachable from the opposite ordering (the project already owned the conflicting skill and a global install landed on top of it), so the wizard cannot currently express the intent.
+
+**Toast:** confirm the override instead of leaving it implicit — owner's wording: "added project X skill to override global Y". Needs a new `TOAST_MESSAGES` entry that names both skills.
+
+**Constraints**
+
+- The new entry must default to `scope: "project"`. The global-first default used for ordinary additions is wrong here; the point of the action is a project-local override.
+- `s` stays the only way to change an existing global skill's own scope. This ticket changes only what SPACE does when selecting a _different_ skill in an exclusive category.
+- The global install is never touched: no edit to the global config, no uninstall. The mask exists only in the project's config.
+- Self-heal must still apply — removing the project skill later has to unmask the global one, per the mask lifetime rule in `reconcileProjectSplitAgainstGlobal`.
+- A required exclusive category must never end up with nothing active.
+- This is **not** an exception to the rule that a global skill is immutable from project scope: the global entry is masked, never removed. The docs must state that explicitly or the two rules will read as contradictory.
+
+**Tests:** the swap is allowed and lands at project scope; the toast names both skills; the written project config holds the active project entry plus the global mask; the global config is byte-identical afterwards; removing the project skill unmasks the global one; and the Sources tab renders the resulting pair correctly.
+
+**Docs:** `.ai-docs/reference/concepts/scope-system.md`, `concepts/guard-pattern.md` (the exclusive-swap guard entry), `concepts/tombstone-pattern.md` (a third route to a derived mask), `wizard/state-transitions.md`, plus the user-facing scope guidance under `docs/`.
 
 ---
 
