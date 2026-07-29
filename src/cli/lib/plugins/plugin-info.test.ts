@@ -199,7 +199,6 @@ describe("plugin-info", () => {
       expect(result).toStrictEqual({
         mode: "eject",
         name: "my-local-project",
-        version: "eject",
         skillCount: 2,
         agentCount: 1,
         configPath,
@@ -444,7 +443,6 @@ describe("plugin-info", () => {
       expect(result).toStrictEqual({
         mode: "plugin",
         name: "my-plugin",
-        version: "plugin",
         skillCount: 1,
         agentCount: 2,
         configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
@@ -493,7 +491,6 @@ describe("plugin-info", () => {
 
       expect(result).not.toBeNull();
       expect(result!.name).toBe(DEFAULT_PLUGIN_NAME);
-      expect(result!.version).toBe("0.0.0");
     });
 
     it("should handle readdir errors gracefully for skills", async () => {
@@ -527,20 +524,17 @@ describe("plugin-info", () => {
     it("should format eject installation info", () => {
       const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
       const agentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
-      const info: InstallationInfo = {
-        mode: "eject",
+      const info = buildInstallationInfo({
         name: "my-project",
-        version: "eject",
         skillCount: 5,
         agentCount: 3,
         configPath,
         agentDirs: [agentsDir],
-        skillsDir: path.join("/project", CLAUDE_DIR, "skills"),
-      };
+      });
 
       const result = formatInstallationDisplay(info);
 
-      expect(result).toContain("Installation: my-project (eject mode)");
+      expect(result).toContain("Installation: my-project\n");
       expect(result).toContain("Mode:    Eject");
       expect(result).toContain("Skills:  5");
       expect(result).toContain("Agents:  3");
@@ -551,16 +545,12 @@ describe("plugin-info", () => {
     it("prints one agents path line per directory that holds agents", () => {
       const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const projectAgentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
-      const info: InstallationInfo = {
-        mode: "eject",
+      const info = buildInstallationInfo({
         name: "dual-scope-project",
-        version: "eject",
         skillCount: 3,
         agentCount: 3,
-        configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
         agentDirs: [globalAgentsDir, projectAgentsDir],
-        skillsDir: path.join("/project", CLAUDE_DIR, "skills"),
-      };
+      });
 
       const result = formatInstallationDisplay(info);
 
@@ -571,16 +561,12 @@ describe("plugin-info", () => {
     it("prints no directory the agents are not in", () => {
       const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const projectAgentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
-      const info: InstallationInfo = {
-        mode: "eject",
+      const info = buildInstallationInfo({
         name: "global-only",
-        version: "eject",
         skillCount: 7,
         agentCount: 9,
-        configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
         agentDirs: [globalAgentsDir],
-        skillsDir: path.join("/project", CLAUDE_DIR, "skills"),
-      };
+      });
 
       const result = formatInstallationDisplay(info);
 
@@ -591,36 +577,41 @@ describe("plugin-info", () => {
     });
 
     it("should format plugin installation info", () => {
-      const info: InstallationInfo = {
+      const info = buildInstallationInfo({
         mode: "plugin",
         name: "my-plugin",
-        version: "1.2.3",
         skillCount: 10,
         agentCount: 5,
-        configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-        agentDirs: [path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS)],
         skillsDir: path.join("/project", CLAUDE_DIR, PLUGINS_SUBDIR),
-      };
+      });
 
       const result = formatInstallationDisplay(info);
 
-      expect(result).toContain("Installation: my-plugin v1.2.3");
+      expect(result).toContain("Installation: my-plugin\n");
       expect(result).toContain("Mode:    Plugin");
       expect(result).toContain("Skills:  10");
       expect(result).toContain("Agents:  5");
+      expect(result, "the install mode must never be rendered as a version").not.toContain(
+        "vplugin",
+      );
+    });
+
+    it("labels a mixed installation as Mixed", () => {
+      const result = formatInstallationDisplay(
+        buildInstallationInfo({ mode: "mixed", name: "mixed-project" }),
+      );
+
+      expect(result).toContain("Installation: mixed-project\n");
+      expect(result).toContain("Mode:    Mixed");
     });
 
     it("should show zero counts correctly", () => {
-      const info: InstallationInfo = {
-        mode: "eject",
+      const info = buildInstallationInfo({
         name: "empty-project",
-        version: "eject",
         skillCount: 0,
         agentCount: 0,
-        configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
         agentDirs: [],
-        skillsDir: path.join("/project", CLAUDE_DIR, "skills"),
-      };
+      });
 
       const result = formatInstallationDisplay(info);
 
@@ -633,6 +624,20 @@ describe("plugin-info", () => {
     });
   });
 });
+
+/** Eject-mode installation report for `/project`; override the fields a test asserts on. */
+function buildInstallationInfo(overrides: Partial<InstallationInfo> = {}): InstallationInfo {
+  return {
+    mode: "eject",
+    name: "my-project",
+    skillCount: 5,
+    agentCount: 3,
+    configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+    agentDirs: [path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS)],
+    skillsDir: path.join("/project", CLAUDE_DIR, STANDARD_DIRS.SKILLS),
+    ...overrides,
+  };
+}
 
 /** Eject-mode installation rooted at `/project`, i.e. a project context whose global root is HOME. */
 function buildInstallation(overrides: Partial<Installation> = {}): Installation {

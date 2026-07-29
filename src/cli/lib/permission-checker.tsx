@@ -13,10 +13,14 @@ import { settingsFileSchema, warnUnknownFields } from "./schemas";
 type SettingsFile = z.infer<typeof settingsFileSchema>;
 type PermissionConfig = NonNullable<SettingsFile["permissions"]>;
 
-// Known Claude CLI settings.json fields (permissions is ours; the rest are managed by Claude CLI)
+// Known Claude CLI settings.json fields (permissions is ours; the rest are managed by Claude CLI).
+// enabledPlugins and extraKnownMarketplaces are written by the Claude CLI during our own
+// plugin-install path (claudePluginInstall / claudePluginMarketplaceAdd in utils/exec.ts),
+// so a settings file produced by this CLI's operations must never trigger the unknown-field warning.
 const EXPECTED_SETTINGS_KEYS = [
   "permissions",
   "enabledPlugins",
+  "extraKnownMarketplaces",
   "env",
   "allowedTools",
   "customInstructions",

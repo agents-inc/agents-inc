@@ -8,6 +8,7 @@ import {
   detectInstallation,
   isHomeDirectory,
   resolveInstallPaths,
+  INSTALL_MODE_LABELS,
   type Installation,
   type InstallMode,
 } from "../installation";
@@ -28,7 +29,6 @@ export type PluginInfo = {
 export type InstallationInfo = {
   mode: InstallMode;
   name: string;
-  version: string;
   skillCount: number;
   agentCount: number;
   configPath: string;
@@ -75,16 +75,10 @@ export async function getInstallationInfo(): Promise<InstallationInfo | null> {
 
   const loaded = await loadProjectConfig(installation.projectDir);
   const name = loaded?.config?.name || DEFAULT_PLUGIN_NAME;
-  const version = loaded?.config
-    ? installation.mode === "eject"
-      ? "eject"
-      : "plugin"
-    : DEFAULT_DISPLAY_VERSION;
 
   return {
     mode: installation.mode,
     name,
-    version,
     skillCount,
     agentCount: sumCounts(agentDirCounts),
     configPath: installation.configPath,
@@ -182,12 +176,10 @@ async function countPluginSkills(projectDir: string): Promise<number> {
 }
 
 export function formatInstallationDisplay(info: InstallationInfo): string {
-  const modeLabel = info.mode === "eject" ? "Eject" : "Plugin";
-  const versionDisplay = info.mode === "eject" ? "(eject mode)" : `v${info.version}`;
   const agentDirLines = info.agentDirs.map((dir) => `\n  Agents:  ${dir}`).join("");
 
-  return `Installation: ${info.name} ${versionDisplay}
-  Mode:    ${modeLabel}
+  return `Installation: ${info.name}
+  Mode:    ${INSTALL_MODE_LABELS[info.mode]}
   Skills:  ${info.skillCount}
   Agents:  ${info.agentCount}
   Config:  ${info.configPath}${agentDirLines}`;
