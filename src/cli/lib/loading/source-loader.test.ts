@@ -37,6 +37,7 @@ import type {
 } from "../../types";
 import { renderConfigTs, renderSkillMd } from "../__tests__/content-generators";
 import { defaultCategories } from "../configuration/default-categories";
+import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
 import type { LocalSkillDiscoveryResult } from "../skills";
@@ -183,6 +184,26 @@ describe("source-loader", () => {
         });
 
         expect(result.marketplace).toBeUndefined();
+      });
+    });
+
+    describe("matrixOnly", () => {
+      it("should resolve the default source offline with the built-in matrix and empty sourcePath", async () => {
+        // No sourceFlag, no env var, no config in projectDir — resolves to
+        // DEFAULT_SOURCE. Without matrixOnly this branch fetches the source
+        // clone (a network call on a cold cache); with it the fetch is skipped,
+        // so a regression here fails with a fetch error instead of passing.
+        const result = await loadSkillsMatrixFromSource({
+          projectDir: tempDir,
+          skipExtraSources: true,
+          matrixOnly: true,
+        });
+
+        expect(result.sourcePath).toBe("");
+        expect(result.isLocal).toBe(false);
+        expect(Object.keys(result.matrix.skills)).toStrictEqual(
+          Object.keys(BUILT_IN_MATRIX.skills),
+        );
       });
     });
 

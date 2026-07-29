@@ -60,6 +60,14 @@ export type SourceLoadOptions = {
   devMode?: boolean;
   /** Skip loading skills from extra sources (multi-source). Only needed for wizard UI tagging. */
   skipExtraSources?: boolean;
+  /**
+   * The caller only needs the matrix, not skill files on disk. For the default
+   * source this skips the `fetchFromSource` clone (the matrix is the pre-computed
+   * BUILT_IN_MATRIX anyway) so the load stays offline; `sourcePath` comes back
+   * empty. Sources that must be read from disk to build the matrix (local paths,
+   * custom remotes) are unaffected.
+   */
+  matrixOnly?: boolean;
 };
 
 export type SourceLoadResult = {
@@ -73,14 +81,20 @@ export type SourceLoadResult = {
 export async function loadSkillsMatrixFromSource(
   options: SourceLoadOptions = {},
 ): Promise<SourceLoadResult> {
-  const { sourceFlag, projectDir, forceRefresh = false, devMode = false } = options;
+  const {
+    sourceFlag,
+    projectDir,
+    forceRefresh = false,
+    devMode = false,
+    matrixOnly = false,
+  } = options;
 
   const sourceConfig = await resolveSource(sourceFlag, projectDir);
   const { source } = sourceConfig;
 
   verbose(`Loading skills from source: ${source}`);
 
-  const result = await resolveBaseResult(source, sourceConfig, devMode, forceRefresh);
+  const result = await resolveBaseResult(source, sourceConfig, devMode, forceRefresh, matrixOnly);
 
   const resolvedProjectDir = projectDir || process.cwd();
 
@@ -116,13 +130,15 @@ async function resolveBaseResult(
   sourceConfig: SourceLoadResult["sourceConfig"],
   devMode: boolean,
   forceRefresh: boolean,
+  matrixOnly: boolean,
 ): Promise<SourceLoadResult> {
   if (source === DEFAULT_SOURCE && !devMode) {
     // Default source: use pre-computed BUILT_IN_MATRIX instead of loading from disk.
     // Still resolve sourcePath via fetchFromSource so skill files can be read
-    // (e.g. for eject-mode copy). The fetch is cached, so no network call if
-    // the clone already exists.
-    const fetchResult = await fetchFromSource(source, { forceRefresh });
+    // (e.g. for eject-mode copy) — unless the caller declared matrixOnly, in
+    // which case the fetch (a network clone on a cold cache) is skipped entirely.
+    // The fetch is cached, so no network call if the clone already exists.
+    const sourcePath = matrixOnly ? "" : (await fetchFromSource(source, { forceRefresh })).path;
     return {
       matrix: {
         ...BUILT_IN_MATRIX,
@@ -131,7 +147,7 @@ async function resolveBaseResult(
         suggestedStacks: [...BUILT_IN_MATRIX.suggestedStacks],
       },
       sourceConfig,
-      sourcePath: fetchResult.path,
+      sourcePath,
       isLocal: false,
       marketplace: sourceConfig.marketplace,
     };

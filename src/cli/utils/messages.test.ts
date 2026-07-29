@@ -83,6 +83,7 @@ describe("INFO_MESSAGES", () => {
       "NO_PLUGIN_INSTALLATION",
       "NO_LOCAL_INSTALLATION",
       "NOT_INSTALLED",
+      "CONFIG_TYPES_REFRESHED",
     ]);
   });
 

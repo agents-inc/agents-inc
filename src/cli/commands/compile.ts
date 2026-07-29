@@ -12,17 +12,27 @@ import {
   type DiscoveredSkills,
 } from "../lib/operations";
 import {
+  ConfigLoadError,
   effectivelyExcludedSkillIds,
   loadProjectConfig,
+  loadProjectConfigFromDir,
   resolveSource,
 } from "../lib/configuration";
 import { getStackSkillIds } from "../lib/stacks";
-import { CLI_INVOKE_COMMAND } from "../consts";
+import { loadSkillsMatrixFromSource } from "../lib/loading";
+import { CLI_INVOKE_COMMAND, STANDARD_FILES } from "../consts";
 import { EXIT_CODES } from "../lib/exit-codes";
-import { ERROR_MESSAGES, STATUS_MESSAGES, INFO_MESSAGES } from "../utils/messages";
-import { type Installation } from "../lib/installation";
+import { getErrorMessage } from "../utils/errors";
+import {
+  ERROR_MESSAGES,
+  STATUS_MESSAGES,
+  INFO_MESSAGES,
+  configTypesRefreshFailed,
+  globalScopedAgentsHint,
+} from "../utils/messages";
+import { type Installation, regenerateScopeConfigTypes } from "../lib/installation";
 import type { SkillScope } from "../types/config";
-import type { SkillDefinitionMap } from "../types";
+import type { AgentDefinition, AgentName, SkillDefinitionMap } from "../types";
 
 export default class Compile extends BaseCommand {
   static summary = "Compile agents using local skills and agent definitions";
@@ -52,11 +62,22 @@ export default class Compile extends BaseCommand {
     const installations = await this.detectInstallations(cwd);
     await this.resolveAndLogSource(flags.source);
     const agentDefs = await this.loadAgentDefsOrFail(cwd);
-    await this.compileAllScopes(installations, agentDefs, cwd);
+    await this.compileAllScopes(installations, agentDefs, cwd, flags.source);
   }
 
   private async detectInstallations(cwd: string): Promise<BothInstallations> {
-    const installations = await detectBothInstallations(cwd);
+    let installations: BothInstallations;
+    try {
+      installations = await detectBothInstallations(cwd);
+    } catch (error) {
+      // A corrupt config (file present but unparseable) must not let compile run
+      // config-less — that resurrects every deselected agent. Hard-error naming
+      // the offending file before any compilation happens.
+      if (error instanceof ConfigLoadError) {
+        this.error(error.message, { exit: EXIT_CODES.ERROR });
+      }
+      throw error;
+    }
 
     if (!installations.global && !installations.project) {
       this.error(ERROR_MESSAGES.NO_INSTALLATION, {
@@ -96,15 +117,16 @@ export default class Compile extends BaseCommand {
     installations: BothInstallations,
     agentDefs: AgentDefs,
     cwd: string,
+    sourceFlag?: string,
   ): Promise<void> {
     // When both installations exist, filter each pass to its own scope to prevent
     // the project pass from overwriting global agents with zero-skill versions
     // (the project config's stack only has project agent entries).
-    const passes = buildCompilePasses(installations, cwd, agentDefs.sourcePath);
+    const passes = buildCompilePasses(installations, cwd, agentDefs);
 
     let totalPassesWithSkills = 0;
     for (const pass of passes) {
-      const hadSkills = await this.runCompilePass(pass);
+      const hadSkills = await this.runCompilePass(pass, sourceFlag);
       if (hadSkills) totalPassesWithSkills++;
     }
 
@@ -149,7 +171,67 @@ export default class Compile extends BaseCommand {
     }
   }
 
-  private async runCompilePass(params: CompilePass): Promise<boolean> {
+  /**
+   * The project pass compiled no agents, but the project config may still declare
+   * global-scope agents whose stack lives in the global config. Without a pointer
+   * the "No agents to recompile" line reads as a silent no-op after a global stack
+   * change, so name the global context and the count.
+   */
+  private async hintGlobalScopedAgents(projectDir: string): Promise<void> {
+    const loaded = await loadProjectConfigFromDir(projectDir);
+    if (!loaded) return;
+
+    const globalAgentCount = loaded.config.agents.filter(
+      (agent) => !agent.excluded && agent.scope === "global",
+    ).length;
+    if (globalAgentCount === 0) return;
+
+    this.log(globalScopedAgentsHint(globalAgentCount));
+  }
+
+  /**
+   * The documented hand-edit workflow is "edit config.ts, then run compile", and
+   * the type unions in config-types.ts are derived from config.ts — so a compile
+   * pass that leaves them untouched strands stale unions after a hand-edit.
+   * Regenerates them from the scope's persisted config exactly as the wizard
+   * write path would: standalone narrowed unions at global scope, import-and-
+   * extend at project scope. `matrixOnly` keeps the default-source path offline.
+   * A failed refresh downgrades to a warning — the compiled agents are already
+   * written and remain valid; only the type unions may still be stale.
+   *
+   * `skipExtraSources: true` is NOT a divergence from the wizard's full
+   * multi-source load: extra-source loading only annotates each skill's
+   * `availableSources`/`activeSource` for wizard UI tagging — it never adds
+   * skills or categories to the matrix, and the config-types writer never reads
+   * those annotations, so the emitted types are byte-identical either way
+   * (pinned by the skipExtraSources parity test in local-installer.test.ts).
+   * Skipping avoids fetching every registered extra source (network on a cold
+   * cache, plus unreachable-remote warnings) on this offline compile path.
+   */
+  private async refreshConfigTypes(pass: CompilePass, sourceFlag?: string): Promise<void> {
+    try {
+      const loaded = await loadProjectConfigFromDir(pass.projectDir);
+      if (!loaded) {
+        verbose(
+          `No config found at ${pass.projectDir} — skipping ${STANDARD_FILES.CONFIG_TYPES_TS} refresh`,
+        );
+        return;
+      }
+
+      const { matrix } = await loadSkillsMatrixFromSource({
+        sourceFlag,
+        projectDir: pass.projectDir,
+        skipExtraSources: true,
+        matrixOnly: true,
+      });
+      await regenerateScopeConfigTypes(pass.projectDir, loaded.config, matrix, pass.agents);
+      this.log(INFO_MESSAGES.CONFIG_TYPES_REFRESHED);
+    } catch (error) {
+      this.warn(configTypesRefreshFailed(getErrorMessage(error)));
+    }
+  }
+
+  private async runCompilePass(params: CompilePass, sourceFlag?: string): Promise<boolean> {
     const { label, projectDir, installation, sourcePath, scopeFilter } = params;
 
     this.log("");
@@ -163,6 +245,10 @@ export default class Compile extends BaseCommand {
 
     if (totalSkillCount === 0) {
       this.log(`No skills found for ${label.toLowerCase()} pass, skipping`);
+      // The config loads independently of discovered skills: a hand-edited
+      // config.ts can list skills while nothing is installed for this scope,
+      // and its type unions must follow the config rather than stay stale.
+      await this.refreshConfigTypes(params, sourceFlag);
       return false;
     }
 
@@ -190,6 +276,9 @@ export default class Compile extends BaseCommand {
         this.log(`Recompiled ${recompileResult.compiled.length} ${label.toLowerCase()} agents`);
       } else {
         this.log(INFO_MESSAGES.NO_AGENTS_TO_RECOMPILE);
+        if (label === "Project") {
+          await this.hintGlobalScopedAgents(projectDir);
+        }
       }
 
       if (recompileResult.compiled.length > 0) {
@@ -199,6 +288,8 @@ export default class Compile extends BaseCommand {
       this.log(ERROR_MESSAGES.FAILED_COMPILE_AGENTS);
       this.handleError(error);
     }
+
+    await this.refreshConfigTypes(params, sourceFlag);
 
     this.log("");
     this.logSuccess(`${label} compile complete!`);
@@ -213,14 +304,16 @@ type CompilePass = {
   projectDir: string;
   installation: Installation;
   sourcePath: string;
+  agents: Record<AgentName, AgentDefinition>;
   scopeFilter?: SkillScope;
 };
 
 function buildCompilePasses(
   installations: BothInstallations,
   cwd: string,
-  sourcePath: string,
+  agentDefs: AgentDefs,
 ): CompilePass[] {
+  const { sourcePath, agents } = agentDefs;
   const passes: CompilePass[] = [];
 
   if (installations.global) {
@@ -229,6 +322,7 @@ function buildCompilePasses(
       projectDir: os.homedir(),
       installation: installations.global,
       sourcePath,
+      agents,
       scopeFilter: installations.hasBoth ? "global" : undefined,
     });
   }
@@ -239,6 +333,7 @@ function buildCompilePasses(
       projectDir: cwd,
       installation: installations.project,
       sourcePath,
+      agents,
       scopeFilter: installations.hasBoth ? "project" : undefined,
     });
   }

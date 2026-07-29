@@ -1,4 +1,4 @@
-import { CLI_INVOKE_COMMAND, DEFAULT_BRANDING } from "../consts.js";
+import { CLI_INVOKE_COMMAND, DEFAULT_BRANDING, STANDARD_FILES } from "../consts.js";
 
 export const ERROR_MESSAGES = {
   UNKNOWN_ERROR: "Unknown error occurred",
@@ -41,4 +41,50 @@ export const INFO_MESSAGES = {
   NO_PLUGIN_INSTALLATION: "No plugin installation found.",
   NO_LOCAL_INSTALLATION: "No local installation found.",
   NOT_INSTALLED: `${DEFAULT_BRANDING.NAME} is not installed in this project.`,
+  CONFIG_TYPES_REFRESHED: `Refreshed ${STANDARD_FILES.CONFIG_TYPES_TS}`,
 } as const;
+
+/**
+ * Hint printed when a project-context compile resolves zero project agents but
+ * the config still declares global-scope agents. Names the global context and
+ * the count so the "No agents to recompile" no-op isn't silent after a global
+ * stack change.
+ */
+export function globalScopedAgentsHint(count: number): string {
+  const subject = count === 1 ? "agent is" : "agents are";
+  return `${count} ${subject} global-scoped — run '${CLI_INVOKE_COMMAND} compile' from your home directory, or edit from this project, to recompile them.`;
+}
+
+/**
+ * Warning printed when a compile pass finished but the scope's config-types.ts
+ * could not be regenerated (e.g. the skills source was unreachable). The compiled
+ * agents are fine; only the type unions may still be stale.
+ */
+export function configTypesRefreshFailed(reason: string): string {
+  return `Could not refresh ${STANDARD_FILES.CONFIG_TYPES_TS} — type unions may be stale: ${reason}`;
+}
+
+/**
+ * Summary printed after a global uninstall pruned the inlined global-scoped
+ * config entries from the registered projects.
+ */
+export function registeredProjectsUpdated(count: number): string {
+  return `Updated ${count} registered ${count === 1 ? "project" : "projects"}`;
+}
+
+/**
+ * Warning printed when a global uninstall could not update one registered
+ * project (missing directory or unreadable config). The uninstall continues.
+ */
+export function registeredProjectUpdateSkipped(projectPath: string): string {
+  return `Could not update registered project at ${projectPath} — its config may still reference the uninstalled global content`;
+}
+
+/**
+ * Warning printed when a global uninstall could not update the registered
+ * projects at all (e.g. the skills source failed to load). The uninstall
+ * itself still completes.
+ */
+export function registeredProjectsUpdateFailed(reason: string): string {
+  return `Could not update registered projects — their configs may still reference the uninstalled global content: ${reason}`;
+}
