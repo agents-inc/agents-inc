@@ -42,6 +42,7 @@ export {
 
 export {
   type LoadedProjectConfig,
+  ConfigLoadError,
   loadProjectConfig,
   loadProjectConfigFromDir,
   validateProjectConfig,

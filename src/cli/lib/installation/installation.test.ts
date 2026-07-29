@@ -122,9 +122,10 @@ describe("installation", () => {
       expect(projectResult).toBeNull();
     });
 
-    it("falls through to eject even when config is invalid TS", async () => {
-      // Create a config file that exists but has invalid content
-      // loadProjectConfig returns null for unparseable configs
+    it("surfaces a corrupt config instead of a phantom eject installation", async () => {
+      // A config file that exists but cannot be parsed must NOT be treated as an
+      // eject installation — that phantom install lets compile run config-less and
+      // resurrect deselected agents. Detection surfaces the corruption instead.
       const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
       await mkdir(configDir, { recursive: true });
       await writeFile(
@@ -132,12 +133,7 @@ describe("installation", () => {
         "invalid typescript content {{",
       );
 
-      const result = await detectInstallation(tempDir);
-
-      // loadProjectConfig returns null, but the file exists so detectInstallation
-      // still enters the local branch. mode defaults to "eject" via ?? operator.
-      expect(result).not.toBeNull();
-      expect(result!.mode).toBe("eject");
+      await expect(detectInstallation(tempDir)).rejects.toThrow("could not be loaded");
     });
 
     it("uses provided projectDir parameter", async () => {

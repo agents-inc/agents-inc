@@ -16,7 +16,32 @@ export type LoadedProjectConfig = {
   configPath: string;
 };
 
-/** Load project config from a specific directory only (no global fallback). */
+/**
+ * Thrown when a project config file exists on disk but cannot be loaded into a
+ * usable config — a syntax/evaluation error, no default export, or a shape the
+ * loader schema rejects. This is deliberately distinct from a MISSING file
+ * (which is a legitimate `null`): a corrupt config is an error that callers must
+ * surface, never swallow into `null`. Collapsing both into `null` let a broken
+ * install pass as absent (e.g. `compile` treating it as config-less and
+ * resurrecting every built-in agent).
+ */
+export class ConfigLoadError extends Error {
+  constructor(
+    readonly configPath: string,
+    readonly reason: string,
+  ) {
+    super(`Config at '${configPath}' could not be loaded: ${reason}`);
+    this.name = "ConfigLoadError";
+  }
+}
+
+/**
+ * Load project config from a specific directory only (no global fallback).
+ *
+ * Returns `null` only when the config file does not exist. When the file exists
+ * but cannot be parsed into a usable config, throws {@link ConfigLoadError} —
+ * the caller decides how to report it.
+ */
 export async function loadProjectConfigFromDir(
   projectDir: string,
 ): Promise<LoadedProjectConfig | null> {
@@ -27,31 +52,36 @@ export async function loadProjectConfigFromDir(
     return null;
   }
 
-  let config: ProjectConfig | null;
+  // The file exists. From here, any failure to produce a usable config means the
+  // file is corrupt — surface it as ConfigLoadError rather than returning `null`,
+  // which is indistinguishable from "missing".
+  let raw: unknown;
   try {
     // Load raw object and validate with Zod (lenient schema accepts custom values via z.string() casts)
-    const raw = await loadConfig<ProjectConfig>(configPath);
-    if (!raw || typeof raw !== "object") return null;
-
-    const result = projectConfigLoaderSchema.safeParse(raw);
-    if (!result.success) {
-      verbose(`Config validation failed at ${configPath}: ${JSON.stringify(result.error)}`);
-      return null;
-    }
-    // Normalize the loose stack values (bare strings, objects, arrays) BEFORE claiming
-    // ProjectConfig, so the boundary cast below is the only one on this path.
-    const parsed = result.data;
-    const normalizedStack = parsed.stack ? normalizeStackRecord(parsed.stack) : undefined;
-    // Boundary cast: loader schema is lenient (optional name, loose strings);
-    // validateProjectConfig enforces the strict shape after load
-    config = {
-      ...parsed,
-      ...(normalizedStack && { stack: normalizedStack }),
-    } as ProjectConfig;
+    raw = await loadConfig<ProjectConfig>(configPath);
   } catch (error) {
-    verbose(`Failed to load project config at ${configPath}: ${getErrorMessage(error)}`);
-    return null;
+    throw new ConfigLoadError(configPath, getErrorMessage(error));
   }
+
+  if (!raw || typeof raw !== "object") {
+    throw new ConfigLoadError(configPath, "the file has no valid default export");
+  }
+
+  const result = projectConfigLoaderSchema.safeParse(raw);
+  if (!result.success) {
+    throw new ConfigLoadError(configPath, formatZodErrors(result.error).join("; "));
+  }
+
+  // Normalize the loose stack values (bare strings, objects, arrays) BEFORE claiming
+  // ProjectConfig, so the boundary cast below is the only one on this path.
+  const parsed = result.data;
+  const normalizedStack = parsed.stack ? normalizeStackRecord(parsed.stack) : undefined;
+  // Boundary cast: loader schema is lenient (optional name, loose strings);
+  // validateProjectConfig enforces the strict shape after load
+  const config = {
+    ...parsed,
+    ...(normalizedStack && { stack: normalizedStack }),
+  } as ProjectConfig;
 
   if (!config.name) {
     warn(

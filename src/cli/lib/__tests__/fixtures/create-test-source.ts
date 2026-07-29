@@ -9,7 +9,13 @@ import {
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../../../consts";
-import type { ExtractedSkillMetadata, SkillId, SkillSlug } from "../../../types";
+import type {
+  AgentScopeConfig,
+  ExtractedSkillMetadata,
+  SkillConfig,
+  SkillId,
+  SkillSlug,
+} from "../../../types";
 import { computeSkillFolderHash } from "../../versioning";
 import { fileExists, directoryExists, createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { readTestYaml } from "../helpers/config-io.js";
@@ -66,8 +72,8 @@ export type TestMatrix = {
 export type TestProjectConfig = {
   name: string;
   description?: string;
-  agents?: string[];
-  skills?: Array<string | { id: string }>;
+  agents?: AgentScopeConfig[];
+  skills?: SkillConfig[];
   version?: string;
 };
 

@@ -5,6 +5,7 @@ import type {
   MergedSkillsMatrix,
   ProjectConfig,
   SkillConfig,
+  SkillId,
 } from "../../../types";
 import type { WizardResultV2 } from "../../../components/wizard/wizard";
 import type { SourceLoadResult } from "../../loading/source-loader";
@@ -106,11 +107,15 @@ export function buildTestProjectConfig(
   skills: Array<string | { id: string }>,
   overrides?: Partial<TestProjectConfig>,
 ): TestProjectConfig {
+  const skillIds = skills.map((s) => (typeof s === "string" ? s : s.id));
   return {
     name: "test-project",
     description: "Test project",
-    agents,
-    skills,
+    // Boundary cast: test callers pass loose string agent/skill identifiers
+    // (some fictional). Emit the object-shaped config the loader schema requires —
+    // buildAgentConfigs/buildSkillConfigs do no matrix lookups, so loose IDs are safe.
+    agents: buildAgentConfigs(agents as AgentName[]),
+    skills: buildSkillConfigs(skillIds as SkillId[]),
     ...overrides,
   };
 }

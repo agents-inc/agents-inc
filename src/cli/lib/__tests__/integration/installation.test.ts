@@ -194,7 +194,7 @@ describe("installation", () => {
       expect(result?.configPath).toBe(path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS));
     });
 
-    it("should treat invalid config file as eject mode (file exists)", async () => {
+    it("surfaces a corrupt config file instead of treating it as eject mode", async () => {
       const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
       await mkdir(claudeSrcDir, { recursive: true });
       await writeFile(
@@ -202,13 +202,9 @@ describe("installation", () => {
         "invalid typescript content {{",
       );
 
-      // When config file exists but is invalid, loadProjectConfig returns null
-      // The detection logic sees file exists but config is invalid,
-      // so mode defaults to "eject"
-      const result = await detectInstallation(tempDir);
-
-      expect(result).not.toBeNull();
-      expect(result?.mode).toBe("eject");
+      // A file that exists but cannot be parsed must not become a phantom eject
+      // installation — detection surfaces the corruption so callers can report it.
+      await expect(detectInstallation(tempDir)).rejects.toThrow("could not be loaded");
     });
 
     it("should use process.cwd() as default when projectDir is not provided", async () => {

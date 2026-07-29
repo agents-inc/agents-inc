@@ -113,7 +113,7 @@ describe("project-config", () => {
       expect(result!.config).toStrictEqual(inputConfig);
     });
 
-    it("should return null for invalid config", async () => {
+    it("should throw for a config file that exists but is unparseable", async () => {
       const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
       await mkdir(configDir, { recursive: true });
       await writeFile(
@@ -121,11 +121,12 @@ describe("project-config", () => {
         "invalid typescript content {{",
       );
 
-      const result = await loadProjectConfig(tempDir);
-      expect(result).toBeNull();
+      // A file that exists but cannot load is corrupt, not "missing" — it must
+      // surface, never collapse into null.
+      await expect(loadProjectConfig(tempDir)).rejects.toThrow("could not be loaded");
     });
 
-    it("should return null for non-object config", async () => {
+    it("should throw for a config whose default export is not an object", async () => {
       const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
       await mkdir(configDir, { recursive: true });
       await writeFile(
@@ -133,8 +134,7 @@ describe("project-config", () => {
         'export default "just a string";',
       );
 
-      const result = await loadProjectConfig(tempDir);
-      expect(result).toBeNull();
+      await expect(loadProjectConfig(tempDir)).rejects.toThrow("could not be loaded");
     });
   });
 

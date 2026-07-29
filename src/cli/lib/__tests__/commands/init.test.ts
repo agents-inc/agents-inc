@@ -32,9 +32,15 @@ describe("init command", () => {
     it("should show dashboard when project is already initialized", async () => {
       const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
       await mkdir(configDir, { recursive: true });
+      // A real installation: the config declares skills so it is detected as
+      // installed. A config declaring neither skills nor agents is content-less
+      // and routes to the setup wizard, not the dashboard.
       await writeFile(
         path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        'export default { name: "test-project" };',
+        renderConfigTs({
+          name: "test-project",
+          skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
+        }),
       );
 
       const { stdout, stderr, error } = await runCliCommand(["init"]);
@@ -109,7 +115,12 @@ describe("init command", () => {
       const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
       await mkdir(configDir, { recursive: true });
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
-      const originalContent = 'export default { name: "test-project" };';
+      // A real installation (declares skills) so init shows the dashboard and
+      // leaves the config untouched, rather than routing to the setup wizard.
+      const originalContent = renderConfigTs({
+        name: "test-project",
+        skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
+      });
       await writeFile(configPath, originalContent);
 
       await runCliCommand(["init"]);
@@ -122,9 +133,14 @@ describe("init command", () => {
     it("should exit with SUCCESS when already initialized", async () => {
       const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
       await mkdir(configDir, { recursive: true });
+      // A real installation (declares skills) so init shows the dashboard, which
+      // exits cleanly, rather than routing to the setup wizard.
       await writeFile(
         path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        'export default { name: "test-project" };',
+        renderConfigTs({
+          name: "test-project",
+          skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
+        }),
       );
 
       const { error } = await runCliCommand(["init"]);

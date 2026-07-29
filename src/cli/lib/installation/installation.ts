@@ -49,8 +49,30 @@ async function detectInstallationInDir(dir: string): Promise<Installation | null
     return null;
   }
 
+  // The config file exists. loadProjectConfigFromDir throws ConfigLoadError for a
+  // corrupt config, so a returned value is always a usable config — a corrupt
+  // config surfaces to the caller (compile reports it) instead of silently
+  // becoming a phantom eject installation that resurrects every built-in agent.
   const loaded = await loadProjectConfigFromDir(dir);
-  const mode: InstallMode = deriveInstallMode(loaded?.config?.skills ?? []);
+  if (!loaded) {
+    // The file vanished between the fileExists check and the load.
+    return null;
+  }
+
+  // A successfully-loaded config that declares neither skills nor agents is
+  // content-less and does not count as an installation — init must route to the
+  // setup wizard, not the dashboard. This is the shared detection function, so
+  // returning null here covers both the project-config and global-config
+  // manifestations.
+  //
+  // skills is asserted directly: loadProjectConfigFromDir defaults it to [].
+  // agents is not defaulted by the loader, so it is guarded with `?? []` — the
+  // same treatment agents gets elsewhere (see doctor.ts, config-writer.ts).
+  if (loaded.config.skills.length === 0 && (loaded.config.agents ?? []).length === 0) {
+    return null;
+  }
+
+  const mode: InstallMode = deriveInstallMode(loaded.config.skills);
 
   return {
     mode,

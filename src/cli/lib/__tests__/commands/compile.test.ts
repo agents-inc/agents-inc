@@ -110,6 +110,11 @@ describe("compile command", () => {
   });
 
   describe("metadata.yaml requirement for local skills", () => {
+    // The project config declares an agent so the project is detected as an
+    // installation (a config that declares neither skills nor agents is
+    // content-less and is not treated as installed). Compile then discovers the
+    // on-disk local skills these cases exercise, same as the sibling
+    // "compilation output" cases above.
     let localDirs: TestDirs;
 
     afterEach(async () => {
@@ -123,7 +128,7 @@ describe("compile command", () => {
         skills: [],
         agents: [],
         localSkills: [VALID_LOCAL_SKILL],
-        projectConfig: buildTestProjectConfig([], []),
+        projectConfig: buildTestProjectConfig(["web-developer"], []),
         asPlugin: true,
       });
       process.chdir(localDirs.projectDir);
@@ -141,7 +146,7 @@ describe("compile command", () => {
         skills: [],
         agents: [],
         localSkills: [SKILL_WITHOUT_METADATA],
-        projectConfig: buildTestProjectConfig([], []),
+        projectConfig: buildTestProjectConfig(["web-developer"], []),
         asPlugin: true,
       });
       process.chdir(localDirs.projectDir);
@@ -160,7 +165,7 @@ describe("compile command", () => {
         skills: [],
         agents: [],
         localSkills: [SKILL_WITHOUT_METADATA_CUSTOM],
-        projectConfig: buildTestProjectConfig([], []),
+        projectConfig: buildTestProjectConfig(["web-developer"], []),
         asPlugin: true,
       });
       process.chdir(localDirs.projectDir);
