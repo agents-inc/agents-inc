@@ -1,14 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { defaultCategories } from "../default-categories";
 import type { Category } from "../../../types";
+import { CATEGORIES } from "../../../types/matrix";
 import { typedKeys } from "../../../utils/typed-object";
 
-const EXPECTED_CATEGORY_COUNT = 51;
+const EXPECTED_CATEGORY_COUNT = 89;
 
 describe("defaultCategories", () => {
   it("has the expected number of categories", () => {
     const keys = typedKeys(defaultCategories);
     expect(keys).toHaveLength(EXPECTED_CATEGORY_COUNT);
+  });
+
+  it("defines every generated category", () => {
+    const keys = typedKeys(defaultCategories);
+    expect([...keys].sort()).toStrictEqual([...CATEGORIES].sort());
   });
 
   it("includes web-framework with correct fields", () => {
