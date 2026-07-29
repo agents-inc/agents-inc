@@ -240,13 +240,6 @@ describe("uninstall command", () => {
       const output = error?.message || "";
       expect(output.toLowerCase()).not.toContain("unknown flag");
     });
-
-    it("should accept --all flag", async () => {
-      const { error } = await runCliCommand(["uninstall", "--all"]);
-
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
-    });
   });
 
   describe("nothing to uninstall", () => {
@@ -443,24 +436,14 @@ describe("uninstall command", () => {
     });
   });
 
-  describe("--all flag and .claude-src/ handling", () => {
-    it("should preserve .claude-src/ by default", async () => {
+  describe(".claude-src/ config manifest removal", () => {
+    it("should remove the config manifest by default", async () => {
       await createProjectConfig(projectDir);
       const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
 
       const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
-      expect(await directoryExists(claudeSrcDir)).toBe(true);
-      // Should NOT mention removing .claude-src/
-      expect(stdout).not.toContain(`Removed ${CLAUDE_SRC_DIR}/`);
-    });
-
-    it("should remove .claude-src/ with --all flag", async () => {
-      await createProjectConfig(projectDir);
-      const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-
-      const { stdout } = await runCliCommand(["uninstall", "--yes", "--all"]);
-
+      // config.ts was the only .claude-src content, so the emptied dir is removed too
       expect(await directoryExists(claudeSrcDir)).toBe(false);
       expect(stdout).toContain(`Removed ${CLAUDE_SRC_DIR}/`);
     });
@@ -768,7 +751,7 @@ describe("uninstall command", () => {
       expect(stdout).toContain("Removed 1 CLI-installed skill");
     });
 
-    it("should remove everything with --all flag", async () => {
+    it("should remove everything including the config manifest by default", async () => {
       await createProjectConfig(projectDir, {
         agents: buildAgentConfigs(["web-developer"]),
       });
@@ -783,7 +766,7 @@ describe("uninstall command", () => {
       await mkdir(agentsDir, { recursive: true });
       await writeFile(path.join(agentsDir, "web-developer.md"), "# Agent");
 
-      const { stdout } = await runCliCommand(["uninstall", "--yes", "--all"]);
+      const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
       expect(await directoryExists(claudeDir)).toBe(false);
       expect(await directoryExists(claudeSrcDir)).toBe(false);
@@ -812,10 +795,11 @@ describe("uninstall command", () => {
       expect(await directoryExists(globalSkillsDir)).toBe(true);
       expect(await directoryExists(path.join(globalSkillsDir, "web-framework-react"))).toBe(true);
 
-      // Nothing to uninstall in the project directory for skills
+      // No skills or agents are removed from the project directory (only the
+      // config manifest is, which is expected by default).
       const output = stdout + stderr;
-      expect(output).not.toContain("Removed");
       expect(output).not.toContain("CLI-installed skill");
+      expect(output).not.toContain("compiled agent");
     });
 
     it("should remove project-scoped skills without touching global-scoped skills", async () => {

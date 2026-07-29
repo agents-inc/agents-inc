@@ -10,7 +10,7 @@ import { BaseCommand } from "../base-command";
 import { Confirm } from "../components/common/confirm";
 import { promptConfirm } from "../components/common/prompt-confirm.js";
 import { getErrorMessage } from "../utils/errors";
-import { directoryExists, listDirectories, remove } from "../utils/fs";
+import { directoryExists, fileExists, listDirectories, remove } from "../utils/fs";
 import { listAgentMdFiles } from "../lib/agents";
 import { claudePluginUninstallBestEffort, isClaudeCLIAvailable } from "../utils/exec";
 import {
@@ -21,12 +21,32 @@ import {
   toClaudePluginScope,
 } from "../lib/plugins/index";
 import { readForkedFromMetadata } from "../lib/skills/index";
-import { deregisterProjectPath, resolveInstallPaths } from "../lib/installation/index";
+import {
+  deregisterProjectPath,
+  isHomeDirectory,
+  pruneGlobalEntriesFromRegisteredProjects,
+  resolveInstallPaths,
+} from "../lib/installation/index";
+import { loadSkillsMatrixFromSource } from "../lib/loading";
+import { loadAgentDefs } from "../lib/operations";
 import { loadProjectConfigFromDir } from "../lib/configuration/project-config";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, CLI_COLORS, DEFAULT_BRANDING, EJECT_SOURCE } from "../consts";
+import {
+  CLAUDE_DIR,
+  CLAUDE_SRC_DIR,
+  CLI_COLORS,
+  DEFAULT_BRANDING,
+  EJECT_SOURCE,
+  STANDARD_FILES,
+} from "../consts";
 import { EXIT_CODES } from "../lib/exit-codes";
-import { SUCCESS_MESSAGES, INFO_MESSAGES } from "../utils/messages";
-import type { AgentName, ProjectConfig } from "../types/index";
+import {
+  SUCCESS_MESSAGES,
+  INFO_MESSAGES,
+  registeredProjectsUpdated,
+  registeredProjectUpdateSkipped,
+  registeredProjectsUpdateFailed,
+} from "../utils/messages";
+import type { AgentDefinition, AgentName, MergedSkillsMatrix, ProjectConfig } from "../types/index";
 
 /** A grouped section of the uninstall removal plan (header label + item lines). */
 type RemovalPlanSection = {
@@ -40,7 +60,7 @@ type RemovalPlanSection = {
  * UninstallConfirm Ink component — each renderer only adds its own
  * indentation/styling, so the emitted strings stay byte-identical.
  */
-function buildRemovalPlan(target: UninstallTarget, removeAll: boolean): RemovalPlanSection[] {
+function buildRemovalPlan(target: UninstallTarget): RemovalPlanSection[] {
   const sections: RemovalPlanSection[] = [];
 
   if (target.hasPlugins) {
@@ -54,8 +74,16 @@ function buildRemovalPlan(target: UninstallTarget, removeAll: boolean): RemovalP
     sections.push({ label: "CLI-managed files:", items });
   }
 
-  if (removeAll && target.hasClaudeSrcDir) {
-    sections.push({ label: "Config:", items: [`${target.claudeSrcDir}/`] });
+  // The CLI config manifest (config.ts + config-types.ts) is always removed.
+  if (target.hasClaudeSrcConfig || target.hasClaudeSrcConfigTypes) {
+    const items: string[] = [];
+    if (target.hasClaudeSrcConfig) {
+      items.push(`${target.claudeSrcDir}/${STANDARD_FILES.CONFIG_TS}`);
+    }
+    if (target.hasClaudeSrcConfigTypes) {
+      items.push(`${target.claudeSrcDir}/${STANDARD_FILES.CONFIG_TYPES_TS}`);
+    }
+    sections.push({ label: "Config:", items });
   }
 
   return sections;
@@ -63,17 +91,11 @@ function buildRemovalPlan(target: UninstallTarget, removeAll: boolean): RemovalP
 
 type UninstallConfirmProps = {
   target: UninstallTarget;
-  removeAll: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
 
-const UninstallConfirm: React.FC<UninstallConfirmProps> = ({
-  target,
-  removeAll,
-  onConfirm,
-  onCancel,
-}) => {
+const UninstallConfirm: React.FC<UninstallConfirmProps> = ({ target, onConfirm, onCancel }) => {
   const { exit } = useApp();
 
   return (
@@ -81,7 +103,7 @@ const UninstallConfirm: React.FC<UninstallConfirmProps> = ({
       <Text bold>The following will be removed:</Text>
       <Text> </Text>
 
-      {buildRemovalPlan(target, removeAll).map((section) => (
+      {buildRemovalPlan(target).map((section) => (
         <Box key={section.label} flexDirection="column">
           <Text color={CLI_COLORS.ERROR}> {section.label}</Text>
           {section.items.map((item) => (
@@ -113,12 +135,11 @@ const UninstallConfirm: React.FC<UninstallConfirmProps> = ({
 export default class Uninstall extends BaseCommand {
   static summary = `Remove ${DEFAULT_BRANDING.NAME} from this project`;
 
-  static description = `Uninstall ${DEFAULT_BRANDING.NAME} from this project. Removes CLI-managed skills (matched by source), compiled agents, and plugins. User-created content is preserved.`;
+  static description = `Uninstall ${DEFAULT_BRANDING.NAME} from this project. Removes CLI-managed skills (matched by source), compiled agents, plugins, and the .claude-src/ config manifest (config.ts + config-types.ts). User-created content is preserved.`;
 
   static examples = [
     "<%= config.bin %> <%= command.id %>",
     "<%= config.bin %> <%= command.id %> --yes",
-    "<%= config.bin %> <%= command.id %> --all",
   ];
 
   static flags = {
@@ -126,10 +147,6 @@ export default class Uninstall extends BaseCommand {
     yes: Flags.boolean({
       char: "y",
       description: "Skip confirmation prompt",
-      default: false,
-    }),
-    all: Flags.boolean({
-      description: "Also remove .claude-src/ config directory",
       default: false,
     }),
   };
@@ -141,21 +158,19 @@ export default class Uninstall extends BaseCommand {
     this.printHeader();
 
     const target = await detectUninstallTarget(projectDir);
-    if (!hasAnythingToRemove(target, flags.all)) {
+    if (!hasAnythingToRemove(target)) {
       this.reportNothingToUninstall();
       return;
     }
 
-    const confirmed = flags.yes
-      ? this.printRemovalPlan(target, flags.all)
-      : await this.confirmRemoval(target, flags.all);
+    const confirmed = flags.yes ? this.printRemovalPlan(target) : await this.confirmRemoval(target);
     if (!confirmed) {
       this.log("");
       this.log("Uninstall cancelled");
       this.exit(EXIT_CODES.CANCELLED);
     }
 
-    await this.executeUninstall(target, projectDir, flags.all);
+    await this.executeUninstall(target, projectDir);
     this.reportSuccess();
   }
 
@@ -173,11 +188,11 @@ export default class Uninstall extends BaseCommand {
     this.log(INFO_MESSAGES.NO_CHANGES_MADE);
   }
 
-  private printRemovalPlan(target: UninstallTarget, removeAll: boolean): true {
+  private printRemovalPlan(target: UninstallTarget): true {
     this.log("The following will be removed:");
     this.log("");
 
-    for (const section of buildRemovalPlan(target, removeAll)) {
+    for (const section of buildRemovalPlan(target)) {
       this.log(`  ${section.label}`);
       for (const item of section.items) {
         this.log(`    ${item}`);
@@ -188,23 +203,22 @@ export default class Uninstall extends BaseCommand {
     return true;
   }
 
-  private async confirmRemoval(target: UninstallTarget, removeAll: boolean): Promise<boolean> {
+  private async confirmRemoval(target: UninstallTarget): Promise<boolean> {
     const outcome = await promptConfirm(({ onConfirm, onCancel }) => (
-      <UninstallConfirm
-        target={target}
-        removeAll={removeAll}
-        onConfirm={onConfirm}
-        onCancel={onCancel}
-      />
+      <UninstallConfirm target={target} onConfirm={onConfirm} onCancel={onCancel} />
     ));
     return outcome === "confirmed";
   }
 
-  private async executeUninstall(
-    target: UninstallTarget,
-    projectDir: string,
-    removeAll: boolean,
-  ): Promise<void> {
+  private async executeUninstall(target: UninstallTarget, projectDir: string): Promise<void> {
+    const isGlobalUninstall = isHomeDirectory(projectDir);
+    // Prepared BEFORE any removal: the projects[] registry and the source used
+    // to regenerate each project's config-types.ts both live in the global
+    // config this uninstall is about to delete.
+    const propagation = isGlobalUninstall
+      ? await this.prepareGlobalPropagation(target, projectDir)
+      : null;
+
     if (target.hasPlugins) {
       this.log("Uninstalling plugins...");
 
@@ -225,7 +239,7 @@ export default class Uninstall extends BaseCommand {
     }
 
     try {
-      await this.removeLocalFiles(target, removeAll);
+      await this.removeLocalFiles(target);
     } catch (error) {
       this.log("Failed to remove local files");
       this.error(getErrorMessage(error), {
@@ -233,13 +247,89 @@ export default class Uninstall extends BaseCommand {
       });
     }
 
-    // Deregister this project from global config's tracked projects
-    if (removeAll) {
-      try {
-        await deregisterProjectPath(projectDir);
-      } catch {
-        // Non-fatal: global config may not exist or may not have projects
+    if (isGlobalUninstall) {
+      // The global manifest is gone — prune the inlined global-scoped entries the
+      // registered projects still carry so they stop referencing removed content.
+      if (propagation) {
+        await this.updateRegisteredProjects(propagation);
       }
+      return;
+    }
+
+    // Deregister this project from the global config's tracked projects so future
+    // global edits stop propagating back into it. Best-effort by nature: a missing,
+    // project-less, or corrupt global config (ConfigLoadError) must never fail the
+    // uninstall — warn and move on.
+    try {
+      await deregisterProjectPath(projectDir);
+    } catch (error) {
+      this.warn(`Could not update the global project registry: ${getErrorMessage(error)}`);
+    }
+  }
+
+  /**
+   * Loads what updating registered projects needs (global config with its
+   * projects[] registry, skills matrix, agent definitions) BEFORE the global
+   * .claude-src manifest is deleted — source resolution reads that config.
+   * Returns null when nothing is registered or loading fails; a load failure
+   * warns and never aborts the uninstall.
+   *
+   * `skipExtraSources: true` is NOT a divergence from the wizard's full
+   * multi-source load: extra-source loading only annotates each skill's
+   * `availableSources`/`activeSource` for wizard UI tagging — it never adds
+   * skills or categories to the matrix, and the config-types writer never reads
+   * those annotations, so the regenerated project types are byte-identical
+   * either way (pinned by the skipExtraSources parity test in
+   * local-installer.test.ts). Skipping avoids fetching every registered extra
+   * source (network on a cold cache, plus unreachable-remote warnings) during
+   * an uninstall that must never hang or noise-fail on remote state.
+   */
+  private async prepareGlobalPropagation(
+    target: UninstallTarget,
+    projectDir: string,
+  ): Promise<GlobalPropagationData | null> {
+    const globalConfig = target.config;
+    if (!globalConfig?.projects?.length) return null;
+
+    try {
+      const [sourceResult, agentDefs] = await Promise.all([
+        loadSkillsMatrixFromSource({
+          projectDir,
+          skipExtraSources: true,
+          matrixOnly: true,
+        }),
+        loadAgentDefs({ projectDir }),
+      ]);
+      return { globalConfig, matrix: sourceResult.matrix, agents: agentDefs.agents };
+    } catch (error) {
+      this.warn(registeredProjectsUpdateFailed(getErrorMessage(error)));
+      return null;
+    }
+  }
+
+  /**
+   * Prunes the inlined global-scoped config entries from every registered
+   * project and regenerates its config-types.ts. Runs AFTER the global manifest
+   * removal so the regenerated project types fall back to the standalone form
+   * instead of importing from the deleted global config-types.ts. Best-effort:
+   * unreachable projects are warned and skipped, and no failure here may abort
+   * the uninstall.
+   */
+  private async updateRegisteredProjects(propagation: GlobalPropagationData): Promise<void> {
+    try {
+      const result = await pruneGlobalEntriesFromRegisteredProjects(
+        propagation.globalConfig,
+        propagation.matrix,
+        propagation.agents,
+      );
+      for (const skippedPath of result.skipped) {
+        this.warn(registeredProjectUpdateSkipped(skippedPath));
+      }
+      if (result.updated.length > 0) {
+        this.logSuccess(registeredProjectsUpdated(result.updated.length));
+      }
+    } catch (error) {
+      this.warn(registeredProjectsUpdateFailed(getErrorMessage(error)));
     }
   }
 
@@ -251,7 +341,7 @@ export default class Uninstall extends BaseCommand {
     this.log("");
   }
 
-  private async removeLocalFiles(target: UninstallTarget, removeAll: boolean): Promise<void> {
+  private async removeLocalFiles(target: UninstallTarget): Promise<void> {
     const skillResult = await removeMatchingSkills(
       target,
       (dirName) => this.log(`  Uninstalled skill '${dirName}'`),
@@ -274,10 +364,12 @@ export default class Uninstall extends BaseCommand {
       );
     }
 
-    const cleanup = await cleanupEmptyDirs(target, removeAll);
+    const cleanup = await cleanupEmptyDirs(target);
 
     if (cleanup.claudeSrcDirRemoved) {
       this.logSuccess(`Removed ${CLAUDE_SRC_DIR}/`);
+    } else if (cleanup.claudeSrcManifestRemoved) {
+      this.logSuccess(`Removed CLI config from ${CLAUDE_SRC_DIR}/`);
     }
 
     if (cleanup.claudeDirRemoved) {
@@ -297,7 +389,10 @@ export type UninstallTarget = {
   hasLocalSkills: boolean;
   hasLocalAgents: boolean;
   hasClaudeDir: boolean;
-  hasClaudeSrcDir: boolean;
+  /** Whether .claude-src/config.ts exists (the CLI config manifest). */
+  hasClaudeSrcConfig: boolean;
+  /** Whether .claude-src/config-types.ts exists (companion to config.ts). */
+  hasClaudeSrcConfigTypes: boolean;
   pluginsDir: string;
   skillsDir: string;
   agentsDir: string;
@@ -307,6 +402,17 @@ export type UninstallTarget = {
   config: ProjectConfig | null;
   /** Agent names from the generated config (e.g., ["web-developer"]) */
   configuredAgents: AgentName[];
+};
+
+/**
+ * Everything a global uninstall needs to update the registered projects after
+ * the global manifest is removed — captured before removal because it is
+ * sourced from the config being deleted.
+ */
+type GlobalPropagationData = {
+  globalConfig: ProjectConfig;
+  matrix: MergedSkillsMatrix;
+  agents: Record<AgentName, AgentDefinition>;
 };
 
 type SkillRemovalResult = {
@@ -332,17 +438,21 @@ type UninstallPluginsResult = {
 
 type CleanupResult = {
   claudeDirRemoved: boolean;
+  /** Whether config.ts/config-types.ts were removed from .claude-src/ */
+  claudeSrcManifestRemoved: boolean;
+  /** Whether the emptied .claude-src/ directory itself was removed */
   claudeSrcDirRemoved: boolean;
   /** Whether .claude/ still exists with user content after cleanup */
   claudeDirKept: boolean;
 };
 
-function hasAnythingToRemove(target: UninstallTarget, removeAll: boolean): boolean {
+function hasAnythingToRemove(target: UninstallTarget): boolean {
   return (
     target.hasPlugins ||
     target.hasLocalSkills ||
     target.hasLocalAgents ||
-    (removeAll && target.hasClaudeSrcDir)
+    target.hasClaudeSrcConfig ||
+    target.hasClaudeSrcConfigTypes
   );
 }
 
@@ -380,15 +490,24 @@ async function detectUninstallTarget(projectDir: string): Promise<UninstallTarge
   const claudeDir = path.join(projectDir, CLAUDE_DIR);
   const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
 
-  const [hasLocalSkills, hasLocalAgents, hasClaudeDir, hasClaudeSrcDir, config] = await Promise.all(
-    [
-      directoryExists(skillsDir),
-      directoryExists(agentsDir),
-      directoryExists(claudeDir),
-      directoryExists(claudeSrcDir),
-      loadProjectConfigFromDir(projectDir).then((result) => result?.config ?? null),
-    ],
-  );
+  const claudeSrcConfigPath = path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS);
+  const claudeSrcConfigTypesPath = path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TYPES_TS);
+
+  const [
+    hasLocalSkills,
+    hasLocalAgents,
+    hasClaudeDir,
+    hasClaudeSrcConfig,
+    hasClaudeSrcConfigTypes,
+    config,
+  ] = await Promise.all([
+    directoryExists(skillsDir),
+    directoryExists(agentsDir),
+    directoryExists(claudeDir),
+    fileExists(claudeSrcConfigPath),
+    fileExists(claudeSrcConfigTypesPath),
+    loadProjectConfigFromDir(projectDir).then((result) => result?.config ?? null),
+  ]);
 
   let pluginNames: string[] = [];
   try {
@@ -415,7 +534,8 @@ async function detectUninstallTarget(projectDir: string): Promise<UninstallTarge
     hasLocalSkills,
     hasLocalAgents,
     hasClaudeDir,
-    hasClaudeSrcDir,
+    hasClaudeSrcConfig,
+    hasClaudeSrcConfigTypes,
     pluginsDir,
     skillsDir,
     agentsDir,
@@ -503,10 +623,11 @@ async function removeDirIfEmpty(dir: string): Promise<boolean> {
 }
 
 /**
- * Removes compiled agent .md files that match configured agent names.
+ * Removes compiled agent .md files that are listed in the project config.
  *
- * Only removes agents that are listed in the project config (CLI-compiled).
- * Cleans up the agents directory if empty after removal.
+ * A file is removed only when its basename matches a configured agent
+ * (config.agents); agents absent from config are preserved. Cleans up the
+ * agents directory if empty after removal.
  *
  * @param onRemoved - Called for each removed agent name (for logging)
  */
@@ -525,8 +646,9 @@ async function removeMatchingAgents(
   const agentFiles = await listAgentFiles(target.agentsDir);
   const removedNames = agentFiles
     .map((agentFile) => agentFile.replace(/\.md$/, ""))
-    // Boundary widen: agent names are derived from on-disk filenames (untrusted strings);
-    // compare against configured AgentName[] as plain strings so custom/non-union agents still match.
+    // Array<AgentName>.includes rejects a plain string; widen the configured
+    // list to readonly string[] so the on-disk basename can be tested for
+    // membership in config.agents.
     .filter((agentName) => (target.configuredAgents as readonly string[]).includes(agentName));
 
   for (const agentName of removedNames) {
@@ -588,26 +710,54 @@ export async function uninstallPlugins(
 }
 
 /**
- * Removes empty .claude/ and .claude-src/ directories after uninstall.
+ * Removes the CLI config manifest (config.ts + config-types.ts) from .claude-src/,
+ * then the .claude-src/ directory itself when it has nothing else left. User-owned
+ * content in .claude-src/ (e.g. ejected templates) keeps the directory alive.
+ */
+async function removeConfigManifest(
+  target: Pick<UninstallTarget, "claudeSrcDir" | "hasClaudeSrcConfig" | "hasClaudeSrcConfigTypes">,
+): Promise<{ manifestRemoved: boolean; dirRemoved: boolean }> {
+  let manifestRemoved = false;
+
+  if (target.hasClaudeSrcConfig) {
+    await remove(path.join(target.claudeSrcDir, STANDARD_FILES.CONFIG_TS));
+    manifestRemoved = true;
+  }
+  if (target.hasClaudeSrcConfigTypes) {
+    await remove(path.join(target.claudeSrcDir, STANDARD_FILES.CONFIG_TYPES_TS));
+    manifestRemoved = true;
+  }
+
+  const dirRemoved = manifestRemoved && (await removeDirIfEmpty(target.claudeSrcDir));
+  return { manifestRemoved, dirRemoved };
+}
+
+/**
+ * Removes the CLI config manifest and cleans up empty .claude/ and .claude-src/
+ * directories after uninstall.
  *
- * Only removes .claude-src/ when `removeAll` is true.
- * Only removes .claude/ when it's completely empty.
+ * The config manifest is always removed. The .claude-src/ and .claude/ directories
+ * are removed only when they are empty after their CLI-managed contents are gone.
  */
 async function cleanupEmptyDirs(
-  target: Pick<UninstallTarget, "hasClaudeDir" | "hasClaudeSrcDir" | "claudeDir" | "claudeSrcDir">,
-  removeAll: boolean,
+  target: Pick<
+    UninstallTarget,
+    "hasClaudeDir" | "claudeDir" | "claudeSrcDir" | "hasClaudeSrcConfig" | "hasClaudeSrcConfigTypes"
+  >,
 ): Promise<CleanupResult> {
-  const claudeSrcDirRemoved = removeAll && target.hasClaudeSrcDir;
-  if (claudeSrcDirRemoved) {
-    await remove(target.claudeSrcDir);
-  }
+  const manifest = await removeConfigManifest(target);
 
   const claudeDirRemoved = target.hasClaudeDir && (await removeDirIfEmpty(target.claudeDir));
   // Nothing else removes .claude itself, so "kept" is exactly "present but not removed".
   const claudeDirKept =
     !claudeDirRemoved && target.hasClaudeDir && (await directoryExists(target.claudeDir));
 
-  return { claudeDirRemoved, claudeSrcDirRemoved, claudeDirKept };
+  return {
+    claudeDirRemoved,
+    claudeSrcManifestRemoved: manifest.manifestRemoved,
+    claudeSrcDirRemoved: manifest.dirRemoved,
+    claudeDirKept,
+  };
 }
 
 async function isDirectoryEmpty(dirPath: string): Promise<boolean> {
