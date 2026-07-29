@@ -7,6 +7,21 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.145.0] - 2026-07-29
+
+**Wizard interaction contract, cross-scope propagation, uninstall, and the non-interactive command surface**
+
+- **Breaking:** `s` is now the sole dual-scope toggle and spacebar is inert on any globally-backed row, replacing a split contract that needed session bookkeeping to stay coherent (D-260); `uninstall --all` is removed and manifest removal is unconditional, so plain `uninstall` no longer leaves behind the `.claude-src/` files that make a project look installed (D-274)
+- Fixed `validate` exiting 1 immediately after a clean install from the official marketplace — 45 errors and 177 warnings on a state `doctor` passed — caused by an over-strict `cliDescription` bound, a directory-name rule the marketplace convention can never satisfy, and a plugins pass blind to the claude CLI cache layout
+- Fixed a corrupt `config.ts` being detected as a phantom eject install and silently recompiling all 23 built-in agents, a blank config counting as an installation, and a global install over-installing sub-agents (D-273, D-264)
+- Fixed global changes reaching registered projects' config but never their compiled agents, and tombstoning that disagreed depending on install order (D-240, D-256, D-259, D-268)
+- Fixed the wizard bleeding content outside its box and clipping sources rows that no keypress could reach, plus unstable grid ordering and a wrapping source-change marker (D-263, D-271, D-272, D-261, D-269)
+- Fixed dual-scope source changes leaking across scopes and the set-all hotkeys rewriting tombstones, and made deselected and newly added skills both visible on the sources step (D-262, D-265, D-257, D-258)
+- `compile` now regenerates `config-types.ts` at every scope it compiles, so the documented hand-edit workflow keeps its type safety net, and hints when a project's agents are all global-scoped (D-275); 38 missing category definitions were added, fixing a broken typecheck and the synthesized placeholder names the wizard was rendering
+- E2E harness reworked: the sandbox no longer collapses `HOME` onto the project directory, and the grid focus walk is closed-loop rather than dead-reckoned (D-226, D-270)
+
+See [changelogs/0.145.0.md](./changelogs/0.145.0.md) for full details.
+
 ## [0.144.1] - 2026-07-20
 
 **E2E coverage and documentation for the 0.143.0–0.144.0 fixes — no runtime changes**
