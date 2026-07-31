@@ -7,6 +7,19 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.147.0] - 2026-08-01
+
+**One summary panel on both surfaces, a corrected Sources grid, and a terminal-size minimum that is actually enforced**
+
+- The confirm step now renders the same panel as the `I` overlay, header included — one component instead of two copies of the same scroll machinery. `I` is no longer offered there, because pressing it used to unmount the confirm step along with its only `Enter` handler and leave the frame dead
+- Fixed a first `init` marking nothing as added on the Sources tab while the confirm step marked everything, plus three Sources-grid rendering defects: the redundant `Scope` caption, a focused row's marker gaining a stray space and unmarked names sitting two columns out, and a `✓` painted on locked and pending-removal rows where no editable row draws one
+- Fixed the terminal-size minimum never being enforced — the documented constant had zero importers while the live gate hardcoded its own copy, and that gate ran once before render, so shrinking a window mid-session left the wizard painting through its own footer. One constant now, at a measured 20 rows, checked continuously. The stack step's ASCII logo is hidden below 26 rows because its six decorative rows made the first screen of `init` bleed at the advertised minimum
+- Fixed the `Marketplace` row, which read a store field no code ever wrote and so always printed the default; it now names the marketplace each skill actually came from
+
+**D-266 is narrowed, not closed** — the shared scroll gates still stop clipping below `MIN_VIEWPORT_ROWS`; this moves users off the cliff rather than removing it.
+
+See [changelogs/0.147.0.md](./changelogs/0.147.0.md) for full details.
+
 ## [0.146.1] - 2026-08-01
 
 **Corrupt-config resilience, symlinked project paths, and a lint gate that can actually fail**
