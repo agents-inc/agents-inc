@@ -52,6 +52,7 @@ Every release MUST complete all steps. No exceptions.
 - [ ] Every ticket with a `### D-xxx` subheading in the detailed `changelogs/{version}.md` MUST have at least one corresponding bullet in the `CHANGELOG.md` summary block for that release. Zero tolerance for "cleanup tickets" that get folded into prose without their own bullet — if a ticket earned a detailed subheading, it earned a summary bullet. Mechanically checkable: grep `### D-` in the detailed file, grep `D-xxx` in the corresponding `CHANGELOG.md` block, diff the sets.
 - [ ] Every `.ai-docs/agent-findings/*.md` path cited in the changelog must exist on disk
 - [ ] Never edit old entries in `CHANGELOG.md` or old `changelogs/` files
+- [ ] Bump `alias/package.json` to the **same version** and publish it (`cd alias && npm publish`). The alias's own contents never change, so this looks like pointless churn — it is not. `npx` caches by package spec and reuses a cached install wholesale, including the `@agents-inc/cli` it resolved on first run. An alias whose version never moves leaves repeat `npx agents-inc` users pinned to the CLI version they first pulled. The version bump is the only thing that busts that cache.
 
 ### CHANGELOG.md Format (Summary)
 
