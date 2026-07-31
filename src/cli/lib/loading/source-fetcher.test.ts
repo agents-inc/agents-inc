@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { TEST_SOURCE_URL } from "../__tests__/test-constants.js";
 import os from "os";
 import path from "path";

@@ -252,7 +252,7 @@ describe("validate command", () => {
     });
 
     it("should iterate over plugin directories and report when absent", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const { stdout, error } = await runCliCommand(["validate"]);
 
@@ -262,7 +262,7 @@ describe("validate command", () => {
     });
 
     it("should iterate over installed plugins when present", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       // Create a plugin in the project's .claude/plugins/ directory
       const pluginDir = path.join(projectDir, CLAUDE_DIR, PLUGINS_SUBDIR, "my-plugin");
@@ -281,7 +281,7 @@ describe("validate command", () => {
     });
 
     it("should surface plugin errors in the aggregate exit code", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       // Create a plugin with malformed plugin.json — validator should report it as invalid
       const pluginDir = path.join(projectDir, CLAUDE_DIR, PLUGINS_SUBDIR, "broken-plugin");
@@ -313,7 +313,7 @@ describe("validate command", () => {
     });
 
     it("should continue past one broken skill and report valid skills in the same pass", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       // One valid skill alongside one broken skill in the same directory.
@@ -548,7 +548,7 @@ describe("validate command", () => {
 
   describe("installed skills pass", () => {
     it("should render Validating skills header in the output", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const { stdout, error } = await runCliCommand(["validate"]);
 
@@ -557,7 +557,7 @@ describe("validate command", () => {
     });
 
     it("should render — not present when no skills dir exists", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const { stdout, error } = await runCliCommand(["validate"]);
 
@@ -567,7 +567,7 @@ describe("validate command", () => {
     });
 
     it("should render — none when the skills dir exists but is empty", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
       await mkdir(path.join(fakeHome, INSTALLED_SKILLS_SUBDIR), { recursive: true });
       await mkdir(path.join(projectDir, INSTALLED_SKILLS_SUBDIR), { recursive: true });
 
@@ -579,7 +579,7 @@ describe("validate command", () => {
     });
 
     it("should count a valid installed skill and exit 0", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       await writeValidInstalledSkill(globalSkillsDir, "web-framework-react");
@@ -593,7 +593,7 @@ describe("validate command", () => {
     });
 
     it("should report over-length cliDescription as a warning and exit 0", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       await writeValidInstalledSkill(globalSkillsDir, "web-framework-react", {
@@ -609,7 +609,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when an installed skill has an empty cliDescription", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       await writeValidInstalledSkill(globalSkillsDir, "web-framework-react", {
@@ -624,7 +624,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when an installed skill is missing SKILL.md", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       const skillDir = path.join(globalSkillsDir, "web-framework-react");
@@ -649,7 +649,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when an installed skill is missing metadata.yaml", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       const skillDir = path.join(globalSkillsDir, "web-framework-react");
@@ -666,7 +666,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when metadata.yaml is malformed YAML", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       const skillDir = path.join(globalSkillsDir, "web-framework-react");
@@ -687,7 +687,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when metadata has custom: true but a non-kebab slug", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       await writeValidInstalledSkill(globalSkillsDir, "custom-tools-my-skill", {
@@ -703,7 +703,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when metadata has custom: false and an unknown category", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       await writeValidInstalledSkill(globalSkillsDir, "web-framework-react", {
@@ -719,7 +719,7 @@ describe("validate command", () => {
 
   describe("installed agents pass", () => {
     it("should render Validating agents header in the output", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const { stdout, error } = await runCliCommand(["validate"]);
 
@@ -728,7 +728,7 @@ describe("validate command", () => {
     });
 
     it("should render — not present when no agents dir exists", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const { stdout, error } = await runCliCommand(["validate"]);
 
@@ -738,7 +738,7 @@ describe("validate command", () => {
     });
 
     it("should count a valid installed agent and exit 0", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const globalAgentsDir = path.join(fakeHome, INSTALLED_AGENTS_SUBDIR);
       await writeValidInstalledAgent(globalAgentsDir, "web-developer", {
@@ -754,7 +754,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when an agent .md has no frontmatter", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const globalAgentsDir = path.join(fakeHome, INSTALLED_AGENTS_SUBDIR);
       await mkdir(globalAgentsDir, { recursive: true });
@@ -770,7 +770,7 @@ describe("validate command", () => {
     });
 
     it("should exit ERROR when an agent frontmatter has a non-kebab name", async () => {
-      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir);
 
       const globalAgentsDir = path.join(fakeHome, INSTALLED_AGENTS_SUBDIR);
       await writeValidInstalledAgent(globalAgentsDir, "BadAgent", {

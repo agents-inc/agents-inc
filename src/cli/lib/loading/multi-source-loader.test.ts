@@ -46,7 +46,6 @@ vi.mock("../plugins", async (importOriginal) => ({
   discoverAllPluginSkills: vi.fn().mockResolvedValue({}),
 }));
 
-const mockWarn = vi.mocked(warn);
 const mockResolveAllSources = vi.mocked(resolveAllSources);
 const mockFetchFromSource = vi.mocked(fetchFromSource);
 const mockFetchMarketplace = vi.mocked(fetchMarketplace);

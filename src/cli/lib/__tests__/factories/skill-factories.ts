@@ -23,8 +23,8 @@ import type { TestSkill } from "../fixtures/create-test-source";
  * test-fixtures.ts calls createMockSkill() at module level during import,
  * and ESM hoists all imports before evaluating any `const` declarations.
  */
-// eslint-disable-next-line no-var -- `var` avoids TDZ in circular ESM imports (let/const would throw)
 // Boundary cast: test factory maps arbitrary skill IDs to category strings (not all are valid Category union members)
+// eslint-disable-next-line no-var -- `var` avoids TDZ in circular ESM imports (let/const would throw)
 var _canonicalSkillCategories: Record<string, string> | undefined;
 function getCanonicalSkillCategories(): Record<string, string> {
   if (!_canonicalSkillCategories) {

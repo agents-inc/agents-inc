@@ -12,11 +12,10 @@ import { CLAUDE_DIR, LOCAL_SKILLS_PATH, STANDARD_DIRS, STANDARD_FILES } from "..
 
 describe("doctor command", () => {
   let projectDir: string;
-  let fakeHome: string;
   let cleanup: () => Promise<void>;
 
   beforeEach(async () => {
-    ({ projectDir, fakeHome, cleanup } = await setupIsolatedHome("doctor-test-home-"));
+    ({ projectDir, cleanup } = await setupIsolatedHome("doctor-test-home-"));
   });
 
   afterEach(async () => {

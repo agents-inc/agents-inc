@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import path from "path";
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
@@ -10,12 +9,11 @@ import { EXIT_CODES } from "../../exit-codes";
 const COMMAND_TIMEOUT = 30_000;
 
 describe("search command", () => {
-  let tempDir: string;
   let projectDir: string;
   let cleanup: () => Promise<void>;
 
   beforeEach(async () => {
-    ({ tempDir, projectDir, cleanup } = await setupIsolatedHome("cc-search-test-"));
+    ({ projectDir, cleanup } = await setupIsolatedHome("cc-search-test-"));
   });
 
   afterEach(async () => {

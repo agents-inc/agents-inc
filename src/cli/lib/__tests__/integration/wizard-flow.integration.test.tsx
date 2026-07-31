@@ -400,7 +400,7 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { stdin, lastFrame, unmount } = render(
+      const { stdin, unmount } = render(
         <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
@@ -434,7 +434,7 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { stdin, lastFrame, unmount } = render(
+      const { stdin, unmount } = render(
         <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
@@ -544,7 +544,7 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { stdin, lastFrame, unmount } = render(
+      const { stdin, unmount } = render(
         <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
@@ -624,7 +624,7 @@ describe("Wizard integration", () => {
       const onComplete = vi.fn();
       const onCancel = vi.fn();
 
-      const { stdin, lastFrame, unmount } = render(
+      const { stdin, unmount } = render(
         <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;
@@ -950,7 +950,7 @@ describe("Wizard integration", () => {
         installedSkillIds: [],
       });
 
-      const { lastFrame, unmount } = render(
+      const { unmount } = render(
         <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
       );
       cleanup = unmount;

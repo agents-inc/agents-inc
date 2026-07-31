@@ -9,10 +9,7 @@ import { installEject } from "../installation/local-installer";
 import {
   validateSelection,
   getAvailableSkills,
-  isDiscouraged,
-  getDiscourageReason,
   isIncompatible,
-  getIncompatibleReason,
   hasUnmetRequirements,
   getUnmetRequirementsReason,
 } from ".";

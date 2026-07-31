@@ -4,12 +4,7 @@ import { readFile } from "fs/promises";
 
 import { deleteLocalSkill } from "../../skills/source-switcher";
 import { installEject } from "../../installation/local-installer";
-import {
-  createTestSource,
-  cleanupTestSource,
-  type TestDirs,
-  type TestSkill,
-} from "../fixtures/create-test-source";
+import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
 import type { ProjectConfig, SkillId } from "../../../types";
 import { LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../../consts";
 import { createMatrixFromTestSkills } from "../factories/matrix-factories.js";
@@ -17,9 +12,8 @@ import { buildWizardResult, initMatrixAndSource } from "../factories/config-fact
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { readTestTsConfig } from "../helpers/config-io.js";
 import { fileExists, directoryExists } from "../test-fs-utils";
-import { expectConfigSkills, expectInstallResult } from "../assertions/index.js";
+import { expectSkillConfigs, expectInstallResult } from "../assertions/index.js";
 import { SWITCHABLE_SKILLS, LOCAL_SKILL_VARIANTS } from "../mock-data/mock-skills.js";
-import type { SkillConfig } from "../../../types/config";
 
 const REACT_SKILL_ID: SkillId = "web-framework-react";
 // Boundary cast: TestSkill.id is string, but SWITCHABLE_SKILLS contains valid SkillIds
@@ -125,7 +119,7 @@ describe("Integration: Source Switching with Delete", () => {
       // Verify config generated with exact skill list
       expect(await fileExists(installResult.configPath)).toBe(true);
       const config = await readTestTsConfig<ProjectConfig>(installResult.configPath);
-      expectConfigSkills(config, [...ALL_SKILL_NAMES]);
+      expectSkillConfigs(config, buildSkillConfigs(ALL_SKILL_NAMES, { source: "eject" }));
 
       // Verify NO _archived directory exists
       const archivedDir = path.join(dirs.projectDir, LOCAL_SKILLS_PATH, "_archived");

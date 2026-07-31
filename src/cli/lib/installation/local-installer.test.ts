@@ -39,7 +39,6 @@ import { initializeMatrix } from "../matrix/matrix-provider";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import {
   createMockCopiedSkill,
-  createMockSkill,
   createMockSkillEntry,
 } from "../__tests__/factories/skill-factories";
 import { createMockAgent } from "../__tests__/factories/agent-factories";

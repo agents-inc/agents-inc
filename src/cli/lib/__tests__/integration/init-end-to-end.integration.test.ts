@@ -9,7 +9,7 @@ import { STANDARD_FILES } from "../../../consts";
 import type { MergedSkillsMatrix, ProjectConfig, SkillId } from "../../../types";
 import type { SourceLoadResult } from "../../loading/source-loader";
 import { createComprehensiveMatrix } from "../factories/matrix-factories.js";
-import { initMatrixAndSource } from "../factories/config-factories.js";
+import { buildAgentConfigs, initMatrixAndSource } from "../factories/config-factories.js";
 import {
   buildSkillConfigs,
   buildWizardResultFromStore,
@@ -95,9 +95,10 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
       const config = await readTestTsConfig<ProjectConfig>(result.configPath);
 
       // Full agents shape check (sorted alphabetically)
-      expectAgentConfigs(config, [
-        ...EXPECTED_AGENTS.WEB_AND_API.map((name) => ({ name, scope: "global" })),
-      ]);
+      expectAgentConfigs(
+        config,
+        buildAgentConfigs(EXPECTED_AGENTS.WEB_AND_API, { scope: "global" }),
+      );
 
       // Full skills shape check
       expectSkillConfigs(
@@ -137,9 +138,10 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         buildSkillConfigs(selectedSkillIds, { scope: "global", source: "agents-inc" }),
       );
 
-      expectAgentConfigs(config, [
-        ...EXPECTED_AGENTS.WEB_AND_API.map((name) => ({ name, scope: "global" })),
-      ]);
+      expectAgentConfigs(
+        config,
+        buildAgentConfigs(EXPECTED_AGENTS.WEB_AND_API, { scope: "global" }),
+      );
 
       // All selected skills are assigned to every selected agent.
       const allAssignments = {
@@ -258,9 +260,10 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
 
       const config = await readTestTsConfig<ProjectConfig>(result.configPath);
 
-      expectAgentConfigs(config, [
-        ...EXPECTED_AGENTS.WEB_AND_API.map((name) => ({ name, scope: "global" })),
-      ]);
+      expectAgentConfigs(
+        config,
+        buildAgentConfigs(EXPECTED_AGENTS.WEB_AND_API, { scope: "global" }),
+      );
 
       expectSkillConfigs(
         config,
@@ -343,9 +346,10 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         buildSkillConfigs(selectedSkillIds, { scope: "global", source: "agents-inc" }),
       );
 
-      expectAgentConfigs(config, [
-        ...EXPECTED_AGENTS.WEB_AND_API.map((name) => ({ name, scope: "global" })),
-      ]);
+      expectAgentConfigs(
+        config,
+        buildAgentConfigs(EXPECTED_AGENTS.WEB_AND_API, { scope: "global" }),
+      );
 
       // All selected skills are assigned to every selected agent (no domain filtering).
       const allAssignments = {
@@ -384,9 +388,10 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         buildSkillConfigs(selectedSkillIds, { scope: "global", source: "agents-inc" }),
       );
 
-      expectAgentConfigs(config, [
-        ...EXPECTED_AGENTS.WEB_AND_API.map((name) => ({ name, scope: "global" })),
-      ]);
+      expectAgentConfigs(
+        config,
+        buildAgentConfigs(EXPECTED_AGENTS.WEB_AND_API, { scope: "global" }),
+      );
 
       // All selected skills are assigned to every selected agent (no domain filtering).
       const allAssignments = {

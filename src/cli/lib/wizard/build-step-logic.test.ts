@@ -435,7 +435,6 @@ describe("buildCategoriesForDomain", () => {
     });
 
     it("should NOT filter on non-web domains even when filterIncompatible is true", () => {
-      const apiCategory: Category = "api-api";
       const apiDbCategory: Category = "api-database";
       initializeMatrix(BUILD_STEP_API_DB_MATRIX);
 

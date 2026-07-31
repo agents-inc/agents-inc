@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { AgentDefinition, AgentName, ProjectConfig } from "../../../types";
+import type { AgentDefinition, AgentName } from "../../../types";
 import type { WizardResultV2 } from "../../../components/wizard/wizard";
 import type { SourceLoadResult } from "../../loading/source-loader";
 import { createMockAgent } from "../../__tests__/factories/agent-factories";

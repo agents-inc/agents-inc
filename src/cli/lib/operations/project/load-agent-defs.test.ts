@@ -39,11 +39,6 @@ function createMockAgentDef(overrides: Partial<AgentDefinition> = {}): AgentDefi
   };
 }
 
-const CLI_AGENT: AgentDefinition = createMockAgentDef({
-  title: "CLI Web Developer",
-  description: "Built-in web developer",
-});
-
 const SOURCE_AGENT: AgentDefinition = createMockAgentDef({
   title: "Source Web Developer",
   description: "Source-overridden web developer",

@@ -125,6 +125,7 @@ describe("StepAgents component", () => {
 
       const store = useWizardStore.getState();
       expect(store.selectedAgents).toContain("web-developer");
+      expect(lastFrame()).toContain("Continue with 1 agent(s)");
     });
 
     it("should toggle correct agent after navigation", async () => {

@@ -15,7 +15,6 @@ import {
 } from "../__tests__/factories/skill-factories.js";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { createMockStack } from "../__tests__/factories/stack-factories.js";
-import { createMockCategory } from "../__tests__/factories/category-factories.js";
 import {
   createMockMarketplace,
   createMockMarketplacePlugin,

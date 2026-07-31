@@ -191,13 +191,12 @@ async function createProjectSkillsDir(projectDir: string): Promise<string> {
 }
 
 describe("uninstall command", () => {
-  let tempDir: string;
   let projectDir: string;
   let fakeHome: string;
   let cleanup: () => Promise<void>;
 
   beforeEach(async () => {
-    ({ tempDir, projectDir, fakeHome, cleanup } = await setupIsolatedHome("cc-uninstall-test-"));
+    ({ projectDir, fakeHome, cleanup } = await setupIsolatedHome("cc-uninstall-test-"));
 
     initializeMatrix(
       createMockMatrix(

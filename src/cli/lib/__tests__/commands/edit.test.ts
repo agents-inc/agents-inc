@@ -23,7 +23,7 @@ import * as wizardStore from "../../../stores/wizard-store";
 import { useWizardStore } from "../../../stores/wizard-store";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import * as execModule from "../../../utils/exec.js";
-import type { AgentName, CategoryPath, SkillConfig, SkillId, SkillScope } from "../../../types";
+import type { CategoryPath, SkillConfig, SkillId, SkillScope } from "../../../types";
 import Edit, {
   applyMigratedGlobalSources,
   migratePluginSkillScopes,
@@ -846,11 +846,6 @@ const PROJECT_PLUGIN_HONO = buildSkillConfigs(["api-framework-hono"], {
   scope: "project",
   source: "agents-inc",
 });
-const PROJECT_EJECT_HONO = buildSkillConfigs(["api-framework-hono"], {
-  scope: "project",
-  source: "eject",
-});
-
 const REACT_MIGRATED_TO_EJECT = new Map<SkillId, string>([["web-framework-react", "eject"]]);
 
 describe("applyMigratedGlobalSources", () => {

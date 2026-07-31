@@ -9,7 +9,6 @@ import type {
   CategoryDefinition,
   Domain,
   ResolvedSkill,
-  Category,
   CategorySelections,
   SkillId,
 } from "../../types";

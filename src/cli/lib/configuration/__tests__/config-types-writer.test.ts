@@ -12,7 +12,6 @@ vi.mock("../../../consts", async (importOriginal) => {
 import {
   generateConfigTypesSource,
   generateProjectConfigTypesSource,
-  getGlobalConfigTypesPath,
   loadConfigTypesDataInBackground,
   regenerateConfigTypes,
   type ConfigTypesBackgroundData,

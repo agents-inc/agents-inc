@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
-import { readTestTsConfig, writeTestTsConfig } from "../__tests__/helpers/config-io.js";
+import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { buildSourceConfig } from "../__tests__/factories/config-factories.js";
 import {
   DEFAULT_SOURCE,

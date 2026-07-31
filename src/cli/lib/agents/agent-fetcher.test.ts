@@ -163,7 +163,7 @@ describe("agent-fetcher", () => {
     });
 
     it("should pass forceRefresh option to fetchFromSource", async () => {
-      const fetchedDir = await mockFetchedRemote(tempDir);
+      await mockFetchedRemote(tempDir);
 
       await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE, {
         forceRefresh: true,
@@ -374,7 +374,7 @@ describe("agent-fetcher", () => {
     });
 
     it("should pass options through to fetchAgentDefinitionsFromRemote", async () => {
-      const fetchedDir = await mockFetchedRemote(tempDir);
+      await mockFetchedRemote(tempDir);
 
       await getAgentDefinitions(REMOTE_SOURCE, { forceRefresh: true });
 

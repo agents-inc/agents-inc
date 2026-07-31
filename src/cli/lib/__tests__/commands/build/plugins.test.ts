@@ -170,7 +170,7 @@ describe("build:plugins command", () => {
       // Create a valid skill with frontmatter
       await writeSkill(skillsDir, "web-framework-react", "React framework");
 
-      const { stdout, error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
+      const { error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
 
       expect(error).toBeUndefined();
 
