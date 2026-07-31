@@ -97,7 +97,8 @@ export const StepSettings: React.FC<StepSettingsProps> = ({ projectDir, onClose 
     }
 
     if (key.return) {
-      // Toggle enabled/disabled is a placeholder for future enabledSources store integration
+      // Claimed so Enter cannot fall through to the hotkeys below; toggling a source
+      // enabled/disabled is not wired up yet.
       return;
     }
 

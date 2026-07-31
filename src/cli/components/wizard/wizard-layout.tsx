@@ -1,11 +1,12 @@
 import { Box, Text } from "ink";
 import React, { Fragment } from "react";
-import { CLI_COLORS, FALLBACK_DOMAIN } from "../../consts.js";
+import { CLI_COLORS, FALLBACK_DOMAIN, LOGO_MIN_TERMINAL_ROWS } from "../../consts.js";
 import type { StartupMessage } from "../../utils/logger.js";
+import { formatTerminalTooSmallMessage, isTerminalLargeEnough } from "../../utils/terminal.js";
 import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
 import { useWizardStore, type WizardStep } from "../../stores/wizard-store.js";
 import { useTerminalDimensions } from "../hooks/use-terminal-dimensions.js";
-import { InfoPanel } from "./info-panel.js";
+import { SummaryPanel } from "./summary-panel.js";
 import { Toast } from "./toast.js";
 import {
   HOTKEY_INFO,
@@ -18,6 +19,7 @@ import {
   KEY_LABEL_ENTER,
   KEY_LABEL_ESC,
   KEY_LABEL_SPACE,
+  isInfoPanelAvailable,
 } from "./hotkeys.js";
 import {
   WIZARD_STEPS,
@@ -102,6 +104,19 @@ const STEP_DROPDOWN_LABEL: Partial<Record<WizardStep, string>> = {
   agents: "Select agents",
 };
 
+/**
+ * What the wizard paints instead of itself while the terminal is below
+ * `MIN_TERMINAL_SIZE` (consts.ts). It REPLACES the wizard tree rather than
+ * covering it: Ink lays a still-mounted tree out at the small size regardless of
+ * what is drawn on top, so an overlay leaves the squeezed content bleeding
+ * underneath.
+ */
+const TerminalTooSmall: React.FC<{ columns: number }> = ({ columns }) => (
+  <Box paddingX={1} paddingY={1}>
+    <Text color={CLI_COLORS.WARNING}>{formatTerminalTooSmallMessage(columns)}</Text>
+  </Box>
+);
+
 function resolveDropdownLabel(
   step: WizardStep,
   selectedStackId: string | null,
@@ -115,8 +130,16 @@ function resolveDropdownLabel(
 
 export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, children }) => {
   const store = useWizardStore();
+  const { columns: terminalWidth, rows: terminalHeight } = useTerminalDimensions();
+
+  // The startup gate cannot catch a terminal that shrinks after launch, and
+  // `useTerminalDimensions` already re-renders on resize — so the same check
+  // lives here, on the value that hook returns.
+  if (!isTerminalLargeEnough(terminalWidth, terminalHeight)) {
+    return <TerminalTooSmall columns={terminalWidth} />;
+  }
+
   const { completedSteps, skippedSteps } = store.getStepProgress();
-  const { rows: terminalHeight } = useTerminalDimensions();
 
   const domainNav: DomainNavProps | undefined =
     store.step === "build" && store.selectedDomains.length > 0
@@ -127,6 +150,12 @@ export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, child
         }
       : undefined;
 
+  // The logo is decoration; the stack list is the content. Below the threshold
+  // its six rows starve that list's viewport until the shared scroll gate stops
+  // clipping and the rows bleed over the footer.
+  const terminalHasRoomForLogo = terminalHeight >= LOGO_MIN_TERMINAL_ROWS;
+  const shouldRenderLogo = !!logo && store.step === "stack" && terminalHasRoomForLogo;
+
   const dropdownLabel = resolveDropdownLabel(store.step, store.selectedStackId);
   const dropdowns: Partial<Record<WizardStep, TabDropdownProps>> = dropdownLabel
     ? { [store.step]: { items: [{ id: dropdownLabel, label: dropdownLabel }] } }
@@ -134,7 +163,7 @@ export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, child
 
   return (
     <Box flexDirection="column" paddingX={1} height={terminalHeight}>
-      {logo && store.step === "stack" && (
+      {shouldRenderLogo && (
         <Box flexDirection="row" marginTop={1} columnGap={1}>
           <Text>{logo}</Text>
         </Box>
@@ -151,7 +180,7 @@ export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, child
       {FEATURE_FLAGS.INFO_PANEL && store.showInfo ? (
         <>
           <Box flexDirection="column" flexGrow={1} flexBasis={0} marginTop={1}>
-            <InfoPanel />
+            <SummaryPanel />
           </Box>
           <WizardFooter />
         </>
@@ -199,7 +228,7 @@ export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, child
             <DefinitionItem
               label="Info"
               values={[HOTKEY_INFO.label]}
-              isVisible={FEATURE_FLAGS.INFO_PANEL}
+              isVisible={isInfoPanelAvailable(store.step)}
             />
           </Box>
           <WizardFooter />

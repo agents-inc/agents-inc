@@ -44,8 +44,14 @@ export type UseSectionScrollResult = {
  * On top of focus-following it exposes an overscroll channel (`scrollBy`) that
  * moves the viewport BEYOND the focused row so rows that can never take focus —
  * trailing inert Sources rows — can still be scrolled into view, plus the
- * `hidden{Above,Below}` counts a `ScrollAffordance` sibling renders. Overscroll
- * resets whenever focus moves, so the viewport snaps back to follow focus.
+ * `hidden{Above,Below}` counts. Overscroll resets whenever focus moves, so the
+ * viewport snaps back to follow focus.
+ *
+ * The counts are OFFERED, not obligatory. `source-grid.tsx` feeds them to a
+ * `ScrollAffordance` sibling; `category-grid.tsx` (the build grid) discards them
+ * deliberately — on a grid that dense a half-cut card is self-evidently "there
+ * is more", so a counted hint would be noise and would cost the viewport a row.
+ * A consumer that ignores them is exercising that choice, not overlooking one.
  */
 export function useSectionScroll({
   sectionCount,

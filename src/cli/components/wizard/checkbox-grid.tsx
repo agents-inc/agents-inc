@@ -66,6 +66,9 @@ export const CheckboxGrid = <T extends string = string>({
     }
   });
 
+  // The Domains grid clips silently: `useRowScroll` exposes no hidden-line
+  // counts and this view renders no `ScrollAffordance`, by owner decision — see
+  // the hook's doc comment.
   // When focus is on continue (past items), scroll to show last items
   const effectiveRow = focusedIndex >= items.length ? items.length - 1 : focusedIndex;
   const { scrollEnabled, scrollTop } = useRowScroll({

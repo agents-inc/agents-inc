@@ -19,6 +19,12 @@ export type UseRowScrollResult = {
  * Manages a scroll offset (in rows) to keep the focused row visible within
  * a constrained viewport. Extracted from the identical scroll plumbing in
  * checkbox-grid.tsx, step-agents.tsx, and stack-selection.tsx.
+ *
+ * Deliberately exposes NO hidden-line counts — unlike `useSectionScroll`, which
+ * computes them for the `ScrollAffordance` the Sources grid renders. Every
+ * consumer here (Domains, Agents, Stack) clips silently by owner decision: a
+ * half-cut row is self-evident, and a counted hint would cost the viewport a row
+ * to say the same thing. Adding the counts is a product change, not a gap.
  */
 export function useRowScroll({
   focusedIndex,

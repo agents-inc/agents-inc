@@ -2,9 +2,13 @@ import { Command, Flags } from "@oclif/core";
 
 import chalk from "chalk";
 
-import { CLI_COLORS } from "./consts.js";
+import { CLI_COLORS, MIN_TERMINAL_SIZE } from "./consts.js";
 import { getErrorMessage } from "./utils/errors.js";
-import { clearTerminalScreen } from "./utils/terminal.js";
+import {
+  clearTerminalScreen,
+  formatTerminalTooSmallMessage,
+  isTerminalLargeEnough,
+} from "./utils/terminal.js";
 import { EXIT_CODES } from "./lib/exit-codes.js";
 import type { ResolvedConfig } from "./lib/configuration/index.js";
 import { requireMarketplace } from "./lib/operations/source/require-marketplace.js";
@@ -38,25 +42,20 @@ export abstract class BaseCommand extends Command {
     return (this.config as unknown as ConfigWithSource).sourceConfig;
   }
 
+  /**
+   * Blocks the command from launching in a terminal below
+   * {@link MIN_TERMINAL_SIZE}. This runs once, before Ink mounts; the terminal
+   * shrinking mid-session is caught by the matching guard in `WizardLayout`.
+   */
   protected async ensureTerminalSize(): Promise<void> {
-    const MIN_WIDTH = 80;
-    const MIN_HEIGHT = 15;
-
-    const isValid = () => {
-      const cols = process.stdout.columns ?? MIN_WIDTH;
-      const rows = process.stdout.rows ?? MIN_HEIGHT;
-      return cols >= MIN_WIDTH && rows >= MIN_HEIGHT;
-    };
+    const currentColumns = () => process.stdout.columns ?? MIN_TERMINAL_SIZE.COLS;
+    const isValid = () =>
+      isTerminalLargeEnough(currentColumns(), process.stdout.rows ?? MIN_TERMINAL_SIZE.ROWS);
 
     if (isValid()) return;
 
-    const cols = process.stdout.columns ?? MIN_WIDTH;
-    const rows = process.stdout.rows ?? MIN_HEIGHT;
-    const issue =
-      cols < MIN_WIDTH ? `too narrow (need ${MIN_WIDTH})` : `too short (need ${MIN_HEIGHT})`;
-
     this.clearTerminal();
-    this.log(chalk.hex(CLI_COLORS.WARNING)(`Terminal ${issue}. Please resize.`));
+    this.log(chalk.hex(CLI_COLORS.WARNING)(formatTerminalTooSmallMessage(currentColumns())));
 
     await new Promise<void>((resolve) => {
       const check = () => {

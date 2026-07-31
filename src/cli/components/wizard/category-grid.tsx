@@ -247,6 +247,12 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
     onFocusedSkillChange?.(focusedSkillId);
   }, [focusedSkillId, onFocusedSkillChange]);
 
+  // `hiddenAbove` / `hiddenBelow` are discarded ON PURPOSE — the build grid has
+  // no `ScrollAffordance` and is not getting one (owner decision). On a grid
+  // this dense a half-cut card already says "there is more"; a counted hint
+  // would be noise, and it would cost the viewport a row to say what the
+  // clipped card says for free. Do not add one on the strength of the counts
+  // merely being available here.
   const { setSectionRef, scrollEnabled, scrollTopPx } = useSectionScroll({
     sectionCount: categories.length,
     focusedIndex: focusedRow,

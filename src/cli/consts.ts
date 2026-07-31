@@ -206,9 +206,58 @@ export const SCROLL_VIEWPORT = {
   CATEGORY_MARGIN_LINES: 1,
   /** Minimum rows to show at least 1 category before enabling scroll */
   MIN_VIEWPORT_ROWS: 5,
-  /** Minimum terminal height to show the wizard at all */
-  MIN_TERMINAL_HEIGHT: 15,
 } as const;
+
+/**
+ * The terminal geometry every command refuses to run below. This is the only
+ * minimum-size gate there is: `BaseCommand.ensureTerminalSize` reads it and
+ * blocks until the terminal is at least this big, so raising `ROWS` raises the
+ * bar for the whole CLI, tests included.
+ *
+ * `ROWS: 20` is measured, not guessed. Driving the real binary to the build
+ * step — the binding constraint, since it is the tallest step — gives:
+ * 15/16/17 corrupt (overlapping card borders, unreadable); 18 the first clean
+ * render (one complete category card, correctly clipped); 20 clean with one
+ * full card plus the next category heading; 24 comfortable. 18 is the hard
+ * correctness floor because it is where {@link SCROLL_VIEWPORT.MIN_VIEWPORT_ROWS}
+ * starts being satisfied — below it the shared scroll gate stops clipping and
+ * the grid bleeds over its borders. 20 buys two rows of margin above that floor
+ * while staying under the 24-row default of common terminals.
+ */
+export const MIN_TERMINAL_SIZE = {
+  COLS: 80,
+  ROWS: 20,
+} as const;
+
+/**
+ * The terminal height at or above which the stack step paints the six-row ASCII
+ * logo. Below it the logo is dropped — it is decoration, and the stack list is
+ * the content.
+ *
+ * This is NOT a second size gate. {@link MIN_TERMINAL_SIZE} decides whether a
+ * command runs at all; this decides only whether one decorative element renders
+ * inside a terminal that already cleared that gate. Conflating them would be a
+ * regression in both directions: raising `MIN_TERMINAL_SIZE.ROWS` to 26 would
+ * refuse to run in the 24-row terminal that is still a common default, and
+ * lowering this to 20 brings back the bleed below.
+ *
+ * 26 is measured against the real binary at 100 columns, on the stack step:
+ *
+ * | rows | stack step with the logo rendered                                 |
+ * | ---- | ----------------------------------------------------------------- |
+ * | 20   | bleeds — stack rows paint over the "Start from scratch" row        |
+ * | 24   | bleeds — stack rows paint through the hotkey row and the footer    |
+ * | 26   | clean                                                              |
+ * | 27   | clean                                                              |
+ * | 28   | clean                                                              |
+ *
+ * The mechanism: the logo eats six rows of the stack step's list viewport,
+ * starving it below {@link SCROLL_VIEWPORT.MIN_VIEWPORT_ROWS}, at which point
+ * the shared scroll hooks stop clipping and the rows bleed. Hiding the logo
+ * returns those rows to the viewport; the bail-instead-of-clip behaviour itself
+ * is untouched and remains the open underlying defect.
+ */
+export const LOGO_MIN_TERMINAL_ROWS = 26;
 
 export const DEFAULT_BRANDING = {
   NAME: "Agents Inc.",
@@ -247,6 +296,13 @@ export const SOURCE_HEADER_NAMES: Record<string, string> = {
 export function formatSourceDisplayName(source: string): string {
   return SOURCE_DISPLAY_NAMES[source] ?? source;
 }
+
+/**
+ * Marketplace-row value when skills are selected but every one of them is `EJECT_SOURCE`. "eject"
+ * names no marketplace, so there is nothing to list — but the selection is not empty either, and
+ * naming the default public marketplace would claim an origin none of those skills has.
+ */
+export const ALL_SKILLS_EJECTED_LABEL = "All skills ejected";
 
 // TODO: update naming convention to GRAY_1,2, etc
 export const CLI_COLORS = {

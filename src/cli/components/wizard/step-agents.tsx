@@ -165,6 +165,9 @@ export const StepAgents: React.FC = () => {
     focusedId !== "continue"
       ? flatRows.findIndex((row) => row.type === "agent" && row.agent.id === focusedId)
       : -1;
+  // The Agents grid clips silently: `useRowScroll` exposes no hidden-line counts
+  // and this view renders no `ScrollAffordance`, by owner decision — see the
+  // hook's doc comment.
   const { scrollEnabled, scrollTop } = useRowScroll({
     focusedIndex: Math.max(0, focusedRowIndex),
     itemCount: flatRows.length,
