@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   agentsPath,
@@ -14,9 +14,10 @@ import {
   readTestFile,
   renderMetadataYaml,
   runCLI,
+  writeCorruptConfig,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
 /**
  * D-273 — a corrupt `.claude-src/config.ts` (a file that exists but cannot be
@@ -51,13 +52,6 @@ const MISSING_EXPORT_DEFAULT = [
 /** A genuine TypeScript syntax error — the loader throws while evaluating it. */
 const SYNTAX_ERROR = `export default {{{ not valid typescript`;
 
-/** Overwrite an existing scope's config.ts with corrupt content (error-path fixture). */
-async function corruptConfig(baseDir: string, content: string): Promise<void> {
-  const configDir = path.join(baseDir, DIRS.CLAUDE_SRC);
-  await mkdir(configDir, { recursive: true });
-  await writeFile(path.join(configDir, FILES.CONFIG_TS), content);
-}
-
 /**
  * Seed a valid global install (config + discoverable local skill) under
  * `fakeHome`, then leave the config ready to be corrupted by the caller.
@@ -89,7 +83,7 @@ describe("compile with a corrupt config", () => {
     tempDir = await createTempDir();
     const fakeHome = path.join(tempDir, "global-home");
     await seedGlobalInstall(fakeHome);
-    await corruptConfig(fakeHome, MISSING_EXPORT_DEFAULT);
+    await writeCorruptConfig(fakeHome, MISSING_EXPORT_DEFAULT);
 
     // Run from HOME itself so detection resolves to a single Global pass.
     const { exitCode, combined } = await runCLI(["compile"], fakeHome, {
@@ -110,7 +104,7 @@ describe("compile with a corrupt config", () => {
     tempDir = await createTempDir();
     const fakeHome = path.join(tempDir, "global-home");
     await seedGlobalInstall(fakeHome);
-    await corruptConfig(fakeHome, MISSING_EXPORT_DEFAULT);
+    await writeCorruptConfig(fakeHome, MISSING_EXPORT_DEFAULT);
 
     const agentsBefore = await listFiles(agentsPath(fakeHome));
     const configBefore = await readTestFile(configTsPath(fakeHome));
@@ -133,7 +127,7 @@ describe("compile with a corrupt config", () => {
     const cleanHome = path.join(tempDir, "clean-home");
     await mkdir(cleanHome, { recursive: true });
     await seedGlobalInstall(projectDir);
-    await corruptConfig(projectDir, SYNTAX_ERROR);
+    await writeCorruptConfig(projectDir, SYNTAX_ERROR);
 
     // cwd is the project (distinct from HOME) so the corrupt config is detected
     // in the PROJECT context, not the global one.

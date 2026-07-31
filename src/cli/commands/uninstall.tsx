@@ -29,7 +29,7 @@ import {
 } from "../lib/installation/index";
 import { loadSkillsMatrixFromSource } from "../lib/loading";
 import { loadAgentDefs } from "../lib/operations";
-import { loadProjectConfigFromDir } from "../lib/configuration/project-config";
+import { ConfigLoadError, loadProjectConfigFromDir } from "../lib/configuration/project-config";
 import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
@@ -157,7 +157,11 @@ export default class Uninstall extends BaseCommand {
 
     this.printHeader();
 
-    const target = await detectUninstallTarget(projectDir);
+    const target = await detectUninstallTarget(projectDir, (reason) =>
+      this.warn(
+        `Could not read the project config — plugins and compiled agents it lists may be left behind: ${reason}`,
+      ),
+    );
     if (!hasAnythingToRemove(target)) {
       this.reportNothingToUninstall();
       return;
@@ -479,12 +483,38 @@ export function getCliInstalledPluginKeys(config: Partial<ProjectConfig> | null)
 }
 
 /**
+ * Loads the config that drives the removal plan. A config file that exists but
+ * cannot be parsed (`ConfigLoadError`) is reported through `onLoadFailed` and
+ * then treated exactly like a missing one — an unreadable config is precisely
+ * when a user needs to uninstall, so it must never fail the run. Same posture as
+ * the `deregisterProjectPath` call site. Only the plan degrades: the plugins and
+ * compiled agents the config named can no longer be identified, while file
+ * removal proceeds. Any other failure is a real fault and still propagates.
+ */
+async function loadUninstallConfig(
+  projectDir: string,
+  onLoadFailed: (reason: string) => void,
+): Promise<ProjectConfig | null> {
+  try {
+    const result = await loadProjectConfigFromDir(projectDir);
+    return result?.config ?? null;
+  } catch (error) {
+    if (!(error instanceof ConfigLoadError)) throw error;
+    onLoadFailed(getErrorMessage(error));
+    return null;
+  }
+}
+
+/**
  * Detects what's installed in a project directory for uninstallation.
  *
  * Checks for plugins, local skills, agents, config directories, and
  * resolves which plugins were installed by this CLI.
  */
-async function detectUninstallTarget(projectDir: string): Promise<UninstallTarget> {
+async function detectUninstallTarget(
+  projectDir: string,
+  onConfigLoadFailed: (reason: string) => void,
+): Promise<UninstallTarget> {
   const pluginsDir = getProjectPluginsDir(projectDir);
   const { skillsDir, agentsDir } = resolveInstallPaths(projectDir);
   const claudeDir = path.join(projectDir, CLAUDE_DIR);
@@ -506,7 +536,7 @@ async function detectUninstallTarget(projectDir: string): Promise<UninstallTarge
     directoryExists(claudeDir),
     fileExists(claudeSrcConfigPath),
     fileExists(claudeSrcConfigTypesPath),
-    loadProjectConfigFromDir(projectDir).then((result) => result?.config ?? null),
+    loadUninstallConfig(projectDir, onConfigLoadFailed),
   ]);
 
   let pluginNames: string[] = [];
