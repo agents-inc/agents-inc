@@ -78,16 +78,18 @@
     "test:coverage": "vitest run --coverage",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit && echo '✓ No TypeScript errors'",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
     "prepare": "husky",
     "generate:types": "bun scripts/generate-source-types.ts",
     "generate:schemas": "npx tsx scripts/generate-json-schemas.ts",
     "generate:schemas:check": "npm run generate:schemas && git diff --exit-code src/schemas/",
-    "prepublishOnly": "npm run format:check && npm run typecheck && npm run build && npm run test"
+    "prepublishOnly": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm run test"
   },
   "lint-staged": {
-    "*.{ts,js,json,yaml,yml,md}": "prettier --write"
+    "*.{ts,js,json,yaml,yml,md}": "prettier --write",
+    "*.{ts,tsx}": "eslint --no-warn-ignored"
   },
   "repository": {
     "type": "git",
@@ -122,6 +124,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@lydell/node-pty": "^1.2.0-beta.3",
     "@oclif/test": "^4.0.0",
     "@types/fs-extra": "^11.0.0",
@@ -129,6 +132,8 @@
     "@types/react": "^18.2.0",
     "@vitest/coverage-v8": "^4.0.18",
     "@xterm/headless": "^6.0.0",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
     "ink-testing-library": "^4.0.0",
     "lint-staged": "^15.2.0",
@@ -136,6 +141,7 @@
     "tree-kill": "^1.2.2",
     "tsup": "^8.0.0",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^4.0.18"
   },
   "engines": {
