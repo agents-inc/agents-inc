@@ -75,7 +75,7 @@ This file provides behavioral rules and conventions. For codebase reference docu
 - NEVER add unnecessary comments — only when unintuitive, complex, or for edge cases
 - NEVER reassign constants to other constants — use the original directly
 - NEVER build intermediate data structures imperatively — use `.map()`, `.flatMap()`, or literal arrays
-- NEVER export constants only used within the same file — run grep before adding `export`
+- NEVER export constants only used within the same file — run grep before adding `export`. Exception: helpers that build an identity or lookup key that more than one surface must agree on. Export those before a second caller exists — the export is the single definition every surface is meant to call, not an oversight. Live examples: `skillSlotKey` and `agentSlotKey` in `src/cli/lib/wizard/scope-diff.ts`; two surfaces each writing their own skill key is what made the Sources tab and the confirm step disagree. Nothing else is exempt.
 
 ## ALWAYS do this
 
@@ -136,7 +136,7 @@ Is it a complete skill/agent/category object?
 ## Code Conventions
 
 - **File naming:** kebab-case for ALL files and directories
-- **Exports:** Named exports only (no default exports). Use `.js` extensions on relative imports in new files.
+- **Exports:** Named exports only (no default exports). Use `.js` extensions on relative imports in new files. Exception — a default export is required wherever a framework loads the module by it: oclif commands (`src/cli/commands/**`) and hooks (`src/cli/hooks/**`), and tool configs (`*.config.*`, plus `e2e/global-setup.ts`). Never "fix" these to named exports — config loaders read `.default` and nothing else, and oclif's undocumented named-export fallback just scans siblings and takes the first match; neither breaks at `tsc`, only at runtime. Nothing else is exempt.
 - **Constants:** No magic numbers or hardcoded strings — use `STANDARD_FILES.*`, `STANDARD_DIRS.*`, `UI_SYMBOLS.*`, `CLI_COLORS.*` from `consts.ts` (and `EXIT_CODES.*` from `lib/exit-codes.ts`)
 - **Error handling:** `getErrorMessage(error)` for unknown errors, `this.handleError(error)` in commands, `EXIT_CODES.*` constants, no silent catch blocks
 - **Logging:** `warn()` for user issues, `verbose()` for diagnostics, `log()` for always-visible
