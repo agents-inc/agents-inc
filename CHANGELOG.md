@@ -7,6 +7,18 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.146.1] - 2026-08-01
+
+**Corrupt-config resilience, symlinked project paths, and a lint gate that can actually fail**
+
+- Fixed `uninstall` aborting when the project `config.ts` could not be read — the one situation in which a user most needs it to work. It now warns, removes the manifest and exits 0; only `ConfigLoadError` is swallowed, everything else still propagates
+- Fixed projects reached through a symlink (macOS `/tmp`, a `~/dev/repo` pointing at `/data/repo`) staying in the global config's `projects` array forever: registration and deregistration normalized differently, so the entry was written under one spelling and filtered under another. One normalizer now serves all three call sites
+- Added an ESLint flat config. The repo had the dependency and a `lint-staged` entry but no config file, so the gate passed by never running; it is now wired into `lint-staged` and `prepublishOnly`, opening onto a known non-zero baseline recorded in the docs rather than suppressed
+
+No ticketed work — this is the output of a sweep over the 0.145.0–0.146.0 tree.
+
+See [changelogs/0.146.1.md](./changelogs/0.146.1.md) for full details.
+
 ## [0.146.0] - 2026-07-30
 
 **Cross-scope rules: global items become immutable from project scope, colliding installs are masked, and the Sources tab agrees with the confirm step**
