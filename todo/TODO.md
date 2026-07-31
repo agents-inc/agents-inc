@@ -62,6 +62,38 @@ See [docs/guides/agent-reminders.md](../docs/guides/agent-reminders.md) for the 
 
 ---
 
+#### D-266: Scroll gates stop clipping below `MIN_VIEWPORT_ROWS`
+
+**Still open.** Two symptoms were removed in the 2026-07-31 wizard-UI pass without touching the cause,
+so the cliff is intact — it is simply harder to walk off.
+
+**Cause.** `useRowScroll` / `useSectionScroll` disable clipping entirely when the computed viewport
+falls below `SCROLL_VIEWPORT.MIN_VIEWPORT_ROWS` (5). Content then overflows and paints through
+whatever sits below it — hotkey row, footer, box borders.
+
+**What already changed (do not re-do):**
+
+- `MIN_TERMINAL_SIZE` (`COLS: 80`, `ROWS: 20`) is now one constant read by both
+  `BaseCommand.ensureTerminalSize()` and a `WizardLayout` guard, so shrinking mid-session shows the
+  resize prompt instead of a shredded frame. Previously the check ran once before render and a dead
+  `MIN_TERMINAL_HEIGHT` constant with zero importers sat alongside it.
+- `LOGO_MIN_TERMINAL_ROWS = 26` hides the ASCII logo on the stack step below that height. The logo's
+  6 rows were what starved that step's viewport past the cliff at 20 and 24 rows.
+
+**Measured on the real binary (100 cols), pre-fix:** build step corrupt at 16/17, first clean at 18;
+stack step corrupt at 20 and 24 with the logo, clean at 26+.
+
+**Accepted, not a defect:** the Skills grid discards `hiddenAbove`/`hiddenBelow` and Domains / Agents /
+Stack use `useRowScroll`, which never computes them — so those steps clip silently with no
+`N more below`. Owner's call: on a grid that dense it is self-evident. Recorded at each call site.
+
+**The remaining fix** is to make the shared hooks clip-and-signal instead of bailing out, so no
+combination of chrome and terminal height can bleed. Detail in
+`.ai-docs/agent-findings/2026-07-31-a-precondition-checked-once-before-render-is-not-a-gate.md`
+and the sibling findings dated 2026-07-31.
+
+---
+
 ### Wizard UX
 
 ---
