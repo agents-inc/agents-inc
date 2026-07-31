@@ -2,14 +2,20 @@ import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StepConfirm } from "./step-confirm";
 import { SkillAgentSummary } from "./skill-agent-summary";
-import { ENTER, ESCAPE, RENDER_DELAY_MS, delay } from "../../lib/__tests__/test-constants";
+import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../consts";
+import {
+  ARROW_DOWN,
+  ENTER,
+  ESCAPE,
+  RENDER_DELAY_MS,
+  delay,
+} from "../../lib/__tests__/test-constants";
 import { buildAgentConfigs } from "../../lib/__tests__/factories/config-factories";
 import { buildSkillConfigs } from "../../lib/__tests__/helpers/wizard-simulation";
 import { initializeMatrix } from "../../lib/matrix/matrix-provider";
 import { WEB_PAIR_MATRIX, WEB_TRIO_MATRIX } from "../../lib/__tests__/mock-data/mock-matrices";
 import { useWizardStore } from "../../stores/wizard-store";
 import type { SkillConfig } from "../../types/config";
-import type { SkillId } from "../../types";
 
 describe("StepConfirm component", () => {
   let cleanup: (() => void) | undefined;
@@ -30,14 +36,11 @@ describe("StepConfirm component", () => {
 
   describe("skills tables", () => {
     it("should show global-scoped skills under Global scope label", () => {
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={buildSkillConfigs(["web-framework-react"], { scope: "global" })}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      useWizardStore.setState({
+        skillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      });
+
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
       const output = lastFrame();
@@ -46,14 +49,11 @@ describe("StepConfirm component", () => {
     });
 
     it("should show project-scoped skills under Project scope label", () => {
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={buildSkillConfigs(["web-framework-react"], { scope: "project" })}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      useWizardStore.setState({
+        skillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+      });
+
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
       const output = lastFrame();
@@ -62,19 +62,14 @@ describe("StepConfirm component", () => {
     });
 
     it("should show both scope labels when both scopes have skills", () => {
-      const skillConfigs: SkillConfig[] = [
-        ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
-        ...buildSkillConfigs(["web-state-zustand"], { scope: "global" }),
-      ];
+      useWizardStore.setState({
+        skillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+          ...buildSkillConfigs(["web-state-zustand"], { scope: "global" }),
+        ],
+      });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={skillConfigs}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
       const output = lastFrame();
@@ -83,14 +78,11 @@ describe("StepConfirm component", () => {
     });
 
     it("should not show Project scope label when no project-scoped skills", () => {
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={buildSkillConfigs(["web-framework-react"], { scope: "global" })}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      useWizardStore.setState({
+        skillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      });
+
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
       const output = lastFrame();
@@ -99,14 +91,11 @@ describe("StepConfirm component", () => {
     });
 
     it("should not show Global scope label when no global-scoped skills", () => {
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={buildSkillConfigs(["web-framework-react"], { scope: "project" })}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      useWizardStore.setState({
+        skillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+      });
+
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
       const output = lastFrame();
@@ -115,184 +104,141 @@ describe("StepConfirm component", () => {
     });
   });
 
-  describe("eject icon display", () => {
-    it("should show eject icon for eject-source skills", () => {
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={buildSkillConfigs(["web-framework-react"], { source: "eject" })}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+  describe("panel header", () => {
+    it("should render the marketplace and stack rows above the summary", () => {
+      // The source is stated because the Marketplace row now derives from it — the factory's
+      // default is `eject`, which names no marketplace at all.
+      useWizardStore.setState({
+        skillConfigs: buildSkillConfigs(["web-framework-react"], {
+          source: DEFAULT_PUBLIC_SOURCE_NAME,
+        }),
+      });
+
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      expect(lastFrame()).toContain("\u23CF");
+      const output = lastFrame();
+      expect(output).toContain("Marketplace Agents Inc");
+      expect(output).toContain("Stack none");
+      expect(output).toContain("React");
+    });
+  });
+
+  describe("eject icon display", () => {
+    it("should show eject icon for eject-source skills", () => {
+      useWizardStore.setState({
+        skillConfigs: buildSkillConfigs(["web-framework-react"], { source: "eject" }),
+      });
+
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
+      cleanup = unmount;
+
+      expect(lastFrame()).toContain("⏏");
     });
 
     it("should not show eject icon for plugin-source skills", () => {
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={buildSkillConfigs(["web-framework-react"], { source: "agents-inc" })}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      useWizardStore.setState({
+        skillConfigs: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+      });
+
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      expect(lastFrame()).not.toContain("\u23CF");
+      expect(lastFrame()).not.toContain("⏏");
     });
   });
 
   describe("new item markers - init mode (no prior installation)", () => {
     it("should show + prefix when installedSkillConfigs is absent", () => {
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={buildSkillConfigs(["web-framework-react", "web-state-zustand"])}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      useWizardStore.setState({
+        skillConfigs: buildSkillConfigs(["web-framework-react", "web-state-zustand"]),
+      });
+
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-      const skillLines = lines.filter((line) => line.includes("React") || line.includes("Zustand"));
-      for (const line of skillLines) {
-        expect(line).toContain("+");
-        expect(line).not.toContain("\u2022");
-      }
+      const output = lastFrame();
+      expect(output).toContain("+ React");
+      expect(output).toContain("+ Zustand");
+      expect(output).not.toContain("• React");
+      expect(output).not.toContain("• Zustand");
     });
 
     it("should show + prefix for agents when installedAgentConfigs is absent", () => {
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          agentConfigs={buildAgentConfigs(["web-developer"])}
-          skillConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      useWizardStore.setState({ agentConfigs: buildAgentConfigs(["web-developer"]) });
+
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-      const agentLine = lines.find((line) => line.includes("web-developer"));
-      expect(agentLine).toBeDefined();
-      expect(agentLine).toContain("+");
-      expect(agentLine).not.toContain("\u2022");
+      const output = lastFrame();
+      expect(output).toContain("+ web-developer");
+      expect(output).not.toContain("• web-developer");
     });
   });
 
   describe("new item markers - edit mode", () => {
     it("should show + for a skill not in installedSkillConfigs", () => {
-      useWizardStore.setState({ installedSkillConfigs: [] });
+      useWizardStore.setState({
+        installedSkillConfigs: [],
+        skillConfigs: buildSkillConfigs(["web-framework-react"]),
+      });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={buildSkillConfigs(["web-framework-react"])}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-      const reactLine = lines.find((line) => line.includes("React"));
-      expect(reactLine).toBeDefined();
-      expect(reactLine).toContain("+");
+      expect(lastFrame()).toContain("+ React");
     });
 
     it("should show bullet for a skill that IS in installedSkillConfigs", () => {
       const configs = buildSkillConfigs(["web-framework-react"]);
-      useWizardStore.setState({ installedSkillConfigs: configs });
+      useWizardStore.setState({ installedSkillConfigs: configs, skillConfigs: configs });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={configs}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-      const reactLine = lines.find((line) => line.includes("React"));
-      expect(reactLine).toBeDefined();
-      expect(reactLine).toContain("\u2022");
-      expect(reactLine).not.toMatch(/\+.*React/);
+      const output = lastFrame();
+      expect(output).toContain("• React");
+      expect(output).not.toContain("+ React");
     });
 
     it("should show mix of + and bullet in same scope", () => {
       const existingConfigs = buildSkillConfigs(["web-framework-react"]);
-      const allConfigs: SkillConfig[] = [
-        ...existingConfigs,
-        ...buildSkillConfigs(["web-state-zustand"]),
-      ];
-      useWizardStore.setState({ installedSkillConfigs: existingConfigs });
+      useWizardStore.setState({
+        installedSkillConfigs: existingConfigs,
+        skillConfigs: [...existingConfigs, ...buildSkillConfigs(["web-state-zustand"])],
+      });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={allConfigs}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-
-      const zustandLine = lines.find((line) => line.includes("Zustand"));
-      expect(zustandLine).toBeDefined();
-      expect(zustandLine).toContain("+");
-
-      const reactLine = lines.find((line) => line.includes("React"));
-      expect(reactLine).toBeDefined();
-      expect(reactLine).toContain("\u2022");
-      expect(reactLine).not.toMatch(/\+.*React/);
+      const output = lastFrame();
+      expect(output).toContain("+ Zustand");
+      expect(output).toContain("• React");
+      expect(output).not.toContain("+ React");
     });
 
     it("should show + on new agent when installedAgentConfigs is empty", () => {
-      useWizardStore.setState({ installedAgentConfigs: [] });
+      useWizardStore.setState({
+        installedAgentConfigs: [],
+        agentConfigs: buildAgentConfigs(["web-developer"]),
+      });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          agentConfigs={buildAgentConfigs(["web-developer"])}
-          skillConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-      const agentLine = lines.find((line) => line.includes("web-developer"));
-      expect(agentLine).toBeDefined();
-      expect(agentLine).toContain("+");
+      expect(lastFrame()).toContain("+ web-developer");
     });
 
     it("should show bullet on agent that was already in installedAgentConfigs", () => {
       const agents = buildAgentConfigs(["web-developer"]);
-      useWizardStore.setState({ installedAgentConfigs: agents });
+      useWizardStore.setState({ installedAgentConfigs: agents, agentConfigs: agents });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          agentConfigs={agents}
-          skillConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-      const agentLine = lines.find((line) => line.includes("web-developer"));
-      expect(agentLine).toBeDefined();
-      expect(agentLine).toContain("\u2022");
-      expect(agentLine).not.toMatch(/\+.*web-developer/);
+      const output = lastFrame();
+      expect(output).toContain("• web-developer");
+      expect(output).not.toContain("+ web-developer");
     });
   });
 
@@ -302,15 +248,10 @@ describe("StepConfirm component", () => {
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"]),
       });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={[]} agentConfigs={[]} onBack={vi.fn()} />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-      const reactLine = lines.find((line) => line.includes("React"));
-      expect(reactLine).toBeDefined();
-      expect(reactLine).toMatch(/-/);
+      expect(lastFrame()).toContain("- React");
     });
 
     it("should show - for a removed agent", () => {
@@ -318,43 +259,26 @@ describe("StepConfirm component", () => {
         installedAgentConfigs: buildAgentConfigs(["web-developer"]),
       });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} agentConfigs={[]} skillConfigs={[]} onBack={vi.fn()} />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-      const agentLine = lines.find((line) => line.includes("web-developer"));
-      expect(agentLine).toBeDefined();
-      expect(agentLine).toMatch(/-/);
+      expect(lastFrame()).toContain("- web-developer");
     });
 
     it("should show mix of bullet and - items", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react", "web-state-zustand"]),
+        skillConfigs: buildSkillConfigs(["web-framework-react"]),
       });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={buildSkillConfigs(["web-framework-react"])}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-
-      const reactLine = lines.find((line) => line.includes("React"));
-      expect(reactLine).toBeDefined();
-      expect(reactLine).toContain("\u2022");
-      expect(reactLine).not.toMatch(/\+.*React/);
-      expect(reactLine).not.toMatch(/-.*React/);
-
-      const zustandLine = lines.find((line) => line.includes("Zustand"));
-      expect(zustandLine).toBeDefined();
-      expect(zustandLine).toMatch(/-/);
+      const output = lastFrame();
+      expect(output).toContain("• React");
+      expect(output).not.toContain("+ React");
+      expect(output).not.toContain("- React");
+      expect(output).toContain("- Zustand");
     });
 
     it("should show scope heading when all skills in scope are removed", () => {
@@ -362,9 +286,7 @@ describe("StepConfirm component", () => {
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={[]} agentConfigs={[]} onBack={vi.fn()} />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
       expect(lastFrame()).toContain("Global");
@@ -378,14 +300,10 @@ describe("StepConfirm component", () => {
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={[]} agentConfigs={[]} onBack={vi.fn()} />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-      const reactLine = lines.find((line) => line.includes("React"));
-      expect(reactLine).toBeUndefined();
+      expect(lastFrame()).not.toContain("React");
     });
 
     it("should NOT show - for a deselected global agent during init", () => {
@@ -394,14 +312,10 @@ describe("StepConfirm component", () => {
         installedAgentConfigs: buildAgentConfigs(["web-developer"], { scope: "global" }),
       });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} agentConfigs={[]} skillConfigs={[]} onBack={vi.fn()} />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-      const agentLine = lines.find((line) => line.includes("web-developer"));
-      expect(agentLine).toBeUndefined();
+      expect(lastFrame()).not.toContain("web-developer");
     });
 
     it("should still show - for removed project skills during init", () => {
@@ -410,15 +324,10 @@ describe("StepConfirm component", () => {
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
       });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={[]} agentConfigs={[]} onBack={vi.fn()} />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-      const reactLine = lines.find((line) => line.includes("React"));
-      expect(reactLine).toBeDefined();
-      expect(reactLine).toMatch(/-/);
+      expect(lastFrame()).toContain("- React");
     });
 
     it("should show - for deselected global skill in edit mode (isInitMode=false)", () => {
@@ -427,28 +336,20 @@ describe("StepConfirm component", () => {
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={[]} agentConfigs={[]} onBack={vi.fn()} />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = lastFrame()?.split("\n") ?? [];
-      const reactLine = lines.find((line) => line.includes("React"));
-      expect(reactLine).toBeDefined();
-      expect(reactLine).toMatch(/-/);
+      expect(lastFrame()).toContain("- React");
     });
   });
 
   describe("agents tables", () => {
     it("should show global agents under Global scope label", () => {
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          agentConfigs={buildAgentConfigs(["web-developer"], { scope: "global" })}
-          skillConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      useWizardStore.setState({
+        agentConfigs: buildAgentConfigs(["web-developer"], { scope: "global" }),
+      });
+
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
       const output = lastFrame();
@@ -457,14 +358,11 @@ describe("StepConfirm component", () => {
     });
 
     it("should show project agents under Project scope label", () => {
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          agentConfigs={buildAgentConfigs(["web-developer"], { scope: "project" })}
-          skillConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      useWizardStore.setState({
+        agentConfigs: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      });
+
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
       const output = lastFrame();
@@ -476,15 +374,9 @@ describe("StepConfirm component", () => {
   describe("keyboard navigation", () => {
     it("should call onComplete when Enter is pressed", async () => {
       const onComplete = vi.fn();
+      useWizardStore.setState({ skillConfigs: buildSkillConfigs(["web-framework-react"]) });
 
-      const { stdin, unmount } = render(
-        <StepConfirm
-          onComplete={onComplete}
-          skillConfigs={buildSkillConfigs(["web-framework-react"])}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { stdin, unmount } = render(<StepConfirm onComplete={onComplete} onBack={vi.fn()} />);
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -494,18 +386,12 @@ describe("StepConfirm component", () => {
       expect(onComplete).toHaveBeenCalled();
     });
 
-    it("should call onBack when Escape is pressed and onBack provided", async () => {
+    it("should call onBack when Escape is pressed", async () => {
       const onComplete = vi.fn();
       const onBack = vi.fn();
+      useWizardStore.setState({ skillConfigs: buildSkillConfigs(["web-framework-react"]) });
 
-      const { stdin, unmount } = render(
-        <StepConfirm
-          onComplete={onComplete}
-          skillConfigs={buildSkillConfigs(["web-framework-react"])}
-          onBack={onBack}
-          agentConfigs={[]}
-        />,
-      );
+      const { stdin, unmount } = render(<StepConfirm onComplete={onComplete} onBack={onBack} />);
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
@@ -516,119 +402,83 @@ describe("StepConfirm component", () => {
       expect(onComplete).not.toHaveBeenCalled();
     });
 
-    it("should not crash when Escape is pressed but onBack is not provided", async () => {
+    it("should not leave or complete the step when the panel's scroll keys are pressed", async () => {
       const onComplete = vi.fn();
+      const onBack = vi.fn();
+      useWizardStore.setState({ skillConfigs: buildSkillConfigs(["web-framework-react"]) });
 
-      const { stdin, unmount } = render(
-        <StepConfirm
-          onComplete={onComplete}
-          skillConfigs={buildSkillConfigs(["web-framework-react"])}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { stdin, unmount } = render(<StepConfirm onComplete={onComplete} onBack={onBack} />);
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ESCAPE);
+      await stdin.write(ARROW_DOWN);
       await delay(RENDER_DELAY_MS);
 
       expect(onComplete).not.toHaveBeenCalled();
+      expect(onBack).not.toHaveBeenCalled();
     });
   });
 
   describe("excluded global items", () => {
     it("should show excluded global skill in Global section alongside active skills", () => {
-      const installed = buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
-        scope: "global",
+      useWizardStore.setState({
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
+          scope: "global",
+        }),
+        skillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+          ...buildSkillConfigs(["web-state-zustand"], { scope: "global", excluded: true }),
+        ],
       });
-      useWizardStore.setState({ installedSkillConfigs: installed });
 
-      const skillConfigs: SkillConfig[] = [
-        ...buildSkillConfigs(["web-framework-react"], { scope: "global" }),
-        ...buildSkillConfigs(["web-state-zustand"], { scope: "global", excluded: true }),
-      ];
-
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={skillConfigs}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const output = lastFrame() ?? "";
+      const output = lastFrame();
       expect(output).toContain("Global");
       expect(output).toContain("React");
       expect(output).toContain("Zustand");
     });
 
     it("should not hide excluded global skill from output", () => {
-      const installed = buildSkillConfigs(["web-framework-react"], { scope: "global" });
-      useWizardStore.setState({ installedSkillConfigs: installed });
-
-      const skillConfigs = buildSkillConfigs(["web-framework-react"], {
-        scope: "global",
-        excluded: true,
+      useWizardStore.setState({
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+        skillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          excluded: true,
+        }),
       });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={skillConfigs}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = (lastFrame() ?? "").split("\n");
-      const reactLine = lines.find((line) => line.includes("React"));
-      expect(reactLine).toBeDefined();
+      expect(lastFrame()).toContain("React");
     });
 
     it("should show excluded global agent in Global section", () => {
-      const installed = buildAgentConfigs(["web-developer"], { scope: "global" });
-      useWizardStore.setState({ installedAgentConfigs: installed });
-
-      const agentConfigs = buildAgentConfigs(["web-developer"], {
-        scope: "global",
-        excluded: true,
+      useWizardStore.setState({
+        installedAgentConfigs: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        agentConfigs: buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
       });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          agentConfigs={agentConfigs}
-          skillConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const output = lastFrame() ?? "";
+      const output = lastFrame();
       expect(output).toContain("Global");
       expect(output).toContain("web-developer");
     });
 
     it("should show Global section when only excluded global skills exist", () => {
-      useWizardStore.setState({ installedSkillConfigs: [] });
-
-      const skillConfigs = buildSkillConfigs(["web-framework-react"], {
-        scope: "global",
-        excluded: true,
+      useWizardStore.setState({
+        installedSkillConfigs: [],
+        skillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          excluded: true,
+        }),
       });
 
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={skillConfigs}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
       expect(lastFrame()).toContain("Global");
@@ -637,27 +487,19 @@ describe("StepConfirm component", () => {
     it("should not duplicate a re-scoped skill in the Global section", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+        skillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
+        ],
       });
 
-      const skillConfigs: SkillConfig[] = [
-        ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
-        ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
-      ];
-
-      const { lastFrame, unmount } = render(
-        <StepConfirm
-          onComplete={vi.fn()}
-          skillConfigs={skillConfigs}
-          agentConfigs={[]}
-          onBack={vi.fn()}
-        />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
-      const lines = (lastFrame() ?? "").split("\n");
-      const reactLines = lines.filter((line) => line.includes("React"));
-      // Once in Global (inherited) + once in Project (re-scoped) = 2, not 3
-      expect(reactLines).toHaveLength(2);
+      const output = lastFrame()!;
+      // Once in Global (inherited •) + once in Project (re-scoped +) = 2, not 3
+      const reactMatches = output.split("React").length - 1;
+      expect(reactMatches).toBe(2);
     });
 
     it("should show correct entries for mixed re-scoped and excluded skills", () => {
@@ -711,9 +553,7 @@ describe("StepConfirm component", () => {
 
   describe("empty state", () => {
     it("should render without crash when no skillConfigs or agentConfigs provided", () => {
-      const { lastFrame, unmount } = render(
-        <StepConfirm onComplete={vi.fn()} skillConfigs={[]} agentConfigs={[]} onBack={vi.fn()} />,
-      );
+      const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
       cleanup = unmount;
 
       expect(lastFrame()).toBeDefined();
@@ -803,7 +643,7 @@ describe("SkillAgentSummary component", () => {
       const output = lastFrame()!;
       expect(output).not.toContain("~");
       expect(output).toContain("React");
-      expect(output).toContain("\u2022");
+      expect(output).toContain("•");
     });
 
     it("should show ~ for global-scoped skill source change", () => {
@@ -850,15 +690,8 @@ describe("SkillAgentSummary component", () => {
       cleanup = unmount;
 
       const output = lastFrame()!;
-
-      const lines = output.split("\n");
-      const reactLine = lines.find((line) => line.includes("React"));
-      expect(reactLine).toBeDefined();
-      expect(reactLine).toContain("~");
-
-      const vitestLine = lines.find((line) => line.includes("Vitest"));
-      expect(vitestLine).toBeDefined();
-      expect(vitestLine).toContain("+");
+      expect(output).toContain("~ React");
+      expect(output).toContain("+ Vitest");
     });
   });
 
@@ -887,7 +720,7 @@ describe("SkillAgentSummary component", () => {
 
       const output = lastFrame()!;
       expect(output).toContain("+ React");
-      expect(output).toContain("\u2022 React");
+      expect(output).toContain("• React");
       expect(output).not.toContain("- React");
       expect(output).not.toContain("~ React");
     });
@@ -910,7 +743,7 @@ describe("SkillAgentSummary component", () => {
       cleanup = unmount;
 
       const output = lastFrame()!;
-      expect(output).toContain("\u2022 React");
+      expect(output).toContain("• React");
       expect(output).not.toContain("+ React");
       expect(output).not.toContain("- React");
       expect(output).not.toContain("~ React");
@@ -919,7 +752,7 @@ describe("SkillAgentSummary component", () => {
     it("agent symmetry: in-session agent G→P toggle shows + at Project and • at Global", () => {
       // Symmetric scenario for agents — `toggleAgentScope` emits the same
       // dual-scope shape (active project + global tombstone) when the agent
-      // was globally installed. The info panel must render the surviving
+      // was globally installed. The summary must render the surviving
       // global agent row as `•`, not `-`.
       useWizardStore.setState({
         installedAgentConfigs: buildAgentConfigs(["web-developer"], { scope: "global" }),
@@ -938,7 +771,7 @@ describe("SkillAgentSummary component", () => {
 
       const output = lastFrame()!;
       expect(output).toContain("+ web-developer");
-      expect(output).toContain("\u2022 web-developer");
+      expect(output).toContain("• web-developer");
       expect(output).not.toContain("- web-developer");
       expect(output).not.toContain("~ web-developer");
     });
@@ -956,7 +789,7 @@ describe("SkillAgentSummary component", () => {
       cleanup = unmount;
 
       const output = lastFrame()!;
-      expect(output).toContain("\u2022 web-developer");
+      expect(output).toContain("• web-developer");
       expect(output).not.toContain("+ web-developer");
       expect(output).not.toContain("- web-developer");
       expect(output).not.toContain("~ web-developer");
@@ -986,7 +819,7 @@ describe("SkillAgentSummary component", () => {
 
       const output = lastFrame()!;
       expect(output).toContain("- React");
-      expect(output).toContain("\u2022 React");
+      expect(output).toContain("• React");
       expect(output).not.toContain("+ React");
       expect(output).not.toContain("~ React");
     });

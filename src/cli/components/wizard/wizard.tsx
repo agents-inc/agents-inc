@@ -21,6 +21,7 @@ import {
   HOTKEY_SCOPE,
   HOTKEY_SETTINGS,
   isHotkey,
+  isInfoPanelAvailable,
 } from "./hotkeys.js";
 import type {
   AgentName,
@@ -32,7 +33,6 @@ import type {
 import type { AgentScopeConfig, SkillConfig } from "../../types/config.js";
 import type { StartupMessage } from "../../utils/logger.js";
 import { useBuildStepProps } from "../hooks/use-build-step-props.js";
-import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
 
 const TOAST_DURATION_MS = 2000;
 
@@ -126,18 +126,18 @@ export const Wizard: React.FC<WizardProps> = ({
       return;
     }
 
-    if (FEATURE_FLAGS.INFO_PANEL) {
-      if (store.showInfo) {
-        if (key.escape || isHotkey(input, HOTKEY_INFO)) {
-          store.toggleInfo();
-        }
-        return;
-      }
-
-      if (isHotkey(input, HOTKEY_INFO)) {
+    // Closing is never gated on the step: the panel is only ever open on a step
+    // that allows it, and gating the close would strand the overlay.
+    if (store.showInfo) {
+      if (key.escape || isHotkey(input, HOTKEY_INFO)) {
         store.toggleInfo();
-        return;
       }
+      return;
+    }
+
+    if (isInfoPanelAvailable(store.step) && isHotkey(input, HOTKEY_INFO)) {
+      store.toggleInfo();
+      return;
     }
 
     if (key.escape) {
@@ -257,14 +257,7 @@ export const Wizard: React.FC<WizardProps> = ({
         return <StepAgents />;
 
       case "confirm": {
-        return (
-          <StepConfirm
-            onComplete={handleComplete}
-            skillConfigs={store.skillConfigs}
-            agentConfigs={store.agentConfigs}
-            onBack={store.goBack}
-          />
-        );
+        return <StepConfirm onComplete={handleComplete} onBack={store.goBack} />;
       }
 
       default: {

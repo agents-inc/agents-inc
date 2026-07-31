@@ -6,6 +6,9 @@
  * info panel in one place.
  */
 
+import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
+import type { WizardStep } from "../../stores/wizard-store.js";
+
 // ---------------------------------------------------------------------------
 // Global hotkeys (active across multiple wizard steps)
 // ---------------------------------------------------------------------------
@@ -57,4 +60,18 @@ export const KEY_LABEL_ARROWS_VERT = "\u2191/\u2193" as const;
 /** Case-insensitive check for a character hotkey. */
 export function isHotkey(input: string, hotkey: { key: string }): boolean {
   return input.toLowerCase() === hotkey.key.toLowerCase();
+}
+
+/**
+ * Whether `HOTKEY_INFO` does anything on `step` — the single answer both the
+ * key handler in `wizard.tsx` and the footer hint in `wizard-layout.tsx` read,
+ * so the wizard never advertises a key it ignores.
+ *
+ * The confirm step is excluded because it already renders the panel the
+ * overlay would show, and the overlay REPLACES the step rather than sitting
+ * over it: opening it there would unmount the confirm step's `Enter` handler
+ * and strand the user on a screen nothing can complete.
+ */
+export function isInfoPanelAvailable(step: WizardStep): boolean {
+  return FEATURE_FLAGS.INFO_PANEL && step !== "confirm";
 }

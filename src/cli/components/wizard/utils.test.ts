@@ -54,8 +54,8 @@ describe("getStackName", () => {
     expect(getStackName("nextjs-fullstack")).toBe("Next.js Full-Stack");
   });
 
-  it("should return undefined for unknown stack ID", () => {
-    expect(getStackName("nonexistent")).toBeUndefined();
+  it("should throw for a stack ID the matrix does not hold", () => {
+    expect(() => getStackName("nonexistent")).toThrow("Stack not found: nonexistent");
   });
 
   it("should return undefined for null input", () => {
