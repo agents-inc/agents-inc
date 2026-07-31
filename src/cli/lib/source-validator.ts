@@ -218,7 +218,7 @@ export async function validateSource(sourcePath: string): Promise<SourceValidati
       issues.push({
         severity: "error",
         file: relPath,
-        message: "Failed to parse YAML",
+        message: `Failed to parse YAML: ${getErrorMessage(error)}`,
       });
       continue;
     }
@@ -252,7 +252,7 @@ export async function validateSource(sourcePath: string): Promise<SourceValidati
     issues.push({
       severity: "warning",
       file: SKILL_CATEGORIES_PATH,
-      message: `Cross-reference validation skipped: failed to load categories/rules`,
+      message: `Cross-reference validation skipped: failed to load categories/rules: ${getErrorMessage(error)}`,
     });
   }
 
