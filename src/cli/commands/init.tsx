@@ -351,7 +351,6 @@ export default class Init extends BaseCommand {
         result,
         sourceResult,
         flags,
-        installMode,
       );
       this.reportSuccess(
         configResult,
@@ -447,7 +446,6 @@ export default class Init extends BaseCommand {
     result: WizardResultV2,
     sourceResult: SourceLoadResult,
     flags: SourceRefreshFlags,
-    installMode: InstallMode,
   ): Promise<{
     configResult: Awaited<ReturnType<typeof writeProjectConfig>>;
     compileResult: CompilationResult;

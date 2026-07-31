@@ -1,4 +1,4 @@
-import type { SkillDefinition, SkillDefinitionMap, SkillId } from "../../types";
+import type { SkillDefinitionMap } from "../../types";
 import { getErrorMessage } from "../../utils/errors";
 import { verbose } from "../../utils/logger";
 import { typedEntries } from "../../utils/typed-object";

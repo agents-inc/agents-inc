@@ -7,7 +7,6 @@ import type {
   SelectionValidation,
   SkillId,
   SkillOption,
-  Category,
   ValidationError,
   ValidationWarning,
 } from "../../types";

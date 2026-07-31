@@ -1,14 +1,5 @@
 import path from "path";
-import { Liquid } from "liquidjs";
-import {
-  readFile,
-  readFileOptional,
-  writeFile,
-  ensureDir,
-  copy,
-  fileExists,
-  directoryExists,
-} from "../../utils/fs";
+import { readFile, writeFile, ensureDir, copy, fileExists, directoryExists } from "../../utils/fs";
 import { log, verbose } from "../../utils/logger";
 import { DEFAULT_BRANDING, DIRS, EJECT_SOURCE, PROJECT_ROOT, STANDARD_FILES } from "../../consts";
 import { createLiquidEngine, compileAgentForPlugin } from "../compiler";
@@ -23,14 +14,10 @@ import { resolveAgents, convertStackToCompileConfig } from "../resolver";
 import { buildStackProperty } from "../configuration";
 import type {
   AgentConfig,
-  AgentDefinition,
   AgentName,
   CompileConfig,
-  CompiledAgentData,
   PluginManifest,
-  PluginSkillRef,
   ProjectConfig,
-  Skill,
   SkillId,
   Stack,
 } from "../../types";

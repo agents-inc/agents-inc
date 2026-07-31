@@ -1,6 +1,6 @@
 import { Args, Flags } from "@oclif/core";
 import path from "path";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { parse as parseYaml } from "yaml";
 import { BaseCommand } from "../../base-command.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { EXIT_CODES } from "../../lib/exit-codes.js";
@@ -15,7 +15,6 @@ import {
   fileExists,
   listDirectories,
   readFile,
-  writeFile,
   ensureDir,
 } from "../../utils/fs.js";
 import { warn } from "../../utils/logger.js";
@@ -24,7 +23,6 @@ import {
   GITHUB_SOURCE,
   LOCAL_SKILLS_PATH,
   STANDARD_FILES,
-  YAML_FORMATTING,
 } from "../../consts.js";
 import { stripYamlSchemaComment } from "../../utils/yaml-schema.js";
 import { IMPORT_DEFAULTS } from "../../lib/metadata-keys.js";

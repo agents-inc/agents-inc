@@ -5,7 +5,7 @@ import type { LocalRawMetadata } from "./skills/local-skill-loader";
 import { AUTHOR_HANDLE_PATTERN, KEBAB_CASE_PATTERN, LOCAL_PSEUDO_CATEGORY } from "../consts";
 import { formatZodIssue } from "./schema-validator";
 import { warn } from "../utils/logger";
-import { SKILL_IDS, SKILL_SLUGS, CATEGORIES } from "../types/generated/source-types";
+import { SKILL_SLUGS, CATEGORIES } from "../types/generated/source-types";
 import { MODEL_NAMES, PERMISSION_MODES } from "../types/matrix";
 import type {
   AgentHookAction,

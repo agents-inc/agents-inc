@@ -1,5 +1,3 @@
-import os from "os";
-import path from "path";
 import type { SkillId } from "../../types";
 import type { SkillConfig, SkillScope } from "../../types/config";
 import type { SourceLoadResult } from "../loading";
@@ -7,9 +5,9 @@ import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
 import { claudePluginInstall, claudePluginUninstall } from "../../utils/exec";
 import { buildMarketplacePluginRef, toClaudePluginScope } from "../plugins/plugin-ref";
 import { installBaseDir, resolveInstallPaths } from "./install-base-dir";
-import { verbose, warn } from "../../utils/logger";
+import { verbose } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
-import { LOCAL_SKILLS_PATH, EJECT_SOURCE } from "../../consts";
+import { EJECT_SOURCE } from "../../consts";
 
 export type SkillMigration = {
   id: SkillId;

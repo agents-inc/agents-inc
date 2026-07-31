@@ -1,4 +1,3 @@
-import os from "os";
 import path from "path";
 import { groupBy, unique } from "remeda";
 import type {
@@ -19,7 +18,6 @@ import {
   CLI_INVOKE_COMMAND,
   GLOBAL_INSTALL_ROOT,
   LOCAL_PSEUDO_CATEGORY,
-  PROJECT_ROOT,
   STANDARD_FILES,
 } from "../../consts";
 import { directoryExists, fileExists, writeFile } from "../../utils/fs";

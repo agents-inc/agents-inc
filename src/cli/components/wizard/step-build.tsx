@@ -24,7 +24,6 @@ export type StepBuildProps = {
 
 export const StepBuild: React.FC<StepBuildProps> = ({
   domain: activeDomain,
-  selectedDomains,
   selections,
   allSelections,
   showLabels,

@@ -8,7 +8,7 @@ import {
   loadConfigTypesDataInBackground,
   regenerateConfigTypes,
 } from "../../lib/configuration/config-types-writer.js";
-import { directoryExists, fileExists, writeFile, ensureDir } from "../../utils/fs.js";
+import { fileExists, writeFile, ensureDir } from "../../utils/fs.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { verbose } from "../../utils/logger.js";
 import { computeSkillFolderHash } from "../../lib/versioning.js";

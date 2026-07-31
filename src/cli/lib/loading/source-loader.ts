@@ -17,7 +17,6 @@ import type {
   AgentDefinition,
   AgentName,
   CategoryMap,
-  Domain,
   MergedSkillsMatrix,
   RelationshipDefinitions,
   ResolvedSkill,

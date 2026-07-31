@@ -3,7 +3,7 @@ import path from "path";
 import { copy, ensureDir, isPathWithin } from "../../utils/fs";
 import { computeFileHash } from "../versioning";
 import { EJECT_SOURCE, SOURCE_SRC_DIR, STANDARD_FILES } from "../../consts";
-import type { MergedSkillsMatrix, ResolvedSkill, SkillId } from "../../types";
+import type { ResolvedSkill, SkillId } from "../../types";
 import type { SourceLoadResult } from "../loading";
 import { getSkillById } from "../matrix/matrix-provider";
 import { injectForkedFromMetadata } from "./skill-metadata";

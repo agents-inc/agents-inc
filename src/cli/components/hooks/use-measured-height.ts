@@ -48,7 +48,9 @@ export function useMeasuredHeight(): {
         clearTimeout(timer);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deps are deliberately empty: this is a mount-only retry ladder. `measure`
+    // is re-created every render, so listing it would re-arm the timers on every
+    // render instead of once.
   }, []);
 
   useEffect(() => {

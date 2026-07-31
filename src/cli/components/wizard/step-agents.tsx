@@ -149,7 +149,6 @@ function buildFocusableIds(groups: AgentGroup[]): FocusId[] {
 export const StepAgents: React.FC = () => {
   const selectedAgents = useWizardStore((s) => s.selectedAgents);
   const agentConfigs = useWizardStore((s) => s.agentConfigs);
-  const installedAgentConfigs = useWizardStore((s) => s.installedAgentConfigs);
 
   const agentGroups = useMemo(() => buildAgentGroups(matrix), []);
   const flatRows = useMemo(() => buildFlatRows(agentGroups), [agentGroups]);

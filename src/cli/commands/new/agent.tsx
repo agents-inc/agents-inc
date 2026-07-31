@@ -25,7 +25,7 @@ import { getAgentDefinitions } from "../../lib/agents/index.js";
 import type { ModelName } from "../../types/index.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { isClaudeCLIAvailable } from "../../utils/exec.js";
-import { directoryExists, fileExists, readFile } from "../../utils/fs.js";
+import { fileExists, readFile } from "../../utils/fs.js";
 
 const SEPARATOR_WIDTH = 60;
 

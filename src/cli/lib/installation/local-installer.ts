@@ -4,7 +4,6 @@ import os from "os";
 import path from "path";
 import { isDeepEqual, unique } from "remeda";
 import type {
-  AgentConfig,
   AgentDefinition,
   AgentName,
   Category,
@@ -18,15 +17,8 @@ import type {
   Stack,
   StackAgentConfig,
 } from "../../types";
-import type { InstallMode } from "./installation";
-import { deriveInstallMode } from "./installation";
 import { isHomeDirectory } from "./is-home-directory";
-import {
-  getProjectConfigPath,
-  installBaseDir,
-  resolveInstallPaths,
-  type InstallPaths,
-} from "./install-base-dir";
+import { getProjectConfigPath, resolveInstallPaths, type InstallPaths } from "./install-base-dir";
 import { matrix } from "../matrix/matrix-provider";
 import type { AgentScopeConfig, SkillConfig, SkillScope } from "../../types/config";
 import type { WizardResultV2 } from "../../components/wizard/wizard";
@@ -71,12 +63,9 @@ import { ensureDir, fileExists, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { typedEntries, typedFromEntries, typedKeys } from "../../utils/typed-object";
 import {
-  CLAUDE_DIR,
   DEFAULT_PLUGIN_NAME,
   GLOBAL_CONFIG_NAME,
   LOCAL_PSEUDO_CATEGORY,
-  LOCAL_SKILLS_PATH,
-  PROJECT_ROOT,
   STANDARD_FILES,
 } from "../../consts";
 

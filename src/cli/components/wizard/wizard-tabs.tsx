@@ -1,4 +1,4 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import React from "react";
 import { CLI_COLORS } from "../../consts.js";
 import { WIZARD_STEP_ORDER, type WizardStep } from "../../stores/wizard-store.js";

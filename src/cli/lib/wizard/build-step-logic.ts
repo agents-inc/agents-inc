@@ -1,6 +1,6 @@
 import { sortBy } from "remeda";
 import { typedValues } from "../../utils/typed-object.js";
-import type { CategoryDefinition, Domain, SkillId, CategorySelections } from "../../types/index.js";
+import type { Domain, SkillId, CategorySelections } from "../../types/index.js";
 import type { SkillConfig } from "../../types/config.js";
 import {
   getAvailableSkills,

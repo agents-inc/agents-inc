@@ -1,7 +1,7 @@
 import { Args, Flags } from "@oclif/core";
 import path from "path";
 import { BaseCommand } from "../../base-command.js";
-import { writeFile, directoryExists, ensureDir } from "../../utils/fs.js";
+import { writeFile, ensureDir } from "../../utils/fs.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import {
   CLAUDE_SRC_DIR,
