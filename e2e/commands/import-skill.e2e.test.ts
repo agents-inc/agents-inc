@@ -8,7 +8,6 @@ import "../matchers/setup.js";
 
 describe("import skill command", () => {
   let tempDir: string;
-  let e2eSourceDir: string | undefined;
   let e2eSourceTempDir: string | undefined;
 
   beforeAll(ensureBinaryExists);
@@ -20,7 +19,6 @@ describe("import skill command", () => {
     if (e2eSourceTempDir) {
       await cleanupTempDir(e2eSourceTempDir);
       e2eSourceTempDir = undefined;
-      e2eSourceDir = undefined;
     }
   });
 
@@ -105,7 +103,6 @@ describe("import skill command", () => {
   it.fails("should list available skills from a local source", async () => {
     tempDir = await createTempDir();
     const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-    e2eSourceDir = sourceDir;
     e2eSourceTempDir = srcTempDir;
 
     const { exitCode, stdout } = await CLI.run(["import", "skill", sourceDir, "--list"], {
@@ -123,7 +120,6 @@ describe("import skill command", () => {
   it.fails("should import a specific skill from a local source", async () => {
     tempDir = await createTempDir();
     const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-    e2eSourceDir = sourceDir;
     e2eSourceTempDir = srcTempDir;
 
     const { exitCode, stdout } = await CLI.run(
@@ -146,7 +142,6 @@ describe("import skill command", () => {
   it.fails("should warn when importing the same skill twice without --force", async () => {
     tempDir = await createTempDir();
     const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-    e2eSourceDir = sourceDir;
     e2eSourceTempDir = srcTempDir;
 
     // First import
@@ -167,7 +162,6 @@ describe("import skill command", () => {
   it.fails("should overwrite existing skill with --force", async () => {
     tempDir = await createTempDir();
     const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-    e2eSourceDir = sourceDir;
     e2eSourceTempDir = srcTempDir;
 
     // First import
@@ -191,7 +185,6 @@ describe("import skill command", () => {
   it.fails("should import all skills with --all flag", async () => {
     tempDir = await createTempDir();
     const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-    e2eSourceDir = sourceDir;
     e2eSourceTempDir = srcTempDir;
 
     const { exitCode, stdout } = await CLI.run(["import", "skill", sourceDir, "--all"], {

@@ -27,7 +27,6 @@ import { createMockSkillAssignment } from "../../src/cli/lib/__tests__/factories
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 import type {
   AgentName,
-  AgentScopeConfig,
   ProjectConfig,
   SkillConfig,
   StackAgentConfig,

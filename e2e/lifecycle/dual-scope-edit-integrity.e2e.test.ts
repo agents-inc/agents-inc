@@ -340,13 +340,11 @@ describe("dual-scope edit lifecycle -- stack field preserves selected agents", (
 
   let testTempDir: string;
   let fakeHome: string;
-  let projectDir: string;
 
   beforeEach(async () => {
-    const { tempDir, fakeHome: fh, projectDir: pd } = await createTestEnvironment();
+    const { tempDir, fakeHome: fh } = await createTestEnvironment();
     testTempDir = tempDir;
     fakeHome = fh;
-    projectDir = pd;
   });
 
   afterEach(async () => {

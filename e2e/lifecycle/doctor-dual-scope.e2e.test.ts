@@ -64,9 +64,13 @@ describe("doctor dual-scope diagnostics", () => {
       const agentFile = path.join(env.projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
       await rm(agentFile, { force: true });
 
-      const { exitCode, stdout, combined } = await runCLI(["doctor"], env.projectDir, {
+      const { exitCode, combined } = await runCLI(["doctor"], env.projectDir, {
         env: { HOME: env.fakeHome },
       });
+
+      // A missing compiled agent is a recompilation warning, not a failing check,
+      // so doctor must still exit successfully.
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
       // Doctor should warn about the missing agent file
       const output = combined.toLowerCase();
@@ -86,13 +90,14 @@ describe("doctor dual-scope diagnostics", () => {
       await mkdir(orphanDir, { recursive: true });
       await writeFile(path.join(orphanDir, FILES.SKILL_MD), "# Orphan Skill\n");
 
-      const { exitCode, stdout, combined } = await runCLI(["doctor"], env.projectDir, {
+      const { exitCode, combined } = await runCLI(["doctor"], env.projectDir, {
         env: { HOME: env.fakeHome },
       });
 
       // Doctor checks for orphaned agent files (No Orphans check).
       // Orphaned skill dirs may not be flagged as errors — the important
       // thing is doctor runs without crashing on the extra directory.
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       const output = combined.toLowerCase();
       expect(output).toMatch(/orphan|warn|summary/);
     },

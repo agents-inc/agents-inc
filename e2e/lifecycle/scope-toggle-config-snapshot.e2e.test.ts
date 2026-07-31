@@ -98,8 +98,13 @@ describe("scope toggle config snapshot", () => {
       // AFTER assertions
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Project config contains web-framework-react with scope:"project"
+      // Proof of execution: the G->P toggle must have rewritten the project config.
       const projectConfigAfter = await readTestFile(configTsPath(projectDir));
+      expect(projectConfigAfter, "project config.ts must record the G->P toggle").not.toBe(
+        projectConfigBefore,
+      );
+
+      // Project config contains web-framework-react with scope:"project"
       const reactProjectLines = projectConfigAfter
         .split("\n")
         .filter((l: string) => l.includes(E2E_SKILL.react.id) && l.includes('"scope":"project"'));
@@ -275,12 +280,23 @@ describe("scope toggle config snapshot", () => {
         "web-developer.md must still exist in global agents dir (G->P is additive)",
       ).toBe(true);
 
-      // Project config contains web-developer agent
+      // Proof of execution: the G->P toggle must have rewritten the project config.
+      // Without this the `toContain` below passes on the pre-toggle config, which
+      // already named web-developer as a global-scoped agent.
       const projectConfigAfter = await readTestFile(configTsPath(projectDir));
+      expect(projectConfigAfter, "project config.ts must record the G->P toggle").not.toBe(
+        projectConfigBefore,
+      );
+
+      // Project config contains web-developer agent
       expect(projectConfigAfter).toContain("web-developer");
 
-      // Global config STILL contains web-developer agent (immutable)
+      // Global config STILL contains web-developer agent (immutable) — a
+      // project-scope edit is not the wizard's licence to rewrite global config.
       const globalConfigAfter = await readTestFile(configTsPath(fakeHome));
+      expect(globalConfigAfter, "global config.ts must be unchanged by a project-scope edit").toBe(
+        globalConfigBefore,
+      );
       expect(globalConfigAfter).toContain("web-developer");
 
       await result.destroy();

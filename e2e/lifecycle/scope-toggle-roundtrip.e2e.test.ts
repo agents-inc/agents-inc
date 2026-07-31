@@ -157,10 +157,17 @@ describe("scope toggle roundtrip", () => {
       const exitCode = await result.exitCode;
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // AFTER: Global config is functionally identical (normalize projects line)
+      // AFTER: Both configs are functionally identical (normalize projects line).
+      // The project config is where a project-scope passthrough would write, so
+      // checking only the global one would leave the spec's own claim untested.
       const globalConfigAfter = await readTestFile(globalConfigPath);
       expect(normalizeConfigPreservingOrder(globalConfigAfter)).toStrictEqual(
         normalizeConfigPreservingOrder(globalConfigBefore),
+      );
+
+      const projectConfigAfter = await readTestFile(projectConfigPath);
+      expect(normalizeConfigPreservingOrder(projectConfigAfter)).toStrictEqual(
+        normalizeConfigPreservingOrder(projectConfigBefore),
       );
 
       // AFTER: All skill directories still exist at their original scopes

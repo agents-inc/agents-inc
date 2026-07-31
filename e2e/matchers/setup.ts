@@ -18,6 +18,12 @@ expect.extend({ ...projectMatchers, ...agentMatchers });
 // matcher that implements it, so a change to an implementation's parameters is
 // a compile error here rather than silent drift between two declarations.
 declare module "vitest" {
+  // `T` is unused here and cannot be renamed to `_T`: TS2428 requires every
+  // declaration of a merged interface to have IDENTICAL type parameters, so the
+  // name must match Vitest's own `Assertion<T>` verbatim. The rule's `^_` escape
+  // hatch is unusable for declaration merging; see the `**/*.d.ts`-style override
+  // recommendation in the accompanying finding.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface Assertion<T> {
     toHaveConfig(expectations?: ConfigExpectations): Promise<void>;
     toHaveCompiledAgents(): Promise<void>;

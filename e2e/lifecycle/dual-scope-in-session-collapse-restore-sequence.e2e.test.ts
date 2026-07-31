@@ -7,7 +7,7 @@ import {
   readTestFile,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   createGlobalOnlyEnv,

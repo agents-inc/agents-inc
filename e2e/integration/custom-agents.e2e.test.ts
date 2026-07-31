@@ -192,9 +192,11 @@ describe("custom sub-agents", () => {
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
-      // Compile should fail or warn about the missing playbook.md
-      // readAgentFiles() calls readFile() (not readFileOptional) for playbook.md,
-      // so a missing file should cause a compile failure for that agent
+      // "Gracefully" is the contract: readAgentFiles() calls readFile() (not
+      // readFileOptional) for playbook.md, so the missing file fails THAT agent —
+      // recompileAgents records it in `failed` and compile.ts reports it without
+      // aborting the run. One broken custom agent must not sink the whole compile.
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toMatch(/failed|error|playbook/i);
     });
 

@@ -170,7 +170,9 @@ describe("uninstall with plugin config but no installed plugins", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-    expect(await directoryExists(configDir)).toBe(false);
+    // "also" means on top of the skills and agents: assert the whole clean state,
+    // not just the config dir, so leftover skill dirs cannot survive unnoticed.
+    await expectCleanUninstall(projectDir, { removeConfig: true });
   });
 });
 
