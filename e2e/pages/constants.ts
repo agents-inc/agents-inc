@@ -73,16 +73,29 @@ export const STEP_TEXT = {
   UNINSTALL_CONFIG_SECTION: "Config:", // Removal-plan section header for the .claude-src/ manifest
   UNINSTALL_PROJECTS_UPDATED_ONE: "Updated 1 registered project", // Global-uninstall summary after pruning one registered project's global entries
   UNINSTALL_PROJECT_SKIPPED: "Could not update registered project at", // Warn prefix for an unreachable registered project during global uninstall
+  UNINSTALL_CONFIG_UNREADABLE: "Could not read the project config", // Warn prefix when uninstall continues past a config it cannot parse
 
   // Sources step
   CONFIGURED_MARKETPLACES: "Configured marketplaces",
   ADD_SOURCE: "Add source",
+
+  // Scope group labels. The info panel, the confirm step and the Sources grid's left-hand gutter
+  // all head their per-scope blocks with these words. Paired with `SCOPE` above, which is the
+  // caption the Sources grid must NOT print over that gutter — the labels already name it.
+  SCOPE_GLOBAL: "Global",
+  SCOPE_PROJECT: "Project",
 
   // Dashboard
   DASHBOARD: "Doctor",
 
   // UI elements
   FOOTER_SELECT: "select", // Footer text used for stable render detection
+  // The whole footer as one unbroken line, with the exact spacing WizardFooter
+  // renders (label backgrounds pad each key, columnGap 2 separates the hints).
+  // Asserting the line rather than the individual words is what catches a step's
+  // rows painting over the footer: a bleed leaves every word present but splices
+  // the overflowing content between them.
+  FOOTER_HOTKEY_ROW: "SPACE  select   ENTER  continue   ESC  back",
   START_FROM_SCRATCH: "Start from scratch",
   TOGGLE_SELECTION: "Toggle selection",
   NO_INSTALLATION: "No installation found",
@@ -102,14 +115,44 @@ export const STEP_TEXT = {
   GLOBAL_SKILLS_BLOCKED: "Global skills cannot be changed from project scope",
   GLOBAL_AGENTS_BLOCKED: "Global agents cannot be changed from project scope",
 
-  // Terminal size warnings
+  // Terminal size warnings. All three come from one formatter
+  // (formatTerminalTooSmallMessage in src/cli/utils/terminal.ts), printed by
+  // BOTH size gates: the pre-Ink startup gate in BaseCommand and the
+  // WizardLayout guard that catches a terminal shrinking mid-session.
   TOO_NARROW: "too narrow",
   TOO_SHORT: "too short",
+  // Dimension-independent tail of the same message — the sentinel to wait on
+  // when either dimension may be the one that tripped the gate.
+  RESIZE_PROMPT: "Please resize",
+
+  // A run of block glyphs from the stack step's ASCII banner (ASCII_LOGO in
+  // src/cli/consts.ts). The wizard paints `█` nowhere else, so this string's
+  // presence in a frame IS the banner's presence. The banner is height-gated on
+  // LOGO_MIN_TERMINAL_ROWS in src/cli/consts.ts — below that height it is
+  // dropped, because its six rows otherwise starve the stack list's viewport
+  // until the shared scroll gate stops clipping and the rows bleed.
+  LOGO_BANNER: "█████╗",
 
   // Scroll overflow affordance (ScrollAffordance in src/cli/components/wizard/scroll-affordance.tsx).
   // Text-only "N more below" / "N more above" hints painted when a viewport clips its content.
   SCROLL_MORE_BELOW: "more below",
   SCROLL_MORE_ABOVE: "more above",
+
+  // Summary-panel header block (summary-panel.tsx). Two label/value rows above a
+  // dimmed divider. Label and value are separate <Text> nodes in a flex row with
+  // columnGap 1, so each renders as "<label> <value>" on one line — compose the
+  // expected line as `${PANEL_MARKETPLACE} ${SOURCE_DISPLAY_DEFAULT}`.
+  PANEL_MARKETPLACE: "Marketplace",
+  PANEL_STACK: "Stack",
+  // Literal fallback rendered in the Stack row when no stack is selected.
+  PANEL_STACK_NONE: "none",
+  // formatSourceDisplayName("agents-inc"). The Marketplace row names the distinct
+  // marketplaces the selected skills' `SkillConfig.source` values point at, and the
+  // E2E source carries no marketplace.json, so every skill resolves to
+  // DEFAULT_PUBLIC_SOURCE_NAME and the row reads as this. Drive the wizard through
+  // `setAllLocal()` and it says "All skills ejected" instead — an eject source names
+  // no marketplace.
+  SOURCE_DISPLAY_DEFAULT: "Agents Inc",
 } as const;
 
 export const TIMEOUTS = {
@@ -191,10 +234,25 @@ export const TERMINAL_SIZE = {
   TALL: { rows: 60, cols: 120 },
   /**
    * Smallest viewport that still clears the wizard's own minimum-size gate
-   * (80 cols / 15 rows). Wide enough to render normally, short enough that any
-   * step whose content exceeds the viewport must clip and signal the overflow.
+   * (`MIN_TERMINAL_SIZE` in src/cli/consts.ts — 80 cols / 20 rows). Wide enough
+   * to render normally, short enough that any step whose content exceeds the
+   * viewport must clip and signal the overflow.
+   *
+   * `rows` must track that gate exactly: one row lower and every spec using this
+   * hangs on "Terminal too short. Please resize." until its timeout, one row
+   * higher and the specs stop being the tightest geometry the wizard supports.
+   * The value is duplicated rather than imported because this file is
+   * deliberately free of src/cli imports.
    */
-  SHORT: { rows: 16, cols: 100 },
+  SHORT: { rows: 20, cols: 100 },
+  /**
+   * BELOW the gate — the geometry a mid-session shrink has to be caught at.
+   *
+   * Never LAUNCH a session here: the startup gate blocks before Ink mounts and
+   * the session sits on the resize prompt until its timeout. Reach it only by
+   * resizing a session that started larger (`BaseStep.resizeBelowMinimum`).
+   */
+  BELOW_MINIMUM: { rows: 16, cols: 100 },
 } as const;
 
 /** Which wizard a shared step page object is driving. */

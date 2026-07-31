@@ -20,34 +20,53 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, UI_SYMBOLS } from "../../src/cli/consts.js";
+import {
+  DEFAULT_PUBLIC_SOURCE_NAME,
+  EJECT_SOURCE,
+  SOURCE_DISPLAY_NAMES,
+  UI_SYMBOLS,
+} from "../../src/cli/consts.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 
 /**
- * A skill installed at BOTH scopes whose project copy is dropped this session
- * (the `s` collapse of a `[P][G]` pair back to `[G]`) empties its PROJECT slot:
- * saving deletes the project copy while the global install survives. Removal is
- * a property of the `(id, scope)` slot, not of the id, so the Sources tab must
- * show the skill TWICE — the surviving locked global row plus an inert
- * pending-removal row under Project — exactly as the confirm step already
- * prints it (`-` at Project, `•` at Global).
+ * The Sources grid has one vocabulary for "this is the selected source" and it
+ * is not a checkmark. An EDITABLE row carries its selection in colour and
+ * weight, and its prefix slot only ever holds the focus chevron or a blank.
+ * `SourceTag` in source-grid.tsx switches vocabulary for INERT rows — `readOnly`
+ * (a globally-installed skill this project may not change) and `disabled` (a
+ * slot this session emptied) — and paints `UI_SYMBOLS.SELECTED` there instead.
  *
- * Today the Sources tab asks "is this id in the config anywhere?" when deciding
- * what is pending removal, so the surviving global entry masks the emptied
- * project slot and only the locked row renders — no `-` appears at all.
+ * So the `✓` appears nowhere else in the grid, and it lands exactly on the rows
+ * the user cannot act on. On the pending-removal row it is actively misleading:
+ * `toPendingRemovalRow` re-pins the selection to the persisted source, so the
+ * row that is about to be DELETED gets an affirmative tick beside the source it
+ * is about to lose. Inert rows already read as inert without it — red for
+ * pending removal, dimmed for locked — so the branch goes and both keep their
+ * colour treatment and the blank chevron spacer.
  *
- * Fixture note: the global entry is marketplace-sourced on purpose. A project
- * EJECT entry over a global EJECT install cannot be collapsed at all —
- * `wouldOverwriteGlobalEject` refuses the `s` press with a toast — so an
- * eject/eject pair would make this scenario unreachable rather than failing on
- * the render.
+ * Fixture: react installed at BOTH scopes, its project half collapsed back to
+ * global with `s`. That produces one row of each inert kind at once — the
+ * surviving locked global row and the emptied project slot's pending-removal
+ * row — which is the whole of the `✓` branch in a single frame.
+ *
+ * The global entry is marketplace-sourced on purpose: a project EJECT entry over
+ * a global EJECT install cannot be collapsed at all (`wouldOverwriteGlobalEject`
+ * refuses the `s` press with a toast), so an eject/eject pair would fail on a
+ * swallowed keystroke rather than on the render.
+ *
+ * The blanket negative is safe on this screen. `SourceTag` is the only producer
+ * of `UI_SYMBOLS.SELECTED` in the wizard's render path — the agents step and the
+ * checkbox grid wrap theirs in `[…]` on other steps, and the settings overlay's
+ * tick needs `s` to open it, which this spec never presses. Asserted against
+ * `getScreen()` (the viewport) rather than `getOutput()`, whose scrollback still
+ * holds the domain step's checkbox frames.
  *
  * Read-only session: the wizard is aborted, so config.ts and the project skills
  * directory must come out byte-for-byte unchanged.
  */
 
-describe("edit wizard — pending-removal row when a dual-scope skill collapses to global", () => {
+describe("edit wizard — Sources grid paints no selection check on inert rows", () => {
   let sourceDir: string;
   let sourceTempDir: string;
 
@@ -75,19 +94,16 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
   });
 
   it(
-    "keeps the emptied project slot of a collapsed dual-scope skill visible as a pending-removal row",
+    "renders neither the pending-removal row nor the locked global row with a selected-source check",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // react is installed at BOTH scopes: a marketplace install at global scope plus a local
-      // project copy overriding it. vitest is the untouched project skill that keeps the Sources
-      // grid populated (and gives the grid a focusable row).
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
 
       await writeProjectConfig(
         projectDir,
         buildProjectConfig({
-          name: "dual-scope-collapse-test",
+          name: "inert-row-check-test",
           skills: [
             ...buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.vitest.id], {
               scope: "project",
@@ -105,7 +121,7 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
       );
 
       await createLocalSkill(projectDir, E2E_SKILL.react.id, {
-        description: "React framework for dual-scope collapse testing",
+        description: "React framework for inert-row rendering",
         metadata: renderMetadataYaml({
           displayName: E2E_SKILL.react.id,
           category: "web-framework",
@@ -116,7 +132,7 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
         }),
       });
       await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
-        description: "Vitest testing skill for dual-scope collapse testing",
+        description: "Vitest testing skill for inert-row rendering",
         metadata: renderMetadataYaml({
           displayName: E2E_SKILL.vitest.id,
           category: "web-testing",
@@ -127,8 +143,7 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
         }),
       });
 
-      // Setup proof: react genuinely occupies BOTH slots before the edit, so the row that must
-      // survive the collapse is backed by a real dual-scope install and not a single entry.
+      // Setup proof: react genuinely occupies both slots, so the collapse below empties a real one.
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.react.id),
         "react must be saved at both project and global scope before the edit",
@@ -147,16 +162,14 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
       });
 
       await wizard.build.focusSkill(E2E_SKILL.react.display);
-      // The live active entry is the project copy — the badge shows the scope the session owns,
-      // not the inherited global install behind it.
       expect(
         await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.display),
         "react must start as the project-scoped half of the dual-scope install",
       ).toStrictEqual(["P"]);
 
-      // `s` is the sole dual-scope toggle: P→G drops the project override and falls back to the
-      // global install. Proof-of-execution — without the badge flip the press was swallowed (or
-      // refused by a guard) and the Sources assertions below would pass or fail vacuously.
+      // `s` is the sole dual-scope toggle: P→G drops the project override. Proof-of-execution —
+      // without the badge flip the press was swallowed (or refused by a guard) and the Sources
+      // assertions below would hold vacuously, with no inert removal row to render at all.
       await wizard.build.toggleScopeOnFocusedSkill();
       expect(
         await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.display),
@@ -167,29 +180,28 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
       const sources = await wizard.build.advanceToSources();
       await sources.waitForReady();
 
-      // Captured on the Sources grid's own frame, with no navigation key in between: the processed
-      // buffer is repainted in place rather than accumulated, so a row state a later frame
-      // overwrites is unrecoverable. Focus does not matter to the assertions — the marker occupies
-      // a fixed two-column cell with one space before the name on every row, focused or not.
       const frame = sources.getScreen();
 
-      // Green guards: the Sources grid rendered its real content — the step header, the untouched
-      // project row, and react's surviving global row with its lock — so a missing removal marker
-      // below is the masked-slot bug, not an empty or wrong grid.
+      // Green guards: BOTH inert kinds are on screen — the surviving locked global row and the
+      // emptied project slot's pending-removal row — plus the untouched editable vitest row. So a
+      // missing check below is the branch being gone, not the rows being absent.
       expect(frame).toContain(STEP_TEXT.SOURCES);
-      expect(
-        frame,
-        `Sources grid must render the untouched project skill. Screen:\n${frame}`,
-      ).toContain(E2E_SKILL.vitest.display);
       expect(frame, `react's surviving global row must stay locked. Screen:\n${frame}`).toContain(
         `${UI_SYMBOLS.LOCK} ${E2E_SKILL.react.display}`,
+      );
+      expect(
+        frame,
+        `the emptied project slot must render as a pending-removal row. Screen:\n${frame}`,
+      ).toContain(`${UI_SYMBOLS.REMOVED} ${E2E_SKILL.react.display}`);
+      expect(frame, `the untouched project skill must render. Screen:\n${frame}`).toContain(
+        E2E_SKILL.vitest.display,
       );
 
       await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
       wizard = undefined;
 
       // Abort saved nothing: config.ts and the project skills directory are untouched. Asserted
-      // before the marker assertion so the read-only guarantee is verified on every run.
+      // before the glyph assertions so the read-only guarantee is verified on every run.
       expect(
         await readTestFile(configTsPath(projectDir)),
         "aborting a scope-collapse preview must not rewrite config.ts",
@@ -199,20 +211,20 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
         "aborting a scope-collapse preview must not add or remove skill directories",
       ).toStrictEqual(skillDirsBefore);
 
-      // The contract: the emptied project slot stays visible as a pending-removal row, so the user
-      // sees that saving deletes the project copy. NO_COLOR strips the red in E2E, so the marker is
-      // what a user and this assertion can see. The locked row above carries the lock instead, so
-      // this `- ` can only be the project row — the skill renders twice, once per scope.
+      // The row about to be removed must not tick the source it is losing. Both inert rows
+      // resolve to the eject column here — the pending-removal row is re-pinned to its persisted
+      // source and the surviving global row to its live one — so this one string covers both.
       expect(
         frame,
-        `the emptied project slot must render as a pending-removal row. Screen:\n${frame}`,
-      ).toContain(`${UI_SYMBOLS.REMOVED} ${E2E_SKILL.react.display}`);
+        `an inert row must not check its selected source. Screen:\n${frame}`,
+      ).not.toContain(`${UI_SYMBOLS.SELECTED} ${SOURCE_DISPLAY_NAMES[EJECT_SOURCE]}`);
 
-      // Shape guard: collapsing a dual-scope skill removes a slot, it never adds one.
+      // Exhaustive: the grid has one selection vocabulary (colour and weight), so the check
+      // belongs to no row at all.
       expect(
         frame,
-        "a collapsed dual-scope skill must not render with the added marker on the Sources tab",
-      ).not.toContain(`${UI_SYMBOLS.ADDED} ${E2E_SKILL.react.display}`);
+        `the Sources grid must not paint a selection check anywhere. Screen:\n${frame}`,
+      ).not.toContain(UI_SYMBOLS.SELECTED);
     },
   );
 });

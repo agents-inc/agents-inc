@@ -111,12 +111,11 @@ describe("edit wizard — added marker when a global skill is adopted at project
       const sources = await wizard.build.advanceToSources();
       await sources.waitForReady();
 
-      // Captured on the Sources grid's own frame, with no navigation key in between: a focused row
-      // pads its name with spaces (`+  <name> `), which splits the marker from the name, and
-      // `getOutput()` reads xterm's repainted-in-place buffer rather than a log of past frames — a
-      // form a later frame overwrites is unrecoverable from it. SourceGrid seeds focus on the first
-      // FOCUSABLE row, skipping the inert locked global row, which lands it on the untouched
-      // project row: the adopted row is unfocused here, so its marker sits flush against the name.
+      // Captured on the Sources grid's own frame, with no navigation key in between: `getOutput()`
+      // reads xterm's repainted-in-place buffer rather than a log of past frames, so a row state a
+      // later frame overwrites is unrecoverable from it. Focus does not matter to the assertions —
+      // the marker occupies a fixed two-column cell with one space before the name on every row,
+      // focused or not.
       const sourcesOutput = sources.getOutput();
       const sourcesScreen = sources.getScreen();
 

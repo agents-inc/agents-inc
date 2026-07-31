@@ -66,6 +66,28 @@ export class ConfirmStep extends BaseStep {
     return new WizardResult(this.session, this.projectDir);
   }
 
+  /**
+   * Arrow down until the summary panel stops reporting clipped content below.
+   *
+   * Closed-loop rather than a fixed press count: how far the panel scrolls
+   * depends on how many skills and agents the run selected and on the terminal
+   * height, so the number of presses that reaches the bottom is not a constant.
+   * Throws rather than returning short, so a caller that then asserts on the
+   * bottom frame cannot mistake a half-scrolled viewport for the end of the
+   * range. Each press goes through `navigateDown`, which waits for the wizard
+   * footer first.
+   */
+  async scrollSummaryToBottom(maxAttempts = 30): Promise<void> {
+    for (let i = 0; i < maxAttempts; i++) {
+      if (!this.getScreen().includes(STEP_TEXT.SCROLL_MORE_BELOW)) return;
+      await this.navigateDown();
+    }
+    throw new Error(
+      `scrollSummaryToBottom: summary still reports clipped content below after ` +
+        `${maxAttempts} presses.\nScreen:\n${this.getScreen()}`,
+    );
+  }
+
   /** Go back from confirm step (Escape). */
   async goBack(): Promise<void> {
     await this.waitForWizardFooter();

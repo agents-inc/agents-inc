@@ -128,6 +128,18 @@ export async function writeConfigTypes(baseDir: string): Promise<void> {
   );
 }
 
+/**
+ * Write arbitrary text as `.claude-src/config.ts` — the error-path counterpart of
+ * {@link writeProjectConfig}, which can only emit a well-formed config. Used to reproduce a config
+ * file that EXISTS but cannot be loaded (syntax error, no default export, schema violation), the
+ * state the loader reports as `ConfigLoadError` rather than as a missing file.
+ */
+export async function writeCorruptConfig(baseDir: string, source: string): Promise<void> {
+  const configDir = path.join(baseDir, CLAUDE_SRC_DIR);
+  await mkdir(configDir, { recursive: true });
+  await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), source);
+}
+
 /** Sub-path of a source cache entry inside CACHE_DIR (mirrors getCacheDir in source-fetcher.ts). */
 const SOURCE_CACHE_SUBDIR = "sources";
 

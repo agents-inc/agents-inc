@@ -1,6 +1,6 @@
 import type { TerminalSession } from "../helpers/terminal-session.js";
 import { delay } from "../helpers/test-utils.js";
-import { INTERNAL_DELAYS, INTERNAL_RETRIES, TIMEOUTS } from "./constants.js";
+import { INTERNAL_DELAYS, INTERNAL_RETRIES, STEP_TEXT, TIMEOUTS } from "./constants.js";
 import { retryEnterUntil } from "./retry-enter.js";
 import { TerminalScreen } from "./terminal-screen.js";
 
@@ -158,6 +158,32 @@ export abstract class BaseStep {
     await retryEnterUntil(this.session, this.screen, (cursor) =>
       this.screen.waitForTextAfter(nextStepText, cursor, INTERNAL_RETRIES.INTERVAL_MS),
     );
+  }
+
+  /**
+   * Shrink the terminal below the wizard's minimum size and wait for the resize
+   * prompt to REPLACE the wizard. Waits on the dimension-independent tail of
+   * the message, so either a too-narrow or a too-short target settles here.
+   *
+   * Cursor-anchored: the prompt text survives in scrollback once a session has
+   * shrunk before, so a plain `waitForText` would return on residue instead of
+   * on this shrink's own repaint.
+   */
+  async resizeBelowMinimum(cols: number, rows: number): Promise<void> {
+    const cursor = this.getRawCursor();
+    this.session.resize(cols, rows);
+    await this.screen.waitForTextAfter(STEP_TEXT.RESIZE_PROMPT, cursor, this.defaultTimeout);
+  }
+
+  /**
+   * Resize back to a geometry that clears the minimum and wait for the wizard to
+   * repaint. Anchored on the footer sentinel emitted after the resize, not on
+   * the copy already in scrollback from before the shrink.
+   */
+  async resizeAboveMinimum(cols: number, rows: number): Promise<void> {
+    const cursor = this.getRawCursor();
+    this.session.resize(cols, rows);
+    await this.waitForWizardFooterAfter(cursor);
   }
 
   /** Get the full output including scrollback (for test assertions). */

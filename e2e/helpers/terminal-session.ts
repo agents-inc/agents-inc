@@ -180,6 +180,18 @@ export class TerminalSession {
     this.ptyProcess.write(data);
   }
 
+  /**
+   * Resize the PTY **and** the emulator. Both, always: resizing only the PTY
+   * delivers SIGWINCH to the process but leaves xterm laying the new output out
+   * at the old geometry, so `getScreen()` reads a viewport the process never
+   * drew; resizing only xterm never reaches the process at all, so nothing
+   * repaints.
+   */
+  resize(cols: number, rows: number): void {
+    this.ptyProcess.resize(cols, rows);
+    this.xterm.resize(cols, rows);
+  }
+
   enter(): void {
     this.write("\r");
   }

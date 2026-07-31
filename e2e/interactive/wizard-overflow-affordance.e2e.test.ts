@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
@@ -10,7 +11,7 @@ import "../matchers/setup.js";
 /**
  * Wizard overflow behaviour at a small-but-valid terminal height (D-263).
  *
- * The wizard refuses to render below 80 cols / 15 rows, so TERMINAL_SIZE.SHORT
+ * The wizard refuses to render below 80 cols / 20 rows, so TERMINAL_SIZE.SHORT
  * is the smallest geometry that still exercises the real layout. At that height
  * the confirm step's summary is taller than the box it is drawn in, so the step
  * must clip its content to that box AND tell the user there is more below.
@@ -95,9 +96,22 @@ describe("wizard overflow at a short terminal height", () => {
     async () => {
       const confirm = await driveToConfirmStep();
 
+      // At scroll offset 0 the viewport is filled entirely by the panel's
+      // marketplace/stack header, so no summary row is painted and the bleed
+      // signature below cannot appear whether or not the bug exists. Run the
+      // viewport to the end of its scroll range first, where the panel does
+      // paint real rows.
+      await confirm.scrollSummaryToBottom();
+
       const screen = confirm.getScreen();
 
       expect(screen).toContain(STEP_TEXT.READY_TO_INSTALL);
+      // Positive guard: the frame really does carry an added row of the
+      // summary, so the negative assertion below is being made about a subject
+      // that is on screen rather than about an empty viewport.
+      expect(screen, "the scrolled confirm summary must paint an added row").toContain(
+        `+ ${E2E_AGENT["web-developer"].name}`,
+      );
       // A horizontal border run is only ever drawn by a box edge, and "+ " only
       // ever by an added row of the summary. The two are adjacent on one line
       // only when the summary paints over the border it should be clipped

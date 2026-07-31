@@ -168,9 +168,19 @@ const apiDeveloperAgentConfig: StackAgentConfig = {
   "meta-reviewing": [createMockSkillAssignment("meta-reviewing-reviewing")],
 };
 
+/**
+ * Display name written into the E2E source's `config/stacks.ts`, and therefore
+ * the text the wizard renders for it — in the stack list, in the confirm step's
+ * "Ready to install <stack>" dropdown, and in the summary panel's Stack row.
+ *
+ * Single source of truth: assertions matching on rendered stack text should key
+ * off this instead of re-typing the string.
+ */
+export const E2E_STACK_NAME = "E2E Test Stack";
+
 const E2E_STACK: Stack = {
   id: "e2e-test-stack",
-  name: "E2E Test Stack",
+  name: E2E_STACK_NAME,
   description: "Minimal stack for E2E testing",
   agents: {
     "web-developer": webDeveloperAgentConfig,

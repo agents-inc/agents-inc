@@ -9,6 +9,15 @@ import type { AgentName, SkillId, SkillSlug } from "../../src/cli/types/index.js
  */
 export { E2E_AGENT_TITLES as E2E_AGENT_DISPLAY } from "../helpers/create-e2e-source.js";
 
+/**
+ * Stack display name as the wizard renders it — in the stack list, in the
+ * confirm step's "Ready to install <stack>" dropdown, and in the summary
+ * panel's Stack row. Re-exported under the name specs use;
+ * create-e2e-source.ts owns the value because it writes it into the source's
+ * `config/stacks.ts`.
+ */
+export { E2E_STACK_NAME as E2E_STACK_DISPLAY } from "../helpers/create-e2e-source.js";
+
 // E2E source skills (from create-e2e-source.ts)
 export const E2E_SKILL_IDS = [
   "api-framework-hono",

@@ -164,6 +164,11 @@ export class EditWizard {
    * domains and toggling the already-focused skill — never for callers that read
    * the grid to locate a skill by name (findSkillGridPosition needs the clean
    * category layout this variant deliberately does not wait for).
+   *
+   * Since the size gate rose to 20 rows the first category header does settle at
+   * SHORT, so this is now a tolerance rather than a necessity — the grid still
+   * overflows (the second category card is clipped) and blind callers still have
+   * no reason to wait on a layout they never read.
    */
   static async launchInProjectShort(options: EditWizardOptions): Promise<EditWizard> {
     const { dir: globalHome, cleanupDirs } = await allocateProjectGlobalHome(options.globalHome);
