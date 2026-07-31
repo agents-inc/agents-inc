@@ -14,6 +14,7 @@ reporting_agent: cli-developer
 category: testing
 domain: e2e
 root_cause: enforcement-gap
+status: open
 ---
 
 ## What Was Wrong

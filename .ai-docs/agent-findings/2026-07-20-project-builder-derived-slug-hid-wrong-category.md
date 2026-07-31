@@ -10,6 +10,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: rule-not-visible
+status: superseded
+superseded_by: 2026-07-20-fixture-category-literals-unvalidated-against-categories-union.md
 ---
 
 ## What Was Wrong

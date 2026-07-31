@@ -1,5 +1,5 @@
 ---
-type: enforcement-gap
+type: standard-gap
 severity: low
 affected_files:
   - e2e/integration/custom-agents.e2e.test.ts
@@ -12,6 +12,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: enforcement-gap
+status: resolved
+resolved_by: 'Proposed-Standard option 2 landed on 2026-07-30 and the gate was verified by running it, not by reading config. `eslint.config.js` now exists with `e2e/**/*.ts` in its file globs and `@typescript-eslint/no-unused-vars` set to `error`; `package.json` has `"lint": "eslint ."`, wired into `prepublishOnly`. Empirically confirmed: a probe file under `e2e/` with one unused import produced `error ''readFile'' is defined but never used @typescript-eslint/no-unused-vars` and exit code 2 (probe removed afterwards). The finding''s premise — "the repo has no ESLint config at all (no `eslint.config.*`, no `lint` script)" — is now false. Option 1 landed only in part and does NOT close the hole on its own: `e2e/tsconfig.json` exists and includes `e2e/**` plus `../src/**/*`, but sets neither `noUnusedLocals` nor `noUnusedParameters`, and `npm run typecheck` runs the ROOT tsconfig whose `include` is `src/**/*` only, with no `typecheck:e2e` script to invoke the e2e project. NOT landed: the secondary ask — `standards/e2e/README.md` still carries no line about deleting a helper''s JSDoc along with the helper, so the orphan-JSDoc re-binding hazard remains undocumented.'
 ---
 
 ## What Was Wrong

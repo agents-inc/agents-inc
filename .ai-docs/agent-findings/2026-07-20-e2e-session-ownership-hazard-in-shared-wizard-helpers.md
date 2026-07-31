@@ -13,6 +13,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: convention-undocumented
+status: partial
+partial_note: 'Inverted relative to the enum''s documented direction — the CODE side landed and the DOCS side did not. Landed (verified 2026-07-30): `readSkillBadgesViaEdit()` and `finishWizard()` both exist in `e2e/fixtures/dual-scope-helpers.ts` with their ownership contracts in doc comments, and `readSkillBadgesViaEdit` has since been adopted at call sites in `dual-scope-collapse-and-restore-via-s.e2e.test.ts` — the convention-A adoption the finding deferred has begun. Pending: the proposed standard. `standards/e2e/README.md` has no "Session ownership" section, so none of the four rules is written down — a future helper author still has nothing telling them a wizard-launching shared helper must own its session, nor that a helper returning wizard output must name whether it reads `rawOutput` or `output`.'
 ---
 
 ## What Was Wrong

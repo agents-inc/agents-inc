@@ -14,6 +14,8 @@ reporting_agent: cli-tester
 category: dry
 domain: e2e
 root_cause: convention-undocumented
+status: partial
+partial_note: "Inverted relative to the enum's documented direction — the CODE side landed and the DOCS side did not. Landed: the category-1 and category-2 adoptions in the four owned spec files. Pending: the proposed standard, which is the load-bearing half here because the finding is explicitly about an UNSTATED boundary. Verified 2026-07-30 that `standards/e2e/test-data.md` names `E2E_SKILL` / `E2E_AGENT_DISPLAY` only in its inventory tables and states no rule for picking `.id` vs `.slug` vs `.display` by what the call site consumes, and no rule on when a spec-local skill constant is still acceptable — so the category-3 constants the finding deliberately left in place remain unadjudicated."
 ---
 
 ## What Was Wrong

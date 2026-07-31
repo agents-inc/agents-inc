@@ -12,6 +12,8 @@ reporting_agent: cli-developer
 category: typescript
 domain: shared
 root_cause: rule-not-specific-enough
+status: partial
+partial_note: 'Inverted relative to the enum''s documented direction — the CODE side landed and the LEDGER-RULE side did not. Landed: the `SkillScope` conversion, and the trap sites are still correctly untouched — verified 2026-07-30 that `config-types-writer.ts` keeps its emitted `scope: "project" | "global"` template text, `plugin-settings.ts` keeps `RegisteredInstallation.scope` as a bare `string`, and the `wizard-store.ts` ternary uses per-branch `as const`. The Cluster A ledger line in `todo/refactor-expressive-ts.md` records the config-types-writer deviation inline. Pending: the generalisation — the ledger''s testing-gates preamble still carries no standing caveat naming generated-code template strings as the canonical false positive for grep-driven type substitutions, so the next union sweep gets no warning before it starts.'
 ---
 
 ## What Was Wrong

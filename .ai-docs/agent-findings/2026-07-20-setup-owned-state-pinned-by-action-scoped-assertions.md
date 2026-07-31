@@ -15,6 +15,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: convention-undocumented
+status: partial
+partial_note: 'Inverted relative to the enum''s documented direction — the CODE side landed and the DOCS side did not. Landed (verified 2026-07-30): none of the three guard specs still calls `not.toHaveConfig()`; each now reads the project config after setup and asserts it byte-identical after the guarded action, with assertion messages naming the invariant. Pending: both proposed standards. `standards/e2e/anti-patterns.md` has no "assert on what your action changed, not on what your setup produced" rule and does not record that `not.toHaveConfig()` proves absence rather than immutability; `standards/e2e/assertions.md` has no "prefer absolute expected values over A-vs-B equality" rule. Both are the generalisable half — the code fix protects four tests, the rules would protect the suite.'
 ---
 
 ## What Was Wrong

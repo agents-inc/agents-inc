@@ -15,6 +15,10 @@ keywords:
     D-220,
     D-223,
     D-224,
+    D-277,
+    D-279,
+    reconcileProjectSplitAgainstGlobal,
+    splitAgentStack,
   ]
 related:
   - reference/config/config-writer.md
@@ -24,6 +28,15 @@ related:
   - reference/concepts/tombstone-pattern.md
 last_validated: 2026-07-30
 ---
+
+<!--
+re-validated 2026-07-30 (product 0.146.0): inserted the D-279 reconciliation step into the cc-edit pipeline
+ordering — the split output is NOT what reaches the writer any more, reconcileProjectSplitAgainstGlobal
+runs between them and can add mask rows; recorded that the split is where the two write paths converge, so
+the split alone no longer explains the emitted project config; named splitAgentStack as the per-agent stack
+partitioner; corrected the selectedAgents scalar row (undefined when empty, not an empty array). Partition
+rules themselves re-verified against config-generator.ts — unchanged.
+-->
 
 # Config Scope Split Contract
 
@@ -68,9 +81,9 @@ Skills and agents are partitioned with `partition(list, e => isActiveAt(e, "glob
 
 ### Stack
 
-The stack field is partitioned by the **agent** partition first, then each global agent's entries are further split per skill reference so global agents never carry project skill ids:
+The stack field is partitioned by the **agent** partition first, then each global agent's entries are further split per skill reference by the private helper `splitAgentStack(agentStack, globalSkillIds)` so global agents never carry project skill ids:
 
-- **Global agent** → inspect each `(category, assignments)` slot. Assignments whose `id` is in `globalSkillIds` land under the agent in `globalStack`; assignments whose `id` is NOT in `globalSkillIds` land under the same agent in `projectStack`.
+- **Global agent** → `splitAgentStack` inspects each `(category, assignments)` slot and `partition`s the assignments on `globalSkillIds.has(a.id)`. The global half lands under the agent in `globalStack`; the non-global half lands under the same agent in `projectStack`. Slots that end up empty on a side are omitted from that side.
 - **Project agent** → the agent's entire stack entry is copied verbatim into `projectStack`. Project agents keep ALL skill references (both project and global) since global skills are available everywhere.
 
 An agent is omitted from its partition's stack when no category slot survives (length 0 after filtering). Empty stack objects are elided from the partition entirely (`stack: undefined`).
@@ -79,12 +92,12 @@ An agent is omitted from its partition's stack when no category slot survives (l
 
 ### Scalar / Array Fields
 
-| Field            | Global split                                                                           | Project split                                   |
-| ---------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `name`           | `"global"` (literal)                                                                   | `config.name` (preserved)                       |
-| `domains`        | `config.domains` (copied)                                                              | `undefined` (project inherits at runtime)       |
-| `selectedAgents` | filtered to names in global agent partition                                            | filtered to names NOT in global agent partition |
-| everything else  | `...config` spread (descriptions, author, source, marketplace, agentsSource, projects) | `...config` spread                              |
+| Field            | Global split                                                                           | Project split                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `name`           | `"global"` (literal)                                                                   | `config.name` (preserved)                                                       |
+| `domains`        | `config.domains` (copied)                                                              | `undefined` (project inherits at runtime)                                       |
+| `selectedAgents` | names in the global agent partition, or `undefined` when that side is empty            | names NOT in the global agent partition, or `undefined` when that side is empty |
+| everything else  | `...config` spread (descriptions, author, source, marketplace, agentsSource, projects) | `...config` spread                                                              |
 
 The `...config` spread copies every remaining scalar/array to BOTH splits — including `projects`. The authoritative copy is in whichever split the caller writes. In practice the project-context branch of `writeScopedConfigs` overwrites `effectiveGlobalConfig` from an `existing`-spread path, so the duplicated `projects` in `globalConfig` never reaches disk.
 
@@ -107,9 +120,13 @@ Order in the `cc edit` project-context pipeline:
 2. `mergeConfigs(newConfig, existingProjectConfig, { authoritativeScope: "owned", unresolvableSkillIds })` reconciles via compound keys. `newConfig` is authoritative for every referenced name/id; under `"owned"` authority a project-owned entry that is absent from `newConfig` was deselected and is dropped (unresolvable skills exempt — see [config-merger.md](./config-merger.md)). Output: `finalConfig` carrying both active and tombstone rows where applicable.
 3. `splitConfigByScope(finalConfig)` → `{ globalSplit, projectSplit }`. Active globals and active global agents to `globalSplit`; everything else (project, tombstones) to `projectSplit`.
 4. `mergeGlobalConfigs(existingGlobalConfig, globalSplit)` is **additive** — existing wins, incoming only appends. `globalSplit` carries only actives, so no tombstones reach this call (which is why `mergeGlobalConfigs` does not need tombstone-handling logic).
-5. The merger's output `effectiveGlobalConfig` is written to `~/.claude-src/config.ts`. The PROJECT split is written to `<projectDir>/.claude-src/config.ts` with `globalConfig: effectiveGlobalConfig` passed to the writer so the inlined-global preamble reflects the merged global state.
+5. The merger's output `effectiveGlobalConfig` is written to `~/.claude-src/config.ts`.
+6. **`reconcileProjectSplitAgainstGlobal(projectSplit, effectiveGlobalConfig, matrix)` (D-279).** The project split is reconciled against the global config it is about to be inlined with: masks whose collision has cleared are dropped, and live global entries the project still collides with (same id at project scope, or a different project-owned skill in the same exclusive category) gain a fresh mask row. See [config-writer.md](./config-writer.md) → "Cross-Scope Reconciliation".
+7. The **reconciled** project config is written to `<projectDir>/.claude-src/config.ts` with `globalConfig: effectiveGlobalConfig` passed to the writer so the inlined-global preamble reflects the merged global state.
 
-Note: the split result is not re-merged. The global half feeds `mergeGlobalConfigs`; the project half is written directly. `splitConfigByScope` is idempotent over already-split configs (a split of a split is a no-op on the same partition).
+**The split output is not what reaches the writer.** Step 6 sits between them and may ADD `{ scope: "global", excluded: true }` rows the split never produced. When reading an emitted project config, a global tombstone therefore has two possible provenances — the `s` scope toggle (which routes through steps 1–3 as a genuine split row) or the reconciliation step. Both look identical on disk; see the mask-lifetime rule in [config-writer.md](./config-writer.md).
+
+Note: the split result is not re-merged. The global half feeds `mergeGlobalConfigs`; the project half is reconciled and written directly. `splitConfigByScope` is idempotent over already-split configs (a split of a split is a no-op on the same partition).
 
 ## `scopeEligibilityKey` — The Stack-Builder Set Key
 
@@ -155,16 +172,20 @@ The OMIT branch is the load-bearing D-220 semantic: a user who previously remove
 
 ## Anchors
 
-- `splitConfigByScope`, `scopeEligibilityKey`, `SplitConfigResult`, `generateProjectConfigFromSkills`, `buildStackForSelection`, `buildAgentStack`, `shouldIncludeTriple`, `isScopePairCompatible` (exported) / `isScopeCompatible` (private), `getScopeOrThrow`, `extractCategoryFromPath`, `buildSkillScopeMap` — `src/cli/lib/configuration/config-generator.ts`.
+- `splitConfigByScope`, `scopeEligibilityKey`, `SplitConfigResult`, `generateProjectConfigFromSkills`, `buildStackForSelection`, `buildAgentStack`, `shouldIncludeTriple`, `splitAgentStack` (private), `isScopePairCompatible` (exported) / `isScopeCompatible` (private), `getScopeOrThrow`, `extractCategoryFromPath`, `buildSkillScopeMap` — `src/cli/lib/configuration/config-generator.ts`.
 - `computeNewlyAddedSkillIds`, `computeScopeEligibilityGained` — `src/cli/lib/installation/local-installer.ts`.
 - `isActiveAt`, `activeAgentScopeMap`, `activeSkillScopeMap`, `effectivelyExcludedSkillIds` — `src/cli/lib/configuration/scope-predicates.ts` (shared predicates consumed by the generator and the delta helpers).
-- Call site threading split into writes: `writeScopedConfigs` project-context branch in `local-installer.ts`.
+- Post-split reconciliation applied to the project half before every write: `reconcileProjectSplitAgainstGlobal` — `src/cli/lib/installation/local-installer.ts`.
+- Call site threading split into writes: `writeScopedConfigs` project-context branch in `local-installer.ts`. Note `splitConfigByScope` is NOT called by `propagateGlobalChangesToProjects` — that path derives its project half from the loaded on-disk config via `retainProjectOwnedSkills` / `retainProjectOwnedAgents` instead.
+- `splitConfigByScope` is not re-exported by `src/cli/lib/configuration/index.ts`; import it from `./config-generator`.
 - Unit tests: `config-generator.test.ts` (generator + split), `local-installer.test.ts` (delta helpers + scope-split behavior in `writeScopedConfigs`).
 
 ## Findings That Shaped This Doc
 
-| Finding                                                             | Contribution                                                                                                 |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Task D-224 (P→G tombstone-not-cleared)                              | Tombstone-routing-to-project is correct; active-entry drop is upstream (merger/generator), not in the split. |
-| merge-global-configs-per-agent-update-loss _(archived, 2026-04-17)_ | Per-agent update loss that motivated the delta-set opt-in model.                                             |
-| Changelog `0.137.0.md` D-220 entry                                  | Source of the `newlyAddedSkillIds` + `scopeEligibilityGained` design.                                        |
+| Finding                                                                 | Contribution                                                                                                 |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Task D-224 (P→G tombstone-not-cleared)                                  | Tombstone-routing-to-project is correct; active-entry drop is upstream (merger/generator), not in the split. |
+| merge-global-configs-per-agent-update-loss _(archived, 2026-04-17)_     | Per-agent update loss that motivated the delta-set opt-in model.                                             |
+| Changelog `0.137.0.md` D-220 entry                                      | Source of the `newlyAddedSkillIds` + `scopeEligibilityGained` design.                                        |
+| `2026-07-29-project-config-written-by-two-paths-only-one-reconciled.md` | The split output is not the written config — a reconciliation step sits between them, at BOTH write sites.   |
+| `2026-07-30-d277-global-immutability-collapses-tombstone-provenance.md` | Deselection is no longer a tombstone source, so a bare mask in a split is machine-derived.                   |

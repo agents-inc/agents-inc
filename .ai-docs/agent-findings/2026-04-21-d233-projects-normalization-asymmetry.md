@@ -10,8 +10,8 @@ reporting_agent: codex-keeper
 category: architecture
 domain: cli
 root_cause: convention-undocumented
-status: partial
-partial_note: Docs landed — `config-writer.md` `projects` Field Lifecycle section documents the asymmetry and cross-references this finding. Code fix pending — `registerProjectPath` still uses `fs.realpathSync` (L622) while `deregisterProjectPath` still uses `path.resolve` (L651) in `local-installer.ts`; one-line unify via cli-developer.
+status: superseded
+superseded_by: 2026-07-25-register-deregister-path-normalization-asymmetry.md
 ---
 
 ## What Was Wrong
@@ -64,3 +64,51 @@ Add to CLAUDE.md under "Data Integrity":
 Cross-reference: the `registerProjectPath` / `deregisterProjectPath`
 pair is the canonical example; note it in the projects-lifecycle
 section of `config-writer.md` (already done).
+
+## Closure Note (amended 2026-07-30)
+
+**This finding is closed and superseded. Everything above is a historical
+record of the 2026-04-21 state; do not act on it.**
+
+The defect is fixed. `normalizeProjectPath()` — a module-private helper in
+`src/cli/lib/installation/local-installer.ts` wrapping `fs.realpathSync` — is
+now called by `registerProjectPath`, `deregisterProjectPath`, AND the
+current-project skip in `propagateGlobalChangesToProjects`, so the rule has
+exactly one implementation and no second one to drift against.
+
+Three corrections to what this file used to claim:
+
+1. **The former `partial_note` was false.** It stated "Code fix pending —
+   `registerProjectPath` still uses `fs.realpathSync` while
+   `deregisterProjectPath` still uses `path.resolve`". That stopped being true
+   when the fix shipped; the note was removed rather than rewritten, because
+   `partial_note:` is a claim about what is pending _right now_, and there is
+   nothing pending.
+2. **Its source line numbers were removed.** The note pinned `L622` / `L651`.
+   Both had moved, and line numbers in `.ai-docs/` are against project
+   convention — doubly so inside a lifecycle field a reader takes as current
+   state.
+3. **`status:` moved `partial` → `superseded`,** paired with `superseded_by:`
+   per `TEMPLATE.md` rule 3. The duplicate — filed independently three months
+   later against the same file and the same two functions — is
+   `2026-07-25-register-deregister-path-normalization-asymmetry.md`, which
+   carries the authoritative Resolution Note. The pair was never linked until
+   now, which is why closing one left this one asserting a live bug.
+
+**The Proposed Standard above was adopted in spirit but NOT verbatim, and the
+divergence is deliberate.** The fix has no `path.resolve` fallback tier:
+`normalizeProjectPath` throws when the directory does not exist. A two-tier
+resolution chain is banned by CLAUDE.md's Data Integrity rule, and building one
+inside the very helper written to unify the rule is where the asymmetry would
+have grown back. The one caller that must survive the throw (`uninstall`'s
+deregistration) already wraps it in a warn-and-continue guard. Do NOT "restore"
+a fallback believing it was overlooked — see
+`2026-07-30-finding-proposed-standard-contradicted-a-never-rule.md`.
+
+Why this file is kept rather than deleted: the findings directory is
+append-and-amend. It is cited by name from
+`.ai-docs/reference/config/config-writer.md` and from the sibling finding;
+moving or removing it breaks those links silently.
+
+Meta-finding on how this stayed stale for the whole gap:
+`2026-07-30-sibling-finding-left-open-when-its-duplicate-was-resolved.md`.

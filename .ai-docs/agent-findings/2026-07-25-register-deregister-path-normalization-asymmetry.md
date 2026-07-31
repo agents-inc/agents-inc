@@ -10,7 +10,9 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: enforcement-gap
-status: open
+status: resolved
+resolved_by: normalizeProjectPath() extracted in local-installer.ts and called by both ends — see Resolution Note below
+supersedes: 2026-04-21-d233-projects-normalization-asymmetry.md
 ---
 
 ## What Was Wrong
@@ -55,3 +57,38 @@ normalization must be read/filtered back under the _same_ normalization — this
 belongs as an explicit note in `.ai-docs/reference/config/config-writer.md`
 ("Registration observability" section) alongside the existing stale-filter
 guidance, so future edits to either half keep them symmetric.
+
+## Resolution Note (2026-07-30)
+
+`normalizeProjectPath()` was extracted in
+`src/cli/lib/installation/local-installer.ts`. `registerProjectPath`,
+`deregisterProjectPath`, and the current-project skip in
+`propagateGlobalChangesToProjects` all call it, so the rule has exactly one
+implementation.
+
+**The Proposed Standard above was deliberately NOT adopted verbatim.** Its
+parenthetical — fall back to `path.resolve` when the path no longer exists — is a
+multi-tier resolution chain, which CLAUDE.md forbids. `normalizeProjectPath` lets
+a non-existent path throw instead; the one caller that must survive it
+(`uninstall`'s deregistration) already wraps the call in a warn-and-continue
+guard. Do not "restore" the fallback believing it was overlooked. See
+`2026-07-30-finding-proposed-standard-contradicted-a-never-rule.md`.
+
+**Docs — DONE (verified 2026-07-30).** Both passages flagged here have since been
+rewritten in `.ai-docs/reference/config/config-writer.md`. "`deregisterProjectPath`
+— removal semantics" now states the normalization as `normalizeProjectPath` /
+`fs.realpathSync`, and the callout beneath it reads "Normalization asymmetry —
+CLOSED. Do not reintroduce it." A new "Path normalization — `normalizeProjectPath`"
+subsection under `projects` Field Lifecycle carries the three call sites, the
+no-fallback-tier rationale, and a where-the-throw-lands table. Nothing is pending
+on the doc side.
+
+**Duplicate linked (2026-07-30).** This finding supersedes
+`2026-04-21-d233-projects-normalization-asymmetry.md` — an independent report of
+the identical defect in the same file, filed three months earlier. It sat at
+`status: partial` asserting the code fix was still pending long after this one was
+resolved, because nothing in the findings pipeline compares lifecycle status
+_between_ findings over the same symbol. It is now `superseded`, and the pair is
+linked in both directions. See
+`2026-07-30-sibling-finding-left-open-when-its-duplicate-was-resolved.md` for the
+proposed pipeline rule.

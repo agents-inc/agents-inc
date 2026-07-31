@@ -12,6 +12,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: convention-undocumented
+status: partial
+partial_note: 'Inverted relative to the enum''s documented direction — the CODE side landed and the DOCS side did not. Landed: `src/cli/lib/__tests__/helpers/config-comparison.ts` + its co-located `.test.ts` sit inside the unit project''s `src/**/*.test.ts` glob and are re-exported through `e2e/helpers/test-utils.ts`. Pending: the proposed standard. Verified 2026-07-30 that the underlying trap is unchanged — `vitest.config.ts` includes `src/**/*.test.ts` / `src/**/*.test.tsx` / `scripts/**/*.test.ts` and `e2e/vitest.config.ts` includes only `e2e/**/*.e2e.test.ts`, so a `*.test.ts` under `e2e/helpers/` still executes under neither. `standards/e2e/README.md` still tells authors to put a tested helper in "`e2e/helpers/` or `src/cli/lib/__tests__/helpers/`", offering the non-running location as an equal option; CLAUDE.md carries the same wording.'
 ---
 
 ## What Was Wrong

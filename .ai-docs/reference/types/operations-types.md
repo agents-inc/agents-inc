@@ -6,6 +6,7 @@ keywords:
     operations,
     LoadedSource,
     ConfigChanges,
+    PropagatedRecompileSummary,
     detectConfigChanges,
     migratePluginSkillScopes,
     edit-command,
@@ -13,58 +14,88 @@ keywords:
 related:
   - reference/types/core-types.md
   - reference/features/operations-layer.md
+  - reference/features/compilation-pipeline.md
   - reference/commands/edit.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
+
+<!--
+2026-07-30 sync to product v0.146.0:
+- Added PropagatedRecompileSummary (D-240) with its failure-isolation contract.
+- ConfigWriteResult gained `propagatedProjects`; the declared-but-never-populated
+  `globalConfigPath` was deleted from the type.
+- Corrected the "re-exported from operations/types.ts" claim — types.ts is a
+  NON-exhaustive subset; three types are index.js-only and CopyLocalSkillsOptions
+  is in neither barrel. Added an explicit export-surface table.
+- DetectedProject: `null` now also covers a corrupt config (D-273 ConfigLoadError).
+- CompileAgentsOptions: documented the D-264 prune trigger (outputDir AND no
+  scopeFilter) and added CompileAllScopesOptions / MarketplaceRequirement shapes.
+-->
 
 # Operations Layer Types
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 > **Split from:** `reference/type-system.md`. See also: [core-types.md](./core-types.md), [zod-schemas.md](./zod-schemas.md).
 
-## Operations Layer Types (`src/cli/lib/operations/types.ts`)
+## Export Surface
 
-The operations layer defines focused result types for each operation, re-exported from `src/cli/lib/operations/types.ts`:
+Two barrels expose operation types, and they are **not** equivalent:
+
+| Barrel                            | Contents                                                                                                   |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `src/cli/lib/operations/index.ts` | Every operation function plus every publicly consumed type. This is what commands import.                  |
+| `src/cli/lib/operations/types.ts` | Type-only convenience re-exports — a NON-exhaustive subset. Nothing imports it that cannot use `index.js`. |
+
+Types reachable only through `index.js` (absent from `types.ts`): `MarketplaceRequirement`, `CompileAllScopesOptions`, `PropagatedRecompileSummary`.
+
+`CopyLocalSkillsOptions` is exported from its own module (`operations/skills/copy-local-skills.ts`) but surfaced by **neither** barrel — import it from the module path.
+
+## Operations Layer Types
+
+The operations layer defines focused option/result types per operation:
 
 ### Source Operations
 
-| Type                | File                                      | Purpose                                     |
-| ------------------- | ----------------------------------------- | ------------------------------------------- |
-| `LoadSourceOptions` | `operations/source/load-source.ts`        | Options for loading a skills source         |
-| `LoadedSource`      | `operations/source/load-source.ts`        | Result of loading a source (matrix + paths) |
-| `MarketplaceResult` | `operations/source/ensure-marketplace.ts` | Result of marketplace registration          |
+| Type                     | File                                       | Purpose                                                  |
+| ------------------------ | ------------------------------------------ | -------------------------------------------------------- |
+| `LoadSourceOptions`      | `operations/source/load-source.ts`         | Options for loading a skills source                      |
+| `LoadedSource`           | `operations/source/load-source.ts`         | Result of loading a source (matrix + paths)              |
+| `MarketplaceResult`      | `operations/source/ensure-marketplace.ts`  | Result of marketplace registration                       |
+| `MarketplaceRequirement` | `operations/source/require-marketplace.ts` | Discriminated union gating plugin work (`index.js` only) |
 
 ### Skill Operations
 
-| Type                     | File                                             | Purpose                                         |
-| ------------------------ | ------------------------------------------------ | ----------------------------------------------- |
-| `DiscoveredSkills`       | `operations/skills/discover-skills.ts`           | Result of skill discovery (local + marketplace) |
-| `ScopedSkillDir`         | `operations/skills/collect-scoped-skill-dirs.ts` | Single scoped skill directory entry             |
-| `ScopedSkillDirsResult`  | `operations/skills/collect-scoped-skill-dirs.ts` | Collected scoped dirs with counts               |
-| `CopyLocalSkillsOptions` | `operations/skills/copy-local-skills.ts`         | Options for copying local skills                |
-| `SkillCopyResult`        | `operations/skills/copy-local-skills.ts`         | Result of copying local skills                  |
-| `SkillComparisonResults` | `operations/skills/compare-skills.ts`            | Comparison results (added/removed/changed)      |
-| `SkillMatchResult`       | `operations/skills/find-skill-match.ts`          | Result of matching a skill to a source          |
-| `PluginInstallResult`    | `operations/skills/install-plugin-skills.ts`     | Result of plugin skill installation             |
-| `PluginUninstallResult`  | `operations/skills/uninstall-plugin-skills.ts`   | Result of plugin skill uninstallation           |
+| Type                     | File                                             | Purpose                                                                  |
+| ------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------ |
+| `DiscoveredSkills`       | `operations/skills/discover-skills.ts`           | Result of skill discovery (local + marketplace)                          |
+| `ScopedSkillDir`         | `operations/skills/collect-scoped-skill-dirs.ts` | Single scoped skill directory entry                                      |
+| `ScopedSkillDirsResult`  | `operations/skills/collect-scoped-skill-dirs.ts` | Collected scoped dirs with counts                                        |
+| `CopyLocalSkillsOptions` | `operations/skills/copy-local-skills.ts`         | Options for copying local skills (module path only — see Export Surface) |
+| `SkillCopyResult`        | `operations/skills/copy-local-skills.ts`         | Result of copying local skills                                           |
+| `SkillComparisonResults` | `operations/skills/compare-skills.ts`            | Comparison results (added/removed/changed)                               |
+| `SkillMatchResult`       | `operations/skills/find-skill-match.ts`          | Result of matching a skill to a source                                   |
+| `PluginInstallResult`    | `operations/skills/install-plugin-skills.ts`     | Result of plugin skill installation                                      |
+| `PluginUninstallResult`  | `operations/skills/uninstall-plugin-skills.ts`   | Result of plugin skill uninstallation                                    |
 
 ### Project Operations
 
-| Type                   | File                                              | Purpose                                    |
-| ---------------------- | ------------------------------------------------- | ------------------------------------------ |
-| `DetectedProject`      | `operations/project/detect-project.ts`            | Detected project installation state        |
-| `BothInstallations`    | `operations/project/detect-both-installations.ts` | Combined project + global installation     |
-| `ConfigWriteOptions`   | `operations/project/write-project-config.ts`      | Options for writing project config         |
-| `ConfigWriteResult`    | `operations/project/write-project-config.ts`      | Result of config write operation           |
-| `CompileAgentsOptions` | `operations/project/compile-agents.ts`            | Options for agent compilation              |
-| `CompilationResult`    | `operations/project/compile-agents.ts`            | Result of agent compilation                |
-| `AgentDefs`            | `operations/project/load-agent-defs.ts`           | Loaded agent definitions with source paths |
+| Type                         | File                                              | Purpose                                                          |
+| ---------------------------- | ------------------------------------------------- | ---------------------------------------------------------------- |
+| `DetectedProject`            | `operations/project/detect-project.ts`            | Detected project installation state                              |
+| `BothInstallations`          | `operations/project/detect-both-installations.ts` | Combined project + global installation                           |
+| `ConfigWriteOptions`         | `operations/project/write-project-config.ts`      | Options for writing project config                               |
+| `ConfigWriteResult`          | `operations/project/write-project-config.ts`      | Result of config write operation (incl. `propagatedProjects`)    |
+| `CompileAgentsOptions`       | `operations/project/compile-agents.ts`            | Options for agent compilation                                    |
+| `CompilationResult`          | `operations/project/compile-agents.ts`            | Result of agent compilation                                      |
+| `CompileAllScopesOptions`    | `operations/project/compile-agents-all-scopes.ts` | Options for the home/project multi-pass driver (`index.js` only) |
+| `PropagatedRecompileSummary` | `operations/project/recompile-project-agents.ts`  | D-240 registered-project recompile summary (`index.js` only)     |
+| `AgentDefs`                  | `operations/project/load-agent-defs.ts`           | Loaded agent definitions with source paths                       |
 
 ## Key Type Shapes
 
-Shapes verified against source 2026-07-23. No line numbers (names only, per project convention).
+Shapes verified against source 2026-07-30. No line numbers (names only, per project convention).
 
 ### `PluginInstallResult` (D-229 contract)
 
@@ -109,7 +140,9 @@ type CompilationResult = {
 };
 ```
 
-Thin re-shape of `recompileAgents()` result. No per-agent error strings on `failed` (just the name).
+Thin re-shape of `recompileAgents()` result. No per-agent error strings on `failed` (just the name). `warnings` carries the human-readable failure text plus any `Agent "<name>" not found in source definitions` entries.
+
+`failed` names are still counted into the D-264 prune keep-set (`compiled ∪ failed`) — a render failure must not also delete the previously good `.md`.
 
 ### `CompileAgentsOptions`
 
@@ -126,7 +159,55 @@ type CompileAgentsOptions = {
 };
 ```
 
+Two behaviours are keyed off these fields rather than being separate flags:
+
+| Behaviour                                            | Trigger                                       |
+| ---------------------------------------------------- | --------------------------------------------- |
+| Auto-build `agentScopeMap` from the loaded config    | `scopeFilter` set AND `agentScopeMap` omitted |
+| Prune stale compiled agents from `outputDir` (D-264) | `outputDir` set AND `scopeFilter` ABSENT      |
+
+The prune trigger is the "authoritative pass" test: a scope-filtered pass only ever resolves one scope's roster, so its roster is not the complete set for the directory and deleting from it could remove another scope's files.
+
 There is no `installMode` field on `CompileAgentsOptions` (nor on `RecompileAgentsOptions` in `agent-recompiler.ts`) — the compile path no longer threads an install mode. The `InstallMode` type (`"eject" | "plugin" | "mixed"`) still exists in `matrix.ts` and is derived on demand via `deriveInstallMode(skills)` in `installation.ts`; D-217 made the plugin skill-reference _format_ per-skill source-based (`SkillReference.source`), which removed the need to pass a whole-project `installMode` into compilation.
+
+### `CompileAllScopesOptions`
+
+```typescript
+type CompileAllScopesOptions = {
+  /** Working directory of the command — a project root, or home for global context. */
+  projectDir: string;
+  sourcePath: string;
+  skills: SkillDefinitionMap;
+  agentScopeMap: Map<AgentName, SkillScope>;
+};
+```
+
+Unlike `CompileAgentsOptions`, `skills` and `agentScopeMap` are **required** — `compileAgentsAllScopes` is the `init`/`edit` driver and both callers already hold them. Exported from `operations/index.js` only, not from `operations/types.ts`.
+
+### `PropagatedRecompileSummary` (D-240 contract)
+
+```typescript
+type PropagatedRecompileSummary = {
+  recompiledCount: number;
+  failedCount: number;
+  /** Per-project warnings in processing order — the caller surfaces them via warn(). */
+  warnings: string[];
+};
+```
+
+Returned by `recompilePropagatedProjectAgents(projectDirs)`, which loops `recompileRegisteredProjectAgents(dir)` over the dirs in `ConfigWriteResult.propagatedProjects`.
+
+**Failure-isolation contract:**
+
+| Per-project outcome                        | Effect on the summary                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------------- |
+| Success (`result.failed` empty)            | `recompiledCount++`                                                       |
+| Compile ran but `result.failed` non-empty  | `failedCount++`, that result's `warnings` appended, loop continues        |
+| Threw (unreadable config, broken template) | `failedCount++`, `Could not recompile agents in <dir>: <reason>` appended |
+
+Nothing here throws or short-circuits: one project's unreadable config must not abort the loop or leave the remaining projects stale. Projects are processed **sequentially** so `warnings` keeps a deterministic per-project order. Both `init` and `edit` `warn()` every entry and then log the counts (`edit` colours the ` (N failed)` suffix with `CLI_COLORS.WARNING`).
+
+`recompileRegisteredProjectAgents(projectDir): Promise<CompilationResult>` always compiles with `scopeFilter: "project"` — so it never prunes (D-264) and writes no agent into `~/.claude/agents`, which the triggering operation's own global pass already rewrote. (`writeCompiledAgentsByScope` still `ensureDir`s the global agents directory unconditionally at entry; that is an idempotent `mkdir -p`, not a write.)
 
 ### `LoadedSource`
 
@@ -147,6 +228,8 @@ type LoadSourceOptions = {
   captureStartupMessages?: boolean; // wraps load in buffer mode for Wizard <Static>
 };
 ```
+
+`LoadSourceOptions` is a strict subset of the loader's own `SourceLoadOptions` (`src/cli/lib/loading/source-loader.ts`) — it does NOT expose `devMode`, `skipExtraSources` or `matrixOnly`. Callers that need the offline matrix-only load (`compile`'s `refreshConfigTypes`, `uninstall`) bypass this operation and call `loadSkillsMatrixFromSource` directly.
 
 ### `ConfigWriteOptions`
 
@@ -169,12 +252,26 @@ type ConfigWriteOptions = {
 type ConfigWriteResult = {
   config: ProjectConfig;
   configPath: string;
-  globalConfigPath?: string;
   wasMerged: boolean;
   existingConfigPath?: string;
   filesWritten: number; // 2 (global context) or 4 (project context: config + types × 2 scopes)
+  /**
+   * Registered project directories whose config was rewritten by propagation of
+   * this write's global changes. Their compiled agents are now stale — the
+   * caller recompiles them with `recompileRegisteredProjectAgents`.
+   */
+  propagatedProjects: string[];
 };
 ```
+
+**`propagatedProjects` (D-240)** originates in `writeScopedConfigs`'s `ScopedConfigWriteResult` (`src/cli/lib/installation/local-installer.ts`) and carries `propagateGlobalChangesToProjects(...).updated` — projects that actually got rewritten. `skipped` (unreachable / failing) dirs are excluded. It is `[]` when:
+
+- the home branch's config declares no `projects` (a home write is always a global write, so there is no change gate on that branch), or
+- the project branch's global data did not change (`globalDataChanged === false`), or the effective global config has no `projects`.
+
+`init.tsx` and `edit.tsx` each early-return on an empty list before calling `recompilePropagatedProjectAgents`.
+
+**There is no `globalConfigPath` on this result.** It was declared optional, never assigned by `writeProjectConfig` and never read by any caller, so it was deleted. The global config path is derived at the write site via `getProjectConfigPath(os.homedir())` inside `writeScopedConfigs`.
 
 ### `DiscoveredSkills`
 
@@ -201,7 +298,9 @@ type DetectedProject = {
 };
 ```
 
-Never throws — returns `null` when no installation. Callers decide how to react.
+`detectProject` never throws: it returns `null` for **both** "no installation found" and "a config file exists but is corrupt". The second case comes from catching `ConfigLoadError` around `detectInstallation()` (D-273) — `doctor` and `edit` then report a config/installation problem. `compile` deliberately does not use this wrapper; it calls `detectBothInstallations` so the error surfaces and it can hard-error naming the file.
+
+A successfully-loaded config that declares neither skills nor agents also reads as **not installed** (`detectInstallationInDir` in `src/cli/lib/installation/installation.ts` returns `null`), so `init` routes to the setup wizard rather than the dashboard.
 
 ### `BothInstallations`
 
@@ -213,7 +312,9 @@ type BothInstallations = {
 };
 ```
 
-Skips project detection when `projectDir === os.homedir()` (avoids double-compile). `hasBoth` gates dual-scope compile passes.
+Skips project detection when `projectDir === os.homedir()` (avoids double-compile). `hasBoth` gates dual-scope compile passes — and, because a filtered pass never prunes, it also decides whether a `compile` run prunes stale compiled agents (D-264).
+
+Unlike `detectProject`, this operation **lets `ConfigLoadError` propagate**. Its only caller wraps it in a try/catch and hard-errors with `EXIT_CODES.ERROR` before any compilation or write.
 
 ### `AgentDefs`
 

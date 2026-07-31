@@ -1,6 +1,8 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added the Closed-Loop Grid Navigation pattern (focusSkill's Tab-walk, the NO_COLOR cell-focus constraint, exact-label matching, Tab-vs-DOWN column semantics) — the canonical navigation recipe, previously undocumented; added a Scope-Explicit Launch pattern for launchInProject / launchInGlobal / globalHome, which every wizard example predated; added a Toast Assertion pattern for the *Awaiting methods and why the processed buffer is the wrong surface; corrected the Wizard Specific-Selection example, which called build.selectSkill("react") — labels now match EXACTLY, so it must be the rendered display title; noted the D-260 spacebar/`s` split in the Scope Testing pattern -->
 
 # Patterns
 
@@ -93,8 +95,10 @@ it("should select specific stack and toggle skills", async () => {
   // Domain -> accept defaults
   const build = await domain.acceptDefaults();
 
-  // Build -> toggle a specific skill, advance through domains
-  await build.selectSkill("react");
+  // Build -> toggle a specific skill, advance through domains.
+  // The label is the EXACT rendered display title, not a substring:
+  // "React" would not match a cell whose title is "web-framework-react".
+  await build.selectSkill("web-framework-react");
   await build.advanceDomain(); // Web
   await build.advanceDomain(); // API
   const sources = await build.advanceToSources(); // Shared
@@ -209,7 +213,100 @@ Key points:
 - Pass `HOME` via env to control where global config lives
 - `ProjectBuilder.dualScope()` for pre-built file structures
 - `dual-scope-helpers.ts` for state built through wizard interactions
-- Scope indicators in wizard output: `"G "` prefix for global skills, `"P "` for project skills. Agent scope badges: `"[G]"`, `"[P]"`
+- Scope indicators in wizard output: `"G "` prefix for global skills, `"P "` for project skills. Agent scope badges: `"[G]"`, `"[P]"`. Read them with `build.getScopeBadgesForSkill(label)` / `agents.getScopeBadgesForAgent(label)` rather than scanning the frame.
+- **`s` is the sole dual-scope toggle** (D-260). It round-trips `[P][G]` to `[G]` and back on its own, for skills and agents alike; **spacebar is inert on any globally-backed row** and emits the global-locked toast instead. A spec that presses Space expecting a collapse tests nothing. Every `s`-collapse spec needs a proof-of-execution assertion on the badges (`["P"]` -> `["G"]`) so a refused press cannot masquerade as the rendering bug under test.
+- A globally installed skill or agent cannot be deselected from a project in ANY flow, including `init` (D-277). A spec that expects a project-scope deselect to remove a global entry is asserting removed behaviour.
+
+---
+
+## Scope-Explicit Launch Pattern
+
+Skills and agents default to GLOBAL scope, and the sandbox gives every session a HOME distinct from `projectDir`. So a project install's `.claude/` content does NOT land under `projectDir`. Pick the launcher by what the test does, then point each assertion at the root that actually received the artefact.
+
+```typescript
+// PROJECT install: config.ts on projectDir, global-default content on globalHome
+const wizard = await InitWizard.launchInProject({ source, projectDir });
+const result = await wizard.completeWithDefaults();
+
+await expect(result.project).toHaveConfig({ skillIds: ["web-framework-react"] });
+await expect({ dir: wizard.globalHome }).toHaveCompiledAgent("web-developer");
+```
+
+```typescript
+// GLOBAL install: HOME === cwd === projectDir, so every artefact collapses onto projectDir
+const wizard = await EditWizard.launchInGlobal({ projectDir, source });
+const result = await wizard.completeFromBuild();
+
+await expect(result.project).toHaveConfig({ skillIds: ["web-framework-react"] });
+await expect(result.project).toHaveCompiledAgent("web-developer");
+```
+
+Key points:
+
+- `wizard.globalHome` throws on a plain `launch()` / `launchRaw()` — those keep HOME internal on purpose. Output-only navigation tests that assert nothing on disk should keep `launch()`.
+- `config.ts` is project-side; installed content is scope-side. Move `.claude/` matchers to `globalHome` only for global-scoped content; project-scoped entries and pre-seeded `projectDir/.claude/skills` stay on `projectDir`.
+- `CLI.run(args, result.project)` needs no extra plumbing: the handle carries `globalHome` and `CLI.run` prefers it over `project.dir`.
+- Multi-phase flows share one global HOME by allocating it in the test and passing `globalHome` to every `launchInProject`. The test then owns its cleanup.
+
+Full decision rules: [anti-patterns.md § Choosing the Wizard Launcher by Scope](./anti-patterns.md#choosing-the-wizard-launcher-by-scope).
+
+---
+
+## Closed-Loop Grid Navigation Pattern
+
+The canonical pattern for moving focus in the build grid, and the model for any future grid navigator. It is implemented once, in `BuildStep.focusSkill` — tests call `focusSkill` / `selectSkill` and never re-implement it.
+
+```typescript
+// Good: name-addressed, closed-loop under the hood
+await build.focusSkill("web-framework-react");
+await build.toggleScopeOnFocusedSkill();
+
+// Good: focus + toggle in one call
+await build.selectSkill("web-framework-react");
+
+// Bad: dead reckoning. The grid PRESERVES and clamps the column across
+// arrow-DOWN, so a counted walk lands on — and toggles — the wrong skill.
+await build.navigateDown();
+await build.navigateRight();
+await build.navigateRight();
+```
+
+Why it must be closed-loop:
+
+| Signal               | Observable under `NO_COLOR`?          | Consequence                                               |
+| -------------------- | ------------------------------------- | --------------------------------------------------------- |
+| Focused **cell**     | No — border colour only               | Cell focus can never be verified from the frame           |
+| Focused **category** | Yes — header paints one column deeper | Category focus CAN be verified by re-parsing the viewport |
+
+And the two keys behave differently: **Tab** moves to the next category AND resets the column to 0; **arrow-DOWN** moves category but preserves and clamps the column. Only Tab yields a known column, so the walk Tabs between categories, re-reads the screen after every press, and only then walks RIGHT from a verified column zero.
+
+Rules for callers:
+
+- **Pass the EXACT rendered display title.** Matching is `===` after stripping scope badges, diff glyphs, and compatibility annotations — `"React"` will not match a `"React Query"` cell. In the standard E2E source, most skill titles ARE the skill id (`web-framework-react`); the `meta-*` and Vue skills have humanised titles. Key off `E2E_SKILL_TITLES` rather than re-typing strings.
+- **Never assert on which cell has focus.** Assert on a consequence instead: `getExclusiveCategorySelectedCount(category)` for in-grid selected state (the only text-observable signal), or `getScopeBadgesForSkill(label)` for scope.
+- **Do not use `EditWizard.launchInProjectShort` with `focusSkill`.** That launcher skips the build-category settle wait, so the layout `focusSkill` parses may not have painted.
+
+See `.ai-docs/agent-findings/2026-07-29-e2e-grid-focus-unobservable-under-no-color-closed-loop-tab-walk.md`.
+
+---
+
+## Toast Assertion Pattern
+
+Toasts render in an absolutely-positioned row that Ink rewrites in place, so xterm's processed buffer has already lost the text by the time a test reads it. Use the `*Awaiting` step methods, which snapshot a raw cursor before the press and wait on raw output after it.
+
+```typescript
+// Good: the toast is waited for on the surface that retains it
+await build.selectSkillAwaiting("web-framework-react", STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
+
+// Also available: toggleFocusedSkillAwaiting, toggleFilterIncompatibleAwaiting,
+// AgentsStep.toggleFocusedAgentAwaiting, ConfirmStep.confirmAwaiting
+
+// Bad: the toast may already be overwritten in the processed buffer
+await build.selectSkill("web-framework-react");
+expect(build.getOutput()).toContain(STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
+```
+
+The pre-press cursor anchor is not optional: the footer sentinel is re-emitted on every frame, so a plain footer wait can fire on a repaint that precedes the toast, and an earlier frame's residue would satisfy a non-anchored raw match.
 
 ---
 
@@ -223,6 +320,7 @@ await wizard.stack.selectStack("E2E Test Stack");
 await agents.toggleAgent("API Developer");
 await agents.navigateCursorToAgent("API Developer");
 await domain.toggleDomain(STEP_TEXT.DOMAIN_API);
+await build.focusSkill("web-framework-react");
 
 // Bad: fragile index-based navigation
 for (let i = 0; i < 3; i++) {

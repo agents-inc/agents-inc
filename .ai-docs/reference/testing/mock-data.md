@@ -15,13 +15,15 @@ keywords:
 related:
   - reference/testing/factories.md
   - reference/testing/infrastructure.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added CATEGORY_EXCLUSIVITY_MATRIX, which the mock-matrices inventory omitted — it is the only fixture whose categories carry real exclusive/required flags (createMockMatrix's default categories map is empty, so exclusivity rules can never fire without it) and the only one separating "exclusive" from "exclusive AND required"; re-counted the BUILD_STEP_* family against source (still 17) and re-verified every other named constant in the mock-matrices, mock-skills, mock-agents, mock-stacks, mock-sources and mock-source-files lists — no other drift -->
 
 # Mock Data Constants
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 > **Split from:** `reference/test-infrastructure.md`. See also: [infrastructure.md](./infrastructure.md), [factories.md](./factories.md), [e2e-infrastructure.md](./e2e-infrastructure.md).
 
@@ -93,6 +95,7 @@ Pre-built test data constants extracted from individual test files. Use these in
 - `LOCAL_SKILL_MATRIX`, `MIXED_LOCAL_REMOTE_MATRIX` - Local skill matrix fixtures
 - `METHODOLOGY_MATRIX`, `VITEST_MATRIX`, `MULTI_STYLING_MATRIX` - Single-domain matrix fixtures
 - `CATEGORY_GRID_MATRIX`, `REACT_HONO_FRAMEWORK_API_MATRIX`, `REACT_HONO_WEB_API_DOMAINS_MATRIX` - Specialized matrix fixtures
+- `CATEGORY_EXCLUSIVITY_MATRIX` - The only fixture whose categories carry REAL `exclusive` / `required` flags. `createMockMatrix`'s default categories map is empty, so every category reads as "undefined flags" and exclusivity rules can never fire — use this whenever the flags must be live. Shape: two frameworks in an exclusive **and required** category (`web-framework`: react, vue), two client-state skills in an exclusive but **optional** one (`web-client-state`: zustand, pinia), two styling skills in a non-exclusive one (`web-styling`: scss, tailwind), plus a non-exclusive `web-testing` (vitest). The exclusive+optional category is the one shape that separates "exclusive" from "exclusive AND required" rules.
 - `BUILD_STEP_*_MATRIX` - Build step logic test matrices (17 constants: WEB, REQUIRES, EMPTY_FRAMEWORK, FRAMEWORK_NON_EXCLUSIVE, FRAMEWORK_NO_FLAGS, FRAMEWORK_API, FRAMEWORK_ONLY, API_DB, UNIVERSAL_COMPAT, LOCAL_SKILL, NON_LOCAL, DISPLAY_NAME, SORTING, UNDEFINED_ORDER, CONFLICTS_EXCLUSIVE, CONFLICTS_NON_EXCLUSIVE, ADVISORY_STATES)
 - `WEB_AND_API_COMPILE_CONFIG`, `WEB_ONLY_COMPILE_CONFIG` - CompileConfig fixtures
 - `TOOLING_AND_FRAMEWORK_CONFIG`, `CI_CD_CONFIG`, `FRAMEWORK_AND_STYLING_CONFIG`, `OBSERVABILITY_CONFIG`, `FRAMEWORK_AND_TESTING_CONFIG`, `EMPTY_MATRIX_CONFIG`, `UNRESOLVED_CONFLICT_MATRIX` - MatrixConfig fixtures

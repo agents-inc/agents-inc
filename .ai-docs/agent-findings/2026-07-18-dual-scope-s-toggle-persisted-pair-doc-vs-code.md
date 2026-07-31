@@ -16,6 +16,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: rule-not-specific-enough
+status: superseded
+superseded_by: 2026-07-18-d233-agent-collapse-fix-in-toggleagent-action-not-helper.md
 supersedes: 2026-07-18-dual-scope-agent-s-toggle-guarded-noop-not-collapse.md
 ---
 

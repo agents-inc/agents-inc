@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-07-30
 ---
 
 # Clean Code Standards
@@ -288,6 +288,10 @@ expect(result).toStrictEqual({ id: "react", name: "React" });
 
 **6.17** Do not split, loop, or regex-scan `lastFrame()` output in component tests. Assert directly with `toContain("+ React")` or snapshot the frame. The rendered frame is the contract; that's what you assert. For parser/extractor helpers with non-trivial logic, see 6.18.
 
+**6.17a** A component that lays content out in fixed-width columns must carry at least one `toMatchInlineSnapshot()` per layout branch. `toContain` proves a label exists and an `indexOf` check proves one label precedes another — neither proves a label sits above the column it names, and in a table-like view that position is the contract. A branch is each structurally distinct arrangement: `source-grid.tsx` has two — grouped (scope gutter present) and flat (no gutter) — and `source-grid.test.tsx` carries one snapshot for each. Use a row with no double-width glyph when the point is position; the 🔒 (`UI_SYMBOLS.LOCK`) in that grid takes two columns and makes an aligned frame read as ragged.
+
+This narrows 6.17 rather than contradicting it — snapshotting is already one of the two options 6.17 offers, and for this component class it becomes the required one. Grounding: the `Scope` caption in `source-grid.tsx` rendered 11 columns right of the labels it captioned, and all 56 tests then in `source-grid.test.tsx` passed — including a `describe("scope-grouped rendering")` block covering that exact branch — because every assertion was `toContain(...)` or an ordering check, and a misplaced caption satisfies both.
+
 **6.18** Never define parser/extractor helpers with non-trivial logic inside a test file (loops, regex scans, state machines that pick data out of rendered output or config text). If a helper is genuinely reusable across tests, live it in `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested. Instead, assert directly on raw output with `toContain`, `toMatchInlineSnapshot`, or a structural load (e.g. `loadProjectConfig` for `config.ts`).
 
 ---
@@ -375,15 +379,19 @@ const output = await readFileOptional(path.join(dir, STANDARD_FILES.OUTPUT_MD), 
 
 **8.6** Build derived collections with `.map()`, `.flatMap()`, or literal arrays. Do not declare an empty array and `push()` in a loop — the imperative build step is always a poorer read than the functional form.
 
+**8.7 Two key families look alike and must stay apart.** `skillSlotKey` / `agentSlotKey` in `src/cli/lib/wizard/scope-diff.ts` build a SLOT key, `id:scope` — "is this the same row?" — so the Sources tab and the confirm step agree on what changed this session. `skillKey` / `agentKey` in `src/cli/lib/configuration/config-merger.ts` build a MERGE key, the same `id:scope` plus a `:excluded` suffix on deletion markers (tombstones) — "which config entry replaces which?". For a live entry the two produce an identical string; only tombstones tell them apart, which is why they read as duplicates.
+
+Never unify them, and never route one through the other's helper. Strip the suffix from the merge key and a tombstone collides with the live entry it exists to mask, so the merge treats them as one entry and one overwrites the other. Add the suffix to the slot key and a tombstone stops matching its live entry, so the diff surfaces render it as an extra row instead of a mask. The fixes that introduced the slot keys (D-278, then `agentSlotKey`) each examined the merge keys and deliberately left them alone.
+
 ---
 
 ## 9. Dead Code
 
-**9.1** Remove exported functions with zero imports outside their file. Search first, then remove tests.
+**9.1** Remove exported functions with zero imports outside their file. Search first, then remove tests. **Exception:** identity/lookup-key helpers such as `skillSlotKey` / `agentSlotKey` (see 8.7) — these exist to precede their second caller, so a bare barrel re-export, or none at all, is the expected state and not evidence of dead code. Nothing else is exempt.
 
 **9.6** Prefix intentionally unused parameters with `_` (e.g., `_onClose`, `_input`). This signals intent and suppresses linter warnings. Remove the parameter entirely if the interface allows it.
 
-**9.2** Un-export symbols only used within their own file. If a module-level constant is only consumed to derive an exported value, keep it un-exported (e.g., `CLI_ROOT` -> `PROJECT_ROOT` in `consts.ts`).
+**9.2** Un-export symbols only used within their own file. If a module-level constant is only consumed to derive an exported value, keep it un-exported (e.g., `CLI_ROOT` -> `PROJECT_ROOT` in `consts.ts`). **Exception:** identity/lookup-key helpers such as `skillSlotKey` / `agentSlotKey` (see 8.7) — the export is the single definition every surface must call, so it precedes the second caller rather than following it. Nothing else is exempt.
 
 **9.3** Delete skipped tests or fix them. No `it.skip` without a linked issue.
 
@@ -459,7 +467,7 @@ populateFromSkillIds: (ids, skills, cats) => set(() => {
 
 **13.1** New files use `.js` extensions on relative imports. Existing files keep their current style. Do not mix styles within a single file.
 
-**13.2** No default exports. Use named exports only.
+**13.2** No default exports. Use named exports only. **Exception:** modules a framework loads by their default export — oclif commands (`src/cli/commands/**`) and hooks (`src/cli/hooks/**`), and tool configs (`*.config.*` plus `e2e/global-setup.ts`). Never convert these to named exports: a config loader reads `module.default` and nothing else, so a named export loads as an empty config — clean at `tsc`, no runtime error, just a config that silently does nothing. The `Exports` bullet under "Code Conventions" in `CLAUDE.md` is the authority; nothing outside those paths is exempt.
 
 ---
 

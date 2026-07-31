@@ -13,6 +13,7 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: convention-undocumented
+status: superseded
 superseded_by: 2026-07-18-dual-scope-s-toggle-persisted-pair-doc-vs-code.md
 ---
 

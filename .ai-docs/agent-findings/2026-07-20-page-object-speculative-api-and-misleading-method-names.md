@@ -13,6 +13,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: convention-undocumented
+status: partial
+partial_note: 'Inverted relative to the enum''s documented direction — the CODE side landed and the DOCS side did not. Landed and still clean (verified 2026-07-30 by grep over `e2e/`): `moveSourceColumnLeft`, `BaseStep.pressArrowLeft`, `InteractivePrompt.arrowLeft()`/`arrowRight()`/`space()` and the `toggleFocusedSource` alias have zero occurrences — none has crept back. Pending: the proposed standard. `standards/e2e/anti-patterns.md` has no "Page-object API hygiene" section and `standards/e2e/page-objects.md` states none of the four rules, so nothing stops the next author adding a speculative mirror method, an alias, or a `toggle…` name for a handler that calls `onSelect`.'
 ---
 
 ## What Was Wrong

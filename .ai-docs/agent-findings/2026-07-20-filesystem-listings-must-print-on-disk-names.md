@@ -8,6 +8,8 @@ reporting_agent: cli-developer
 category: testing
 domain: cli
 root_cause: missing-rule
+status: partial
+partial_note: 'Inverted relative to the enum''s documented direction — the CODE side landed and the DOCS side did not. Landed (verified 2026-07-30): `reportSkillsCopied` in `init.tsx` prints `` `    ${copied.skillId}/` `` and its JSDoc states "This block is a filesystem listing, so the entries are the on-disk directory" names — the anti-tidy guard the finding asked for. `reportAgentsCompiled` still prints `${agentName}.md`, matching what `writeCompiledAgentsByScope` writes. Pending: (a) the proposed standard — CLAUDE.md''s Data Integrity list has no rule against printing a `displayName` inside a filesystem block, so the inverse of the existing `path.basename` rule is still unwritten; (b) the coverage gap the finding flagged as unowned — still nothing asserts the CONTENTS of the "Skills copied to:" block, so a regression to `displayName` would be caught by no test.'
 ---
 
 ## What Was Wrong

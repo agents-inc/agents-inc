@@ -11,6 +11,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: enforcement-gap
+status: partial
+partial_note: 'Inverted relative to the enum''s documented direction — the CODE side landed and the DOCS side did not. Landed (verified 2026-07-30): `e2e/fixtures/project-builder.ts` maps `"web-state-zustand"` to `category: "web-client-state"`, and the forward-looking comment naming `CATEGORIES` in `src/cli/types/generated/source-types.ts` and the `web-state` trap sits above the table. Pending: the proposed standard, which is the load-bearing half — the finding''s own point is that nothing COULD have caught the bad literal. `standards/e2e/anti-patterns.md` still has no "fixture literals that mirror a generated union must be diffed against that union" rule and no statement of the corollary that "no test failed" is not evidence a fixture value is correct. `SkillMetadataFields.category` remains `string` by design, so the compiler still cannot help.'
 supersedes: 2026-07-20-project-builder-derived-slug-hid-wrong-category.md
 ---
 

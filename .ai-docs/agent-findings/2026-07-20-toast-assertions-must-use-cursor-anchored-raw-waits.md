@@ -14,6 +14,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: convention-undocumented
+status: resolved
+resolved_by: 'Fix Applied, both proposed standards, AND the deferred follow-up all landed. Verified 2026-07-30: `BuildStep.toggleFocusedSkillAwaiting(sentinel)` and `selectSkillAwaiting(label, sentinel)` exist in `e2e/pages/steps/build-step.ts` alongside the pattern they mirror. `standards/e2e/assertions.md` gained the rule — "Toasts are always a raw-output assertion" — in an "Assert the Surface That Retains the Value" section that contrasts the processed buffer against the append-only raw surface and names every `*Awaiting` method. `standards/e2e/page-objects.md` gained the pairing rule, listing the `*Awaiting` variants in the BuildStep/AgentsStep/ConfirmStep tables and giving BOTH reasons the pre-press cursor anchor is required (the footer sentinel re-emits every frame; an earlier frame''s residue would satisfy an unanchored match). The "remaining unconverted surface" the finding declined to add speculatively is also closed: `AgentsStep.toggleFocusedAgentAwaiting(sentinel)` now exists and is documented as the toast-asserting counterpart of `toggleAgent`.'
 ---
 
 ## What Was Wrong

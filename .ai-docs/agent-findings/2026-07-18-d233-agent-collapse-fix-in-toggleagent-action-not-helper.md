@@ -13,6 +13,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: rule-not-specific-enough
+status: resolved
+resolved_by: "Both proposed doc touch-ups landed. (1) `reference/store-map.md` -> Internal Helpers now describes `applyAgentToggle` as the leaf add/remove helper that never mints a tombstone, names `restoreDualScopeAgent` as `toggleAgent`'s restore half, and records that the collapse half moved to `toggleAgentScope`'s `s` toggle rather than a helper (D-260); the `toggleAgent` action row documents its guards. `reference/wizard/store-map.md` is a pointer stub to that file. (2) `reference/concepts/tombstone-pattern.md` cross-links the guards and states that neither `applySkillRemoval` nor `applyAgentToggle` stamps `excluded` (D-277). The wrong-layer misdiagnosis this finding warned about can no longer be reached from either doc. Note the finding's quoted `toggleAgent` guard is itself now stale: D-260 made spacebar inert on a live `[P][G]` pair (GLOBAL_AGENTS_LOCKED toast) instead of collapsing it — which strengthens rather than weakens the finding's conclusion that the behaviour never lived in the helper."
 supersedes: 2026-07-18-dual-scope-s-toggle-persisted-pair-doc-vs-code.md
 ---
 

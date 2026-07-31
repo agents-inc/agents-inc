@@ -12,6 +12,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
+status: partial
+partial_note: 'Inverted relative to the enum''s documented direction — the CODE side landed and the DOCS side did not. Landed (verified 2026-07-30): `applyProjectScopeAuthority`/`enforceScopeAuthority` are gone from `edit.tsx` and `recordGlobalSourceMigrations` replaces them, invoked before `writeConfigAndCompile` and scoped to `migratedSkillIds` filtered by `isActiveAt(s, "global")`; the rationale is on-site in its JSDoc. `authoritativeScope: "owned"` in `config-merger.ts` is unchanged as intended. Pending: the proposed standard. Neither CLAUDE.md''s "Scope Awareness" section nor `reference/concepts/scope-system.md` states "config authority must follow the work actually performed", so the trap the finding names — reading the config rule as an invariant about ALL global state rather than about UNRELATED global state — is still uncorrected in the docs, and the guidance about grepping the E2E suite before implementing a refusal was not added to the sub-agent prompt guidance. Also still true: the reconciliation lives in the command rather than its ideal home in the config-write layer.'
 ---
 
 ## What Was Wrong

@@ -1,6 +1,8 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): recorded that BaseStep's default wait is now TIMEOUTS.WIZARD_LOAD = 45s (was 15s), so an unqualified step wait is a 45s upper bound and a misapplied waitForWizardFooter burns 45s; added the maxWorkers: 16 cap and why parallel contention is the reason keypress guards exist; added the state-change verification rule (assert config AND filesystem, and snapshot-then-compare when nothing should change) to the three-phase pattern; added the scope caveat to the wizard three-phase example — installed content lands under the global HOME, not projectDir -->
 
 # Test Structure
 
@@ -44,18 +46,23 @@ await expect(project).toHaveCompiledAgents();
 For wizard tests:
 
 ```typescript
-// Phase 1: Setup (implicit -- InitWizard.launch creates temp dir and source)
-const wizard = await InitWizard.launch();
+// Phase 1: Setup (implicit -- launchInProject creates temp dir, source, and a global HOME)
+const wizard = await InitWizard.launchInProject();
 
 // Phase 2: Interaction
 const result = await wizard.completeWithDefaults();
 
-// Phase 3: Assertion
+// Phase 3: Assertion -- config is project-side, installed content is scope-side
 expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-await expect(result.project).toHaveConfig();
+await expect(result.project).toHaveConfig({ skillIds: ["web-framework-react"] });
+await expect({ dir: wizard.globalHome }).toHaveCompiledAgent("web-developer");
 ```
 
+Skills and agents default to GLOBAL scope, so a project install's `.claude/` content lands under `wizard.globalHome`, not `projectDir`. Choose the launcher by what the test does — see [anti-patterns.md § Choosing the Wizard Launcher by Scope](./anti-patterns.md#choosing-the-wizard-launcher-by-scope).
+
 The three phases should be visually distinct. Mixing setup, interaction, and assertion within a single block makes tests harder to read and maintain.
+
+**Phase 3 must cover both sides.** Any test that completes a wizard flow, or runs a command that creates, modifies, or removes files or config entries, MUST assert the resulting state of config AND filesystem. If the operation should NOT change something, snapshot it before and assert it is identical after. Never check only one side — a config write with no corresponding install, or an install with no config entry, are both real failure modes that a one-sided assertion passes.
 
 ---
 
@@ -139,8 +146,8 @@ afterEach(async () => {
 
 All delays are encapsulated inside the framework:
 
-- `BaseStep.pressEnter()` includes an internal `STEP_TRANSITION` delay
-- `BaseStep.pressSpace()` includes an internal `KEYSTROKE` delay
+- `BaseStep.pressEnter()` includes an internal `STEP_TRANSITION` delay (500ms)
+- `BaseStep.pressSpace()` includes an internal `KEYSTROKE` delay (150ms)
 - `TerminalScreen.waitForText()` polls with auto-retry
 - `TerminalScreen.waitForWizardFooter()` waits for the wizard footer to render (wizard screens only)
 
@@ -152,7 +159,9 @@ it("full lifecycle", { timeout: TIMEOUTS.LIFECYCLE }, async () => {
 });
 ```
 
-**Timeout contract:** `TerminalScreen.waitForText()` uses whatever `timeoutMs` is passed -- there is no built-in default or CI multiplier. Callers are responsible for passing an appropriate timeout (typically via `TIMEOUTS.*` constants). For operations that may be slow in CI (e.g., plugin installs), pass a generous timeout.
+**Timeout contract:** `TerminalScreen.waitForText()` uses whatever `timeoutMs` is passed -- there is no built-in default or CI multiplier at that layer. `BaseStep`'s waits DO have a default: `BaseStep.defaultTimeout` is `TIMEOUTS.WIZARD_LOAD`, raised from 15s to **45s** in 0.145.0, so every unqualified step wait is now a 45s upper bound. That also raises the cost of misapplying `waitForWizardFooter` to a footer-less screen: the call burns 45s before giving up, rather than 15s.
+
+**Parallelism is capped at `maxWorkers: 16`.** PTY-driven wizard tests are load-sensitive — at one worker per core (21+ on dev machines) keystrokes get dropped and installs slow enough to produce failures that never reproduce solo. The cap is also the reason the page-object keypress rule exists at all: the PTY-write-vs-React-commit race is invisible in isolation and only surfaces under contention.
 
 **Why:** Timing scattered across test files is the primary cause of flaky tests. Centralizing it in the framework means timing changes require editing one file, not dozens.
 

@@ -1,10 +1,12 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): corrected two flatly-wrong HOME claims — 3.2 said runCLI sets HOME=cwd and 3.6 said TerminalSession sets HOME=cwd; since D-226 both default to a SIBLING temp dir distinct from cwd, because HOME===cwd silently forced project commands into global scope; corrected the 7.1 timeout table (WIZARD_LOAD 15,000 -> 45,000) and added WIZARD_TRANSITION, SESSION_DEFAULT and SETUP_DUAL; added maxWorkers: 16 to 1.4; added the scope-explicit launchers, globalHome and CLI.run's HOME precedence to 3.5/4.6; added the D-260 `s`-is-the-sole-toggle contract and the D-277 global-immutability rule to 9.4; added three anti-patterns (10.14 closed-loop grid navigation, 10.15 getOutput is not a frame log, 10.16 colour is not assertable in E2E); refreshed the 1.1 directory tree and the section-11 test-utils export list; noted that 4.3's misapplied footer wait now burns 45s -->
 
 # E2E Testing Standards
 
-Consolidated from 11 audit/strategy docs and 74 E2E test files. Every rule is enforceable and grounded in actual codebase patterns.
+Consolidated from 11 audit/strategy docs and the E2E suite (156 `*.e2e.test.ts` files as of v0.146.0). Every rule is enforceable and grounded in actual codebase patterns.
 
 ---
 
@@ -24,22 +26,32 @@ e2e/
     terminal-session.ts   # PTY wrapper with xterm-headless screen reading
     create-e2e-source.ts  # 9-skill source fixture (skills, agents, stacks, templates)
     create-e2e-plugin-source.ts  # Source + built plugins + marketplace.json
+    type-check-probe.ts   # tsc probe: asserts generated config-types.ts aliases still REJECT bad values
     node-pty.d.ts         # Type declaration reference for @lydell/node-pty
   fixtures/         # Project creation, CLI execution, scope helpers
     project-builder.ts    # ProjectBuilder static factories
     cli.ts                # Non-interactive CLI runner (CLI.run)
     dual-scope-helpers.ts # Multi-phase dual-scope lifecycle helpers
     interactive-prompt.ts # Non-wizard interactive prompt page object
+    expected-values.ts    # E2E_SKILL_IDS, E2E_SKILL, E2E_AGENT, E2E_AGENTS, E2E_AGENT_DISPLAY
+    plugin-install-state.ts # Reproduces a completed plugin install WITHOUT the Claude CLI
   pages/            # Page Object Model framework
-    constants.ts          # DIRS, FILES, STEP_TEXT, TIMEOUTS, EXIT_CODES
+    constants.ts          # DIRS, FILES, STEP_TEXT, TIMEOUTS, EXIT_CODES, SOURCE_PATHS, TERMINAL_SIZE, INTERNAL_DELAYS, INTERNAL_RETRIES
     base-step.ts          # Abstract base for all step page objects
+    retry-enter.ts        # retryEnterUntil(): closed-loop Enter retry
     terminal-screen.ts    # Screen abstraction over TerminalSession
     wizard-result.ts      # WizardResult + ProjectHandle types
     dashboard-session.ts  # Dashboard mode page object
-    wizards/              # Wizard entry points (InitWizard, EditWizard)
-    steps/                # Step page objects (stack, domain, build, sources, agents, confirm)
+    wizards/              # Wizard entry points (InitWizard, EditWizard) + global-home.ts
+    steps/                # Step page objects (stack, domain, build, sources, agents, confirm, search-modal)
+  assertions/       # Composite assertion helpers (plain functions, NOT called via expect())
+    phase-assertions.ts     # expectPhaseSuccess, expectFullInstallation
+    scope-assertions.ts     # expectDualScopeInstallation
+    uninstall-assertions.ts # expectCleanUninstall
+    config-assertions.ts    # expectNoDuplicates, normalizeConfigPreservingOrder
   matchers/         # Custom Vitest matchers for file-based assertions
     project-matchers.ts   # Matcher implementations
+    agent-matchers.ts     # toHaveAgentFrontmatter, toHaveAgentDynamicSkills
     setup.ts              # Matcher registration + type augmentation
 ```
 
@@ -47,7 +59,9 @@ e2e/
 
 **1.3 No task IDs in test names, assertion messages, or inline comments.** Never include `D-NNN` / `P-BUILD-1` / `Bug A` in `describe()` names, `it()` names, assertion messages (2nd arg to `expect`), or inline test-body comments. The only permitted location is file-level JSDoc at the top of the file, for scenario context. Test names describe BEHAVIOR ("version field is not emitted on init"), not tickets. Assertion messages describe the INVARIANT ("config.ts must not contain version field"), not the ticket that added it. Names rot — ticket IDs look authoritative but become meaningless once the task is closed. See `.ai-docs/agent-findings/2026-04-21-task-ids-in-test-names-sweep-needed.md`.
 
-**1.4 Vitest config:** `e2e/vitest.config.ts` uses `pool: "forks"`, `testTimeout: 30_000`, `hookTimeout: 60_000`, `retry: 2`. The include pattern is `e2e/**/*.e2e.test.ts` -- smoke tests (`*.smoke.test.ts`) are excluded and must be run explicitly. Long tests override per-test with `{ timeout: TIMEOUTS.LIFECYCLE }`.
+**1.4 Vitest config:** `e2e/vitest.config.ts` uses `pool: "forks"`, `maxWorkers: 16`, `testTimeout: 30_000`, `hookTimeout: 60_000`, `retry: 2`, `globalSetup: ["./e2e/global-setup.ts"]`. The include pattern is `e2e/**/*.e2e.test.ts` -- smoke tests (`*.smoke.test.ts`) are excluded and must be run explicitly. Long tests override per-test with `{ timeout: TIMEOUTS.LIFECYCLE }`.
+
+The worker cap is deliberate: PTY-driven wizard tests are load-sensitive, and at one worker per core (21+ on dev machines) dropped keystrokes and slow installs produce failures that never reproduce solo.
 
 ---
 
@@ -83,7 +97,9 @@ expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 expect(combined).toContain("Discovered 1 local skills");
 ```
 
-**3.2 `runCLI` sets `HOME=cwd` by default** to isolate from user's real global config. Override via `options.env.HOME` when testing dual-scope (separate global home and project dir).
+**3.2 All three harness spawners resolve HOME the same way, and none of them collapse it onto `cwd`.** `runCLI` and `TerminalSession` default HOME to a freshly-created **sibling** temp dir (prefix `ai-e2e-home-`), distinct from `cwd`/`projectDir`, removed on teardown; `CLI.run`'s precedence is `options.env.HOME` > `project.globalHome` > `project.dir`. An explicit `env.HOME` always wins and is never auto-removed.
+
+The old `HOME=cwd` default was removed in D-226: with `os.homedir() === cwd`, every project-versus-global distinction disappeared, a project `init`/`edit` silently ran as a global edit, and the scope hotkey vanished from the footer. It also made ~43 tests pass by accident, asserting global-scoped content against `projectDir`. Any new spawner must adopt the same precedence.
 
 **3.3 All output is pre-stripped of ANSI.** `runCLI` calls `stripVTControlCharacters` on stdout, stderr, and combined. No manual stripping needed.
 
@@ -91,21 +107,33 @@ expect(combined).toContain("Discovered 1 local skills");
 
 ### Interactive: Page Objects (Wizards + Steps)
 
-**3.5 Use page objects for all interactive flows.** Tests use `InitWizard.launch()` or `EditWizard.launch()` from `e2e/pages/wizards/`. Never import `TerminalSession` in test files.
+**3.5 Use page objects for all interactive flows, and choose the launcher by scope.** Tests use the `InitWizard` / `EditWizard` launchers from `e2e/pages/wizards/`. Never import `TerminalSession` in test files.
 
 ```typescript
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 
-const wizard = await InitWizard.launch({ source });
+// PROJECT install: config.ts on projectDir, global-default content on wizard.globalHome
+const wizard = await InitWizard.launchInProject({ source, projectDir });
 const result = await wizard.completeWithDefaults();
 ```
+
+| Launcher                    | HOME                                      | Use for                                                                            |
+| --------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------- |
+| `launch()` / `launchRaw()`  | Internal, unexposed (`globalHome` throws) | Output-only navigation tests that assert nothing on disk                           |
+| `launchInProject(options?)` | Fresh dir distinct from `projectDir`      | Tests that ASSERT installed content; `.claude/` matchers go to `wizard.globalHome` |
+| `launchInGlobal(options?)`  | `HOME === cwd === projectDir`             | Tests that MUTATE global content, or whose follow-up resolves its target from cwd  |
+
+`EditWizard` adds `launchInProjectShort`, a `launchInProject` variant for `TERMINAL_SIZE.SHORT` that skips the build-category settle wait — valid only for callers that step through the build step blind, never for callers that locate a skill by name.
+
+Skills and agents default to GLOBAL scope, so a project install's `.claude/` content lands under the global HOME, not `projectDir`. `config.ts` is project-side; installed content is scope-side. Full decision rules: `.ai-docs/standards/e2e/anti-patterns.md` § "Choosing the Wizard Launcher by Scope".
 
 For non-wizard interactive prompts (uninstall confirmation, update), use `InteractivePrompt` from `e2e/fixtures/interactive-prompt.ts`.
 
 **3.6 `TerminalSession` architecture (framework-internal -- never used in tests):**
 
 - Spawns `node bin/run.js` via `@lydell/node-pty` (prebuilt binaries, no C++ compilation)
-- Spreads `process.env` and sets `HOME=cwd`, `NO_COLOR=1`, `FORCE_COLOR=0` (color suppression ensures clean xterm buffer reads)
+- Spreads `process.env` and sets `NO_COLOR=1`, `FORCE_COLOR=0` (color suppression ensures clean xterm buffer reads — and is why colour is never assertable in E2E). HOME defaults to a sibling temp dir distinct from `cwd`; see 3.2.
+- Carries a `readonly globalHome` echo of the HOME it was given, which `WizardResult` stamps onto its `ProjectHandle` so `CLI.run` reads the same global root
 - Pipes PTY output to `@xterm/headless` virtual terminal (processes all ANSI/cursor codes)
 - `getScreen()`: visible viewport only
 - `getFullOutput()`: viewport + scrollback (use for most assertions)
@@ -174,7 +202,7 @@ await screen.waitForWizardFooter(TIMEOUTS.WIZARD_LOAD);
 expect(screen.getFullOutput()).toContain("web-framework-react");
 ```
 
-**Precondition — `WizardLayout` screens only.** This is a one-string sentinel match on the footer text `"select"`, which only `WizardLayout` paints. It is not a generic "the UI has settled" primitive: on a footer-less screen (the dashboard, a plain `SelectList` menu, the post-install result screen) the sentinel never appears and the call burns the full 15s timeout instead of settling. On those screens, wait on text that screen actually renders.
+**Precondition — `WizardLayout` screens only.** This is a one-string sentinel match on the footer text `"select"`, which only `WizardLayout` paints. It is not a generic "the UI has settled" primitive: on a footer-less screen (the dashboard, a plain `SelectList` menu, the post-install result screen) the sentinel never appears and the call burns the full `TIMEOUTS.WIZARD_LOAD` — **45s since 0.145.0**, not the 15s it used to cost — instead of settling. On those screens, wait on text that screen actually renders.
 
 **4.4 For text that Ink overwrites (installation progress), use `getRawOutput()`.** The xterm buffer has limited scrollback (1000 lines). Installation warnings may exceed this. `getRawOutput()` captures everything:
 
@@ -186,12 +214,17 @@ await screen.waitForRawText("initialized successfully", TIMEOUTS.INSTALL);
 
 **4.6 Use page object composite flows for repeated patterns.** The old `navigate*` helper functions in `test-utils.ts` have been replaced by page object methods:
 
-| Page Object Method                            | Purpose                                                        | Source                   |
-| --------------------------------------------- | -------------------------------------------------------------- | ------------------------ |
-| `InitWizard.completeWithDefaults(stackName?)` | Stack -> Domain -> Build (all) -> Sources -> Agents -> Confirm | `wizards/init-wizard.ts` |
-| `EditWizard.passThrough()`                    | Build (all) -> Sources -> Agents -> Confirm                    | `wizards/edit-wizard.ts` |
-| `BuildStep.passThroughAllDomains()`           | Web -> API -> Methodology domain build steps                   | `steps/build-step.ts`    |
-| `TerminalScreen.waitForRawText(text, ms)`     | Poll raw PTY output (bypasses xterm buffer limits)             | `terminal-screen.ts`     |
+| Page Object Method                                  | Purpose                                                                                                                                      | Source                   |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `InitWizard.completeWithDefaults(stackName?)`       | Stack -> Domain -> Build (all) -> Sources -> Agents -> Confirm                                                                               | `wizards/init-wizard.ts` |
+| `InitWizard.acceptStackDefaults()`                  | Stack -> Domain -> Build -> "a" hotkey -> Confirm (unknown domain count)                                                                     | `wizards/init-wizard.ts` |
+| `EditWizard.passThrough()`                          | Build (all) -> Sources -> Agents -> Confirm, no mutation                                                                                     | `wizards/edit-wizard.ts` |
+| `EditWizard.completeFromBuild()`                    | Single-domain path via `build.saveFromBuild("edit")`                                                                                         | `wizards/edit-wizard.ts` |
+| `BuildStep.passThroughAllDomains()`                 | Web -> API -> Methodology domain build steps                                                                                                 | `steps/build-step.ts`    |
+| `BuildStep.saveFromBuild(wizardType)`               | Build -> Sources -> Agents -> Confirm -> confirm(). **Default path only** — it silently skips any sources/agents mutation the test intended. | `steps/build-step.ts`    |
+| `wizard.abortAndDestroy(timeout?)`                  | Ctrl+C -> waitForExit -> destroy, returning the exit code                                                                                    | both wizards             |
+| `TerminalScreen.waitForRawText(text, ms)`           | Poll raw PTY output (bypasses xterm buffer limits)                                                                                           | `terminal-screen.ts`     |
+| `TerminalScreen.waitForTextAfter(text, cursor, ms)` | Poll raw output past a `getRawCursor()` snapshot                                                                                             | `terminal-screen.ts`     |
 
 **4.7 Page-object keypress rule.** Every key-press method in an E2E step page object (`e2e/pages/steps/*.ts`, `e2e/pages/base-step.ts`) MUST call `await this.waitForWizardFooter()` _before_ pressing the key. This applies to `pressEnter`, `pressSpace`, `pressKey`, `pressEscape`, `pressArrowUp`/`Down`/`Right`, `pressCtrlC`, and any domain-specific keypress method (e.g. `toggleFocusedSkill`, `openSearch`, `navigateToNextCategory`, `goBack`).
 
@@ -229,7 +262,8 @@ afterAll(async () => {
 | ----------------------------------------------------- | ------------------------------------------- | ---------------------------------------- |
 | `ProjectBuilder.minimal()`                            | Config + 1 skill                            | Compile tests                            |
 | `ProjectBuilder.editable(options?)`                   | Config + skills + agents dir                | Edit wizard tests                        |
-| `ProjectBuilder.dualScope()`                          | Global home + project with separate configs | Dual-scope tests                         |
+| `ProjectBuilder.dualScope(options?)`                  | Global home + project with separate configs | Dual-scope tests                         |
+| `ProjectBuilder.dualScopeWithImport()`                | Dual-scope state for import/migration flows | Import/migration lifecycle tests         |
 | `ProjectBuilder.withCustomSkill()`                    | Config + custom skill ID + config-types.ts  | Custom skill validation                  |
 | `ProjectBuilder.pluginProject(options)`               | Config with marketplace, skills, agents     | Plugin-mode tests                        |
 | `ProjectBuilder.localProjectWithMarketplace(options)` | Eject mode + marketplace in config          | Eject-to-plugin migration tests          |
@@ -252,6 +286,8 @@ Create sources in `beforeAll` (expensive). Share across tests in a file. Each te
 ```typescript
 await createPermissionsFile(projectDir);
 ```
+
+The helper **merges** into an existing settings file rather than overwriting it: every existing field is preserved, only `permissions.allow` is ensured to contain `Read(*)`, an already-granting file is left byte-identical, and invalid JSON is a hard error. It previously replaced the whole file, which wiped `enabledPlugins` / `extraKnownMarketplaces` whenever a wizard launch re-ran it after a plugin install — producing failures in the phase AFTER the one that ran it.
 
 ---
 
@@ -320,20 +356,25 @@ If `arrayContaining` is genuinely needed (the slice isn't scope-anchorable), it 
 
 **7.1 Use named timing constants from `e2e/pages/constants.ts`.** Never inline timeout numbers:
 
-| Constant                      | Value   | Usage                       |
-| ----------------------------- | ------- | --------------------------- |
-| `TIMEOUTS.WIZARD_LOAD`        | 15,000  | Wait for wizard to render   |
-| `TIMEOUTS.INSTALL`            | 30,000  | Wait for installation       |
-| `TIMEOUTS.EXIT`               | 10,000  | Wait for process exit       |
-| `TIMEOUTS.PLUGIN_INSTALL`     | 60,000  | Plugin install timeout      |
-| `TIMEOUTS.PLUGIN_TEST`        | 90,000  | Plugin operations + exit    |
-| `TIMEOUTS.EXIT_WAIT`          | 30,000  | Lifecycle process exit      |
-| `TIMEOUTS.SETUP`              | 60,000  | `beforeAll` hooks           |
-| `TIMEOUTS.LIFECYCLE`          | 180,000 | Multi-phase lifecycle tests |
-| `TIMEOUTS.EXTENDED_LIFECYCLE` | 300,000 | Long lifecycle tests        |
-| `TIMEOUTS.INTERACTIVE`        | 120,000 | Interactive wizard tests    |
+| Constant                      | Value   | Usage                                                       |
+| ----------------------------- | ------- | ----------------------------------------------------------- |
+| `TIMEOUTS.WIZARD_LOAD`        | 45,000  | Spawn -> first wizard frame; also `BaseStep.defaultTimeout` |
+| `TIMEOUTS.WIZARD_TRANSITION`  | 45,000  | Enter -> next-view first frame. Not for intra-step waits.   |
+| `TIMEOUTS.INSTALL`            | 30,000  | Wait for installation                                       |
+| `TIMEOUTS.EXIT`               | 10,000  | Wait for process exit                                       |
+| `TIMEOUTS.SESSION_DEFAULT`    | 10,000  | `TerminalSession` default (20,000 as `SESSION_DEFAULT_CI`)  |
+| `TIMEOUTS.PLUGIN_INSTALL`     | 60,000  | Plugin install timeout                                      |
+| `TIMEOUTS.PLUGIN_TEST`        | 90,000  | Plugin operations + exit                                    |
+| `TIMEOUTS.EXIT_WAIT`          | 30,000  | Lifecycle process exit                                      |
+| `TIMEOUTS.SETUP`              | 60,000  | `beforeAll` hooks                                           |
+| `TIMEOUTS.SETUP_DUAL`         | 120,000 | `beforeAll` hooks that build TWO sources                    |
+| `TIMEOUTS.LIFECYCLE`          | 180,000 | Multi-phase lifecycle tests                                 |
+| `TIMEOUTS.EXTENDED_LIFECYCLE` | 300,000 | Long lifecycle tests                                        |
+| `TIMEOUTS.INTERACTIVE`        | 120,000 | Interactive wizard tests                                    |
 
-**Framework-internal delays** (`INTERNAL_DELAYS.STEP_TRANSITION = 500`, `INTERNAL_DELAYS.KEYSTROKE = 150`) are encapsulated in `BaseStep` methods. Tests must never import or reference `INTERNAL_DELAYS`.
+`WIZARD_LOAD` was raised from 15,000 to 45,000 in 0.145.0, for the same reason as `WIZARD_TRANSITION`: solo runs land in ~1–2s, but `init` against the real marketplace under full-suite parallelism can sit at "Loading skills..." well past 15s. `BaseStep.defaultTimeout` derives from it, so every unqualified step wait is now a 45s upper bound.
+
+**Framework-internal delays** (`INTERNAL_DELAYS.STEP_TRANSITION = 500`, `INTERNAL_DELAYS.KEYSTROKE = 150`) and the closed-loop Enter retry budget (`INTERNAL_RETRIES.MAX_ATTEMPTS = 5`, `INTERNAL_RETRIES.INTERVAL_MS = 3_000`) are encapsulated in `BaseStep` / `retry-enter.ts`. Tests must never import or reference either.
 
 **7.2 Tests should not call `delay()` directly.** All timing is encapsulated in page object methods (`BaseStep.pressEnter()`, `BaseStep.pressSpace()`, etc.). The `delay()` function in `test-utils.ts` is framework-internal -- used by `BaseStep`, `DashboardSession`, and `InteractivePrompt`. Never use raw `setTimeout` or `new Promise(r => setTimeout(r, ms))` in tests.
 
@@ -345,7 +386,7 @@ it("should complete full lifecycle", { timeout: TIMEOUTS.LIFECYCLE }, async () =
 });
 ```
 
-**7.4 `waitForText` is CI-aware.** Default timeout is 10s locally, 20s in CI (`process.env.CI`). Always pass explicit timeouts for operations that take longer than defaults.
+**7.4 CI-awareness lives at the session layer only.** `TerminalSession.waitForText()` / `waitForExit()` fall back to `defaultTimeout`, which is `TIMEOUTS.SESSION_DEFAULT` (10s) locally and `SESSION_DEFAULT_CI` (20s) in CI. `TerminalScreen`'s waits take an explicit `timeoutMs` with no default and no CI multiplier; `BaseStep`'s waits default to `TIMEOUTS.WIZARD_LOAD` (45s). Always pass an explicit `TIMEOUTS.*` value for operations slower than the default.
 
 **7.5 Wait for specific text, not arbitrary delays.** The `waitForText` -> `delay` -> `keystroke` pattern is the core reliability mechanism (encapsulated in `BaseStep` methods for page object tests). The delay after `waitForText` is not arbitrary -- it accounts for Ink rendering remaining elements after the matched text appears.
 
@@ -409,7 +450,11 @@ await verifyConfig(globalHome, { skillIds: ["web-framework-react"] });
 await verifyConfig(projectDir, { skillIds: ["api-framework-hono"] });
 ```
 
-**9.4 Scope indicators in wizard output:** `"G "` prefix for global skills, `"P "` prefix for project skills. Agent scope badges: `"[G]"`, `"[P]"`.
+**9.4 Scope indicators in wizard output:** `"G "` prefix for global skills, `"P "` prefix for project skills. Agent scope badges: `"[G]"`, `"[P]"`. Read them via `BuildStep.getScopeBadgesForSkill(label)` / `AgentsStep.getScopeBadgesForAgent(label)` rather than scanning the frame.
+
+**9.5 `s` is the sole dual-scope toggle (D-260).** It round-trips `[P][G]` to `[G]` and back on its own, for skills and agents alike. **Spacebar is inert on any globally-backed row** and emits the global-locked toast instead. A spec that presses Space expecting a collapse exercises nothing. Every `s`-collapse spec needs a proof-of-execution assertion on the badges (`["P"]` -> `["G"]`) so a refused press cannot masquerade as the bug under test.
+
+**9.6 A globally installed skill or agent cannot be deselected from a project (D-277)** — in any flow, including `init`. Deselecting a domain is a view filter: it hides that domain's skills and drops only what the project owns, leaving global entries neither dropped nor masked. A spec expecting a project-scope deselect to remove a global entry is asserting removed behaviour.
 
 ---
 
@@ -454,28 +499,46 @@ When the bug is fixed, removing `it.fails()` makes the test start passing -- no 
 
 Instead: assert directly on raw output with `toContain("+ React")`, `toMatchInlineSnapshot`, or a structural load (e.g. `loadProjectConfig` for `config.ts`). If the helper is genuinely reusable across multiple test files, move it to `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested. See `.ai-docs/agent-findings/2026-04-21-complex-helpers-in-component-tests-anti-pattern.md`.
 
+**10.14 Never dead-reckon grid navigation.** A navigator that counts keystrokes to a row and column, and carries that model across calls, is wrong about this grid: arrow-DOWN PRESERVES and clamps the column (`useFocusedListItem`: `finalCol = min(currentCol, newColCount - 1)`), it does not reset it. A second `focusSkill` in the same domain therefore started its RIGHT presses from a wrong column and, with cyclic wrap, toggled the WRONG skill — while the suite stayed green, because the wrong skill toggled just as successfully as the right one.
+
+Navigation MUST be closed-loop at CATEGORY granularity: verify the focused category from the rendered screen after every focus-moving keystroke, and never carry a position model between calls. Three constraints force that shape — under `NO_COLOR` the focused CELL has no text signal at all (border colour only, and the harness strips it); the focused CATEGORY HEADER is observable (it paints one column deeper); and only Tab resets the column to 0 (Tab = next category + column reset; DOWN = next category + column preserved). Match cell labels EXACTLY after stripping scope badges, diff glyphs, and compatibility annotations — `cell.includes(label)` stops the walk on `"React Query"` when you asked for `"React"`. `BuildStep.focusSkill` is the reference implementation. See `.ai-docs/agent-findings/2026-07-29-e2e-grid-focus-unobservable-under-no-color-closed-loop-tab-walk.md`.
+
+**10.15 Never treat `getOutput()` as a log of every frame.** `getOutput()` / `getFullOutput()` read xterm's PROCESSED buffer — the current screen plus whatever genuinely scrolled off. Ink redraws in place, so when a frame fits the viewport each repaint OVERWRITES the previous one and nothing enters scrollback; a value rendered and then re-rendered differently is unrecoverable from it. Never press a key to "manufacture" a different render state and then look for the old one. Assert at the moment the frame is on screen, or use a raw-output surface (`getRawOutput()`, `waitForRawText`, `waitForTextAfter`, the `*Awaiting` step methods) — raw PTY output is append-only and is the only frame-accumulating surface. See `.ai-docs/agent-findings/2026-07-29-e2e-getoutput-is-not-a-frame-accumulator.md`.
+
+**10.16 Never write a colour assertion in an E2E test.** The harness runs `NO_COLOR=1` / `FORCE_COLOR=0`, so colour is not in the captured output at all. Colour is testable only at the component-test layer, and even there it needs a forced `chalk.level` (chalk auto-disables on vitest's non-TTY stdout). A colour assertion that fails for that reason is a harness gap, not a product bug — never downgrade it to a text-only assertion. See `.ai-docs/reference/testing/infrastructure.md` § "Asserting Colour in Ink Component Tests".
+
+**10.17 Never build an `s`-collapse spec on an eject/eject dual-scope pair.** `ProjectBuilder.editable({ globalSkills })` pins BOTH halves to `source: "eject"`, and `wouldOverwriteGlobalEject` refuses the project->global press for an eject-over-eject pair with no tombstone. The press changes nothing, so the spec fails on a swallowed keystroke rather than on its assertion — a false RED that looks exactly like the bug under test. Give at least the global half a non-eject source. Relatedly, **a fixture must establish the state the test's name claims**: `buildSkillConfig` defaults to `scope: "project"` while `buildSkillConfigForId` defaults to `"global"`, so an unstated scope is a coin flip. See `.ai-docs/agent-findings/2026-07-29-dual-scope-collapse-unreachable-for-eject-pairs.md` and `2026-07-29-per-slot-removal-exposes-fixture-name-mismatch-and-confirm-double-row.md`.
+
 ---
 
 ## 11. Additional Exports from `test-utils.ts`
 
 Beyond the factories documented above, `test-utils.ts` exports:
 
-| Export                               | Purpose                                                           |
-| ------------------------------------ | ----------------------------------------------------------------- |
-| `FORKED_FROM_METADATA`               | Standard forkedFrom metadata block for plugin/uninstall tests     |
-| `CLI_ROOT`                           | Absolute path to the repository root                              |
-| `BIN_RUN`                            | Absolute path to `bin/run.js` (the built binary)                  |
-| `ensureBinaryExists()`               | Verifies `bin/run.js` exists; throws if CLI wasn't built          |
-| `stripAnsi(text)`                    | Strips ANSI escape sequences (wraps `stripVTControlCharacters`)   |
-| `getEjectedTemplatePath(projectDir)` | Returns path to ejected `agent.liquid` template                   |
-| `renderConfigTs(config)`             | Re-exported from content-generators -- renders a config.ts string |
-| `renderSkillMd(id, desc, content?)`  | Re-exported from content-generators -- renders a SKILL.md string  |
-| `renderAgentYaml(...)`               | Re-exported from content-generators -- renders agent YAML         |
-| `cleanupTempDir(dir)`                | Re-exported -- removes temp directory                             |
-| `directoryExists(path)`              | Re-exported -- async directory existence check                    |
-| `fileExists(path)`                   | Re-exported -- async file existence check                         |
+| Export                                                                                                                                                  | Purpose                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `FORKED_FROM_METADATA`                                                                                                                                  | Standard forkedFrom metadata block for plugin/uninstall tests                                                 |
+| `CLI_ROOT` / `BIN_RUN`                                                                                                                                  | Absolute paths to the repository root and the built binary (`bin/run.js`)                                     |
+| `ensureBinaryExists()`                                                                                                                                  | Verifies `bin/run.js` exists; throws if the CLI wasn't built                                                  |
+| `stripAnsi(text)`                                                                                                                                       | Strips ANSI escape sequences (wraps `stripVTControlCharacters`)                                               |
+| `delay(ms)` / `pollUntil(pred, ms, buildError)`                                                                                                         | Framework-internal timing primitives (never in `it()` bodies)                                                 |
+| `agentsPath` / `skillsPath` / `configTsPath` / `configTypesTsPath` / `getEjectedTemplatePath`                                                           | Path builders for a project OR global scope dir                                                               |
+| `writeProjectConfig(dir, cfg)` / `writeConfigTypes(dir)`                                                                                                | Write `.claude-src/config.ts` and its `config-types.ts` companion (the first does NOT emit the second)        |
+| `createLocalSkill(dir, id, opts?)`                                                                                                                      | Creates `.claude/skills/<id>/SKILL.md` + optional `metadata.yaml`                                             |
+| `writeAgentFile(dir, name, opts?)` / `writeAgentStubs(dir, agents)`                                                                                     | Write agent `.md` files / minimal compiled-agent stubs                                                        |
+| `createPermissionsFile(dir)`                                                                                                                            | Ensures `permissions.allow: ["Read(*)"]`. **Merges, never overwrites** — see 5.7.                             |
+| `seedDefaultSourceCache(homeDir, sourceDir)`                                                                                                            | Seeds the CLI source cache for `DEFAULT_SOURCE` so the public-marketplace fallback resolves offline           |
+| `loadConfigOrFail(dir)` / `readAgentEntriesFor(dir, name)`                                                                                              | Structural config reads that throw rather than falling back to an empty config                                |
+| `completeWithLocalSources(wizard)`                                                                                                                      | Drives init end-to-end with every source switched to local — required by tests asserting on `.claude/skills/` |
+| `addForkedFromMetadata(dir)` / `injectMarketplaceIntoConfig(dir, name)`                                                                                 | Post-hoc fixture patches for uninstall / local-to-plugin migration tests                                      |
+| `listFiles(dir)` / `readTestFile(path)` / `readMarketplaceJson(path)`                                                                                   | Read helpers (`listFiles` returns `[]` on error)                                                              |
+| `renderSkillMd` / `renderConfigTs` / `renderAgentYaml` / `renderAgentMd` / `renderMetadataYaml`                                                         | Re-exported from content-generators — **always use these** over inline fixtures                               |
+| `normalizeGlobalConfig` / `writeTestPackageJson`                                                                                                        | Re-exported from the unit-test helper tree                                                                    |
+| `createE2ESource` / `E2E_SKILL_TITLES` / `E2E_AGENT_TITLES` / type `E2ESource`                                                                          | Re-exported from create-e2e-source.ts; the `*_TITLES` maps ARE the rendered wizard text                       |
+| `cleanupTempDir` / `fileExists` / `directoryExists`                                                                                                     | Re-exported from `test-fs-utils.ts`                                                                           |
+| `isClaudeCLIAvailable` / `claudePluginInstall` / `claudePluginUninstall` / `claudePluginMarketplaceAdd` / `claudePluginMarketplaceList` / `execCommand` | Re-exported from `src/cli/utils/exec.ts`                                                                      |
 
-**Constants and exit codes** are now in `e2e/pages/constants.ts` (`TIMEOUTS`, `EXIT_CODES`, `DIRS`, `FILES`, `STEP_TEXT`), not in `test-utils.ts`.
+**Constants and exit codes** are in `e2e/pages/constants.ts` (`TIMEOUTS`, `EXIT_CODES`, `DIRS`, `FILES`, `STEP_TEXT`, `SOURCE_PATHS`, `TERMINAL_SIZE`, `INTERNAL_DELAYS`, `INTERNAL_RETRIES`), not in `test-utils.ts`.
 
 ---
 

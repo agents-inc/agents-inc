@@ -1,6 +1,8 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added five rule groups from the 0.145.0/0.146.0 findings — "Reading Rendered Output" (getOutput() is xterm's processed buffer, not a frame log; Ink repaints overwrite in place, so only raw output accumulates frames, and colour is unobservable under NO_COLOR so it belongs in a component test with a forced chalk level); "No dead-reckoned grid navigation" (the DOWN-clamp mis-model that silently toggled the wrong skill, plus the Tab-vs-DOWN column semantics and exact-label matching); "Fixture Selection" (ProjectBuilder.editable({globalSkills}) pins BOTH halves to eject, so an s-collapse spec built on it fails on a swallowed keystroke, not its assertion — and a fixture must establish the state its name claims, since buildSkillConfig defaults project while buildSkillConfigForId defaults global); and the harness invariant that TerminalSession, runCLI and CLI.run all resolve HOME identically -->
 
 # Anti-Patterns
 
@@ -125,6 +127,32 @@ afterEach(async () => {
 
 ---
 
+## Reading Rendered Output
+
+### Never treat `getOutput()` as a log of every frame
+
+**What:** Pressing a navigation key and then asserting on `step.getOutput()` on the assumption that "the accumulated output holds a frame where the row rendered in the form I want" — typically to dodge the focus padding a focused row adds (`+  React ` with two spaces, so `"+ React"` is not a substring).
+
+**Why:** `BaseStep.getOutput()` -> `TerminalSession.getFullOutput()` reads xterm's **processed buffer** (`xterm.buffer.active`) — the current screen plus whatever genuinely scrolled off. Ink redraws in place, so when a frame fits the viewport (the common case at `TERMINAL_SIZE.TALL`) each repaint OVERWRITES the previous one and nothing enters scrollback. The earlier frame is gone. Verified empirically against the real binary: a `+ web-framework-react` marker present in `getOutput()` before a `navigateDown()` is absent after it, while `getRawOutput()` still holds it.
+
+**Instead:** assert at the moment the frame is on screen (capture before the key press), or use a raw-output surface — `InitWizard.getRawOutput()` / `EditWizard.getRawOutput()` / `WizardResult.rawOutput` / `TerminalScreen.waitForRawText` / `waitForTextAfter`. Raw PTY output is append-only and is the only frame-accumulating surface.
+
+**Corollary — do not manufacture a different render state with a key press.** When a row renders differently focused vs unfocused (padding, chevrons, highlight), assert against the state actually on screen at capture time. If a press is unavoidable, first establish which row holds focus: `SourceGrid` seeds focus with `firstFocusableRowIndex(rows, 0)`, which SKIPS inert (locked / pending-removal) rows, so "the first row" and "the first focusable row" are frequently different — a single `navigateDown()` may move focus ONTO the row under test rather than away from it.
+
+See `.ai-docs/agent-findings/2026-07-29-e2e-getoutput-is-not-a-frame-accumulator.md`.
+
+### Never write a colour assertion in an E2E test
+
+**What:** `expect(output).toContain("\x1b[38;2;...")` or any assertion that a marker is green/red, in an `.e2e.test.ts`.
+
+**Why:** The terminal harness runs with `NO_COLOR=1` / `FORCE_COLOR=0` (deliberately, so xterm buffer reads stay clean). Colour is not present in the captured output at all — an E2E spec can only assert the marker, never the colour.
+
+**Instead:** colour is testable ONLY at the component-test layer, and even there it needs a forced chalk level, because Ink colourises through chalk and chalk auto-disables on vitest's non-TTY stdout. A contract phrased as "these two surfaces render the same colour" needs a component test; an E2E marker assertion does not cover it. See [reference/testing/infrastructure.md § Asserting Colour in Ink Component Tests](../../reference/testing/infrastructure.md) and `.ai-docs/agent-findings/2026-07-29-ink-component-colour-assertions-need-forced-chalk-level.md`.
+
+**Never downgrade a failing colour assertion to a text-only one.** A colour assertion that fails because no ANSI was emitted is a harness gap, not a product bug — and silently weakening it is exactly how a colour regression stays invisible.
+
+---
+
 ## Index-Based Navigation
 
 ### Never use counted arrow presses to reach items
@@ -133,7 +161,7 @@ afterEach(async () => {
 
 **Why:** Adding or reordering items breaks these tests silently. The test passes but selects the wrong item.
 
-**Instead:** Navigate by name: `await agents.toggleAgent("API Developer")`, `await wizard.stack.selectStack("E2E Test Stack")`.
+**Instead:** Navigate by name: `await agents.toggleAgent("API Developer")`, `await wizard.stack.selectStack("E2E Test Stack")`, `await build.focusSkill("web-framework-react")`.
 
 **Exception:** `InteractivePrompt` (non-wizard prompts like uninstall confirmation) may need index-based navigation because prompt items lack unique text. Document the assumption:
 
@@ -141,6 +169,24 @@ afterEach(async () => {
 // Navigate to "Remove plugins only" -- second option in prompt
 await prompt.arrowDown();
 ```
+
+### Never dead-reckon grid navigation
+
+**What:** A page-object navigator that maintains a keystroke-count model of grid position — counting arrow presses to a row, then to a column, and carrying that model across calls.
+
+**Why:** It was wrong about the grid, and wrongly for two releases. `focusSkill` assumed arrow-DOWN resets the column to 0; `useFocusedListItem` actually PRESERVES and clamps it (`finalCol = min(currentCol, newColCount - 1)`). So a second `focusSkill` in the same domain started its RIGHT presses from a wrong column and, with cyclic wrap, landed on — and toggled — the WRONG skill. The suite stayed green: the wrong skill toggled just as successfully as the right one.
+
+**Instead:** navigation MUST be closed-loop at CATEGORY granularity — verify the focused category from the rendered screen after every focus-moving keystroke, and never carry a position model between calls. Three constraints make that the only workable shape:
+
+| Constraint                                                                                                                                                      | Consequence                                                                         |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Under `NO_COLOR` the focused **cell** has no text signal — `SkillTag` distinguishes it only via `borderColor` / `borderDimColor`, and the harness strips those. | Any design requiring cell-level verification must be redesigned. Do not attempt it. |
+| The focused **category header** IS observable — it paints one column deeper than its unfocused siblings.                                                        | Close the loop at category granularity.                                             |
+| **Tab** = next category + column reset to 0. **DOWN** = next category + column preserved/clamped.                                                               | Only Tab yields a known column. Build the walk on Tab.                              |
+
+**Match cell labels EXACTLY, never by substring.** `cell.includes(label)` stops the walk on the wrong cell whenever one label is a substring of another — `"React"` matches a `"React Query"` cell, `"Vite"` matches `"Vitest"`. Strip the rendered decoration (scope badges, diff glyphs, compatibility annotations) and compare with `===`.
+
+`BuildStep.focusSkill` is the reference implementation. See [patterns.md § Closed-Loop Grid Navigation](./patterns.md) and `.ai-docs/agent-findings/2026-07-29-e2e-grid-focus-unobservable-under-no-color-closed-loop-tab-walk.md`.
 
 ---
 
@@ -189,6 +235,46 @@ await prompt.arrowDown();
 **Instead:** Use a file-local `writeAgentStub()` or `writeAgentFile()` helper. If the pattern appears in 3+ files, extract to `test-utils.ts`.
 
 **Exception:** When creating intentionally corrupt/invalid files for error-path tests, inline construction with an explanatory comment is acceptable.
+
+---
+
+## Fixture Selection
+
+### Never build an `s`-collapse spec on an eject/eject dual-scope pair
+
+**What:** Reaching for `ProjectBuilder.editable({ skills, globalSkills })` — the obvious "installed at both scopes" fixture — for a spec that presses `s` to collapse `[P][G]` to `[G]`.
+
+**Why:** That fixture hardcodes `source: "eject"` for BOTH halves, and `toggleSkillScope` refuses a project->global press in exactly that shape. `wouldOverwriteGlobalEject` fires when the live entry is `scope: "project"` + `source: "eject"`, the snapshot holds an ACTIVE global entry with `source: "eject"`, and the live config carries no tombstone. The press emits a toast and changes nothing — **so the spec fails on a swallowed keystroke rather than on the render it claims to test.** That is a false RED that looks exactly like the bug under test.
+
+**Instead:** give at least the global half a non-eject source (e.g. a marketplace name). Build the config directly rather than through `ProjectBuilder.editable` when the pairing matters, and say why in the file-level JSDoc. **Every `s`-collapse spec needs a proof-of-execution assertion on the scope badges (`["P"]` -> `["G"]`)** so a refused press cannot masquerade as a rendering bug. The unit-level fixture for the same scenario already dodges this by using a marketplace source on both entries.
+
+See `.ai-docs/agent-findings/2026-07-29-dual-scope-collapse-unreachable-for-eject-pairs.md`.
+
+### Never let a fixture rely on a factory default for the state the test's name claims
+
+**What:** A spec named "…previously installed as project" whose live state comes from `toggleTechnology(...)` (which produces a **global**-scoped entry, because `buildSkillConfigForId` defaults to `scope: "global"`) while its snapshot comes from `buildSkillConfigs([...])` (which defaults to `scope: "project"`).
+
+**Why:** The two relevant defaults point OPPOSITE ways — `buildSkillConfig` -> `project`, `createDefaultSkillConfig` / `buildSkillConfigForId` -> `global` — so an unstated scope is a coin flip. The spec above was not testing "project-scoped, previously installed as project" at all; it was testing a project->global migration. Its named assertion still passed, for the wrong reason, and it went unnoticed for two releases.
+
+**Instead:** when a spec's name asserts a scope, source, or mode, the fixture must set it EXPLICITLY. Never inherit it from a factory default.
+
+**Corollary — incidental `toHaveLength` assertions are contracts too.** A row/entry count in a spec whose stated subject is a flag silently pins derivation behaviour the spec never claims to own; the count above pinned id-keyed removal detection for an unlisted shape and broke when the rule was re-keyed per slot. Either assert the count deliberately with a comment saying why that count is the contract, or assert on the specific row (`rows.find(...)`) instead of the collection.
+
+See `.ai-docs/agent-findings/2026-07-29-per-slot-removal-exposes-fixture-name-mismatch-and-confirm-double-row.md`.
+
+---
+
+## Harness Invariants
+
+### All harness process spawners must resolve HOME identically
+
+**What:** One spawner defaulting HOME differently from the others — historically `CLI.run` hardcoded `HOME: project.dir` while `TerminalSession` and `runCLI` had moved to a sibling temp dir.
+
+**Why:** A wizard that installs global content to its sibling HOME, followed by a `CLI.run` that reads with `HOME=projectDir`, disagrees on where "global" lives. The symptom is not an obvious assertion failure — it is `ENOENT scandir <projectDir>/.claude/skills` from a command that looked unrelated.
+
+**Instead:** `TerminalSession`, `runCLI`, and `CLI.run` all default HOME to a temp dir distinct from `cwd`/`projectDir`, and an explicit `env.HOME` always wins and is never auto-removed. `CLI.run` additionally prefers `project.globalHome` over `project.dir`, so a handle produced by `launchInProject` / `launchInGlobal` routes the follow-up command to the same global root the wizard wrote. This is true in code today; it is documented here so it does not regress. Any new spawner must adopt the same precedence.
+
+See `.ai-docs/agent-findings/2026-07-24-d226-phase1-launcher-sugar-and-multiphase-home.md`.
 
 ---
 
@@ -434,6 +520,22 @@ The E2E sandbox defaults `HOME` to a sibling temp dir distinct from `projectDir`
 **Why:** `cc uninstall` (`detectUninstallTarget`, cwd-only) and `claude plugin install` (writes `enabledPlugins` into HOME's `settings.json`) act on the content root at cwd/HOME. A default all-global install under `launchInProject` puts that content at `HOME ≠ projectDir`, so the follow-up silently no-ops ("not installed in this project", or plugin enablement in the wrong `settings.json`).
 
 **Instead:** Model the whole flow as the GLOBAL install with `launchInGlobal` (`HOME === cwd === projectDir`) — every artifact collapses onto `projectDir` and the follow-up finds it. Use `launchInProject` + redirect ONLY when the test merely ASSERTS content; `cc compile` is the one follow-up that IS HOME/scope-aware and can straddle the split. See `.ai-docs/agent-findings/2026-07-24-d226-phase2-wave2-uninstall-cwd-only-launcher.md`.
+
+### Never let two `launchInProject` phases allocate separate global HOMEs
+
+**What:** A multi-phase test (init -> edit, or edit -> edit) that calls `launchInProject()` twice against the same project and expects phase 2 to see phase 1's global-scoped content.
+
+**Why:** `launchInProject` allocates a FRESH global HOME per call, so phase 2's HOME is not phase 1's. Phase 1's compiled agents, ejected global skills, and plugin enablement are invisible to phase 2 — and the failure surfaces as "the wizard doesn't show what I just installed", not as a HOME problem.
+
+**Instead:** allocate one dir in the test and pass it as `globalHome` to every launch. The option is honoured by `launchInProject` only; the wizard then does NOT own cleanup, so the test must clean it up itself. Pass the same dir to any `CLI.run` phase via `project.globalHome` (automatic when the handle came from the wizard) or an explicit `env.HOME`.
+
+### Never use `launchInProjectShort` for a test that locates a skill by name
+
+**What:** Reaching for `EditWizard.launchInProjectShort` because the scenario needs a short terminal, in a test that then calls `focusSkill` / `selectSkill`.
+
+**Why:** That launcher deliberately skips the third settle wait (`BUILD`, the first category label), because at `TERMINAL_SIZE.SHORT` the grid overflows the viewport and "Framework" is overdrawn by later rows, never settling as a stable substring. `focusSkill` parses exactly that category layout to close its loop.
+
+**Instead:** `launchInProjectShort` is for callers that step through the build step blind — pressing Enter to advance domains and toggling the already-focused skill. Anything that reads the grid needs the full `launchInProject` settle sequence.
 
 ---
 

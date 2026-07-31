@@ -14,6 +14,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: missing-rule
+status: partial
+partial_note: 'Three of the four parts landed; the general rule did not. Landed (verified 2026-07-30): the mechanism — `EDIT_PROJECT_SETUP_FLAG` in `consts.ts`, `DashboardOrigin` and `dashboardCommandArgv()` in `init.tsx`, the `hidden` flag declaration in `edit.tsx`, and the gate `flags[EDIT_PROJECT_SETUP_FLAG] && !isHomeDirectory(cwd)`. The cross-reference — `reference/commands/edit.md` documents the flag and states outright that the intent "is passed explicitly ... it is NOT re-derived from `cwd`/config state", citing this finding. The Known Follow-Up is CLOSED: none of the three guard specs still asserts `not.toHaveConfig()`; all three now snapshot the project config and assert it byte-identical after the blocked edit, which is exactly the strengthening this finding recommended. Pending: the general standard. `standards/clean-code-standards.md` has no "a delegated command must receive the caller''s intent explicitly" section adjacent to "Early-Return Guards Over Persistence", so the rule exists only as one command''s reference doc, not as a rule the next delegation will be measured against.'
 ---
 
 ## What Was Wrong

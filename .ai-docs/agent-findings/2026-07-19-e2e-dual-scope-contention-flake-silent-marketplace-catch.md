@@ -13,6 +13,8 @@ reporting_agent: main-thread (expressive-ts refactor loop)
 category: testing
 domain: e2e
 root_cause: enforcement-gap
+status: partial
+partial_note: 'Fix A landed; the two remaining items did not. Landed: `seedFocusedSkillForActiveDomain` exists in `wizard-store.ts` and is wired at hydrate, `setStep("build")` and every domain transition; `FOCUS_EFFECT_FLUSH_MS` is gone from the tree; `maxWorkers: 16` is retained in `e2e/vitest.config.ts` as the documented palliative. Pending: (a) the diagnosability hardening — `ensureMarketplace`''s lazy-resolution `catch` still returns `{ marketplace: null, registered: false }` with no `verbose`/`warn`, so a transient failure is still indistinguishable from a genuinely absent marketplace, and no retry was added; (b) the remaining root-cause fix, the `inputReady` gate on the wizard footer sentinel — no `inputReady` flag exists in `src/cli/`, and the finding records it as owner-deferred rather than rejected. The closed-loop keypress retry stays reverted; do not re-attempt it. Verified 2026-07-30.'
 ---
 
 # Dual-scope E2E suites flake under full-suite contention; one mechanism is ensureMarketplace's silent catch

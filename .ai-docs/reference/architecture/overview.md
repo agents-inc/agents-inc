@@ -11,13 +11,18 @@ related:
   - reference/commands/index.md
   - reference/concepts/scope-system.md
   - reference/concepts/tombstone-pattern.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
+
+<!--
+  2026-07-30 sweep (product 0.146.0). Pointer only — verified it still points at the
+  root-level original, which is where the 0.146.0 content landed. Dates re-stamped.
+-->
 
 # Architecture Overview
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 > **Reorganized from:** `reference/architecture-overview.md`. The original file is preserved during migration. Cross-cutting concepts (Scope System and Tombstone Pattern) now have dedicated docs at [concepts/scope-system.md](../concepts/scope-system.md) and [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md).
 

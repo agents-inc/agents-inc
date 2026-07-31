@@ -7,13 +7,15 @@ related:
   - reference/testing/factories.md
   - reference/testing/mock-data.md
   - reference/testing/e2e-infrastructure.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added the new src/cli/lib/permission-checker.test.tsx to the co-located test list; added an "Asserting colour in Ink component tests" subsection — chalk auto-disables on vitest's non-TTY stdout, so colour is unobservable by default and a failing colour assertion is a harness gap, not a product bug (source-grid.test.tsx now saves/restores chalk.level per block); recorded that colour is testable ONLY at the component layer because the E2E harness runs NO_COLOR; verified the three test projects, the unit include/exclude patterns and the vitest.setup.ts homedir/matrix/store hooks against source — unchanged -->
 
 # Test Infrastructure
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 > **Split from:** `reference/test-infrastructure.md`. See also: [factories.md](./factories.md), [mock-data.md](./mock-data.md), [e2e-infrastructure.md](./e2e-infrastructure.md).
 
@@ -86,7 +88,7 @@ src/cli/lib/__tests__/
     config-io.ts                     # readTestYaml, readTestJson, readTestTsConfig, writeTestTsConfig, writeTestPackageJson
     config-comparison.ts             # normalizeGlobalConfig (order-insensitive config-text normalizer: strips projects line, sorts lines)
     config-source-sections.ts        # extractNamedSection, extractScopeSections (config.ts section extractors)
-    disk-writers.ts                  # writeTestSkill, writeSourceSkill, writeTestAgent, writeSourceAgent, createImportSource, writeTestPluginManifest
+    disk-writers.ts                  # writeTestSkill, writeSourceSkill, writeTestAgent, writeSourceAgent, createImportSource, writeTestInstalledPluginsRegistry, writeTestPluginManifest
     isolated-home.ts                 # setupIsolatedHome, useFakeHome (chdirs to tempDir/project, points HOME at tempDir/fakehome)
     silence-console.ts               # silenceConsole (suppresses console output during a test body)
     test-dir-setup.ts                # createTestDirs, cleanupTestDirs, PluginTestDirs type
@@ -207,6 +209,7 @@ src/cli/lib/operations/skills/uninstall-plugin-skills.test.ts
 src/cli/lib/operations/source/ensure-marketplace.test.ts
 src/cli/lib/operations/source/load-source.test.ts
 src/cli/lib/output-validator.test.ts
+src/cli/lib/permission-checker.test.tsx
 src/cli/lib/plugins/plugin-discovery.test.ts
 src/cli/lib/plugins/plugin-finder.test.ts
 src/cli/lib/plugins/plugin-info.test.ts
@@ -328,6 +331,19 @@ Signature: `silenceConsole(methods: ConsoleMethod[] = ["log", "warn", "error"]):
 - Registers a `beforeEach` that replaces each requested console method with a no-op `vi.spyOn` spy and an `afterEach` that restores them via `mockRestore`. It only restores the spies it created — it does NOT call `vi.restoreAllMocks()`, so unrelated spies survive.
 - `methods` — which console methods to silence. Defaults to `["log", "warn", "error"]`; `"info"` / `"debug"` are opt-in.
 - Returns a live spy map. Only the requested methods get an entry (the rest stay `undefined`). Because entries are populated in `beforeEach`, read them (e.g. `spies.log?.mock.calls`) inside test bodies, not at module scope.
+
+### Asserting Colour in Ink Component Tests
+
+Ink component tests see **no ANSI at all** by default. Ink colourises through `chalk` (`ink/build/colorize.js` calls `chalk.hex` / `chalk.bgHex`), and chalk auto-disables on vitest's non-TTY stdout — so `<Text color="#90EE90" backgroundColor="#383838">hello</Text>` renders as `lastFrame() === "hello"`, every escape sequence stripped. A colour assertion that "fails" for this reason is a **harness gap, not a product bug**; never downgrade it to a text-only assertion.
+
+The enabling pattern (see `src/cli/components/wizard/source-grid.test.tsx`, which is the only place in the repo that asserts colour):
+
+- Declare a `TRUECOLOR_CHALK_LEVEL = 3` constant. In `beforeEach` save `chalk.level` and set it to truecolor; in `afterEach` restore the saved value. Chalk 5 resolves the level per call, so a runtime mutation is sufficient — no import-time `FORCE_COLOR` plumbing.
+- **Do NOT set it globally in `vitest.setup.ts`.** Every existing frame assertion would then have to cope with interleaved escape sequences. Keep the mutation scoped to the describe block that needs it.
+- Build the expected string with `chalk.hex(...)` / `chalk.bgHex(...)` over the `CLI_COLORS.*` constant, never a literal `\x1b[38;2;R;G;Bm` sequence. Ink applies the foreground first and the background outermost, so a `<Text color bg>` renders as `bgHex(hex(text))`. This keeps the assertion a plain `toContain` on the frame (per CLAUDE.md: never split/loop/regex-scan `lastFrame()`) and survives a palette change in `consts.ts` without editing.
+- Assert both shapes: the positive (label carries the expected colour) AND the negative (label does not fall back to `CLI_COLORS.WHITE`), so a fix that drops the focus background instead of fixing the colour cannot pass.
+
+**Colour is testable only at this layer.** The E2E harness runs with `NO_COLOR`, so every E2E spec asserts the marker, not the colour. Any contract phrased as "these two surfaces render the same colour" (e.g. `rowLabelColor` in `source-grid.tsx` vs `DIFF_COLOR` in `skill-agent-summary.tsx`) needs a component test — an E2E marker assertion does not cover it. See `.ai-docs/agent-findings/2026-07-29-ink-component-colour-assertions-need-forced-chalk-level.md`.
 
 ## Test Constants (`src/cli/lib/__tests__/test-constants.ts`)
 

@@ -13,6 +13,8 @@ reporting_agent: cli-tester
 category: testing
 domain: web
 root_cause: convention-undocumented
+status: resolved
+resolved_by: 'Fix Applied and the proposed standard both landed. Verified 2026-07-30: `src/cli/components/wizard/source-grid.test.tsx` declares `TRUECOLOR_CHALK_LEVEL = 3` and saves/restores `chalk.level` around the colour block. `reference/testing/infrastructure.md` gained the "Asserting Colour in Ink Component Tests" subsection carrying every point the finding proposed — that Ink tests see no ANSI by default because chalk auto-disables on vitest''s non-TTY stdout, that a colour assertion failing for that reason is a harness gap and must never be downgraded to a text-only assertion, the save/restore-per-block pattern with the reason not to set it globally in `vitest.setup.ts`, the `chalk.hex`/`chalk.bgHex`-over-`CLI_COLORS` construction with Ink''s foreground-inner/background-outer ordering, and that colour is testable only at the component layer because the E2E harness runs `NO_COLOR`. The doc names `source-grid.test.tsx` as the repo''s only colour-asserting file, so the next author is pointed at the worked example.'
 ---
 
 ## What Was Wrong

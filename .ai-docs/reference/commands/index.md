@@ -23,13 +23,28 @@ related:
   - reference/features/operations-layer.md
   - reference/features/compilation-pipeline.md
   - reference/commands/edit.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
+
+<!--
+  Sync 2026-07-30 (product 0.145.0 + 0.146.0): removed the deleted `uninstall --all` flag and
+  rewrote the uninstall section (unconditional manifest removal, `Config:` plan section,
+  deregistration, global-uninstall pruning of registered projects); rewrote the compile section
+  (ConfigLoadError hard-error, per-scope config-types.ts regeneration incl. the no-skills early
+  return, matrixOnly offline load, global-scoped agents hint, stale built-in agent pruning only on
+  unfiltered passes); rewrote the validate section (advisory over-length cliDescription, dir-name
+  rule keyed on SKILL.md frontmatter id, claude CLI v2 installed_plugins.json registry pass);
+  corrected `list` (InstallationInfo.version removed, mode rendered once, hydrateWizardStore);
+  added the propagated-project recompile step to `init` and `edit`; added the content-less-config
+  detection rule; added FILTER_INCOMPATIBLE to the feature-flag inventory; fixed INFO_MESSAGES
+  count 6 -> 7 and added the message builder functions; corrected the operations table
+  (`uninstall` uses `loadAgentDefs`; `init`/`edit` use `recompilePropagatedProjectAgents`).
+-->
 
 # Commands Reference
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 ## Command Architecture
 
@@ -61,24 +76,24 @@ The single oclif lifecycle hook, registered in `package.json` under `oclif.hooks
 
 ## Commands Index
 
-| Command             | File                                    | Type | Summary                                                                |
-| ------------------- | --------------------------------------- | ---- | ---------------------------------------------------------------------- |
-| `init`              | `src/cli/commands/init.tsx`             | tsx  | Initialize project (interactive wizard/dashboard)                      |
-| `edit`              | `src/cli/commands/edit.tsx`             | tsx  | Edit skills in the plugin                                              |
-| `compile`           | `src/cli/commands/compile.ts`           | ts   | Compile agents from skills (global + project pass)                     |
-| `validate`          | `src/cli/commands/validate.ts`          | ts   | Validate every registered source, plugin, skill, and agent (read-only) |
-| `list`              | `src/cli/commands/list.tsx`             | tsx  | Show installation information (alias: `ls`)                            |
-| `doctor`            | `src/cli/commands/doctor.ts`            | ts   | Diagnose configuration issues                                          |
-| `eject`             | `src/cli/commands/eject.ts`             | ts   | Eject skills, agent partials, or templates                             |
-| `search`            | `src/cli/commands/search.ts`            | ts   | Search the catalog of available skills (read-only)                     |
-| `uninstall`         | `src/cli/commands/uninstall.tsx`        | tsx  | Uninstall from project                                                 |
-| `update`            | `src/cli/commands/update.tsx`           | tsx  | Update local skills from source                                        |
-| `import skill`      | `src/cli/commands/import/skill.ts`      | ts   | Import a skill from third-party GitHub repo                            |
-| `new skill`         | `src/cli/commands/new/skill.ts`         | ts   | (FEATURE-GATED: `NEW_SKILL_COMMAND=false`) scaffold a local skill      |
-| `new agent`         | `src/cli/commands/new/agent.tsx`        | tsx  | (FEATURE-GATED: `NEW_AGENT_COMMAND=false`) AI-generate an agent        |
-| `new marketplace`   | `src/cli/commands/new/marketplace.ts`   | ts   | (FEATURE-GATED: `NEW_MARKETPLACE_COMMAND=false`) scaffold marketplace  |
-| `build marketplace` | `src/cli/commands/build/marketplace.ts` | ts   | Generate marketplace.json from built plugins                           |
-| `build plugins`     | `src/cli/commands/build/plugins.ts`     | ts   | Build skill/agent plugins                                              |
+| Command             | File                                    | Type | Summary                                                                        |
+| ------------------- | --------------------------------------- | ---- | ------------------------------------------------------------------------------ |
+| `init`              | `src/cli/commands/init.tsx`             | tsx  | Initialize project (interactive wizard/dashboard)                              |
+| `edit`              | `src/cli/commands/edit.tsx`             | tsx  | Edit skills in the plugin                                                      |
+| `compile`           | `src/cli/commands/compile.ts`           | ts   | Compile agents from skills + refresh `config-types.ts` (global + project pass) |
+| `validate`          | `src/cli/commands/validate.ts`          | ts   | Validate every registered source, plugin, skill, and agent (read-only)         |
+| `list`              | `src/cli/commands/list.tsx`             | tsx  | Show installation information (alias: `ls`)                                    |
+| `doctor`            | `src/cli/commands/doctor.ts`            | ts   | Diagnose configuration issues                                                  |
+| `eject`             | `src/cli/commands/eject.ts`             | ts   | Eject skills, agent partials, or templates                                     |
+| `search`            | `src/cli/commands/search.ts`            | ts   | Search the catalog of available skills (read-only)                             |
+| `uninstall`         | `src/cli/commands/uninstall.tsx`        | tsx  | Uninstall from project or global scope (always removes the config manifest)    |
+| `update`            | `src/cli/commands/update.tsx`           | tsx  | Update local skills from source                                                |
+| `import skill`      | `src/cli/commands/import/skill.ts`      | ts   | Import a skill from third-party GitHub repo                                    |
+| `new skill`         | `src/cli/commands/new/skill.ts`         | ts   | (FEATURE-GATED: `NEW_SKILL_COMMAND=false`) scaffold a local skill              |
+| `new agent`         | `src/cli/commands/new/agent.tsx`        | tsx  | (FEATURE-GATED: `NEW_AGENT_COMMAND=false`) AI-generate an agent                |
+| `new marketplace`   | `src/cli/commands/new/marketplace.ts`   | ts   | (FEATURE-GATED: `NEW_MARKETPLACE_COMMAND=false`) scaffold marketplace          |
+| `build marketplace` | `src/cli/commands/build/marketplace.ts` | ts   | Generate marketplace.json from built plugins                                   |
+| `build plugins`     | `src/cli/commands/build/plugins.ts`     | ts   | Build skill/agent plugins                                                      |
 
 ## Primary Commands (Detailed)
 
@@ -103,12 +118,16 @@ The single oclif lifecycle hook, registered in `package.json` under `oclif.hooks
 6. If plugin/mixed: `requireMarketplaceOrExit()` (BaseCommand) resolves/registers the marketplace up front, BEFORE any filesystem mutation. **No fallback to eject** -- an unresolvable marketplace hard-errors (`EXIT_CODES.ERROR`).
 7. If eject/mixed: `copyEjectSkillsStep()` -- **Operation: `copyLocalSkills()`** copies eject-source skills split by scope.
 8. If plugin/mixed: `installPluginsStep()` -- **Operation: `installPluginSkills()`**; hard-errors (`pluginInstallFailureError`) on any per-skill failure before config is written.
-9. `writeConfigAndCompile()`: **Operation: `writeProjectConfig()`** (writes `.claude-src/config.ts`; `ensureBlankGlobalConfig()` runs inside this operation, not in the command), **Operation: `loadAgentDefs()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`** (compiles agents across scopes; single home-root pass or split global+project passes).
-10. `checkPermissions()` -- render permission warning (Ink) if needed, awaiting `waitUntilExit()`.
+9. `writeConfigAndCompile()`: **Operation: `writeProjectConfig()`** (writes `.claude-src/config.ts`; `ensureBlankGlobalConfig()` runs inside this operation, not in the command), **Operation: `loadAgentDefs()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`** (compiles agents across scopes; single home-root pass or split global+project passes), then `recompilePropagatedProjects(configResult.propagatedProjects)`.
+10. `checkPermissions()` -- render permission warning (Ink) if needed, awaiting `waitUntilExit()`. Reading a settings file runs `warnUnknownFields(raw, EXPECTED_SETTINGS_KEYS, ...)`; `EXPECTED_SETTINGS_KEYS` (`src/cli/lib/permission-checker.tsx`) includes `enabledPlugins` and `extraKnownMarketplaces` because the Claude CLI writes both during this CLI's own plugin-install path -- a settings file this CLI produced must never trigger the unknown-field warning. Genuinely unknown fields still warn.
+
+**Propagated-project recompile (D-240).** `writeProjectConfig` returns `ConfigWriteResult.propagatedProjects` -- the registered project directories whose `config.ts` this run's global change was fanned out into. Their compiled agents are now stale, so `recompilePropagatedProjects()` feeds the list to **Operation: `recompilePropagatedProjectAgents()`**, which recompiles each project at project scope with per-project failure isolation. Empty list is a no-op (nothing logged). Per-project warnings are re-emitted via `this.warn()`; the summary line reads `Recompiled agents in N registered projects` with a ` (N failed)` suffix when any failed.
+
+**Not-installed detection.** `detectInstallationInDir` (`src/cli/lib/installation/installation.ts`) returns `null` for a config that declares neither skills nor agents, so a content-less config reads as NOT installed and `init` routes to the setup wizard instead of the dashboard. It also returns `null` when the config file vanished between the `fileExists` probe and the load. A **corrupt** config is different: `loadProjectConfigFromDir` throws `ConfigLoadError`, which propagates to the caller rather than becoming a phantom eject installation.
 
 **Key dependencies:**
 
-- `src/cli/lib/operations/index.ts` -- `loadSource`, `installPluginSkills`, `pluginInstallFailureError`, `copyLocalSkills`, `writeProjectConfig`, `compileAgentsAllScopes`, `discoverInstalledSkills`, `loadAgentDefs`
+- `src/cli/lib/operations/index.ts` -- `loadSource`, `installPluginSkills`, `pluginInstallFailureError`, `copyLocalSkills`, `writeProjectConfig`, `compileAgentsAllScopes`, `recompilePropagatedProjectAgents`, `discoverInstalledSkills`, `loadAgentDefs`
 - `src/cli/base-command.ts` -- `requireMarketplaceOrExit` (wraps `requireMarketplace` operation; no `ensureMarketplace` fallback)
 - `src/cli/lib/installation/index.ts` -- `detectInstallation`, `detectGlobalInstallation`, `deriveInstallMode`, `resolveInstallPaths`, `buildAgentScopeMap`, `isHomeDirectory`, `INSTALL_MODE_LABELS`
 - `src/cli/lib/configuration/project-config.ts` -- `loadProjectConfig`, `loadProjectConfigFromDir`
@@ -155,8 +174,10 @@ Plus a hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`
 12. `applyPluginChanges()` -- **Operation: `installPluginSkills()`** for added plugins (hard-errors on failure), **Operation: `uninstallPluginSkills()`** for removed; marketplace via `requireMarketplaceOrExit()`
 13. `copyNewLocalSkills()` -- **Operation: `copyLocalSkills()`** for newly added eject-source skills
 14. `removeDeletedLocalSkills()` -- `deleteLocalSkill()` for fully-deselected eject skills (D-233)
-15. `writeConfigAndCompile()` -- **Operation: `loadAgentDefs()`**, **Operation: `writeProjectConfig()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`**
+15. `writeConfigAndCompile()` -- **Operation: `loadAgentDefs()`**, **Operation: `writeProjectConfig()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`**, then `recompilePropagatedProjects(configResult.propagatedProjects)` -- **Operation: `recompilePropagatedProjectAgents()`** (D-240; same contract as `init`)
 16. `cleanupStaleAgentFiles()` -- remove old agent .md files after scope changes / deselection
+
+**Global immutability (D-277).** A globally installed skill or agent cannot be deselected from a project in any flow, `init` included, so `removedSkills` / `removedAgents` never contain an active global entry when the edit runs at project scope. Domain deselection is a view filter that drops only project-owned skills. The rule is enforced in the wizard store, not in this command -- see `reference/concepts/scope-system.md`.
 
 **Exported utilities (`@internal`, for testing):**
 
@@ -168,7 +189,7 @@ Plus a hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`
 
 **Key dependencies:**
 
-- `src/cli/lib/operations/index.ts` -- `detectProject`, `loadSource`, `installPluginSkills`, `pluginInstallFailureError`, `uninstallPluginSkills`, `copyLocalSkills`, `writeProjectConfig`, `compileAgentsAllScopes`, `discoverInstalledSkills`, `loadAgentDefs`
+- `src/cli/lib/operations/index.ts` -- `detectProject`, `loadSource`, `installPluginSkills`, `pluginInstallFailureError`, `uninstallPluginSkills`, `copyLocalSkills`, `writeProjectConfig` (+ `ConfigWriteResult`), `compileAgentsAllScopes`, `recompilePropagatedProjectAgents`, `discoverInstalledSkills`, `loadAgentDefs`
 - `src/cli/base-command.ts` -- `requireMarketplaceOrExit` (no `ensureMarketplace` fallback)
 - `src/cli/lib/installation/index.ts` -- `detectMigrations`, `executeMigration`, `isHomeDirectory`, `installBaseDir`, `resolveInstallPaths`, `writeConfigFile`
 - `src/cli/lib/plugins/index.ts` -- `discoverAllPluginSkills`, `buildMarketplacePluginRef`, `toClaudePluginScope`
@@ -176,7 +197,7 @@ Plus a hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`
 
 ### `compile` (src/cli/commands/compile.ts)
 
-**Purpose:** Compile agents using installed skills and agent definitions. Runs dual-pass for global and project installations.
+**Purpose:** Compile agents using installed skills and agent definitions, and refresh each compiled scope's `config-types.ts`. Runs dual-pass for global and project installations.
 
 **Flags:**
 
@@ -187,20 +208,34 @@ Plus a hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`
 
 **Flow:**
 
-1. **Operation: `detectBothInstallations(cwd)`** -- returns `{ global, project, hasBoth }`
-2. Error if neither installation found
-3. `resolveSource()` from configuration -- resolve and log source
-4. **Operation: `loadAgentDefs({ projectDir })`** -- load agent definitions
-5. `buildCompilePasses()` -- build compile pass list: global pass (if exists) + project pass (if exists). When both exist, each pass gets a `scopeFilter` to prevent cross-scope overwrites.
-6. For each pass:
-   a. **Operation: `discoverInstalledSkills(projectDir)`** -- discover all skills
-   b. `warnUnresolvedStackSkills()` -- emits `this.warn()` for each configured stack skill absent from disk; such skills are dropped from the recompiled agents rather than silently omitted (D-254)
-   c. **Operation: `compileAgents({ projectDir, sourcePath, skills, pluginDir, outputDir, scopeFilter })`** -- compile agents with optional scope filter
+1. `detectInstallations(cwd)` -- **Operation: `detectBothInstallations(cwd)`**, returning `{ global, project, hasBoth }`. A `ConfigLoadError` (config file present but unparseable) is caught and re-raised via `this.error(..., { exit: EXIT_CODES.ERROR })` naming the offending file, **before any write** -- a corrupt config must never let compile run config-less and resurrect every built-in agent (D-273).
+2. Error `ERROR_MESSAGES.NO_INSTALLATION` if neither installation found
+3. `resolveAndLogSource()` -- `resolveSource()` from configuration, logs `Source: <sourceOrigin>`
+4. `loadAgentDefsOrFail()` -- **Operation: `loadAgentDefs({ projectDir })`**
+5. `buildCompilePasses()` -- global pass (`projectDir = os.homedir()`) if a global installation exists, project pass (`projectDir = cwd`) if a project installation exists. When `hasBoth`, each pass gets a `scopeFilter` (`"global"` / `"project"`) to prevent cross-scope overwrites; with only one installation the pass is unfiltered.
+6. For each pass (`runCompilePass`):
+   a. `discoverAllSkills()` -- **Operation: `discoverInstalledSkills(projectDir)`**
+   b. If `totalSkillCount === 0`: log `No skills found for <label> pass, skipping`, still run `refreshConfigTypes()`, and return `false`. The config loads independently of discovered skills, so a hand-edited `config.ts` listing skills with nothing installed for that scope must still get fresh unions.
+   c. `warnUnresolvedStackSkills()` -- emits `this.warn()` for each configured stack skill absent from disk (excluded ids filtered via `effectivelyExcludedSkillIds`); such skills are dropped from the recompiled agents rather than silently omitted (D-254)
+   d. **Operation: `compileAgents({ projectDir, sourcePath, skills, pluginDir, outputDir, scopeFilter })`**
+   e. When the pass compiled zero agents and `label === "Project"`, `hintGlobalScopedAgents()` counts the config's active `scope === "global"` agents and, if non-zero, prints `globalScopedAgentsHint(count)` after `INFO_MESSAGES.NO_AGENTS_TO_RECOMPILE` (D-275)
+   f. `refreshConfigTypes()`
+7. After all passes, if no pass had skills, hard-error `No skills found. Add skills with '<bin> add <skill>' ...` (`EXIT_CODES.ERROR`).
+
+**`config-types.ts` regeneration.** The documented workflow is to hand-edit `config.ts` then run `compile`, so every pass regenerates the type unions for the scope it compiled via `regenerateScopeConfigTypes(projectDir, config, matrix, agents)` (`src/cli/lib/installation/local-installer.ts`), matching the wizard write path exactly: standalone narrowed unions at global scope (`writeStandaloneConfigTypes`), import-and-extend at project scope (`regenerateConfigTypes`). Success logs `INFO_MESSAGES.CONFIG_TYPES_REFRESHED`. When `loadProjectConfigFromDir` finds no config the refresh is skipped at verbose level. **Any failure downgrades to a warning** (`configTypesRefreshFailed(reason)`) -- the compiled agents are already written and remain valid; only the unions may be stale.
+
+The matrix for that refresh is loaded with `loadSkillsMatrixFromSource({ sourceFlag, projectDir, skipExtraSources: true, matrixOnly: true })`. `matrixOnly` skips the `fetchFromSource` clone for the default source (the matrix is the pre-computed `BUILT_IN_MATRIX` anyway) so `compile` stays offline on a cold cache; `sourcePath` comes back empty. `skipExtraSources` is not a divergence from the wizard's fully tagged load -- extra sources only annotate `availableSources`/`activeSource` for wizard UI tagging and the config-types writer never reads them, so the emitted types are byte-identical (pinned by the `skipExtraSources` parity test in `local-installer.test.ts`).
+
+**Stale built-in agent pruning (D-264).** `compileAgents` calls `pruneStaleAgentsForPass` (`src/cli/lib/operations/project/compile-agents.ts`), which removes built-in agent `.md` files no longer compiled into `outputDir`. It runs **only on a scope-UNfiltered pass with an `outputDir`** -- an unfiltered pass owns its entire output directory. A scope-filtered pass (the `hasBoth` two-pass compile, or the D-240 registered-project recompile) sees one scope's roster and must never delete another scope's files, so it skips pruning. Hand-authored agents are preserved by the prune predicate (`pruneStaleCompiledAgents` in `src/cli/lib/agents/list-compiled-agents.ts`).
 
 **Key dependencies:**
 
 - `src/cli/lib/operations/index.ts` -- `detectBothInstallations`, `loadAgentDefs`, `compileAgents`, `discoverInstalledSkills`
-- `src/cli/lib/configuration/index.ts` -- `resolveSource`
+- `src/cli/lib/configuration/index.ts` -- `resolveSource`, `loadProjectConfig`, `loadProjectConfigFromDir`, `effectivelyExcludedSkillIds`, `ConfigLoadError`
+- `src/cli/lib/installation/index.ts` -- `regenerateScopeConfigTypes`, `Installation`
+- `src/cli/lib/loading/index.ts` -- `loadSkillsMatrixFromSource` (with `matrixOnly` + `skipExtraSources`)
+- `src/cli/lib/stacks/index.ts` -- `getStackSkillIds`
+- `src/cli/utils/messages.ts` -- `configTypesRefreshFailed`, `globalScopedAgentsHint`, `INFO_MESSAGES.CONFIG_TYPES_REFRESHED`
 
 ### `validate` (src/cli/commands/validate.ts)
 
@@ -210,7 +245,24 @@ Plus a hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`
 
 **Flags:** None. `static flags = {}` and `static baseFlags = {}` -- validate overrides the base `--source` flag (validate is a zero-flag command that walks every registered source automatically).
 
-**Key dependencies:** `resolveAllSources()`, `isLocalSource()` from configuration. `validateSource()` from source-validator. `validateAllPlugins()`, `printPluginValidationResult()`, `validateSkillFrontmatter()`, `validateAgentFrontmatter()`, `getUserPluginsDir()`, `getProjectPluginsDir()` from plugins. `resolveInstallPaths()` from installation. `validateSkillMetadata()` from schemas (installed-skill `metadata.yaml` parsed with `parseYaml`, checked via the local `validateInstalledSkillMetadata()` helper). `formatZodErrors()` from schema-validator. `listAgentMdFiles()` from agents.
+**Flow (`validateAllRegistered`):** four labelled passes, in order -- `Validating sources` (primary + extras from `resolveAllSources`), `Validating plugins`, `Validating skills`, `Validating agents`. Each of the last three validates the global directory and, when `!isHomeDirectory(projectDir)`, the project directory too (at the home root both resolve to the same place, so only one pass runs). Counts are summed by `sumCounts`; the run ends with `Result: N error(s), M warning(s)` and exits `EXIT_CODES.ERROR` when `errors > 0`.
+
+**Plugin pass -- claude CLI v2 registry.** `validatePluginsDirectory` first probes `getInstalledPluginsRegistryPath(pluginsDir)` (`installed_plugins.json`, the claude CLI >= 2.1.220 cache layout). When that file exists, `validateRegistryPlugins` reads it via `listRegisteredPluginInstalls` and runs `validatePlugin(installPath)` against **each recorded install path**. Behaviour:
+
+| Registry state              | Outcome                                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Absent                      | Falls through to the direct-children scan (`findPluginDirectories` + `validateAllPlugins`)             |
+| Present but records zero    | `validateRegistryPlugins` returns `undefined`; caller falls back to the direct-children scan           |
+| Present with records        | Each recorded `installPath` validated; a path that no longer exists is an **invalid plugin**           |
+| Unreadable / schema-invalid | `listRegisteredPluginInstalls` throws; counted as **1 error** (`failed: <reason>`), not scanned around |
+
+Before this pass existed, the direct-children-only scan made the v2 cache layout invisible and installed plugins were never validated.
+
+**Skill metadata -- advisory over-length `cliDescription`.** `validateInstalledSkillMetadata` parses `metadata.yaml` with `parseYaml`, runs `validateSkillMetadata()`, and on failure splits the issues with `splitMetadataValidationIssues(result.error, rawMetadata)` from `src/cli/lib/schemas.ts`. An over-length `cliDescription` (> `CLI_DESCRIPTION_MAX_LENGTH`) is downgraded to a **warning carrying the actual length** -- the runtime schemas accept any length and the value only feeds wizard description text, while the strict schema keeps `max(60)` as the declared contract. An empty or missing `cliDescription`, and every other issue, stays an **error**. `valid` is `errors.length === 0`, so an advisory warning alone no longer fails the run. `validateSource()` applies the same split for source-repo skills.
+
+**Directory-name rule.** Enforced during source validation by `checkSkillDirName` (`src/cli/lib/source-validator.ts`), which compares the directory name against the skill's **machine id read from `SKILL.md` frontmatter** (`parseFrontmatter(...).name`), not `displayName`. It runs independently of whether the metadata validated. Missing/invalid frontmatter, or an unreadable `SKILL.md`, produces a warning (`Cannot verify directory name '<dir>': ...`) rather than an error. Comparing `displayName` was unsatisfiable under the marketplace convention -- human display names living in `<domain>-<category>-<slug>` directories.
+
+**Key dependencies:** `resolveAllSources()`, `isLocalSource()`, `SourceEntry` from configuration. `validateSource()` from source-validator. `validateAllPlugins()`, `validatePlugin()`, `printPluginValidationResult()`, `validateSkillFrontmatter()`, `validateAgentFrontmatter()`, `getUserPluginsDir()`, `getProjectPluginsDir()`, `getInstalledPluginsRegistryPath()`, `listRegisteredPluginInstalls()`, `ResolvedPlugin` from plugins. `resolveInstallPaths()`, `isHomeDirectory()` from installation. `validateSkillMetadata()`, `splitMetadataValidationIssues()` from schemas. `listAgentMdFiles()` from agents.
 
 ### `list` (src/cli/commands/list.tsx)
 
@@ -220,17 +272,29 @@ Plus a hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`
 
 **Flow:**
 
-1. `detectInstallation()` from `installation/installation.ts` -- find installation
-2. If no installation: print "No installation found" message and return
+1. `detectInstallation()` from `installation/installation.ts` -- find installation. A content-less config (no skills, no agents) is not an installation, so this returns `null` and the command prints the not-found message.
+2. If no installation: print "No installation found." + `Run '<bin> init' to create one.` and return
 3. `loadProjectConfig(projectDir)` from `configuration/project-config.ts` -- load project config
 4. If no config or non-TTY: fallback to `getInstallationInfo()` + `formatInstallationDisplay()` (plain text) from `plugins/index.ts`
-5. If TTY with config: `render(<ListView>)` -- Ink component showing mode, source, and `<SkillAgentSummary>` component. Uses `useApp().exit()` via `setTimeout` to auto-exit after render.
+5. If TTY with config: filter excluded skills/agents, `hydrateWizardStore({ installedSkillConfigs, installedAgentConfigs })`, then `render(<ListView>)` -- Ink component showing mode (`INSTALL_MODE_LABELS[installation.mode]`), source, and the `<SkillAgentSummary>` component. `ListView` calls `useApp().exit()` via a `setTimeout(..., 0)` effect to auto-exit after render; the command awaits `waitUntilExit()` then `clear()`.
+
+**No version field.** `InstallationInfo` (`src/cli/lib/plugins/plugin-info.ts`) is `{ mode, name, skillCount, agentCount, configPath, agentDirs, skillsDir }` -- there is **no `version` field**. It previously held the install mode and the formatter prefixed it with `v`, so the header printed `Installation: agents-inc vplugin`. `formatInstallationDisplay` now emits the mode exactly once:
+
+```
+Installation: <name>
+  Mode:    <INSTALL_MODE_LABELS[mode]>
+  Skills:  <skillCount>
+  Agents:  <agentCount>
+  Config:  <configPath>
+  Agents:  <dir>            # one line per entry in agentDirs
+```
 
 **Key dependencies:**
 
-- `src/cli/lib/installation/installation.ts` -- `detectInstallation()`
+- `src/cli/lib/installation/installation.ts` -- `detectInstallation()`, `INSTALL_MODE_LABELS`
 - `src/cli/lib/configuration/project-config.ts` -- `loadProjectConfig()`
 - `src/cli/lib/plugins/index.ts` -- `getInstallationInfo()`, `formatInstallationDisplay()` (non-TTY fallback)
+- `src/cli/stores/wizard-store.ts` -- `hydrateWizardStore()` (feeds `SkillAgentSummary`)
 - `src/cli/components/wizard/skill-agent-summary.tsx` -- `SkillAgentSummary` component (TTY mode)
 - `src/cli/types/config.ts` -- `SkillConfig`, `AgentScopeConfig` types
 
@@ -283,17 +347,55 @@ Plus a hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`
 
 ### `uninstall` (src/cli/commands/uninstall.tsx)
 
-**Purpose:** Remove CLI-managed skills, compiled agents, and plugins from project. Preserves user-created content.
+**Purpose:** Remove CLI-managed skills, compiled agents, plugins, **and the `.claude-src/` config manifest** (`config.ts` + `config-types.ts`). User-created content is preserved.
 
 **Flags:**
 
-| Flag     | Short | Type    | Description                         |
-| -------- | ----- | ------- | ----------------------------------- |
-| --yes    | -y    | boolean | Skip confirmation prompt            |
-| --all    |       | boolean | Also remove .claude-src/ config dir |
-| --source | -s    | string  | Skills source path or URL           |
+| Flag     | Short | Type    | Description               |
+| -------- | ----- | ------- | ------------------------- |
+| --yes    | -y    | boolean | Skip confirmation prompt  |
+| --source | -s    | string  | Skills source path or URL |
 
-**Key dependencies:** `listPluginNames()`, `getProjectPluginsDir()` from plugins. `readForkedFromMetadata()` from skills. `loadProjectConfigFromDir()` from configuration. `claudePluginUninstallBestEffort()`, `isClaudeCLIAvailable()` from exec.
+> **`--all` removed (D-274, breaking).** Manifest removal is now unconditional -- plain `uninstall` does what `--all` used to do. `static flags` is `{ ...BaseCommand.baseFlags, yes }`; there is no `all` key. The old default left `config.ts` + `config-types.ts` behind, so a "successful" uninstall still left the project looking installed.
+
+**Flow (`run`):**
+
+1. `printHeader()`
+2. `detectUninstallTarget(projectDir)` -- builds `UninstallTarget` (plugins, local skills/agents, `.claude/`, `.claude-src/config.ts`, `.claude-src/config-types.ts`, loaded config, configured agents). CLI-owned plugins are the intersection of `listPluginNames()` with `getCliInstalledPluginKeys(activeConfig)`.
+3. `hasAnythingToRemove(target)` -- true when any of `hasPlugins`, `hasLocalSkills`, `hasLocalAgents`, **`hasClaudeSrcConfig`, `hasClaudeSrcConfigTypes`**. False -> `reportNothingToUninstall()` and return.
+4. Confirmation: `--yes` prints the plan via `printRemovalPlan()` (always returns `true`); otherwise `confirmRemoval()` renders `<UninstallConfirm>` through `promptConfirm()`. Cancel -> `this.exit(EXIT_CODES.CANCELLED)`.
+5. `executeUninstall(target, projectDir)`
+6. `reportSuccess()` -- `SUCCESS_MESSAGES.UNINSTALL_COMPLETE`
+
+**Removal plan.** `buildRemovalPlan(target)` is the single pure builder shared by `printRemovalPlan` (plain text) and the `UninstallConfirm` Ink component, so both emit byte-identical item strings and only add their own indentation/styling. Sections, in order:
+
+| Section              | Emitted when                                      | Items                                                            |
+| -------------------- | ------------------------------------------------- | ---------------------------------------------------------------- |
+| `Plugins:`           | `hasPlugins`                                      | `cliPluginNames`                                                 |
+| `CLI-managed files:` | `hasLocalSkills \|\| hasLocalAgents`              | `<skillsDir>/ (matching sources)`, `<agentsDir>/ (CLI-compiled)` |
+| `Config:`            | `hasClaudeSrcConfig \|\| hasClaudeSrcConfigTypes` | `<claudeSrcDir>/config.ts`, `<claudeSrcDir>/config-types.ts`     |
+
+**`executeUninstall` order (scope-dependent):**
+
+1. `isGlobalUninstall = isHomeDirectory(projectDir)`. When global, `prepareGlobalPropagation()` runs **first** -- the `projects[]` registry and the source used to regenerate each project's `config-types.ts` both live in the global config this run is about to delete.
+2. `uninstallPlugins()` when `hasPlugins`; a throw here hard-errors (`EXIT_CODES.ERROR`).
+3. `removeLocalFiles()` -- `removeMatchingSkills` (only dirs carrying `forkedFrom` metadata; others are skipped with a warning), `removeMatchingAgents` (only basenames listed in `config.agents`), then `cleanupEmptyDirs`. A throw hard-errors.
+4. **Global uninstall:** `updateRegisteredProjects(propagation)` and return. **Project uninstall:** `deregisterProjectPath(projectDir)`.
+
+**Config manifest + directory cleanup.** `removeConfigManifest` deletes `config.ts` and `config-types.ts` from `.claude-src/`, then `removeDirIfEmpty(claudeSrcDir)` removes `.claude-src/` **only when it is empty afterwards** -- user-owned content there (e.g. ejected templates) keeps the directory alive. Logging: `Removed .claude-src/` when the directory went, otherwise `Removed CLI config from .claude-src/`. `.claude/` is removed only when empty, else `Kept .claude/ (contains user content)`.
+
+**Project uninstall -- deregistration.** Always calls `deregisterProjectPath(projectDir)` so future global edits stop propagating back into a removed project. Failure is **warned, not swallowed**: `Could not update the global project registry: <reason>`. A missing, project-less, or corrupt (`ConfigLoadError`) global config must never fail the uninstall.
+
+**Global uninstall -- registered-project propagation.** Two halves:
+
+- `prepareGlobalPropagation()` (before removal) returns `null` when `config.projects` is empty. Otherwise it loads, in parallel, `loadSkillsMatrixFromSource({ projectDir, skipExtraSources: true, matrixOnly: true })` and `loadAgentDefs({ projectDir })`, producing `GlobalPropagationData { globalConfig, matrix, agents }`. A load failure warns via `registeredProjectsUpdateFailed(...)` and returns `null` -- it never aborts.
+- `updateRegisteredProjects()` (after removal) calls `pruneGlobalEntriesFromRegisteredProjects(globalConfig, matrix, agents)`, which strips the inlined global-scoped entries from every registered project and regenerates each project's `config-types.ts`. It runs **after** the global manifest is gone so the regenerated project types fall back to the standalone form instead of importing from a deleted global `config-types.ts`. Each `result.skipped` path warns via `registeredProjectUpdateSkipped(path)`; a non-empty `result.updated` logs `registeredProjectsUpdated(count)`. A throw is caught and warned -- **no failure here may abort the uninstall**.
+
+`matrixOnly` + `skipExtraSources` keep this load offline and quiet: an uninstall must not hang on a cold cache or fail on an unreachable remote. The types emitted are byte-identical to the wizard's fully tagged load (same parity test as `compile`).
+
+**Exported for testing (`@internal`):** `UninstallTarget` type, `getCliInstalledPluginKeys(config)`, `uninstallPlugins(target, projectDir, onUninstalled?)`.
+
+**Key dependencies:** `listPluginNames()`, `getProjectPluginsDir()`, `buildMarketplacePluginRef()`, `parseMarketplacePluginRef()`, `toClaudePluginScope()` from plugins. `readForkedFromMetadata()` from skills. `loadProjectConfigFromDir()` from configuration. `deregisterProjectPath()`, `isHomeDirectory()`, `pruneGlobalEntriesFromRegisteredProjects()`, `resolveInstallPaths()` from installation. `loadSkillsMatrixFromSource()` from loading. **Operation: `loadAgentDefs()`**. `listAgentMdFiles()` from agents. `claudePluginUninstallBestEffort()`, `isClaudeCLIAvailable()` from exec. `promptConfirm()` from `components/common/prompt-confirm.tsx`, `Confirm` from `components/common/confirm.tsx`. `registeredProjectsUpdated()`, `registeredProjectUpdateSkipped()`, `registeredProjectsUpdateFailed()` from `utils/messages.ts`.
 
 ### `update` (src/cli/commands/update.tsx)
 
@@ -441,13 +543,27 @@ Agents are always recompiled after a successful update (`recompileAfterUpdate()`
 
 ## Feature-Gated Commands
 
-The following commands are gated behind `FEATURE_FLAGS` in `src/cli/lib/feature-flags.ts`. All three are currently disabled (flag `false`). The command prints an error and exits if invoked.
+The following commands are gated behind `FEATURE_FLAGS` in `src/cli/lib/feature-flags.ts`. All three are currently disabled (flag `false`). The command prints `featureDisabledError(commandName)` and exits if invoked.
 
 | Command           | Flag                      | Current Value |
 | ----------------- | ------------------------- | ------------- |
 | `new skill`       | `NEW_SKILL_COMMAND`       | `false`       |
 | `new agent`       | `NEW_AGENT_COMMAND`       | `false`       |
 | `new marketplace` | `NEW_MARKETPLACE_COMMAND` | `false`       |
+
+**Full `FEATURE_FLAGS` inventory** (`src/cli/lib/feature-flags.ts`). The remaining four gate wizard UI, not commands; no other flags exist:
+
+| Flag                      | Current Value | Gates                                                        |
+| ------------------------- | ------------- | ------------------------------------------------------------ |
+| `SOURCE_SEARCH`           | `false`       | Search pill in the source grid (step-sources)                |
+| `SOURCE_CHOICE`           | `false`       | Intermediate source choice screen (recommended vs customize) |
+| `INFO_PANEL`              | `true`        | `I` opens the info panel overlay                             |
+| `FILTER_INCOMPATIBLE`     | `false`       | `F` filters incompatible skills in the build step (D-269)    |
+| `NEW_SKILL_COMMAND`       | `false`       | `new skill`                                                  |
+| `NEW_AGENT_COMMAND`       | `false`       | `new agent`                                                  |
+| `NEW_MARKETPLACE_COMMAND` | `false`       | `new marketplace`                                            |
+
+`FILTER_INCOMPATIBLE` gates both the `F` keypress and its footer hint; the store action stays present but dormant for a one-flag re-enable (it was disabled over a dual-scope collapse bug).
 
 ## Error Handling Pattern
 
@@ -482,24 +598,34 @@ All message constants centralized in `src/cli/utils/messages.ts`:
 - `ERROR_MESSAGES` - Error strings (10 entries)
 - `SUCCESS_MESSAGES` - Success strings (4 entries)
 - `STATUS_MESSAGES` - Progress/status strings (11 entries)
-- `INFO_MESSAGES` - Informational strings (6 entries)
+- `INFO_MESSAGES` - Informational strings (7 entries; `CONFIG_TYPES_REFRESHED` added for `compile`)
+
+The same module also exports five **message builder functions** for messages that interpolate a count, path, or reason:
+
+| Function                                 | Used by     | Purpose                                                             |
+| ---------------------------------------- | ----------- | ------------------------------------------------------------------- |
+| `globalScopedAgentsHint(count)`          | `compile`   | Names the global-scoped agent count after a zero-agent project pass |
+| `configTypesRefreshFailed(reason)`       | `compile`   | Warns that `config-types.ts` unions may be stale                    |
+| `registeredProjectsUpdated(count)`       | `uninstall` | Summary after pruning registered projects                           |
+| `registeredProjectUpdateSkipped(path)`   | `uninstall` | Warns one unreachable registered project                            |
+| `registeredProjectsUpdateFailed(reason)` | `uninstall` | Warns that no registered project could be updated                   |
 
 ## Operations Layer Usage by Command
 
-| Command           | Operations Used                                                                                                                                                                                                                           |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init`            | `loadSource`, `installPluginSkills`, `copyLocalSkills`, `writeProjectConfig`, `compileAgentsAllScopes`, `discoverInstalledSkills`, `loadAgentDefs` (marketplace via `requireMarketplaceOrExit`)                                           |
-| `edit`            | `detectProject`, `loadSource`, `installPluginSkills`, `uninstallPluginSkills`, `copyLocalSkills`, `writeProjectConfig`, `compileAgentsAllScopes`, `discoverInstalledSkills`, `loadAgentDefs` (marketplace via `requireMarketplaceOrExit`) |
-| `compile`         | `detectBothInstallations`, `loadAgentDefs`, `compileAgents`, `discoverInstalledSkills`                                                                                                                                                    |
-| `doctor`          | `detectProject`, `loadSource`                                                                                                                                                                                                             |
-| `eject`           | `loadSource`                                                                                                                                                                                                                              |
-| `search`          | `loadSource`                                                                                                                                                                                                                              |
-| `update`          | `loadSource`, `compareSkillsWithSource`, `collectScopedSkillDirs`, `findSkillMatch`, `compileAgents`, `discoverInstalledSkills`                                                                                                           |
-| `validate`        | (none -- uses lib functions directly)                                                                                                                                                                                                     |
-| `list`            | (none -- uses installation, configuration, plugins directly)                                                                                                                                                                              |
-| `uninstall`       | (none -- uses lib functions directly)                                                                                                                                                                                                     |
-| `import skill`    | (none -- uses loading/fetching directly)                                                                                                                                                                                                  |
-| `new skill`       | (none -- uses configuration/installation directly)                                                                                                                                                                                        |
-| `new agent`       | (none -- uses agents/configuration directly)                                                                                                                                                                                              |
-| `new marketplace` | (none -- uses generators directly)                                                                                                                                                                                                        |
-| `build *`         | (none -- uses skill/agent compilers directly)                                                                                                                                                                                             |
+| Command           | Operations Used                                                                                                                                                                                                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`            | `loadSource`, `installPluginSkills`, `copyLocalSkills`, `writeProjectConfig`, `compileAgentsAllScopes`, `recompilePropagatedProjectAgents`, `discoverInstalledSkills`, `loadAgentDefs` (marketplace via `requireMarketplaceOrExit`)                                           |
+| `edit`            | `detectProject`, `loadSource`, `installPluginSkills`, `uninstallPluginSkills`, `copyLocalSkills`, `writeProjectConfig`, `compileAgentsAllScopes`, `recompilePropagatedProjectAgents`, `discoverInstalledSkills`, `loadAgentDefs` (marketplace via `requireMarketplaceOrExit`) |
+| `compile`         | `detectBothInstallations`, `loadAgentDefs`, `compileAgents`, `discoverInstalledSkills`                                                                                                                                                                                        |
+| `doctor`          | `detectProject`, `loadSource`                                                                                                                                                                                                                                                 |
+| `eject`           | `loadSource`                                                                                                                                                                                                                                                                  |
+| `search`          | `loadSource`                                                                                                                                                                                                                                                                  |
+| `update`          | `loadSource`, `compareSkillsWithSource`, `collectScopedSkillDirs`, `findSkillMatch`, `compileAgents`, `discoverInstalledSkills`                                                                                                                                               |
+| `validate`        | (none -- uses lib functions directly)                                                                                                                                                                                                                                         |
+| `list`            | (none -- uses installation, configuration, plugins directly)                                                                                                                                                                                                                  |
+| `uninstall`       | `loadAgentDefs` (global-uninstall propagation prep; everything else via lib functions directly)                                                                                                                                                                               |
+| `import skill`    | (none -- uses loading/fetching directly)                                                                                                                                                                                                                                      |
+| `new skill`       | (none -- uses configuration/installation directly)                                                                                                                                                                                                                            |
+| `new agent`       | (none -- uses agents/configuration directly)                                                                                                                                                                                                                                  |
+| `new marketplace` | (none -- uses generators directly)                                                                                                                                                                                                                                            |
+| `build *`         | (none -- uses skill/agent compilers directly)                                                                                                                                                                                                                                 |

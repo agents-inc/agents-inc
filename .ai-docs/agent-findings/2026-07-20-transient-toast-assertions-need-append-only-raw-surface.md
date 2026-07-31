@@ -18,6 +18,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: convention-undocumented
+status: partial
+partial_note: 'Three of the four proposed items landed; one did not. Landed (verified 2026-07-30): the `toggleFilterIncompatibleAwaiting` affordance; item 1''s assertions.md half — an "Assert the Surface That Retains the Value" section with the processed-vs-raw table and "Toasts are always a raw-output assertion", naming the cursor-anchor requirement and why an unanchored raw match is unsound; item 3, the follow-up sweep — `BuildStep.toggleFocusedSkillAwaiting` and `selectSkillAwaiting` both exist and `AgentsStep.toggleFocusedAgentAwaiting` was added beyond what was asked; item 4 — `terminal-screen.ts`''s `waitForTextAfter` JSDoc now states the rule ("assert on post-cursor raw output"), not just the mechanism. Pending: item 2. `standards/e2e/anti-patterns.md` has no "reading a toast off the processed buffer with no wait" entry, so the anti-pattern is described nowhere in the doc agents consult for anti-patterns — only the positive rule exists, in assertions.md. `standards/e2e/README.md` carries the general `getOutput()`-is-not-a-frame-log rule but not the toast-specific cursor-anchoring rule item 1 also asked for there.'
 ---
 
 ## What Was Wrong

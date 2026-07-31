@@ -1,6 +1,21 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-07-30
 ---
+
+<!--
+  re-validated 2026-07-30 (product 0.146.0), index-consistency pass: purged counts from the
+  structure diagram (`All 39 Zod schemas` -> no number; `34 factories` -> no number) and added the
+  "A Count Lives in Exactly One Document" rule with an ownership registry; fixed the
+  commands canonical/pointer classification (`commands/index.md` is CANONICAL, root `commands.md`
+  is the pointer) in both the diagram and the "What Each Document Covers" table; rebuilt the
+  Doc-Touching Changes hook table so every `src/cli/` source directory has an owning doc — the
+  missing `lib/installation/**` and `lib/plugins/**` rows are the mechanical reason two sync
+  passes skipped `plugin-system.md`; widened the command row from command-level to
+  signature-level and added checklist item 4 (flag/arg diff + removal callout); added the
+  "Heading Diff" rule (a pass that only checks existing claims cannot detect a section that was
+  never written); added the Known-Limitations re-validation clause covering both narrowed and
+  closed limitations; widened the agent-findings pre-processing scan from 3 checks to 6.
+-->
 
 # Documentation Bible -- Agents Inc. CLI
 
@@ -33,7 +48,7 @@ last_validated: 2026-04-21
   reference/
     architecture-overview.md    # System architecture, data flow, directory structure
     boundary-map.md             # System boundaries: input, parse, write, exec, security
-    commands.md                 # All CLI commands, flags, exit codes
+    commands.md                 # POINTER -> commands/index.md
     component-patterns.md       # Ink component conventions, hooks, styling constants
     dependency-graph.md         # Cross-cutting import maps: commands -> ops -> lib -> utils
     findings-impact-report.md   # Agent findings cross-referenced against reference docs
@@ -47,7 +62,7 @@ last_validated: 2026-04-21
       dependency-graph.md       # -> dependency-graph.md
       boundary-map.md           # -> boundary-map.md
     commands/                   # Command details
-      index.md                  # -> commands.md (pointer)
+      index.md                  # CANONICAL commands reference (root commands.md is the pointer)
       edit.md                   # Detailed edit command flow, types, utilities
     concepts/                   # Cross-cutting concerns
       scope-system.md           # Project vs global scope, path resolution, config splitting
@@ -58,13 +73,13 @@ last_validated: 2026-04-21
       config-writer.md          # Config writer and config types writer detail
     testing/                    # Test infrastructure splits
       infrastructure.md         # Vitest config, test projects, directory structure
-      factories.md              # Factory/helper/assertion tables (34 factories)
+      factories.md              # Factory/helper/assertion tables
       mock-data.md              # SKILLS registry, TEST_CATEGORIES, mock-data constants
       e2e-infrastructure.md     # E2E config, POM, matchers, fixtures, timeouts
     types/                      # Type system splits
       core-types.md             # Generated unions, core data structures, type guards
       operations-types.md       # Operations layer types, edit command types
-      zod-schemas.md            # All 39 Zod schemas (bridge, loader, structural, strict)
+      zod-schemas.md            # Zod schemas (bridge, loader, structural, strict)
     wizard/                     # Wizard pointer files
       flow.md                   # -> features/wizard-flow.md
       state-transitions.md      # -> state-transitions.md
@@ -79,6 +94,41 @@ last_validated: 2026-04-21
       skills-and-matrix.md      # Skills matrix, categories, resolution, source loading
       wizard-flow.md            # Wizard steps, state transitions, keyboard navigation
 ```
+
+### A Count Lives in Exactly One Document
+
+**Annotations in the tree above, and in the "What Each Document Covers" table below, describe SCOPE, never QUANTITY.**
+
+```
+GOOD: zod-schemas.md   # Zod schemas (bridge, loader, structural, strict)
+BAD:  zod-schemas.md   # All 39 Zod schemas (bridge, loader, structural, strict)
+
+GOOD: factories.md     # Factory/helper/assertion tables
+BAD:  factories.md     # Factory/helper/assertion tables (34 factories)
+```
+
+A count belongs in **one** place: the document that re-verifies it against source. Duplicating a count into a second file guarantees drift, because:
+
+- The two files have **different owners** (`standards/` is convention-keeper's, `reference/` is codex-keeper's) and **different validation cadences**.
+- Validation is organised **per document**. The agent assigned `zod-schemas.md` re-counts the schemas and bumps that file's `last_validated`. Nothing tells it another file quotes the same number.
+- Index drift is **silent and high-blast-radius**: the index is read _before_ the doc it describes, so a number there is taken as authoritative by every agent that never opens the owning doc.
+
+Evidence this is real, not theoretical: the annotation `# All 39 Zod schemas` survived in this file from 2026-07-23 to 2026-07-30 — through a full documentation sweep and two targeted syncs — while the true count (35) sat corrected in `zod-schemas.md` the whole time.
+
+**When a validation pass changes a count, grep `.ai-docs/` for BOTH the old and the new value before finishing.** Any other file quoting it is drift. If the other file is outside your ownership, record the mismatch in a file you _do_ own — naming the stale file, its stale value, and its owner — and report it. Never leave two surfaces disagreeing unremarked.
+
+**Ownership registry for the counts that are duplicated most often:**
+
+| Count                                                                     | Owning doc (the ONLY place the number is written)                         |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Zod schema count                                                          | `reference/types/zod-schemas.md`                                          |
+| `SkillId` / `SkillSlug` / `Category` / `Domain` / `AgentName` union sizes | `reference/type-system.md` ("Counts" section)                             |
+| `defaultCategories` size + exclusive/required split                       | `reference/features/skills-and-matrix.md` ("Current Counts")              |
+| Factory / helper / assertion counts                                       | `reference/testing/factories.md`                                          |
+| Source-file and E2E-file totals                                           | `DOCUMENTATION_MAP.md` ("Coverage Metrics")                               |
+| Agent-findings totals                                                     | `reference/findings-impact-report.md` (header, against a pinned snapshot) |
+
+Everything else references the owning doc by name instead of restating the number.
 
 ### Loading Decision Tree
 
@@ -100,7 +150,7 @@ Need to work on any area of the codebase?
 | ---------------------------------- | --------------------------------------------------------------------------------- | --------------------------- |
 | `DOCUMENTATION_MAP.md`             | Index of all docs, validation history, staleness tracking                         | Always first                |
 | `architecture-overview.md`         | Directory structure, data flow, technology stack, entry points                    | Understanding system design |
-| `commands.md`                      | `init`, `edit`, `compile`, `config` commands with flags and exit codes            | Working on commands         |
+| `commands/index.md` (CANONICAL)    | Every CLI command with flags, args and exit codes (`commands.md` is a pointer)    | Working on commands         |
 | `component-patterns.md`            | Ink components, hooks, `CLI_COLORS`, `UI_SYMBOLS`, `CategoryOption` types         | Working on wizard UI        |
 | `store-map.md`                     | `WizardState` shape, all actions, store consumers, initial state                  | Modifying wizard state      |
 | `test-infrastructure.md`           | Factory functions, fixtures, `SKILLS.*` registry, E2E test structure              | Writing or updating tests   |
@@ -208,18 +258,52 @@ Rule of thumb: reference docs age faster than code. Any concept/reference doc re
 
 ### Doc-Touching Changes (Feature / Rename / Deletion Hooks)
 
-When shipping a feature, rename, or deletion that touches these high-impact files, grep the listed docs and update in the same session:
+When shipping a feature, rename, or deletion that touches these files, grep the listed docs and update in the same session.
 
-| Change                                                                    | Doc(s) to grep + update                                 |
-| ------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Command added / deleted / renamed (`src/cli/commands/**`)                 | `commands.md`, `dependency-graph.md`, `boundary-map.md` |
-| Component added / deleted / renamed (`src/cli/components/**`)             | `component-patterns.md`, `dependency-graph.md`          |
-| New trust-boundary op (read/write/exec) or change to existing             | `boundary-map.md`                                       |
-| D-feature touching `config-types-writer.ts` or `stack-plugin-compiler.ts` | `boundary-map.md`, `dependency-graph.md`                |
-| Store refactor (prop-driven <-> hydration-before-render)                  | `store-map.md`, `features/wizard-flow.md`               |
-| Mock-data constants added / removed                                       | `testing/mock-data.md`                                  |
+**Every source directory under `src/cli/` MUST appear in this table.** A directory with no row produces no doc hook, and a change there ships undocumented no matter how diligent the agent is. The table is the checklist; if the area is not on it, a targeted sync pass will correctly skip it.
+
+| Change                                                                                                                                                                             | Doc(s) to grep + update                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Command **or its public signature** added / deleted / renamed (`src/cli/commands/**`) — includes any change to `static flags`, `static baseFlags`, `static args`, `static aliases` | `commands/index.md`, `dependency-graph.md`, `boundary-map.md`                                                       |
+| Component added / deleted / renamed (`src/cli/components/**`, `src/cli/hooks/**`)                                                                                                  | `component-patterns.md`, `dependency-graph.md`                                                                      |
+| New trust-boundary op (read/write/exec) or change to existing                                                                                                                      | `boundary-map.md`                                                                                                   |
+| D-feature touching `config-types-writer.ts` or `stack-plugin-compiler.ts`                                                                                                          | `boundary-map.md`, `dependency-graph.md`                                                                            |
+| Store refactor (prop-driven <-> hydration-before-render), or any change under `src/cli/stores/**`                                                                                  | `store-map.md`, `wizard/state-transitions.md`, `features/wizard-flow.md`                                            |
+| Mock-data constants added / removed                                                                                                                                                | `testing/mock-data.md`                                                                                              |
+| **Any change under `src/cli/lib/installation/**`\*\*                                                                                                                               | `features/plugin-system.md`, `concepts/scope-system.md`, `concepts/tombstone-pattern.md`, `config/config-writer.md` |
+| **Any change under `src/cli/lib/plugins/**`or to`permission-checker.tsx`\*\*                                                                                                       | `features/plugin-system.md`, `boundary-map.md`                                                                      |
+| Matrix composition inputs (`default-categories.ts`, `default-rules.ts`, `lib/matrix/**`, `lib/loading/**`, regenerated `types/generated/**`)                                       | `features/skills-and-matrix.md` (esp. Known Limitations + Current Counts), `type-system.md`, `types/core-types.md`  |
+| Any change under `src/cli/lib/configuration/**`                                                                                                                                    | `features/configuration.md`, `config/config-writer.md`, `config/config-merger.md`, `config/scope-split.md`          |
+| Any change under `src/cli/lib/operations/**`                                                                                                                                       | `features/operations-layer.md`, `types/operations-types.md`, `dependency-graph.md`                                  |
+| Any change under `src/cli/lib/agents/**`, or to `lib/compiler.ts` / `lib/output-validator.ts`                                                                                      | `features/agent-system.md`, `features/compilation-pipeline.md`                                                      |
+| Any change under `src/cli/lib/skills/**` or `src/cli/lib/stacks/**`                                                                                                                | `features/skills-and-matrix.md`, `features/compilation-pipeline.md`                                                 |
+| Any change under `src/cli/lib/wizard/**`                                                                                                                                           | `features/wizard-flow.md`, `wizard/state-transitions.md`, `concepts/guard-pattern.md`                               |
+| Any change to `lib/schemas.ts` or `lib/schema-validator.ts`                                                                                                                        | `types/zod-schemas.md` (owns the schema count), `boundary-map.md`                                                   |
+| Any change under `src/cli/utils/**`, or to `consts.ts` / `lib/exit-codes.ts` / `lib/feature-flags.ts`                                                                              | `utilities.md`                                                                                                      |
+| Any change under `src/cli/types/**`                                                                                                                                                | `type-system.md`, `types/core-types.md`, `types/operations-types.md`                                                |
+| Test-infrastructure change (`__tests__/factories/`, `__tests__/helpers/`, `e2e/pages/`, `e2e/helpers/`)                                                                            | `testing/factories.md`, `testing/e2e-infrastructure.md`, `standards/e2e/*`                                          |
 
 If an update cannot be made in the same session, add a `NEEDS-VALIDATION` note to the doc's `DOCUMENTATION_MAP.md` row.
+
+**Grep the diff, not the release notes.** A targeted sync pass must grep the shipped diff for the files named in this table, not only for the docs the release notes happen to mention. A release note describes user-visible _behaviour_; a doc hook describes which reference doc owns the _code_ that produced it. The two do not overlap reliably — the D-279 masking work is described in the changelog under a wizard-facing heading while the code lives entirely in `local-installer.ts`.
+
+**Why the two bolded rows exist.** Before 2026-07-30 this table had no row for `src/cli/lib/installation/**` or `src/cli/lib/plugins/**`. `local-installer.ts` is 1584 lines — the joint most-cited file in `agent-findings/` (22 citations) — and it absorbed the entire D-279 cross-scope masking layer. Two consecutive targeted sync passes (0.145.0, 0.146.0) both skipped `features/plugin-system.md` and were behaving _correctly against the checklist they were given_. A change to the single largest file in the install path triggered no hook, while a change to any component file did.
+
+### Heading Diff: Detecting Sections That Were Never Written
+
+**A validation sweep MUST diff a doc's heading list against the exported surface of the modules it owns.**
+
+The standard validation loop (read each claim, verify it against source, fix it) is _structurally incapable_ of finding a missing section. It only checks claims that exist. When a doc's owned area gains a **new** subsystem rather than a changed one, the absence of a matching heading is the only drift signal — and nothing in a claim-by-claim pass looks for an absence.
+
+Procedure, per doc, per sweep:
+
+1. Determine the modules the doc owns (use the hook table above, read in reverse: doc -> source dirs).
+2. `Glob` those dirs and list every exported symbol (`export const`, `export function`, `export type`, `export class`).
+3. Extract the doc's heading list (`grep '^#'`).
+4. **Diff.** Every exported symbol should be reachable from some heading. A cluster of exports with no owning heading is a missing section, not a stale line.
+5. New section names come from the source, not from what the doc already discusses.
+
+This is how a 349-line feature (the cross-scope reconciliation layer) shipped with **zero** documentation while the doc it belonged in passed every structural check that ran against it.
 
 ### Command Reference Docs (`commands.md`)
 
@@ -229,9 +313,27 @@ When documenting or validating a command:
 2. **Glob `src/cli/commands/**/\*.{ts,tsx}` and diff against the index table.\*\* Flag any row whose file does not exist and any command file not in the table.
 3. **Any command whose `run()` begins with `if (!FEATURE_FLAGS.X)` MUST carry a `Feature flag:` line** in its section, cross-referencing the current value in `src/cli/lib/feature-flags.ts`.
 
+4. **Diff every documented flag/arg row against the command's `static flags` / `static baseFlags` / `static args`.** A documented flag that no longer parses is a **hard error, not staleness** — treat it with the same severity as a documented file path that does not exist. An agent following the doc emits an invocation oclif rejects; compare a stale prose paragraph, which at worst under-informs.
+
+   A removed flag MUST leave behind an **explicit callout naming the removal** (and the replacement behaviour, if any), not just a deleted table row. Silently deleting the row makes the doc self-consistent but leaves everyone who already knows the old flag with no signal. The `> **`--all` removed (D-274, breaking).**` block in `commands/index.md` is the intended shape.
+
+   Evidence: `uninstall --all` was removed as a documented breaking change in 0.145.0, and `commands/index.md` kept advertising it across two releases, because the hook table's row was command-level and nothing fired for a signature-level change.
+
 ### Known Limitations Rule
 
 When a documented system has active hardening tasks in `todo/TODO.md` (e.g., D-214), the reference doc MUST include a **Known Limitations** section cross-referenced to the task ID with file/function anchors. Describing code as if its TODOs were closed is drift.
+
+**Re-validation clause — a limitation must be re-checked against the fix, not merely re-dated.**
+
+A Known Limitation MUST be re-validated whenever a change lands that touches the code it names — **even when the referenced task is still open**. A fix that narrows a limitation's reach without closing it must update the limitation's _current behaviour_ in the same session.
+
+State the **mechanism** (unchanged / changed) separately from the **reach** (which paths can still hit it). A fix commonly changes only the second. Where the reach is now guarded by a test, name that test.
+
+**Also re-check a limitation against the fix that CLOSED it.** A limitation whose fix shipped must be removed or moved to a "Resolved" note in the same session as the fix — a closed limitation left standing reads as an open one and gets designed around. This is not hypothetical: D-240 shipped in 0.145.0 and was still documented as an OPEN limitation in **three separate reference docs** afterwards.
+
+The dangerous shape is the _half_-right limitation: it reads as authoritative and gets trusted. Limitation #6 in `features/skills-and-matrix.md` claimed "built-in marketplace drift is masked instead of failing loudly" — true when written, falsified when 38 category definitions were added to `defaultCategories` (which now covers all 89 generated categories, test-pinned). The underlying gap was genuinely still open, so the limitation had to stay listed; only its **blast radius** was wrong.
+
+**Cheap mechanical check:** for any limitation whose current-behaviour text asserts an observable artifact (`order: 999` entries in `BUILT_IN_MATRIX`, a file that should not exist, a field that should be absent), **grep the artifact during validation**. In the case above it was zero.
 
 ### Hydration-vs-Props / Hook Table / Hotkey Registry
 
@@ -275,15 +377,30 @@ A pointer file contains:
 
 **Drift detection:** During sweeps, any file whose frontmatter `related:` overlaps with a sibling's AND whose headings duplicate the sibling's is a drift candidate -- audit the body, not just the date. If an original and a split-child sibling exist and `|original.last_validated - child.last_validated| > 7 days`, treat as drifted-original candidate.
 
+**Direction is not implied by path depth.** A pointer may be the root file or the subdirectory file; there is no positional convention. Two of the current pointers are root-level (`commands.md` -> `commands/index.md`, `state-transitions.md` -> `wizard/state-transitions.md`) because those pairs were flipped after the split. Always determine direction by **reading both files** — the canonical one holds the body; the pointer holds a redirect table and nothing else. Never infer it from the directory layout, and never carry a prior classification forward without re-reading.
+
+### Pointer Freshness Rule
+
+A pointer file contains **no source-derived claims** — only a redirect table. Its `last_validated` therefore records the last time its **redirect targets were confirmed to resolve**, not the last time source was checked. Four consequences, all binding:
+
+1. **A sweep that validates a pointer's targets does NOT re-stamp the pointer.** Re-stamping requires actually opening the pointer and confirming its redirect table resolves. An agent that made no judgement on a file must not date it as though it had — a date is a claim about work performed.
+2. **Pointers are measured against a link-integrity threshold (30 days)**, not against the content threshold of their targets.
+3. **A pointer is `OK` while its targets exist and its redirect table resolves**, regardless of how much newer those targets are. A pointer lagging its targets is the _expected_ steady state, not drift.
+4. **Un-restamped pointers MUST NOT be churned to the current date** by a sweep that made no content judgement on them. Repeatedly bumping pointer dates to match a sweep destroys the only signal that distinguishes "verified" from "swept past".
+
+Record a pointer's status in `DOCUMENTATION_MAP.md` as `OK (pointer)` with its own date. Do not treat a date gap between a pointer and its target as an Invariant 3 violation.
+
 ### Map Self-Consistency Audit
 
 Every 10th iteration (or when visible drift appears), audit `DOCUMENTATION_MAP.md` against itself:
 
 1. **Count invariants:** `Total Areas` header == count of Reference-table rows. `Documented` == `Total Areas`.
 2. **Row uniqueness:** No file appears in more than one staleness-dashboard row.
-3. **Cross-surface sync:** For each tracked doc, `Days Stale` in the dashboard must match `Last Validated` in the Reference table (same date basis, +/-0).
-4. **Disk vs map:** `Glob reference/**/*.md` count equals tracked-row count + pointer-row count.
+3. **Cross-surface sync:** For each tracked doc, `Days Stale` in the dashboard must match `Last Validated` in the Reference table (same date basis, +/-0), and **both must match the file's own frontmatter `last_validated` on disk**. Disk is authoritative; the map is derived. Pointer files are exempt from the pointer-vs-target date gap (see Pointer Freshness Rule) but not from disk-vs-map agreement on their own date.
+4. **Disk vs map:** `Glob reference/**/*.md` count equals tracked-row count + untracked-pointer count. **Verify the pointer set by name, not only by arithmetic** — a mis-labelled pointer keeps the total correct while excluding a canonical doc from staleness tracking. This is not hypothetical: `commands/index.md` was listed as a pointer in two consecutive audits while root `commands.md` (the actual pointer) held the tracked row, so the canonical commands reference went untracked and drifted through two releases advertising a flag oclif rejects.
 5. **Header dates:** `Last Updated`, `Last Validated`, `Date basis` must not lag the newest row annotation by more than 1 day.
+
+**Re-derive, never carry forward.** Every count and every date in this audit must be recomputed from disk in the session that records it. A number copied from the previous audit is the exact failure the audit exists to catch — the audit's own output is not evidence.
 
 Record the iter number and fixes in the Validation History in the same format as content-validation iters.
 
@@ -498,4 +615,19 @@ Every file in `.ai-docs/agent-findings/*.md` (other than `README.md` and `TEMPLA
 
 Cross-cutting audit sweeps (D-168-style, multi-file meta-reports) live in `.ai-docs/agent-findings/audits/`, not the main findings directory -- they use a different schema.
 
-A pre-processing pass by convention-keeper / codex-keeper scans for (a) files without frontmatter, (b) `root_cause` values outside the enum, (c) duplicate `affected_files + root_cause + date` tuples.
+A pre-processing pass by convention-keeper / codex-keeper scans for **six** defect classes:
+
+| #   | Defect                                                            | Detection                                                                          |
+| --- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| a   | File without frontmatter                                          | No leading `---` block                                                             |
+| b   | `root_cause:` outside the enum                                    | `grep -h '^root_cause:'` vs the enum in `TEMPLATE.md`                              |
+| c   | Duplicate `affected_files + root_cause + date` tuple              | Compare tuples across files                                                        |
+| d   | **`type:` outside the `TEMPLATE.md` enum**                        | `grep -h '^type:'`; note `enforcement-gap` is a `root_cause` value, never a `type` |
+| e   | **`superseded_by:` / `supersedes:` without `status: superseded`** | Cross-check the pair on each file                                                  |
+| f   | **Missing `status:`**                                             | `grep -L '^status:'`                                                               |
+
+Classes (d), (e) and (f) were added 2026-07-30. They are the three that actually drifted, and the original three-check list covered none of them. `status:` is a **required** field per `TEMPLATE.md`; the "defaults to `open`" convention in `README.md` describes how to _read_ legacy files, not a licence to omit it.
+
+**Rollups must declare inference.** Any report quoting a status distribution MUST state how many files had no `status:` and were inferred. Do not restate the figure here — per "A Count Lives in Exactly One Document" it is owned by `reference/findings-impact-report.md`, which re-derives it from disk at every pass. This paragraph previously carried "39 of 125", which was stale in both the numerator and the denominator by the time anyone read it, and is precisely the drift the ownership rule exists to stop.
+
+The rule stands on its own merits, and the worked example is now a closed one. The 2026-07-30 status-backfill pass eliminated the gap entirely — every finding on disk declares a `status:`, so current rollups declare zero inference. It also showed why the requirement matters more than it looks: reading an absent `status:` as `open` had mis-classified **30 of the 36** status-less files, most of them `partial` and nine of them already `resolved`. An undeclared inference does not merely blur a rollup, it invents work that was already done.

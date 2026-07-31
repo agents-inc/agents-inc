@@ -12,6 +12,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: enforcement-gap
+status: partial
+partial_note: 'The finding''s own "remaining half" is still open, and the fix it describes has since been replaced. Verified 2026-07-30: `applyProjectScopeAuthority()` and `enforceScopeAuthority()` no longer exist in `edit.tsx` under those names — the blanket restore-everything gate was narrowed to "authority follows the work actually performed" (only ids the run actually migrated, filtered by `isActiveAt(s, "global")`), the successor recorded in `2026-07-20-scope-authority-must-follow-work-performed.md`. Read that file before treating this one''s Fix Applied as current. Still pending: the ungated source setters the finding named as the remaining half. `setSourceSelection` (the renamed `setSkillSource`, D-262) validates only that skillId/sourceId are non-empty before calling `withActiveEntrySource`, and `setAllSourcesEject`/`setAllSourcesPlugin` skip excluded tombstones (D-265) but map over every active entry — none of the three carries the `isEditingFromGlobalScope`/`isInitMode` predicate that `toggleTechnology`/`toggleSkillScope` use, so the wizard can still show a source change on an inherited global row. The three proposed CLAUDE.md "Scope Awareness" bullets were not added, though D-277 covers the selection/scope half of the rule more broadly.'
 ---
 
 ## What Was Wrong

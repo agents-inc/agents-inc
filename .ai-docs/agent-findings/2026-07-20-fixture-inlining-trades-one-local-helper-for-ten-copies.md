@@ -11,6 +11,8 @@ reporting_agent: cli-tester
 category: dry
 domain: e2e
 root_cause: rule-not-specific-enough
+status: partial
+partial_note: "Inverted relative to the enum's documented direction — the CODE side landed and the DOCS side did not. Landed: `createUninstallableProject` is gone from `e2e/interactive/uninstall.e2e.test.ts` and the builder call is inlined. Pending: the proposed standard, which is the load-bearing half — the finding is explicitly about a rule COLLISION with no stated precedence (Pattern E). Verified 2026-07-30 that neither `standards/e2e/README.md` nor `standards/e2e/anti-patterns.md` states when a local arrange helper is worth keeping. The 3+ thresholds that exist there govern EXTRACTING to shared infra (`3+ files -> ProjectBuilder static method`, `3+ places -> add a matcher`), which is the opposite direction from the one this finding needs, so the collision is still unadjudicated. Same class as `2026-07-30-e2e-helper-extraction-threshold-unstated-for-file-writers.md`."
 ---
 
 ## What Was Wrong

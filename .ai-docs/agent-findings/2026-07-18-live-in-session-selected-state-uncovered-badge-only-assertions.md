@@ -13,6 +13,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: rule-not-specific-enough
+status: partial
+partial_note: "Inverted relative to the enum's documented direction — the CODE/coverage side landed and the DOCS side did not. Landed: `BuildStep.getExclusiveCategorySelectedCount()` exists in `e2e/pages/steps/build-step.ts`, and the red spec went green — it is now `e2e/lifecycle/dual-scope-collapse-live-selection.e2e.test.ts` (renamed when D-260 made spacebar inert and `s` the sole dual-scope toggle), asserting the live Framework counter stays `(1 of 1)` after the collapse, with no `it.fails`. `dual-scope-s-round-trip-space-inert.e2e.test.ts` reads the same counter, so the reader has two consumers. Pending: the proposed standard. Verified 2026-07-30 that `standards/e2e/anti-patterns.md` has no rule about asserting live in-session render state when a keypress mutates both `domainSelections` and `skillConfigs`; its Weak Assertions and Assertion Quality sections do not cover the badge-vs-selection divergence."
 ---
 
 ## What Was Wrong

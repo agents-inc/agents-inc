@@ -11,6 +11,7 @@ reporting_agent: cli-developer
 category: typescript
 domain: cli
 root_cause: rule-not-specific-enough
+status: open
 ---
 
 ## What Was Wrong

@@ -17,6 +17,8 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: convention-undocumented
+status: partial
+partial_note: 'The companion note landed; the rule did not. Landed (verified 2026-07-30): `reference/wizard/state-transitions.md` carries the callout "The DOMAINS step is init-only and unreachable from `cc edit`", reproducing the full source trace — edit hydrates at `initialStep: "build"` with `history: []`, the build ESC handler no-ops on empty history, and `showDashboardIfInitialized` -> `detectInstallation` falls back to `detectGlobalInstallation` so init routes to the dashboard — and drawing the planning consequence that `toggleDomain` must be covered at unit level. It cites this finding. The diagnosis was also acted on in the product: 0.146.0 describes the domain-deselect portion of D-277 as invariant hardening rather than a user-visible change, on exactly this reachability argument. Pending: the generalised rule. `standards/e2e/anti-patterns.md` has no "prove the surface exists before writing the E2E" entry, so the reusable instruction — grep the store action''s callers and confirm a keypress path reaches one before writing the spec, and never settle for an absence-only assertion a blocked action satisfies vacuously — exists only as a note about one specific step.'
 ---
 
 ## What Was Wrong

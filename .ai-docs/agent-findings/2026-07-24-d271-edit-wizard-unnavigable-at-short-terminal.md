@@ -12,6 +12,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: convention-undocumented
+status: partial
+partial_note: 'Two of the three proposed bullets landed. Landed (verified 2026-07-30): `EditWizard.launchInProjectShort` exists in `e2e/pages/wizards/edit-wizard.ts`; `standards/e2e/page-objects.md` lists it among the scope-explicit launchers; and `standards/e2e/anti-patterns.md` carries "Never use `launchInProjectShort` for a test that locates a skill by name", which states both the launcher-choice rule and the why (the BUILD settle wait is skipped because "Framework" is overdrawn at SHORT, and `focusSkill` parses exactly that layout). Pending: the third bullet — nothing records that at SHORT the Sources viewport clips silently and cannot report selection state, so a spec author is not told to prove a deselection by completing the flow and asserting the config drop rather than by reading the clipped frame. That is the non-obvious half: the first two bullets fail loudly, this one fails as a wrong-looking frame.'
 ---
 
 ## What Was Wrong

@@ -13,6 +13,7 @@ reporting_agent: cli-tester
 category: dry
 domain: e2e
 root_cause: rule-not-specific-enough
+status: open
 ---
 
 ## What Was Wrong

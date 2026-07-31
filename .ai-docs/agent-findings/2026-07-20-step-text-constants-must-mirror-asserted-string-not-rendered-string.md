@@ -15,6 +15,8 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: convention-undocumented
+status: partial
+partial_note: "Inverted relative to the enum's documented direction — the CODE side landed and the DOCS side did not. Landed (verified 2026-07-30): every constant the Fix Applied added is present in `e2e/pages/constants.ts` with its explanatory comment — `INSTALLING_PLUGINS_ELLIPSIS` (bare form retained for negative assertions), `UNINSTALL_PREVIEW_HEADING`, `CONFIGURED_MARKETPLACES`, `ADD_SOURCE`, `LOADED_SKILL`, `COMPILED_LIST`, and `CATEGORY_FRAMEWORK` marked as a label argument distinct in role from the `BUILD` sentinel that shares its value. Pending: the proposed standard. `standards/e2e/anti-patterns.md` states no rule that a `STEP_TEXT` entry holds the asserted string byte for byte rather than the rendered one, no `X` / `X_<QUALIFIER>` pairing convention, and nothing sanctioning two entries that share a value but differ in role — so the next literal-to-constant sweep faces the same unsafe-in-both-directions choice."
 ---
 
 ## What Was Wrong

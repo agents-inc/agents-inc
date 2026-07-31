@@ -12,6 +12,8 @@ reporting_agent: general-purpose
 category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
+status: resolved
+resolved_by: D-277 (0.146.0) made the throw unreachable rather than removing it. The proposed fix — filtering `agentList` against non-excluded configs — was deliberately NOT adopted; instead the store stopped producing the offending input. `applyAgentToggle` deselects by clean removal from both `selectedAgents` and `agentConfigs`, `buildAgentConfigForName` always returns a non-excluded entry, and `restoreDualScopeAgent`/`toggleAgentScope` always keep an active entry alongside any tombstone. The invariant is now stated positively in `resolveActiveAgentConfigs` ("every selected agent MUST have a non-excluded entry"), which keeps the throw as a guard. Verified 2026-07-30 against `config-generator.ts` and `wizard-store.ts`.
 ---
 
 ## What Was Wrong

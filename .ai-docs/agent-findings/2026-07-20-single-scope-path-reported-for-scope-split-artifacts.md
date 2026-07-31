@@ -11,6 +11,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
+status: partial
+partial_note: 'Inverted relative to the enum''s documented direction — the CODE side landed and the DOCS side did not. Landed (verified 2026-07-30): `InstallationInfo.agentDirs` is `string[]`, populated only from scopes that actually hold agents (`agentDirCounts.filter(hasEntries)`), and `formatInstallationDisplay` emits one `Agents:` line per surviving dir — so a count and a path can no longer disagree. Pending: (a) the proposed standard — CLAUDE.md''s "Scope Awareness" section has neither the "never report a single path for scope-split artifacts" bullet nor the "never carry a single agentsDir/skillsDir on a display type" bullet, so reporting code remains uncovered while writing code is covered; (b) the follow-up — `InstallationInfo.skillsDir` is still a single project-scoped `string` carrying the identical latent defect, still written and still unread outside tests.'
 ---
 
 ## What Was Wrong

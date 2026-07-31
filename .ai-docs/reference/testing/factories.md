@@ -15,13 +15,15 @@ keywords:
 related:
   - reference/testing/infrastructure.md
   - reference/testing/mock-data.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added writeTestInstalledPluginsRegistry to the disk-writers helper table (claude CLI v2 installed_plugins.json fixture, previously undocumented); corrected the createTestSource example — the option is projectConfig, not config, and asPlugin / localSkills were omitted; replaced the invented `dirs.root` with the real TestDirs shape (tempDir, projectDir, sourceDir, skillsDir, agentsDir, pluginDir?, configDir?); re-verified the 38 factory exports and the 12 assertion helpers against source — no other drift -->
 
 # Test Factories & Helpers
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 > **Split from:** `reference/test-infrastructure.md`. See also: [infrastructure.md](./infrastructure.md), [mock-data.md](./mock-data.md), [e2e-infrastructure.md](./e2e-infrastructure.md).
 
@@ -80,35 +82,36 @@ Barrel import: `import { createMockSkill, buildProjectConfig } from "../__tests_
 
 Barrel import: `import { runCliCommand, writeTestSkill } from "../__tests__/helpers/index.js"`. Exception: `extractNamedSection` / `extractScopeSections` are imported directly from `config-source-sections.js` (not re-exported by the barrel).
 
-| Helper                            | File                        | Purpose                                                                        |
-| --------------------------------- | --------------------------- | ------------------------------------------------------------------------------ |
-| `CLI_ROOT`                        | `cli-runner.ts`             | Root path constant for CLI commands                                            |
-| `runCliCommand()`                 | `cli-runner.ts`             | Run CLI command, capture stdout/stderr/error                                   |
-| `readTestYaml<T>()`               | `config-io.ts`              | Read and parse YAML test file                                                  |
-| `readTestJson<T>()`               | `config-io.ts`              | Read and parse JSON test file                                                  |
-| `readTestTsConfig<T>()`           | `config-io.ts`              | Load TS config file via jiti                                                   |
-| `writeTestTsConfig()`             | `config-io.ts`              | Write a config.ts file to a project directory                                  |
-| `writeTestPackageJson()`          | `config-io.ts`              | Write package.json (marketplace identity)                                      |
-| `normalizeGlobalConfig()`         | `config-comparison.ts`      | Order-INSENSITIVE config-text normalizer (strips `projects` line, sorts lines) |
-| `writeTestSkill()`                | `disk-writers.ts`           | Write SKILL.md + metadata.yaml to dir                                          |
-| `writeSourceSkill()`              | `disk-writers.ts`           | Write skill to source directory structure                                      |
-| `writeTestAgent()`                | `disk-writers.ts`           | Write agent metadata.yaml to dir                                               |
-| `writeSourceAgent()`              | `disk-writers.ts`           | Write agent to source directory structure                                      |
-| `createImportSource()`            | `disk-writers.ts`           | Write an import-source skill directory                                         |
-| `writeTestPluginManifest()`       | `disk-writers.ts`           | Write a plugin.json manifest to dir                                            |
-| `createTestDirs()`                | `test-dir-setup.ts`         | Create plugin test directory structure                                         |
-| `cleanupTestDirs()`               | `test-dir-setup.ts`         | Clean up plugin test directory structure                                       |
-| `setupIsolatedHome()`             | `isolated-home.ts`          | Isolate cwd + HOME + project dir per test                                      |
-| `useFakeHome()`                   | `isolated-home.ts`          | beforeEach/afterEach fake-HOME lifecycle wrapper                               |
-| `silenceConsole()`                | `silence-console.ts`        | Suppress console output during a test body                                     |
-| `buildSkillConfig()`              | `wizard-simulation.ts`      | Create a single SkillConfig                                                    |
-| `buildSkillConfigs()`             | `wizard-simulation.ts`      | Create SkillConfig array                                                       |
-| `simulateSkillSelections()`       | `wizard-simulation.ts`      | Simulate user skill selections                                                 |
-| `buildWizardResultFromStore()`    | `wizard-simulation.ts`      | Build WizardResultV2 from store                                                |
-| `extractSkillIdsFromAssignment()` | `wizard-simulation.ts`      | Extract IDs from stack assignment                                              |
-| `extractNamedSection()`           | `config-source-sections.ts` | Extract a named config.ts const block                                          |
-| `extractScopeSections()`          | `config-source-sections.ts` | Split a section into global/project parts                                      |
-| `parseTestFrontmatter()`          | `index.ts`                  | Lightweight frontmatter parser for assertions                                  |
+| Helper                                | File                        | Purpose                                                                                                                                                                                                                                                                                 |
+| ------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLI_ROOT`                            | `cli-runner.ts`             | Root path constant for CLI commands                                                                                                                                                                                                                                                     |
+| `runCliCommand()`                     | `cli-runner.ts`             | Run CLI command, capture stdout/stderr/error                                                                                                                                                                                                                                            |
+| `readTestYaml<T>()`                   | `config-io.ts`              | Read and parse YAML test file                                                                                                                                                                                                                                                           |
+| `readTestJson<T>()`                   | `config-io.ts`              | Read and parse JSON test file                                                                                                                                                                                                                                                           |
+| `readTestTsConfig<T>()`               | `config-io.ts`              | Load TS config file via jiti                                                                                                                                                                                                                                                            |
+| `writeTestTsConfig()`                 | `config-io.ts`              | Write a config.ts file to a project directory                                                                                                                                                                                                                                           |
+| `writeTestPackageJson()`              | `config-io.ts`              | Write package.json (marketplace identity)                                                                                                                                                                                                                                               |
+| `normalizeGlobalConfig()`             | `config-comparison.ts`      | Order-INSENSITIVE config-text normalizer (strips `projects` line, sorts lines)                                                                                                                                                                                                          |
+| `writeTestSkill()`                    | `disk-writers.ts`           | Write SKILL.md + metadata.yaml to dir                                                                                                                                                                                                                                                   |
+| `writeSourceSkill()`                  | `disk-writers.ts`           | Write skill to source directory structure                                                                                                                                                                                                                                               |
+| `writeTestAgent()`                    | `disk-writers.ts`           | Write agent metadata.yaml to dir                                                                                                                                                                                                                                                        |
+| `writeSourceAgent()`                  | `disk-writers.ts`           | Write agent to source directory structure                                                                                                                                                                                                                                               |
+| `createImportSource()`                | `disk-writers.ts`           | Write an import-source skill directory                                                                                                                                                                                                                                                  |
+| `writeTestInstalledPluginsRegistry()` | `disk-writers.ts`           | Write a claude CLI v2 `installed_plugins.json` under a plugins dir. Takes `Record<"<plugin>@<marketplace>", installPaths[]>` and emits one user-scoped install record per path — the shape `claude plugin install` (>= 2.1.220) writes for its cache layout. Returns the registry path. |
+| `writeTestPluginManifest()`           | `disk-writers.ts`           | Write a `.claude-plugin/plugin.json` manifest to dir. Pretty (2-space) by default; pass `{ pretty: false }` for compact-form call sites.                                                                                                                                                |
+| `createTestDirs()`                    | `test-dir-setup.ts`         | Create plugin test directory structure                                                                                                                                                                                                                                                  |
+| `cleanupTestDirs()`                   | `test-dir-setup.ts`         | Clean up plugin test directory structure                                                                                                                                                                                                                                                |
+| `setupIsolatedHome()`                 | `isolated-home.ts`          | Isolate cwd + HOME + project dir per test                                                                                                                                                                                                                                               |
+| `useFakeHome()`                       | `isolated-home.ts`          | beforeEach/afterEach fake-HOME lifecycle wrapper                                                                                                                                                                                                                                        |
+| `silenceConsole()`                    | `silence-console.ts`        | Suppress console output during a test body                                                                                                                                                                                                                                              |
+| `buildSkillConfig()`                  | `wizard-simulation.ts`      | Create a single SkillConfig                                                                                                                                                                                                                                                             |
+| `buildSkillConfigs()`                 | `wizard-simulation.ts`      | Create SkillConfig array                                                                                                                                                                                                                                                                |
+| `simulateSkillSelections()`           | `wizard-simulation.ts`      | Simulate user skill selections                                                                                                                                                                                                                                                          |
+| `buildWizardResultFromStore()`        | `wizard-simulation.ts`      | Build WizardResultV2 from store                                                                                                                                                                                                                                                         |
+| `extractSkillIdsFromAssignment()`     | `wizard-simulation.ts`      | Extract IDs from stack assignment                                                                                                                                                                                                                                                       |
+| `extractNamedSection()`               | `config-source-sections.ts` | Extract a named config.ts const block                                                                                                                                                                                                                                                   |
+| `extractScopeSections()`              | `config-source-sections.ts` | Split a section into global/project parts                                                                                                                                                                                                                                               |
+| `parseTestFrontmatter()`              | `index.ts`                  | Lightweight frontmatter parser for assertions                                                                                                                                                                                                                                           |
 
 ## Assertion Helpers (`src/cli/lib/__tests__/assertions/`)
 
@@ -171,12 +174,19 @@ Creates complete project directory structures for integration tests:
 import { createTestSource } from "../fixtures/create-test-source.js";
 
 const dirs = await createTestSource({
-  skills: [...],       // TestSkill[]
-  agents: [...],       // TestAgent[]
-  stacks: [...],       // TestStack[]
-  matrix: {...},       // TestMatrix
-  config: {...},       // TestProjectConfig
-  pluginManifest: {...},
+  skills: [...],         // TestSkill[]        — source skills under <sourceDir>/src/skills/
+  agents: [...],         // TestAgent[]        — source agents
+  stacks: [...],         // TestStack[]        — writes config/stacks.ts
+  matrix: {...},         // Partial<TestMatrix>
+  projectConfig: {...},  // TestProjectConfig  — writes <projectDir>/.claude-src/config.ts
+  pluginManifest: {...}, // TestPluginManifest
+  localSkills: [...],    // TestSkill[]        — writes into <projectDir>/.claude/skills/
+  asPlugin: true,        // build as a plugin structure under .claude/plugins/<plugin-name>
 });
-// dirs.root, dirs.skills, dirs.agents, dirs.config, etc.
 ```
+
+`TestSourceOptions` field names are load-bearing: the project config option is **`projectConfig`**, not `config`.
+
+`TestDirs` (the return shape) is `{ tempDir, projectDir, sourceDir, skillsDir, agentsDir, pluginDir?, configDir? }`. There is no `root` / `skills` / `agents` / `config` field. `cleanupTestSource(dirs)` tears the whole tree down.
+
+The module also re-exports the file-IO helpers used alongside it: `readTestFile`, `readTestYaml`, `readTestJson`, `writeTestFile`, `writeTestYaml`, `fileExists`, `directoryExists`.

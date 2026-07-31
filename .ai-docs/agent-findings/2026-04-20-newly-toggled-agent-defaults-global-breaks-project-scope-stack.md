@@ -11,7 +11,6 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: convention-undocumented
-supersedes: 2026-04-20-new-agent-toggle-defaults-global-scope.md
 status: open
 ---
 
@@ -62,3 +61,39 @@ is more discoverable (it sits next to the buggy actions themselves)
 and avoids a thin doc. Finding status stays `open` until the
 `applyAgentToggle` scope-defaulting fix lands plus the two unit tests
 listed above.
+
+## Lineage — dropped `supersedes:` key (recorded 2026-07-30)
+
+This file previously carried, in its frontmatter:
+
+```yaml
+supersedes: 2026-04-20-new-agent-toggle-defaults-global-scope.md
+```
+
+**That target is not on disk and the key has been removed.** The claim is recorded
+here so the lineage is not lost, because the target's absence is a rule violation
+rather than a mistyped reference — the key was correct when written.
+
+**What the reference asserted.** A second finding covering this same defect was filed
+the same day (2026-04-20) as a free-form narrative file with **no YAML frontmatter**.
+This file is the properly-formatted sibling, and the `supersedes:` key marked it as
+the authoritative one of the pair. Both described the same `toggleAgent` /
+`applyAgentToggle` hard-coded `scope: "global"` defect in the same `affected_files`.
+
+**Evidence the target existed** (it was not a typo and not a rename):
+
+| Source                                                  | What it records                                                                                                                                                                                                                     |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `changelogs/0.137.0.md` -> "Findings"                   | Lists `agent-findings/2026-04-20-new-agent-toggle-defaults-global-scope.md` on its own line, immediately above this file                                                                                                            |
+| `2026-04-21-agent-findings-frontmatter-drift-iter45.md` | Names it first in `affected_files:`; its "Fix Applied" reads _"Added proper YAML frontmatter to ... with a `superseded_by:` key pointing at its authoritative sibling"_ — frontmatter cannot be added to a file that does not exist |
+| This file's "Docs Landed — 2026-04-21" section above    | Calls it "the superseded finding" and retargets an `agent-system.md` cross-ref away from it                                                                                                                                         |
+
+**It was removed from disk after 2026-04-21**, contrary to `README.md`'s
+"Never move files" rule ("moving a file breaks every such link silently"). No file on
+disk is a rename of it: the only surviving finding covering this defect is this one,
+and `iter45` describes the two as distinct siblings rather than one file under two
+names.
+
+**Nothing is lost by dropping the key.** The removed file was the _narrative duplicate_;
+this file is the authoritative record its `superseded_by:` pointed at, and its content
+is preserved in full above.

@@ -16,8 +16,11 @@ category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
 status: resolved
-partial_note: "Code + docs landed (D-277 sections A, B, D). The two pending local-installer specs were repaired 2026-07-30: each fixture gained an active project-scoped entry of the same id/name, turning the bare mask into a legitimate identity-collision mask, and the specs were renamed to 'preserves the dual-scope pair's tombstone while the global skill/agent still exists'. Full unit suite green (5162 passed, 0 failed)."
-supersedes: 2026-07-18-scope-guards-read-stale-hydration-snapshot.md
+resolved_by: "Code + docs landed (D-277 sections A, B, D). The two pending local-installer specs were repaired 2026-07-30: each fixture gained an active project-scoped entry of the same id/name, turning the bare mask into a legitimate identity-collision mask, and the specs were renamed to 'preserves the dual-scope pair's tombstone while the global skill/agent still exists'. Full unit suite green (5162 passed, 0 failed). Re-verified 2026-07-30: `local-installer.test.ts` carries the renamed spec, `buildProjectCollisionTest` / `dropOrphanedDerivedMasks` / `dropOrphanedDerivedAgentMasks` are all present in `local-installer.ts`, and the Proposed Standard's provenance rule is in `reference/concepts/tombstone-pattern.md` alongside the Mask vs. Tombstone terminology section. Field renamed from `partial_note:` this pass — the note always described a completed resolution, so it was the key that was wrong, not the status; content preserved verbatim above the re-verification sentence."
+supersedes:
+  - 2026-07-17-d227-same-scope-active-tombstone-duplicate.md
+  - 2026-07-18-scope-guards-read-stale-hydration-snapshot.md
+  - 2026-07-29-derived-mask-and-user-tombstone-are-indistinguishable.md
 ---
 
 ## What Was Wrong

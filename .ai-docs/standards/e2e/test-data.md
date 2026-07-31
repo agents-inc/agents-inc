@@ -1,6 +1,8 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): corrected the flatly-wrong "runCLI sets HOME=cwd" claim — since D-226 it defaults to a fresh SIBLING temp dir distinct from cwd, and the auto-created dir is removed in a finally; corrected "only create-e2e-plugin-source.ts still imports runCLI" (10 spec files do); added ProjectBuilder.dualScopeWithImport to the factory table and documented the EditableOptions forkedFrom / globalSkills fields, plus the rule that globalSkills produces eject/eject pairs an s-collapse spec cannot use; refreshed the test-utils export table with the 15 helpers it omitted (pollUntil, seedDefaultSourceCache, writeConfigTypes, writeAgentFile, writeAgentStubs, configTsPath, configTypesTsPath, loadConfigOrFail, readAgentEntriesFor, completeWithLocalSources, readMarketplaceJson, renderAgentMd, renderMetadataYaml, normalizeGlobalConfig, writeTestPackageJson) and dropped the stale entries; noted createPermissionsFile's merge semantics -->
 
 # Test Data
 
@@ -14,16 +16,25 @@ Never inline `mkdir` + `writeFile` to build a project directory in a test file. 
 
 ### When to Use Each Method
 
-| Method                                                | Returns                  | Use When                                                                                                  |
-| ----------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `ProjectBuilder.minimal()`                            | `ProjectHandle`          | Compile tests. Creates config + 1 skill (`web-testing-vitest`).                                           |
-| `ProjectBuilder.editable(options?)`                   | `ProjectHandle`          | Edit wizard tests. Creates config + skills + agents dir. Options: `skills`, `agents`, `domains`, `stack`. |
-| `ProjectBuilder.dualScope()`                          | `DualScopeHandle`        | Dual-scope non-interactive tests. Creates `globalHome` + `project` with separate configs.                 |
-| `ProjectBuilder.withCustomSkill()`                    | `ProjectHandle`          | Custom skill validation. Creates config + config-types.ts + custom skill with `custom: true`.             |
-| `ProjectBuilder.pluginProject(options)`               | `ProjectHandle`          | Plugin mode tests. Creates config with marketplace source, skills, agent stubs.                           |
-| `ProjectBuilder.localProjectWithMarketplace(options)` | `ProjectHandle`          | Eject mode with marketplace field in config. Skills have `source: "eject"`.                               |
-| `ProjectBuilder.globalWithSubproject()`               | `{ globalHome, subDir }` | Global installation tests. Creates global config + skill + empty subproject dir.                          |
-| `ProjectBuilder.installation(dir)`                    | `void`                   | Minimal install detection. Writes config.ts into existing dir. Unlike others, does not create a temp dir. |
+All 9 static factories:
+
+| Method                                                | Returns                  | Use When                                                                                                                                                                      |
+| ----------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ProjectBuilder.minimal()`                            | `ProjectHandle`          | Compile tests. Creates config + 1 skill (`web-testing-vitest`).                                                                                                               |
+| `ProjectBuilder.editable(options?)`                   | `ProjectHandle`          | Edit wizard tests. Creates config + skills + agents dir. `EditableOptions`: `skills`, `agents`, `domains`, `stack`, `forkedFrom`, `globalSkills`.                             |
+| `ProjectBuilder.dualScope(options?)`                  | `DualScopeHandle`        | Dual-scope non-interactive tests. Creates `globalHome` + `project` with separate configs. `DualScopeOptions`: `globalSkill`, `projectSkills`, `projectStack`, `projectSkill`. |
+| `ProjectBuilder.dualScopeWithImport()`                | `DualScopeHandle`        | Dual-scope state for import/migration flows — the worked example of encapsulating complex setup in a factory rather than inlining it.                                         |
+| `ProjectBuilder.withCustomSkill()`                    | `ProjectHandle`          | Custom skill validation. Creates config + config-types.ts + custom skill with `custom: true`.                                                                                 |
+| `ProjectBuilder.pluginProject(options)`               | `ProjectHandle`          | Plugin mode tests. Creates config with marketplace source, skills, agent stubs. `omitMarketplaceField` simulates a legacy install that never persisted the marketplace.       |
+| `ProjectBuilder.localProjectWithMarketplace(options)` | `ProjectHandle`          | Eject mode with marketplace field in config. Skills have `source: "eject"`.                                                                                                   |
+| `ProjectBuilder.globalWithSubproject()`               | `{ globalHome, subDir }` | Global installation tests. Creates global config + skill + empty subproject dir.                                                                                              |
+| `ProjectBuilder.installation(dir)`                    | `void`                   | Minimal install detection. Writes config.ts into existing dir. Unlike others, does not create a temp dir.                                                                     |
+
+**`editable({ globalSkills })` records extra `scope: "global"` entries in the PROJECT config** with no disk copy — they model skills inherited from the global install. In a project-scope edit they render as inherited, locked (readOnly) Sources rows.
+
+**`editable({ globalSkills })` pins BOTH halves of the pair to `source: "eject"`.** A spec that presses `s` to collapse `[P][G]` to `[G]` cannot use it: `wouldOverwriteGlobalEject` refuses the project->global press for an eject-over-eject pair with no tombstone, so the spec fails on a swallowed keystroke rather than on its assertion. Give at least the global half a non-eject source and build that config directly. See [anti-patterns.md § Fixture Selection](./anti-patterns.md).
+
+**`editable({ forkedFrom: true })`** writes `FORKED_FROM_METADATA` as each skill's `metadata.yaml`, marking them CLI-managed so `uninstall` removes them instead of skipping them as user-created.
 
 **When 3+ tests share a setup pattern not covered by these methods, add a new `ProjectBuilder` method rather than duplicating setup logic across test files.**
 
@@ -114,6 +125,12 @@ Only create sources inline when the test requires a unique or modified source (e
 | `setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir)` | Like setupDualScope but Phase A uses eject mode                               |
 | `createDualScopeEnv(sourceDir, sourceTempDir)`                            | Creates env + runs dual-scope setup with eject, returns `DualScopeEnv`        |
 | `createGlobalOnlyEnv(sourceDir, sourceTempDir)`                           | Creates env with all-global skills (no project scope), returns `DualScopeEnv` |
+| `setupProjectOnlyMixedScope(...)`                                         | Builds a project-only install with mixed per-skill scopes                     |
+| `finishWizard(...)`                                                       | Shared tail of the init phases (sources -> agents -> confirm)                 |
+
+**Config readers** (load a scope's `config.ts` structurally rather than string-matching it): `readSkillEntries()`, `readAllSkillEntries()`, `readAgentEntries()`, `readSelectedAgents()`, `readConfigSkillIds()`.
+
+**Edit probes** (drive a throwaway edit session to observe wizard state): `runEditWithFirstSkillAction()`, `readSkillBadgesViaEdit()`.
 
 **Convenience wrappers:** `createDualScopeEnv` and `createGlobalOnlyEnv` combine environment creation + wizard setup + cleanup into a single call. They return a `DualScopeEnv` with `{ fakeHome, projectDir, destroy() }` -- call `destroy()` in `afterEach`/`afterAll` for automatic cleanup.
 
@@ -123,9 +140,11 @@ Use `createTestEnvironment` + `setupDualScope` when you need fine-grained contro
 
 ## Permissions File
 
-`createPermissionsFile(projectDir)` writes `.claude/settings.json` with default allow permissions. Without it, the Ink permission prompt blocks the PTY after install.
+`createPermissionsFile(projectDir)` ensures `.claude/settings.json` grants `permissions.allow: ["Read(*)"]`. Without it, the Ink permission prompt blocks the PTY after install and the process never exits.
 
-`InitWizard.launch()` and `EditWizard.launch()` call this internally. You only need to call it directly when:
+**It MERGES rather than overwrites.** When the file already exists — e.g. a plugin install wrote `enabledPlugins` / `extraKnownMarketplaces` before an `EditWizard.launch` re-runs this helper — every existing field is preserved and only `permissions.allow` is ensured to contain `Read(*)`. A file that already grants it is left byte-identical, and invalid JSON is a hard error rather than a silent clobber. It previously replaced the whole file, which wiped plugin state mid-lifecycle and produced failures in the phase AFTER the one that ran it.
+
+All the wizard launchers call this internally. You only need to call it directly when:
 
 - Using `InteractivePrompt` for non-wizard flows
 - Building project state manually with `ProjectBuilder` for an interactive test
@@ -135,16 +154,22 @@ Use `createTestEnvironment` + `setupDualScope` when you need fine-grained contro
 
 ## Where Test Data Lives
 
-| What                         | Location                             | Examples                                                        |
-| ---------------------------- | ------------------------------------ | --------------------------------------------------------------- |
-| Project directory factories  | `e2e/fixtures/project-builder.ts`    | `ProjectBuilder.minimal()`, `.editable()`                       |
-| Source factories             | `e2e/helpers/create-e2e-source.ts`   | `createE2ESource()`, `createE2EPluginSource()`                  |
-| Utility helpers              | `e2e/helpers/test-utils.ts`          | `createTempDir()`, `writeProjectConfig()`, `createLocalSkill()` |
-| UI text and paths            | `e2e/pages/constants.ts`             | `STEP_TEXT`, `DIRS`, `FILES`, `TIMEOUTS`                        |
-| Dual-scope lifecycle helpers | `e2e/fixtures/dual-scope-helpers.ts` | `setupDualScope()`, `initGlobal()`                              |
-| Expected value constants     | `e2e/fixtures/expected-values.ts`    | `E2E_AGENTS`, `E2E_SKILL_IDS`                                   |
-| Assertion helpers            | `e2e/assertions/`                    | `expectPhaseSuccess()`, `expectCleanUninstall()`                |
-| Agent matchers               | `e2e/matchers/agent-matchers.ts`     | `toHaveAgentFrontmatter`, `toHaveAgentDynamicSkills`            |
+| What                         | Location                               | Examples                                                                     |
+| ---------------------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
+| Project directory factories  | `e2e/fixtures/project-builder.ts`      | `ProjectBuilder.minimal()`, `.editable()`                                    |
+| Source factories             | `e2e/helpers/create-e2e-source.ts`     | `createE2ESource()`, `createE2EPluginSource()`                               |
+| Utility helpers              | `e2e/helpers/test-utils.ts`            | `createTempDir()`, `writeProjectConfig()`, `createLocalSkill()`              |
+| UI text and paths            | `e2e/pages/constants.ts`               | `STEP_TEXT`, `DIRS`, `FILES`, `TIMEOUTS`                                     |
+| Dual-scope lifecycle helpers | `e2e/fixtures/dual-scope-helpers.ts`   | `setupDualScope()`, `initGlobal()`                                           |
+| Expected value constants     | `e2e/fixtures/expected-values.ts`      | `E2E_AGENTS`, `E2E_SKILL_IDS`, `E2E_SKILL`, `E2E_AGENT`, `E2E_AGENT_DISPLAY` |
+| Assertion helpers            | `e2e/assertions/`                      | `expectPhaseSuccess()`, `expectCleanUninstall()`                             |
+| Agent matchers               | `e2e/matchers/agent-matchers.ts`       | `toHaveAgentFrontmatter`, `toHaveAgentDynamicSkills`                         |
+| Plugin-state fixture         | `e2e/fixtures/plugin-install-state.ts` | `createPluginInstalledProject()`, `uninstallProjectPlugins()`                |
+| Type-narrowing probe         | `e2e/helpers/type-check-probe.ts`      | `probeConfigTypesNarrowing()`                                                |
+
+`createPluginInstalledProject()` reproduces a completed `claude plugin install` **without** the Claude CLI binary — it writes `config.ts` (skills sourced to the marketplace), `settings.json` (`enabledPlugins`), and the fake-HOME `installed_plugins.json` registry directly. Plugin-state tests built on it run unconditionally, with no `describe.skipIf` gate.
+
+`probeConfigTypesNarrowing(claudeSrcDir, aliases)` asserts that a project's generated `config-types.ts` union aliases still REJECT bogus values, by running the repo-local `tsc` over a temporary probe module and reading its verdict. This is the property that matters: a union collapsed to `string` passes a text assertion but silently accepts everything. `exitCode === 0` means the aliases are NOT narrowing (a bug); non-zero with `TS_NOT_ASSIGNABLE` (`"TS2322"`) in the output means they are.
 
 **Never create test data in** `e2e/commands/`, `e2e/interactive/`, `e2e/lifecycle/`, or `e2e/integration/`. Those directories contain only test files.
 
@@ -158,7 +183,7 @@ Use `createTestEnvironment` + `setupDualScope` when you need fine-grained contro
 const { exitCode, output } = await CLI.run(["compile"], project);
 ```
 
-**`runCLI(args, cwd, options?)`** still exists in `test-utils.ts` and returns `{ exitCode, stdout, stderr, combined }`. It takes a raw `cwd` string. New tests should prefer `CLI.run()`. Only `create-e2e-plugin-source.ts` still imports `runCLI` directly.
+**`runCLI(args, cwd, options?)`** still exists in `test-utils.ts` and returns `{ exitCode, stdout, stderr, combined }`. It takes a raw `cwd` string. New tests should prefer `CLI.run()`; `runCLI` remains in use where a test needs an explicit HOME split without a `ProjectHandle` (10 spec files plus `create-e2e-plugin-source.ts`).
 
 Key differences:
 
@@ -169,7 +194,9 @@ Key differences:
 | Location                | `e2e/fixtures/cli.ts` | `e2e/helpers/test-utils.ts` |
 | Preferred for new tests | Yes                   | Legacy                      |
 
-`CLI.run()` sets `HOME=project.dir` and `AGENTSINC_SOURCE=undefined` by default. `runCLI()` sets `HOME=cwd` but does NOT set `AGENTSINC_SOURCE` -- callers must pass it via `options.env` if needed. Both strip ANSI from all output.
+**HOME resolution.** `CLI.run()`'s precedence is `options.env.HOME` > `project.globalHome` > `project.dir` — so a handle produced by `launchInProject` / `launchInGlobal` routes the follow-up command to the same global root the wizard wrote, and a plain-`launch()` handle falls back to `project.dir`. `runCLI()` defaults HOME to a freshly-created **sibling** temp dir (prefix `ai-e2e-home-`), distinct from `cwd`, removed in a `finally`; an explicit `options.env.HOME` wins and is never auto-removed. Neither sets `HOME=cwd` — that collapse was removed in D-226, because `os.homedir() === cwd` silently forces a project command into global scope.
+
+`CLI.run()` sets `AGENTSINC_SOURCE=undefined` by default; `runCLI()` does NOT -- callers must pass it via `options.env` if needed. Both strip ANSI from all output.
 
 **Do NOT spread `process.env` into `env`.** `execa` inherits `process.env` automatically. Spreading it clobbers the `HOME` override that both `CLI.run()` and `runCLI()` set for isolation:
 
@@ -187,34 +214,41 @@ await CLI.run(["compile"], project);
 
 These are still exported and used in some tests. Matchers are preferred for assertions, but these exist for edge cases where no matcher covers the need:
 
-| Export                                   | Purpose                                                             |
-| ---------------------------------------- | ------------------------------------------------------------------- |
-| `FORKED_FROM_METADATA`                   | Standard `forkedFrom` metadata block for plugin/uninstall tests     |
-| `listFiles(dirPath)`                     | `readdir` wrapper, returns `[]` on error instead of throwing        |
-| `readTestFile(filePath)`                 | `readFile(path, "utf-8")` wrapper                                   |
-| `agentsPath(dir)`                        | Returns path to `.claude/agents/` in a project                      |
-| `getEjectedTemplatePath(dir)`            | Returns path to ejected `agent.liquid` template                     |
-| `stripAnsi(text)`                        | Strips ANSI escape sequences (rarely needed -- CLI.run pre-strips)  |
-| `createLocalSkill(dir, id, opts?)`       | Creates a skill directory with SKILL.md + optional metadata.yaml    |
-| `writeProjectConfig(dir, config)`        | Writes `.claude-src/config.ts` (used internally by ProjectBuilder)  |
-| `createPermissionsFile(dir)`             | Writes `.claude/settings.json` with default permissions             |
-| `skillsPath(dir)`                        | Returns path to `.claude/skills/` in a project                      |
-| `addForkedFromMetadata(dir)`             | Writes forkedFrom metadata to default web-framework-react skill     |
-| `injectMarketplaceIntoConfig(dir, name)` | Patches marketplace field into existing config.ts                   |
-| `delay(ms)`                              | Framework-internal wait utility (not for use in test `it()` blocks) |
-| `createE2ESource()`                      | Re-export from create-e2e-source.ts                                 |
-| `ensureBinaryExists()`                   | Verifies `bin/run.js` exists, throws if not                         |
-| `BIN_RUN`                                | Absolute path to `bin/run.js` binary                                |
-| `CLI_ROOT`                               | Absolute path to repository root                                    |
-| `renderSkillMd(id, desc, body?)`         | Re-export from content-generators.ts                                |
-| `renderConfigTs(config)`                 | Re-export from content-generators.ts                                |
-| `renderAgentYaml(agent)`                 | Re-export from content-generators.ts                                |
-| `fileExists(path)`                       | Re-export from test-fs-utils.ts                                     |
-| `directoryExists(path)`                  | Re-export from test-fs-utils.ts                                     |
-| `isClaudeCLIAvailable()`                 | Re-export from exec.ts -- checks if Claude CLI binary is available  |
-| `claudePluginInstall(...)`               | Re-export from exec.ts -- runs `claude plugin install`              |
-| `claudePluginUninstall(...)`             | Re-export from exec.ts -- runs `claude plugin uninstall`            |
-| `execCommand(cmd)`                       | Re-export from exec.ts -- general command execution                 |
+| Export                                                                                          | Purpose                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FORKED_FROM_METADATA`                                                                          | Standard `forkedFrom` metadata block for plugin/uninstall tests                                                                                                      |
+| `listFiles(dirPath)`                                                                            | `readdir` wrapper, returns `[]` on error instead of throwing                                                                                                         |
+| `readTestFile(filePath)`                                                                        | `readFile(path, "utf-8")` wrapper                                                                                                                                    |
+| `readMarketplaceJson(outputPath)`                                                               | Parse a generated `marketplace.json` into `Marketplace` (for `build marketplace` / `new marketplace` tests)                                                          |
+| `agentsPath(dir)`                                                                               | Path to `.claude/agents/` in a project                                                                                                                               |
+| `skillsPath(dir)`                                                                               | Path to `.claude/skills/` in a project                                                                                                                               |
+| `configTsPath(dir)` / `configTypesTsPath(dir)`                                                  | Paths to `.claude-src/config.ts` and `config-types.ts` (project OR global scope dir)                                                                                 |
+| `getEjectedTemplatePath(dir)`                                                                   | Path to the ejected `agent.liquid` template                                                                                                                          |
+| `stripAnsi(text)`                                                                               | Strips ANSI escape sequences (rarely needed -- CLI.run pre-strips)                                                                                                   |
+| `createLocalSkill(dir, id, opts?)`                                                              | Creates a skill directory with SKILL.md + optional metadata.yaml                                                                                                     |
+| `writeProjectConfig(dir, config)`                                                               | Writes `.claude-src/config.ts` (used internally by ProjectBuilder). Emits ONLY config.ts.                                                                            |
+| `writeConfigTypes(dir)`                                                                         | Writes a minimal `config-types.ts` stub — pair with `writeProjectConfig` when the test asserts on the companion file (e.g. uninstall manifest removal)               |
+| `writeAgentFile(dir, name, opts?)`                                                              | Writes `<dir>/.claude/agents/<name>.md`. Bare `# <name>` heading by default; `opts.frontmatter` prefixes a `name:` block.                                            |
+| `writeAgentStubs(dir, agents)`                                                                  | Writes minimal compiled-agent stubs, as a prior `compile` would leave behind                                                                                         |
+| `createPermissionsFile(dir)`                                                                    | Ensures `.claude/settings.json` grants `Read(*)`. **MERGES, never overwrites** — preserves `enabledPlugins` / `extraKnownMarketplaces`; hard-errors on invalid JSON. |
+| `seedDefaultSourceCache(homeDir, sourceDir)`                                                    | Copies a source into the CLI cache for `DEFAULT_SOURCE` under `homeDir`, so the public-marketplace fallback resolves from disk instead of the network                |
+| `addForkedFromMetadata(dir)`                                                                    | Writes forkedFrom metadata to the default web-framework-react skill                                                                                                  |
+| `injectMarketplaceIntoConfig(dir, name)`                                                        | Patches a marketplace field into an existing config.ts                                                                                                               |
+| `loadConfigOrFail(dir)`                                                                         | Structurally loads a scope's `config.ts`; throws when absent or unparseable (no silent empty-config fallback)                                                        |
+| `readAgentEntriesFor(dir, agentName)`                                                           | Loads a scope's config and returns every `AgentScopeConfig` with that name                                                                                           |
+| `completeWithLocalSources(wizard)`                                                              | Drives init end-to-end with every source switched to local (`l` on the Sources step). Required by tests asserting on `.claude/skills/` contents.                     |
+| `delay(ms)`                                                                                     | Framework-internal wait utility (not for use in test `it()` blocks)                                                                                                  |
+| `pollUntil(isSatisfied, timeoutMs, buildError)`                                                 | Framework-internal poll skeleton behind every `TerminalScreen` wait (predicate evaluated before the first delay)                                                     |
+| `ensureBinaryExists()`                                                                          | Verifies `bin/run.js` exists, throws if not                                                                                                                          |
+| `BIN_RUN` / `CLI_ROOT`                                                                          | Absolute paths to the built binary and the repository root                                                                                                           |
+| `createE2ESource` / `E2E_SKILL_TITLES` / `E2E_AGENT_TITLES` / type `E2ESource`                  | Re-exports from create-e2e-source.ts. The `*_TITLES` maps ARE the text the wizard renders — key label assertions off them.                                           |
+| `renderSkillMd` / `renderConfigTs` / `renderAgentYaml` / `renderAgentMd` / `renderMetadataYaml` | Re-exports from `content-generators.ts`. **Always use these** instead of inlining fixtures.                                                                          |
+| `normalizeGlobalConfig` / `writeTestPackageJson`                                                | Re-exports from the unit-test helper tree (`helpers/config-comparison.ts`, `helpers/config-io.ts`)                                                                   |
+| `fileExists(path)` / `directoryExists(path)` / `cleanupTempDir(dir)`                            | Re-exports from `test-fs-utils.ts`                                                                                                                                   |
+| `isClaudeCLIAvailable()`                                                                        | Re-export from exec.ts -- checks if the Claude CLI binary is available                                                                                               |
+| `claudePluginInstall(...)` / `claudePluginUninstall(...)`                                       | Re-exports from exec.ts                                                                                                                                              |
+| `claudePluginMarketplaceAdd(...)` / `claudePluginMarketplaceList(...)`                          | Re-exports from exec.ts                                                                                                                                              |
+| `execCommand(cmd)`                                                                              | Re-export from exec.ts -- general command execution                                                                                                                  |
 
 ---
 

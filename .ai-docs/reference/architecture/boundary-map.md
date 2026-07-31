@@ -6,12 +6,17 @@ related:
   - reference/architecture/overview.md
   - reference/types/core-types.md
   - reference/config/configuration.md
-last_validated: 2026-07-23
+last_validated: 2026-07-30
 ---
+
+<!--
+  2026-07-30 sweep (product 0.146.0). Pointer only — verified it still points at the
+  root-level original, which is where the 0.146.0 content landed. Date re-stamped.
+-->
 
 # Boundary Map
 
-**Last Validated:** 2026-07-23
+**Last Validated:** 2026-07-30
 
 > **Reorganized from:** `reference/boundary-map.md`. The original file is preserved during migration.
 

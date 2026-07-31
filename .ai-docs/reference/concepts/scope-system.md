@@ -30,8 +30,11 @@ related:
   - reference/wizard/component-patterns.md
   - reference/concepts/tombstone-pattern.md
   - reference/concepts/guard-pattern.md
+  - reference/types/core-types.md
 last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0): verified the path-resolution, predicate and splitting claims against install-base-dir.ts, scope-predicates.ts, config-generator.ts and local-installer.ts — all held. Gaps closed this pass: added "Cross-Scope Reconciliation Before Project Writes", the D-279 step that runs immediately before BOTH project-config write paths (writeScopedConfigs previously reconciled at neither); made the write-order explicit in the writeScopedConfigs list; added an explicit statement that a globally installed item is immutable from project scope in EVERY flow including init, with the domain-deselect view-filter rule and its no-reachable-UI-surface caveat -->
 
 # Scope System (Project vs Global)
 
@@ -136,10 +139,34 @@ Splits a `ProjectConfig` into global and project partitions by skill/agent scope
 Writes:
 
 1. Global config to `~/.claude-src/config.ts` (standalone) — merged into any existing global config via `mergeGlobalConfigs()`, then written only when `resolveEffectiveGlobalConfig()` reports a change
-2. Project config to `{projectDir}/.claude-src/config.ts` (self-contained snapshot via `generateProjectConfigWithInlinedGlobal()` -- both global and project entries inlined, no import/spread)
+2. Project config to `{projectDir}/.claude-src/config.ts` (self-contained snapshot via `generateProjectConfigWithInlinedGlobal()` -- both global and project entries inlined, no import/spread). The split is passed through `reconcileProjectSplitAgainstGlobal()` **first** -- see [Cross-Scope Reconciliation](#cross-scope-reconciliation-before-project-writes) below.
 3. Config-types files: the global config-types is standalone (`writeStandaloneConfigTypes`); the project config-types is written via `regenerateConfigTypes`, whose global-aware branch imports `GlobalSkillId`/`GlobalAgentName` from the global types and extends them with project-only additions when a global install exists (falls back to standalone otherwise)
 
 When installing from the home directory (detected via `isHomeDirectory(projectDir)` in `src/cli/lib/installation/is-home-directory.ts`, which compares `fs.realpathSync` of the dir and `os.homedir()`), scope splitting is skipped: a single standalone global config is written via `writeConfigFile` + `writeStandaloneConfigTypes`, and changes propagate to all registered projects via `propagateGlobalChangesToProjects`.
+
+## Cross-Scope Reconciliation Before Project Writes
+
+**Function:** `reconcileProjectSplitAgainstGlobal(projectSplit, globalConfig, matrix)` in `src/cli/lib/installation/local-installer.ts` (D-279).
+
+Splitting by scope is **not sufficient** on its own. A project config is written as a self-contained snapshot with the global entries inlined, so if the project owns an entry that collides with a live global install, both land as **active** entries in the same file — two live skills in one exclusive category, which the wizard then shows as both selected and seeds into a fresh agent stack. Neither `doctor` nor `validate` catches it, because neither checks config semantics.
+
+**Two project-config write paths exist, and this step now runs immediately before both:**
+
+| Write path                                            | File                 | Trigger                                                 |
+| ----------------------------------------------------- | -------------------- | ------------------------------------------------------- |
+| `propagateGlobalChangesToProjects`                    | `local-installer.ts` | A global change fanning out to every registered project |
+| The project-scope save branch of `writeScopedConfigs` | `local-installer.ts` | An ordinary project `init` / `edit`                     |
+
+Before D-279 only the first reconciled at all; the project's own save path handed the raw split straight to the inlining writer. Either path alone can produce the malformed shape, so both must run it.
+
+**What it does** (details and the full predicate table in [tombstone-pattern.md](./tombstone-pattern.md)):
+
+1. Self-heal first — `dropOrphanedDerivedMasks` (skills) and `dropOrphanedDerivedAgentMasks` (agents) drop a mask whose collision has cleared.
+2. Then mask — `maskCollidingGlobalSkills` / `maskCollidingGlobalAgents` append `{ ...globalEntry, excluded: true }` for each live global entry that collides with the project's own state.
+
+**Collision kinds:** identity (the project owns the same id/name active at project scope — skills _and_ agents), or a different active project skill in the same **matrix-declared exclusive** category (skills only; agents have no categories).
+
+**Scope invariant:** reconciliation is applied to the **project split only**. `globalConfig` is a read-only input — masks never reach `~/.claude-src/config.ts`. This is the same invariant `splitConfigByScope` enforces for tombstones.
 
 ## Config Writer Scope Handling
 
@@ -226,6 +253,27 @@ The lock icon lives in the **Sources step**, not the build step. `source-grid.ts
 ### SkillAgentSummary Scope Display
 
 `skill-agent-summary.tsx` renders `ScopeLabel` components (white-on-LABEL_BG badges showing "Project" or "Global") next to each skill and agent in the confirm step and info panel.
+
+## Global Immutability From Project Scope (D-277)
+
+**Rule:** a globally installed skill or agent can no longer be deselected from a project in **any** flow, `init` included. A global install belongs to the global config, which every project shares, so no project may remove it. `isEditingFromGlobalScope === true` is the sole bypass.
+
+Four paths escaped this rule before D-277; all four are closed:
+
+| Path                                     | Was                                                                           | Now                                                                                                                                               |
+| ---------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Init-mode arm on every global-item guard | `&& !state.isInitMode` bypassed the guard                                     | Arm deleted. `isInitMode` gates no scope guard at all.                                                                                            |
+| Scope move to global, then deselect      | Minted a tombstone for a skill never installed globally (probe ignored scope) | `applySkillRemoval` is ownership-scoped; it never stamps `excluded`.                                                                              |
+| Toggling an agent off                    | Tombstoned the global entry                                                   | `applyAgentToggle`'s deselect branch is a plain removal of what the project owns.                                                                 |
+| Deselecting a domain                     | Tombstoned that domain's global skills, with no guard at all                  | A **view filter**: hides the domain's skills and drops only what the project owns; global entries survive untouched — neither dropped nor masked. |
+
+**Removing the init-mode arm was a production no-op, not a behaviour change.** `Init.run` routes to the dashboard → `edit` whenever `detectInstallation` / `detectGlobalInstallation` finds an install, so `isInitMode === true` implies `installedSkillConfigs === null` — a real `cc init` can never see a global preselection. Deleting the arm closes the bypass at store level so no future caller can reach through it.
+
+**The domain-deselect fix is invariant hardening, not a user-visible change.** `toggleDomain` has exactly two callers — `domain-selection.tsx` (the DOMAINS step) and `stack-selection.tsx` (the init-only "start from scratch" branch). `cc edit` hydrates with `initialStep: "build"` and `history: []`, so ESC cannot walk backwards into the DOMAINS step, and `cc init` in a project with a global install routes to the dashboard first. **No keypress path exists** where a domain deselect can see a globally-installed entry; the guarantee is pinned at unit level in `wizard-store.test.ts`, not by an E2E. See `.ai-docs/agent-findings/2026-07-30-domain-deselect-has-no-reachable-ui-surface-in-edit.md`.
+
+**Escape hatches for the user:** to keep a global skill out of a project, leave it out of that project's agent stacks (see `docs/guides/editing-config.md`). To uninstall it outright, edit at global scope — `agentsinc edit` from the home directory.
+
+**Agent-roster rebuilds merge rather than replace.** `preselectAgentsFromDomains` retains all tombstones plus every non-project-owned entry outside the selected domains' roster, so a globally installed agent outside that roster is no longer silently uninstalled.
 
 ## Global Visibility From Project Scope
 

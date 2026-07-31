@@ -12,6 +12,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
+status: partial
+partial_note: 'Both defects are fixed and Proposed Standard 1 landed; Proposed Standard 2 did not. Landed (verified 2026-07-30): `MigrationResult.failedPluginInstalls` exists in `mode-migrator.ts`, the toPlugin branch installs before deleting the ejected working copy, `edit.tsx` calls `requireMarketplaceOrExit(context.sourceResult, "migrate skills to plugin mode")` before `executeMigration` and hard-errors via `pluginInstallFailureError` on any failure before anything is written. Rule 1 is documented — `reference/features/operations-layer.md` states that callers MUST hard-error on `requireMarketplace` returning `ok: false` BEFORE any filesystem mutation, never silently falling back to eject, and `reference/features/plugin-system.md` records the asymmetric toEject/toPlugin handling citing this finding. Pending: Rule 2. `standards/e2e/anti-patterns.md` has no rule that a test asserting config state after a plugin operation must also assert the operation happened, and `e2e/interactive/edit-wizard-plugin-migration.e2e.test.ts` still asserts only exit code, two output substrings and `toHaveConfig` — it would not catch a regression to silent install failure, exactly as the finding predicted.'
 ---
 
 ## What Was Wrong

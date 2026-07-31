@@ -31,8 +31,11 @@ related:
   - reference/config/config-merger.md
   - reference/config/config-writer.md
   - reference/architecture/overview.md
+  - reference/types/core-types.md
 last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0): verified every D-277/D-279 claim against local-installer.ts and wizard-store.ts — all held. Gap closed this pass: added the "Mask vs. Tombstone" terminology section the superseded 2026-07-29 finding asked for, so the two senses of `{ excluded: true }` are named and distinguishable rather than both called "tombstone"; added the mask-lifetime/provenance rule (bare ⇒ system-derived by construction, hence the single retention test) and the mask decision table with the exact source predicates; recorded that a mask is spread from the global entry so it inherits the global install's `source` -->
 
 # Excluded Tombstone Pattern
 
@@ -45,13 +48,35 @@ last_validated: 2026-07-30
 
 A **tombstone** is a config entry with shape `{ id, scope: "global", excluded: true }` (or `{ name, scope: "global", excluded: true }` for agents). It is **project-local state** that suppresses or shadows a shared global install without mutating the global config that other projects read.
 
-A tombstone's provenance is not recorded on disk — both remaining routes emit the same byte-identical shape: the global half of a dual-scope `[P][G]` pair (wizard store, via the `s` scope toggle), or a **derived conflict mask** synthesized at write time when a live global entry collides with the project's own state (see "Creation outside the wizard" below). **Deselection is no longer a route (D-277):** a project-scope deselect of a globally-installed skill or agent is refused with a toast, so the wizard can no longer mint a tombstone by removal. Because the only user-authored route always pairs the tombstone with an active project entry for the same id, a **bare** tombstone (no active project sibling) is necessarily machine-derived — which is what lets the derived-mask self-heal key on one test: "does the collision that produced it still hold?"
+Exactly two routes emit it, and they emit the same byte-identical shape: the global half of a dual-scope `[P][G]` pair (wizard store, via the `s` scope toggle), or a **derived conflict mask** synthesized at write time. **Deselection is no longer a route (D-277).** See [Mask vs. Tombstone](#mask-vs-tombstone--terminology) immediately below for the two senses and the provenance rule — that section is the single place the distinction is defined; do not restate it elsewhere.
 
 A tombstone is always:
 
 - At **`scope: "global"`** — project-scoped entries never need tombstones (they are just removed).
 - Stored in the **project** config (`<projectDir>/.claude-src/config.ts`), never in `~/.claude-src/config.ts`. See [scope-split.md](../config/scope-split.md).
 - A **slot occupant**: it holds the `(id, "global")` or `(name, "global")` slot in the config so the renderer and merger can distinguish "still installed globally, suppressed locally" from "removed entirely".
+
+## Mask vs. Tombstone — Terminology
+
+Two senses of the same persisted shape. **They are byte-identical on disk.** Use the right word: the docs, the changelog and the source all distinguish them, and a rule written for one is wrong for the other.
+
+| Term                      | What it is                                                                                                      | Who writes it                                                                                  | Where it lives      |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------- |
+| **Tombstone** (umbrella)  | The persisted shape `{ id \| name, scope: "global", excluded: true }`. A slot occupant.                         | Either producer below.                                                                         | Project config only |
+| **Dual-scope half**       | The global half of a `[P][G]` pair. Always accompanied by an **active project entry of the same id**.           | The wizard store, via the `s` scope toggle (G→P) — `toggleSkillScope` / `toggleAgentScope`.    | Project config only |
+| **Derived conflict mask** | A hide-this-global directive synthesized at write time because a live global entry collides with project state. | `reconcileProjectSplitAgainstGlobal` in `src/cli/lib/installation/local-installer.ts` (D-279). | Project config only |
+
+**Neither ever appears in `~/.claude-src/config.ts`.** Masking is applied to the project split only; the global config passed into reconciliation is read, never rewritten.
+
+**Provenance is not recorded on disk — it is _inferred from the collision_.** There is no marker field. What makes the inference sound is a construction argument rather than data:
+
+1. Since D-277 no store path can mint a **bare** tombstone. A project-scope deselect of a globally-installed skill or agent is refused with a toast; `applySkillRemoval` and `applyAgentToggle` no longer stamp `excluded` at all; a domain deselect drops only what the project owns.
+2. The one remaining user route (`s`, G→P) **always** pairs the tombstone with an active project entry for the same id — that is, an identity collision.
+3. Therefore **every bare tombstone is system-derived by construction**, and a single retention test suffices: keep it iff the collision that would re-derive it still holds.
+
+This is what let the self-heal generalise. The **interim** rule — shipped with the first masking implementation, before D-277 landed in the same release — retained a mask only in categories the matrix declares **both `exclusive` and `required`**. That class was not chosen because it was principled, but because a derived mask and a deliberate user exclusion were then indistinguishable on disk, so any broader rule risked resurrecting a knowingly-deselected skill; the narrow class was the one where the wizard's own only-skill guard already made a lone tombstone provably machine-derived. Its cost: in an _optional_ exclusive category the mask outlived its collision forever. Once D-277 made user-authored bare tombstones unreachable, the ambiguity disappeared and the `exclusive && required` narrowing was deleted. See `.ai-docs/agent-findings/2026-07-29-derived-mask-and-user-tombstone-are-indistinguishable.md` (superseded) and `.ai-docs/agent-findings/2026-07-30-d277-global-immutability-collapses-tombstone-provenance.md`.
+
+> **Consequence for tests:** a fixture asserting that an `excluded: true` entry survives a write must set up the thing that justifies it — an active project-scoped entry for the same id/name (identity), or an active project skill in the same matrix-declared `exclusive` category. A bare tombstone with no collision is by definition orphaned and the self-heal drops it.
 
 **Tombstones are only created when editing FROM project scope** (`isEditingFromGlobalScope === false`). Because a tombstone is project-local state that shadows a global install for _this_ project, it is meaningless when the config being edited IS the global config. When editing FROM global scope (`cc edit` at `~/`, `isEditingFromGlobalScope === true`), there is no project overlay, so a deselect is a **genuine removal** — the skill/agent is dropped entirely, never tombstoned. This keeps the invariant "tombstones never appear in `~/.claude-src/config.ts`" true even during a global-context edit (D-233). `applySkillRemoval` receives `null` for its installed-configs argument when editing from global scope (via `reconcileSkillConfigs` / `toggleDomain` / `toggleFilterIncompatible`), which makes every removed id droppable; at project scope the same argument identifies what the project merely inherits and may not touch.
 
@@ -102,7 +127,22 @@ The wizard-store rows above are no longer the only creation site. `reconcileProj
 | The project owns the **same id** active at project scope (skills and agents)                                               | `maskCollidingGlobalSkills` / `maskCollidingGlobalAgents` | Appends `{ ...globalEntry, excluded: true }` so the pair renders `[P][G]`.                                                                                 |
 | The project owns a **different** active skill in the same **exclusive** category (skills only — agents have no categories) | `maskCollidingGlobalSkills`                               | Masks the global entry; the project-owned skill wins locally. This mask has NO active project sibling — it is the one legitimately "bare" tombstone shape. |
 
-Masking is idempotent (an already-tombstoned id is skipped), reads `exclusive` from the **merged matrix** (strict `=== true`; undeclared flags never mask), never throws on custom/local skills without a matrix entry, and never writes into the global config.
+**The collision predicate is shared.** `buildProjectCollisionTest(projectOwnedSkills, matrix)` returns an `(id: SkillId) => boolean` used by BOTH the mask producer and the self-heal, so the two can never disagree about what a mask means. It answers true when either:
+
+- **Identity** — `id` is in the set of ids the project holds `isActiveAt(entry, "project")`; or
+- **Category** — `categoryOfSkill(id, matrix)` is in the set of categories occupied by an active project-scoped skill AND `isExclusiveCategory(category, matrix)`.
+
+Supporting rules, each verified in `local-installer.ts`:
+
+| Rule                             | Implementation                                                                                                                                                                                                                                                                                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Idempotent                       | `alreadyTombstoned` set skips any id/name the project already tombstones, so re-running the write is a no-op.                                                                                                                                                                                                                                                |
+| Exclusivity read from the matrix | `isExclusiveCategory` is `matrix.categories[category]?.exclusive === true` — the **merged** matrix, so a source repo's category overrides win.                                                                                                                                                                                                               |
+| Undeclared flag never masks      | Strict `=== true`. The wizard **renderer** defaults an undeclared category to exclusive (`cat.exclusive ?? true` in `src/cli/lib/wizard/build-step-logic.ts` and `src/cli/components/hooks/use-build-step-props.ts`); masking deliberately does **not**, because a rule that masks **persisted** entries must only fire on a flag the data actually carries. |
+| Never throws on custom skills    | `categoryOfSkill` returns `undefined` for an id the matrix has no entry for, and for the `local` pseudo-category — neither participates in category rules.                                                                                                                                                                                                   |
+| Mask inherits the global source  | The mask is `{ ...globalEntry, excluded: true }`, spread from the global entry, so it carries the global install's `source`.                                                                                                                                                                                                                                 |
+| Global config never written      | Masking applies to the project split only; `globalConfig` is a read-only input.                                                                                                                                                                                                                                                                              |
+| Self-heal ordered first          | `reconcileProjectSplitAgainstGlobal` runs `dropOrphanedDerivedMasks` / `dropOrphanedDerivedAgentMasks` **before** masking on both axes, so a cleared mask is removed rather than immediately re-derived, and `alreadyTombstoned` only sees masks that are still warranted.                                                                                   |
 
 **Self-heal (generalised in D-277):** `dropOrphanedDerivedMasks` (skills) and `dropOrphanedDerivedAgentMasks` (agents) run **before** masking and drop a mask whose collision has cleared. Both key on the _same_ collision test the mask producer uses — `buildProjectCollisionTest` for skills (identity, or an active project skill in the same exclusive category), active-project-name identity for agents — so producer and self-heal can never disagree about what a mask means. The old `exclusive && required` narrowing is gone: with deselection no longer able to author a bare tombstone (see Creation above), there is no "deliberate exclusion" left to resurrect, so a mask is retained on exactly one test — the collision that would re-derive it. This supersedes the trade-off recorded in the finding `2026-07-29-derived-mask-and-user-tombstone-are-indistinguishable.md`.
 

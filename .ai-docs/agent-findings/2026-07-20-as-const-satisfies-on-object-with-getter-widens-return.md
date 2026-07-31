@@ -10,6 +10,8 @@ reporting_agent: cli-tester
 category: typescript
 domain: e2e
 root_cause: convention-undocumented
+status: partial
+partial_note: 'Inverted relative to the enum''s documented direction — the CODE side landed and the DOCS side did not. Landed and still in place (verified 2026-07-30): `E2E_AGENTS` in `e2e/fixtures/expected-values.ts` carries `as const satisfies readonly AgentName[]` on the `WEB` and `API` members with the `WEB_AND_API` getter left uncontextualised, and the sibling `E2E_AGENT` object carries an on-site comment — "Unlike `E2E_AGENTS` below this object has no accessor, so the `satisfies` clause can sit on the object without widening anything" — which is the anti-tidy guard the finding asked for. Pending: the proposed standard. Neither `standards/e2e/anti-patterns.md` nor `standards/clean-code-standards.md` nor `standards/typescript-types-bible.md` states the rule that a `satisfies` clause must never change the type of the thing it annotates, or the getter/method carve-out.'
 ---
 
 ## What Was Wrong

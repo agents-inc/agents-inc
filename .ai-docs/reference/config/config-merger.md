@@ -15,6 +15,8 @@ keywords:
     authoritative-semantics,
     projects-field-preserve,
     authoritative-scope,
+    ConfigLoadError,
+    cross-scope-reconciliation,
   ]
 related:
   - reference/config/configuration.md
@@ -24,6 +26,16 @@ related:
   - reference/concepts/scope-system.md
 last_validated: 2026-07-30
 ---
+
+<!--
+re-validated 2026-07-30 (product 0.146.0): recorded that mergeWithExistingConfig's load leg now THROWS
+ConfigLoadError on a corrupt config instead of falling through to the merged:false stub path (D-273) —
+this was the most load-bearing stale claim in the two-tier fallback section; corrected the "no full config"
+wording to name loadProjectConfig's home-directory fallback; added the D-279 note that neither merge
+function performs cross-scope reconciliation (that runs after the split, in local-installer); added
+mergeGlobalConfigs' role in the global-uninstall path. Merge algebra itself re-verified line-for-line
+against config-merger.ts and local-installer.ts — unchanged.
+-->
 
 # Config Merger Contract
 
@@ -44,6 +56,12 @@ There are only two actual merge functions in the config pipeline. `additiveMerge
 | `mergeAgentCategories` | `src/cli/lib/installation/local-installer.ts` (private)               | Mutates a cloned agent stack in place; appends missing categories and skill assignments.                                       | `additiveMergeStack`                               |
 
 The policy mismatch is intentional: `mergeConfigs` reconciles the wizard's full output with whatever is on disk (tombstones, scope migrations, and dual-scope pairs are expressed via `newConfig` and must reach disk verbatim). `mergeGlobalConfigs` reconciles one project's global slice with the shared `~/.claude-src/config.ts` (other projects' global contributions must never be removed by a project-level write).
+
+### What neither merge function does: cross-scope reconciliation (D-279)
+
+Neither function compares a project entry against a global entry. `mergeConfigs` sees one config's worth of rows keyed by compound key; `mergeGlobalConfigs` only ever appends. The rule that a project-owned skill and a colliding live global install cannot both be active is enforced **after** the split, by `reconcileProjectSplitAgainstGlobal` in `local-installer.ts`, immediately before each project-config write. Do not add a collision rule to either merge function — see [config-writer.md](./config-writer.md) → "Cross-Scope Reconciliation" for the shared helper and its two write sites.
+
+`mergeGlobalConfigs` is also not involved in the global-uninstall fan-out: `pruneGlobalEntriesFromRegisteredProjects` bypasses merging entirely and re-enters `propagateGlobalChangesToProjects` with an emptied global config.
 
 ## `mergeConfigs` — Replace-on-Match Semantics
 
@@ -126,12 +144,16 @@ Before the fix the written global config lost its `"projects": [...]` entry, and
 
 where `MergeContext = { projectDir: string; authoritativeScope?: AuthoritativeScope; unresolvableSkillIds?: readonly SkillId[] }` and `MergeResult = { config: ProjectConfig; merged: boolean; existingConfigPath?: string }`.
 
-Two-tier fallback:
+Two-tier fallback, gated on `loadProjectConfig(context.projectDir)`:
 
-1. **Full config exists** at `projectDir/.claude-src/config.ts` → call `mergeConfigs(newConfig, existingFullConfig.config, { authoritativeScope, unresolvableSkillIds })`, return `{ merged: true, existingConfigPath }`.
-2. **No full config, only legacy source stub** → copy `author` and `agentsSource` from the simple project source config if present. Return `{ merged: false }`.
+1. **Full config loads** → call `mergeConfigs(newConfig, existingFullConfig.config, { authoritativeScope, unresolvableSkillIds })`, return `{ merged: true, existingConfigPath }`.
+2. **Load returns `null`** → copy `author` and `agentsSource` from the legacy project source stub (`loadProjectSourceConfig`) if present. Return `{ merged: false }`.
 
 The `merged: false` path never calls `mergeConfigs` — there is nothing to reconcile. `buildAndMergeConfig` (in `local-installer.ts`) is the production caller that threads `authoritativeScope` and `wizardResult.unresolvableSkillIds` into the context.
+
+**`loadProjectConfig`, not `loadProjectConfigFromDir`.** The load leg checks `context.projectDir` first and then falls back to `os.homedir()` when `projectDir` is not already home. A project with no `.claude-src/config.ts` of its own therefore merges against the GLOBAL config, not against nothing.
+
+**Third outcome since D-273: the load can THROW.** `loadProjectConfigFromDir` returns `null` only when the config file is MISSING; a file that exists but cannot be loaded (evaluation error, no object default export, loader-schema violation) raises `ConfigLoadError`. `mergeWithExistingConfig` does not catch it, so it propagates through `buildAndMergeConfig` → `writeProjectConfig` → the calling command. This is deliberate: a corrupt config previously read as `null` and dropped the wizard into the tier-2 stub path, where the entire on-disk roster was invisible and the next write silently replaced it. See [../features/configuration.md](../features/configuration.md) → "Config Load Outcomes".
 
 ## `mergeGlobalConfigs` — Additive Semantics
 
@@ -206,17 +228,21 @@ The reverse (P→G) relies on `mergeConfigs` step 2 to drop the tombstone: `newC
 - `mergeGlobalConfigs`, `additiveMergeStack`, `mergeAgentCategories`: `local-installer.ts`.
 - Call site threading `mergeGlobalConfigs` into writes: `writeScopedConfigs` project-context branch in `local-installer.ts`.
 - Call site threading `mergeConfigs` into writes: `buildAndMergeConfig` → `writeProjectConfig` operation.
-- Unit tests: `config-merger.test.ts` (`mergeConfigs`, `mergeWithExistingConfig`), `local-installer.test.ts` (`mergeGlobalConfigs` describe block).
+- `ConfigLoadError`, `loadProjectConfig`, `loadProjectConfigFromDir`: `src/cli/lib/configuration/project-config.ts`.
+- Post-split cross-scope reconciliation (NOT in either merger): `reconcileProjectSplitAgainstGlobal` in `local-installer.ts`.
+- Unit tests: `config-merger.test.ts` (`mergeConfigs`, `mergeWithExistingConfig`), `project-config.test.ts` (`ConfigLoadError` cases), `local-installer.test.ts` (`mergeGlobalConfigs` describe block).
 
 ## Findings That Shaped This Doc
 
 Finding files with a live path below exist in `.ai-docs/agent-findings/`; April-2026 rows marked _(archived)_ were consolidated during a findings regeneration and survive here as provenance only.
 
-| Finding                                                             | Contribution                                                                                            |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| agent-merge-key-mismatch-with-skills _(archived, 2026-04-06)_       | Compound keys for agents to match the existing skill pattern.                                           |
-| merger-authoritative-for-names-semantic _(archived, 2026-04-17)_    | Authoritative-for-names semantic; dual-scope invariant is load-bearing.                                 |
-| merge-global-configs-per-agent-update-loss _(archived, 2026-04-17)_ | Per-agent update loss bug in `mergeGlobalConfigs` stack policy.                                         |
-| `2026-04-18-mergeConfigs-drops-projects-field.md`                   | Original `projects` field drop report.                                                                  |
-| `2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`         | `projects` drop fixed in `mergeConfigs`; home-context propagation reachable.                            |
-| `2026-07-20-config-merge-functions-disagree-on-source-identity.md`  | `mergeGlobalConfigs` now carries `marketplace`/`source` fill-only; the source-identity precedence rule. |
+| Finding                                                                 | Contribution                                                                                            |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| agent-merge-key-mismatch-with-skills _(archived, 2026-04-06)_           | Compound keys for agents to match the existing skill pattern.                                           |
+| merger-authoritative-for-names-semantic _(archived, 2026-04-17)_        | Authoritative-for-names semantic; dual-scope invariant is load-bearing.                                 |
+| merge-global-configs-per-agent-update-loss _(archived, 2026-04-17)_     | Per-agent update loss bug in `mergeGlobalConfigs` stack policy.                                         |
+| `2026-04-18-mergeConfigs-drops-projects-field.md`                       | Original `projects` field drop report.                                                                  |
+| `2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`             | `projects` drop fixed in `mergeConfigs`; home-context propagation reachable.                            |
+| `2026-07-20-config-merge-functions-disagree-on-source-identity.md`      | `mergeGlobalConfigs` now carries `marketplace`/`source` fill-only; the source-identity precedence rule. |
+| `2026-07-29-project-config-written-by-two-paths-only-one-reconciled.md` | Cross-scope reconciliation is a property of the WRITE, not of either merge function.                    |
+| `2026-07-30-d277-global-immutability-collapses-tombstone-provenance.md` | Why "absent from `newConfig`" no longer means "deselected" for a global entry under `"owned"`.          |

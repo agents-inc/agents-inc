@@ -11,6 +11,7 @@ reporting_agent: general-purpose
 category: architecture
 domain: cli
 root_cause: convention-undocumented
+status: open
 ---
 
 ## What Was Wrong

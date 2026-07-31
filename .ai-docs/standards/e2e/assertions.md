@@ -1,6 +1,8 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added the three assertion utilities the doc omitted — expectFullInstallation (phase-assertions), expectNoDuplicates and normalizeConfigPreservingOrder (config-assertions); completed the expected-value constant list (E2E_SKILL, E2E_AGENT, E2E_AGENT_DISPLAY were missing); added an "Assert the Surface That Retains the Value" section covering getOutput()'s in-place-repaint loss and the *Awaiting raw-output methods; added the rule that colour is never assertable in E2E (NO_COLOR harness) and belongs in a component test; re-verified all 12 project matchers and 2 agent matchers against matchers/setup.ts — unchanged -->
 
 # Assertions
 
@@ -190,6 +192,10 @@ await expectCleanUninstall(projectDir, { removeConfig: true }); // --all flag
 await expectCleanUninstall(projectDir, { preservedSkills: ["my-custom-skill"] });
 ```
 
+### `expectFullInstallation(...)`
+
+Also in `phase-assertions.ts`. The heavier sibling of `expectPhaseSuccess` for flows that must verify a complete install rather than one phase's outcome.
+
 ### `expectDualScopeInstallation(globalHome, projectDir, expected)`
 
 Verifies both scopes have correct config and compiled agents.
@@ -202,6 +208,10 @@ await expectDualScopeInstallation(fakeHome, projectDir, {
   project: { skillIds: ["api-framework-hono"], agents: ["api-developer"] },
 });
 ```
+
+### `expectNoDuplicates(arr, label, context?)` and `normalizeConfigPreservingOrder(config)`
+
+In `e2e/assertions/config-assertions.ts`. `expectNoDuplicates` asserts a string array holds no repeats, with `label`/`context` folded into the failure message — use it for skill-id and agent-name lists where a duplicate is the bug. `normalizeConfigPreservingOrder` normalizes generated config text for comparison while KEEPING declaration order, so it can be diffed against an expected snapshot; the unit-side `normalizeGlobalConfig` is the order-INSENSITIVE counterpart.
 
 ---
 
@@ -250,8 +260,13 @@ Available constants:
 
 - `E2E_AGENTS.WEB` — web-scope agent names
 - `E2E_AGENTS.API` — api-scope agent names
-- `E2E_AGENTS.WEB_AND_API` — both scopes combined
-- `E2E_SKILL_IDS` — all 9 skill IDs from the E2E source
+- `E2E_AGENTS.WEB_AND_API` — both scopes combined (computed getter)
+- `E2E_SKILL_IDS` — all 9 skill IDs from the E2E source, as a tuple
+- `E2E_SKILL` — per-skill `id` <-> `slug` <-> `display` map
+- `E2E_AGENT` — per-agent `name` <-> `display` map
+- `E2E_AGENT_DISPLAY` — re-export of `E2E_AGENT_TITLES` from `create-e2e-source.ts`
+
+`E2E_SKILL_TITLES` / `E2E_AGENT_TITLES` are written into each fixture's `metadata.yaml`, so they ARE the text the wizard renders. **Any assertion matching rendered skill or agent text must key off these rather than re-typing the string** — that includes the exact labels `BuildStep.focusSkill` / `selectSkill` take, which are matched with `===` after decoration stripping.
 
 ---
 
@@ -353,6 +368,24 @@ expect(output).toContain(STEP_TEXT.COMPILE_SUCCESS);
 ```
 
 **Never assert on single characters or whitespace.** `toContain("+")` matches skill IDs, not change indicators. `toContain("G ")` matches any word starting with G. Use distinctive substrings.
+
+---
+
+## Assert the Surface That Retains the Value
+
+Three output surfaces exist, and they do not hold the same thing.
+
+| Surface                                                                | What it holds                                                              | Assert on it when                                        |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `getScreen()`                                                          | The visible viewport only                                                  | The assertion must ignore scrollback                     |
+| `getOutput()` / `getFullOutput()`                                      | xterm's PROCESSED buffer: current screen + whatever genuinely scrolled off | The value is on screen at capture time                   |
+| `getRawOutput()` / `waitForRawText` / `waitForTextAfter` / `*Awaiting` | Every byte the process wrote — append-only                                 | The value may already have been overwritten by a repaint |
+
+**`getOutput()` is not a frame log.** Ink redraws in place, so when a frame fits the viewport each repaint overwrites the previous one and nothing enters scrollback. A value that was rendered and then re-rendered differently is unrecoverable from it. Never assert "an earlier frame contained X" via `getOutput()`.
+
+**Toasts are always a raw-output assertion.** They render in an absolutely-positioned row Ink rewrites in place. Use the `*Awaiting` step methods (`toggleFocusedSkillAwaiting`, `selectSkillAwaiting`, `toggleFilterIncompatibleAwaiting`, `toggleFocusedAgentAwaiting`, `confirmAwaiting`), which snapshot a raw cursor before the press and wait on raw output after it. A non-anchored raw match would be satisfied by an earlier frame's residue.
+
+**Colour is never assertable in E2E.** The harness runs with `NO_COLOR`, so every E2E spec asserts the marker (`+`, `-`, `~`, `•`), not the colour. In-grid selected state is likewise colour-only in the build grid — read it via `getExclusiveCategorySelectedCount(category)`, the sole text-observable signal. A "these two surfaces use the same colour" contract needs a component test with a forced chalk level; see [reference/testing/infrastructure.md § Asserting Colour in Ink Component Tests](../../reference/testing/infrastructure.md).
 
 ---
 
