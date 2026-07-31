@@ -608,13 +608,17 @@ function collectRemovedInstalledEntries(
  * D-258: every `(id, scope)` slot the hydration snapshot occupies — the baseline a Sources row is
  * "added" against, and the direct counterpart of `computeScopeDiff`'s `prevSkillKeySet`. Tombstones
  * count as occupied, exactly as that set does (D-232), so re-reading a stored tombstone never flags
- * a spurious addition. `null` during init: with no snapshot there is nothing to diff against, which
- * keeps init from flagging every row.
+ * a spurious addition.
+ *
+ * A missing snapshot (a first `init`, nothing installed at either scope) collapses to the EMPTY set
+ * rather than to a distinct "no baseline" state, because the two are the same answer: an empty
+ * baseline occupies no slot, so every row is new — which is what `classifyDiffRow` already tells the
+ * confirm step for a null baseline, and what an empty snapshot already told this surface.
  */
 function collectInstalledSkillSlots(
   installedSkillConfigs: SkillConfig[] | null,
-): Set<string> | null {
-  if (!installedSkillConfigs) return null;
+): ReadonlySet<string> {
+  if (!installedSkillConfigs) return new Set();
   return new Set(installedSkillConfigs.map((sc) => skillSlotKey(sc.id, sc.scope)));
 }
 
@@ -627,11 +631,10 @@ function collectInstalledSkillSlots(
  * addition is an addition regardless of edit context.
  */
 function addedSlotFlag(
-  installedSkillSlots: ReadonlySet<string> | null,
+  installedSkillSlots: ReadonlySet<string>,
   id: SkillId,
   scope: SkillScope | undefined,
 ): { added?: true } {
-  if (!installedSkillSlots) return {};
   return installedSkillSlots.has(skillSlotKey(id, scope)) ? {} : { added: true };
 }
 
@@ -669,7 +672,7 @@ type SourceRowContext = {
   installedSkillConfigs: SkillConfig[] | null;
   isEditingFromGlobalScope: boolean;
   /** D-258: `(id, scope)` slots the snapshot occupies — the baseline each row's `+` derives from. */
-  installedSkillSlots: ReadonlySet<string> | null;
+  installedSkillSlots: ReadonlySet<string>;
 };
 
 /**
@@ -716,7 +719,7 @@ function toLockedGlobalRow(
   skillId: SkillId,
   options: SourceOption[],
   installedSource: string | undefined,
-  installedSkillSlots: ReadonlySet<string> | null,
+  installedSkillSlots: ReadonlySet<string>,
 ): SourceRow {
   return {
     skillId,
@@ -868,7 +871,6 @@ export type WizardState = {
 
   showSettings: boolean;
   showInfo: boolean;
-  enabledSources: Record<string, boolean>;
 
   selectedAgents: AgentName[];
   agentConfigs: AgentScopeConfig[];
@@ -1044,13 +1046,6 @@ export type WizardState = {
   /** Set a temporary toast message, or null to clear it. */
   setToastMessage: (message: string | null) => void;
   /**
-   * Replace the full set of enabled/disabled sources.
-   * @param sources - Record of source name to enabled boolean. Empty-string keys are filtered out.
-   *
-   * Side effects: sets `enabledSources`
-   */
-  setEnabledSources: (sources: Record<string, boolean>) => void;
-  /**
    * Add a bound skill from search to the wizard's bound skills list.
    * Duplicates (same id + sourceUrl) are silently skipped with a warning.
    *
@@ -1175,7 +1170,6 @@ type WizardStateData = Pick<
   | "customizeSources"
   | "showSettings"
   | "showInfo"
-  | "enabledSources"
   | "selectedAgents"
   | "agentConfigs"
   | "focusedAgentId"
@@ -1208,7 +1202,6 @@ export const createInitialState = (overrides?: Partial<WizardStateData>): Wizard
   customizeSources: false,
   showSettings: false,
   showInfo: false,
-  enabledSources: {},
   selectedAgents: [],
   agentConfigs: [],
   focusedAgentId: null,
@@ -1599,15 +1592,6 @@ export const useWizardStore = create<WizardState>((set, get) => ({
   toggleInfo: () => set((state) => ({ showInfo: !state.showInfo })),
 
   setToastMessage: (message) => set({ toastMessage: message }),
-
-  setEnabledSources: (sources) => {
-    const invalidKeys = Object.keys(sources).filter((key) => !key.trim());
-    if (invalidKeys.length > 0) {
-      warn("Ignoring setEnabledSources call with empty source name(s)");
-    }
-    const validSources = Object.fromEntries(Object.entries(sources).filter(([key]) => key.trim()));
-    return set({ enabledSources: validSources });
-  },
 
   bindSkill: (skill) =>
     set((state) => {

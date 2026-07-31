@@ -2424,6 +2424,32 @@ describe("WizardStore", () => {
       expect(rows[1].disabled).toBe(true);
     });
 
+    it("should mark every row added when there is no installation snapshot", () => {
+      const store = useWizardStore.getState();
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      // A first init hydrates no snapshot. An absent baseline occupies no slot, so every row is
+      // new — the same answer computeScopeDiff gives the confirm step, which prints `+` on every
+      // row of a first install.
+      useWizardStore.setState({ installedSkillConfigs: null });
+
+      const rows = store.buildSourceRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].added).toBe(true);
+    });
+
+    it("should mark every row added when the installation snapshot is empty", () => {
+      const store = useWizardStore.getState();
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      // "No snapshot" and "empty snapshot" are the same baseline and must classify identically —
+      // the divergence between them is what left a first init unmarked while the confirm step
+      // marked the same rows added.
+      useWizardStore.setState({ installedSkillConfigs: [] });
+
+      const rows = store.buildSourceRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].added).toBe(true);
+    });
+
     it("should mark only the project half of an adopted global skill as added", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
