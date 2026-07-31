@@ -12,6 +12,7 @@ export {
   type ScopeDiffInput,
   type SkillDiffRow,
   type ScopeBadges,
+  agentSlotKey,
   computeScopeDiff,
   deriveScopeBadges,
   formatScopeTag,

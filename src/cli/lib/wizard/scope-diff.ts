@@ -65,7 +65,7 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
       )
     : null;
   const prevAgentKeySet = installedAgentConfigs
-    ? new Set(installedAgentConfigs.map((a) => `${a.name}:${a.scope}`))
+    ? new Set(installedAgentConfigs.map((a) => agentSlotKey(a.name, a.scope)))
     : null;
 
   // Active baseline globals that are overridden at project scope without a
@@ -172,6 +172,16 @@ export function skillSlotKey(id: SkillId, scope: SkillScope | undefined): string
   return `${id}:${scope}`;
 }
 
+/**
+ * The `(name, scope)` SLOT key for an agent — the agent-side counterpart of {@link skillSlotKey},
+ * exported for the same reason. Today only this module diffs agent slots, so there is nothing to
+ * disagree with; the helper exists so that a second surface routes through it from the start rather
+ * than re-deriving the key on `name` alone, which is precisely how the skill side reached D-278.
+ */
+export function agentSlotKey(name: AgentName, scope: SkillScope | undefined): string {
+  return `${name}:${scope}`;
+}
+
 export type ScopeBadges = {
   scope: SkillScope | undefined;
   secondaryScope: SkillScope | undefined;
@@ -218,7 +228,7 @@ function classifyAgentDiffRow(
   agent: AgentScopeConfig,
   prevKeySet: Set<string> | null,
 ): AgentDiffRow {
-  const isNew = prevKeySet === null || !prevKeySet.has(`${agent.name}:${agent.scope}`);
+  const isNew = prevKeySet === null || !prevKeySet.has(agentSlotKey(agent.name, agent.scope));
   return { name: agent.name, status: isNew ? "added" : "unchanged" };
 }
 
