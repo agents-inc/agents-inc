@@ -12,9 +12,30 @@ import { SearchModal } from "./search-modal.js";
 
 const SEARCH_PILL_LABEL = "\u2315 Search";
 
-const SKILL_NAME_WIDTH = 24;
+/**
+ * Skill-name cell: the 24 columns the name itself gets, plus the fixed 2-column marker cell that
+ * shares the box (see `rowStatusMarker`). Widening by exactly the marker width keeps every name
+ * that fitted before the marker was reserved fitting still.
+ */
+const SKILL_NAME_WIDTH = 26;
 const SOURCE_COL_WIDTH = 18;
+
+/**
+ * Scope gutter: the column of `Global` / `Project` row headers down the left of a scope-grouped
+ * grid. Present only in the grouped layout — a single-scope grid has nothing to head, and renders
+ * flat with no gutter at all. The header row reserves the width but prints no caption in it: the
+ * labels below already name the column, so a caption over them would only repeat them.
+ */
 const SCOPE_COL_WIDTH = 11;
+
+/** Row-header label each scope block is headed by. */
+const SCOPE_ROW_HEADERS: Record<SkillScope, string> = {
+  global: "Global",
+  project: "Project",
+};
+
+/** Blank marker cell — the same two columns a `${glyph} ` marker costs, so names never shift. */
+const ROW_MARKER_BLANK = "  ";
 
 /**
  * Sources always clips-and-signals rather than bleeding, even at the very short viewports the wizard
@@ -66,12 +87,17 @@ export function isRowInert(row: SourceRow): boolean {
  * removed/added-diff treatment (DIFF_PREFIX/DIFF_COLOR in skill-agent-summary.tsx) so a
  * pending-removal or added row reads the same on both surfaces. The marker (not the colour) is
  * what carries the meaning in no-color terminals.
+ *
+ * ALWAYS two columns wide — glyph plus one separating space, or `ROW_MARKER_BLANK` on a row with no
+ * status — so every skill name starts in the same column whether or not its row is marked. Same
+ * contract as DIFF_PREFIX, which gives even `unchanged` a 2-char prefix. `UI_SYMBOLS.LOCK` is
+ * double-width and still renders a locked row one column wider; known and accepted.
  */
-function rowStatusGlyph(row: SourceRow): string {
+function rowStatusMarker(row: SourceRow): string {
   if (row.readOnly) return `${UI_SYMBOLS.LOCK} `;
   if (row.disabled) return `${UI_SYMBOLS.REMOVED} `;
   if (row.added) return `${UI_SYMBOLS.ADDED} `;
-  return "";
+  return ROW_MARKER_BLANK;
 }
 
 /**
@@ -149,12 +175,18 @@ const SourceTag: React.FC<{
   disabled?: boolean;
 }> = ({ option, isFocused, readOnly, disabled }) => {
   if (readOnly || disabled) {
-    const prefix = option.selected ? `${UI_SYMBOLS.SELECTED} ` : `${UI_SYMBOLS.CHEVRON_SPACER} `;
-    // Pending-removal rows render red (matching the info panel); locked global rows stay dimmed.
+    // Inert rows carry selection in the same vocabulary editable ones do — weight, plus brightness
+    // on the locked row whose cells are otherwise all dimmed. Never a glyph: a check appears nowhere
+    // else in the grid, and on a pending-removal row it would tick the source the row is losing. The
+    // prefix slot stays a blank spacer so the source labels line up with every other row's.
     return (
       <Box width={SOURCE_COL_WIDTH}>
-        <Text color={disabled ? CLI_COLORS.ERROR : undefined} dimColor={!disabled}>
-          {prefix}
+        <Text
+          color={disabled ? CLI_COLORS.ERROR : undefined}
+          bold={option.selected}
+          dimColor={!disabled && !option.selected}
+        >
+          {`${UI_SYMBOLS.CHEVRON_SPACER} `}
           {formatSourceLabel(option)}
         </Text>
       </Box>
@@ -186,19 +218,22 @@ const SourceSection: React.FC<SourceSectionProps> = ({
   const effectiveFocused = isInert ? false : isFocused;
   const effectiveShowSearchPill = isInert ? false : showSearchPill;
   // Unlike removal, an added row stays a normal editable row — only its marker/colour differ.
-  const statusGlyph = rowStatusGlyph(row);
+  const statusMarker = rowStatusMarker(row);
 
   return (
     <Box flexDirection="row">
       <Box width={SKILL_NAME_WIDTH}>
         {effectiveFocused ? (
+          // The marker sits INSIDE the highlight, and the marker's own separating space is the only
+          // one before the name — so the band is the same width on every focused row and the name
+          // does not shift a column when focus arrives.
           <Text color={focusedRowLabelColor(row)} backgroundColor={CLI_COLORS.LABEL_BG}>
-            {statusGlyph}
-            {` ${getSkillById(row.skillId).displayName} `}
+            {statusMarker}
+            {`${getSkillById(row.skillId).displayName} `}
           </Text>
         ) : (
           <Text color={rowLabelColor(row)} dimColor={!!row.readOnly}>
-            {statusGlyph}
+            {statusMarker}
             {getSkillById(row.skillId).displayName}
           </Text>
         )}
@@ -228,9 +263,27 @@ const getNavigableCount = (row: SourceRow, showSearchPill: boolean): number => {
 };
 
 type ScopeGroup = {
-  label: string;
+  scope: SkillScope;
   rows: { row: SourceRow; originalIndex: number }[];
 };
+
+/**
+ * One row's cell in the scope gutter. Only the first row of a block prints the block's label; every
+ * other row reserves the same width empty, which is what indents the rest of the block under its
+ * header.
+ */
+const ScopeRowHeader: React.FC<{ scope: SkillScope; isGroupStart: boolean }> = ({
+  scope,
+  isGroupStart,
+}) => (
+  <Box width={SCOPE_COL_WIDTH}>
+    {isGroupStart && (
+      <Text color={CLI_COLORS.WARNING} bold>
+        {SCOPE_ROW_HEADERS[scope]}
+      </Text>
+    )}
+  </Box>
+);
 
 /** First focusable row index at or cyclically after `startRow`; `startRow` when every row is inert. */
 function firstFocusableRowIndex(rows: SourceRow[], startRow: number): number {
@@ -252,7 +305,11 @@ function lastFocusableRowIndex(rows: SourceRow[]): number {
   return -1;
 }
 
-/** Groups rows by scope for rendering with section labels. Returns empty array when all rows share the same scope (renders flat). */
+/**
+ * Groups rows by scope so the two blocks render separated by a blank line, each headed by its scope
+ * in the gutter. Returns an empty array when all rows share the same scope: one block needs no
+ * header to tell it from another, so that grid renders flat with no gutter at all.
+ */
 function groupRowsByScope(rows: SourceRow[]): ScopeGroup[] {
   const indexed = rows.map((row, i) => ({ row, originalIndex: i }));
   const globalRows = indexed.filter(({ row }) => row.scope === "global");
@@ -261,8 +318,8 @@ function groupRowsByScope(rows: SourceRow[]): ScopeGroup[] {
   if (globalRows.length === 0 || projectRows.length === 0) return [];
 
   return [
-    { label: "Global", rows: globalRows },
-    { label: "Project", rows: projectRows },
+    { scope: "global", rows: globalRows },
+    { scope: "project", rows: projectRows },
   ];
 }
 
@@ -419,14 +476,10 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
   const showPinnedHeader = !scrollEnabled || availableHeight >= SOURCE_GRID_HEADER_MIN_HEIGHT;
   const headerElement = (
     <Box flexDirection="row" marginBottom={headerMarginBottom} {...noShrink}>
+      {/* Neither the scope gutter nor the skill-name column carries a caption; both boxes reserve
+          their width so the source headers stay above the source cells. */}
       {scopeGroups.length > 0 && <Box width={SCOPE_COL_WIDTH} />}
-      <Box width={SKILL_NAME_WIDTH}>
-        {scopeGroups.length > 0 && (
-          <Text color={CLI_COLORS.WARNING} bold>
-            Scope
-          </Text>
-        )}
-      </Box>
+      <Box width={SKILL_NAME_WIDTH} />
       {headerSources.map((option) => (
         <Box key={option.id} width={SOURCE_COL_WIDTH}>
           <Text
@@ -441,7 +494,7 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
   const sectionElements =
     scopeGroups.length > 0
       ? scopeGroups.map((group) => (
-          <Box key={group.label} flexDirection="column" marginTop={1} {...noShrink}>
+          <Box key={group.scope} flexDirection="column" marginTop={1} {...noShrink}>
             {group.rows.map(({ row, originalIndex }, rowIndexInGroup) => (
               <Box
                 key={`${row.skillId}-${row.scope ?? "default"}`}
@@ -449,13 +502,7 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
                 ref={(el) => setSectionRef(originalIndex, el)}
                 {...noShrink}
               >
-                <Box width={SCOPE_COL_WIDTH}>
-                  {rowIndexInGroup === 0 && (
-                    <Text color={CLI_COLORS.WARNING} bold>
-                      {group.label}
-                    </Text>
-                  )}
-                </Box>
+                <ScopeRowHeader scope={group.scope} isGroupStart={rowIndexInGroup === 0} />
                 <SourceSection
                   row={row}
                   isFocused={originalIndex === focusedRow}

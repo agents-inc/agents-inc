@@ -158,7 +158,7 @@ describe("SourceGrid component", () => {
   });
 
   describe("scope-grouped rendering", () => {
-    it("should render scope labels when rows have mixed scopes", () => {
+    it("should head each scope block with its own row header and caption no column", () => {
       const rows: SourceRow[] = [
         createSourceRow(
           "web-framework-react",
@@ -176,44 +176,13 @@ describe("SourceGrid component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
+      expect(output).toContain("React");
+      expect(output).toContain("Zustand");
+      // The gutter's row headers are what name the scopes; a caption above them would only repeat
+      // what every value in the column already says.
       expect(output).toContain("Global");
       expect(output).toContain("Project");
-    });
-
-    it("should render flat (no scope labels) when all rows share the same scope", () => {
-      const rows: SourceRow[] = [
-        createSourceRow(
-          "web-framework-react",
-          [createSourceOption("public", { selected: true })],
-          "global",
-        ),
-        createSourceRow(
-          "web-state-zustand",
-          [createSourceOption("public", { selected: true })],
-          "global",
-        ),
-      ];
-
-      const { lastFrame, unmount } = renderGrid({ rows });
-      cleanup = unmount;
-
-      const output = lastFrame();
-      expect(output).not.toContain("Global");
-      expect(output).not.toContain("Project");
-    });
-
-    it("should render flat when no rows have scope set", () => {
-      const rows: SourceRow[] = [
-        createSourceRow("web-framework-react", [createSourceOption("public", { selected: true })]),
-        createSourceRow("web-state-zustand", [createSourceOption("public", { selected: true })]),
-      ];
-
-      const { lastFrame, unmount } = renderGrid({ rows });
-      cleanup = unmount;
-
-      const output = lastFrame();
-      expect(output).not.toContain("Global");
-      expect(output).not.toContain("Project");
+      expect(output).not.toContain("Scope");
     });
 
     it("should show global rows before project rows", () => {
@@ -239,6 +208,102 @@ describe("SourceGrid component", () => {
       expect(globalPos).toBeGreaterThan(-1);
       expect(projectPos).toBeGreaterThan(-1);
       expect(globalPos).toBeLessThan(projectPos);
+    });
+
+    /**
+     * Column geometry is the contract in a fixed-width table, and neither `toContain` nor a
+     * relative-order check can express it: a name rendered one column family too far right
+     * satisfies both. The whole-frame snapshot pins every column start at once — including the
+     * two-column marker cell every row reserves, which is what keeps the focused row's name in the
+     * same column as the unfocused row's.
+     *
+     * It also pins the two things the caption's removal must not have disturbed: the scope gutter
+     * still heads each block on its first row only (the rest of the block indents under it), and
+     * the source captions still sit above their cells even though nothing captions the gutter.
+     *
+     * Rows are deliberately lock-free — the 🔒 glyph is double-width, so a locked row would make
+     * the name column read as ragged for reasons that have nothing to do with the layout.
+     */
+    it("heads each block in the gutter and lines the source captions up with their cells", () => {
+      const rows: SourceRow[] = [
+        createSourceRow(
+          "web-framework-react",
+          [createSourceOption("eject"), createSourceOption("agents-inc", { selected: true })],
+          "global",
+        ),
+        createSourceRow(
+          "web-state-zustand",
+          [createSourceOption("eject", { selected: true }), createSourceOption("agents-inc")],
+          "project",
+        ),
+      ];
+
+      const { lastFrame, unmount } = renderGrid({ rows });
+      cleanup = unmount;
+
+      expect(lastFrame()).toMatchInlineSnapshot(`
+        "                                       Local             Plugin
+
+        Global       React                   ❯ Eject             Agents Inc
+
+        Project      Zustand                   Eject             Agents Inc"
+      `);
+    });
+
+    /**
+     * The flat branch renders one block, so it has nothing to head: no gutter, and every column
+     * therefore starts SCOPE_COL_WIDTH to the left of where the grouped snapshot above puts it, with
+     * no separating blank line between rows. Snapshotting both branches is what makes a gutter or a
+     * block separator leaking into the flat layout (or vanishing from the grouped one) a visible
+     * diff.
+     */
+    it("renders one unseparated block in the flat layout", () => {
+      const rows: SourceRow[] = [
+        createSourceRow(
+          "web-framework-react",
+          [createSourceOption("eject"), createSourceOption("agents-inc", { selected: true })],
+          "project",
+        ),
+        createSourceRow(
+          "web-state-zustand",
+          [createSourceOption("eject", { selected: true }), createSourceOption("agents-inc")],
+          "project",
+        ),
+      ];
+
+      const { lastFrame, unmount } = renderGrid({ rows });
+      cleanup = unmount;
+
+      expect(lastFrame()).toMatchInlineSnapshot(`
+        "                            Local             Plugin
+
+          React                   ❯ Eject             Agents Inc
+          Zustand                   Eject             Agents Inc"
+      `);
+    });
+
+    /** A row with no scope at all takes the same flat branch as a single-scope grid. */
+    it("renders one unseparated block when no row has a scope", () => {
+      const rows: SourceRow[] = [
+        createSourceRow("web-framework-react", [
+          createSourceOption("eject"),
+          createSourceOption("agents-inc", { selected: true }),
+        ]),
+        createSourceRow("web-state-zustand", [
+          createSourceOption("eject", { selected: true }),
+          createSourceOption("agents-inc"),
+        ]),
+      ];
+
+      const { lastFrame, unmount } = renderGrid({ rows });
+      cleanup = unmount;
+
+      expect(lastFrame()).toMatchInlineSnapshot(`
+        "                            Local             Plugin
+
+          React                   ❯ Eject             Agents Inc
+          Zustand                   Eject             Agents Inc"
+      `);
     });
   });
 
@@ -734,14 +799,6 @@ describe("SourceGrid component", () => {
       expect(output).toContain("Zustand");
     });
 
-    it("should show selected source indicator on read-only rows", () => {
-      const { lastFrame, unmount } = renderGrid({ rows: readOnlyRows });
-      cleanup = unmount;
-
-      const output = lastFrame()!;
-      expect(output).toContain(UI_SYMBOLS.SELECTED);
-    });
-
     it("should not fire onSelect for read-only rows (defense-in-depth guard)", async () => {
       const onSelect = vi.fn();
       const { stdin, unmount } = renderGrid({
@@ -866,7 +923,7 @@ describe("SourceGrid component", () => {
       expect(output).not.toContain(UI_SYMBOLS.CHEVRON);
     });
 
-    it("should render re-scoped skill in both global and project groups", () => {
+    it("should render re-scoped skill once per scope group", () => {
       const reSccopedRows: SourceRow[] = [
         createSourceRow(
           "web-framework-react",
@@ -885,9 +942,6 @@ describe("SourceGrid component", () => {
       cleanup = unmount;
 
       const output = lastFrame()!;
-      // Should show both scope section headers
-      expect(output).toContain("Global");
-      expect(output).toContain("Project");
       // React should appear twice (once per scope group)
       const reactMatches = output.split("React").length - 1;
       expect(reactMatches).toBe(2);
@@ -926,13 +980,6 @@ describe("SourceGrid component", () => {
       expect(output).toContain(`${UI_SYMBOLS.REMOVED} Vitest`);
       // A lock means "installed globally, not editable here" — the wrong message for a removal.
       expect(output).not.toContain(UI_SYMBOLS.LOCK);
-    });
-
-    it("should show the persisted source indicator on the removed skill", () => {
-      const { lastFrame, unmount } = renderGrid({ rows: removedRows });
-      cleanup = unmount;
-
-      expect(lastFrame()).toContain(UI_SYMBOLS.SELECTED);
     });
 
     it("should not fire onSelect when space is pressed with a removed row focused", async () => {
@@ -1058,10 +1105,8 @@ describe("SourceGrid component", () => {
 
         const output = lastFrame()!;
         const skillName = getSkillById(COLLAPSED_SKILL_ID).displayName;
-        // Both scope sections are labelled, and the skill name appears once under each — proven by
-        // its two distinct role prefixes rather than by counting occurrences.
-        expect(output).toContain("Global");
-        expect(output).toContain("Project");
+        // The skill name appears once per scope section — proven by its two distinct role prefixes
+        // rather than by counting occurrences.
         expect(
           output,
           `the surviving global install must keep its lock. Frame:\n${JSON.stringify(output)}`,
@@ -1194,9 +1239,9 @@ describe("SourceGrid component", () => {
       });
       cleanup = unmount;
 
-      // The focused branch renders the status glyph (`+ `) followed by the focus-padded
-      // name (` React `), on the focus background.
-      const focusedLabel = `${UI_SYMBOLS.ADDED}  ${getSkillById(ADDED_SKILL_ID).displayName} `;
+      // The focused branch renders the two-column marker cell (`+ `) then the name and the
+      // highlight's trailing pad, on the focus background — one space between marker and name.
+      const focusedLabel = `${UI_SYMBOLS.ADDED} ${getSkillById(ADDED_SKILL_ID).displayName} `;
       const output = lastFrame()!;
 
       // Focus must stay visible (background highlight) AND the label must keep the added-diff
@@ -1213,6 +1258,82 @@ describe("SourceGrid component", () => {
         output,
         "a focused added row must not fall back to the plain white label colour",
       ).not.toContain(chalk.bgHex(CLI_COLORS.LABEL_BG)(chalk.hex(CLI_COLORS.WHITE)(focusedLabel)));
+    });
+  });
+
+  /**
+   * Inert rows — `readOnly` (locked global) and `disabled` (pending removal) — express which source
+   * is selected in the same vocabulary editable rows use: weight, plus brightness on the locked row
+   * whose cells are otherwise dimmed. The prefix slot only ever holds a blank spacer, so the check
+   * that used to live there appears nowhere in the grid; on a pending-removal row it ticked the
+   * source the row was about to lose.
+   */
+  describe("inert row source selection", () => {
+    const LOCKED_ROW: SourceRow = createSourceRow(
+      "web-framework-react",
+      [createSourceOption("public", { selected: true }), createSourceOption("eject")],
+      "global",
+      true,
+    );
+    const REMOVAL_ROW: SourceRow = createRemovedRow(
+      "web-testing-vitest",
+      [createSourceOption("eject", { selected: true }), createSourceOption("public")],
+      "project",
+    );
+
+    /** Prefix every inert source cell carries, selected or not — the blank chevron slot. */
+    const INERT_PREFIX = `${UI_SYMBOLS.CHEVRON_SPACER} `;
+
+    /**
+     * Ink colourises through chalk, and chalk disables itself on vitest's non-TTY stdout — every
+     * frame would come back stripped of colour, making a colour assertion unobservable. Forcing
+     * truecolor for the duration of these tests renders what a user sees in a real terminal.
+     */
+    let previousChalkLevel: typeof chalk.level;
+
+    beforeEach(() => {
+      previousChalkLevel = chalk.level;
+      chalk.level = TRUECOLOR_CHALK_LEVEL;
+    });
+
+    afterEach(() => {
+      chalk.level = previousChalkLevel;
+    });
+
+    it("should carry the locked row's selection in weight and brightness, not a check", () => {
+      const { lastFrame, unmount } = renderGrid({ rows: [LOCKED_ROW] });
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      // Ink applies dim, then colour, then background, then bold (components/Text.js), so a bold
+      // undimmed cell is the selected one and a dimmed cell is not.
+      expect(
+        output,
+        `the locked row's selected source must render bold. Frame:\n${JSON.stringify(output)}`,
+      ).toContain(chalk.bold(`${INERT_PREFIX}Public`));
+      expect(
+        output,
+        `the locked row's unselected sources must stay dimmed. Frame:\n${JSON.stringify(output)}`,
+      ).toContain(chalk.dim(`${INERT_PREFIX}Eject`));
+      expect(output).not.toContain(UI_SYMBOLS.SELECTED);
+    });
+
+    it("should carry the pending-removal row's selection in weight while keeping its removal colour", () => {
+      const { lastFrame, unmount } = renderGrid({ rows: [REMOVAL_ROW] });
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      // Red says "this row is going"; bold says "this is the source it is going from". A check
+      // there would say the opposite of both.
+      expect(
+        output,
+        `the removal row's selected source must render bold in the removal colour. Frame:\n${JSON.stringify(output)}`,
+      ).toContain(chalk.bold(chalk.hex(CLI_COLORS.ERROR)(`${INERT_PREFIX}Eject`)));
+      expect(
+        output,
+        `the removal row's unselected sources must keep the removal colour unbolded. Frame:\n${JSON.stringify(output)}`,
+      ).toContain(chalk.hex(CLI_COLORS.ERROR)(`${INERT_PREFIX}Public`));
+      expect(output).not.toContain(UI_SYMBOLS.SELECTED);
     });
   });
 });
