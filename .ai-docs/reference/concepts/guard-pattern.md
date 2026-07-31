@@ -19,6 +19,9 @@ keywords:
     D-233,
     D-260,
     D-277,
+    D-279,
+    guard-asymmetry,
+    conflict-mask,
   ]
 related:
   - reference/concepts/scope-system.md
@@ -27,6 +30,8 @@ related:
   - reference/wizard/flow.md
 last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0): verified every guard arm and the D-277 bypass collapse against wizard-store.ts — all held. Gap closed this pass: added "Guard Asymmetry — Refusal vs. Masking (D-260 vs. D-279)", which records why the exclusive-swap guard refuses to displace a globally locked skill while write-time reconciliation lets the project's own skill win; added the corresponding Summary Table row so the masking predicate is discoverable from the guard inventory -->
 
 # Guard Pattern
 
@@ -187,6 +192,24 @@ All three arms additionally require `!isEditingFromGlobalScope`.
 
 **Outcome:** Silent — the triple is dropped from the output. See [config-generator reference docs](../config/configuration.md) for the D-220 delta-pipeline context.
 
+## Guard Asymmetry — Refusal vs. Masking (D-260 vs. D-279)
+
+Two rules in this codebase resolve the _same shape_ of conflict — one exclusive category, one project-owned skill, one globally-installed skill — in **opposite directions**. This is deliberate. Do not "harmonise" them.
+
+| Situation                                                                                                                   | Layer                                                                              | Outcome                                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| User presses SPACE to select a different skill in an exclusive category whose current selection is a globally-installed one | Store guard — `toggleTechnology` exclusive-swap arm (guard #1)                     | **Refused.** Toast `"Global skills cannot be changed from project scope"`; global survives.                               |
+| A write finds the project already owning a different active skill in the same exclusive category as a live global install   | Write-time predicate — `maskCollidingGlobalSkills` in `local-installer.ts` (D-279) | **Project's own skill wins.** The global entry is masked with `{ ...globalEntry, excluded: true }` in the project config. |
+
+**Why they differ — the direction the conflict arrived from:**
+
+- In the guard case the **user is the aggressor**: the keypress is an attempt to displace a shared install that every project reads. Refusing is the whole point of D-277's "a globally installed item is immutable from project scope, in every flow including `init`".
+- In the masking case the conflict is **pushed in**: a global install has landed on top of pre-existing project state, without the project asking. Letting global win there would silently uninstall the user's own skill — a strictly worse failure than hiding a global entry the user never chose to receive.
+
+**The mask is not an exception to immutability.** Masking never removes the global entry and never writes into `~/.claude-src/config.ts`; it only records, in the project's own config, that this project cannot show that global install. The global install stays intact for every other project, and the mask is dropped automatically once the collision clears (`dropOrphanedDerivedMasks`). Backlog item **D-276** — allowing a user to _deliberately_ select a skill that conflicts with a global one in an exclusive category — is filed with the same constraint: the global entry is masked, never removed.
+
+> See [tombstone-pattern.md](./tombstone-pattern.md) "Mask vs. Tombstone" for the persisted shape and the provenance argument, and "Creation outside the wizard — derived conflict masks" for the full predicate table.
+
 ## Silent Guards and Race Surfaces
 
 **The Scenario B race class** (from finding `2026-04-21-e2e-build-step-keypress-missing-stable-render.md` and `2026-04-21-e2e-keypress-rule-coverage-gap-sibling-steps.md`): when a keypress handler dispatches an action that bails silently because store state hasn't finished committing, the user sees nothing — the keystroke is swallowed.
@@ -216,13 +239,12 @@ The exposed silent surfaces:
 
 These log to `warn()` and return the current state. They exist to catch bad callers, not bad user input:
 
-| Action                 | Condition                                                      | Log                                                                                                          |
-| ---------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `setSourceSelection`   | empty `skillId`                                                | "Ignoring setSourceSelection call with empty skillId"                                                        |
-| `setSourceSelection`   | empty `sourceId`                                               | "Ignoring setSourceSelection call with empty sourceId for skill '...'"                                       |
-| `setEnabledSources`    | any empty-trim key                                             | "Ignoring setEnabledSources call with empty source name(s)" (empty keys are filtered from the written state) |
-| `bindSkill`            | duplicate `(id, sourceUrl)`                                    | "Skill '...' from '...' is already bound — skipping duplicate"                                               |
-| `populateFromSkillIds` | unresolvable skill id (missing from matrix / unknown category) | "... installed skill(s) could not be resolved and were skipped"                                              |
+| Action                 | Condition                                                      | Log                                                                    |
+| ---------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `setSourceSelection`   | empty `skillId`                                                | "Ignoring setSourceSelection call with empty skillId"                  |
+| `setSourceSelection`   | empty `sourceId`                                               | "Ignoring setSourceSelection call with empty sourceId for skill '...'" |
+| `bindSkill`            | duplicate `(id, sourceUrl)`                                    | "Skill '...' from '...' is already bound — skipping duplicate"         |
+| `populateFromSkillIds` | unresolvable skill id (missing from matrix / unknown category) | "... installed skill(s) could not be resolved and were skipped"        |
 
 ## Known Gap — Ungated Source Setters
 
@@ -259,28 +281,30 @@ Normal action logic (compute newSelections, reconcileSkillConfigs, ...)
 
 ## Summary Table
 
-| Guard                              | Action / Layer                                                                    | Outcome        | Text / Note                                                                                                            |
-| ---------------------------------- | --------------------------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Global skill toggle                | `toggleTechnology` / store                                                        | Toast          | "Global skills cannot be changed from project scope"                                                                   |
-| Global skill exclusive replacement | `toggleTechnology` / store                                                        | Toast          | Same as above (radio-replace path)                                                                                     |
-| Only-skill deselect                | `toggleTechnology` / store                                                        | Toast          | "Cannot deselect the only skill in this category"                                                                      |
-| Global agent toggle                | `toggleAgent` / store                                                             | Toast          | "Global agents cannot be changed from project scope"                                                                   |
-| Scope toggle global-context        | `HOTKEY_SCOPE` / wizard.tsx                                                       | Toast          | "Scope toggle unavailable in global context"                                                                           |
-| Dual-scope inert spacebar (D-260)  | `toggleTechnology` / `toggleAgent` / store                                        | Toast          | Global-locked toast on SPACE over a live `[P][G]`; `s` is the sole dual-scope toggle                                   |
-| Skill scope eject collision        | `toggleSkillScope` / store                                                        | Toast          | "Already exists as ejected skill at global scope"                                                                      |
-| Scope silent (editing-from-global) | `toggleSkillScope` / `toggleAgentScope`                                           | Silent         | Covers direct action callers that bypass the hotkey toast                                                              |
-| Scope silent (missing config)      | `toggleSkillScope` / `toggleAgentScope`                                           | Silent         | Stale-id callers                                                                                                       |
-| Scope silent (no focused id)       | `HOTKEY_SCOPE` / wizard.tsx                                                       | Silent         | Scenario B race surface — see Silent Guards section                                                                    |
-| Filter incompatible                | `toggleFilterIncompatible` / store                                                | Silent / Toast | Skips excluded entries, protects tombstones; refuses whole toggle with a toast if a locked global would be uninstalled |
-| Tombstone-aware removal            | `applySkillRemoval` / store                                                       | Silent         | Shapes removal output; collapses dual-scope pairs (D-233 resolved)                                                     |
-| Stack-build ownership              | `shouldIncludeTriple` / config-generator                                          | Silent         | D-220 delta pipeline predicate                                                                                         |
-| Warn-and-return                    | `setSourceSelection` / `setEnabledSources` / `bindSkill` / `populateFromSkillIds` | Warn           | Programmatic-misuse logs                                                                                               |
+| Guard                              | Action / Layer                                                              | Outcome        | Text / Note                                                                                                                        |
+| ---------------------------------- | --------------------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Global skill toggle                | `toggleTechnology` / store                                                  | Toast          | "Global skills cannot be changed from project scope"                                                                               |
+| Global skill exclusive replacement | `toggleTechnology` / store                                                  | Toast          | Same as above (radio-replace path)                                                                                                 |
+| Only-skill deselect                | `toggleTechnology` / store                                                  | Toast          | "Cannot deselect the only skill in this category"                                                                                  |
+| Global agent toggle                | `toggleAgent` / store                                                       | Toast          | "Global agents cannot be changed from project scope"                                                                               |
+| Scope toggle global-context        | `HOTKEY_SCOPE` / wizard.tsx                                                 | Toast          | "Scope toggle unavailable in global context"                                                                                       |
+| Dual-scope inert spacebar (D-260)  | `toggleTechnology` / `toggleAgent` / store                                  | Toast          | Global-locked toast on SPACE over a live `[P][G]`; `s` is the sole dual-scope toggle                                               |
+| Skill scope eject collision        | `toggleSkillScope` / store                                                  | Toast          | "Already exists as ejected skill at global scope"                                                                                  |
+| Scope silent (editing-from-global) | `toggleSkillScope` / `toggleAgentScope`                                     | Silent         | Covers direct action callers that bypass the hotkey toast                                                                          |
+| Scope silent (missing config)      | `toggleSkillScope` / `toggleAgentScope`                                     | Silent         | Stale-id callers                                                                                                                   |
+| Scope silent (no focused id)       | `HOTKEY_SCOPE` / wizard.tsx                                                 | Silent         | Scenario B race surface — see Silent Guards section                                                                                |
+| Filter incompatible                | `toggleFilterIncompatible` / store                                          | Silent / Toast | Skips excluded entries, protects tombstones; refuses whole toggle with a toast if a locked global would be uninstalled             |
+| Tombstone-aware removal            | `applySkillRemoval` / store                                                 | Silent         | Shapes removal output; collapses dual-scope pairs (D-233 resolved)                                                                 |
+| Stack-build ownership              | `shouldIncludeTriple` / config-generator                                    | Silent         | D-220 delta pipeline predicate                                                                                                     |
+| Cross-scope conflict mask (D-279)  | `maskCollidingGlobalSkills` / `maskCollidingGlobalAgents` / local-installer | Silent         | Write-time, not a keypress guard. Project's own skill wins locally — deliberately asymmetric with the exclusive-swap refusal above |
+| Warn-and-return                    | `setSourceSelection` / `bindSkill` / `populateFromSkillIds`                 | Warn           | Programmatic-misuse logs                                                                                                           |
 
 ## Anchors
 
-- `toggleTechnology`, `toggleAgent`, `toggleSkillScope`, `toggleAgentScope`, `toggleFilterIncompatible`, `applySkillRemoval`, `reconcileSkillConfigs`, `restoreDualScopeAgent`, `isDualScopePair`, `isDualScopeAgentPair`, `setAllSourcesEject`, `setAllSourcesPlugin`, `setSourceSelection`, `setEnabledSources`, `bindSkill`, `populateFromSkillIds`, `goBack`, `setCurrentDomainIndex` — `src/cli/stores/wizard-store.ts`.
+- `toggleTechnology`, `toggleAgent`, `toggleSkillScope`, `toggleAgentScope`, `toggleFilterIncompatible`, `applySkillRemoval`, `reconcileSkillConfigs`, `restoreDualScopeAgent`, `isDualScopePair`, `isDualScopeAgentPair`, `setAllSourcesEject`, `setAllSourcesPlugin`, `setSourceSelection`, `bindSkill`, `populateFromSkillIds`, `goBack`, `setCurrentDomainIndex` — `src/cli/stores/wizard-store.ts`.
 - `HOTKEY_SCOPE` handler, `TOAST_DURATION_MS` effect — `src/cli/components/wizard/wizard.tsx`.
 - `shouldIncludeTriple`, `buildAgentStack` — `src/cli/lib/configuration/config-generator.ts`.
 - `recordGlobalSourceMigrations`, `logChangeSummary` — `src/cli/commands/edit.tsx`.
+- `reconcileProjectSplitAgainstGlobal`, `maskCollidingGlobalSkills`, `maskCollidingGlobalAgents`, `dropOrphanedDerivedMasks`, `dropOrphanedDerivedAgentMasks`, `buildProjectCollisionTest`, `isExclusiveCategory`, `categoryOfSkill` — `src/cli/lib/installation/local-installer.ts`.
 
 > **See also:** [tombstone-pattern.md](./tombstone-pattern.md) for tombstone lifecycle interacting with scope guards; [scope-system.md](./scope-system.md) for the project/global distinction the guards enforce.

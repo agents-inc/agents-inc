@@ -26,6 +26,23 @@ related:
 last_validated: 2026-07-30
 ---
 
+<!--
+  2026-07-30 sweep (product 0.146.0). Corrected this pass:
+  - Version 0.144.1 -> 0.146.0.
+  - Directory structure re-verified against the tree: added scroll-affordance.tsx,
+    operations/project/recompile-project-agents.ts, configuration/scope-predicates.ts,
+    configuration/define-config.ts, agents/list-compiled-agents.ts; corrected the
+    local-installer.ts / installation.ts / operations export inventories.
+  - FEATURE_FLAGS list gained FILTER_INCOMPATIBLE (D-269).
+  - Section 14: the D-240/D-256 "propagation does not recompile" Known Limitation is
+    CLOSED — documented recompileRegisteredProjectAgents / recompilePropagatedProjectAgents
+    and the ScopedConfigWriteResult.propagatedProjects channel that feeds them.
+  - New section 16: cross-scope reconciliation at project-config write time (D-279).
+  - New section 17: ConfigLoadError as a parse-boundary contract (D-273).
+  - Data-flow diagram: added the propagated-project recompile step and the
+    compile-time config-types refresh.
+-->
+
 # Architecture Overview
 
 **Last Updated:** 2026-07-30
@@ -36,7 +53,7 @@ last_validated: 2026-07-30
 | Field       | Value                                                                                                                                                                     |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Package     | `@agents-inc/cli`                                                                                                                                                         |
-| Version     | 0.144.1                                                                                                                                                                   |
+| Version     | 0.146.0                                                                                                                                                                   |
 | Binary      | `agentsinc` (registered global bin, `package.json` `bin`/`oclif.bin`); user-facing messages promote `npx @agents-inc/cli` via `CLI_INVOKE_COMMAND` in `src/cli/consts.ts` |
 | Type        | ESM (`"type": "module"` in package.json)                                                                                                                                  |
 | Entry Point | `src/cli/index.ts` (runs oclif with `run()`)                                                                                                                              |
@@ -78,26 +95,35 @@ src/cli/
     init.tsx                # Initialize project (wizard)
     list.tsx                # Show installation information (Ink component)
     search.ts               # Search for skills across sources (plain ts, no Ink)
-    uninstall.tsx           # Uninstall from project
+    uninstall.tsx           # Uninstall project or global install (manifest removal unconditional; no `--all`)
     update.tsx              # Update skills
     validate.ts             # Validate installation
   components/               # Ink React components
-    common/                 # Shared UI: confirm, message, select-list, spinner
+    common/                 # Shared UI: confirm, prompt-confirm, select-list, spinner
     hooks/                  # React hooks for wizard behavior (hook table: reference/component-patterns.md)
     themes/                 # Ink theme (CLI_COLORS -> theme)
     wizard/                 # Wizard step components + utilities
+      scroll-affordance.tsx # ScrollAffordance — shared "N more above / N more below" overflow hint
   hooks/
     init.ts                 # oclif init hook: resolves source, attaches to config
   lib/                      # Core business logic (no UI)
     agents/                 # Agent fetching, compilation, recompilation
+      list-compiled-agents.ts # listAgentMdFiles() — on-disk compiled-agent enumeration
     configuration/          # Config loader/saver/merger/writer/generator/source-manager/config-types-writer/project-config/default-*
+      project-config.ts     # loadProjectConfigFromDir(), loadProjectConfig(), validateProjectConfig(), ConfigLoadError
+      scope-predicates.ts   # isActiveAt(), isGlobalTombstone(), isProjectOwned(), activeAgentScopeMap()
+      define-config.ts      # defineConfig() helper re-exported through @agents-inc/cli/config
+      default-categories.ts # defaultCategories — 89 category definitions, pinned 1:1 against the generated `Category` union
     installation/           # Install mode detection, local installer, mode migrator
-      installation.ts       # detectInstallation(), detectProjectInstallation(), detectGlobalInstallation(), deriveInstallMode()
+      installation.ts       # detectInstallation(), detectProjectInstallation(), detectGlobalInstallation(), getInstallationOrThrow(), deriveInstallMode()
       install-base-dir.ts   # resolveInstallPaths(projectDir, scope), installBaseDir() — scope-aware base dir
       is-home-directory.ts  # isHomeDirectory() — symlink-safe global-install-root check
-      local-installer.ts    # writeScopedConfigs(), installEject(), propagateGlobalChangesToProjects()
+      local-installer.ts    # writeScopedConfigs(), installEject(), installPluginConfig(), propagateGlobalChangesToProjects(),
+                            #   pruneGlobalEntriesFromRegisteredProjects(), regenerateScopeConfigTypes(),
+                            #   deregisterProjectPath() + the cross-scope reconciliation step (section 16)
       mode-migrator.ts      # detectMigrations(), executeMigration() — install-mode migration
     loading/                # YAML/frontmatter loading, source fetching, multi-source
+      source-loader.ts      # loadSkillsMatrixFromSource() — SourceLoadOptions: skipExtraSources, matrixOnly, forceRefresh, devMode
     matrix/                 # Skills matrix loading, resolving, health checks
       matrix-provider.ts    # getSkillById(), getSkillBySlug() asserting lookups
       skill-resolution.ts   # synthesizeCategory(), mergeMatrixWithSkills() — resolveRelationships is internal
@@ -105,22 +131,24 @@ src/cli/
       source/               # loadSource(), ensureMarketplace(), requireMarketplace()
       skills/               # discoverSkills(), copyLocalSkills(), installPluginSkills(), uninstallPluginSkills(), pluginInstallFailureError(), compareSkills(), collectScopedSkillDirs(), findSkillMatch()
       project/              # detectProject(), detectBothInstallations(), writeProjectConfig(), compileAgents(), compileAgentsAllScopes(), loadAgentDefs()
+        recompile-project-agents.ts # recompileRegisteredProjectAgents(), recompilePropagatedProjectAgents() (D-240)
     plugins/                # Plugin discovery, validation, manifest, settings
+      plugin-settings.ts    # getEnabledPluginKeys(), getInstalledPluginsRegistryPath(), listRegisteredPluginInstalls(), resolvePluginInstallPaths(), getVerifiedPluginInstallPaths()
     skills/                 # Skill fetching, copying, metadata, source switching, local loader, plugin compiler
     stacks/                 # Stack loading, installing, plugin compilation
-    wizard/                 # Build step logic (pure functions)
+    wizard/                 # Build step logic + session diff (pure functions): validateBuildStep(), computeScopeDiff(), skillSlotKey(), deriveScopeBadges(), formatScopeTag(), orderDomains()
     assert-dir-overwritable.ts # Guards fresh-write dirs (assertDirOverwritable)
     compiler.ts             # Liquid template engine, agent/skill compilation
     exit-codes.ts           # Named EXIT_CODES constants
-    feature-flags.ts        # Runtime feature flags (SOURCE_SEARCH, SOURCE_CHOICE, INFO_PANEL, NEW_SKILL_COMMAND, NEW_AGENT_COMMAND, NEW_MARKETPLACE_COMMAND) + featureDisabledError()
+    feature-flags.ts        # Runtime feature flags (SOURCE_SEARCH, SOURCE_CHOICE, INFO_PANEL, FILTER_INCOMPATIBLE, NEW_SKILL_COMMAND, NEW_AGENT_COMMAND, NEW_MARKETPLACE_COMMAND) + featureDisabledError()
     marketplace-generator.ts # Marketplace.json generation
     metadata-keys.ts        # Metadata key constants
     output-validator.ts     # Compiled agent output validation
     permission-checker.tsx  # Claude Code permissions check
     resolver.ts             # Skill/agent reference resolution
     schema-validator.ts     # Zod error formatting (formatZodErrors, formatZodIssue)
-    schemas.ts              # ALL Zod schemas
-    source-validator.ts     # Source directory validation
+    schemas.ts              # ALL Zod schemas + validateSkillMetadata(), splitMetadataValidationIssues(), validateNestingDepth()
+    source-validator.ts     # Source directory validation (incl. checkDirNameMatchesSkillId — directory name vs SKILL.md machine id)
     validate-kebab-name.ts  # Kebab-case entity name validation (validateKebabCaseName)
     validation-result.ts    # ValidationResult factories (validResult, invalidResult, mergeValidationResults)
     versioning.ts           # Content hashing for versioning
@@ -181,8 +209,13 @@ Wizard (Ink/React UI)
 Installation (commands use operations layer as composable building blocks)
   -> Operations: loadSource(), detectProject(), copyLocalSkills(), installPluginSkills()
   -> writeProjectConfig() generates config via generateConfigSource()
-  -> compileAgents() compiles agent prompts
   -> writeScopedConfigs() splits config into global + project scopes
+       -> reconcileProjectSplitAgainstGlobal() masks colliding global entries (section 16)
+       -> propagateGlobalChangesToProjects() rewrites each registered project's config
+       -> returns ScopedConfigWriteResult { propagatedProjects }
+  -> compileAgents() / compileAgentsAllScopes() compiles agent prompts for this install
+  -> recompilePropagatedProjectAgents(propagatedProjects) recompiles the registered
+     projects whose config.ts propagation just rewrote (D-240; init.tsx + edit.tsx)
   |
   v
 Compilation (lib/compiler.ts)
@@ -203,8 +236,9 @@ Every command extends `BaseCommand` in `src/cli/base-command.ts`.
 BaseCommand provides:
   - baseFlags: --source (doctor, search, validate override baseFlags to `{}`)
   - init() lifecycle -> super.init() + ensureTerminalSize()
-      (blocks until the terminal meets the 80x15 minimum; uses
-       clearTerminal() -> clearTerminalScreen() from utils/terminal.ts)
+      (blocks until the terminal meets the MIN_TERMINAL_SIZE minimum of
+       80x20 -- consts.ts, the only size gate; uses clearTerminal() ->
+       clearTerminalScreen() from utils/terminal.ts)
   - sourceConfig getter (from init hook)
   - handleError() -> this.error() with EXIT_CODES.ERROR
   - requireMarketplaceOrExit() -> requireMarketplace() (operations/source/require-marketplace.ts)
@@ -300,6 +334,8 @@ Key function: `generateConfigSource(config, options?)`. When `options.isProjectC
 
 Never call `writeStandaloneConfigTypes` for a project path — it bypasses the import-from-global branch and produces duplicated standalone unions (D-216 / D-228 regression).
 
+**Scope-dispatching wrapper:** `regenerateScopeConfigTypes(projectDir, config, matrix, agents)` in `local-installer.ts` applies the rule above from a single entry point — `writeStandaloneConfigTypes()` when `isHomeDirectory(projectDir)`, `regenerateConfigTypes()` otherwise. `commands/compile.ts` calls it once per compile pass (including the early-return pass where the scope has no installed skills, since the config — not the discovered skills — drives the unions) so the documented "hand-edit `config.ts`, then run `compile`" workflow refreshes the type unions instead of stranding them. A failed refresh downgrades to a warning (`configTypesRefreshFailed()` in `utils/messages.ts`); the compiled agents are already written.
+
 ### 11. Scope System (Project vs Global)
 
 > **Detailed documentation:** See [concepts/scope-system.md](./concepts/scope-system.md) for the full cross-cutting reference.
@@ -327,17 +363,30 @@ When a project needs to override (disable) a globally-installed skill or agent w
 
 **Types:** `SkillConfig.excluded?: boolean` and `AgentScopeConfig.excluded?: boolean` in `src/cli/types/config.ts`.
 
-**How tombstones are created:**
+**How tombstones are created (post-D-277 / D-279):**
 
-- **Skill removal** (`applySkillRemoval()` in `wizard-store.ts`): When deselecting a globally-installed skill, instead of removing the config entry, it sets `excluded: true`. Project-scoped skills are simply removed.
-- **Agent toggle off** (`applyAgentToggle()` in `wizard-store.ts`): When toggling off a globally-installed agent, it marks the config entry as `excluded: true` and keeps the agent in `selectedAgents` (so the global config stays correct for other projects).
-- **Scope toggle** (`toggleSkillScope()` in `wizard-store.ts`): Moving a globally-installed skill from global to project scope adds an excluded tombstone for the global entry.
+| Producer                                                              | File                              | When                                                                                                                                                                                           |
+| --------------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toggleSkillScope()` (G→P)                                            | `stores/wizard-store.ts`          | Moving a globally-installed skill to project scope adds `{ id, scope: "global", excluded: true, source }`, gated on `wasInstalledGlobally` so a fresh init toggle mints no spurious tombstone. |
+| `toggleAgentScope()` (G→P)                                            | `stores/wizard-store.ts`          | Agent mirror of the above.                                                                                                                                                                     |
+| dual-scope restore (`reconcileSkillConfigs`, `restoreDualScopeAgent`) | `stores/wizard-store.ts`          | Re-selecting an inherited-global row whose snapshot holds a tombstone re-creates BOTH the project entry and the global tombstone, so the row renders `[P][G]` again (D-233 Scenario B).        |
+| `maskCollidingGlobalSkills()` / `maskCollidingGlobalAgents()`         | `installation/local-installer.ts` | System-derived masks written at project-config write time (see section 16).                                                                                                                    |
+
+**What no longer creates a tombstone:**
+
+- `applySkillRemoval()` — a globally-installed skill the project does not own now **survives** a deselect verbatim (`survivesRemoval()`); it is neither dropped nor masked. Editing from global scope passes `installedSkillConfigs: null`, making the removal a genuine uninstall.
+- `applyAgentToggle()` — toggling a globally-installed agent off at project scope is **refused** by `toggleAgent` with the `GLOBAL_AGENTS_LOCKED` toast before `applyAgentToggle` runs.
+- `toggleDomain()` — a domain deselect is a **view filter**: it hides the domain's skills and drops only project-owned entries, leaving global entries byte-identical. Agent-roster rebuilds merge rather than replace (`survivesRosterRebuild()`), so a globally-installed agent outside the selected domains' roster is never silently uninstalled.
 
 **How tombstones are consumed:**
 
 - Tombstoned entries are skipped during compilation (not compiled into agent prompts)
 - Re-selecting a tombstoned skill/agent clears the `excluded` flag (restores it)
-- The `toggleSkillScope()` action checks for existing excluded entries to allow undo of scope overrides
+- `toggleSkillScope()` P→G unconditionally drops any excluded global tombstone for that id — an active entry at global scope supersedes a tombstone at the same scope
+- `retainProjectOwnedSkills()` / `retainProjectOwnedAgents()` drop a tombstone whose global entry no longer exists
+- `dropOrphanedDerivedMasks()` drops a mask once the collision that would re-derive it is gone (section 16)
+
+**Provenance note (D-277 / D-279):** a derived mask and a user-authored tombstone are byte-identical on disk (`{ id, scope: "global", excluded: true }`). Since D-277 removed every store path that could mint the second kind on its own, every _bare_ mask is system-derived by construction — which is what lets the self-heal generalise from "only exclusive+required categories" to "keep it only while the collision still exists".
 
 ### 13. Per-Skill Source (D-217)
 
@@ -354,10 +403,18 @@ The authoritative plugin-reference format is **per-skill**, not per-agent.
 `ProjectConfig.projects?: string[]` in `src/cli/types/config.ts` tracks per-project install paths registered against the global config.
 
 - Only meaningful in the GLOBAL config (`~/.claude-src/config.ts`). Project configs never carry `projects`.
-- A project init appends the project directory; uninstall removes it.
+- A project init appends the project directory (`registerProjectPath()`, internal to `local-installer.ts`); a project uninstall always removes it (`deregisterProjectPath()`, called unconditionally by `commands/uninstall.tsx` — a failure warns, never aborts).
 - `propagateGlobalChangesToProjects()` in `local-installer.ts` iterates `projects` to rewrite each registered project's `config.ts` (via `writeConfigFile`) and `config-types.ts` (via `regenerateConfigTypes()`, per the writer-selection rule above) when the global unions change.
+- `pruneGlobalEntriesFromRegisteredProjects()` in `local-installer.ts` is the GLOBAL-uninstall path: it re-enters `propagateGlobalChangesToProjects()` with an emptied global config (`skills: []`, `agents: []`, `selectedAgents: []`) so every inlined global row, tombstone, `selectedAgents` name and per-agent stack ref is pruned from each registered project, and each project's `config-types.ts` is regenerated. It must run AFTER the global `.claude-src` manifest is removed so the regenerated project types fall back to the standalone form instead of importing from a deleted global `config-types.ts`. Unreachable projects come back in `skipped`, never thrown.
 
-**Known Limitation (D-240 / D-256, active in `todo/TODO.md`):** `propagateGlobalChangesToProjects()` is config-only — it rewrites each registered project's `config.ts` / `config-types.ts` but does NOT recompile that project's agents. A registered project's already-compiled `.claude/agents/<name>.md` keeps referencing a removed or re-scoped global skill until the project is next edited/installed/compiled directly (which runs `compileAndWriteAgents`). D-240 (propagate agent recompilation to registered projects) and D-256 (global plugin→eject recompile) track closing this gap.
+**Agent recompilation after propagation (D-240, closed):** propagation used to be config-only, leaving each registered project's already-compiled `.claude/agents/<name>.md` referencing a removed or re-scoped global skill. `writeScopedConfigs()` now returns `ScopedConfigWriteResult { propagatedProjects: string[] }`, surfaced through `writeProjectConfig()`'s `ConfigWriteResult`, and `init.tsx` / `edit.tsx` feed it to `recompilePropagatedProjectAgents()`.
+
+| Function                             | File                                                 | Behavior                                                                                                                                                                    |
+| ------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `recompileRegisteredProjectAgents()` | `lib/operations/project/recompile-project-agents.ts` | Recompiles ONE registered project at `scopeFilter: "project"`. Passes discovered `skills` explicitly so global-local/project-local skills are not stripped.                 |
+| `recompilePropagatedProjectAgents()` | `lib/operations/project/recompile-project-agents.ts` | Loops the above over every propagated dir sequentially with per-project failure isolation; returns `PropagatedRecompileSummary { recompiledCount, failedCount, warnings }`. |
+
+Scope is project-only by design: the global agents were already recompiled by the triggering operation's own pass.
 
 ### 15. Stack Grouping System
 
@@ -368,3 +425,58 @@ Stacks can be organized into visual groups in the stack selection screen.
 **UI grouping:** `groupStacks()` in `src/cli/components/wizard/stack-selection.tsx` sorts stacks into `StackGroup[]` objects. Groups are ordered by `GROUP_ORDER` (React first, then CLI, then alphabetical). Ungrouped stacks go into an "Other Frameworks" section. If no stacks have a `group` field, the list renders flat without headers.
 
 **Agent preselection from stacks:** Selecting a stack is a two-step flow. `selectStack(stackId)` in `wizard-store.ts` resets the stack-scoped state (wipes `selectedAgents`, `agentConfigs`, `skillConfigs`, `domainSelections`). The `stack-selection.tsx` component then derives the stack's agent keys via `typedKeys<AgentName>(focusedStack.skills)` and calls `preselectAgentsFromStack(stackAgents)`, which sets `selectedAgents` and `agentConfigs` (merging stack agents with any `globalAgentPreselections` and preserving dual-scope tombstones, D-227), ensuring agent selection matches the stack definition.
+
+### 16. Cross-Scope Reconciliation at Project-Config Write Time (D-279)
+
+Two production call sites write a project `config.ts` with the global config inlined (`writeConfigFile(..., { isProjectConfig: true, globalConfig })`). Both now run ONE shared reconciliation step immediately before the write, so config semantics are enforced at the write boundary rather than only in wizard keypress handlers.
+
+**Entry point:** `reconcileProjectSplitAgainstGlobal(projectSplit, globalConfig, matrix)` — module-private in `src/cli/lib/installation/local-installer.ts`.
+
+**Applied at:**
+
+| Write site                                          | File                              | Why it needs reconciliation                                                                       |
+| --------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `propagateGlobalChangesToProjects()`                | `installation/local-installer.ts` | A global change fans out into a registered project that may already own a colliding skill/agent.  |
+| project-scope save branch of `writeScopedConfigs()` | `installation/local-installer.ts` | An ordinary project `init`/`edit` performed while the colliding skill is already active globally. |
+
+**What it does, in order:**
+
+1. **Self-heal** — `dropOrphanedDerivedMasks()` (skills) and `dropOrphanedDerivedAgentMasks()` (agents) remove a mask whose collision has cleared, so the global install becomes visible again. Runs BEFORE masking so a stale mask is not immediately re-derived and the masking step's `alreadyTombstoned` guard only sees warranted tombstones.
+2. **Mask** — `maskCollidingGlobalSkills()` / `maskCollidingGlobalAgents()` add `{ ...globalEntry, excluded: true }` for each live global entry the project cannot show alongside what it owns.
+
+**Collision kinds** (`buildProjectCollisionTest()`, shared by both the producer and the self-heal so they cannot disagree):
+
+| Kind         | Applies to      | Condition                                                                                                                                                 |
+| ------------ | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **IDENTITY** | skills + agents | The project owns the same id/name at project scope.                                                                                                       |
+| **CATEGORY** | skills only     | The project owns a DIFFERENT active skill in the same category AND the merged matrix declares that category `exclusive: true`. Agents have no categories. |
+
+**Contracts:**
+
+- `isExclusiveCategory()` reads `exclusive` from the **merged matrix** passed in (not `defaultCategories`), so a source repo's category overrides are honoured. An **undeclared** flag is treated as non-exclusive — deliberately unlike the wizard renderer's `cat.exclusive ?? true` default, because a rule that masks persisted entries must only fire on a flag the data actually carries.
+- `categoryOfSkill()` returns `undefined` for a skill absent from the matrix or sitting in the `local` pseudo-category — a custom skill never throws and never participates in category rules.
+- Masking is **project-local**: the global config passed in is read, never rewritten. A tombstone never lands in `~/.claude-src/config.ts`.
+- Idempotent: a skill the project already tombstones is skipped.
+- The project's own skill **wins locally**. This is deliberately asymmetric with the D-260 guard that refuses a user-initiated exclusive swap over a globally-locked skill: there the user is displacing a shared install, whereas here a global install has landed on top of existing project state, and letting global win would silently uninstall the user's own skill.
+
+Supporting reconcilers in the same module: `retainProjectOwnedSkills()` / `retainProjectOwnedAgents()` (drop tombstones whose global entry is gone), `retainReconciledSelectedAgents()` (prune a flat `selectedAgents[]` name no longer backed by an active agent), `computeRemovedGlobalSkillIds()` + `retainReconciledStack()` (drop stack refs to global skills removed at global scope).
+
+### 17. Config Load Failure Is an Error, Not `null` (D-273)
+
+`loadProjectConfigFromDir()` in `src/cli/lib/configuration/project-config.ts` distinguishes two previously-conflated outcomes:
+
+| Situation                                                                             | Result                                       |
+| ------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Config file does not exist                                                            | `null` (legitimate "not installed")          |
+| File exists but jiti load throws / no object default export / loader-schema violation | throws `ConfigLoadError(configPath, reason)` |
+
+`ConfigLoadError` is exported from `configuration/project-config.ts` (re-exported via `lib/configuration/index.ts`). Caller contract:
+
+| Caller                      | File                                       | Handling                                                                               |
+| --------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `compile`                   | `commands/compile.ts`                      | Hard-errors before any write (`detectInstallations()` catches and calls `this.error`). |
+| `detectProject()`           | `lib/operations/project/detect-project.ts` | Converts to `null` so `doctor` / `edit` report a config problem rather than crashing.  |
+| `detectInstallationInDir()` | `lib/installation/installation.ts`         | No longer fabricates an installation from an unloadable config.                        |
+| `uninstall`                 | `commands/uninstall.tsx`                   | `deregisterProjectPath()` failure (incl. `ConfigLoadError`) warns and continues.       |
+
+A content-less config (no skills and no agents) reads as **not installed**, so `init` routes to the setup wizard instead of the dashboard.

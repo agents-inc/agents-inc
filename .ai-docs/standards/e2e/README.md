@@ -1,6 +1,8 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added the directory entries the tree omitted — assertions/, fixtures/expected-values.ts, fixtures/plugin-install-state.ts, helpers/type-check-probe.ts, pages/retry-enter.ts, pages/wizards/global-home.ts, matchers/agent-matchers.ts; added maxWorkers: 16 to the Vitest table (PTY tests drop keystrokes at full parallelism); re-counted STEP_TEXT from source (50 -> 64) and listed the omitted members; added TIMEOUTS.SETUP_DUAL and the TERMINAL_SIZE / INTERNAL_RETRIES / WizardType exports to the constants quick-reference; added SOURCE_PATHS.PLUGINS_DIST; added Critical Rules for closed-loop grid navigation and for getOutput() not being a frame log -->
 
 # E2E Testing Standards
 
@@ -49,11 +51,12 @@ The framework uses a 5-layer Page Object Model adapted for terminal-based CLI te
 
 **Horizontal layers** support all vertical layers:
 
-| Layer     | Files                                                                                         | Purpose                                          |
-| --------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| Matchers  | `e2e/matchers/project-matchers.ts`, `setup.ts`                                                | Custom Vitest matchers for file-based assertions |
-| Fixtures  | `e2e/fixtures/project-builder.ts`, `cli.ts`, `dual-scope-helpers.ts`, `interactive-prompt.ts` | Project creation, CLI execution, scope helpers   |
-| Constants | `e2e/pages/constants.ts`                                                                      | All UI text, paths, timeouts, exit codes         |
+| Layer      | Files                                                                                                                                          | Purpose                                                                   |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Matchers   | `e2e/matchers/project-matchers.ts`, `agent-matchers.ts`, `setup.ts`                                                                            | Custom Vitest matchers for file-based assertions                          |
+| Assertions | `e2e/assertions/{phase,scope,uninstall,config}-assertions.ts`                                                                                  | Composite assertion helpers (plain functions, NOT called via `expect()`)  |
+| Fixtures   | `e2e/fixtures/project-builder.ts`, `cli.ts`, `dual-scope-helpers.ts`, `interactive-prompt.ts`, `expected-values.ts`, `plugin-install-state.ts` | Project creation, CLI execution, scope helpers, canonical expected values |
+| Constants  | `e2e/pages/constants.ts`                                                                                                                       | All UI text, paths, timeouts, exit codes                                  |
 
 ---
 
@@ -72,20 +75,25 @@ e2e/
     create-e2e-source.ts  # 9-skill E2E source factory
     node-pty.d.ts         # Type reference for node-pty
     create-e2e-plugin-source.ts # Plugin source factory (builds plugins + marketplace.json)
+    type-check-probe.ts   # tsc probe: asserts a generated config-types.ts alias still REJECTS bad values
   fixtures/
     project-builder.ts    # Project directory factories (ProjectBuilder)
     cli.ts                # Non-interactive CLI runner (CLI.run)
     dual-scope-helpers.ts # Multi-phase dual-scope lifecycle helpers
     interactive-prompt.ts # Non-wizard interactive prompt page object
+    expected-values.ts    # E2E_SKILL_IDS, E2E_SKILL, E2E_AGENT, E2E_AGENTS, E2E_AGENT_DISPLAY
+    plugin-install-state.ts # Reproduces a completed plugin install WITHOUT the Claude CLI
   pages/
-    constants.ts          # DIRS, FILES, STEP_TEXT, TIMEOUTS, EXIT_CODES, INTERNAL_DELAYS
+    constants.ts          # DIRS, FILES, STEP_TEXT, TIMEOUTS, EXIT_CODES, SOURCE_PATHS, TERMINAL_SIZE, INTERNAL_DELAYS, INTERNAL_RETRIES
     base-step.ts          # Abstract base for all step page objects
+    retry-enter.ts        # retryEnterUntil(): closed-loop Enter retry shared by BaseStep + DashboardSession
     terminal-screen.ts    # Screen abstraction over TerminalSession
     wizard-result.ts      # WizardResult + ProjectHandle types
     dashboard-session.ts  # Dashboard mode page object
     wizards/
       init-wizard.ts      # InitWizard entry point
       edit-wizard.ts      # EditWizard entry point
+      global-home.ts      # allocateProjectGlobalHome(): fresh-or-reused global HOME for launchInProject
     steps/
       stack-step.ts       # Stack selection step
       domain-step.ts      # Domain selection step
@@ -94,8 +102,14 @@ e2e/
       agents-step.ts      # Agent selection step
       confirm-step.ts     # Confirm and install step
       search-modal.ts     # Search overlay (opened from build step)
+  assertions/
+    phase-assertions.ts     # expectPhaseSuccess, expectFullInstallation
+    scope-assertions.ts     # expectDualScopeInstallation
+    uninstall-assertions.ts # expectCleanUninstall
+    config-assertions.ts    # expectNoDuplicates, normalizeConfigPreservingOrder
   matchers/
     project-matchers.ts   # Custom Vitest matcher implementations
+    agent-matchers.ts     # toHaveAgentFrontmatter, toHaveAgentDynamicSkills
     setup.ts              # Matcher registration + type augmentation
 ```
 
@@ -127,14 +141,15 @@ e2e/
 
 **File:** `e2e/vitest.config.ts`
 
-| Setting       | Value                   | Notes                                                    |
-| ------------- | ----------------------- | -------------------------------------------------------- |
-| `pool`        | `"forks"`               | Process isolation between test files                     |
-| `testTimeout` | `30_000`                | Default per-test timeout                                 |
-| `hookTimeout` | `60_000`                | Default for beforeAll/afterAll                           |
-| `retry`       | `2`                     | Automatic retry (up to 2 retries on failure)             |
-| `include`     | `e2e/**/*.e2e.test.ts`  | Smoke tests (`*.smoke.test.ts`) excluded, run explicitly |
-| `globalSetup` | `./e2e/global-setup.ts` | Pre-suite setup                                          |
+| Setting       | Value                   | Notes                                                                                                                                                                           |
+| ------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pool`        | `"forks"`               | Process isolation between test files                                                                                                                                            |
+| `maxWorkers`  | `16`                    | Capped. PTY-driven wizard tests are load-sensitive: at one worker per core (21+ on dev machines) dropped keystrokes and slow installs produce flake that never reproduces solo. |
+| `testTimeout` | `30_000`                | Default per-test timeout                                                                                                                                                        |
+| `hookTimeout` | `60_000`                | Default for beforeAll/afterAll                                                                                                                                                  |
+| `retry`       | `2`                     | Automatic retry (up to 2 retries on failure)                                                                                                                                    |
+| `include`     | `e2e/**/*.e2e.test.ts`  | Smoke tests (`*.smoke.test.ts`) excluded, run explicitly                                                                                                                        |
+| `globalSetup` | `./e2e/global-setup.ts` | Pre-suite setup                                                                                                                                                                 |
 
 Long tests override per-test: `it("...", { timeout: TIMEOUTS.LIFECYCLE }, async () => {})`.
 
@@ -148,15 +163,43 @@ All constants live in `e2e/pages/constants.ts`. Tests import from here, never fr
 
 **Files (`FILES`):** `CONFIG_TS`, `CONFIG_TYPES_TS`, `SKILL_MD`, `METADATA_YAML`, `SETTINGS_JSON`, `INSTALLED_PLUGINS_JSON`, `IDENTITY_MD`, `PLAYBOOK_MD`, `PLUGIN_JSON`
 
-**Step text (`STEP_TEXT`):** `STACK`, `DOMAINS`, `DOMAIN_WEB`, `DOMAIN_API`, `DOMAIN_META`, `DOMAIN_MOBILE`, `BUILD`, `BUILD_FOOTER`, `SOURCES`, `AGENTS`, `CONFIRM`, `INIT_SUCCESS`, `EDIT_SUCCESS`, `EDIT_UNCHANGED`, `COMPILE_SUCCESS`, `EJECT_SUCCESS`, `IMPORT_SUCCESS`, `UNINSTALL_SUCCESS`, `LOADING_SKILLS`, `RECOMPILING`, `COMPILING_STACK`, `LOADED`, `LOADED_LOCAL`, `CONFIRM_UPDATE`, `CONFIRM_UNINSTALL`, `SEARCH`, `DASHBOARD`, `FOOTER_SELECT`, `START_FROM_SCRATCH`, `TOGGLE_SELECTION`, `NO_INSTALLATION`, `TOO_NARROW`, `TOO_SHORT`
+**Step text (`STEP_TEXT`)** — all 72 members (re-counted on disk 2026-07-31; the previous "64" predated eight members, seven of which the table below had never listed):
 
-**Timeouts (`TIMEOUTS`):** `WIZARD_LOAD` (45s), `WIZARD_TRANSITION` (45s), `INSTALL` (30s), `PLUGIN_INSTALL` (60s), `PLUGIN_TEST` (90s = PLUGIN_INSTALL + EXIT_WAIT), `EXIT` (10s), `SESSION_DEFAULT` (10s), `SESSION_DEFAULT_CI` (20s), `EXIT_WAIT` (30s), `SETUP` (60s), `LIFECYCLE` (180s), `EXTENDED_LIFECYCLE` (300s), `INTERACTIVE` (120s)
+| Group                 | Members                                                                                                                                                                                                                                                     |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Step identification   | `STACK`, `DOMAINS`, `DOMAIN_WEB`, `DOMAIN_API`, `DOMAIN_META`, `DOMAIN_MOBILE`, `BUILD`, `BUILD_FOOTER`, `SCOPE`, `CATEGORY_FRAMEWORK`, `SOURCES`, `AGENTS`, `CONFIRM`                                                                                      |
+| Completion            | `INIT_SUCCESS`, `EDIT_SUCCESS`, `EDIT_UNCHANGED`, `COMPILE_SUCCESS`, `COMPILE_COMPLETE`, `CONFIG_LOAD_FAILED`, `EJECT_SUCCESS`, `IMPORT_SUCCESS`, `UNINSTALL_SUCCESS`                                                                                       |
+| Status / progress     | `LOADING_SKILLS`, `RECOMPILING`, `NO_AGENTS_TO_RECOMPILE`, `COMPILE_GLOBAL_SCOPE_HINT`, `CONFIG_TYPES_REFRESHED`, `SKILL_NOT_FOUND_WARNING`, `COMPILE_PASS_NO_SKILLS`, `COMPILE_NO_SKILLS_ERROR`, `LOADED`, `LOADED_LOCAL`, `LOADED_SKILL`, `COMPILED_LIST` |
+| Prompts               | `CONFIRM_UPDATE`, `CONFIRM_UNINSTALL`, `SEARCH`, `UNINSTALL_PREVIEW`, `UNINSTALL_PREVIEW_HEADING`, `UNINSTALL_CONFIG_SECTION`, `UNINSTALL_PROJECTS_UPDATED_ONE`, `UNINSTALL_PROJECT_SKIPPED`, `UNINSTALL_CONFIG_UNREADABLE`                                 |
+| Sources step          | `CONFIGURED_MARKETPLACES`, `ADD_SOURCE`                                                                                                                                                                                                                     |
+| Scope group labels    | `SCOPE_GLOBAL`, `SCOPE_PROJECT`                                                                                                                                                                                                                             |
+| Dashboard             | `DASHBOARD`                                                                                                                                                                                                                                                 |
+| UI elements           | `FOOTER_SELECT`, `START_FROM_SCRATCH`, `TOGGLE_SELECTION`, `NO_INSTALLATION`                                                                                                                                                                                |
+| Installation output   | `INSTALLING_PLUGINS`, `INSTALLING_PLUGINS_ELLIPSIS`, `PLUGIN_NATIVE`, `SKILLS_COPIED_TO`, `AGENTS_COMPILED_TO`, `CONFIGURATION_LABEL`, `READY_TO_INSTALL`, `NO_SKILLS_FOUND`, `UNINSTALL_CANCELLED`                                                         |
+| Scope warnings        | `GLOBAL_SKILLS_BLOCKED`, `GLOBAL_AGENTS_BLOCKED`                                                                                                                                                                                                            |
+| Terminal-size warning | `TOO_NARROW`, `TOO_SHORT`, `RESIZE_PROMPT`                                                                                                                                                                                                                  |
+| Scroll affordance     | `SCROLL_MORE_BELOW`, `SCROLL_MORE_ABOVE`                                                                                                                                                                                                                    |
+| Summary-panel header  | `PANEL_MARKETPLACE`, `PANEL_STACK`, `PANEL_STACK_NONE`, `SOURCE_DISPLAY_DEFAULT`                                                                                                                                                                            |
+
+`SCOPE` ("Scope") is painted only for genuine project-scope edits — the footer hides it when `isEditingFromGlobalScope` is true — so it is the sentinel for asserting which scope a session actually runs at.
+
+**Timeouts (`TIMEOUTS`):** `WIZARD_LOAD` (45s), `WIZARD_TRANSITION` (45s), `INSTALL` (30s), `PLUGIN_INSTALL` (60s), `PLUGIN_TEST` (90s = PLUGIN_INSTALL + EXIT_WAIT), `EXIT` (10s), `SESSION_DEFAULT` (10s), `SESSION_DEFAULT_CI` (20s), `EXIT_WAIT` (30s), `SETUP` (60s), `SETUP_DUAL` (120s = SETUP × 2, for `beforeAll` hooks that build two sources), `LIFECYCLE` (180s), `EXTENDED_LIFECYCLE` (300s), `INTERACTIVE` (120s)
+
+`WIZARD_LOAD` was raised 15s → 45s in 0.145.0: `init` against the real marketplace under full-suite parallelism can sit at "Loading skills..." well past 15s. `BaseStep.defaultTimeout` derives from it, so every unqualified step wait is now a 45s upper bound — including the one that burns when `waitForWizardFooter` is used on a footer-less screen.
 
 **Exit codes (`EXIT_CODES`):** `SUCCESS` (0), `ERROR` (1), `INVALID_ARGS` (2), `NETWORK_ERROR` (3), `CANCELLED` (4), `UNKNOWN_COMMAND` (127)
 
-**`INTERNAL_DELAYS`** contains `STEP_TRANSITION` and `KEYSTROKE`. These are framework-internal and must never appear in test files.
+**Terminal geometry (`TERMINAL_SIZE`):** `TALL` = `{ rows: 60, cols: 120 }` (full build grid visible); `SHORT` = `{ rows: 20, cols: 100 }` (smallest viewport that still clears the wizard's own 80×20 minimum-size gate — wide enough to render normally, short enough that an overflowing step must clip and paint a `SCROLL_MORE_*` affordance); `BELOW_MINIMUM` = `{ rows: 16, cols: 100 }` (**below** the gate — reachable only by RESIZING a session that started larger; launching here hangs on the resize prompt). Unset session defaults live in `helpers/terminal-session.ts` and are deliberately not mirrored here.
 
-**Source paths (`SOURCE_PATHS`):** `SKILLS_DIR`, `SKILL_CATEGORIES`, `SKILL_RULES`, `STACKS_FILE`, `PLUGIN_MANIFEST_DIR`
+`SHORT.rows` must equal `MIN_TERMINAL_SIZE.ROWS` in `src/cli/consts.ts`, the single live size gate. Set it lower and every spec using `SHORT` hangs on `Terminal too short. Please resize.` until its timeout instead of failing; set it higher and those specs stop exercising the tightest geometry the wizard claims to support. The value is duplicated rather than imported because `e2e/pages/constants.ts` is deliberately free of `src/cli` imports.
+
+**Resizing mid-session.** The same gate is enforced a second time by `WizardLayout`, which replaces the wizard tree when the terminal shrinks under a running session. `BaseStep.resizeBelowMinimum(cols, rows)` and `resizeAboveMinimum(cols, rows)` drive that: each resizes the PTY **and** the xterm emulator (both, or the buffer desynchronises from the process) and then closed-loops on a cursor-anchored raw wait — the resize prompt one way, the wizard footer the other. Do not assert the wizard's ABSENCE after a shrink: the emulator keeps everything the session ever drew, so any wizard string is still matchable from scrollback. Assert that the prompt is the CURRENT frame instead.
+
+**`INTERNAL_DELAYS`** contains `STEP_TRANSITION` (500ms) and `KEYSTROKE` (150ms). **`INTERNAL_RETRIES`** contains `MAX_ATTEMPTS` (5) and `INTERVAL_MS` (3000), the budget for the closed-loop `retryEnterUntil()` helper. Both are framework-internal and must never appear in test files.
+
+**`WizardType`** is an exported type (`"init" | "edit"`) — which wizard a shared step page object is driving. `AgentsStep.acceptDefaults` / `advance` and `BuildStep.saveFromBuild` take it.
+
+**Source paths (`SOURCE_PATHS`):** `SKILLS_DIR` (`src/skills`), `SKILL_CATEGORIES` (`config/skill-categories.ts`), `SKILL_RULES` (`config/skill-rules.ts`), `STACKS_FILE` (`config/stacks.ts`), `PLUGIN_MANIFEST_DIR` (`.claude-plugin`), `PLUGINS_DIST` (`dist/plugins`)
 
 These are paths within a skills source directory (not a project directory). Use for tests that assert on source structure.
 
@@ -169,6 +212,10 @@ These are paths within a skills source directory (not a project directory). Use 
 **State-change verification.** Any test that completes a wizard flow or runs a command that creates, modifies, or removes files or config entries MUST assert the resulting state of both config AND filesystem. If the operation should NOT change something, snapshot before and assert identical after. Never check only one side.
 
 **Page object key-press rule.** Every step page-object method that sends a key press MUST call `await this.waitForWizardFooter()` _before_ the press. No qualifier on WHICH keypress — every keypress needs the wait under parallel suite contention, not just the first one. There IS a qualifier on WHICH SCREEN: `waitForWizardFooter()` is a one-string match on the footer text `"select"` that only `WizardLayout` paints, so the rule covers `BaseStep` subclasses only — applying it to the dashboard or any other footer-less screen hangs for the full timeout instead of settling. Post-press waits don't substitute — the race is between render commit and `useEffect`, so the guard must sit upstream of the keystroke. Callers cannot be trusted to have left the screen stable, because the previous method may itself have been a keypress-before-settle. In isolation the race is invisible; under contention the PTY write lands between commit and `useEffect` and the `useInput` handler registered by the new frame isn't listening yet — the keystroke is silently swallowed and the test passes by not exercising the behavior it claims to test.
+
+**Grid navigation must be closed-loop.** Page-object navigation on the build grid MUST verify the focused CATEGORY from the rendered screen after every focus-moving keystroke. Never maintain a keystroke-count model of grid position across calls. Under `NO_COLOR` the focused CELL has no text signal at all (only border colours distinguish it, and those are stripped), but the focused category header does — it paints one column deeper. Tab moves to the next category AND resets the column to 0; arrow-DOWN moves category but PRESERVES and clamps the column. Only Tab yields a known column. `BuildStep.focusSkill` is the canonical implementation; see [patterns.md § Closed-Loop Grid Navigation](./patterns.md) and [page-objects.md](./page-objects.md).
+
+**`getOutput()` is a buffer, not a frame log.** `getOutput()` / `getFullOutput()` return xterm's PROCESSED buffer — the current screen plus whatever genuinely scrolled off. Ink repaints overwrite in place, so a value that was rendered and then re-rendered differently is NOT retrievable from it. Never assert "some earlier frame contained X" via `getOutput()`. Assert at the moment the frame is on screen, or use a raw-output surface (`getRawOutput()`, `waitForRawText`, `waitForTextAfter`) — raw PTY output is append-only and is the only frame-accumulating surface.
 
 **Never broaden assertions.** When a strict assertion fails, investigate why — don't weaken it. If the failure is a fixture limitation, keep the strict assertion as a commented-out `// KNOWN GAP:` with an explanation. If it's a product bug, use `it.fails`.
 

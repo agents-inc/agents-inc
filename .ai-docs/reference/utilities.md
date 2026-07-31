@@ -1,18 +1,34 @@
 ---
 scope: reference
 area: architecture
-keywords: [consts, messages, logger, fs, exec, typed-object]
+keywords:
+  [
+    consts,
+    messages,
+    logger,
+    fs,
+    exec,
+    typed-object,
+    ui-symbols,
+    cli-colors,
+    diff-markers,
+    ConfigLoadError,
+  ]
 related:
   - reference/architecture-overview.md
   - reference/dependency-graph.md
   - reference/test-infrastructure.md
-last_validated: 2026-07-23
+  - reference/component-patterns.md
+  - reference/features/configuration.md
+last_validated: 2026-07-30
 ---
+
+<!-- re-validated 2026-07-30 (product v0.146.0): corrected the messages.ts inventory — INFO_MESSAGES is 7 keys (CONFIG_TYPES_REFRESHED added), and messages.ts now also exports five message-builder FUNCTIONS the doc had no section for (globalScopedAgentsHint, configTypesRefreshFailed, registeredProjectsUpdated, registeredProjectUpdateSkipped, registeredProjectsUpdateFailed); UI_SYMBOLS is 19 members, not 17 — added the shared ADDED (+) / REMOVED (-) diff markers and named their two consumers; added the exhaustive CLI_COLORS key list (16) and the previously-undocumented ASCII_LOGO export; corrected the remeda file count from 26 to 29 (27 production + 2 test modules; the 14 named imports are unchanged); added ConfigLoadError as the only custom Error subclass in production code (cross-referenced, not duplicated). ERROR/SUCCESS/STATUS message counts re-verified unchanged against messages.test.ts -->
 
 # Utilities Reference
 
-**Last Updated:** 2026-07-23
-**Last Validated:** 2026-07-23
+**Last Updated:** 2026-07-30
+**Last Validated:** 2026-07-30
 
 ## Utility Files
 
@@ -25,7 +41,7 @@ All utilities in `src/cli/utils/`.
 | `frontmatter.ts`  | `src/cli/utils/frontmatter.ts`  | YAML frontmatter extraction                 |
 | `fs.ts`           | `src/cli/utils/fs.ts`           | File system wrappers + path containment     |
 | `logger.ts`       | `src/cli/utils/logger.ts`       | Logging: log, warn, verbose, buffering      |
-| `messages.ts`     | `src/cli/utils/messages.ts`     | User-facing message constants               |
+| `messages.ts`     | `src/cli/utils/messages.ts`     | User-facing message constants + builders    |
 | `string.ts`       | `src/cli/utils/string.ts`       | `truncateText`, `toTitleCase`               |
 | `terminal.ts`     | `src/cli/utils/terminal.ts`     | Clear terminal screen + scrollback          |
 | `type-guards.ts`  | `src/cli/utils/type-guards.ts`  | Runtime type narrowing for union types      |
@@ -53,6 +69,15 @@ function getErrorMessage(error: unknown): string;
 Extracts human-readable message from unknown error value. Returns `error.message` for Error instances, `String(error)` otherwise.
 
 **Used in:** Every catch block across the codebase.
+
+### Typed errors
+
+`ConfigLoadError` (`src/cli/lib/configuration/project-config.ts`) is the **only** class extending
+`Error` in production code — every other failure path throws a plain `Error` or returns a result
+object. It carries `configPath` and `reason` as readonly fields and sets `name = "ConfigLoadError"`,
+so callers can distinguish "config file absent" (`loadProjectConfigFromDir` returns `null`) from
+"config file present but unloadable" (throws). Behaviour and callers are documented in
+`reference/features/configuration.md` and `reference/commands/index.md` — not duplicated here.
 
 ## Shell Execution
 
@@ -276,7 +301,8 @@ Helpers for the `# yaml-language-server: $schema=...` header on generated YAML f
 
 ### `src/cli/utils/messages.ts`
 
-All user-facing strings centralized in constant objects:
+Static user-facing strings live in four constant objects; strings that interpolate a runtime value
+are exported as **functions** instead (see below).
 
 Each row lists every key in that object (exhaustive, in source order).
 
@@ -285,7 +311,27 @@ Each row lists every key in that object (exhaustive, in source order).
 | `ERROR_MESSAGES`   | 10    | UNKNOWN_ERROR, UNKNOWN_ERROR_SHORT, NO_INSTALLATION, NO_LOCAL_SKILLS, NO_SKILLS_FOUND, VALIDATION_FAILED, FAILED_RESOLVE_SOURCE, FAILED_LOAD_AGENT_PARTIALS, FAILED_COMPILE_AGENTS, SKILL_NOT_FOUND                                       |
 | `SUCCESS_MESSAGES` | 4     | UNINSTALL_COMPLETE, INIT_SUCCESS, PLUGIN_COMPILE_COMPLETE, ALL_SKILLS_UP_TO_DATE                                                                                                                                                          |
 | `STATUS_MESSAGES`  | 11    | LOADING_SKILLS, LOADING_MARKETPLACE_SOURCE, RECOMPILING_AGENTS, COMPILING_AGENTS, DISCOVERING_SKILLS, RESOLVING_SOURCE, RESOLVING_MARKETPLACE_SOURCE, LOADING_AGENT_PARTIALS, FETCHING_REPOSITORY, COPYING_SKILLS, UPDATING_PLUGIN_SKILLS |
-| `INFO_MESSAGES`    | 6     | NO_CHANGES_MADE, RUN_COMPILE, NO_AGENTS_TO_RECOMPILE, NO_PLUGIN_INSTALLATION, NO_LOCAL_INSTALLATION, NOT_INSTALLED                                                                                                                        |
+| `INFO_MESSAGES`    | 7     | NO_CHANGES_MADE, RUN_COMPILE, NO_AGENTS_TO_RECOMPILE, NO_PLUGIN_INSTALLATION, NO_LOCAL_INSTALLATION, NOT_INSTALLED, CONFIG_TYPES_REFRESHED                                                                                                |
+
+All four key lists are pinned with `toStrictEqual` in `src/cli/utils/messages.test.ts`, which also
+asserts non-empty string values everywhere and a trailing `...` on every `STATUS_MESSAGES` value.
+The test does **not** cover the message-builder functions below.
+
+### Message builder functions
+
+Exported from the same file. Used where the string embeds a count, a path, or an error reason —
+so they cannot live in a `const` object.
+
+| Function                                      | Signature                         | Where it prints                                                                                                        |
+| --------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `globalScopedAgentsHint(count)`               | `(count: number) => string`       | `Compile` — project pass resolved zero project agents but the config declares global-scope ones. Singular/plural aware |
+| `configTypesRefreshFailed(reason)`            | `(reason: string) => string`      | `Compile.refreshConfigTypes` catch — compiled agents are written, only the type unions may be stale                    |
+| `registeredProjectsUpdated(count)`            | `(count: number) => string`       | `Uninstall` — summary after a global uninstall pruned inlined global entries. Singular/plural aware                    |
+| `registeredProjectUpdateSkipped(projectPath)` | `(projectPath: string) => string` | `Uninstall` — one registered project was unreachable; the uninstall continues                                          |
+| `registeredProjectsUpdateFailed(reason)`      | `(reason: string) => string`      | `Uninstall.prepareGlobalPropagation` catch — no registered project could be updated; the uninstall still completes     |
+
+`INFO_MESSAGES.CONFIG_TYPES_REFRESHED` is the success counterpart to `configTypesRefreshFailed()`;
+both interpolate `STANDARD_FILES.CONFIG_TYPES_TS` rather than hardcoding `config-types.ts`.
 
 ## Constants Reference (`src/cli/consts.ts`)
 
@@ -411,11 +457,31 @@ Helper: `formatSourceDisplayName(source: string): string` resolves a source name
 
 ### UI Constants
 
-`UI_SYMBOLS`, `CLI_COLORS`, and `SCROLL_VIEWPORT` are defined in `src/cli/consts.ts`. (No `UI_LAYOUT` or `UI_MESSAGES` objects — those names are not defined.)
+`UI_SYMBOLS`, `CLI_COLORS`, `SCROLL_VIEWPORT`, and `ASCII_LOGO` are defined in `src/cli/consts.ts`. (No `UI_LAYOUT` or `UI_MESSAGES` objects — those names are not defined.)
 
-`UI_SYMBOLS` has exactly 17 members (exhaustive): `CHECKBOX_CHECKED`, `CHECKBOX_UNCHECKED`, `CHEVRON`, `CHEVRON_SPACER`, `SELECTED`, `UNSELECTED`, `CURRENT`, `SKIPPED`, `DISCOURAGED`, `DISABLED`, `LOCK`, `EJECT`, `BULLET`, `SCROLL_UP`, `SCROLL_DOWN`, `CHECK`, `CROSS`. (`SELECTED`/`CHECK` share one checkmark glyph; `SKIPPED`/`DISABLED` share one en-dash glyph.)
+`UI_SYMBOLS` has exactly 19 members (exhaustive, in source order): `CHECKBOX_CHECKED`, `CHECKBOX_UNCHECKED`, `CHEVRON`, `CHEVRON_SPACER`, `SELECTED`, `UNSELECTED`, `CURRENT`, `SKIPPED`, `DISCOURAGED`, `DISABLED`, `LOCK`, `EJECT`, `BULLET`, `SCROLL_UP`, `SCROLL_DOWN`, `CHECK`, `CROSS`, `REMOVED`, `ADDED`. (`SELECTED`/`CHECK` share one checkmark glyph via the module-private `CHECK_GLYPH`; `SKIPPED`/`DISABLED` share one en-dash glyph via `EN_DASH_GLYPH`. Both key pairs are kept so call sites express intent.)
 
-`SCROLL_VIEWPORT` keys: `SCROLL_INDICATOR_HEIGHT`, `CATEGORY_NAME_LINES`, `CATEGORY_MARGIN_LINES`, `MIN_VIEWPORT_ROWS`, `MIN_TERMINAL_HEIGHT`.
+#### Shared diff markers
+
+`UI_SYMBOLS.ADDED` (ASCII `+`) and `UI_SYMBOLS.REMOVED` (ASCII `-`) are the added / pending-removal
+diff markers, deliberately shared by the two surfaces that render a session diff so they cannot
+drift apart:
+
+| Consumer                                            | Surface                 | Usage                                               |
+| --------------------------------------------------- | ----------------------- | --------------------------------------------------- |
+| `src/cli/components/wizard/skill-agent-summary.tsx` | Confirm-step info panel | `DIFF_PREFIX` record keyed by `DiffRowStatus`       |
+| `src/cli/components/wizard/source-grid.tsx`         | Sources step            | `row.disabled` -> `REMOVED`, `row.added` -> `ADDED` |
+
+The `unchanged` marker is `UI_SYMBOLS.BULLET`. The **source-changed** marker is a bare `"~ "` string
+literal in `skill-agent-summary.tsx`'s `DIFF_PREFIX` — it is _not_ a `UI_SYMBOLS` member.
+
+`CLI_COLORS` has exactly 16 keys (exhaustive, in source order): `PRIMARY`, `SUCCESS`, `ERROR`, `WARNING`, `INFO`, `NEUTRAL`, `FOCUS`, `UNFOCUSED`, `WHITE`, `BLACK`, `DIM`, `GRAY_1`, `LABEL_BG`, `TOAST_BG`, `TOAST_FG`, `HOVER_BG`.
+
+`SCROLL_VIEWPORT` keys (exhaustive): `SCROLL_INDICATOR_HEIGHT`, `CATEGORY_NAME_LINES`, `CATEGORY_MARGIN_LINES`, `MIN_VIEWPORT_ROWS`.
+
+`MIN_TERMINAL_SIZE` (`COLS`, `ROWS`) is a sibling export, not a `SCROLL_VIEWPORT` key: it is the minimum terminal geometry `BaseCommand.ensureTerminalSize` enforces, and the only size gate in the CLI. `SCROLL_VIEWPORT` used to carry a `MIN_TERMINAL_HEIGHT` that no call site read; it has been deleted.
+
+`ASCII_LOGO` is a multi-line box-drawing banner string. Only `src/cli/commands/init.tsx` reads it — once rendered directly in a `<Text>`, once passed through as the wizard's `logo` prop.
 
 `UI_SYMBOLS` and `CLI_COLORS` values are documented in detail in `reference/component-patterns.md`.
 
@@ -456,7 +522,10 @@ Helper: `yamlSchemaComment(schemaPath: string): string` generates a `# yaml-lang
 
 ## Remeda Utilities (External)
 
-Imported by 26 files (`import { ... } from "remeda"`; no namespace `* as R` imports). The named imports actually in use across `src/cli/`:
+Imported by 29 files under `src/cli/`: 27 production modules, one test-data module
+(`lib/__tests__/mock-data/mock-matrices.ts`) and one spec (`components/wizard/step-build.test.tsx`).
+Always `import { ... } from "remeda"`; there are zero namespace `* as R` imports. The named imports
+actually in use across `src/cli/`:
 
 | Function        | Usage                       |
 | --------------- | --------------------------- |
