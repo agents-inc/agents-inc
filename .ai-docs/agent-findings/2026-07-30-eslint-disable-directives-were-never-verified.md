@@ -12,7 +12,17 @@ reporting_agent: cli-developer
 category: architecture
 domain: infra
 root_cause: enforcement-gap
-status: open
+status: partial
+partial_note: >
+  Code side COMPLETE for both drifted directives; docs side still pending. `use-measured-height.ts:51`
+  — inert `react-hooks/exhaustive-deps` directive deleted, intent kept as prose (2026-08-01,
+  cli-developer). `lib/__tests__/factories/skill-factories.ts:26` — the dangerous `no-var`
+  misplacement is fixed by reordering so the directive sits immediately above the `var`
+  (2026-08-01, cli-tester, during the test-file no-unused-vars burndown); both the `no-var` error
+  and the "unused eslint-disable directive" error are gone, verified by a clean `npx eslint .`.
+  STILL PENDING: Proposed Standard items 2 and 3 — the clean-code-standards § 14 rule and the
+  `reportUnusedDisableDirectives` decision are unwritten — and no decision has been taken on
+  adopting `eslint-plugin-react-hooks`.
 ---
 
 ## What Was Wrong
@@ -87,3 +97,67 @@ The one preventive step that _was_ taken: `lint-staged` runs `eslint --no-warn-i
    the baseline is clean. ESLint reports unused directives as warnings by default in flat config
    (which is how this was caught); raising it to `"error"` makes stale suppressions a hard failure
    rather than something that scrolls past in a 150-problem report.
+
+## Update — 2026-08-01 (cli-developer, `src/cli` no-unused-vars burndown)
+
+Proposed Standard item 1, second bullet, is now done — by the **delete** branch, not the
+install-the-plugin branch. `eslint-plugin-react-hooks` was deliberately NOT added: that is an
+owner-level decision, and adding it to an Ink/React codebase would surface a fresh batch of
+`exhaustive-deps` reports across every component, which is not something a lint-burndown task
+should decide unilaterally.
+
+What replaced the directive in `use-measured-height.ts` is a plain comment in the same position,
+because the directive's only surviving value was the intent it recorded — deleting it outright
+would have destroyed a signal while fixing nothing:
+
+```ts
+    // Deps are deliberately empty: this is a mount-only retry ladder. `measure`
+    // is re-created every render, so listing it would re-arm the timers on every
+    // render instead of once.
+  }, []);
+```
+
+**The dependency situation the owner needs in order to decide on the plugin.** The hook has three
+effects and `exhaustive-deps` would have something to say about two of them:
+
+| Effect                        | Deps       | What the rule would report                                                                                               |
+| ----------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `measure()` after each render | _(none)_   | Nothing — a bare effect is intentional and the rule does not flag it.                                                    |
+| retry ladder (`[0, 16, 50]`)  | `[]`       | Would demand `measure`. Honouring it re-arms three timers on every render instead of once; the omission is correct.      |
+| `stdout` resize listener      | `[stdout]` | Would ALSO demand `measure` — and this one was never suppressed, so the "one directive" framing understated the surface. |
+
+The shared cause in both cases is that `measure` is a plain arrow re-created every render rather
+than a `useCallback`. If the plugin is ever adopted, the fix is to memoise `measure` (with `ref`
+and `setMeasuredHeight`, both stable) rather than to widen the dep arrays — widening them is what
+the deleted directive existed to prevent.
+
+The `no-var` half of this finding is untouched and remains the dangerous one.
+
+## Update — 2026-08-01 (cli-tester, test-file `no-unused-vars` burndown)
+
+Proposed Standard item 1, **first** bullet is now done. `skill-factories.ts` reads:
+
+```ts
+// Boundary cast: test factory maps arbitrary skill IDs to category strings (...)
+// eslint-disable-next-line no-var -- `var` avoids TDZ in circular ESM imports (let/const would throw)
+var _canonicalSkillCategories: Record<string, string> | undefined;
+```
+
+Only the two comment lines swapped — no code change, both comments' content kept verbatim. The
+directive is now the line immediately preceding the `var`, which is what item 1 prescribed. Both
+reported problems disappear together: `no-var` on the `var` line is suppressed again, and the
+"unused eslint-disable directive" report on the directive line goes away because the directive now
+has something to suppress. Confirmed by `npx eslint .` returning zero problems repo-wide.
+
+This closes the code side of the whole finding. What remains is documentation only: the
+clean-code-standards § 14 rule (item 2) and the `reportUnusedDisableDirectives` decision (item 3).
+Item 3 is now actionable in a way it was not on 2026-07-30 — the baseline the item was waiting on
+("once the baseline is clean") is clean as of today, so raising unused directives to `"error"` can
+be decided on its merits rather than deferred.
+
+One observation for whoever writes item 2. This directive was misplaced for as long as it existed
+and nothing caught it, but the reason it was _worth_ catching is narrower than "stale suppression":
+it is that the misplacement made a correct-and-load-bearing `var` look like an unfixed lint error,
+and the auto-fix for that apparent error is a runtime crash. The § 14 rule should lead with that
+failure mode rather than with tidiness — a directive one line too high is not cosmetic drift, it is
+an armed `--fix` trap.
