@@ -17,7 +17,7 @@ import {
 } from "./generate-source-types";
 
 import type { AgentEntry } from "./generate-source-types";
-import type { Stack } from "../src/cli/types";
+import type { SkillId, Stack } from "../src/cli/types";
 
 // -- sortedGroupBy -----------------------------------------------------------
 
@@ -56,7 +56,15 @@ describe("sortedGroupBy", () => {
 // -- resolveStack ------------------------------------------------------------
 
 describe("resolveStack", () => {
-  const VALID_IDS = new Set(["web-framework-react", "web-state-zustand", "api-framework-hono"]);
+  const KNOWN_SKILL_IDS = new Set<SkillId>([
+    "web-framework-react",
+    "web-state-zustand",
+    "api-framework-hono",
+  ]);
+
+  /** A real skill ID deliberately absent from KNOWN_SKILL_IDS — models a stack
+   * referencing a skill the current skills source no longer provides. */
+  const UNKNOWN_SKILL_ID: SkillId = "web-framework-svelte";
 
   it("resolves valid skill IDs from stack assignments", () => {
     const stack: Stack = {
@@ -66,12 +74,12 @@ describe("resolveStack", () => {
       philosophy: "Test philosophy",
       agents: {
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react" as any, preloaded: true }],
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
       },
     };
 
-    const result = resolveStack(stack, VALID_IDS);
+    const result = resolveStack(stack, KNOWN_SKILL_IDS);
 
     expect(result.id).toBe("test-stack");
     expect(result.name).toBe("Test Stack");
@@ -84,7 +92,7 @@ describe("resolveStack", () => {
     });
   });
 
-  it("filters out invalid skill IDs not in skillIdSet", () => {
+  it("filters out skill IDs not in skillIdSet", () => {
     const stack: Stack = {
       id: "mixed-stack",
       name: "Mixed",
@@ -92,14 +100,14 @@ describe("resolveStack", () => {
       agents: {
         "web-developer": {
           "web-framework": [
-            { id: "web-framework-react" as any, preloaded: true },
-            { id: "web-framework-nonexistent" as any, preloaded: false },
+            { id: "web-framework-react", preloaded: true },
+            { id: UNKNOWN_SKILL_ID, preloaded: false },
           ],
         },
       },
     };
 
-    const result = resolveStack(stack, VALID_IDS);
+    const result = resolveStack(stack, KNOWN_SKILL_IDS);
 
     expect(result.skills).toStrictEqual({
       "web-developer": {
@@ -115,15 +123,15 @@ describe("resolveStack", () => {
       description: "Dedup test",
       agents: {
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react" as any, preloaded: true }],
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
         "web-reviewer": {
-          "web-framework": [{ id: "web-framework-react" as any, preloaded: false }],
+          "web-framework": [{ id: "web-framework-react", preloaded: false }],
         },
       },
     };
 
-    const result = resolveStack(stack, VALID_IDS);
+    const result = resolveStack(stack, KNOWN_SKILL_IDS);
 
     expect(result.allSkillIds).toStrictEqual(["web-framework-react"]);
   });
@@ -136,7 +144,7 @@ describe("resolveStack", () => {
       agents: {},
     };
 
-    const result = resolveStack(stack, VALID_IDS);
+    const result = resolveStack(stack, KNOWN_SKILL_IDS);
 
     expect(result.skills).toStrictEqual({});
     expect(result.allSkillIds).toStrictEqual([]);
@@ -150,7 +158,7 @@ describe("resolveStack", () => {
       agents: {},
     };
 
-    const result = resolveStack(stack, VALID_IDS);
+    const result = resolveStack(stack, KNOWN_SKILL_IDS);
 
     expect(result.philosophy).toBe("");
   });
@@ -433,8 +441,8 @@ describe("generatePhase1", () => {
 
   it("generates valid source-types.ts content with SKILL_MAP", () => {
     const skills = [
-      createMockExtractedSkill("web-framework-react", { slug: "react" as any }),
-      createMockExtractedSkill("api-framework-hono", { slug: "hono" as any }),
+      createMockExtractedSkill("web-framework-react", { slug: "react" }),
+      createMockExtractedSkill("api-framework-hono", { slug: "hono" }),
     ];
     const agents: AgentEntry[] = [{ id: "web-developer", domain: "web" }];
 
@@ -452,8 +460,8 @@ describe("generatePhase1", () => {
 
   it("throws on duplicate slugs", () => {
     const skills = [
-      createMockExtractedSkill("web-framework-react", { slug: "react" as any }),
-      createMockExtractedSkill("web-state-zustand", { slug: "react" as any }),
+      createMockExtractedSkill("web-framework-react", { slug: "react" }),
+      createMockExtractedSkill("web-state-zustand", { slug: "react" }),
     ];
     const agents: AgentEntry[] = [];
 
@@ -464,8 +472,8 @@ describe("generatePhase1", () => {
 
   it("throws on duplicate skill IDs", () => {
     const skills = [
-      createMockExtractedSkill("web-framework-react", { slug: "react" as any }),
-      createMockExtractedSkill("web-framework-react", { slug: "react-alt" as any }),
+      createMockExtractedSkill("web-framework-react", { slug: "react" }),
+      createMockExtractedSkill("web-framework-react", { slug: "svelte" }),
     ];
     const agents: AgentEntry[] = [];
 
@@ -478,9 +486,9 @@ describe("generatePhase1", () => {
 
   it("sorts skills by slug in SKILL_MAP", () => {
     const skills = [
-      createMockExtractedSkill("web-state-zustand", { slug: "zustand" as any }),
-      createMockExtractedSkill("api-framework-hono", { slug: "hono" as any }),
-      createMockExtractedSkill("web-framework-react", { slug: "react" as any }),
+      createMockExtractedSkill("web-state-zustand", { slug: "zustand" }),
+      createMockExtractedSkill("api-framework-hono", { slug: "hono" }),
+      createMockExtractedSkill("web-framework-react", { slug: "react" }),
     ];
     const agents: AgentEntry[] = [];
 
@@ -500,14 +508,14 @@ describe("generatePhase1", () => {
   it("includes all categories, domains, agent names", () => {
     const skills = [
       createMockExtractedSkill("web-framework-react", {
-        slug: "react" as any,
-        category: "web-framework" as any,
-        domain: "web" as any,
+        slug: "react",
+        category: "web-framework",
+        domain: "web",
       }),
       createMockExtractedSkill("api-framework-hono", {
-        slug: "hono" as any,
-        category: "api-framework" as any,
-        domain: "api" as any,
+        slug: "hono",
+        category: "api-framework",
+        domain: "api",
       }),
     ];
     const agents: AgentEntry[] = [
@@ -534,7 +542,7 @@ describe("generatePhase1", () => {
   });
 
   it("deduplicates agent names", () => {
-    const skills = [createMockExtractedSkill("web-framework-react", { slug: "react" as any })];
+    const skills = [createMockExtractedSkill("web-framework-react", { slug: "react" })];
     const agents: AgentEntry[] = [
       { id: "web-developer", domain: "web" },
       { id: "web-developer", domain: "web" },
@@ -553,8 +561,8 @@ describe("generatePhase1", () => {
 
   it("returns skillIdSet with all skill IDs", () => {
     const skills = [
-      createMockExtractedSkill("web-framework-react", { slug: "react" as any }),
-      createMockExtractedSkill("api-framework-hono", { slug: "hono" as any }),
+      createMockExtractedSkill("web-framework-react", { slug: "react" }),
+      createMockExtractedSkill("api-framework-hono", { slug: "hono" }),
     ];
     const agents: AgentEntry[] = [];
 
@@ -583,9 +591,9 @@ describe("generatePhase2", () => {
   it("generates matrix.ts with BUILT_IN_MATRIX export", () => {
     const skills = [
       createMockExtractedSkill("web-framework-react", {
-        slug: "react" as any,
-        category: "web-framework" as any,
-        domain: "web" as any,
+        slug: "react",
+        category: "web-framework",
+        domain: "web",
         displayName: "React",
       }),
     ];
@@ -604,9 +612,9 @@ describe("generatePhase2", () => {
   it("generates SKILL_IDS_BY_CATEGORY lookup", () => {
     const skills = [
       createMockExtractedSkill("web-framework-react", {
-        slug: "react" as any,
-        category: "web-framework" as any,
-        domain: "web" as any,
+        slug: "react",
+        category: "web-framework",
+        domain: "web",
         displayName: "React",
       }),
     ];
@@ -625,9 +633,9 @@ describe("generatePhase2", () => {
   it("generates CATEGORIES_BY_DOMAIN lookup", () => {
     const skills = [
       createMockExtractedSkill("web-framework-react", {
-        slug: "react" as any,
-        category: "web-framework" as any,
-        domain: "web" as any,
+        slug: "react",
+        category: "web-framework",
+        domain: "web",
         displayName: "React",
       }),
     ];
@@ -646,9 +654,9 @@ describe("generatePhase2", () => {
   it("sets generatedAt to 'build'", () => {
     const skills = [
       createMockExtractedSkill("web-framework-react", {
-        slug: "react" as any,
-        category: "web-framework" as any,
-        domain: "web" as any,
+        slug: "react",
+        category: "web-framework",
+        domain: "web",
         displayName: "React",
       }),
     ];
@@ -667,9 +675,9 @@ describe("generatePhase2", () => {
   it("includes agentDefinedDomains when agents have domains", () => {
     const skills = [
       createMockExtractedSkill("web-framework-react", {
-        slug: "react" as any,
-        category: "web-framework" as any,
-        domain: "web" as any,
+        slug: "react",
+        category: "web-framework",
+        domain: "web",
         displayName: "React",
       }),
     ];
