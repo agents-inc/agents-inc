@@ -7,6 +7,18 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.147.1] - 2026-08-01
+
+**`validate` reports why parsing failed, and the ESLint baseline goes to zero**
+
+- Fixed `validate` discarding the cause of a parse failure — two `catch` blocks bound the error and threw it away, in the command whose entire job is telling you what is wrong with your source. One lost a `YAMLParseError` carrying line and column numbers
+- Burned the 148-problem ESLint baseline down to 0 with no rule disabled. Of those 148, five marked real defects that were invisible precisely because the binding recording them was unused: specs that ran a command and asserted nothing about the outcome, a spec that snapshotted both configs and compared neither, a test exercising an input the type system forbids, and a loose parameter type that was licensing inline test data at five call sites
+- Removed 37 dead imports from production code and every `any` in the repo (all 38 lived in one file, and every one resolved to a type that already existed)
+
+Otherwise internal. No behaviour change beyond the `validate` message.
+
+See [changelogs/0.147.1.md](./changelogs/0.147.1.md) for full details.
+
 ## [0.147.0] - 2026-08-01
 
 **One summary panel on both surfaces, a corrected Sources grid, and a terminal-size minimum that is actually enforced**
