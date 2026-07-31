@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile } from "fs/promises";
+import { mkdir, writeFile, readFile, realpath, symlink } from "fs/promises";
 import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -2136,6 +2136,9 @@ describe("local-installer", () => {
 
   describe("deregisterProjectPath", () => {
     const fakeHomeHandle = useFakeHome(() => tempDir);
+    // Partial<Record<>> per CLAUDE.md — cast at the call site because writeScopedConfigs
+    // requires Record<AgentName, AgentDefinition>.
+    const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
 
     it("should remove project from global config's projects array", async () => {
       const projectDir = path.join(tempDir, "my-project");
@@ -2216,6 +2219,67 @@ describe("local-installer", () => {
 
       // No global config on disk — should not throw
       await expect(deregisterProjectPath(anyDir)).resolves.toBeUndefined();
+    });
+
+    /**
+     * Registration and deregistration must normalize the project path the SAME way. Registration
+     * has always resolved symlinks; deregistration used to look the entry up under
+     * `path.resolve`, which is a no-op on an already-canonical absolute path and therefore agrees
+     * with registration everywhere EXCEPT a symlinked layout — where it silently matched nothing
+     * and left the project registered forever.
+     *
+     * A symlinked ancestor is the only fixture that can tell the two rules apart, so the whole
+     * round trip runs through `<sandbox>/link/project` while the real directory is
+     * `<sandbox>/real/project`. The sandbox root itself is canonicalized first so the expected
+     * value is not built on an assumption about the temp root.
+     */
+    it("should deregister a project reached through a symlinked ancestor", async () => {
+      const sandbox = await realpath(tempDir);
+      const realProjectDir = path.join(sandbox, "real", "project");
+      const linkedProjectDir = path.join(sandbox, "link", "project");
+      const projectConfigPath = path.join(
+        linkedProjectDir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TS,
+      );
+
+      await mkdir(path.join(realProjectDir, CLAUDE_SRC_DIR), { recursive: true });
+      await symlink(path.join(sandbox, "real"), path.join(sandbox, "link"), "dir");
+
+      // Install through the symlinked path — the same entry point production takes.
+      await writeScopedConfigs(
+        buildProjectConfig({
+          skills: buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        }),
+        EMPTY_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+        linkedProjectDir,
+        projectConfigPath,
+        true,
+      );
+
+      const globalConfigPath = path.join(
+        fakeHomeHandle.dir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TS,
+      );
+      const registered = await readTestTsConfig<ProjectConfig>(globalConfigPath);
+      expect(
+        registered.projects,
+        "registration must store the resolved path, never the symlinked one",
+      ).toStrictEqual([realProjectDir]);
+
+      await deregisterProjectPath(linkedProjectDir);
+
+      const deregistered = await readTestTsConfig<ProjectConfig>(globalConfigPath);
+      expect(
+        deregistered.projects ?? [],
+        "deregistering through the symlink must clear the entry registration stored",
+      ).toStrictEqual([]);
     });
   });
 

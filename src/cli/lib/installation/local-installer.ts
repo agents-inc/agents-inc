@@ -592,15 +592,34 @@ export function mergeGlobalConfigs(
 }
 
 /**
+ * The single normalization for every value compared against the global config's
+ * `projects` array — the one written by {@link registerProjectPath}, the one
+ * filtered by {@link deregisterProjectPath}, and the current-project skip in
+ * {@link propagateGlobalChangesToProjects}. Symlinks are resolved, so an entry
+ * stored under one of them matches byte-for-byte under the others. The two ends
+ * normalizing differently is what left symlinked layouts (macOS `/tmp`, a
+ * `~/dev/repo` pointing at `/data/repo`) registered forever after an uninstall.
+ *
+ * Throws when the directory does not exist. That is deliberate: a path that
+ * cannot be resolved is an error, not a cue to fall back to a weaker
+ * normalization — a second tier would reintroduce exactly the asymmetry this
+ * helper exists to remove. The one caller that must survive it (`uninstall`'s
+ * deregistration) already wraps the call in a warn-and-continue guard.
+ */
+function normalizeProjectPath(projectDir: string): string {
+  return fs.realpathSync(projectDir);
+}
+
+/**
  * Registers a project directory in the global config's `projects` array.
- * Paths are normalized via `fs.realpathSync` to resolve symlinks.
+ * Paths are normalized via {@link normalizeProjectPath} to resolve symlinks.
  * Filters stale entries (where .claude-src/config.ts no longer exists).
  */
 async function registerProjectPath(
   globalConfig: ProjectConfig,
   projectDir: string,
 ): Promise<{ config: ProjectConfig; changed: boolean }> {
-  const normalizedPath = fs.realpathSync(projectDir);
+  const normalizedPath = normalizeProjectPath(projectDir);
   const existing = globalConfig.projects ?? [];
 
   // Filter stale entries
@@ -623,13 +642,15 @@ async function registerProjectPath(
 /**
  * Removes a project directory from the global config's `projects` array.
  * Loads global config, removes the path, and writes back if changed.
+ * Paths are normalized via {@link normalizeProjectPath} — the same rule
+ * {@link registerProjectPath} stored them under, so the filter matches.
  */
 export async function deregisterProjectPath(projectDir: string): Promise<void> {
   const homeDir = os.homedir();
   const existingGlobal = await loadProjectConfigFromDir(homeDir);
   if (!existingGlobal?.config?.projects?.length) return;
 
-  const normalizedPath = path.resolve(projectDir);
+  const normalizedPath = normalizeProjectPath(projectDir);
   const filtered = existingGlobal.config.projects.filter((p) => p !== normalizedPath);
 
   if (filtered.length === existingGlobal.config.projects.length) return;
@@ -995,7 +1016,7 @@ export async function propagateGlobalChangesToProjects(
   const projects = globalConfig.projects ?? [];
   if (projects.length === 0) return { updated: [], skipped: [] };
 
-  const currentNormalized = currentProjectDir ? fs.realpathSync(currentProjectDir) : null;
+  const currentNormalized = currentProjectDir ? normalizeProjectPath(currentProjectDir) : null;
   const updated: string[] = [];
   const skipped: string[] = [];
 

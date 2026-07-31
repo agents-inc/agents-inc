@@ -30,7 +30,6 @@ export type ConfigWriteOptions = {
 export type ConfigWriteResult = {
   config: ProjectConfig;
   configPath: string;
-  globalConfigPath?: string;
   wasMerged: boolean;
   existingConfigPath?: string;
   filesWritten: number;
