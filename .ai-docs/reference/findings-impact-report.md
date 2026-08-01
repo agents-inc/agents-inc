@@ -4,184 +4,175 @@ area: architecture
 keywords: [findings, agent-findings, impact, cross-reference]
 related:
   - reference/architecture-overview.md
-  - reference/test-infrastructure.md
   - reference/concepts/tombstone-pattern.md
+  - reference/component-patterns.md
   - reference/config/config-writer.md
   - reference/testing/e2e-infrastructure.md
-last_validated: 2026-07-30
+  - reference/testing/infrastructure.md
+  - reference/dependency-graph.md
+  - reference/store-map.md
+last_validated: 2026-08-01
 ---
 
-<!--
-  2026-07-30 (fifth edit of the day): SINGLE-DIMENSION AMENDMENT — status only. NOT a regeneration.
-  The 36 findings that carried no `status:` were backfilled by opening each one and verifying its
-  claim against current source, so the status rollup is now measured rather than inferred.
-
-  AMENDED (these four places, and nothing else):
-  - "By Status": table rebuilt from the 135 declared statuses; INFERENCE BOUNDARY callout RETIRED
-    (kept in place, marked retired, with the before/after delta so the retirement is auditable).
-  - "By Severity": the high-severity-by-status sentence only. The severity TABLE (26/78/31) is
-    untouched — the backfill moves how high-severity findings are classified, not how many exist.
-  - "By Type": `enforcement-gap` retired as a `type` (1 -> 0), `standard-gap` 31 -> 32, after fixing
-    the schema violation on `e2e-spec-files-accumulate-unused-imports-unenforced`. A `Δ this
-    amendment` column was added so the regeneration's 121-basis deltas stay readable and unedited.
-  - Priority Actions: item 16 struck as CLOSED (it tracked that `type: enforcement-gap`).
-
-  NOT REGENERATED — every other rollup below is carried forward verbatim from the 2026-07-30 full
-  regeneration and still describes the same 135-file snapshot: root cause, category, domain, the
-  severity table itself, By Date, per-reference-doc impact, per-source-file churn, systemic patterns
-  A..U, supersession links, and the Original Snapshot. None of them keys on `status:`, so the
-  backfill cannot have moved them. Do NOT read this amendment as a fresh basis: the snapshot
-  boundary is still 135 files, re-verified on disk at the close of this pass.
-
-  What the backfill found, in one line: the "defaults to open" convention mis-classified 30 of the
-  36 files — 21 were `partial` and 9 were already `resolved`. See "By Status".
-
-  2026-07-30 (fourth edit of the day): FULL REGENERATION over 135 findings — the regeneration the
-  previous pass recorded as OWED. Both triggers were live: "Incremental Updates" held 12 entries
-  (bible threshold is >10) and the 0.145.0 + 0.146.0 release bundle had shipped.
-
-  What changed this pass:
-  - Every primary table rebuilt from scratch over all 135 finding files on disk (was pinned at 121).
-    Snapshot boundary re-pinned at 135; the 121-basis figures are retired, not carried forward.
-  - All 12 Incremental entries promoted into the primary tables; the section is reset to empty.
-  - Systemic patterns: A..S carry forward (all classes survived and gained members). E, O, Q and S
-    had their STATEMENTS widened by this window's findings — see each pattern's "widened" note.
-    T is promoted from the "Candidate Pattern T" stub the previous pass staged for this decision;
-    it now has 5 instances, not the 1 it had when staged. U is newly named.
-  - Status rollup now qualified with its inference boundary in-table: 36 of 135 findings carry no
-    `status:` field. Previous passes reported 39 of 125 — BOTH numbers moved (see the callout).
-    [SUPERSEDED by the fifth edit above: the 36 were backfilled and the figure is now 0.]
-  - Per-source-file churn deltas are measured against the 121-basis table, which is the only prior
-    basis; two files enter the table for the first time.
-  - The findings directory's FIRST link-integrity scan over `supersedes:` / `superseded_by:` /
-    `blocked_by:` — 7 defects found, 7 fixed, 0 remaining. Two dangling targets traced to findings
-    DELETED from disk contrary to README.md's never-move rule (see "Findings removed from disk").
-  - Concurrency: the pass ran against 133 files and closed at 135 (a sibling agent filed 2 mid-pass).
-    Every table was re-derived over 135 rather than pinning a stale snapshot — see the boundary
-    callout. The count moved twice today; re-count at the END of a regeneration, not the start.
-  - The 2026-03-28 "Original Snapshot" is preserved verbatim below, per the bible.
-
-  Prior edits this day, preserved for lineage: (1) full regeneration over 121 files, patterns
-  lettered A..S, Incremental reset; (2) an in-place correction of one falsified present-tense claim
-  in Pattern N (`deregisterProjectPath` "filters with `path.resolve`" — shipped fixed the same day);
-  (3) an append-only reconciliation pass that added 8 findings to Incremental, struck Priority
-  Actions 3 and 18 as CLOSED after source verification, and recorded this regeneration as owed.
--->
+<!-- VALIDATED 2026-08-01 · FULL — every primary table regenerated over all 158 findings; the
+     135-file basis is retired, so there is one basis and nothing is carried forward. -->
 
 # Agent Findings Impact Report
 
-**Generated:** 2026-03-28 (original); regenerations 2026-04-21 (Ralph iter 92), 2026-07-23 (95 findings), 2026-07-30 (121 findings); **last full regeneration 2026-07-30 (second of the day)** — rebuilt from all 135 finding files on disk.
-**Total Findings Catalogued:** 135 (excluding `README.md` and `TEMPLATE.md`; no `audits/` subdirectory exists — every finding lives at the directory root).
-**Date Range:** 2026-04-17 to 2026-07-30. Findings from 2026-03-21..2026-04-16 referenced by earlier regenerations are no longer on disk (see "Findings removed from disk" below); the rollups reflect only the 135 files present now.
+**Generated:** 2026-03-28 (original); regenerations 2026-04-21 (Ralph iter 92), 2026-07-23 (95 findings), 2026-07-30 (121 findings), 2026-07-30 (135 findings); **last full regeneration 2026-08-01** — rebuilt from all 158 finding files on disk.
+**Total Findings Catalogued:** 158 (excluding `README.md` and `TEMPLATE.md`; no `audits/` subdirectory exists — every finding lives at the directory root).
+**Date Range:** 2026-04-17 to 2026-08-01. Findings from 2026-03-21..2026-04-16 referenced by earlier regenerations are no longer on disk (see "Findings removed from disk" below); the rollups reflect only the 158 files present now.
+**Product at regeneration:** 0.147.1.
 
-> **Snapshot boundary (re-pinned 2026-07-30, full regeneration).** Every rollup, table, count and
-> percentage below is derived from a snapshot of **135 finding files** (**137 `.md`** including
-> `README.md` and `TEMPLATE.md`), counted on disk at the close of this pass.
+> **Snapshot boundary (re-pinned 2026-08-01, full regeneration).** Every rollup, table, count and
+> percentage below is derived from a snapshot of **158 finding files** (**160 `.md`** including
+> `README.md` and `TEMPLATE.md`), counted on disk **at the close of this pass**.
 >
-> **This supersedes the 121-file basis.** The previous pass pinned 121 and carried a 12-file delta
-> in "Incremental Updates"; all 12 have been promoted into the tables and the section is reset.
-> There is now **one basis, not two** — the split-basis reconciliation warning that stood here is
-> retired. Arithmetic for the next validator: 121 previously pinned + 4 (doc-hygiene tail) + 8
-> (bug-fix + reconciliation tail) + 2 (see below) = **135**, matching disk.
+> **This supersedes the 135-file basis.** There is **one basis, not two** — the 135-file figures are
+> retired, not carried forward, and no reconciliation between them is intended or possible.
+> Arithmetic for the next validator: 135 previously pinned + 13 filed 2026-07-31 + 10 filed
+> 2026-08-01 = **158**, matching disk.
 >
-> **Concurrency note — the count moved twice during this pass.** The regeneration was run against
-> 133 files; a concurrent agent filed 2 more (`eslint-disable-directives-were-never-verified`,
-> `no-default-exports-rule-collides-with-oclif`) before it closed. Rather than pin a stale snapshot
-> and open an Incremental block on the same day the previous one was cleared, **every table was
-> re-derived over 135** and the totals below are the post-arrival figures. Both new findings were
-> classified and are members of Patterns E and M/U respectively. This is the third consecutive
-> regeneration to race a concurrent sweep, which is the standing hazard
-> `findings-rollup-has-no-snapshot-rule-and-schema-drifted` was filed about: **re-count at the end
-> of the pass, not the start.**
+> **`README.md` is not a finding — and the 158 here is not the 158 you may have been handed.** The
+> corpus at the START of this pass was **157**. A brief given to this regeneration quoted "158
+> excluding TEMPLATE.md", which counted `README.md`; the pass then filed one finding of its own
+> (`link-integrity-scan-scope-excludes-the-keys-that-dangle`), taking the true corpus from 157 to 158. **The two numbers agree by coincidence and disagree in composition.** The bible defines the
+> corpus as every `*.md` "other than `README.md` and `TEMPLATE.md`"; a recount must apply that
+> definition rather than match a figure. Re-derive; never corroborate a count against another count.
+>
+> **Re-count at the END of the pass, not the start.** This is the fourth consecutive regeneration
+> whose basis moved while it was being written — twice from concurrent sibling agents, twice from
+> the regenerating pass itself. Every table below is derived from the closing count.
+>
+> **This report OWNS the agent-findings totals** per the count-ownership registry in
+> `standards/documentation-bible.md`. `DOCUMENTATION_MAP.md` references this callout rather than
+> restating any of these numbers. Re-derive from disk here; never quote a findings total from the
+> map, the changelogs or the Validation History.
 >
 > **Do not partially fold.** If findings accumulate again, log them in "Incremental Updates" and
 > regenerate the whole set at the next trigger — never promote a subset, which produces a report
 > whose totals match no snapshot at all.
 
-> **Regeneration Policy:** Per `documentation-bible.md` ("Findings Impact Report Regeneration"), the report is fully regenerated when "Incremental Updates" exceeds ~10 entries, when the oldest un-aggregated finding is >30 days old, or when a major release bundle ships. **Two of the three triggers fired here:** 12 un-aggregated entries (>10), and the 0.145.0 + 0.146.0 bundle shipped. Both are now discharged.
+> **Regeneration Policy:** Per `documentation-bible.md` ("Findings Impact Report Regeneration"), the report is fully regenerated when "Incremental Updates" exceeds ~10 entries, when the oldest un-aggregated finding is >30 days old, or when a major release bundle ships. **Two of the three triggers fired here:** 23 findings accumulated past the 135-file snapshot (>10), and the 0.146.1 + 0.147.0 + 0.147.1 bundle shipped. Both are now discharged.
 
 ---
 
-## Rollups (2026-07-30 regeneration — 135 findings on disk)
+## Rollups (2026-08-01 regeneration — 158 findings on disk)
 
-Counts are computed directly from the YAML frontmatter of the 135 finding files (`root_cause`, `severity`, `category`, `domain`, `status`, `date`). `README.md` and `TEMPLATE.md` are excluded.
+Counts are computed directly from the YAML frontmatter of the 158 finding files (`root_cause`, `severity`, `category`, `domain`, `status`, `date`). `README.md` and `TEMPLATE.md` are excluded. **Δ columns are against the 135-file basis** and therefore measure this window's 23 findings only; each Δ column sums to +23.
 
 ### By Status
 
-> **INFERENCE BOUNDARY — RETIRED 2026-07-30 (status-backfill pass).** This table was, until this
-> amendment, 51% inference: 36 of 135 findings carried no `status:` field and were read as `open`
-> per `README.md`'s "defaults to open" convention. **All 36 have been backfilled by opening each
-> finding and verifying its claim against current source**, so the callout no longer applies and is
-> retired rather than reworded. **Every one of the 135 findings now declares a `status:`. The
-> `Inferred` column is zero by measurement, not by assumption, and every figure in this table is a
-> count.** The column is kept so the retirement stays legible to the next validator; delete it only
-> if a future pass confirms the directory has held at zero.
+> **Inference declared: ZERO.** Per `documentation-bible.md` ("Rollups must declare inference"), a
+> report quoting a status distribution must state how many files had no `status:` and were inferred.
+> **All 158 findings declare a `status:` explicitly** — re-verified this pass with
+> `grep -L '^status:'` over the whole corpus, which returned nothing. Every figure below is a count,
+> not an inference. The 2026-07-30 backfill closed this gap and the directory has now held at zero
+> across a 23-file growth window, which is the first evidence the convention is self-sustaining
+> rather than a one-off cleanup.
 
-| Status       | Explicit | Inferred (no `status:`) | Total | Share |
-| ------------ | -------- | ----------------------- | ----- | ----- |
-| `open`       | 39       | 0                       | 39    | 28.9% |
-| `partial`    | 50       | 0                       | 50    | 37.0% |
-| `resolved`   | 39       | 0                       | 39    | 28.9% |
-| `superseded` | 7        | 0                       | 7     | 5.2%  |
-| **Total**    | **135**  | **0**                   | 135   | 100%  |
+| Status       | Count   | Share | Δ vs 135-basis |
+| ------------ | ------- | ----- | -------------- |
+| `partial`    | 67      | 42.4% | **+17**        |
+| `open`       | 42      | 26.6% | +3             |
+| `resolved`   | 41      | 25.9% | +2             |
+| `superseded` | 8       | 5.1%  | +1             |
+| **Total**    | **158** | 100%  | **+23**        |
 
 - `partial` = one side landed and the other did not (`partial_note:` present, describing which).
 - `resolved` = anti-pattern fixed or standard fully updated (`resolved_by:` present).
 - `superseded` = replaced by a later finding covering the same files and root cause (`superseded_by:` present, paired with `status: superseded`).
 
-**Open vs closed:** closed (`resolved` + `superseded`) = **46 (34.1%)**. Not closed (`open` + `partial`) = **89 (65.9%)**. Both figures are now exact; the previous "closed is understated by an unknown amount" caveat is discharged.
+**Open vs closed:** closed (`resolved` + `superseded`) = **49 (31.0%)**. Not closed (`open` + `partial`) = **109 (69.0%)**. Both figures are exact.
 
-**What the backfill moved, and what that says about the old inference:**
+**`partial` is now the plurality status, and that is the single most informative number in this
+report.** It overtook `open` in the 2026-07-30 backfill and extended its lead sharply this window:
+**17 of the 23 new findings landed `partial`**, against 3 `open`, 2 `resolved` and 1 `superseded`.
+Closure fell from 34.1% to 31.0% not because anything regressed but because the window produced
+almost nothing but half-closed work.
 
-| Status       | Before (34 explicit + 36 inferred) | After      | Δ       |
-| ------------ | ---------------------------------- | ---------- | ------- |
-| `open`       | 70                                 | 39         | **−31** |
-| `partial`    | 29                                 | 50         | **+21** |
-| `resolved`   | 29                                 | 39         | **+10** |
-| `superseded` | 7                                  | 7          | =       |
-| **Closed**   | 36 (26.7%)                         | 46 (34.1%) | **+10** |
+**The shape is the same one the backfill identified, and it is the inverse of the enum's
+definition.** `README.md` defines `partial` as "docs/standards side landed, code-side fix still
+pending". Nearly every `partial` in this corpus is the opposite: **the code fix shipped and the
+Proposed Standard was never written.** The 0.147.0 and 0.147.1 changelogs make this explicit rather
+than leaving it to be inferred — each closes with a "Proposed standards / Not yet written into the
+standards docs" section listing nine rules between them, none adopted. Those unwritten rules ARE
+the `partial` backlog.
 
-The "defaults to open" convention was wrong about **30 of the 36** files. Of the status-less set:
-**21 were `partial`** (the dominant outcome by a wide margin), **9 were `resolved`**, and only **6
-were genuinely `open`**. The convention did not merely under-report closure — it mis-classified
-five sixths of the set, because a finding whose fix shipped is indistinguishable from one nobody
-touched when neither declares a status. `resolved` also gained a 10th file from a concurrent
-sibling pass (`no-default-exports-rule-collides-with-oclif`, flipped `open` -> `resolved` while
-this amendment was being written).
+The enum still has no value for "fixed but not generalised", so `partial` carries both directions
+and only the `partial_note:` distinguishes them. `TEMPLATE.md` records this as an OPEN QUESTION for
+its owner; it is now a question about 67 of 158 files rather than 21, which raises it from a
+labelling nicety to the main obstacle to reading this report's status column at a glance.
 
-**The 21 `partial` files share one shape, and it is the inverse of the enum's definition.**
-`README.md` defines `partial` as "docs/standards side landed, code-side fix still pending". Nearly
-every backfilled `partial` is the opposite: **the code fix shipped and the Proposed Standard was
-never written.** Each carries a `partial_note:` saying so explicitly. The enum has no value for
-"fixed but not generalised", so `partial` is being used for both directions and the direction is
-recoverable only from the note. Widening the enum (or documenting the second direction in
-`TEMPLATE.md`) is a decision for `agent-findings/TEMPLATE.md`'s owner — recorded here, not taken.
-The substantive reading: **this codebase fixes its defects and does not codify the lessons**, which
-is the mechanism behind Patterns E and M recurring.
+**The substantive reading is unchanged and now better evidenced: this codebase fixes its defects and
+does not codify the lessons.** That is the mechanism behind Patterns E, M and V recurring, and it is
+why the high-severity backlog below is predominantly documentation debt rather than defects.
 
-**The prior "39 of 125" figure is retired everywhere.** It was already stale twice over (the
-directory grew to 135; a link-repair pass had moved the numerator to 36). The backfill makes it
-moot: the numerator is now **0**. `TEMPLATE.md` and `standards/documentation-bible.md` were both
-corrected in this pass — the latter's "Rollups must declare inference" rule keeps its point but no
-longer cites a live gap as its example.
+### Schema and link-integrity scan (re-run over all 158 files, 2026-08-01)
+
+The six pre-processing defect classes mandated by `documentation-bible.md` were re-run mechanically
+over all 158 files. **Five of six are clean.**
+
+| #   | Defect class                                                  | Result                                                                                                                                                                                                                                       |
+| --- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a   | File without frontmatter                                      | **0** — every one of the 158 opens with a `---` block                                                                                                                                                                                        |
+| b   | `root_cause:` outside the enum                                | **0** — all 158 values are enum members                                                                                                                                                                                                      |
+| c   | Duplicate `affected_files + root_cause + date` tuple          | **1 pair, benign** — `propagation-skipped-observability-gap` and `registerProjectPath-sweep-observability-gap` (both 2026-04-21, `enforcement-gap`). Genuinely distinct findings about two different `local-installer.ts` sweeps; not merged |
+| d   | `type:` outside the enum                                      | **0** — the `enforcement-gap`-as-a-`type` violation repaired 2026-07-30 has not recurred                                                                                                                                                     |
+| e   | `superseded_by:` / `supersedes:` without `status: superseded` | **0** — all 8 supersession relationships are correctly paired in both directions                                                                                                                                                             |
+| f   | Missing `status:`                                             | **0** — see the inference callout above                                                                                                                                                                                                      |
 
 ### Supersession links (all verified against disk this pass)
 
-Every `supersedes:` / `superseded_by:` / `blocked_by:` value in the directory was checked for
-target existence and mirrored pairing. **7 defects were found and 7 fixed; 0 remain.**
+Every `supersedes:` / `superseded_by:` / `blocked_by:` value was re-checked for target existence and
+mirrored pairing. **0 dangling targets, 0 one-sided pairs.** The 7 defects the 2026-07-30 pass
+repaired have stayed repaired through a 23-file growth window, and the window's one new supersession
+was filed correctly paired on both ends from the start.
 
-| Superseded (older)                                                 | Superseded by (newer)                                                       | Repair made this pass                       |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------- | ------------------------------------------- |
-| `2026-04-21-d233-projects-normalization-asymmetry`                 | `2026-07-25-register-deregister-path-normalization-asymmetry`               | none — was already correct                  |
-| `2026-07-17-d227-same-scope-active-tombstone-duplicate`            | `2026-07-30-d277-global-immutability-collapses-tombstone-provenance`        | added missing mirror on the newer file      |
-| `2026-07-18-scope-guards-read-stale-hydration-snapshot`            | `2026-07-30-d277-global-immutability-collapses-tombstone-provenance`        | none — was already correct                  |
-| `2026-07-29-derived-mask-and-user-tombstone-are-indistinguishable` | `2026-07-30-d277-global-immutability-collapses-tombstone-provenance`        | added missing mirror on the newer file      |
-| `2026-07-18-dual-scope-agent-s-toggle-guarded-noop-not-collapse`   | `2026-07-18-dual-scope-s-toggle-persisted-pair-doc-vs-code`                 | added missing `status: superseded`          |
-| `2026-07-18-dual-scope-s-toggle-persisted-pair-doc-vs-code`        | `2026-07-18-d233-agent-collapse-fix-in-toggleagent-action-not-helper`       | added missing mirror + `status: superseded` |
-| `2026-07-20-project-builder-derived-slug-hid-wrong-category`       | `2026-07-20-fixture-category-literals-unvalidated-against-categories-union` | added missing mirror + `status: superseded` |
+| Superseded (older)                                                                   | Superseded by (newer)                                                       | State this pass                              |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- | -------------------------------------------- |
+| `2026-04-21-d233-projects-normalization-asymmetry`                                   | `2026-07-25-register-deregister-path-normalization-asymmetry`               | correct                                      |
+| `2026-07-17-d227-same-scope-active-tombstone-duplicate`                              | `2026-07-30-d277-global-immutability-collapses-tombstone-provenance`        | correct (mirror added 2026-07-30)            |
+| `2026-07-18-scope-guards-read-stale-hydration-snapshot`                              | `2026-07-30-d277-global-immutability-collapses-tombstone-provenance`        | correct                                      |
+| `2026-07-29-derived-mask-and-user-tombstone-are-indistinguishable`                   | `2026-07-30-d277-global-immutability-collapses-tombstone-provenance`        | correct (mirror added 2026-07-30)            |
+| `2026-07-18-dual-scope-agent-s-toggle-guarded-noop-not-collapse`                     | `2026-07-18-dual-scope-s-toggle-persisted-pair-doc-vs-code`                 | correct (`status:` added 2026-07-30)         |
+| `2026-07-18-dual-scope-s-toggle-persisted-pair-doc-vs-code`                          | `2026-07-18-d233-agent-collapse-fix-in-toggleagent-action-not-helper`       | correct (repaired 2026-07-30)                |
+| `2026-07-20-project-builder-derived-slug-hid-wrong-category`                         | `2026-07-20-fixture-category-literals-unvalidated-against-categories-union` | correct (repaired 2026-07-30)                |
+| `2026-07-31-confirm-step-viewport-is-zero-rows-at-short-so-overflow-spec-is-vacuous` | `2026-07-31-negative-render-assertion-needs-a-positive-subject-guard`       | **NEW this window** — filed correctly paired |
 
-`2026-07-30-d277-...` supersedes **three** findings, so its `supersedes:` key is now a YAML list.
-The three `status: superseded` additions are what moved the status-less count from 39 to 36.
+`2026-07-30-d277-...` supersedes **three** findings, so its `supersedes:` key is a YAML list.
+
+**The new pair is worth reading, because it is a finding superseding itself on a geometry change.**
+`confirm-step-viewport-is-zero-rows-at-short` measured the confirm viewport at **zero rows** when
+`TERMINAL_SIZE.SHORT` was 16. 0.147.0 raised that constant to 20, the viewport became **five** rows,
+and the original finding's central measurement stopped being true — while its conclusion (the
+overflow spec is vacuous) remained true for an entirely different reason. The successor re-measured
+at the new geometry rather than re-dating the old claim. That is the correct handling of a finding
+whose evidence a later release invalidates, and it is the only instance of it in the corpus.
+
+### Link-integrity scope gap — NEW defect class found this pass
+
+The link scan the bible mandates covers three keys: `supersedes:`, `superseded_by:`, `blocked_by:`.
+Extending it to `related:` and `standards_docs:` for the first time — which name finding files just
+as often — surfaced **4 dangling targets the mandated scan cannot see**:
+
+| Dangling target                                        | Named by                                                  | Key              |
+| ------------------------------------------------------ | --------------------------------------------------------- | ---------------- |
+| `2026-04-20-new-agent-toggle-defaults-global-scope.md` | `2026-04-21-agent-findings-frontmatter-drift-iter45`      | `standards_docs` |
+| `2026-04-13-e2e-anti-pattern-audit-d168.md`            | `2026-04-21-e2e-keypress-rule-coverage-gap-sibling-steps` | `related`        |
+| `2026-04-14-missing-home-isolation-in-unit-tests.md`   | `2026-07-17-e2e-helper-tests-have-no-runnable-home`       | `related`        |
+| `2026-04-14-unit-test-home-isolation.md`               | `2026-07-17-e2e-helper-tests-have-no-runnable-home`       | `related`        |
+
+All four are casualties of the same never-delete violation documented below — three of them from the
+2026-03-21..2026-04-16 window this report can no longer account for. **This is a Pattern U instance
+about the Pattern U remedy itself**: remedy (a) specified three keys, the three the author had in
+mind, and a check scoped to three keys cannot report on the two it was not given. Filed as
+`2026-08-01-link-integrity-scan-scope-excludes-the-keys-that-dangle.md`.
+
+Two further path defects, recorded but not repaired (they live in findings, not in files this pass
+owns): `scratchpad/d226-porting-recipe.md` is named in two findings' `standards_docs:` and does not
+exist, and three findings carry machine-specific absolute paths beginning `/home/vince/`, which
+CLAUDE.md forbids in any git-tracked file.
 
 ### Findings removed from disk (link-integrity casualties)
 
@@ -203,200 +194,259 @@ This is the mechanism behind **Pattern U**.
 
 ### By Date (filing day)
 
-| Date       | Count | Theme of the batch                                                                                                                                                                                                                                                                                                                                            |
-| ---------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-04-17 | 1     | Shared config/stack parser duplication                                                                                                                                                                                                                                                                                                                        |
-| 2026-04-18 | 1     | `mergeConfigs` drops `projects` field                                                                                                                                                                                                                                                                                                                         |
-| 2026-04-20 | 2     | D-217 installMode dead plumbing; newly-toggled agent defaults to global scope                                                                                                                                                                                                                                                                                 |
-| 2026-04-21 | 13    | Dual-scope/tombstone cluster, E2E keypress rule, findings-system self-governance                                                                                                                                                                                                                                                                              |
-| 2026-04-22 | 6     | Edit-mode scope-awareness audit, tombstone/checkbox, mode-migrator, plugin-uninstall asymmetry                                                                                                                                                                                                                                                                |
-| 2026-07-09 | 1     | Marketplace schema stricter-than-contract                                                                                                                                                                                                                                                                                                                     |
-| 2026-07-17 | 4     | D-167 task-ID lint guard, D-227 preselect/tombstone reachability, E2E helper test home                                                                                                                                                                                                                                                                        |
-| 2026-07-18 | 10    | Dual-scope collapse doc-vs-code, propagation recompile, scope guards read stale hydration snapshot                                                                                                                                                                                                                                                            |
-| 2026-07-19 | 11    | Config-as-text vs structural load, union-sweep type safety, Ink post-mount race, parser dedup                                                                                                                                                                                                                                                                 |
-| 2026-07-20 | 46    | Pass-8 shared-infra adoption sweep: fixtures, config normalizers, scope authority, renderer determinism, toast + page-object hygiene                                                                                                                                                                                                                          |
-| 2026-07-24 | 6     | D-226 sandbox-HOME default + D-219 launcher sugar; D-271 short-terminal clipping and the source-grid overflow affordance                                                                                                                                                                                                                                      |
-| 2026-07-25 | 1     | `registerProjectPath` / `deregisterProjectPath` path-normalization asymmetry                                                                                                                                                                                                                                                                                  |
-| 2026-07-29 | 11    | **0.146.0 cluster:** duplicate-implementation drift (sources tab vs confirm step, two config write paths, exclusivity in a keypress handler) + the live-CLI QA sweep + frame-observability findings                                                                                                                                                           |
-| 2026-07-30 | 22    | **Largest single day after 07-20.** Five sub-batches: D-277 tombstone provenance + unreachable surfaces; nine doc-hygiene findings on claims whose falsification has no trigger; seven accompanying the day's five bug fixes; four on the findings/doc pipeline's own self-governance; two on the ESLint toolchain, filed concurrently with this regeneration |
-| **Total**  | 135   |                                                                                                                                                                                                                                                                                                                                                               |
+| Date       | Count | Theme of the batch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-04-17 | 1     | Shared config/stack parser duplication                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 2026-04-18 | 1     | `mergeConfigs` drops `projects` field                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 2026-04-20 | 2     | D-217 installMode dead plumbing; newly-toggled agent defaults to global scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 2026-04-21 | 13    | Dual-scope/tombstone cluster, E2E keypress rule, findings-system self-governance                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2026-04-22 | 6     | Edit-mode scope-awareness audit, tombstone/checkbox, mode-migrator, plugin-uninstall asymmetry                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 2026-07-09 | 1     | Marketplace schema stricter-than-contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 2026-07-17 | 4     | D-167 task-ID lint guard, D-227 preselect/tombstone reachability, E2E helper test home                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 2026-07-18 | 10    | Dual-scope collapse doc-vs-code, propagation recompile, scope guards read stale hydration snapshot                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 2026-07-19 | 11    | Config-as-text vs structural load, union-sweep type safety, Ink post-mount race, parser dedup                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 2026-07-20 | 46    | Pass-8 shared-infra adoption sweep: fixtures, config normalizers, scope authority, renderer determinism, toast + page-object hygiene                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 2026-07-24 | 6     | D-226 sandbox-HOME default + D-219 launcher sugar; D-271 short-terminal clipping and the source-grid overflow affordance                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 2026-07-25 | 1     | `registerProjectPath` / `deregisterProjectPath` path-normalization asymmetry                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 2026-07-29 | 11    | **0.146.0 cluster:** duplicate-implementation drift (sources tab vs confirm step, two config write paths, exclusivity in a keypress handler) + the live-CLI QA sweep + frame-observability findings                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 2026-07-30 | 22    | **Second-largest day.** Five sub-batches: D-277 tombstone provenance + unreachable surfaces; nine doc-hygiene findings on claims whose falsification has no trigger; seven accompanying that day's five bug fixes; four on the findings/doc pipeline's own self-governance; two on the ESLint toolchain                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 2026-07-31 | 13    | **0.147.0 cluster — the live-CLI rendering sweep.** Every defect reproduced against the real binary through a PTY before and after its fix. Terminal-size gating (two disagreeing declarations; a precondition checked once before render), Ink layout under clipping (`flexShrink` defaults, vertical padding, fixed-height blocks), Sources-grid vocabulary drift, and five findings on tests and snapshots that concealed the defect they covered                                                                                                                                                                                                                                                                                                                         |
+| 2026-08-01 | 10    | **0.146.1 + 0.147.1 cluster — the ESLint baseline burndown, plus a doc-index audit.** Five arise from standing up a lint gate that had never executed (unused catch bindings hiding discarded causes; `as any` masking two fabrications; unused test bindings marking unwritten assertions; specs asserting nothing; two constructs TypeScript mandates that ESLint cannot express). Five are doc/findings-pipeline defects: a count-ownership registry naming the wrong owner, an exhaustive enumeration extended instead of re-derived, an import graph validating rows instead of diffing edges, reference docs naming identifiers that no longer exist, and (filed by this regeneration) a link-integrity scan whose key list excludes the two keys that actually dangle |
+| **Total**  | 158   |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
-2026-07-30 is the second-largest filing day on record and the **first** dominated by findings about
-the documentation and findings systems themselves rather than about product code — the direct cause
-of Patterns S and U below.
+**The last three days are the densest window in the corpus after the 2026-07-20 sweep: 44 findings
+in 72 hours, 28% of everything ever filed.** They are also the most homogeneous. 2026-07-30 was the
+first day dominated by findings about the documentation and findings systems themselves; 2026-07-31
+and 2026-08-01 extended that to the _test_ and _tooling_ systems, and all three converge on a single
+mechanism — an artefact that exists to catch a defect, runs, reports success, and could not have
+reported anything else. That is **Pattern V**, newly named below, and it is the reason both the
+0.146.1 and 0.147.0 changelogs open by naming the same shape in their own words.
 
 ### By Root Cause
 
-| Root Cause                  | Count | Δ vs 121-basis | Canonical remedy                                   |
+| Root Cause                  | Count | Δ vs 135-basis | Canonical remedy                                   |
 | --------------------------- | ----- | -------------- | -------------------------------------------------- |
-| `convention-undocumented`   | 47    | +1             | Add rule to standards doc; cite in CLAUDE.md       |
-| `rule-not-specific-enough`  | 40    | +6             | Tighten rule wording with enumerated cases         |
-| `enforcement-gap`           | 25    | +5             | Add lint/typecheck/coverage-as-policy requirement  |
-| `missing-rule`              | 16    | +2             | Author a new rule from scratch                     |
+| `convention-undocumented`   | 51    | +4             | Add rule to standards doc; cite in CLAUDE.md       |
+| `rule-not-specific-enough`  | 52    | **+12**        | Tighten rule wording with enumerated cases         |
+| `enforcement-gap`           | 31    | +6             | Add lint/typecheck/coverage-as-policy requirement  |
+| `missing-rule`              | 17    | +1             | Author a new rule from scratch                     |
 | `scope-discipline-deferred` | 5     | =              | Knowingly left in-scope; track as TODO             |
 | `rule-not-visible`          | 2     | =              | Cross-link rule from other docs; move to prominent |
-| **Total**                   | 135   | +14            |                                                    |
+| **Total**                   | 158   | **+23**        |                                                    |
 
-`rule-not-specific-enough` grew fastest (+6). Every one of the six is a case where a rule existed
-and was followed, and the defect landed anyway because the rule did not say which of two readings
-applied — the mechanism behind the widened Pattern E. `enforcement-gap` (+5) is the runner-up and
-is dominated by rules that are written down but have no runnable checker (Patterns M and U).
+**`rule-not-specific-enough` has overtaken `convention-undocumented` (52 vs 51), and the crossover is
+the story of this window.** It grew +12 against the other's +4 — over half the window's findings.
+Every one of the twelve is a case where a rule existed, was followed in good faith, and the defect
+landed anyway because the rule did not say which of two readings applied: rule 6.17a required a snapshot
+but not that a regenerated one be read; the cast rule named `as SkillId` but not `as any`; the
+count-ownership registry named an owner topically without checking which doc carries the figure.
+
+**A codebase whose dominant root cause is `convention-undocumented` has a writing problem. One whose
+dominant root cause is `rule-not-specific-enough` has a precision problem, and that is the harder
+one** — it cannot be fixed by writing more rules, only by making existing rules say which of two
+readings binds. That is Pattern E's remedy, and Pattern E is now the pattern to watch.
+
+`enforcement-gap` (+6) is the runner-up and is almost entirely the ESLint burndown: rules that were
+written down, believed enforced, and had no runnable checker (Patterns M and V).
 
 ### By Severity
 
-| Severity  | Count | Share |
-| --------- | ----- | ----- |
-| high      | 26    | 19.3% |
-| medium    | 78    | 57.8% |
-| low       | 31    | 23.0% |
-| **Total** | 135   | 100%  |
+| Severity  | Count   | Share | Δ vs 135-basis |
+| --------- | ------- | ----- | -------------- |
+| high      | 27      | 17.1% | +1             |
+| medium    | 98      | 62.0% | **+20**        |
+| low       | 33      | 20.9% | +2             |
+| **Total** | **158** | 100%  | **+23**        |
 
-**High severity by status (re-measured 2026-07-30, status-backfill pass):** `resolved` 10, `partial` 11, `open` 4, `superseded` 1. **15 of 26 high-severity findings are still not closed**, down from the 18 this section previously reported. The severity totals themselves (26 / 78 / 31) are unchanged and carry forward from the regeneration — only this by-status breakdown moved.
+**High severity by status:** `partial` 12, `resolved` 10, `open` 4, `superseded` 1. **16 of 27
+high-severity findings are still not closed** (4 `open`, 12 `partial`) — up by one from the 15 the
+previous basis reported, entirely from the window's single new high-severity finding.
 
-This was flagged as "the single figure in the report most distorted by the missing-`status:` gap", and it was: the old reading was `open` 3 explicit + 10 inferred = 13. Measured, only **4** are open. Of the 10 previously inferred, **6 are `partial`** (the fix shipped, the standard was never written) and **3 are `resolved`**; just 1 was genuinely open. The distortion ran in the direction the callout warned about — inference systematically over-reported `open` at the severity level that matters most.
+The window added **one** high-severity finding against 20 medium and 2 low, which is why `high`'s
+share fell from 19.3% to 17.1% without any high-severity work closing. The one addition is
+`2026-08-01-import-graph-docs-validate-rows-instead-of-diffing-edges` (`partial`) — a documentation
+finding, not a product one, and it is high because `dependency-graph.md`'s entire content is the
+class of claim it falsifies.
+
+**12 of the 16 not-closed high-severity findings are `partial`, and nearly all of those are "the
+code fix shipped, the standard was never written."** The high-severity backlog is now predominantly
+a writing task, not an engineering one — see Priority Actions.
 
 ### By Category
 
-| Category     | Count | Δ   |
-| ------------ | ----- | --- |
-| testing      | 57    | +3  |
-| architecture | 56    | +9  |
-| dry          | 11    | +2  |
-| typescript   | 9     | =   |
-| complexity   | 2     | =   |
-| **Total**    | 135   | +14 |
+| Category     | Count   | Δ vs 135-basis |
+| ------------ | ------- | -------------- |
+| testing      | 66      | +9             |
+| architecture | 66      | **+10**        |
+| dry          | 12      | +1             |
+| typescript   | 12      | +3             |
+| complexity   | 2       | =              |
+| **Total**    | **158** | **+23**        |
+
+**`architecture` has drawn level with `testing` at 66 apiece** (+10 and +9 respectively) — the two
+have between them accounted for 84% of every finding ever filed, and neither has led by more than a
+few for three bases running. `typescript` (+3) had been flat for two windows; all three additions
+are ESLint-burndown findings, which is the first evidence that standing up the lint gate surfaces a
+class nothing else was reporting.
 
 ### By Domain
 
-| Domain    | Count | Δ   |
-| --------- | ----- | --- |
-| cli       | 61    | +6  |
-| e2e       | 57    | +3  |
-| shared    | 9     | +2  |
-| infra     | 5     | +2  |
-| web       | 3     | +1  |
-| **Total** | 135   | +14 |
+| Domain    | Count   | Δ vs 135-basis |
+| --------- | ------- | -------------- |
+| cli       | 67      | +6             |
+| e2e       | 63      | +6             |
+| shared    | 12      | +3             |
+| web       | 9       | **+6**         |
+| infra     | 7       | +2             |
+| **Total** | **158** | **+23**        |
 
-`cli` remains ahead of `e2e` and extended its lead: the 0.145.0/0.146.0 cluster is production-code drift found by running the CLI, not test-harness drift. `shared` and `infra` both grew this window for the first time in months — those are the doc-pipeline and tooling findings (Patterns S, U).
+**`web` tripled (3 → 9) and is the only domain that moved by more than its own prior size.** That is
+the 0.147.0 rendering cluster: Ink layout under a clipping viewport, `flexShrink` defaults, column
+geometry, display-lookup fallbacks. `web` in this project means terminal rendering, and it had been
+the smallest domain in the corpus by a wide margin precisely because nothing was looking at it —
+these nine arrived the moment someone ran the CLI at a non-default terminal size.
+
+`cli` keeps a narrow lead over `e2e`. `infra` (+2) is the ESLint toolchain.
 
 ### By Type
 
-| Type                  | Count | Δ vs 121-basis | Δ this amendment |
-| --------------------- | ----- | -------------- | ---------------- |
-| `convention-drift`    | 36    | +4             | =                |
-| `anti-pattern`        | 33    | =              | =                |
-| `standard-gap`        | 32    | +8             | **+1**           |
-| `missing-standard`    | 18    | +2             | =                |
-| `architectural-drift` | 11    | =              | =                |
-| `audit`               | 5     | =              | =                |
-| ~~`enforcement-gap`~~ | 0     | =              | **−1 (retired)** |
-| **Total**             | 135   | +14            | =                |
+| Type                  | Count   | Δ vs 135-basis |
+| --------------------- | ------- | -------------- |
+| `anti-pattern`        | 43      | **+10**        |
+| `convention-drift`    | 38      | +2             |
+| `standard-gap`        | 39      | +7             |
+| `missing-standard`    | 21      | +3             |
+| `architectural-drift` | 12      | +1             |
+| `audit`               | 5       | =              |
+| **Total**             | **158** | **+23**        |
 
-> **Schema defect — FIXED 2026-07-30 (status-backfill pass).** `enforcement-gap` appeared as BOTH a
-> `type` value (1 file) and a `root_cause` value (25 files), which `TEMPLATE.md` rule 2 makes
-> explicitly invalid since the two enums are disjoint. The single offender,
-> `2026-07-20-e2e-spec-files-accumulate-unused-imports-unenforced.md`, is reclassified to
-> `type: standard-gap`; its `root_cause: enforcement-gap` is correct and unchanged.
->
-> **Why this was mechanical after all, not a judgement about what the author observed.** The corpus
-> already answers it. Both sibling findings in the identical class — a hygiene rule with no runnable
-> checker, `root_cause: enforcement-gap` — use `type: standard-gap`:
-> `2026-07-17-d167-task-id-recurrence-no-lint-guard` and, filed the same day as this amendment and
-> about ESLint specifically, `2026-07-30-eslint-precommit-gate-has-no-config-and-cannot-run`. The
-> author's own diagnosis is preserved intact in `root_cause:`; what was repaired is that they wrote
-> it into the WHAT field as well as the WHY field. No `type` value is now used in both enums, and
-> `Δ this amendment` is the only column that moves — the 121-basis deltas are carried forward from
-> the regeneration untouched.
+**`anti-pattern` retook the lead from `convention-drift` (+10 in one window)** after two bases in
+second place. The ten are concrete, reproduced-against-the-binary defects rather than doc drift —
+the 0.147.0 sweep's defining characteristic is that every one of its findings was verified through a
+PTY before and after its fix, so they were filed as observed anti-patterns rather than as suspected
+convention drift.
+
+> **`enforcement-gap` remains retired as a `type` and has not recurred.** It is a `root_cause` value
+> only (31 files); the two enums are disjoint per `TEMPLATE.md` rule 2. The single 2026-07-20
+> offender was reclassified 2026-07-30 and the class-(d) scan over all 158 files this pass returns
+> zero. No `type` value appears in both enums.
 
 ---
 
-## Per-Reference-Doc Impact (2026-07-30)
+## Per-Reference-Doc Impact (2026-08-01)
 
-Reference docs named in the `affected_files:` / `standards_docs:` / `related:` frontmatter of the 135 findings. This is the report's core cross-reference: a reference doc appearing here has at least one finding touching the behavior it documents and should be re-validated per `documentation-bible.md` "Re-Validation Triggers."
+Reference docs named in the `affected_files:` / `standards_docs:` / `related:` frontmatter of the 158 findings. This is the report's core cross-reference: a reference doc appearing here has at least one finding touching the behavior it documents and should be re-validated per `documentation-bible.md` "Re-Validation Triggers."
 
-> **Basis change from the 121-file table:** counts are now **distinct findings**, not raw frontmatter
-> references. A finding naming the same doc in both `affected_files:` and `standards_docs:` (common —
-> the tombstone and guard docs are usually named twice) previously counted twice. Deltas against the
-> old column would therefore be meaningless and are deliberately omitted from this table.
+> **Counts are distinct findings, not raw frontmatter references.** A finding naming the same doc in
+> both `affected_files:` and `standards_docs:` (common — the tombstone, component-patterns and guard
+> docs are usually named twice) counts once. Δ is against the 135-file basis, which used the same
+> distinct-finding measure.
 
-| Reference Doc                             | Findings | Priority          | Why                                                                                                                                                                                                                                                                 |
-| ----------------------------------------- | -------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `reference/concepts/tombstone-pattern.md` | 11       | HIGH              | D-277 removed most tombstone producers; D-279 added derived masks (Pattern K/O)                                                                                                                                                                                     |
-| `reference/testing/e2e-infrastructure.md` | 7        | HIGH              | Scope-and-HOME model, frame observability, and **three verified count/name drifts still open** (Patterns N, Q, S)                                                                                                                                                   |
-| `reference/config/config-writer.md`       | 6        | HIGH              | Three negative exhaustiveness claims went stale (Pattern S); path normalization now a code guarantee                                                                                                                                                                |
-| `reference/concepts/scope-system.md`      | 6        | HIGH              | Global immutability from project scope is now absolute (Pattern A)                                                                                                                                                                                                  |
-| `reference/features/plugin-system.md`     | 3        | ~~HIGH~~ RESOLVED | Was "not validated since v0.144.1 while `local-installer.ts` changed the most". **Rewritten and re-stamped `last_validated: 2026-07-30`** (Cross-Scope Reconciliation, v2 plugin registry, Settings Integration, `ScopedConfigWriteResult`). No longer a drift risk |
-| `reference/features/operations-layer.md`  | 3        | MED               | New `recompile-project-agents` operation; `ConfigWriteResult` dead field removed                                                                                                                                                                                    |
-| `reference/commands/index.md` (CANONICAL) | 3        | HIGH              | **New to this table.** `uninstall` corrupt-project-config path (`loadUninstallConfig`) undocumented; the doc advertised a removed `--all` flag across two releases                                                                                                  |
-| `reference/wizard/store-map.md`           | 2        | HIGH              | `setSkillSource` removed; `skillSlotKey` added; removal semantics inverted                                                                                                                                                                                          |
-| `reference/concepts/guard-pattern.md`     | 2        | MED               | The `s`-only dual-scope contract and the init-mode bypass removal                                                                                                                                                                                                   |
-| `reference/features/skills-and-matrix.md` | 2        | MED               | Known Limitation #6 falsified by the 38-category fix (Pattern S)                                                                                                                                                                                                    |
-| `reference/component-patterns.md`         | 2        | MED               | `ScrollAffordance` is a new shared component (Pattern P); column-geometry assertions (Pattern Q)                                                                                                                                                                    |
-| `reference/commands.md` (pointer)         | 2        | LOW               | Pointer to `commands/index.md`; measured on link integrity only, not content                                                                                                                                                                                        |
-| `reference/config/config-merger.md`       | 1        | HIGH              | Source-identity contract still unlanded (Pattern B)                                                                                                                                                                                                                 |
-| `reference/commands/edit.md`              | 1        | HIGH              | Scope-authority gate (Pattern A)                                                                                                                                                                                                                                    |
-| `reference/types/operations-types.md`     | 1        | LOW               | `ConfigWriteResult.globalConfigPath` — closed, deletion now stated positively                                                                                                                                                                                       |
-| `reference/types/zod-schemas.md`          | 1        | LOW               | Owns the schema count that the index doc pinned stale (Pattern O/S)                                                                                                                                                                                                 |
-| `reference/type-system.md`                | 1        | LOW               | Union-sweep carve-outs (Pattern I)                                                                                                                                                                                                                                  |
-| `reference/testing/infrastructure.md`     | 1        | LOW               |                                                                                                                                                                                                                                                                     |
-| `reference/wizard/state-transitions.md`   | 1        | LOW               | Known-bug note for `toggleAgent` scope defaulting                                                                                                                                                                                                                   |
-| `reference/store-map.md` (pointer)        | 1        | LOW               | Pointer; link integrity only                                                                                                                                                                                                                                        |
-| `reference/findings-impact-report.md`     | 1        | —                 | This file; named by the snapshot-rule finding                                                                                                                                                                                                                       |
+| Reference Doc                                       | Findings | Priority           | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------- | -------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reference/concepts/tombstone-pattern.md`           | 11       | **HIGH**           | =. D-277 removed most tombstone producers; D-279 added derived masks (Patterns K/O). **Untouched by the 2026-08-01 sweep** — the most-referenced reference doc in the corpus has now gone a full release bundle without validation                                                                                                                                                                                                                                     |
+| `reference/testing/e2e-infrastructure.md`           | 8        | HIGH               | +1. Frame observability, `getScreen()` unsoundness, fixture cardinality. Its `STEP_TEXT` enumeration claimed **64 against a true 74** — corrected 2026-08-01. `NEEDS-VALIDATION` **narrowed, not cleared** (Patterns Q, R, S, V)                                                                                                                                                                                                                                       |
+| `reference/config/config-writer.md`                 | 6        | MED                | =. Path normalization is now a code guarantee and the doc records it. The 2026-08-01 PARTIAL pass re-verified that section specifically and found every claim accurate — hence the drop from HIGH                                                                                                                                                                                                                                                                      |
+| `reference/concepts/scope-system.md`                | 7        | HIGH               | +1. Global immutability from project scope is now absolute (Pattern A); the Sources-tab vocabulary divergence added this window. Not re-validated since 2026-07-30                                                                                                                                                                                                                                                                                                     |
+| `reference/features/plugin-system.md`               | 3        | LOW                | =. Rewritten and re-stamped `last_validated: 2026-07-30` (Cross-Scope Reconciliation, v2 plugin registry, Settings Integration, `ScopedConfigWriteResult`). **`local-installer.ts` gained zero findings this window** — the 0.147.x work was rendering and tooling, not installation — so the doc has not re-drifted                                                                                                                                                   |
+| `reference/features/operations-layer.md`            | 3        | LOW                | =. `types/operations-types.md`'s 2026-08-01 heading diff globbed every `export type` under `lib/operations/` and found **22 in source, 22 in the doc, sets identical** — zero operations-layer drift across all three releases                                                                                                                                                                                                                                         |
+| `reference/commands/index.md` (CANONICAL)           | 3        | **LOW (was HIGH)** | =. **`NEEDS-VALIDATION` DISCHARGED 2026-08-01.** The corrupt-project-config path (`loadUninstallConfig`) is now documented in full, and the pass additionally re-derived the whole 16-command file inventory and every `static flags` / `baseFlags` / `args` / `aliases` table from source with **zero mismatches**. The `--all` removal callout is intact                                                                                                             |
+| `reference/wizard/store-map.md` (POINTER)           | 2        | LOW                | =. **Label corrected this pass — this is the POINTER (16 lines), not the canonical doc.** The previous table had this pair inverted, which is the same defect Map Invariant 4 exists to catch. Its target `store-map.md` received a FULL re-validation 2026-08-01, so link integrity is all that is measured here                                                                                                                                                      |
+| `reference/concepts/guard-pattern.md`               | 2        | MED                | The `s`-only dual-scope contract and the init-mode bypass removal                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `reference/features/skills-and-matrix.md`           | 3        | MED                | +1. Known Limitation #6 falsified by the 38-category fix (Pattern S). **New this window:** the count-ownership registry assigns it the `defaultCategories` figure, but the doc carries that number only inside an HTML validation comment — the authoritative write-up lives in `features/configuration.md`                                                                                                                                                            |
+| `reference/component-patterns.md`                   | **10**   | **HIGH**           | **+8 — the biggest mover in the corpus, and the doc to validate next.** The entire 0.147.0 rendering cluster names it: Ink `flexShrink` defaults, fixed-height blocks in a clipped viewport, vertical padding blanking a viewport, display-lookup fallbacks, Sources-grid vocabulary, `SummaryPanel` extraction, terminal-size gates, column geometry (Patterns P, Q, V). Two PARTIAL passes landed (2026-07-31, 2026-08-01) and it is still **not re-stamped**        |
+| `reference/commands.md` (POINTER)                   | 1        | LOW                | −1. Pointer to `commands/index.md`; measured on link integrity only, not content                                                                                                                                                                                                                                                                                                                                                                                       |
+| `reference/config/config-merger.md`                 | 1        | HIGH               | Source-identity contract still unlanded (Pattern B)                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `reference/commands/edit.md`                        | 1        | MED                | =. Scope-authority gate (Pattern A). The `command-delegation-must-carry-caller-intent` mechanism it documents is confirmed shipped; only the general rule is outstanding                                                                                                                                                                                                                                                                                               |
+| `reference/types/operations-types.md`               | 1        | LOW                | `ConfigWriteResult.globalConfigPath` — closed, deletion now stated positively                                                                                                                                                                                                                                                                                                                                                                                          |
+| `reference/types/zod-schemas.md`                    | 1        | LOW                | =. Owns the schema count that the index doc had pinned stale (Patterns O/S). FULL re-validation 2026-08-01 re-derived it from `lib/schemas.ts` and it is unchanged; `boundary-map.md` dropped its duplicate copy the same day                                                                                                                                                                                                                                          |
+| `reference/type-system.md`                          | 1        | LOW                | Union-sweep carve-outs (Pattern I)                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `reference/testing/infrastructure.md`               | 1        | LOW                | =. Gained "`render()` returns before effects flush" and "A regenerated snapshot is a proposal, not a result" 2026-08-01 (Pattern V). PARTIAL pass, not re-stamped                                                                                                                                                                                                                                                                                                      |
+| `reference/wizard/state-transitions.md` (CANONICAL) | 1        | MED                | =. Known-bug note for `toggleAgent` scope defaulting. PARTIAL pass 2026-08-01 corrected the `I`-hotkey gate and the null-baseline diff projection; not re-stamped                                                                                                                                                                                                                                                                                                      |
+| `reference/store-map.md` (CANONICAL)                | 1        | LOW                | =. **Label corrected this pass — this is the CANONICAL doc (342 lines), previously mislabelled "(pointer)".** FULL re-validation 2026-08-01 read `wizard-store.ts` end to end; `wizard-store.ts` is now the single most-cited file in the corpus, so this pairing is correct                                                                                                                                                                                           |
+| `reference/findings-impact-report.md`               | 1        | —                  | =. This file; named by the snapshot-rule finding                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `reference/dependency-graph.md`                     | 1        | **HIGH**           | **NEW. The window's only high-severity finding.** Its entire content is an import graph, and it was validating existing rows instead of diffing edges — it carried a `wizard.tsx -> lib/feature-flags` edge deleted in 0.147.1 and had never recorded the real `hotkeys.ts -> lib/feature-flags` edge. FULL re-validation landed 2026-08-01: 13 of 17 Operations→Lib rows were wrong, and Observation 12 ("composition exists in exactly one place") was wrong by four |
+| `reference/features/wizard-flow.md`                 | 1        | MED                | **NEW.** The `I`-hotkey gate is `isInfoPanelAvailable(step)` (flag AND `step !== "confirm"`), not the flag alone, and `usePanelScroll` was missing from the hook table. Two PARTIAL passes; **not re-stamped**                                                                                                                                                                                                                                                         |
+| `reference/features/configuration.md`               | 1        | MED                | **NEW.** Carries the authoritative `defaultCategories` write-up that the count-ownership registry assigns to `skills-and-matrix.md`. PARTIAL pass 2026-08-01 split the `ConfigLoadError` "who handles the throw" table for the corrupt-PROJECT-config path                                                                                                                                                                                                             |
+| `reference/architecture-overview.md`                | 1        | MED                | **NEW.** Quotes the `defaultCategories` count a third time (same finding). PARTIAL pass 2026-08-01 added the terminal-size gate as section 18 and corrected two `operations/skills/` symbol names that are not exports                                                                                                                                                                                                                                                 |
+| `reference/boundary-map.md`                         | 1        | MED                | **NEW.** Same import-graph mechanism as `dependency-graph.md`. PARTIAL pass 2026-08-01 removed its restated Zod count and added section 1.4 (terminal geometry as a pre-command gate); sections 2–6 and 8 remain on the 2026-07-30 basis                                                                                                                                                                                                                               |
+| `reference/utilities.md`                            | 1        | LOW                | **NEW.** `SCROLL_VIEWPORT.MIN_TERMINAL_HEIGHT` had zero importers while the live gate hardcoded its own copy — two declarations of one minimum, neither agreeing. FULL re-validation 2026-08-01 re-derived every exhaustive list in the file                                                                                                                                                                                                                           |
+| `reference/config/configuration.md` (POINTER)       | 1        | LOW                | **NEW.** Its redirect row restated the `defaultCategories` count; a redirect row must carry a topic, never a quantity. Removed 2026-08-01 and the pointer re-stamped on link-integrity basis only                                                                                                                                                                                                                                                                      |
 
-> **Scope note:** most of these 135 findings name `.ai-docs/standards/**` docs (convention-keeper's domain), not reference docs. Top standards targets, for prioritization only: `standards/e2e/anti-patterns.md` (37), `standards/e2e/README.md` (25), `CLAUDE.md` (15), `standards/clean-code-standards.md` (11), `standards/documentation-bible.md` (10 — **doubled this window**, see Patterns S and U), `standards/e2e/page-objects.md` (9), `DOCUMENTATION_MAP.md` (6), `standards/e2e/test-data.md` (4), `standards/e2e/assertions.md` (4), `agent-findings/TEMPLATE.md` (4), `agent-findings/README.md` (4), `standards/commit-protocol.md` (3). Out of scope for this reference-doc report, but they drive the same underlying patterns.
+**Read the Priority column against the 2026-08-01 sweep, not against the counts.** Eight docs that
+would rank HIGH on reference count alone were validated in that sweep and drop to LOW/MED. The two
+that stay HIGH on count — `tombstone-pattern.md` and `component-patterns.md` — are precisely the two
+the sweep did not close. **`tombstone-pattern.md` is the more urgent of the pair:** it is the
+most-referenced reference doc in the corpus and the sweep did not touch it at all.
 
-## Per-Source-File Churn (2026-07-30)
+**Two pointer/canonical labels in this table were inverted and are corrected above.**
+`reference/store-map.md` is CANONICAL (342 lines) and `reference/wizard/store-map.md` is the POINTER
+(16 lines) — the previous table had them the other way round, and priced the pointer HIGH while
+marking the canonical doc LOW. This is the same defect Map Invariant 4 exists to catch, replicated
+inside this report; it is now verified by reading both files rather than inferred from path depth.
 
-Source / E2E files most frequently named in `affected_files:` (>= 5 findings). High churn signals which reference doc needs the tightest validation cadence. **Deltas are against the 121-file basis** (the immediately preceding table), so they measure this window's 12 findings only.
+**One finding names a path that does not resolve as written:** `docs/reference/commands.md`. That
+file exists — it is a user-facing guide — but the reference doc intended is
+`.ai-docs/reference/commands/index.md`. It is counted under neither row above.
 
-| Source File                                                    | Findings | Δ vs 121-basis | Reference doc(s) to re-validate                                                        |
+> **Scope note:** most of these 158 findings name `.ai-docs/standards/**` docs (convention-keeper's domain), not reference docs. Top standards targets, for prioritization only: `standards/e2e/anti-patterns.md` (43), `standards/e2e/README.md` (28), `CLAUDE.md` (20), `standards/clean-code-standards.md` (14), `standards/documentation-bible.md` (15), `standards/e2e/page-objects.md` (9), `standards/e2e/assertions.md` (7), `DOCUMENTATION_MAP.md` (6), `standards/e2e/test-data.md` (5), `agent-findings/TEMPLATE.md` (5), `agent-findings/README.md` (4), `standards/commit-protocol.md` (3), `standards/e2e-testing-bible.md` (2). **`CLAUDE.md` (+5) and `clean-code-standards.md` (+3) grew fastest** — both are where this window's nine unwritten Proposed Standards are addressed, which is the same debt the `partial` plurality measures. Out of scope for this reference-doc report, but they drive the same underlying patterns.
+
+## Per-Source-File Churn (2026-08-01)
+
+Source / E2E files most frequently named in `affected_files:` (>= 5 findings). High churn signals which reference doc needs the tightest validation cadence. **Deltas are against the 135-file basis**, so they measure this window's 23 findings only. Corpus-wide: **271 distinct files, 561 citations.**
+
+| Source File                                                    | Findings | Δ vs 135-basis | Reference doc(s) to re-validate                                                        |
 | -------------------------------------------------------------- | -------- | -------------- | -------------------------------------------------------------------------------------- |
-| `src/cli/lib/installation/local-installer.ts`                  | 23       | +1             | `features/plugin-system.md`, `config/config-writer.md`, `features/operations-layer.md` |
-| `src/cli/stores/wizard-store.ts`                               | 23       | +1             | `wizard/store-map.md`, `concepts/tombstone-pattern.md`, `concepts/guard-pattern.md`    |
+| `src/cli/stores/wizard-store.ts`                               | **25**   | **+2**         | `store-map.md`, `concepts/tombstone-pattern.md`, `concepts/guard-pattern.md`           |
+| `src/cli/lib/installation/local-installer.ts`                  | 23       | =              | `features/plugin-system.md`, `config/config-writer.md`, `features/operations-layer.md` |
 | `src/cli/commands/edit.tsx`                                    | 10       | =              | `commands/edit.md`                                                                     |
+| `src/cli/components/wizard/source-grid.tsx`                    | **9**    | **+4**         | `component-patterns.md`                                                                |
 | `e2e/pages/steps/build-step.ts`                                | 9        | =              | `testing/e2e-infrastructure.md`                                                        |
-| `e2e/helpers/test-utils.ts`                                    | 9        | +1             | `testing/e2e-infrastructure.md`                                                        |
-| `e2e/pages/wizards/edit-wizard.ts`                             | 7        | +1             | `testing/e2e-infrastructure.md`                                                        |
-| `src/cli/lib/configuration/config-merger.ts`                   | 6        | +1             | `config/config-merger.md`                                                              |
+| `e2e/helpers/test-utils.ts`                                    | 9        | =              | `testing/e2e-infrastructure.md`                                                        |
+| `e2e/pages/wizards/edit-wizard.ts`                             | 7        | =              | `testing/e2e-infrastructure.md`                                                        |
+| `src/cli/lib/configuration/config-merger.ts`                   | 6        | =              | `config/config-merger.md`                                                              |
 | `src/cli/lib/configuration/config-writer.ts`                   | 6        | =              | `config/config-writer.md`                                                              |
 | `src/cli/commands/init.tsx`                                    | 6        | =              | `commands/index.md`                                                                    |
 | `e2e/fixtures/dual-scope-helpers.ts`                           | 6        | =              | `testing/e2e-infrastructure.md`                                                        |
 | `e2e/fixtures/expected-values.ts`                              | 6        | =              | `testing/e2e-infrastructure.md`                                                        |
-| `src/cli/commands/uninstall.tsx`                               | 5        | **new**        | `commands/index.md`                                                                    |
-| `src/cli/components/wizard/source-grid.tsx`                    | 5        | **new**        | `component-patterns.md`                                                                |
+| `e2e/pages/base-step.ts`                                       | 6        | +1             | `testing/e2e-infrastructure.md`                                                        |
+| `e2e/pages/steps/confirm-step.ts`                              | 6        | +1             | `testing/e2e-infrastructure.md`                                                        |
+| `e2e/helpers/terminal-session.ts`                              | 6        | +1             | `testing/e2e-infrastructure.md`                                                        |
+| `src/cli/components/wizard/summary-panel.tsx`                  | **5**    | **new**        | `component-patterns.md`                                                                |
+| `e2e/pages/constants.ts`                                       | **5**    | **new**        | `testing/e2e-infrastructure.md`, `standards/e2e/README.md`                             |
+| `src/cli/commands/uninstall.tsx`                               | 5        | =              | `commands/index.md`                                                                    |
 | `src/cli/lib/installation/mode-migrator.ts`                    | 5        | =              | `features/plugin-system.md`                                                            |
-| `e2e/pages/base-step.ts`                                       | 5        | =              | `testing/e2e-infrastructure.md`                                                        |
 | `e2e/pages/steps/agents-step.ts`                               | 5        | =              | `testing/e2e-infrastructure.md`                                                        |
-| `e2e/pages/steps/confirm-step.ts`                              | 5        | =              | `testing/e2e-infrastructure.md`                                                        |
-| `e2e/helpers/terminal-session.ts`                              | 5        | =              | `testing/e2e-infrastructure.md`                                                        |
 | `e2e/lifecycle/init-dashboard-edit-plugin-install.e2e.test.ts` | 5        | =              | `testing/e2e-infrastructure.md`                                                        |
 
-**`local-installer.ts` and `wizard-store.ts` remain tied at the top (23 each).** The installer absorbed the D-279 reconciliation, the D-274 global-uninstall pruning and the D-240 propagation return channel; it is the mechanical reason `documentation-bible.md` gained an `installation/**` hook row this window. Every reference doc mapped to either file is a HIGH-priority revalidation target.
+**`wizard-store.ts` has broken the two-way tie and is now the single most-cited file in the corpus (25).** `local-installer.ts` took **zero** findings this window — the 0.147.x work was rendering and tooling, not installation — so the store pulled ahead on the Sources-tab null-baseline divergence and the dead `step-agents.tsx` subscription. `store-map.md` received a FULL re-validation on 2026-08-01, which is the correct response; `concepts/tombstone-pattern.md` and `concepts/guard-pattern.md`, the other two docs this file maps to, did not.
 
-**Two files enter the table for the first time**, and both are this window's bug-fix work rather than long-running churn: `uninstall.tsx` (corrupt-config posture, `--all` removal, cwd/symlink resolution) and `source-grid.tsx` (the D-271/overflow-affordance cluster, Pattern P). Neither has a dedicated reference doc; they are covered by `commands/index.md` and `component-patterns.md` respectively.
+**`source-grid.tsx` nearly doubled (5 → 9) and is now the third-most-cited production file.** One component absorbed four findings in a single release: marker-column geometry, focused-row padding, the stray `✓` on locked and pending-removal rows, and the vocabulary divergence from the info panel. **`component-patterns.md` is the reference doc for all four and is still not re-stamped** — that pairing is the sharpest churn-to-doc signal in this table.
 
-**Near-threshold watch list (4 findings each, one short of the table):** `e2e/pages/steps/sources-step.ts`, `e2e/pages/wizards/init-wizard.ts`, `e2e/fixtures/project-builder.ts`, `src/cli/lib/wizard/scope-diff.ts`, `src/cli/lib/__tests__/content-generators.ts`, and four `e2e/lifecycle/` specs. `scope-diff.ts` is the one to watch — it is the home of `skillSlotKey`, the extracted primitive at the centre of Pattern O.
+**Two files enter the table**, both from the 0.147.0 rendering cluster. `summary-panel.tsx` is the component extracted so the confirm step and the `I` overlay stop being two implementations of one summary — a Pattern O remedy that generated five findings on its way in, which is worth noting: **extracting the shared primitive is the right fix and is not free.** `e2e/pages/constants.ts` holds `STEP_TEXT`, `TERMINAL_SIZE` and the second of the two disagreeing minimum-height declarations; it is also the file whose exhaustive enumeration was documented as 64 against a true 74.
 
-## Systemic Patterns (2026-07-30 regeneration)
+**Near-threshold watch list (4 findings each, one short of the table):** `src/cli/lib/wizard/scope-diff.ts`, `src/cli/consts.ts`, `e2e/pages/steps/sources-step.ts`, `e2e/pages/wizards/init-wizard.ts`, `e2e/fixtures/project-builder.ts`, `src/cli/lib/__tests__/content-generators.ts`, and six `e2e/lifecycle/` specs. **`consts.ts` is new to this list** — it holds `MIN_TERMINAL_SIZE`, `LOGO_MIN_TERMINAL_ROWS` and the deleted `SCROLL_VIEWPORT.MIN_TERMINAL_HEIGHT`, and is where the two-disagreeing-declarations finding landed. `scope-diff.ts` remains the one to watch: it is the home of `skillSlotKey` / `agentSlotKey`, the extracted primitives at the centre of Pattern O and the cited examples in CLAUDE.md's export carve-out.
 
-Consolidated from all **135** on-disk findings. **A..S carry forward with their letters intact** — every class survived this window and none merged away. **T** is promoted from the "Candidate Pattern T" stub the previous pass staged explicitly for this decision. **U** is newly named. The pre-2026-07-23 numbered patterns are preserved in the Original Snapshot below.
+## Systemic Patterns (2026-08-01 regeneration)
+
+Consolidated from all **158** on-disk findings. **A..U carry forward with their letters intact** — every class survived this window, none merged away, and no letter was reused. **V is newly named.** The pre-2026-07-23 numbered patterns are preserved in the Original Snapshot below.
 
 Each pattern lists representative finding slugs (date prefixes omitted for brevity), the shared root cause, and the remedy plus the reference doc that should absorb it. A finding may appear under more than one pattern; that is deliberate and long-standing (e.g. `empty-union-string-fallback` sits under B, I and T), because the patterns classify _mechanisms_, not files.
 
 ### What this window changed, and what it did not
 
-The 2026-07-30 batch was the largest ever filed about the **documentation and findings systems themselves**. Two judgements had to be made about it, and both are recorded here rather than left implicit:
+**The 0.146.1 / 0.147.0 / 0.147.1 window produced one dominant shape, and both of the first two changelogs name it in their own opening lines before any pattern analysis was done.** 0.146.1: _"an artefact that looks like verification but cannot fail."_ 0.147.0: _"five of the defects were being actively concealed by the tests and docs meant to catch them."_ When the release notes and the finding corpus converge independently on the same sentence, the class is real.
 
-**1. The doc-hygiene findings STRENGTHEN Pattern O rather than warranting a new pattern.** Pattern O ("one rule, two implementations that drift, and only one enforces") was named from product code in the 0.146.0 cluster. Two of this window's findings — `doc-index-pins-counts-that-only-the-indexed-doc-revalidates` and `e2e-doc-inventories-pin-counts-and-names-nothing-verifies` — have the identical mechanism expressed in prose: a value written in two places, with a revalidation trigger on only one of them. The first states it outright: _"The count is duplicated with no back-link in either direction."_
+**That class is lettered V.** The decision to give it a letter rather than distribute its members across existing patterns is the main judgement of this regeneration, and the reasoning is recorded rather than left implicit:
 
-The decisive evidence is the **remedy that actually landed**. `documentation-bible.md` did not gain a doc-specific rule; it gained _"A Count Lives in Exactly One Document"_ plus an ownership registry — which is Pattern O's remedy verbatim (extract the value to a single owner, reference it from everywhere else). A pattern whose fix is another pattern's fix is not a separate pattern. **Pattern O's statement is therefore widened to drop the implicit "in code" qualifier**, and the two findings are added as members. Splitting them into a new letter would have produced two patterns with one shared remedy and guaranteed that a future reader fixed only one of them.
+- It is **not Pattern M** (_rules live in prose with no enforcement_). M's defect is an **absent** checker. V's defect is a checker that **exists, executes, and reports PASS** — which is strictly worse, because M leaves a visible hole and V manufactures false assurance. The two ESLint findings sit in both, and that overlap is the seam: the gate was absent (M) _and_ the checklist reported it passing (V).
+- It is **not Pattern Q** (_the assertion cannot see the property under test_). Q is about the **observation surface** lacking a signal. V includes cases where the signal is perfectly observable and the artefact still cannot fail — a snapshot regenerated with `-u`, a spec that captures a value and asserts nothing, a test exercising an input the type system forbids.
+- It is **not Pattern G** (_assertions pin state the test's own action did not produce_). G's assertion is real and mis-targeted. V's assertion is frequently **absent altogether**, or present but unreachable.
+- It is **not Pattern U** (_the self-audit cannot detect its target class_). U is V's special case, restricted to the findings/doc pipeline auditing itself. U keeps its letter because its remedies are pipeline-specific; V is the general statement and now carries the product-code and test-suite instances U never covered.
 
-**2. Two classes DID warrant lettering, for opposite reasons.**
+**Six pattern statements were widened rather than split** — G, M, Q, R, S and T. Each carries a "**Widened 2026-08-01**" note naming what moved and why. Where a finding is a member of both V and an older pattern, it is listed under both: the older pattern says what kind of thing went wrong, V says why nothing caught it.
 
-- **Pattern T** was already staged. The previous pass wrote: _"Do not letter this until the regeneration; it currently has one instance."_ This is that regeneration, and re-reading the corpus against its definition found **5** instances, not 1. The staging instruction is discharged.
-- **Pattern U** is genuinely new and could not have been seen before this pass, because it took a link-integrity scan to surface it. Its distinguishing mechanism is not "the findings system drifts" (that is the historical numbered Pattern 11) but the sharper and more troubling **"the self-audit is structurally incapable of detecting the defect class it is aimed at"** — an arithmetic check that passes on a mis-enumerated set, a duplicate key that cannot fire across dates, and a link check nobody ever ran.
-
-**What was NOT done:** no pattern was merged, renamed or retired, and no letter was reused. Patterns E, O, Q and S had their _statements_ widened by new members without changing their identity; each carries a "**Widened 2026-07-30**" note naming what moved and why.
+**What was NOT done:** no pattern was merged, renamed or retired. Pattern O was **not** widened this window — its two prose members from 2026-07-30 already carry it, and the count-ownership findings filed this window (`count-ownership-registry-names-a-doc-that-does-not-carry-the-count`, `exhaustive-enumeration-extended-not-rederived-stayed-short`) are recorded under S and V because their mechanism is a claim nothing re-derives, not a value implemented twice.
 
 ### Pattern A — Scope authority decided in several disagreeing places (project vs global)
 
@@ -449,9 +499,12 @@ _**Widened 2026-07-30.** Was "shared-fixture/constant DRY adoption boundary uncl
 
 ### Pattern G — Assertions pin state the test's own action did not produce (coverage / vacuous)
 
-- Findings: `setup-owned-state-pinned-by-action-scoped-assertions`, `live-in-session-selected-state-uncovered-badge-only-assertions`, `toggle-selection-array-diverges-from-reconciled-active-state`, `init-dashboard-plugin-test-vacuous-project-scope`, `d228-e2e-vacuous-pass-via-home-edit`, `d227-preselect-fix-not-e2e-reachable`.
-- Root cause: absolute assertions on setup-owned state; badge-only assertions miss live selection; "project scope" tests sharing `HOME=projectDir` pass vacuously.
-- Remedy: "Assert on what your action changed" in `standards/e2e/anti-patterns.md` (convention-keeper). Reference: `testing/e2e-infrastructure.md`.
+_**Widened 2026-08-01.** The 2026-08-01 unused-binding sweep supplied the pattern's purest instance and its sharpest evidence. `scope-toggle-config-snapshot.e2e.test.ts` — named "should compile agent at project scope and preserve global" — snapshotted **both** configs under a comment reading `// BEFORE: Snapshot both configs` and compared **neither**. Its two live assertions were `toContain("web-developer")` on each config, and the fixture writes `web-developer` into both files **before** the toggle runs. Both assertions were already true of the pre-state, so the spec would have passed with the toggle keystroke silently swallowed — a documented failure mode of this harness. That is Pattern G exactly: every assertion in the file pinned setup-owned state._
+
+- Findings: `setup-owned-state-pinned-by-action-scoped-assertions`, `live-in-session-selected-state-uncovered-badge-only-assertions`, `toggle-selection-array-diverges-from-reconciled-active-state`, `init-dashboard-plugin-test-vacuous-project-scope`, `d228-e2e-vacuous-pass-via-home-edit`, `d227-preselect-fix-not-e2e-reachable`, **`e2e-specs-captured-exit-codes-and-config-snapshots-then-asserted-nothing`** (new, also V), **`unused-bindings-in-tests-mark-assertions-that-were-planned-but-never-written`** (new, also V).
+- Root cause: absolute assertions on setup-owned state; badge-only assertions miss live selection; "project scope" tests sharing `HOME=projectDir` pass vacuously. **The new members add a mechanical detector the pattern never had:** an unused binding in a test file marks the exact spot where an assertion was planned and not written, and `@typescript-eslint/no-unused-vars` finds them for free. 53 in `src/` tests and 15 in `e2e/` on first run.
+- **The detector is the deliverable, not the fix.** In production code a dead variable is usually just dead; in a test it is very often the value the author meant to assert on. Deleting it silently discards the signal. Triage before deletion.
+- Remedy: "Assert on what your action changed" in `standards/e2e/anti-patterns.md` (convention-keeper), plus a standing rule that an unused binding in a test file is triaged as a missing assertion before it is removed. Reference: `testing/e2e-infrastructure.md`.
 
 ### Pattern H — Field name ≠ field contents; derived slug/category/display hides the wrong value
 
@@ -490,6 +543,23 @@ _**Widened 2026-07-30.** Was "shared-fixture/constant DRY adoption boundary uncl
 - **The new member inverts the pattern and is worse than it looks.** Here the gate is not merely absent from prose — it is _written down as enforced_ and cannot run. `CLAUDE.md`'s Pre-Commit Checklist gates on "No ESLint errors", but the repo has no `eslint.config.*`, no `eslint` dependency, no `node_modules/.bin/eslint` and no `lint` script; `lint-staged` runs `prettier --write` only. **An unrunnable gate is always reported as passed**, so every commit has recorded a clean lint result that was never computed. Several other remedies in this very pattern ("add an ESLint rule for task-IDs in test names") were prescribed against infrastructure that does not exist — so those remedies were never actionable either.
 - **The second new member is the proof, and it arrived while this regeneration was being written.** Standing ESLint up for the first time read the four `// eslint-disable-next-line` directives in `src/` — and **two of the four do not do what their author believed**: one `no-var` directive is misplaced and suppresses nothing, and one names `react-hooks/exhaustive-deps`, a rule that is not installed. A suppression comment is a claim about a checker's behaviour; when the checker never runs, the claim is never tested, and the codebase accumulates directives that are _load-bearing in the author's mind and inert in fact_. **This generalises beyond ESLint: any suppression, ignore-file or waiver is unverified until the tool that honours it actually runs.**
 - Remedy: add ESLint/typecheck gates (`e2e/tsconfig.json`, task-ID lint rule, `typecheck:scripts`) — **but establish the ESLint installation first**, since three of this pattern's proposed remedies presuppose it; one extractor per on-disk concern; document plugin/migration marketplace preconditions and bare-id/qualified-id symmetry. Standing rule: **a checklist item that names a tool must be runnable, or the checklist is recording an outcome nobody measured.**
+
+_**Widened 2026-08-01 — the prerequisite is discharged, and the payoff is measured.**_ The ESLint
+installation this pattern named as a hard prerequisite landed in 0.146.1 and its baseline reached
+**zero** in 0.147.1 with no rule disabled. That closes the pattern's blocking item and lets the rest
+of its remedy list become actionable for the first time. Two consequences worth recording:
+
+1. **Running the checker for the first time is itself a finding generator.** Of 148 problems, five
+   marked real defects invisible precisely because the binding recording them was unused — two
+   discarded `catch` causes in `source-validator.ts` (the command whose entire job is reporting
+   causes), and `as any` casts that made two impossible test scenarios compile. **A gate's first
+   execution is a source of information, not a chore**, and this is the corpus's evidence for it.
+2. **The remedy list is still not fully actionable.** `d167-task-id-recurrence-no-lint-guard` needs
+   a `no-restricted-syntax` rule that was deliberately left out to keep the initial rule set stock,
+   and `eslint-plugin-react-hooks` is not installed at all — so this Ink/React codebase has **no
+   hooks linting**, and two effects in `use-measured-height.ts` would be flagged if it were added.
+
+New members: **`unused-catch-binding-hid-a-discarded-validator-cause`**, **`eslint-flags-two-typescript-mandated-constructs-it-cannot-express`** (the counter-case: two constructs TypeScript _requires_ in the shape the rule objects to, where the rule's own `_` escape hatch fails to compile — `TS2428` merged declarations match on the parameter's _name_).
 
 ### Pattern N — E2E launcher must match the scope the test edits
 
@@ -550,6 +620,15 @@ _**Widened 2026-07-30.** Was "The rendered frame does not carry the signal the a
 - Consequence: an agent that writes the naive assertion sees it fail and is one step from silently weakening it — which is how Pattern G (vacuous assertions) gets seeded.
 - Remedy: dead reckoning over a grid is banned; walk closed-loop against a signal that IS observable (the focused category header Tabs observably). Document which helper accumulates frames and which does not. Force the chalk level explicitly for colour assertions. Standards: `standards/e2e/assertions.md`, `standards/e2e/anti-patterns.md`. Reference: `testing/e2e-infrastructure.md`.
 
+_**Widened 2026-08-01 with a third failure mode: the surface reads MORE than it claims.**_ The first
+two modes are a surface that carries **too little** — a stripped colour, an overwritten frame. The
+new member is the inverse and is more dangerous, because it makes **absence** assertions unsound.
+
+- New members: **`getscreen-is-not-viewport-only-so-absence-assertions-are-unsound`**, **`negative-render-assertion-needs-a-positive-subject-guard`**, **`confirm-step-viewport-is-zero-rows-at-short-so-overflow-spec-is-vacuous`** (superseded by the former).
+- `TerminalSession.getScreen()` documents itself as viewport-only and **reads from buffer line 0**, so every `not.toContain(...)` through it is scrollback-sensitive. A resize pushes the whole pre-shrink frame into scrollback and paints twice — Ink's own `resized()` re-render, then the app's reaction — so a cursor-anchored raw wait does not rescue it either. **Flagged, not changed: every page object depends on `getScreen()`.**
+- The paired rule, and the cheapest fix in this pattern: **a negative rendering assertion needs a positive guard proving its subject is on screen.** A counter is not its content — `toContain("2 more below")` proves an affordance rendered, not that the rows it counts exist. And never assert a rendering invariant at a geometry where the subject does not render.
+- Both new members are also Pattern V members: the assertion runs, reports PASS, and could not have reported otherwise.
+
 ### Pattern R — The scenario has no reachable surface, or the fixture cannot establish the state its name claims
 
 _**Widened 2026-07-30** with a third failure mode: the layer under test cannot observe the input the spec varies._
@@ -560,6 +639,13 @@ _**Widened 2026-07-30** with a third failure mode: the layer under test cannot o
   2. **Fixture establishes a different state than the name claims.** A unit spec named "project-scoped skill, previously installed as project" built its live state with `toggleTechnology` (which defaults `scope: "global"`) against a `buildSkillConfigs` snapshot (which defaults `scope: "project"`) — a project→global migration. Its incidental row-count assertion had been pinning id-keyed behaviour for a shape nobody listed.
   3. **The layer under test cannot observe the varied input** _(new 2026-07-30)_. `uninstall.tsx` takes its directory from `process.cwd()` = `getcwd(2)`, which returns the kernel's canonical path with symlinks **already resolved**, and ignores `$PWD`. A symlinked-sandbox E2E spec therefore **cannot fail** — it passes identically against bug and fix. The coverage was correctly written one layer down, in `local-installer.test.ts`. This generalises to any input the OS canonicalizes before the process observes it, and is the most dangerous of the three because the spec looks precisely targeted at the bug.
 - Remedy: trace the caller graph and the fixture's emitted shape **before** writing the spec; when a scenario is unreachable, record it as invariant hardening rather than inventing a flow. For mode 3, ask which layer first _observes_ the varied input and test there. Standards: `standards/e2e/README.md`, `standards/e2e/test-data.md`, `standards/e2e/anti-patterns.md`. Reference: `testing/e2e-infrastructure.md`.
+
+_**Widened 2026-08-01 with a fourth failure mode: the fixture is a valid state that cannot express the bug.**_ Modes 1–3 are about a scenario nothing can reach. Mode 4 is about a scenario reached correctly against a fixture too small to produce the symptom.
+
+4. **The fixture is smaller than production, so the bug has a different signature in it.** The stack step bled at the advertised minimum height because a six-row ASCII logo starved the list's viewport past `MIN_VIEWPORT_ROWS`. `create-e2e-source.ts` builds **one** stack where the real marketplace has a dozen — with one row there is nothing to overflow, so `useRowScroll` never stops clipping and the overpaint never reaches the assertion. The spec was correctly written, correctly targeted, and structurally incapable of failing. **Cardinality is part of a fixture's contract**: any fixture backing a spec about overflow, scrolling, clipping or pagination must exceed the viewport it is testing.
+
+- New members: **`e2e-fixture-smaller-than-production-changes-the-bug-signature`**, **`as-any-on-valid-union-members-is-noise-that-hides-two-fabrications`** (mode 1, in a unit spec: `{ id: "web-framework-nonexistent" as any }` in a test named "filters out invalid skill IDs not in skillIdSet" — the cast was the _sole_ reason it compiled, so the spec asserted correct behaviour for a scenario no type-checked path can produce. The scenario that **can** occur is the inverse: a valid `SkillId` absent from the set, which happens whenever `defaultStacks` — type-checked against the previous generation's union — names a skill the current source no longer provides).
+- **A cast is how an unreachable scenario gets written.** That is the generalisable half: when a test needs `as any` to compile, the type system is reporting that the scenario cannot occur, and the cast overrides the report rather than answering it. Renaming `VALID_IDS` to `KNOWN_SKILL_IDS` was the corresponding fix — calling the set "valid" is what invites the next person to fabricate an invalid member.
 
 ### Pattern S — Reference-doc claims whose falsification has no trigger
 
@@ -580,7 +666,19 @@ _Named in the 121-basis regeneration with six members; **widened 2026-07-30 to e
   | A recorded deletion that was later **reverted** _(new)_ | A doc recorded a deletion; a later commit restored the thing. The doc now describes an absence that no longer holds — a negative claim that decays silently, exactly like a stale Known Limitation                                                      |
   | An inventory of names, not just counts _(new)_          | The E2E doc set pinned per-directory spec totals, `STEP_TEXT` membership and three page-object method tables. All drifted together, including two **inverted** `HOME=cwd` claims that would have instructed an agent to reintroduce the bug D-226 fixed |
 
-- Remedy: widen the hook table with rows for flag changes, Known-Limitation narrowing, and high-churn source files; ban unqualified negative exhaustiveness claims (scope them to a named function or add a grep the validator can re-run); make an index doc's numeric annotations point at the indexed doc rather than restating them. Standards: `standards/documentation-bible.md` (convention-keeper's domain). Reference docs to re-validate first: `config/config-writer.md`, `features/plugin-system.md`, `features/skills-and-matrix.md`, `types/operations-types.md`.
+- Remedy: widen the hook table with rows for flag changes, Known-Limitation narrowing, and high-churn source files; ban unqualified negative exhaustiveness claims (scope them to a named function or add a grep the validator can re-run); make an index doc's numeric annotations point at the indexed doc rather than restating them. Standards: `standards/documentation-bible.md` (convention-keeper's domain). Reference docs to re-validate first: `concepts/tombstone-pattern.md`, `component-patterns.md`, `concepts/scope-system.md`.
+
+_**Widened 2026-08-01 to eleven members, and the widening is a rebuke to the previous window's own remedy.**_ 2026-07-30 landed "A Count Lives in Exactly One Document" plus an ownership registry. This window found **three defects in that remedy's execution**, all the same shape — the fix was applied by assignment rather than by re-derivation:
+
+| New change shape that went uncaught                              | Example                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| An ownership registry row naming the wrong owner                 | The registry assigns the `defaultCategories` figure to `skills-and-matrix.md`, which carries it only inside an HTML validation comment. The authoritative write-up is in `features/configuration.md`, and `architecture-overview.md` quotes it a third time. All three agree with disk today — **so there is no live drift, and that is exactly why it would have survived** |
+| An exhaustive enumeration **extended** rather than re-derived    | `STEP_TEXT` was documented as 64 in one doc and 72 in another against a true **74**. The 72 was itself recorded one day earlier and was short by two. Extending a list by the members you happen to notice preserves every member you do not                                                                                                                                 |
+| An import-graph doc validating **rows** instead of diffing edges | `dependency-graph.md`'s entire content is edges. It carried a `wizard.tsx -> lib/feature-flags` edge deleted in 0.147.1 and had never recorded the real `hotkeys.ts -> lib/feature-flags` edge. A claim-by-claim pass checks the rows present; only a diff finds the rows absent                                                                                             |
+| A doc naming an identifier that no longer exists                 | `component-patterns.md` named `rowStatusGlyph`, which has no declaration anywhere in source (the function is `rowStatusMarker`). A renamed module-internal symbol breaks no build and fails no test                                                                                                                                                                          |
+
+- New members: **`count-ownership-registry-names-a-doc-that-does-not-carry-the-count`**, **`exhaustive-enumeration-extended-not-rederived-stayed-short`**, **`import-graph-docs-validate-rows-instead-of-diffing-edges`** (the window's only `high`), **`reference-docs-name-identifiers-that-no-longer-exist`**.
+- **The unifying lesson, and this pattern's strongest statement to date: a documentation claim is only as good as the mechanism that re-derives it.** Assigning an owner, extending a list, or validating the rows you can see are all forms of _not re-deriving_, and each produces a doc that passes its own validation pass while being wrong. This is why the bible already says "Re-derive, never carry forward" — the rule existed and was followed in spirit by four separate passes that still shipped these four defects, which puts the finding class squarely under `rule-not-specific-enough`.
 
 ### Pattern T — The type system cannot police this change, so nothing enumerates the sites that need auditing
 
@@ -600,31 +698,88 @@ _**Promoted 2026-07-30.** The previous pass staged this as "Candidate Pattern T"
 - **The contrast that makes the remedy obvious:** D-240 added `propagatedProjects: string[]` as a **required** field on the same result type, precisely so every branch of `writeScopedConfigs` has to answer for it — and both branches do. Required fields recruit the compiler as the enumerator; optional fields decline it.
 - Remedy: when a contract changes in a way `tsc` cannot see, **enumerate the call sites by hand and record the posture chosen at each** — the enumeration is the deliverable, not the fix. Prefer required fields over optional ones on result types. Prefer `never` over `string` as a union identity. Keep every directory inside a typecheck project. Standards: `CLAUDE.md`, `standards/clean-code-standards.md`. Reference: `commands/index.md`, `types/operations-types.md`, `type-system.md`.
 
+_**Widened 2026-08-01 with a sixth blind spot: a constant nothing imports.**_
+
+| Blind spot                                    | Instance                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Declared constant with zero importers _(new)_ | `SCROLL_VIEWPORT.MIN_TERMINAL_HEIGHT` had **zero importers in all of `src/`** while the live gate hardcoded its own copy. `tsc` has nothing to say about an exported constant nobody reads, so the documented value and the enforced value drifted apart in silence, and **changing the documented constant did nothing at all**. Fixed by collapsing to one `MIN_TERMINAL_SIZE` read by both gates |
+
+- New members: **`two-minimum-terminal-height-declarations-neither-agreeing`**, **`a-precondition-checked-once-before-render-is-not-a-gate`** (a gate installed in `init()` that removes its own resize listener the moment the size becomes valid — no type says a gate must stay armed), **`display-lookup-fallbacks-hide-invariants-in-ink-render-paths`** (`findStack(id)?.name ?? id` collapses "no stack selected", a real renderable state, with "a stack is selected but the matrix does not hold it", which is not a state at all — the `??` makes both compile).
+- **The cheap mechanical check this window supplies, and it belongs in every validation pass: grep the importers of any constant a doc calls authoritative.** Zero importers means the doc is describing a value the running code does not read. It is a one-line check and it would have caught the terminal-height pair immediately.
+
 ### Pattern U — The self-audit is structurally incapable of detecting the defect class it is aimed at
 
 _**New 2026-07-30.** Distinct from the historical numbered Pattern 11 ("findings-system self-governance drift"), which observed **that** the pipeline drifts. This pattern names **why the checks do not catch it**: each check is individually well-formed and passes, while being the wrong shape to detect the defect it targets. Surfaced by this pass's link-integrity scan, which had never been run._
 
-- Findings: `index-audit-arithmetic-passed-while-pointer-set-was-misnamed`, `sibling-finding-left-open-when-its-duplicate-was-resolved`, `findings-rollup-has-no-snapshot-rule-and-schema-drifted`, `finding-proposed-standard-contradicted-a-never-rule` (also E), plus the two dangling links and three one-sided supersession pairs this pass repaired (see "Supersession links" and "Findings removed from disk" above).
+- Findings: `index-audit-arithmetic-passed-while-pointer-set-was-misnamed`, `sibling-finding-left-open-when-its-duplicate-was-resolved`, `findings-rollup-has-no-snapshot-rule-and-schema-drifted`, `finding-proposed-standard-contradicted-a-never-rule` (also E), **`link-integrity-scan-scope-excludes-the-keys-that-dangle`** (new 2026-08-01), **`import-graph-docs-validate-rows-instead-of-diffing-edges`** (new, also S and V), plus the two dangling links and three one-sided supersession pairs the 2026-07-30 pass repaired (see "Supersession links" and "Findings removed from disk" above).
 
-  | The check                                                            | Why it cannot fire                                                                                                                                                                                                                                                                                                                                                                         |
-  | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-  | Map Invariant 4: `41 == 32 + 9`                                      | Tests a **cardinality**, not a **membership**. Two pointer pairs are flipped (the root file is the stub), so swapping a member for its partner preserves the total. Four consecutive audits recorded PASS on a mis-enumerated set, and `commands/index.md` — the canonical commands reference — was never staleness-tracked, drifting two releases while advertising a flag oclif rejects. |
-  | Duplicate detection keyed on `affected_files + root_cause + date`    | Includes `date` in the key, so **findings filed on different days can never collide by construction**. The pair it was meant to catch was three months apart _and_ differed on `root_cause` — it would have missed on two of three components.                                                                                                                                             |
-  | Frontmatter pre-processing scan                                      | Ran three checks (missing frontmatter, out-of-enum `root_cause`, duplicate tuple). The three defects that actually drifted — out-of-enum `type:`, unpaired `superseded_by:`, missing `status:` — were covered by **none** of them. Widened to six checks 2026-07-30.                                                                                                                       |
-  | Link integrity over `supersedes:` / `superseded_by:` / `blocked_by:` | **Did not exist.** It is a one-line existence check. Running it for the first time this pass found 2 dangling targets and 5 one-sided or unpaired links — 7 defects in a directory that had passed four self-audits.                                                                                                                                                                       |
-  | Reviewing a finding's Proposed Standard                              | Nothing checks a prescription against the NEVER rules. A finding prescribed a banned two-tier fallback; implementing it verbatim would have looked justified in review, _citing an approved finding_.                                                                                                                                                                                      |
+  | The check                                                            | Why it cannot fire                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+  | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Map Invariant 4: `41 == 32 + 9`                                      | Tests a **cardinality**, not a **membership**. Two pointer pairs are flipped (the root file is the stub), so swapping a member for its partner preserves the total. Four consecutive audits recorded PASS on a mis-enumerated set, and `commands/index.md` — the canonical commands reference — was never staleness-tracked, drifting two releases while advertising a flag oclif rejects.                                                                                                                                                                                             |
+  | Duplicate detection keyed on `affected_files + root_cause + date`    | Includes `date` in the key, so **findings filed on different days can never collide by construction**. The pair it was meant to catch was three months apart _and_ differed on `root_cause` — it would have missed on two of three components.                                                                                                                                                                                                                                                                                                                                         |
+  | Frontmatter pre-processing scan                                      | Ran three checks (missing frontmatter, out-of-enum `root_cause`, duplicate tuple). The three defects that actually drifted — out-of-enum `type:`, unpaired `superseded_by:`, missing `status:` — were covered by **none** of them. Widened to six checks 2026-07-30.                                                                                                                                                                                                                                                                                                                   |
+  | Link integrity over `supersedes:` / `superseded_by:` / `blocked_by:` | **Did not exist until 2026-07-30.** It is a one-line existence check. Running it for the first time found 2 dangling targets and 5 one-sided or unpaired links — 7 defects in a directory that had passed four self-audits.                                                                                                                                                                                                                                                                                                                                                            |
+  | **The scope of that link check** _(new 2026-08-01)_                  | **The 2026-07-30 remedy named three keys — the three its author had in mind.** `related:` and `standards_docs:` name finding files just as often and were not on the list, so the check reported PASS over a set it was never given. Extending the identical one-line check to them found **4 more dangling targets**, three pointing into the same deleted window. **The fix for a Pattern U defect was itself a Pattern U defect**, one regeneration later. Remedy (a) is restated by property rather than by enumeration: any frontmatter value that is a path must resolve on disk |
+  | Reviewing a finding's Proposed Standard                              | Nothing checks a prescription against the NEVER rules. A finding prescribed a banned two-tier fallback; implementing it verbatim would have looked justified in review, _citing an approved finding_.                                                                                                                                                                                                                                                                                                                                                                                  |
 
 - Root cause: self-audits are written to confirm the invariant the author had in mind, and a passing check is then read as evidence the whole class is sound. **The audit's own output is not evidence** — the documentation-bible already says "Re-derive, never carry forward" for counts, and this pattern is that rule generalised from values to _checks_.
 - Aggravating factor, and the reason two of this pass's defects existed at all: **findings have been deleted from disk despite `README.md`'s explicit "Never move files" rule.** `changelogs/0.137.0.md` and `changelogs/0.141.8.md` each name findings that are gone, and the 0.141.8 batch removed at least three resolved findings at once. Every cross-link into a deleted file breaks silently, which is precisely what the rule predicts.
 - Remedy: (a) add link integrity as a **seventh** pre-processing defect class — target existence plus mirrored pairing for `supersedes:` / `superseded_by:`, target existence for `blocked_by:`; (b) make Map Invariant 4 verify pointer membership **by name**, not by cardinality; (c) drop `date` from the duplicate-detection key, or add a second date-independent key on `affected_files + a normalized title`; (d) require a Proposed Standard to be checked against the NEVER lists before adoption; (e) enforce the never-delete rule, and when a finding must leave the working set, keep the file and set `status:` rather than removing it. Standards: `standards/documentation-bible.md`, `agent-findings/README.md`, `agent-findings/TEMPLATE.md` (all convention-keeper's domain except `TEMPLATE.md`). Reference: this file.
 
+### Pattern V — The artefact looks like verification and cannot fail
+
+_**New 2026-08-01.** The defining pattern of the 0.146.1 + 0.147.0 + 0.147.1 bundle, and the only pattern in this report that both changelogs named independently before any analysis was run: "an artefact that looks like verification but cannot fail" (0.146.1) and "five of the defects were being actively concealed by the tests and docs meant to catch them" (0.147.0)._
+
+- Findings: `eslint-precommit-gate-has-no-config-and-cannot-run`, `eslint-disable-directives-were-never-verified`, `column-geometry-snapshots-regenerated-never-verified`, `a-precondition-checked-once-before-render-is-not-a-gate`, `e2e-specs-captured-exit-codes-and-config-snapshots-then-asserted-nothing`, `unused-bindings-in-tests-mark-assertions-that-were-planned-but-never-written`, `as-any-on-valid-union-members-is-noise-that-hides-two-fabrications`, `exhaustive-enumeration-extended-not-rederived-stayed-short`, `e2e-doc-inventories-pin-counts-and-names-nothing-verifies`, `getscreen-is-not-viewport-only-so-absence-assertions-are-unsound`, `negative-render-assertion-needs-a-positive-subject-guard`, `e2e-fixture-smaller-than-production-changes-the-bug-signature`, `confirm-step-viewport-is-zero-rows-at-short-so-overflow-spec-is-vacuous`, `focused-row-padding-defect-codified-as-a-test-rule`, `import-graph-docs-validate-rows-instead-of-diffing-edges`, `unused-catch-binding-hid-a-discarded-validator-cause`, `d167-task-id-recurrence-no-lint-guard`, `e2e-spec-files-accumulate-unused-imports-unenforced`.
+
+- **Root cause:** an artefact whose purpose is to catch a defect is _present_, is _believed to be enforcing_, and is structurally unable to report failure. It is not a missing check (Pattern M) and not a blind observation surface (Pattern Q). **It reports PASS, and PASS is the only thing it could have reported.** The three releases produced eight distinct mechanisms for this:
+
+  | Mechanism                                          | Instance                                                                                                                                                                                                                                                                                                                                                                              |
+  | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | **The gate has no config**                         | `CLAUDE.md`'s Pre-Commit Checklist gated on "No ESLint errors". There was an `eslint` dependency and a `lint-staged` entry — and no config file, no script, no binary. **Every commit recorded a clean lint result that was never computed.** When the gate was finally stood up it reported **148 problems on first execution**                                                      |
+  | **The suppression suppresses nothing**             | Two of four `eslint-disable-next-line` directives did not do what their author believed: one `no-var` was separated from its statement by a comment line and applied to the comment; one named `react-hooks/exhaustive-deps`, a rule **not installed**. A suppression is a claim about a checker's behaviour, and an unrun checker never tests the claim                              |
+  | **The snapshot was regenerated, not read**         | Rule 6.17a requires a whole-frame `toMatchInlineSnapshot()` per layout branch precisely so a caption drifting off its column fails loudly. Both required snapshots were present. Both were regenerated with `vitest -u` when the scope gutter changed and both came back green — **encoding the wrong layout as the expectation.** A regenerated snapshot is a proposal, not a result |
+  | **The gate runs once and disarms itself**          | `BaseCommand.ensureTerminalSize()` ran in `init()`, before Ink mounts, and removed its own resize listener the moment the size became valid. It stopped you _launching_ small but not _becoming_ small — the wizard painted card borders through its own footer on any mid-session shrink                                                                                             |
+  | **The spec captures and asserts nothing**          | Config snapshots taken under a comment reading `// BEFORE: Snapshot both configs` and compared against nothing; exit codes captured from two `doctor` runs with no assertion on either, one with the missing assertion **stated in English in its own comment**; an imported-but-never-called `expectCleanUninstall`                                                                  |
+  | **The test exercises a forbidden input**           | `{ id: "web-framework-nonexistent" as any }` could not reach `resolveStack` through any type-checked path — `as any` was the sole reason it compiled. The spec asserted correct behaviour for a scenario that cannot occur, while the scenario that _can_ occur is its inverse                                                                                                        |
+  | **The fixture cannot produce the symptom**         | One stack in the E2E source where production has a dozen: with one row there is nothing to overflow, so the overpaint under test never reaches the assertion                                                                                                                                                                                                                          |
+  | **Prose claims exhaustiveness nothing re-derives** | `STEP_TEXT` enumerated "All 64 members" against a true 74, in two docs, one of which had recorded 72 a day earlier. **An exhaustive list that is short is worse than a glob, because it reads as authoritative** and no reader has cause to re-count                                                                                                                                  |
+
+- **The aggravating shape, and the one to watch for in review: the artefact does not merely fail to catch the defect — it argues that the defect is intended.** Three instances:
+  - The Sources-grid focused-row padding bug was the **worked example in a standards doc**, and two specs carried JSDoc explaining how they dodged it. The defect had been promoted to a rule.
+  - The snapshots did not just miss the wrong layout; they **recorded it as the expectation**, so the next correct change would have failed against them.
+  - A `catch` binding renamed to `_error` to satisfy a linter converts a discarded cause — a real bug in the command whose job is reporting causes — into documented intent.
+
+  **A JSDoc explaining a workaround is a defect report unless some spec pins the un-worked-around form.**
+
+- **Boundaries.** Pattern U is V restricted to the findings/doc pipeline auditing itself and keeps its letter because its remedies are pipeline-specific. Pattern M is V's _absent_-checker sibling; the two ESLint findings sit in both, and that overlap is the seam — the gate was absent (M) _and_ the checklist reported it passing (V). Q is about a surface that cannot carry the signal; V includes cases where the signal is perfectly visible.
+
+- **Remedy — the general form: an artefact that has never reported a failure has not been shown to be capable of one.** Concretely, five checks, each cheap:
+  1. **Run the gate before trusting the checklist item that names it.** A tool's first execution is a source of information, not a formality — this one returned 148 problems, five of which marked real defects.
+  2. **A suppression must cite the compiler error or the mechanism that makes the rule inexpressible**, and be verified against a checker that actually runs. Prefer a scoped config override when the exemption is true of a whole file class (as `triple-slash-reference` is for `**/*.d.ts`).
+  3. **A regenerated snapshot must be read, not accepted.** `-u` is a proposal.
+  4. **A negative assertion needs a positive guard proving its subject is on screen**, and no rendering invariant should be asserted at a geometry where the subject does not render.
+  5. **An exhaustive enumeration must be re-derived from source in the session that records it**, never extended. Grep the other surfaces for both the old and the new value before finishing.
+- **Mechanical detectors that now exist and did not before:** `@typescript-eslint/no-unused-vars` over test files (finds unwritten assertions), `reportUnusedDisableDirectives` (blocked on a clean baseline, now unblocked — the 0.147.1 changelog records it as actionable), and grepping the importers of any constant a doc calls authoritative (finds gates reading a private copy).
+- Standards: `CLAUDE.md`, `standards/clean-code-standards.md` (rules 6.17a and the `catch`-discards-cause rule), `standards/e2e/anti-patterns.md`, `standards/e2e/assertions.md`, `standards/documentation-bible.md`. Reference: `testing/infrastructure.md` (which gained "A regenerated snapshot is a proposal, not a result" 2026-08-01), `testing/e2e-infrastructure.md`, `component-patterns.md`.
+
 ## Cross-surface defects reported, not fixed
 
 Defects found while regenerating this report that live in files **outside this pass's ownership**. Per `documentation-bible.md` -> "A Count Lives in Exactly One Document": _"If the other file is outside your ownership, record the mismatch in a file you do own — naming the stale file, its stale value, and its owner — and report it. Never leave two surfaces disagreeing unremarked."_ That is what this section is for.
 
-| Stale surface                                                          | Stale claim                                    | State                                                                     | Owner             |
-| ---------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------- | ----------------- |
-| `standards/documentation-bible.md` -> "Rollups must declare inference" | "As of 2026-07-30, 39 of 125 findings omit it" | **FIXED 2026-07-30 (status-backfill pass)** — the true figure is now zero | convention-keeper |
+| Stale surface                                                          | Stale claim                                                                                      | State                                                                                                                                                                                                                                                                                                                       | Owner             |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `standards/documentation-bible.md` -> "Rollups must declare inference" | "As of 2026-07-30, 39 of 125 findings omit it"                                                   | **FIXED 2026-07-30 (status-backfill pass)** — the true figure is now zero                                                                                                                                                                                                                                                   | convention-keeper |
+| `standards/documentation-bible.md` -> count-ownership registry         | Assigns "`defaultCategories` size + exclusive/required split" to `features/skills-and-matrix.md` | **OPEN.** That doc carries the figure only inside an HTML validation comment; the authoritative write-up is in `features/configuration.md`, and `architecture-overview.md` quotes it a third time. All three agree with disk **today** — so there is no live drift, which is precisely why it would have survived unnoticed | convention-keeper |
+| `standards/documentation-bible.md` -> count-ownership registry         | Has no row for the status-distribution figure                                                    | **OPEN, carried forward.** This report owns it (see the snapshot-boundary callout); adding the registry row is the remaining preventive step against re-scattering it                                                                                                                                                       | convention-keeper |
+| `standards/documentation-bible.md` -> Pattern U remedy (a)             | Specifies link integrity over `supersedes:` / `superseded_by:` / `blocked_by:`                   | **OPEN.** The scope excludes `related:` and `standards_docs:`, which name finding files just as often. Extending it found **4 dangling targets** the mandated scan cannot see — see "Link-integrity scope gap" above                                                                                                        | convention-keeper |
+| `agent-findings/TEMPLATE.md` -> lifecycle-field pairing                | Records 7 pairing defects as STILL OPEN                                                          | **STILL OPEN, and still exactly 7** — re-scanned this pass, unchanged. Named individually under Priority Action 16                                                                                                                                                                                                          | convention-keeper |
+| `agent-findings/TEMPLATE.md` -> `partial` OPEN QUESTION                | "`partial` has only one documented direction"                                                    | **OPEN and now materially larger.** `partial` is the plurality status at 67 of 158 (was 50 of 135). The question is no longer a labelling nicety — it makes a third of the directory's status column unreadable at a glance                                                                                                 | convention-keeper |
+
+**Three of these six are the same defect as the finding class in Pattern S: a rule applied by
+assignment rather than by re-derivation.** The count-ownership registry named owners topically; the
+link-integrity remedy named the three keys its author had in mind. Both are correct rules whose
+_execution_ skipped the step that would have made them true.
 
 **Both figures in that claim were stale, for different reasons** — the denominator because the directory grew (125 -> 135), the numerator because a link-repair pass added `status: superseded` to three files (39 -> 36). A validator checking only one would have concluded the other was still good. **The status backfill made the whole claim moot rather than merely outdated:** the numerator is 0, so there is no live inference to declare.
 
@@ -634,11 +789,13 @@ The report's earlier entry claimed this figure appeared in **two** places in `do
 
 **This was itself a Pattern O instance**, which is the point: "39 of 125" was written into three files at once, only one of which was re-derived when the findings directory changed. The count-ownership registry in `documentation-bible.md` still does not list the status-distribution figure — adding a row for it (owner: `reference/findings-impact-report.md`) is the remaining preventive step, and is now the only way a future pass avoids re-scattering it.
 
-## Priority Actions (2026-07-30 regeneration)
+## Priority Actions (2026-08-01 regeneration)
 
-26 findings are `high` severity: **10 `resolved`, 1 `superseded`, 15 still open or partial** (4 `open`, 11 `partial`) — re-measured 2026-07-30 after the status backfill, down from the 18 this section previously reported. The not-closed high-severity set splits into the long-running `cli`/`architecture` scope-authority and config-merge backlog (Patterns A, B, J) and the duplicate-implementation cluster (Pattern O), of which the code side largely landed in 0.146.0 while the _standard_ remains unwritten.
+27 findings are `high` severity: **10 `resolved`, 1 `superseded`, 16 still open or partial** (4 `open`, 12 `partial`). The window added one high-severity finding and closed none, so the not-closed figure moved 15 → 16.
 
-> **Inference warning DISCHARGED 2026-07-30.** This section previously warned that 10 of the 13 high-severity findings counted `open` carried no `status:` and were inferred, making "18 not closed" a ceiling rather than a measurement. The backfill landed (Action 16), and the ceiling was loose: measured, **15** are not closed and only **4** are open. **This figure is now a valid burn-down baseline.** Note what the numbers say about the remaining work — 11 of the 15 are `partial`, and nearly all of those are "the code fix shipped, the standard was never written", so the high-severity backlog is now predominantly a documentation debt rather than a defect backlog.
+**The composition matters more than the count. 12 of the 16 are `partial`, and nearly all of those are "the code fix shipped, the standard was never written."** The high-severity backlog is predominantly a _writing_ task. That is corroborated outside this report: the 0.147.0 and 0.147.1 changelogs each close with a "Proposed standards — not yet written into the standards docs" section, nine rules between them, none adopted.
+
+**The single highest-leverage action in this report is therefore not on the list below.** It is: **adopt the nine unwritten Proposed Standards.** Doing so would close a large share of the 67 `partial` findings without touching a line of product code, and it is the direct remedy for the `rule-not-specific-enough` root cause overtaking `convention-undocumented` this window.
 
 ### HIGH priority
 
@@ -675,7 +832,11 @@ The report's earlier entry claimed this figure appeared in **two** places in `do
     | f   | ~~**36** files carry no `status:` field~~                                                         | **FIXED 2026-07-30** — all 36 backfilled by opening each finding and verifying its claim against current source, not by defaulting them. Every one of the 135 findings now declares a `status:`      |
     | g   | ~~`enforcement-gap` used as both a `type` and a `root_cause`~~                                    | **FIXED 2026-07-30** — reclassified to `type: standard-gap`, matching the two sibling findings in the identical class; `root_cause: enforcement-gap` kept. See the By Type callout for the reasoning |
 
-    **Status distribution, re-derived on disk over all 135 findings:** `open` 39, `partial` 50, `resolved` 39, `superseded` 7 = **135 explicit, 0 inferred**. The documentation-bible's "declare your inference" requirement is satisfied trivially — there is none. This is the same basis as the primary rollup table above.
+    **RE-SCANNED 2026-08-01 over all 158 findings. Defect classes (a), (b), (d), (e) and (f) all return ZERO — the repairs have held through a 23-file growth window, which is the first evidence they are self-sustaining rather than a one-off cleanup.** Class (c) reports one benign pair (two genuinely distinct `local-installer.ts` sweep findings filed the same day with the same `root_cause`); it is not merged. **Class (e) — the duplicate-detection key that cannot fire across dates — is STILL OPEN** and remains a checker-design problem, Pattern U remedy (c).
+
+    **Status distribution, re-derived on disk over all 158 findings:** `partial` 67, `open` 42, `resolved` 41, `superseded` 8 = **158 explicit, 0 inferred**. The documentation-bible's "declare your inference" requirement is satisfied trivially — there is none. This is the same basis as the primary rollup table above.
+
+    **The seven lifecycle-field pairing defects are STILL OPEN and still exactly seven** — re-scanned this pass, none repaired, none added. Named individually so the next pass need not re-derive the list: three `status: resolved` with no `resolved_by:` (`2026-07-19-ink-prompt-closure-lets-hang-anti-pattern`, `2026-07-19-post-construction-conditional-mutation-on-serialized-objects`, `2026-07-20-shared-mutable-constants-and-false-dry`); one `status: open` carrying a `resolved_by:` (`2026-04-21-ralph76-memory-md-stale-phase-entries`); three `status: superseded` carrying an extra `resolved_by:` beside a correct `superseded_by:` (`2026-07-17-d227-same-scope-active-tombstone-duplicate`, `2026-07-18-scope-guards-read-stale-hydration-snapshot`, `2026-07-29-derived-mask-and-user-tombstone-are-indistinguishable` — the last also carries a `partial_note:`). The first four are unambiguous defects; the last three may be legitimate and `TEMPLATE.md` should decide whether recording both the replacement and the underlying fix is sanctioned. **The pairing check is a four-line script, has now been run twice, and has repaired nothing on either occasion** — which makes it a Pattern V instance in its own right: a check that runs, reports, and changes nothing is not enforcement.
 
     **What the backfill changed about this section's own premise:** it was listed at LOW priority and described as the highest-value item in the section, and both were right for different reasons than expected. It did not just convert a 52%-inferred rollup into a measurement — it showed the inference was **wrong for 30 of the 36 files**, not merely unproven. Nine findings that every rollup counted as `open` had in fact been fully resolved, three of them `high` severity. A convention that reads an absent field as "not done" does not fail gracefully; it manufactures a backlog.
 
@@ -688,9 +849,21 @@ The report's earlier entry claimed this figure appeared in **two** places in `do
 
 Both are pipeline-integrity items rather than product work, which is why they sit outside the HIGH/MEDIUM/LOW product ranking above. **Item 19 should be treated as HIGH** — it is the mechanism that produced two of the seven link defects this pass repaired.
 
-19. **Enforce the never-delete rule on `agent-findings/`** — **HIGH for pipeline integrity.** At least three findings named in `changelogs/0.137.0.md` and `changelogs/0.141.8.md` are absent from disk, and 0.141.8 removed a batch of that release's resolved findings at once. This is the direct cause of both dangling links repaired this pass, and it silently truncates the Date Range this report can cover — the 2026-03-21..2026-04-16 window is simply gone, which is why this report's own header can no longer account for findings its predecessors rolled up. Resolution is a frontmatter edit, never a deletion; `README.md` already says so. Add the link-integrity scan (Pattern U, remedy (a)) so the next removal is caught in the same session rather than three months later.
+19. **Enforce the never-delete rule on `agent-findings/`** — **HIGH for pipeline integrity, and NOW WORSE THAN RECORDED.** At least three findings named in `changelogs/0.137.0.md` and `changelogs/0.141.8.md` are absent from disk, and 0.141.8 removed a batch of that release's resolved findings at once. It silently truncates the Date Range this report can cover — the 2026-03-21..2026-04-16 window is simply gone. **2026-08-01 update: the blast radius is larger than the 2026-07-30 pass could see.** That pass found 2 dangling `supersedes:` / `blocked_by:` targets; extending the scan to `related:` and `standards_docs:` this pass found **4 more**, all pointing into the same deleted window. **No finding has been deleted since 2026-07-30** — the rule is holding — but the historical damage keeps surfacing as each new scan widens. Resolution is a frontmatter edit, never a deletion; `README.md` already says so.
 
-20. **Install ESLint or strike the gate.** `CLAUDE.md`'s Pre-Commit Checklist gates on "No ESLint errors" and nothing can run it — no config, no dependency, no binary, no script. Every commit has recorded a lint result that was never computed. This also blocks three remedies elsewhere in this report that presuppose an ESLint installation (task-ID lint rule, unused-import enforcement, the Pattern M gates), so it is a prerequisite, not a parallel task. Either land the toolchain or strike the checklist item; leaving it as-is is strictly worse than both. _An `eslint.config.js` / `package.json` change was in flight elsewhere at the time of this regeneration — verify current state before acting._
+20. ~~**Install ESLint or strike the gate.**~~ — **CLOSED 2026-08-01, both halves verified by running the tool.** The toolchain landed in 0.146.1 (flat config, `npm run lint`, wired into `lint-staged` and `prepublishOnly`) and the baseline reached **zero** in 0.147.1 with **no rule disabled**. Verified this pass: `npx eslint .` exits **0** with no output. Exactly **four** inline suppressions remain, each justified in place — two pre-existing `no-control-regex` for ANSI/control-character patterns (`lib/configuration/config.ts`, `utils/exec.ts`), one `no-var` that must stay (`let` would throw a TDZ error in circular ESM imports, `__tests__/factories/skill-factories.ts`), and one `@typescript-eslint/no-unused-vars` on a Vitest `Assertion<T>` interface augmentation where the rule's `^_` escape hatch fails to compile (`TS2428`: merged declarations match on the parameter's _name_). The three remedies this item blocked are now unblocked. **Residual, tracked as item 22.**
+
+### Added by the 2026-08-01 regeneration
+
+21. **Adopt the nine unwritten Proposed Standards** — **HIGHEST LEVERAGE ITEM IN THIS REPORT.** Listed in the 0.147.0 and 0.147.1 changelogs and reproduced across Patterns Q, R, S, T and V: a negative rendering assertion needs a positive subject guard; never assert a rendering invariant at a geometry where the subject does not render; a JSDoc explaining a workaround is a defect report unless some spec pins the un-worked-around form; a regenerated geometry snapshot must be read, not accepted; widen CLAUDE.md's cast rule to name `as any` explicitly; a `catch` that discards its cause in a user-facing path is a bug, not a lint nuisance to be renamed `_error`; an unused binding in a test file is triaged as a missing assertion before deletion; a bar for `eslint-disable` (cite the compiler error or the mechanism, prefer a scoped config override); fixture cardinality must exceed the viewport a spec tests. **These nine are the code-shipped-standard-unwritten half of a large share of the 67 `partial` findings.** Standards: `CLAUDE.md`, `standards/clean-code-standards.md`, `standards/e2e/anti-patterns.md`, `standards/e2e/assertions.md`, `standards/e2e/test-data.md` (all convention-keeper's domain).
+
+22. **Finish the ESLint rule set now that the baseline is zero** — MED. Three items were deliberately deferred to keep the initial config stock, and all three are now actionable for the first time: (a) `reportUnusedDisableDirectives`, which was blocked on a clean baseline and would have caught both of this window's dead-directive defects; (b) a `no-restricted-syntax` rule for task-IDs in test names, which `d167-task-id-recurrence-no-lint-guard` has needed since 2026-07-17 and which Pattern M has listed as un-actionable for two regenerations; (c) **`eslint-plugin-react-hooks` is not installed at all**, so this Ink/React codebase has no hooks linting — two effects in `use-measured-height.ts` would be flagged if it were, and the correct response there is `useCallback` on `measure`, not widening dependency arrays.
+
+23. **Re-validate `concepts/tombstone-pattern.md` and `component-patterns.md`** — HIGH, and the only two reference docs the 2026-08-01 sweep left materially exposed. `tombstone-pattern.md` is the most-referenced reference doc in the corpus (11 findings), maps to the corpus's most-cited source file, and **the sweep did not touch it at all**. `component-patterns.md` took the largest single-window jump in this report's history (2 → 10), owns all four `source-grid.tsx` findings and the whole Ink-layout cluster, and after two PARTIAL passes is still not re-stamped.
+
+24. **Extend the findings link-integrity scan to `related:` and `standards_docs:`** — MED, one line of scope. The mandated scan covers three keys; extending it to the two that also name finding files found **4 dangling targets** on first run, three of them from the deleted 2026-03-21..2026-04-16 window. Also repair the two path defects this pass recorded but does not own: `scratchpad/d226-porting-recipe.md` is named in two findings and does not exist, and three findings carry machine-specific absolute paths beginning `/home/vince/`, which CLAUDE.md forbids in any git-tracked file. Standards: `standards/documentation-bible.md` (Pattern U remedy (a)).
+
+25. **Resolve `TEMPLATE.md`'s `partial` direction question** — MED, and no longer cosmetic. `partial` is now the plurality status at **67 of 158**, and it carries two opposite meanings distinguished only by prose in `partial_note:`. Either widen the enum (e.g. `partial-code` / `partial-standard`) or state in `TEMPLATE.md` that `partial` covers both directions and the note MUST name which. Until then the status column is unreadable at a glance for 43% of the directory. Owner: `agent-findings/TEMPLATE.md`.
 
 ---
 
@@ -1077,27 +1250,18 @@ Root cause: the findings directory grew past ~50 entries before anyone audited i
 
 ## Incremental Updates
 
-_**Reset 2026-07-30** (full regeneration — all **135** findings rebuilt into the primary tables above). Both of the previous window's blocks were promoted: the 4-finding doc-hygiene tail and the 8-finding bug-fix + reconciliation tail. Patterns A..S carried forward with widened statements for E, O, Q and S; Pattern T promoted from candidate; Pattern U newly named. Next regeneration trigger: >10 entries accumulated here, OR the oldest un-aggregated finding exceeds 30 days, OR a major release bundle ships._
+_**Reset 2026-08-01** (full regeneration — all **158** findings rebuilt into the primary tables above). This section was **already empty** when the regeneration began: the 23 new findings were never logged here, because the 0.146.1 / 0.147.0 / 0.147.1 releases shipped before the >10 entry threshold was reached, and the release-bundle trigger fired first. Patterns A..U carried forward with widened statements for G, M, Q, R, S and T; **Pattern V newly named**. Next regeneration trigger: >10 entries accumulated here, OR the oldest un-aggregated finding exceeds 30 days, OR a major release bundle ships._
 
-**This section is empty. Window opens: 2026-07-30 (post-regeneration).** Findings filed after the 135-file snapshot go here, not into the primary tables.
+**This section is empty. Window opens: 2026-08-01 (post-regeneration).** Findings filed after the 158-file snapshot go here, not into the primary tables.
 
-**Snapshot boundary for the next validator:** the primary tables are pinned at **135 findings** (**137 `.md`** including `README.md` and `TEMPLATE.md`). A recount that returns a different number means findings were filed (log them here) or deleted (a rule violation — see Priority Action 19). There is a single basis in this report; do not introduce a second by folding entries in piecemeal.
+**Snapshot boundary for the next validator:** the primary tables are pinned at **158 findings** (**160 `.md`** including `README.md` and `TEMPLATE.md`). A recount that returns a different number means findings were filed (log them here) or deleted (a rule violation — see Priority Action 19).
 
-<!--
-  The previous window's two Incremental blocks (the 4-finding doc-hygiene tail and the 8-finding
-  bug-fix + reconciliation tail) stood here. Both have been PROMOTED into the primary tables and
-  DELETED from this section per the bible's step 8 ("Reset the Incremental Updates section to
-  empty"). They are deleted rather than retained-and-annotated on purpose: the regeneration trigger
-  counts entries in this section, so leaving 12 promoted entries in place would re-fire the >10
-  threshold immediately and every subsequent pass would inherit a false signal.
+> **If your recount says 158, you have counted `README.md`.** It is not a finding. This is not
+> hypothetical — the brief handed to the 2026-08-01 regeneration carried 158, and the pass had to
+> re-derive the basis to catch it. The corpus is defined in `documentation-bible.md` as every
+> `*.md` "other than `README.md` and `TEMPLATE.md`", and every regeneration in this file's lineage
+> has used that definition. **Subtract one; do not reconcile two bases.**
 
-  Where the blocks carried content that was NOT merely a restatement of the findings themselves,
-  that content was carried up rather than dropped:
-  - The 12 findings -> By Date (2026-07-30 row), all rollups, and Patterns E/M/O/Q/R/S/T/U.
-  - "Candidate Pattern T" -> lettered as Pattern T (its staging note said to decide at regeneration).
-  - The three verified e2e-infrastructure count/name drifts -> Per-Reference-Doc Impact, which now
-    marks that doc HIGH and names the drift; they also carry NEEDS-VALIDATION in DOCUMENTATION_MAP.md.
-  - The two unadopted proposals in `.ai-docs/agent-suggestions/` are unchanged and still awaiting
-    the user's decision: `2026-07-30-identity-key-helper-export-exception.md` (cross-referenced from
-    Pattern E) and `2026-07-30-column-geometry-snapshot-rule-6-17a.md` (from Pattern Q).
--->
+There is a single basis in this report; do not introduce a second by folding entries in piecemeal.
+
+Nothing in `.ai-docs/agent-suggestions/` is awaiting a decision — both proposals cross-referenced from Patterns E and Q carry a terminal `status:` in their own frontmatter, which is the authoritative record.
