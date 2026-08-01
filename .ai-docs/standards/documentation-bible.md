@@ -2,20 +2,7 @@
 last_validated: 2026-07-30
 ---
 
-<!--
-  re-validated 2026-07-30 (product 0.146.0), index-consistency pass: purged counts from the
-  structure diagram (`All 39 Zod schemas` -> no number; `34 factories` -> no number) and added the
-  "A Count Lives in Exactly One Document" rule with an ownership registry; fixed the
-  commands canonical/pointer classification (`commands/index.md` is CANONICAL, root `commands.md`
-  is the pointer) in both the diagram and the "What Each Document Covers" table; rebuilt the
-  Doc-Touching Changes hook table so every `src/cli/` source directory has an owning doc — the
-  missing `lib/installation/**` and `lib/plugins/**` rows are the mechanical reason two sync
-  passes skipped `plugin-system.md`; widened the command row from command-level to
-  signature-level and added checklist item 4 (flag/arg diff + removal callout); added the
-  "Heading Diff" rule (a pass that only checks existing claims cannot detect a section that was
-  never written); added the Known-Limitations re-validation clause covering both narrowed and
-  closed limitations; widened the agent-findings pre-processing scan from 3 checks to 6.
--->
+<!-- VALIDATED 2026-07-30 · SYNC (product 0.146.0) — index-consistency pass. -->
 
 # Documentation Bible -- Agents Inc. CLI
 
@@ -380,6 +367,33 @@ A pointer file contains:
 **Direction is not implied by path depth.** A pointer may be the root file or the subdirectory file; there is no positional convention. Two of the current pointers are root-level (`commands.md` -> `commands/index.md`, `state-transitions.md` -> `wizard/state-transitions.md`) because those pairs were flipped after the split. Always determine direction by **reading both files** — the canonical one holds the body; the pointer holds a redirect table and nothing else. Never infer it from the directory layout, and never carry a prior classification forward without re-reading.
 
 ### Pointer Freshness Rule
+
+## Validation Annotation Form (binding)
+
+Every doc carries **at most one** validation annotation, immediately after its frontmatter. It records **scope only** — what this pass checked and what it did not. Nothing else.
+
+```html
+<!-- VALIDATED 2026-08-01 · FULL — every claim re-derived from source. -->
+```
+
+```html
+<!-- VALIDATED 2026-08-01 · PARTIAL
+     ✓ §1, §18, directory tree, lib/wizard exports
+     ✗ §4-17 — no diff touched them; still on 2026-07-30 basis
+-->
+```
+
+Binding rules:
+
+1. **Replace, never append.** There is no "prior annotation follows" chain. The previous block is deleted, not nested. An annotation is a statement about the file's _current_ validation state, not a log.
+2. **Six lines maximum.**
+3. **Scope only.** What was checked, what was not, and the date. **No record of what was corrected or why** — that is what the commit message and `agent-findings/` are for, and both are searchable in ways an HTML comment is not.
+4. **A `PARTIAL` annotation must not move `last_validated`.** The staleness dashboard reads frontmatter, so stamping a partially-checked file current reports its unverified sections as freshly checked — destroying the one signal that distinguishes "verified" from "swept past".
+5. **If a constraint would be reverted by the next reader because the reasoning is invisible in the result, it belongs in the document body as prose — not in a comment.** A hidden warning protects nothing. This is the only case where "why" survives in the file, and it survives _visibly_.
+
+**Why the cap exists.** These docs are consumed by agents, which read raw markdown — so an HTML comment is invisible to a human reading rendered output and fully visible to the actual reader, who pays context for it. Before this rule, `DOCUMENTATION_MAP.md` carried 45KB of annotation in a 272KB file, most of it a per-pass changelog duplicating information already in git. The scope marker is load-bearing; the history is not.
+
+---
 
 A pointer file contains **no source-derived claims** — only a redirect table. Its `last_validated` therefore records the last time its **redirect targets were confirmed to resolve**, not the last time source was checked. Four consequences, all binding:
 
