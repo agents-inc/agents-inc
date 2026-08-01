@@ -19,17 +19,11 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-2026-07-30 sync to product v0.146.0:
-- Added PropagatedRecompileSummary (D-240) with its failure-isolation contract.
-- ConfigWriteResult gained `propagatedProjects`; the declared-but-never-populated
-  `globalConfigPath` was deleted from the type.
-- Corrected the "re-exported from operations/types.ts" claim — types.ts is a
-  NON-exhaustive subset; three types are index.js-only and CopyLocalSkillsOptions
-  is in neither barrel. Added an explicit export-surface table.
-- DetectedProject: `null` now also covers a corrupt config (D-273 ConfigLoadError).
-- CompileAgentsOptions: documented the D-264 prune trigger (outputDir AND no
-  scopeFilter) and added CompileAllScopesOptions / MarketplaceRequirement shapes.
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.146.1 + 0.147.0 + 0.147.1) — nothing changed
+     ✓ heading diff: every `export type` under src/cli/lib/operations/ globbed and matched against
+       the location table; ConfigWriteOptions/ConfigWriteResult re-read field-by-field; the
+       `installMode` absence claim re-confirmed
+     ✗ field-level shapes of the other 20 types — 2026-07-30 basis
 -->
 
 # Operations Layer Types

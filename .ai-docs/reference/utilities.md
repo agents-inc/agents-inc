@@ -20,15 +20,16 @@ related:
   - reference/test-infrastructure.md
   - reference/component-patterns.md
   - reference/features/configuration.md
-last_validated: 2026-07-30
+last_validated: 2026-08-01
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0): corrected the messages.ts inventory — INFO_MESSAGES is 7 keys (CONFIG_TYPES_REFRESHED added), and messages.ts now also exports five message-builder FUNCTIONS the doc had no section for (globalScopedAgentsHint, configTypesRefreshFailed, registeredProjectsUpdated, registeredProjectUpdateSkipped, registeredProjectsUpdateFailed); UI_SYMBOLS is 19 members, not 17 — added the shared ADDED (+) / REMOVED (-) diff markers and named their two consumers; added the exhaustive CLI_COLORS key list (16) and the previously-undocumented ASCII_LOGO export; corrected the remeda file count from 26 to 29 (27 production + 2 test modules; the 14 named imports are unchanged); added ConfigLoadError as the only custom Error subclass in production code (cross-referenced, not duplicated). ERROR/SUCCESS/STATUS message counts re-verified unchanged against messages.test.ts -->
+<!-- VALIDATED 2026-08-01 · FULL (product 0.147.1) — every exhaustive list re-derived from source
+     this session, including a diff of consts.ts's export list against this doc's headings. -->
 
 # Utilities Reference
 
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
+**Last Updated:** 2026-08-01
+**Last Validated:** 2026-08-01 (full — every exhaustive list re-derived from source)
 
 ## Utility Files
 
@@ -43,7 +44,7 @@ All utilities in `src/cli/utils/`.
 | `logger.ts`       | `src/cli/utils/logger.ts`       | Logging: log, warn, verbose, buffering      |
 | `messages.ts`     | `src/cli/utils/messages.ts`     | User-facing message constants + builders    |
 | `string.ts`       | `src/cli/utils/string.ts`       | `truncateText`, `toTitleCase`               |
-| `terminal.ts`     | `src/cli/utils/terminal.ts`     | Clear terminal screen + scrollback          |
+| `terminal.ts`     | `src/cli/utils/terminal.ts`     | Clear screen/scrollback + size-gate helpers |
 | `type-guards.ts`  | `src/cli/utils/type-guards.ts`  | Runtime type narrowing for union types      |
 | `typed-object.ts` | `src/cli/utils/typed-object.ts` | Type-safe Object.entries/keys/values        |
 | `yaml-schema.ts`  | `src/cli/utils/yaml-schema.ts`  | yaml-language-server schema comment helpers |
@@ -240,13 +241,41 @@ Converts a kebab-case string to a space-separated Title Case string (`"web-frame
 
 ## Terminal
 
-### `clearTerminalScreen()` (`src/cli/utils/terminal.ts`)
+`src/cli/utils/terminal.ts` exports exactly three functions. Two of them exist so that the CLI's
+**two** terminal-size gates read one threshold and print one wording.
 
-```typescript
-function clearTerminalScreen(): void;
-```
+| Function                          | Signature                                    | Purpose                                        |
+| --------------------------------- | -------------------------------------------- | ---------------------------------------------- |
+| `clearTerminalScreen()`           | `() => void`                                 | Clear screen + scrollback, move cursor home    |
+| `isTerminalLargeEnough()`         | `(columns: number, rows: number) => boolean` | `MIN_TERMINAL_SIZE` cleared in BOTH dimensions |
+| `formatTerminalTooSmallMessage()` | `(columns: number) => string`                | The single resize prompt both gates print      |
+
+### `clearTerminalScreen()`
 
 Writes ANSI escape sequences that clear the screen, clear scrollback, and move the cursor home. Shared by `BaseCommand.clearTerminal` (`src/cli/base-command.ts`) and the init dashboard (`src/cli/commands/init.tsx`).
+
+### `isTerminalLargeEnough()` / `formatTerminalTooSmallMessage()`
+
+Both read `MIN_TERMINAL_SIZE` from `src/cli/consts.ts`. The threshold lives in one constant and the
+message in one builder because two independent gates enforce it:
+
+| Gate                             | File                                          | When it fires                                                      |
+| -------------------------------- | --------------------------------------------- | ------------------------------------------------------------------ |
+| `BaseCommand.ensureTerminalSize` | `src/cli/base-command.ts`                     | Once, in `init()`, **before Ink mounts** — blocks the command      |
+| `WizardLayout`                   | `src/cli/components/wizard/wizard-layout.tsx` | Every render, on the `useTerminalDimensions()` value — mid-session |
+
+The startup gate polls (`setInterval` 500 ms) plus a `process.stdout` `resize` listener and resolves
+once the terminal is big enough. The `WizardLayout` guard **replaces** the wizard tree with
+`TerminalTooSmall` rather than overlaying it — Ink lays a still-mounted subtree out at the small size
+regardless of what is drawn on top, so an overlay leaves squeezed content bleeding underneath.
+
+`formatTerminalTooSmallMessage` takes only `columns`: its precondition is that
+`isTerminalLargeEnough` returned false, and width is reported in preference to height, so
+"not too narrow" already means "too short". Output is
+`Terminal too narrow (need 80). Please resize.` or `Terminal too short (need 20). Please resize.`
+
+`STEP_TEXT.TOO_NARROW` / `STEP_TEXT.TOO_SHORT` in `e2e/pages/constants.ts` key off this text, so a
+second wording would leave one of the two gates unassertable.
 
 ## Type Guards
 
@@ -426,6 +455,17 @@ Helper: `marketplaceManifestPath(dir: string): string` joins `dir` + `PLUGIN_MAN
 | `SOURCE_HEADER_NAMES`        | `{ eject: "Local", "agents-inc": "Plugin", public: "Public" }`     | Column-header labels for the source grid (distinct from inline labels)                                                                            |
 | `DEFAULT_VERSION`            | `1.0.0`                                                            | Default skill version                                                                                                                             |
 | `DEFAULT_DISPLAY_VERSION`    | `0.0.0`                                                            | Indicates no version explicitly set                                                                                                               |
+| `ALL_SKILLS_EJECTED_LABEL`   | `All skills ejected`                                               | Summary-panel `Marketplace` row when no skill has a marketplace source (distinct state from an empty set, which falls back to the public default) |
+
+`ALL_SKILLS_EJECTED_LABEL` has exactly one production consumer: `formatSkillMarketplaces(skillConfigs: SkillConfig[])` in `src/cli/components/wizard/summary-panel.tsx`. Three distinct cases, in source order:
+
+| Input                            | Output                                                |
+| -------------------------------- | ----------------------------------------------------- |
+| `skillConfigs.length === 0`      | `formatSourceDisplayName(DEFAULT_PUBLIC_SOURCE_NAME)` |
+| every `source` is `EJECT_SOURCE` | `ALL_SKILLS_EJECTED_LABEL`                            |
+| any marketplace-sourced skill    | its marketplace name(s), sorted, joined with `" · "`  |
+
+The label derives from `SkillConfig.source`, not from a store field — the pre-0.147.0 `Marketplace` row read a store field no code ever wrote, so it always printed the hardcoded public default. Tombstoned (`excluded`) entries count toward the marketplace names, because one still records a real global install.
 
 Helper: `formatSourceDisplayName(source: string): string` resolves a source name to its `SOURCE_DISPLAY_NAMES` label, falling back to the raw name.
 
@@ -477,9 +517,36 @@ literal in `skill-agent-summary.tsx`'s `DIFF_PREFIX` — it is _not_ a `UI_SYMBO
 
 `CLI_COLORS` has exactly 16 keys (exhaustive, in source order): `PRIMARY`, `SUCCESS`, `ERROR`, `WARNING`, `INFO`, `NEUTRAL`, `FOCUS`, `UNFOCUSED`, `WHITE`, `BLACK`, `DIM`, `GRAY_1`, `LABEL_BG`, `TOAST_BG`, `TOAST_FG`, `HOVER_BG`.
 
-`SCROLL_VIEWPORT` keys (exhaustive): `SCROLL_INDICATOR_HEIGHT`, `CATEGORY_NAME_LINES`, `CATEGORY_MARGIN_LINES`, `MIN_VIEWPORT_ROWS`.
+`SCROLL_VIEWPORT` keys (exhaustive, re-derived from source 2026-08-01 — **4** keys): `SCROLL_INDICATOR_HEIGHT` (1), `CATEGORY_NAME_LINES` (2), `CATEGORY_MARGIN_LINES` (1), `MIN_VIEWPORT_ROWS` (5).
 
-`MIN_TERMINAL_SIZE` (`COLS`, `ROWS`) is a sibling export, not a `SCROLL_VIEWPORT` key: it is the minimum terminal geometry `BaseCommand.ensureTerminalSize` enforces, and the only size gate in the CLI. `SCROLL_VIEWPORT` used to carry a `MIN_TERMINAL_HEIGHT` that no call site read; it has been deleted.
+#### Terminal-height constants (both siblings of `SCROLL_VIEWPORT`, neither a key of it)
+
+| Constant                 | Value                    | What it decides                                                                 |
+| ------------------------ | ------------------------ | ------------------------------------------------------------------------------- |
+| `MIN_TERMINAL_SIZE`      | `{ COLS: 80, ROWS: 20 }` | Whether a command runs **at all**. One threshold, read by two gates (below)     |
+| `LOGO_MIN_TERMINAL_ROWS` | `26`                     | Whether the six-row `ASCII_LOGO` renders on the stack step. **Not a size gate** |
+
+`MIN_TERMINAL_SIZE` is the CLI's only minimum-size _threshold_, but it is read by **two** gates —
+`BaseCommand.ensureTerminalSize` before Ink mounts, and the `WizardLayout` guard on every render
+(see [Terminal](#terminal) above for both, and `isTerminalLargeEnough` /
+`formatTerminalTooSmallMessage`, which are the shared readers). Raising `ROWS` raises the bar for the
+whole CLI, tests included.
+
+`ROWS: 20` is measured against the real binary on the build step (the tallest step): 15–17 render
+corrupt, 18 is the first clean frame, 24 comfortable. 18 is the hard correctness floor because it is
+where `SCROLL_VIEWPORT.MIN_VIEWPORT_ROWS` starts being satisfied — below it the shared scroll gate
+stops clipping and the grid bleeds over its borders. 20 buys two rows above that floor while staying
+under the 24-row default of common terminals.
+
+`LOGO_MIN_TERMINAL_ROWS = 26` is deliberately **not** folded into `MIN_TERMINAL_SIZE`: raising the
+gate to 26 would refuse to run in a 24-row terminal, and lowering the logo threshold to 20 brings
+back the stack-step bleed. Consumer: `terminalHasRoomForLogo` in
+`src/cli/components/wizard/wizard-layout.tsx`.
+
+> **`SCROLL_VIEWPORT.MIN_TERMINAL_HEIGHT` was DELETED (0.147.0).** It had **zero importers in all of
+> `src/`** while the live gate hardcoded its own copy — so changing the documented constant did
+> nothing. It is named here only so the name is not copied back out of an older doc into code; it
+> does not exist. Use `MIN_TERMINAL_SIZE.ROWS`.
 
 `ASCII_LOGO` is a multi-line box-drawing banner string. Only `src/cli/commands/init.tsx` reads it — once rendered directly in a `<Text>`, once passed through as the wizard's `logo` prop.
 
@@ -522,8 +589,8 @@ Helper: `yamlSchemaComment(schemaPath: string): string` generates a `# yaml-lang
 
 ## Remeda Utilities (External)
 
-Imported by 29 files under `src/cli/`: 27 production modules, one test-data module
-(`lib/__tests__/mock-data/mock-matrices.ts`) and one spec (`components/wizard/step-build.test.tsx`).
+Imported by 30 files under `src/cli/` (re-counted 2026-08-01): 28 production modules, one test-data
+module (`lib/__tests__/mock-data/mock-matrices.ts`) and one spec (`components/wizard/step-build.test.tsx`).
 Always `import { ... } from "remeda"`; there are zero namespace `* as R` imports. The named imports
 actually in use across `src/cli/`:
 

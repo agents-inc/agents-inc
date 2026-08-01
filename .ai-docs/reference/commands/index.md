@@ -26,19 +26,11 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-  Sync 2026-07-30 (product 0.145.0 + 0.146.0): removed the deleted `uninstall --all` flag and
-  rewrote the uninstall section (unconditional manifest removal, `Config:` plan section,
-  deregistration, global-uninstall pruning of registered projects); rewrote the compile section
-  (ConfigLoadError hard-error, per-scope config-types.ts regeneration incl. the no-skills early
-  return, matrixOnly offline load, global-scoped agents hint, stale built-in agent pruning only on
-  unfiltered passes); rewrote the validate section (advisory over-length cliDescription, dir-name
-  rule keyed on SKILL.md frontmatter id, claude CLI v2 installed_plugins.json registry pass);
-  corrected `list` (InstallationInfo.version removed, mode rendered once, hydrateWizardStore);
-  added the propagated-project recompile step to `init` and `edit`; added the content-less-config
-  detection rule; added FILTER_INCOMPATIBLE to the feature-flag inventory; fixed INFO_MESSAGES
-  count 6 -> 7 and added the message builder functions; corrected the operations table
-  (`uninstall` uses `loadAgentDefs`; `init`/`edit` use `recompilePropagatedProjectAgents`).
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.146.1 + 0.147.0 + 0.147.1)
+     ✓ command-file inventory (source set == index-table set) and a full flag/arg/alias diff over
+       every documented table; the `uninstall` and `validate` sections re-verified against source
+     ✗ prose for init, edit, compile, list, doctor, eject, search, update, import/new/build — 2026-07-30
+     ! GAP: prepublishOnly now runs lint before typecheck; this doc has no npm-scripts section to hold it
 -->
 
 # Commands Reference
@@ -262,6 +254,19 @@ Before this pass existed, the direct-children-only scan made the v2 cache layout
 
 **Directory-name rule.** Enforced during source validation by `checkSkillDirName` (`src/cli/lib/source-validator.ts`), which compares the directory name against the skill's **machine id read from `SKILL.md` frontmatter** (`parseFrontmatter(...).name`), not `displayName`. It runs independently of whether the metadata validated. Missing/invalid frontmatter, or an unreadable `SKILL.md`, produces a warning (`Cannot verify directory name '<dir>': ...`) rather than an error. Comparing `displayName` was unsatisfiable under the marketplace convention -- human display names living in `<domain>-<category>-<slug>` directories.
 
+**Parse-failure causes -- reported in one phase, not the other (0.147.1).** Two `catch` blocks in `src/cli/lib/source-validator.ts` bound the error and discarded it, in the command whose entire purpose is telling you what is wrong with your source repo. Both now interpolate `getErrorMessage(error)`:
+
+| Site                                                      | Message emitted                                                                                     |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `validateSource` -- skill `metadata.yaml` parse           | `Failed to parse YAML: <cause>` (severity `error`) -- was losing a `YAMLParseError`'s line/column   |
+| `validateSource` -- categories/rules cross-reference load | `Cross-reference validation skipped: failed to load categories/rules: <cause>` (severity `warning`) |
+
+The second was self-evidencing before the fix: a template literal with no interpolation, the residue of a deleted `${getErrorMessage(error)}`.
+
+> **Known inconsistency -- the same sentence carries a cause from one phase and not the other.** `validateYamlFiles` (`src/cli/lib/source-validator.ts`) still emits a bare `Failed to parse YAML` with **no cause**, from a bare `catch {`. It has exactly three call sites, all in the optional source-repo phases: `validateStacks` (stack skill `metadata.yaml`, and `*/config.yaml`) and `validateAgents` (agent `metadata.yaml`). `validateConfigFiles` does **not** route through it -- it runtime-loads `.ts` config files via `validateTsConfig`, whose own `catch` already reports through `formatLoadError`.
+>
+> Deliberately out of scope for the 0.147.1 pass: with no binding there is no lint signal, so it was invisible to the sweep that found the other two. It is also the more general problem -- a linter can only ever see the bound-and-discarded variant. Do not read the presence of a cause on a `Failed to parse YAML` line as diagnostic of which file failed; it is diagnostic of which _phase_ produced it.
+
 **Key dependencies:** `resolveAllSources()`, `isLocalSource()`, `SourceEntry` from configuration. `validateSource()` from source-validator. `validateAllPlugins()`, `validatePlugin()`, `printPluginValidationResult()`, `validateSkillFrontmatter()`, `validateAgentFrontmatter()`, `getUserPluginsDir()`, `getProjectPluginsDir()`, `getInstalledPluginsRegistryPath()`, `listRegisteredPluginInstalls()`, `ResolvedPlugin` from plugins. `resolveInstallPaths()`, `isHomeDirectory()` from installation. `validateSkillMetadata()`, `splitMetadataValidationIssues()` from schemas. `listAgentMdFiles()` from agents.
 
 ### `list` (src/cli/commands/list.tsx)
@@ -361,7 +366,7 @@ Installation: <name>
 **Flow (`run`):**
 
 1. `printHeader()`
-2. `detectUninstallTarget(projectDir)` -- builds `UninstallTarget` (plugins, local skills/agents, `.claude/`, `.claude-src/config.ts`, `.claude-src/config-types.ts`, loaded config, configured agents). CLI-owned plugins are the intersection of `listPluginNames()` with `getCliInstalledPluginKeys(activeConfig)`.
+2. `detectUninstallTarget(projectDir, onConfigLoadFailed)` -- builds `UninstallTarget` (plugins, local skills/agents, `.claude/`, `.claude-src/config.ts`, `.claude-src/config-types.ts`, loaded config, configured agents). CLI-owned plugins are the intersection of `listPluginNames()` with `getCliInstalledPluginKeys(activeConfig)`. The second parameter is a warn callback -- see "corrupt PROJECT config" below.
 3. `hasAnythingToRemove(target)` -- true when any of `hasPlugins`, `hasLocalSkills`, `hasLocalAgents`, **`hasClaudeSrcConfig`, `hasClaudeSrcConfigTypes`**. False -> `reportNothingToUninstall()` and return.
 4. Confirmation: `--yes` prints the plan via `printRemovalPlan()` (always returns `true`); otherwise `confirmRemoval()` renders `<UninstallConfirm>` through `promptConfirm()`. Cancel -> `this.exit(EXIT_CODES.CANCELLED)`.
 5. `executeUninstall(target, projectDir)`
@@ -385,6 +390,26 @@ Installation: <name>
 **Config manifest + directory cleanup.** `removeConfigManifest` deletes `config.ts` and `config-types.ts` from `.claude-src/`, then `removeDirIfEmpty(claudeSrcDir)` removes `.claude-src/` **only when it is empty afterwards** -- user-owned content there (e.g. ejected templates) keeps the directory alive. Logging: `Removed .claude-src/` when the directory went, otherwise `Removed CLI config from .claude-src/`. `.claude/` is removed only when empty, else `Kept .claude/ (contains user content)`.
 
 **Project uninstall -- deregistration.** Always calls `deregisterProjectPath(projectDir)` so future global edits stop propagating back into a removed project. Failure is **warned, not swallowed**: `Could not update the global project registry: <reason>`. A missing, project-less, or corrupt (`ConfigLoadError`) global config must never fail the uninstall.
+
+**Corrupt PROJECT config -- uninstall proceeds (0.146.1).** `loadUninstallConfig(projectDir, onLoadFailed)` wraps the `loadProjectConfigFromDir` call in `detectUninstallTarget`:
+
+```ts
+catch (error) {
+  if (!(error instanceof ConfigLoadError)) throw error;
+  onLoadFailed(getErrorMessage(error));
+  return null;
+}
+```
+
+`ConfigLoadError` is caught **only**; any other error still propagates as a real fault. The callback `run()` passes warns:
+
+```
+Could not read the project config — plugins and compiled agents it lists may be left behind: <reason>
+```
+
+An unreadable config is then treated exactly like a **missing** one (`null`), so the run continues, removes the manifest, and exits 0. Only the _plan_ degrades -- the plugins and compiled agents the config named can no longer be identified, while file removal proceeds.
+
+Previously a `ConfigLoadError` escaped `run()` and killed the command precisely when the config was unreadable -- that is, exactly when a user most needs to uninstall; the only way out was to hand-delete `.claude-src/`. This closes the corrupt-**project**-config path alongside the corrupt-**global**-config path deregistration already handled (above). Both call sites hold the same posture; see `reference/features/configuration.md` -> `ConfigLoadError` call-site posture table.
 
 **Global uninstall -- registered-project propagation.** Two halves:
 

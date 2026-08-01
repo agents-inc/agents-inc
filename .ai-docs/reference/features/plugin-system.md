@@ -33,7 +33,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0): added Cross-Scope Reconciliation (D-259/D-268/D-279 masking + self-heal in local-installer.ts) which the doc had no section for; added the claude CLI v2 plugin registry (installed_plugins.json) and validate's registry-first / direct-children-fallback rule; added Settings Integration (permission-checker EXPECTED_SETTINGS_KEYS incl. extraKnownMarketplaces); removed InstallationInfo.version and added agentDirs; documented ScopedConfigWriteResult + propagation-then-recompile (D-240/D-256); recorded mode-migrator's scope-precise uninstall (D-262); corrected detection to note ConfigLoadError + content-less config (D-273); refreshed both barrel-export lists; added Known Limitations (D-276) -->
+<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0. -->
 
 # Plugin System
 

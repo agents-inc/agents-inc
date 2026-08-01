@@ -19,16 +19,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-  Sync 2026-07-30 (product 0.145.0 + 0.146.0): documented the D-240 propagated-project recompile
-  now performed at the tail of writeConfigAndCompile (ConfigWriteResult.propagatedProjects ->
-  recompilePropagatedProjectAgents), including its per-project failure isolation; recorded that
-  writeProjectConfig returns ConfigWriteResult and that a write failure only warns; added the
-  D-279 cross-scope reconciliation step that runs immediately before the project-config write in
-  writeScopedConfigs; added the D-277 global-immutability invariant constraining what removedSkills
-  / removedAgents can contain at project scope. Flow steps renumbered 16 -> 16/17, cleanup and
-  completion shifted to 18/19.
--->
+<!-- VALIDATED 2026-07-30 · SYNC to product 0.145.0 + 0.146.0. -->
 
 # Edit Command (Detailed)
 

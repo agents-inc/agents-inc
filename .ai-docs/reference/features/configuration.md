@@ -23,15 +23,10 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-re-validated 2026-07-30 (product 0.146.0): added ConfigLoadError three-way load contract (missing -> null,
-loadable -> config, unloadable -> throw) and the content-less-config-is-not-an-installation rule (D-273);
-rewrote Default Categories from "51 defined" to the verified 89 definitions with per-domain counts,
-27 exclusive / 6 required, the importance-first ordering rule and the auto-synthesis fallback that used to
-fire; added the D-279 cross-scope reconciliation summary (one shared step before BOTH project-config writes);
-added ConfigLoadError to the barrel-export list; recorded that writeScopedConfigs now returns
-ScopedConfigWriteResult and writeProjectConfig returns propagatedProjects (D-240); added the compile and
-uninstall config-types regeneration callers (regenerateScopeConfigTypes, pruneGlobalEntriesFromRegisteredProjects).
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.146.1 + 0.147.0 + 0.147.1)
+     ✓ the ConfigLoadError "Who handles the throw" table and its exhaustiveness note only
+     ✗ Default Categories counts, resolution hierarchy, D-279 reconciliation summary,
+       barrel-export list — 2026-07-30 basis
 -->
 
 # Configuration System
@@ -107,8 +102,19 @@ Two lenient repairs happen only on the success path, both with a `warn()`: a mis
 | `compile` (`src/cli/commands/compile.ts` → `detectInstallations`)      | Catches, hard-errors with `this.error(error.message, { exit: EXIT_CODES.ERROR })` before any write |
 | `detectProject` (`src/cli/lib/operations/project/detect-project.ts`)   | Catches, returns `null` so `doctor` / `edit` report a config problem instead of crashing           |
 | `detectInstallationInDir` (`src/cli/lib/installation/installation.ts`) | Does NOT catch — propagates, so no phantom eject installation is fabricated                        |
-| `uninstall` (`src/cli/commands/uninstall.tsx`)                         | A corrupt GLOBAL config during `deregisterProjectPath` is warned, never fatal                      |
+| `uninstall` — GLOBAL config (`src/cli/commands/uninstall.tsx`)         | A corrupt global config during `deregisterProjectPath` is warned, never fatal                      |
+| `uninstall` — PROJECT config (`loadUninstallConfig`, same file)        | Catches `ConfigLoadError` **only**, warns, returns `null`; the uninstall proceeds and exits 0      |
 | `mergeWithExistingConfig` (`config-merger.ts`)                         | Does NOT catch — `loadProjectConfig` throws straight through to the wizard save path               |
+
+The two `uninstall` rows are the same posture applied at both ends, and the second one is newer (0.146.1). `loadUninstallConfig` narrows before swallowing:
+
+```ts
+if (!(error instanceof ConfigLoadError)) throw error;
+```
+
+so a genuine fault still propagates. Its warn text is `Could not read the project config — plugins and compiled agents it lists may be left behind: <reason>`. An unreadable config is then treated exactly like a **missing** one, because an unreadable config is precisely when a user needs to uninstall; before this, a `ConfigLoadError` escaped `run()` and the only way out was to hand-delete `.claude-src/`. Only the removal _plan_ degrades — the plugins and compiled agents the config named can no longer be identified, while file removal proceeds. Full flow in `reference/commands/index.md` → `uninstall`.
+
+**Exhaustiveness.** Three call sites in non-test `src/` narrow on the error explicitly (`error instanceof ConfigLoadError`): `compile.ts`, `detect-project.ts`, and `uninstall.tsx`'s `loadUninstallConfig`. The `uninstall` GLOBAL row is a **bare** `catch (error)` that warns on anything, so it handles a `ConfigLoadError` without naming the class. The remaining two rows (`detectInstallationInDir`, `mergeWithExistingConfig`) are statements about _absence_ of a catch and so are invisible to a grep — they are listed because propagating is itself the documented posture. Beyond these, the only other `ConfigLoadError` occurrences in non-test `src/` are the class definition and its throw sites (`configuration/project-config.ts`), the barrel re-export (`configuration/index.ts`), and one explanatory comment in `installation.ts`.
 
 `loadProjectConfig(projectDir)` layers a home-directory fallback on top: project dir first, then `os.homedir()` when `projectDir` is not already home. Both legs can throw `ConfigLoadError`.
 

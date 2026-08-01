@@ -43,30 +43,11 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-re-validated 2026-07-30 (product 0.146.0): corrected "writeScopedConfigs returns void" -> it returns
-ScopedConfigWriteResult { propagatedProjects } (D-240); corrected "skipped is returned but never consumed"
--> the uninstall path now warns per skipped project via registeredProjectUpdateSkipped (D-274); added the
-third production caller of propagateGlobalChangesToProjects (pruneGlobalEntriesFromRegisteredProjects);
-closed the D-240 "compiled agents are not recompiled" Known Limitation with the recompile pipeline that
-shipped; corrected deregisterProjectPath's trigger (`uninstall --all` is removed — a project uninstall
-always deregisters); added regenerateScopeConfigTypes + the compile/uninstall/new-* config-types write
-sites to the writer-selection table; added the D-279 reconciliation write-site inventory and recorded that
-hasProjectItems is computed from the RECONCILED project config; refreshed the normalization-asymmetry
-finding reference to the 2026-07-25 entry.
--->
-
-<!--
-2026-07-30 (incremental correction, same day): the register/deregister path-normalization asymmetry
-was FIXED in local-installer.ts. Corrected deregisterProjectPath's normalization (`path.resolve` ->
-the new module-private normalizeProjectPath helper, fs.realpathSync); rewrote the "Normalization
-asymmetry (open)" callout as CLOSED-with-invariant rather than deleting it (documentation-bible
-Known Limitations re-validation clause: a closed limitation removed outright gets silently
-reintroduced); added a "Path normalization — normalizeProjectPath" section owning the rule for all
-three projects[] registry sites, the deliberate no-fallback-tier decision (the 2026-07-25 finding's
-proposed path.resolve fallback was NOT adopted — CLAUDE.md bans multi-tier resolution fallbacks),
-and the verified throw trace into executeUninstall's pre-existing warn-and-continue guard;
-downgraded the symlinked-no-op stale-sweep cause to historical-only.
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
+     ✓ "Path normalization", "registerProjectPath — stale-filter semantics" and
+       "deregisterProjectPath — removal semantics" only
+     ✗ everything else — generateConfigSource, the D-279 reconciliation inventory, the
+       writer-selection table, both observability gaps, cross-scope masking — 2026-07-30 basis
 -->
 
 # Config Writer (Detailed)
@@ -230,7 +211,7 @@ Taken when `projectDir !== $HOME`. Splits the final config by scope and handles 
 1. `splitConfigByScope(finalConfig)` → `{ global, project }`. Global half = entries with `scope === "global"`. See [scope-split.md](./scope-split.md) for the full partition rules (tombstone routing, stack partitioning, delta pipeline).
 2. Load existing global config via `loadProjectConfigFromDir(homeDir)` (in `writeScopedConfigs`, before calling the helper).
 3. In `resolveEffectiveGlobalConfig`: if the global split has skills/agents, merge them into the existing global via `mergeGlobalConfigs` (deep-additive, never removes; also fill-only for `marketplace`/`source` — see [config-merger.md](./config-merger.md)); when there are no global items the existing config is used unchanged (`changed: false`). Tracks `globalDataChanged` (= the merge's `changed`).
-4. Still in the helper: `registerProjectPath(mergedConfig, projectDir)` — adds the current project to the global `projects` array (normalized via `fs.realpathSync`, stale entries filtered). `needsGlobalWrite = globalDataChanged || registration.changed`.
+4. Still in the helper: `registerProjectPath(mergedConfig, projectDir)` — adds the current project to the global `projects` array (normalized via `normalizeProjectPath`, stale entries filtered). `needsGlobalWrite = globalDataChanged || registration.changed`.
 5. If `needsGlobalWrite`, `ensureDir` then write `~/.claude-src/config.ts` via `writeConfigFile` and `~/.claude-src/config-types.ts` via `writeStandaloneConfigTypes`.
 6. If `globalDataChanged && effectiveGlobalConfig.projects?.length`, call `propagateGlobalChangesToProjects(..., projectDir)` — the `projectDir` argument ensures the current project is skipped in the loop.
 
@@ -262,7 +243,7 @@ The `projectInstallationExists` parameter is computed the same way as `isProject
 
 **Per-project loop logic:**
 
-- **Skip current project.** If `currentProjectDir` is set and `projectPath === fs.realpathSync(currentProjectDir)`, `continue` (no push).
+- **Skip current project.** If `currentProjectDir` is set and `projectPath === normalizeProjectPath(currentProjectDir)`, `continue` (no push). The normalization is hoisted out of the loop into a `currentNormalized` local.
 - **Skip if stale.** `fileExists(projectConfigPath)` guard — if `<projectPath>/.claude-src/config.ts` is missing, the project is pushed to `skipped` and verbose-logged (not deregistered; stale entries accumulate until `registerProjectPath` filters them on the next global write).
 - **Skip if load fails.** `loadProjectConfigFromDir(projectPath)` returning null (pushed, `continue`) or throwing (caught, pushed, verbose-logged) skips the project.
 - **Reconcile the project split against the new global data.** `projectSplit` is the loaded project config with four fields reconciled — it is NOT a simple project-owned filter:

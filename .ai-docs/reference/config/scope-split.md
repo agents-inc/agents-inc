@@ -29,14 +29,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-re-validated 2026-07-30 (product 0.146.0): inserted the D-279 reconciliation step into the cc-edit pipeline
-ordering — the split output is NOT what reaches the writer any more, reconcileProjectSplitAgainstGlobal
-runs between them and can add mask rows; recorded that the split is where the two write paths converge, so
-the split alone no longer explains the emitted project config; named splitAgentStack as the per-agent stack
-partitioner; corrected the selectedAgents scalar row (undefined when empty, not an empty array). Partition
-rules themselves re-verified against config-generator.ts — unchanged.
--->
+<!-- VALIDATED 2026-07-30 · SYNC to product 0.146.0 — partition rules re-verified against config-generator.ts. -->
 
 # Config Scope Split Contract
 

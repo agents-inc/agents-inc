@@ -19,20 +19,16 @@ related:
   - reference/concepts/scope-system.md
   - reference/architecture/overview.md
   - reference/types/core-types.md
-last_validated: 2026-07-30
+last_validated: 2026-08-01
 ---
 
-<!--
-re-validated 2026-07-30 (product 0.146.0): pointer body only — added a topic->destination table so the
-0.145.0/0.146.0 additions are routable (ConfigLoadError three-way load contract, the 89 default category
-definitions, D-279 cross-scope reconciliation, compile/uninstall config-types regeneration). No content
-duplicated; features/configuration.md remains authoritative.
--->
+<!-- VALIDATED 2026-08-01 · POINTER (product 0.147.1) — all nine redirect targets confirmed to
+     resolve. Per the Pointer Freshness Rule this date records link integrity, not source validation. -->
 
 # Configuration System
 
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
+**Last Updated:** 2026-08-01
+**Last Validated:** 2026-08-01 (pointer — redirect targets confirmed to resolve)
 
 > **Reorganized from:** `reference/features/configuration.md`. The original file is preserved during migration.
 
@@ -44,7 +40,7 @@ duplicated; features/configuration.md remains authoritative.
 | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Config file locations, `ProjectConfig` / `SkillConfig` / `AgentScopeConfig` shapes, source resolution | [../features/configuration.md](../features/configuration.md)                                         |
 | `ConfigLoadError` — missing vs blank vs unloadable config (D-273)                                     | [../features/configuration.md](../features/configuration.md)                                         |
-| The 89 `defaultCategories` definitions, exclusive/required counts, ordering rule                      | [../features/configuration.md](../features/configuration.md)                                         |
+| `defaultCategories` definitions, exclusive/required counts, ordering rule                             | [../features/configuration.md](../features/configuration.md)                                         |
 | D-279 cross-scope reconciliation (masking, self-heal, mask lifetime)                                  | [../features/configuration.md](../features/configuration.md), [config-writer.md](./config-writer.md) |
 | Config writer internals, `generateProjectConfigWithInlinedGlobal`, union emission                     | [config-writer.md](./config-writer.md)                                                               |
 | `writeScopedConfigs` branches, `propagateGlobalChangesToProjects`, the `projects` registry lifecycle  | [config-writer.md](./config-writer.md)                                                               |

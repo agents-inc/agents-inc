@@ -8,12 +8,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-  Sync 2026-07-30 (product 0.145.0 + 0.146.0): pointer body re-verified against the children —
-  both targets exist and still hold the canonical content. Dates bumped; no content drift found
-  in this file. All command-surface corrections for this sweep landed in commands/index.md and
-  commands/edit.md.
--->
+<!-- VALIDATED 2026-07-30 · POINTER (product 0.145.0 + 0.146.0) — both redirect targets confirmed to resolve; no content lives here. -->
 
 # Commands Reference (Pointer)
 

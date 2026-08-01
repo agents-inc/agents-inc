@@ -27,15 +27,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-re-validated 2026-07-30 (product 0.146.0): recorded that mergeWithExistingConfig's load leg now THROWS
-ConfigLoadError on a corrupt config instead of falling through to the merged:false stub path (D-273) —
-this was the most load-bearing stale claim in the two-tier fallback section; corrected the "no full config"
-wording to name loadProjectConfig's home-directory fallback; added the D-279 note that neither merge
-function performs cross-scope reconciliation (that runs after the split, in local-installer); added
-mergeGlobalConfigs' role in the global-uninstall path. Merge algebra itself re-verified line-for-line
-against config-merger.ts and local-installer.ts — unchanged.
--->
+<!-- VALIDATED 2026-07-30 · SYNC to product 0.146.0 — merge algebra re-verified line-for-line against config-merger.ts and local-installer.ts. -->
 
 # Config Merger Contract
 

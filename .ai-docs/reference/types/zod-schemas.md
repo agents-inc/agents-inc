@@ -6,15 +6,16 @@ related:
   - reference/types/core-types.md
   - reference/architecture/overview.md
   - reference/config/configuration.md
-last_validated: 2026-07-30
+last_validated: 2026-08-01
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0): re-counted the exported-schema inventory from source — still 35, now with a per-table breakdown that sums to it; added splitMetadataValidationIssues() + MetadataIssueSplit (0.145.0 validate fix) to the utility list, which the doc had omitted; documented the CLI_DESCRIPTION_MAX_LENGTH advisory-vs-error split on cliDescription; added the module-internal (non-exported) schema inventory per the bible's exhaustive-enumeration rule; flagged customMetadataValidationSchema as the one non-.strict() member of the strict table; recorded that a projectConfigLoaderSchema violation now throws ConfigLoadError instead of returning null (D-273); pinned the Zod major version -->
+<!-- VALIDATED 2026-08-01 · FULL (product 0.147.1) — every countable claim re-derived from
+     `src/cli/lib/schemas.ts` this session, not carried forward. -->
 
 # Zod Schema Reference
 
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
+**Last Updated:** 2026-08-01
+**Last Validated:** 2026-08-01 (full — all counts and pattern claims re-derived from source)
 
 > **Split from:** `reference/type-system.md`. See also: [core-types.md](./core-types.md), [operations-types.md](./operations-types.md).
 
@@ -43,7 +44,30 @@ All schemas in `src/cli/lib/schemas.ts`. Zod major version **4** (`"zod": "^4.3.
 | `modelNameSchema`      | ModelName union      | `z.enum(MODEL_NAMES)` bridge                            |
 | `permissionModeSchema` | PermissionMode union | `z.enum(PERMISSION_MODES)` bridge                       |
 
-There is no standalone `skillIdSchema`, `domainSchema`, `categorySchema`, `agentNameSchema`, or `skillSourceTypeSchema` in `schemas.ts`. `SkillId` / `Domain` values are accepted via inline `z.string() as z.ZodType<...>` casts inside the object schemas that consume them (e.g. `boundSkillSchema`, `skillFrontmatterLoaderSchema`, `matrixRawMetadataSchema`).
+There is no standalone `skillIdSchema`, `domainSchema`, `categorySchema`, `agentNameSchema`, or `skillSourceTypeSchema` in `schemas.ts`. `SkillId` / `Domain` values are accepted via inline `z.string() as z.ZodType<...>` casts inside the object schemas that consume them (e.g. `boundSkillSchema`, `skillFrontmatterLoaderSchema`, `skillAssignmentSchema`, `matrixRawMetadataSchema`).
+
+#### Why slugs and categories are strict but skill IDs are not
+
+This asymmetry is **deliberate, not an omission**. `schemas.ts` imports exactly two generated union arrays:
+
+```ts
+import { SKILL_SLUGS, CATEGORIES } from "../types/generated/source-types";
+```
+
+| Union       | Treatment in `schemas.ts`                                                                              | Why                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `SkillSlug` | Strict — `z.enum(SKILL_SLUGS)` (`skillSlugSchema`, and again in `metadataValidationSchema`)            | A slug names a skill the source repo publishes; an unknown one is an error |
+| `Category`  | Strict — `z.enum(CATEGORIES)` in `metadataValidationSchema`; membership-tested in `categoryPathSchema` | Same                                                                       |
+| `SkillId`   | **Lenient** — `z.string() as z.ZodType<SkillId>`, never enum-checked                                   | Local and custom skills legitimately have IDs outside the generated union  |
+| `Domain`    | **Lenient** — `(z.string() as z.ZodType<Domain>)`                                                      | Custom skills declare custom domains                                       |
+
+The rationale is written inline in source at `skillFrontmatterLoaderSchema`:
+
+```ts
+// Lenient: accepts any string for `name` since local/custom skills may not follow strict SkillId pattern
+```
+
+**`SKILL_IDS` is not imported.** It was an unused import removed in 0.147.1's dead-code pass; its removal is a no-op for validation, not a loosening — nothing had ever enum-checked a skill ID. Do not "restore" it: adding `z.enum(SKILL_IDS)` to any of the four schemas above would reject every local and custom skill at its parse boundary.
 
 ### Loader Schemas (lenient, `.passthrough()`)
 
@@ -157,6 +181,7 @@ Rationale: the runtime loader schemas accept any length and the value only feeds
 
 ### Recent changes
 
+- **2026-08-01 validation sweep (product v0.147.1)**: Exported-schema count **re-derived from source and unchanged at 35**; the module-internal inventory re-derived and unchanged at 22 (21 `const *Schema` declarations plus `skillRefInRules`, whose name does not end in `Schema`). Every `.strict()` / `.passthrough()` claim re-attributed to its owning schema: 6 exported schemas call `.strict()` (`pluginManifestValidationSchema`, `agentYamlGenerationSchema`, `agentFrontmatterValidationSchema`, `skillFrontmatterValidationSchema`, `metadataValidationSchema`, `stackConfigValidationSchema`), confirming the `customMetadataValidationSchema` callout below the strict table; the internal `stackSkillAssignmentSchema` also calls `.strict()`. 7 schema-level `.passthrough()` calls, matching the 8-row Loader table minus `skillFrontmatterLoaderSchema`. **Changed in source:** the unused `SKILL_IDS` import was removed from `schemas.ts` — see "Why slugs and categories are strict but skill IDs are not" above, which was added this pass because the doc stated the lenient _mechanism_ without stating that it is intentional.
 - **2026-07-30 validation sweep (product v0.146.0)**: Exported-schema count **re-counted from source and unchanged at 35** — `schemas.ts` grew ~63 lines in this window but added no schema. What it added: the `splitMetadataValidationIssues()` function, the `MetadataIssueSplit` type, and the module-internal `CLI_DESCRIPTION_MAX_LENGTH` / `isOverLengthCliDescription` / `readCliDescription` / `formatOverLengthWarning` helpers, all documented above. `cliDescription`'s `.max(60)` was reworded to "recommended" in source and its violation downgraded to a warning. Also newly recorded: the module-internal schema inventory, the per-table count breakdown, the Zod major version, and that a `projectConfigLoaderSchema` violation now throws `ConfigLoadError` (D-273) instead of returning `null`.
 - **2026-07-23 validation sweep**: Schema count corrected 39 → 35. The standalone union bridge schemas `skillIdSchema`, `domainSchema`, `categorySchema`, `agentNameSchema`, and `skillSourceTypeSchema` no longer exist in `schemas.ts` — those unions are now validated via inline `z.string() as z.ZodType<...>` casts in the consuming object schemas. New `matrixRawMetadataSchema` (raw metadata.yaml read by the matrix loader) was added to the Structural table.
 - **D-231** (2026-04-21): Removed `version: z.literal("1").optional()` from `projectConfigLoaderSchema`. `.claude-src/config.ts` is a TypeScript module (not a versioned schema), so the field was dead. See also `reference/types/core-types.md` (`ProjectConfig` — no `version` field).

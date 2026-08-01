@@ -9,7 +9,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0): re-counted all four generated unions directly against src/cli/types/generated/source-types.ts — 222 SkillId / 222 SkillSlug / 89 Category / 9 Domain / 23 AgentName, every one unchanged, so the pinned counts were correct and are now re-dated; added the exclusive/required category sub-counts and the note that defaultCategories finally defines all 89 (0.145.0); added semantic-shift entries for D-273 (ConfigLoadError), D-279 (cross-scope masking) and the InstallationInfo.version removal -->
+<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0 — all four generated unions re-counted against src/cli/types/generated/source-types.ts. -->
 
 # Type System (Pointer)
 

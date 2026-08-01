@@ -38,7 +38,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0): re-counted every generated union against src/cli/types/generated/source-types.ts (222/222/89/9/23 — all unchanged); added the three shared base types the consolidation refactor introduced and the doc never picked up (SkillCore, BaseAgentFields, SkillGroupRule + its three aliases); added ConfigLoadError with the missing/content-less/unloadable three-way distinction (D-273); added InstallMode, SKILL_SOURCE_TYPES, LoadedProjectConfig, Installation; corrected SourceRowContext, which gained a fourth field (installedSkillSlots, D-258); noted that defaultCategories now defines all 89 Category members; cross-referenced the D-240 recompile types to operations-types.md rather than duplicating them -->
+<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0 — generated unions re-counted against src/cli/types/generated/source-types.ts. -->
 
 # Core Types
 

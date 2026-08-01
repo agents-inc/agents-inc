@@ -34,7 +34,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0): verified the path-resolution, predicate and splitting claims against install-base-dir.ts, scope-predicates.ts, config-generator.ts and local-installer.ts — all held. Gaps closed this pass: added "Cross-Scope Reconciliation Before Project Writes", the D-279 step that runs immediately before BOTH project-config write paths (writeScopedConfigs previously reconciled at neither); made the write-order explicit in the writeScopedConfigs list; added an explicit statement that a globally installed item is immutable from project scope in EVERY flow including init, with the domain-deselect view-filter rule and its no-reachable-UI-surface caveat -->
+<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0 — path-resolution, predicate and splitting claims re-verified against source. -->
 
 # Scope System (Project vs Global)
 

@@ -24,18 +24,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-2026-07-30 sync to product v0.146.0:
-- D-240 CLOSED — replaced the "Known Limitations" propagation gap with the shipped
-  recompile-project-agents operation; added it to Entry Points, Key Files and the
-  Operations Layer Integration table.
-- D-264 — added the stale-agent pruning stage and the resolveAgentNames
-  config-PRESENCE rule (`agents: []` now compiles zero agents, no longer falls
-  through to compile-everything).
-- D-273 — compile hard-errors on ConfigLoadError before any write.
-- Added the `compile` config-types refresh stage (matrixOnly + skipExtraSources
-  offline load, warning-only failure) and the D-275 global-scoped-agents hint.
--->
+<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0. -->
 
 # Compilation Pipeline
 

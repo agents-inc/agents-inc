@@ -25,18 +25,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-2026-07-30 (second pass this date) sync to product v0.146.0. The earlier pass only
-touched the D-260/D-277 scope-rule lines; this pass reconciles the compile side:
-- D-240 CLOSED — "Known Limitations: propagation is config-only" replaced with the
-  shipped recompileRegisteredProjectAgents / recompilePropagatedProjectAgents stage.
-- D-264 — added the stale-agent pruning section; corrected resolveAgentNames
-  priority 2 to key on config PRESENCE (`agents: []` compiles zero agents).
-- D-273 — recompile's config load now throws ConfigLoadError on a corrupt config.
-- Key Functions: added pruneStaleCompiledAgents, regenerateScopeConfigTypes and the
-  two D-240 operations; marked readAgentFiles / compileAgent as file-local (neither
-  is exported — compileAgent is reached only through compileAllAgents).
--->
+<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0 (second pass this date) — compile side reconciled. -->
 
 # Agent System
 

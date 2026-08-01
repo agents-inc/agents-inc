@@ -31,7 +31,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0): verified every guard arm and the D-277 bypass collapse against wizard-store.ts — all held. Gap closed this pass: added "Guard Asymmetry — Refusal vs. Masking (D-260 vs. D-279)", which records why the exclusive-swap guard refuses to displace a globally locked skill while write-time reconciliation lets the project's own skill win; added the corresponding Summary Table row so the masking predicate is discoverable from the guard inventory -->
+<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0 — every guard arm and the D-277 bypass collapse re-verified against wizard-store.ts. -->
 
 # Guard Pattern
 

@@ -22,18 +22,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-2026-07-30 sync to product v0.146.0:
-- NEW operation file recompile-project-agents.ts (D-240) added to the file table,
-  exported-function table, type table and both barrels' surface notes.
-- ConfigWriteResult now returns `propagatedProjects` (fed to the new operation by
-  init/edit); the declared-but-never-populated `globalConfigPath` field was deleted.
-- compileAgents now prunes stale compiled agents on an authoritative pass (D-264).
-- detectProject converts ConfigLoadError to null; detectBothInstallations lets it
-  propagate so `compile` can hard-error (D-273).
-- writeProjectConfig documented against the shared D-279 reconciliation step.
-- Key-file count corrected 21 -> 22; added `uninstall` to Command Consumers.
--->
+<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0. -->
 
 # Operations Layer
 

@@ -24,7 +24,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0): documented the new `matrixOnly` SourceLoadOptions flag (offline default-source load, empty sourcePath) with its callers and its skipExtraSources parity claim; added a Source Validation section for source-validator.ts covering the three rule changes (advisory over-length cliDescription via splitMetadataValidationIssues, checkDisplayNameMatches -> checkDirNameMatchesSkillId running independently of metadata validity, and the plugins pass moving to the claude CLI v2 registry — cross-referenced, not duplicated); corrected Known Limitation #6, since defaultCategories now covers all 89 generated categories (pinned by default-categories.test.ts) so no built-in category auto-synthesizes; recorded that loadAndMergeSkillsMatrix has no production callers and merges no defaults; tightened the loadSkillRules relationship-default wording -->
+<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0. -->
 
 # Skills & Matrix System
 

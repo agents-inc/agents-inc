@@ -35,7 +35,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0): verified every D-277/D-279 claim against local-installer.ts and wizard-store.ts — all held. Gap closed this pass: added the "Mask vs. Tombstone" terminology section the superseded 2026-07-29 finding asked for, so the two senses of `{ excluded: true }` are named and distinguishable rather than both called "tombstone"; added the mask-lifetime/provenance rule (bare ⇒ system-derived by construction, hence the single retention test) and the mask decision table with the exact source predicates; recorded that a mask is spread from the global entry so it inherits the global install's `source` -->
+<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0 — every D-277/D-279 claim re-verified against local-installer.ts and wizard-store.ts. -->
 
 # Excluded Tombstone Pattern
 
