@@ -1,0 +1,51 @@
+# Tells agents-inc/web that the catalog moved, so it can regenerate its vendored
+# copy and open a PR.
+#
+# The web repo vendors this repo's catalog via
+# `packages/matrix/scripts/generate-from-cli.mjs`, and nothing that happens over
+# there signals that the source changed — which is why the notification has to
+# come from here. Without it the web app silently offers a stale catalog: it
+# cannot show a skill it has not vendored, and its incompatibility rule reasons
+# over whatever `requires` it last copied.
+#
+# The receiving half is `.github/workflows/sync-catalog.yml` in agents-inc/web.
+name: Notify web of catalog changes
+
+on:
+  push:
+    branches: [main]
+    # These mirror what the web's generator actually reads. They duplicate
+    # knowledge that lives in that script, so they can drift — which is why they
+    # are scoped generously rather than precisely. The asymmetry matters: a
+    # false positive costs one run that finds no diff and exits, while a false
+    # negative costs silent staleness until somebody notices by hand.
+    paths:
+      - "src/cli/types/**"
+      - "src/agents/**"
+      - "src/cli/lib/configuration/default-stacks.ts"
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      # Cross-repo dispatch cannot use the default GITHUB_TOKEN — it has no
+      # rights outside this repo. WEB_REPO_DISPATCH_TOKEN should be a
+      # fine-grained PAT scoped to agents-inc/web alone, contents: write, and
+      # nothing else.
+      - name: Dispatch catalog-changed to agents-inc/web
+        env:
+          GH_TOKEN: ${{ secrets.WEB_REPO_DISPATCH_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::WEB_REPO_DISPATCH_TOKEN is not set — the web repo will not learn about this change."
+            exit 1
+          fi
+
+          # JSON on stdin rather than -f/-F flags, so the nested client_payload
+          # is unambiguous.
+          jq -n --arg sha "$SHA" \
+            '{event_type: "catalog-changed", client_payload: {sha: $sha}}' \
+            | gh api repos/agents-inc/web/dispatches --method POST --input -
+
+          echo "Dispatched catalog-changed for $SHA"
