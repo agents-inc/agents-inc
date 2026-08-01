@@ -26,34 +26,25 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-  2026-07-30 sweep (product 0.146.0). Corrected this pass:
-  - Version 0.144.1 -> 0.146.0.
-  - Directory structure re-verified against the tree: added scroll-affordance.tsx,
-    operations/project/recompile-project-agents.ts, configuration/scope-predicates.ts,
-    configuration/define-config.ts, agents/list-compiled-agents.ts; corrected the
-    local-installer.ts / installation.ts / operations export inventories.
-  - FEATURE_FLAGS list gained FILTER_INCOMPATIBLE (D-269).
-  - Section 14: the D-240/D-256 "propagation does not recompile" Known Limitation is
-    CLOSED — documented recompileRegisteredProjectAgents / recompilePropagatedProjectAgents
-    and the ScopedConfigWriteResult.propagatedProjects channel that feeds them.
-  - New section 16: cross-scope reconciliation at project-config write time (D-279).
-  - New section 17: ConfigLoadError as a parse-boundary contract (D-273).
-  - Data-flow diagram: added the propagated-project recompile step and the
-    compile-time config-types refresh.
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
+     ✓ Project Identity, Directory Structure tree, §1 BaseCommand, §18 terminal-size gate,
+       lib/wizard + operations/skills export inventories
+     ✗ §4-17 — no 0.146.1/0.147.x diff touched them; still on 2026-07-30 basis
 -->
 
 # Architecture Overview
 
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
+**Last Updated:** 2026-08-01
+**Last Validated:** 2026-08-01 — **PARTIAL.** Project Identity, Directory Structure, sections 1 and 18 re-verified against source at 0.147.1. Sections 4-17 were not re-checked this pass and still carry their 2026-07-30 validation.
+
+> **Do not "fix" the frontmatter `last_validated` to match the line above.** It is deliberately held at **2026-07-30** because a partial pass must not advance it. The staleness dashboard reads frontmatter, not this header, so stamping the file current would report sections 4-17 as freshly checked when nothing verified them.
 
 ## Project Identity
 
 | Field       | Value                                                                                                                                                                     |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Package     | `@agents-inc/cli`                                                                                                                                                         |
-| Version     | 0.146.0                                                                                                                                                                   |
+| Version     | 0.147.1                                                                                                                                                                   |
 | Binary      | `agentsinc` (registered global bin, `package.json` `bin`/`oclif.bin`); user-facing messages promote `npx @agents-inc/cli` via `CLI_INVOKE_COMMAND` in `src/cli/consts.ts` |
 | Type        | ESM (`"type": "module"` in package.json)                                                                                                                                  |
 | Entry Point | `src/cli/index.ts` (runs oclif with `run()`)                                                                                                                              |
@@ -104,6 +95,10 @@ src/cli/
     themes/                 # Ink theme (CLI_COLORS -> theme)
     wizard/                 # Wizard step components + utilities
       scroll-affordance.tsx # ScrollAffordance — shared "N more above / N more below" overflow hint
+      summary-panel.tsx     # SummaryPanel — the ONE skills/agents summary, rendered by BOTH
+                            #   wizard-layout.tsx (the `I` overlay) and step-confirm.tsx.
+                            #   Replaced the deleted info-panel.tsx (0.147.0).
+      wizard-layout.tsx     # Chrome + the in-render terminal-size guard (section 18)
   hooks/
     init.ts                 # oclif init hook: resolves source, attaches to config
   lib/                      # Core business logic (no UI)
@@ -129,14 +124,14 @@ src/cli/
       skill-resolution.ts   # synthesizeCategory(), mergeMatrixWithSkills() — resolveRelationships is internal
     operations/             # Composable building blocks for CLI commands
       source/               # loadSource(), ensureMarketplace(), requireMarketplace()
-      skills/               # discoverSkills(), copyLocalSkills(), installPluginSkills(), uninstallPluginSkills(), pluginInstallFailureError(), compareSkills(), collectScopedSkillDirs(), findSkillMatch()
+      skills/               # discoverInstalledSkills(), copyLocalSkills(), installPluginSkills(), uninstallPluginSkills(), pluginInstallFailureError(), compareSkillsWithSource(), collectScopedSkillDirs(), findSkillMatch()
       project/              # detectProject(), detectBothInstallations(), writeProjectConfig(), compileAgents(), compileAgentsAllScopes(), loadAgentDefs()
         recompile-project-agents.ts # recompileRegisteredProjectAgents(), recompilePropagatedProjectAgents() (D-240)
     plugins/                # Plugin discovery, validation, manifest, settings
       plugin-settings.ts    # getEnabledPluginKeys(), getInstalledPluginsRegistryPath(), listRegisteredPluginInstalls(), resolvePluginInstallPaths(), getVerifiedPluginInstallPaths()
     skills/                 # Skill fetching, copying, metadata, source switching, local loader, plugin compiler
     stacks/                 # Stack loading, installing, plugin compilation
-    wizard/                 # Build step logic + session diff (pure functions): validateBuildStep(), computeScopeDiff(), skillSlotKey(), deriveScopeBadges(), formatScopeTag(), orderDomains()
+    wizard/                 # Build step logic + session diff (pure functions): validateBuildStep(), computeScopeDiff(), skillSlotKey(), agentSlotKey(), deriveScopeBadges(), formatScopeTag(), orderDomains(), buildCategoriesForDomain(), isCompatibleWithSelectedFrameworks()
     assert-dir-overwritable.ts # Guards fresh-write dirs (assertDirOverwritable)
     compiler.ts             # Liquid template engine, agent/skill compilation
     exit-codes.ts           # Named EXIT_CODES constants
@@ -174,7 +169,8 @@ src/cli/
     logger.ts               # log(), warn(), verbose(), setVerbose()
     messages.ts             # All user-facing message constants
     string.ts               # truncateText(), toTitleCase() string utilities
-    terminal.ts             # clearTerminalScreen()
+    terminal.ts             # clearTerminalScreen(), isTerminalLargeEnough(),
+                            #   formatTerminalTooSmallMessage() — the shared size gate (section 18)
     type-guards.ts          # isCategory(), isDomain(), isAgentName(), isCategoryPath(), isSkillId(), isSkillSlug(), isSkillAssignment(), isRecord()
     typed-object.ts         # typedEntries(), typedKeys(), typedValues(), typedFromEntries()
     yaml-schema.ts          # yamlSchemaComment(), stripYamlSchemaComment()
@@ -236,8 +232,9 @@ Every command extends `BaseCommand` in `src/cli/base-command.ts`.
 BaseCommand provides:
   - baseFlags: --source (doctor, search, validate override baseFlags to `{}`)
   - init() lifecycle -> super.init() + ensureTerminalSize()
-      (blocks until the terminal meets the MIN_TERMINAL_SIZE minimum of
-       80x20 -- consts.ts, the only size gate; uses clearTerminal() ->
+      (blocks until the terminal meets MIN_TERMINAL_SIZE, 80x20 in consts.ts.
+       This is the STARTUP gate, not the only one -- WizardLayout enforces the
+       same constant every render. See section 18. Uses clearTerminal() ->
        clearTerminalScreen() from utils/terminal.ts)
   - sourceConfig getter (from init hook)
   - handleError() -> this.error() with EXIT_CODES.ERROR
@@ -480,3 +477,24 @@ Supporting reconcilers in the same module: `retainProjectOwnedSkills()` / `retai
 | `uninstall`                 | `commands/uninstall.tsx`                   | `deregisterProjectPath()` failure (incl. `ConfigLoadError`) warns and continues.       |
 
 A content-less config (no skills and no agents) reads as **not installed**, so `init` routes to the setup wizard instead of the dashboard.
+
+### 18. Terminal-Size Gate: Two Enforcement Points, One Constant (0.147.0)
+
+The CLI refuses to run below a minimum terminal geometry. This is an architectural concern rather than a UI detail because it is enforced in **two places on opposite sides of the Ink mount**, and because of how the previous design failed: the startup gate hardcoded its own copy of the threshold while `SCROLL_VIEWPORT.MIN_TERMINAL_HEIGHT` sat in `consts.ts` with **zero importers in all of `src/`**, so editing the documented constant changed nothing. That constant no longer exists; `SCROLL_VIEWPORT` now carries only the viewport-clipping values.
+
+**Single source of truth:** `MIN_TERMINAL_SIZE` (`COLS: 80`, `ROWS: 20`) in `src/cli/consts.ts`.
+
+**Shared helpers:** `isTerminalLargeEnough(columns, rows)` and `formatTerminalTooSmallMessage(columns)` in `src/cli/utils/terminal.ts`. Both gates call both — the threshold and the user-facing wording each exist once.
+
+| Enforcement point                  | File                                          | Lifecycle position          | Behaviour when too small                                                                                              |
+| ---------------------------------- | --------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `BaseCommand.ensureTerminalSize()` | `src/cli/base-command.ts`                     | `init()`, before Ink mounts | Clears the screen, prints the message, then **blocks** on a `resize` listener + 500 ms poll until the terminal grows  |
+| `WizardLayout` guard               | `src/cli/components/wizard/wizard-layout.tsx` | Every render, after mount   | **Replaces** the wizard tree with `TerminalTooSmall`; restores the wizard, selections intact, when the terminal grows |
+
+**Why two.** The startup gate runs once and cannot see a window shrunk mid-session. The render guard cannot run before Ink mounts. Neither subsumes the other.
+
+**Why the render guard replaces rather than overlays.** Ink lays out a still-mounted subtree at the small size regardless of what is drawn on top, so an overlay would leave squeezed wizard content bleeding underneath the message. `WizardLayout` returns early instead of compositing.
+
+**Resize reactivity** comes from `useTerminalDimensions()` (`src/cli/components/hooks/use-terminal-dimensions.ts`), which subscribes to stdout `resize` and falls back to 80x24 when stdout is not a TTY.
+
+**`LOGO_MIN_TERMINAL_ROWS` (26) is NOT a third gate.** It decides only whether the stack step's six-row ASCII logo renders inside a terminal that already cleared `MIN_TERMINAL_SIZE`. Conflating the two regresses in both directions: raising `MIN_TERMINAL_SIZE.ROWS` to 26 refuses to run in the still-common 24-row terminal, and lowering the logo threshold to 20 brings back the bleed. Both constants carry their measurement tables inline in `consts.ts`.

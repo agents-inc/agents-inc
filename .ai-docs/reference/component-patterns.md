@@ -24,9 +24,12 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- PARTIAL re-validation 2026-07-31 (InfoPanel-extraction drift + terminal-size gate). `last_validated` deliberately NOT re-stamped: this pass validated four areas against source and made no judgement on the rest of the file. Validated and rewritten: (1) the wizard directory tree — `info-panel.tsx` replaced by `summary-panel.tsx`, test-file count 13 -> 15, both re-counted on disk; (2) the whole `## InfoPanel` section, now `## SummaryPanel`, rewritten against summary-panel.tsx + use-panel-scroll.ts, and its NEEDS-VALIDATION marker cleared — the manual scrollOffset/useMeasuredHeight machinery it described is gone, the panel is rendered by BOTH wizard-layout.tsx and step-confirm.tsx, and paddingX-only + PanelHeader's flexShrink={0} are recorded as load-bearing; (3) consumer lists re-derived by grep — SkillAgentSummary is consumed by summary-panel.tsx AND commands/list.tsx, ScrollAffordance by exactly source-grid.tsx + summary-panel.tsx; (4) the Scrolling section: three hooks not two (use-panel-scroll.ts was missing from the hook table entirely, count 13 -> 14), plus two NEW subsections — "No affordance on the grid steps" (owner decision; records that category-grid DISCARDS the counts while the useRowScroll views never compute them, and that this narrows but does not close D-266) and "Terminal-size gates" (the WizardLayout guard added 2026-07-31 alongside the pre-existing startup gate; both now read isTerminalLargeEnough/formatTerminalTooSmallMessage from src/cli/utils/terminal.ts). NOT re-validated this pass and untouched: hotkey registry, SourceGrid row states, SkillAgentSummary diff invariants, focus seeding, theme, testing pattern. Prior annotation follows. -->
-
-<!-- re-validated 2026-07-30 (product v0.146.0, UX/rendering pass): added the new ScrollAffordance component (D-263) and listed it in the wizard directory tree, correcting the source-file count 22→23; rewrote "Focus seeding" — the doc claimed CategoryGrid has no post-mount effect and that handleFocusChange dispatches onFocusedSkillChange, both untrue since D-272, which moved the dispatch INTO a mount effect and out of handleFocusChange; documented the D-272 alphabetical grid ordering, which was undocumented; removed the `prevSource` field and the "(OldSource → NewSource)" transition-label claim from the SkillAgentSummary section (D-261 replaced both with the compact `~`) and dropped the stale formatSourceDisplayName attribution; annotated HOTKEY_FILTER_INCOMPATIBLE as feature-flag-gated (D-269); expanded the Scrolling section with the measured-viewport/overscroll model, the source-grid clipping gates and the pinned-header rule (D-263/D-271); noted the two open computeScopeDiff display quirks -->
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
+     ✓ StepAgents dual-scope badges, SourceGrid row states, hotkey registry
+     ✗ everything else — directory tree + counts, CLI_COLORS/UI_SYMBOLS, SelectList, prompt helpers,
+       grid types, SkillTag, StackSelection, SummaryPanel, SkillAgentSummary diff invariants,
+       ScrollAffordance, hook table, theme, testing pattern, Scrolling — 2026-07-31 / 07-30 bases
+-->
 
 # Component Patterns
 
@@ -271,28 +274,36 @@ Consequence: the older "Scenario B `focusedSkillId` race" narrative no longer de
 
 ### SourceGrid Row States (in `src/cli/components/wizard/source-grid.tsx`)
 
-A `SourceRow` renders in one of four states, driven by its optional flags:
+A `SourceRow` renders in one of four states, driven by its optional flags. The marker cell is produced by `rowStatusMarker(row)` and is checked in that order, so a row carrying more than one flag shows the first match:
 
-| State           | Flag       | Marker before the name          | Name colour          | Interactive?                         |
-| --------------- | ---------- | ------------------------------- | -------------------- | ------------------------------------ |
-| Ordinary        | —          | none                            | `CLI_COLORS.NEUTRAL` | Yes                                  |
-| Locked global   | `readOnly` | `UI_SYMBOLS.LOCK`               | dimmed               | No (inert)                           |
-| Pending removal | `disabled` | `UI_SYMBOLS.REMOVED` (red `- `) | `CLI_COLORS.ERROR`   | No (inert)                           |
-| Added           | `added`    | `UI_SYMBOLS.ADDED` (green `+ `) | `CLI_COLORS.SUCCESS` | Yes — added rows stay fully editable |
+| State           | Flag       | Marker cell (always 2 columns)      | Name colour           | Interactive?                         |
+| --------------- | ---------- | ----------------------------------- | --------------------- | ------------------------------------ |
+| Ordinary        | —          | `ROW_MARKER_BLANK` (two spaces)     | `CLI_COLORS.NEUTRAL`  | Yes                                  |
+| Locked global   | `readOnly` | `UI_SYMBOLS.LOCK` + space           | `NEUTRAL`, `dimColor` | No (inert)                           |
+| Pending removal | `disabled` | `UI_SYMBOLS.REMOVED` + space (`- `) | `CLI_COLORS.ERROR`    | No (inert)                           |
+| Added           | `added`    | `UI_SYMBOLS.ADDED` + space (`+ `)   | `CLI_COLORS.SUCCESS`  | Yes — added rows stay fully editable |
+
+**The marker cell is fixed-width and lives inside the focus highlight.** Every row spends exactly two columns on it — glyph plus one separating space, or `ROW_MARKER_BLANK` when the row has no status — so an unmarked name starts in the same column as a marked one. Same contract as `DIFF_PREFIX`, which gives even `unchanged` a two-character prefix. On a focused row the marker is rendered inside the `LABEL_BG` band and supplies the only space before the name, so the band width does not change and the name does not shift a column when focus arrives. Both properties were defects before 0.147.0: the marker carried its own trailing space and the focused branch added another, so one row rendered `+  Name` focused against `+ Name` unfocused. `SKILL_NAME_WIDTH` is **26** — 24 for the name plus exactly the marker's 2 — so every name that fitted before the marker was reserved still fits. Known and accepted: `UI_SYMBOLS.LOCK` is double-width, so a locked row still renders one column wider.
+
+**No `✓` anywhere in the grid.** Inert rows (`readOnly` / `disabled`) express which source is selected the same way editable rows do — weight, plus brightness on the otherwise-dimmed locked row — and reserve `UI_SYMBOLS.CHEVRON_SPACER` where an editable row draws its focus chevron, so the source labels stay aligned. Editable rows never drew a checkmark, so one on an inert row would be the only instance of the glyph in the grid; on a pending-removal row it would tick the source the row is about to lose.
 
 **Inertness is the interaction contract.** `isRowInert(row)` (`readOnly || disabled`) is consulted in three places, so an inert row can never be acted on: focus seeding and arrow navigation skip inert rows (`firstFocusableRowIndex` and the focus walk), the SPACE handler returns immediately on them, and the render drops the selection chevron and search pill. A pending-removal row therefore shows its **persisted** source purely as information — the skill that is going away cannot also have its source changed. `disabled` and `readOnly` are deliberately distinct flags: the lock means "installed globally, not yours to change here"; the removal marker means "saving will remove this".
 
-**The diff palette is shared with the confirm step by design.** `rowStatusGlyph` / `rowLabelColor` mirror `DIFF_PREFIX` / `DIFF_COLOR` in `skill-agent-summary.tsx` (both built on `UI_SYMBOLS.ADDED` / `UI_SYMBOLS.REMOVED` and `CLI_COLORS.SUCCESS` / `CLI_COLORS.ERROR`), so an added or pending-removal skill reads identically on the Sources tab and the confirm step. The marker (not the colour) carries the meaning in no-color terminals. On a **focused** row, `focusedRowLabelColor` keeps the diff colour for added/removed rows while ordinary focused rows stay `CLI_COLORS.WHITE` on the focus background — focus styling must never erase diff information.
+**The diff palette is shared with the confirm step by design.** `rowStatusMarker` / `rowDiffColor` mirror `DIFF_PREFIX` / `DIFF_COLOR` in `skill-agent-summary.tsx` (both built on `UI_SYMBOLS.ADDED` / `UI_SYMBOLS.REMOVED` and `CLI_COLORS.SUCCESS` / `CLI_COLORS.ERROR`), so an added or pending-removal skill reads identically on the Sources tab and the confirm step. The marker (not the colour) carries the meaning in no-color terminals. `rowDiffColor` returns `undefined` for a row with no diff status, and the two callers supply their own default: `rowLabelColor` falls back to `CLI_COLORS.NEUTRAL` for an unfocused row, `focusedRowLabelColor` to `CLI_COLORS.WHITE` for a focused one. A diff row keeps its diff colour under focus — focus styling must never erase diff information — while an ordinary focused row deliberately does NOT reuse `NEUTRAL`, which is the low-contrast pairing against `LABEL_BG`.
 
 **Session-diff flags come from the store, not the component.** `buildSourceRows` (see `store-map.md`, "Sources-tab session diff") decides `disabled`/`added` against the hydration snapshot per `(id, scope)` slot, using the same `skillSlotKey` as the confirm step's `computeScopeDiff`. Because removal is per slot, one skill can occupy two rows: a collapsed dual-scope `[P][G]` pair renders a surviving global row plus a Project pending-removal row, both inert (keyed `${skillId}-${scope}`, so the two rows never collide).
 
 **Inert rows are reachable by SCROLLING, not by focus (D-271).** Because focus skips inert rows, a trailing locked or pending-removal row used to be clipped with no way to reach it — exactly the row that mattered most. `SourceGrid`'s `useInput` therefore splits vertical keys two ways, using `lastFocusableRowIndex(rows)`: when nothing is focusable at all (`lastFocusableRow === -1`) or focus already sits on the last focusable row, `↓` calls `scrollBy(1)` on `useSectionScroll` to travel the viewport past focus instead of wrapping; `↑` does the same via `scrollBy(-1)` in the no-focusable-row case. Otherwise the keys move focus normally. Both are additionally gated on `scrollEnabled` and a non-zero `hiddenBelow`/`hiddenAbove`.
 
-**Row grouping.** `groupRowsByScope(rows)` returns `Global` / `Project` sections only when BOTH exist; when every row shares a scope it returns `[]` and the grid renders flat with no scope column. Each group's first row carries the section label in a `SCOPE_COL_WIDTH` gutter. Grouping is presentation only — navigation indices stay in the store's sort order, which `sourceRowSortTier` aligns with the render order.
+**Row grouping.** `groupRowsByScope(rows)` returns `Global` / `Project` sections only when BOTH exist; when every row shares a scope it returns `[]` and the grid renders flat with no gutter at all. Split is `scope === "global"` vs everything else, so a row with no scope groups under `Project`. Each group's first row carries its label (`SCOPE_ROW_HEADERS`) in a `SCOPE_COL_WIDTH = 11` gutter; every other row reserves the same width empty, which is what indents the block under its header. Grouping is presentation only — navigation indices stay in the store's sort order, which `sourceRowSortTier` aligns with the render order.
+
+**The gutter has no column caption.** The pinned header row reserves the gutter's width and the skill-name column's width and prints nothing in either — `{scopeGroups.length > 0 && <Box width={SCOPE_COL_WIDTH} />}` then `<Box width={SKILL_NAME_WIDTH} />` — so the source captions stay above the source cells. The `Scope` caption that used to sit there was removed in 0.147.0: the `Global` / `Project` row headers directly below already name the column, and the spacer is what keeps `Local` / `Plugin` over their own cells.
 
 ### StepAgents Dual Scope Badges (in `src/cli/components/wizard/step-agents.tsx`)
 
-**Store access:** Reads `selectedAgents`, `agentConfigs`, and `installedAgentConfigs` from wizard store.
+**Store access:** subscribes to `selectedAgents` and `agentConfigs` **only**, plus imperative `useWizardStore.getState()` calls in its `useInput` handler (`goBack`, `setStep`, `toggleAgent`) and its focus effect (`setFocusedAgentId`).
+
+> **It does NOT read `installedAgentConfigs`.** A subscription to that field sat here unused and was deleted in 0.147.1. The dual-scope badges derive entirely from the LIVE `agentConfigs` pair — an active entry plus a tombstone at the other scope — never from the hydration snapshot. Anything claiming otherwise is stale; the snapshot's only outside-store reader is `skill-agent-summary.tsx`.
 
 **Secondary scope computation:** For each agent row, finds the active config (`!excluded`) and the excluded config, then calls `deriveScopeBadges(activeConfig, excludedConfig)` (from `src/cli/lib/wizard/scope-diff.ts`). A `secondaryScope` badge is emitted only when the excluded tombstone has a different scope than the active entry.
 
@@ -328,9 +339,16 @@ Centralized hotkey definitions. Each hotkey has a `key` (for matching) and `labe
 
 **Structural key labels** (display-only, for footer hints): `KEY_LABEL_ENTER`, `KEY_LABEL_ESC`, `KEY_LABEL_SPACE`, `KEY_LABEL_DEL`, `KEY_LABEL_ARROWS_VERT` (`↑/↓`). Also exported: `KEY_SPACE` (the literal `" "` input character used for space-key matching, not a display label).
 
-**No other `KEY_LABEL_*` constants exist.** Previously-documented `KEY_LABEL_TAB`, `KEY_LABEL_ARROWS`, `KEY_LABEL_VIM`, and `KEY_LABEL_VIM_VERT` have been removed.
+**No other `KEY_LABEL_*` constants exist**, and **no other `HOTKEY_*` constants exist** (both re-read off `hotkeys.ts` in full, 2026-08-01 — the module holds nothing beyond what the tables above and below enumerate). Previously-documented `KEY_LABEL_TAB`, `KEY_LABEL_ARROWS`, `KEY_LABEL_VIM`, and `KEY_LABEL_VIM_VERT` have been removed.
 
-Helper: `isHotkey(input, hotkey)` for case-insensitive matching.
+**Helpers — the module exports exactly two:**
+
+| Helper                 | Signature                                             | Purpose                                                                                                                                                                                                             |
+| ---------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `isHotkey`             | `(input: string, hotkey: { key: string }) => boolean` | Case-insensitive character match.                                                                                                                                                                                   |
+| `isInfoPanelAvailable` | `(step: WizardStep) => boolean`                       | `FEATURE_FLAGS.INFO_PANEL && step !== "confirm"` — the ONE answer both the `I` key handler in `wizard.tsx` and the `Info` footer hint in `wizard-layout.tsx` read, so the wizard never advertises a key it ignores. |
+
+**Why `isInfoPanelAvailable` excludes the confirm step.** The `I` overlay REPLACES `children` in `WizardLayout` rather than sitting over them, and the confirm step already renders the very panel the overlay would show. Opening it there unmounted `StepConfirm` along with the only `Enter` handler, so `Enter` produced a byte-identical frame and nothing could complete the wizard. Note the **close** path in `wizard.tsx` is deliberately NOT gated — the `store.showInfo` branch runs before the availability check — because gating it would strand an overlay opened on a step that later became disallowed.
 
 **`HOTKEY_FILTER_INCOMPATIBLE` is dormant (D-269).** It is gated behind `FEATURE_FLAGS.FILTER_INCOMPATIBLE` (default `false`) in **two** places, which must stay in step: the keypress arm in `use-category-grid-input.ts` (`FEATURE_FLAGS.FILTER_INCOMPATIBLE && isHotkey(input, HOTKEY_FILTER_INCOMPATIBLE) && onToggleFilterIncompatible`) and the footer hint's `isVisible` in `wizard-layout.tsx`. Pressing `F` is a no-op today; the constant and the store action stay intact for a one-flag re-enable.
 

@@ -22,9 +22,12 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- PARTIAL re-validation 2026-07-31 (InfoPanel-extraction drift + terminal-size gate). `last_validated` deliberately NOT re-stamped: four areas were checked against source, the rest of the file was not. Validated and rewritten: (1) the component tree — `InfoPanel (info-panel.tsx)` is now `SummaryPanel (summary-panel.tsx)`, and StepConfirm's children re-nested under it, because the confirm step renders that same component rather than its own copy of the scroll block; (2) the `## Info Panel` section — the "Key difference from StepConfirm" sentence was false in BOTH halves (SummaryPanel reads the store on both surfaces; StepConfirm no longer takes skillConfigs/agentConfigs props at all), `useMeasuredHeight` replaced by `usePanelScroll`, and the `isInfoPanelAvailable` gating of `I` on the confirm step added; (3) the computeScopeDiff consumer row; (4) the Viewport Clipping section — ScrollAffordance consumers are exactly source-grid.tsx + summary-panel.tsx, the grid steps' silent clipping is recorded as an owner decision that NARROWS D-266 without closing it, and the new WizardLayout mid-session terminal-size guard is documented beside the pre-existing startup gate. NOT re-validated and untouched: step progression, guards, scope toggles, store actions, keyboard sections, sources-tab session diff. Prior annotation follows. -->
-
-<!-- re-validated 2026-07-30 (product v0.146.0, UX/rendering pass): removed `prevSource` from the SkillDiffRow shape and rewrote the "Source Mode Transition Labels" section — D-261 deleted both the field and the "(OldSource → NewSource)" label, leaving the compact `~` marker as the whole signal; added the exported skillSlotKey to the scope-diff function/consumer tables (D-278); added FEATURE_FLAGS.FILTER_INCOMPATIBLE to the flag table and gated the F hotkey text on it (D-269); documented the D-272 alphabetical option sort in buildCategoriesForDomain; corrected the source-grid keyboard section — it claimed vim keys the component does not implement — and documented the D-271 overscroll path to trailing inert rows; added ScrollAffordance to the component tree; added a Known Limitations subsection for the two open computeScopeDiff display quirks -->
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
+     ✓ `I`-gate + INFO_PANEL row, hotkey helpers, hooks table, component tree; re-verified
+       unchanged: WizardProps/WizardResultV2/HydrateOptions, scope-diff tables, Viewport Clipping
+     ✗ step progression, guards, scope toggles, store actions, edit mode, settings overlay, domain
+       order, framework filtering, stack grouping — prior 2026-07-31 / 07-30 bases
+-->
 
 # Wizard Flow
 
@@ -67,8 +70,9 @@ The canonical ordered sequence is the `WIZARD_STEP_ORDER` constant in `src/cli/s
 ```
 Wizard (src/cli/components/wizard/wizard.tsx)
   |-> WizardLayout (wizard-layout.tsx)
+  |     |-> [terminal-size guard] - REPLACES everything below when the terminal drops under MIN_TERMINAL_SIZE
   |     |-> WizardTabs (wizard-tabs.tsx) - Step progress indicators
-  |     |-> SummaryPanel (summary-panel.tsx) - the "I" overlay: skill/agent scope summary (feature-flagged: FEATURE_FLAGS.INFO_PANEL)
+  |     |-> SummaryPanel (summary-panel.tsx) - the "I" overlay: skill/agent scope summary (gated by isInfoPanelAvailable(step): FEATURE_FLAGS.INFO_PANEL and step !== "confirm")
   |     |     |-> SkillAgentSummary (skill-agent-summary.tsx)
   |     |     |-> ScrollAffordance (scroll-affordance.tsx) - "N more above / below" hint
   |     |-> WizardFooter (inline in wizard-layout.tsx) - SPACE/ENTER/ESC key hints
@@ -105,12 +109,12 @@ Additional wizard components (not in the step render tree):
 
 Feature flags live in `FEATURE_FLAGS` (`src/cli/lib/feature-flags.ts`). The wizard-relevant flags:
 
-| Flag                  | Default | Controls                                                                                                                                                                                                                                         |
-| --------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SOURCE_SEARCH`       | `false` | Search pill in source grid, settings overlay access                                                                                                                                                                                              |
-| `SOURCE_CHOICE`       | `false` | Intermediate "recommended vs customize" screen in sources step                                                                                                                                                                                   |
-| `INFO_PANEL`          | `true`  | `I` key opens info panel overlay in wizard-layout                                                                                                                                                                                                |
-| `FILTER_INCOMPATIBLE` | `false` | `F` key filters incompatible skills in the build step (D-269). Gates BOTH the keypress in `use-category-grid-input.ts` and the footer hint in `wizard-layout.tsx`; `toggleFilterIncompatible` stays intact and dormant for a one-flag re-enable. |
+| Flag                  | Default | Controls                                                                                                                                                                                                                                                |
+| --------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SOURCE_SEARCH`       | `false` | Search pill in source grid, settings overlay access                                                                                                                                                                                                     |
+| `SOURCE_CHOICE`       | `false` | Intermediate "recommended vs customize" screen in sources step                                                                                                                                                                                          |
+| `INFO_PANEL`          | `true`  | `I` opens the `SummaryPanel` overlay in `wizard-layout.tsx`, and guards the overlay's own render branch there. Necessary but not sufficient for the key: the step gate lives with it inside `isInfoPanelAvailable(step)`, which also excludes `confirm` |
+| `FILTER_INCOMPATIBLE` | `false` | `F` key filters incompatible skills in the build step (D-269). Gates BOTH the keypress in `use-category-grid-input.ts` and the footer hint in `wizard-layout.tsx`; `toggleFilterIncompatible` stays intact and dormant for a one-flag re-enable.        |
 
 The same object also holds three command-gating flags outside the wizard: `NEW_SKILL_COMMAND`, `NEW_AGENT_COMMAND`, `NEW_MARKETPLACE_COMMAND` (all `false`) — see `commands.md`.
 
@@ -176,21 +180,22 @@ export type WizardResultV2 = {
 
 ## Wizard Hooks
 
-| Hook                       | File                                                       | Purpose                         |
-| -------------------------- | ---------------------------------------------------------- | ------------------------------- |
-| `useBuildStepProps`        | `src/cli/components/hooks/use-build-step-props.ts`         | Compute build step derived data |
-| `useCategoryGridInput`     | `src/cli/components/hooks/use-category-grid-input.ts`      | Keyboard navigation for grid    |
-| `useKeyboardNavigation`    | `src/cli/components/hooks/use-keyboard-navigation.ts`      | Arrow key + Enter handling      |
-| `useFocusedListItem`       | `src/cli/components/hooks/use-focused-list-item.ts`        | Focus tracking for lists        |
-| `useFrameworkFiltering`    | `src/cli/components/hooks/use-framework-filtering.ts`      | Framework-first skill filtering |
-| `useMeasuredHeight`        | `src/cli/components/hooks/use-measured-height.ts`          | Component height measurement    |
-| `useModalState`            | `src/cli/components/hooks/use-modal-state.ts`              | Modal open/close state          |
-| `useRowScroll`             | `src/cli/components/hooks/use-row-scroll.ts`               | Row-based scroll position       |
-| `useSectionScroll`         | `src/cli/components/hooks/use-section-scroll.ts`           | Section-based scroll position   |
-| `useSourceGridSearchModal` | `src/cli/components/hooks/use-source-grid-search-modal.ts` | Search modal for sources        |
-| `useSourceOperations`      | `src/cli/components/hooks/use-source-operations.ts`        | Source add/remove operations    |
-| `useTerminalDimensions`    | `src/cli/components/hooks/use-terminal-dimensions.ts`      | Terminal width/height tracking  |
-| `useTextInput`             | `src/cli/components/hooks/use-text-input.ts`               | Text input handling             |
+| Hook                       | File                                                       | Purpose                                                                             |
+| -------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `useBuildStepProps`        | `src/cli/components/hooks/use-build-step-props.ts`         | Compute build step derived data                                                     |
+| `useCategoryGridInput`     | `src/cli/components/hooks/use-category-grid-input.ts`      | Keyboard navigation for grid                                                        |
+| `useKeyboardNavigation`    | `src/cli/components/hooks/use-keyboard-navigation.ts`      | Arrow key + Enter handling                                                          |
+| `useFocusedListItem`       | `src/cli/components/hooks/use-focused-list-item.ts`        | Focus tracking for lists                                                            |
+| `useFrameworkFiltering`    | `src/cli/components/hooks/use-framework-filtering.ts`      | Framework-first skill filtering                                                     |
+| `useMeasuredHeight`        | `src/cli/components/hooks/use-measured-height.ts`          | Component height measurement                                                        |
+| `useModalState`            | `src/cli/components/hooks/use-modal-state.ts`              | Modal open/close state                                                              |
+| `usePanelScroll`           | `src/cli/components/hooks/use-panel-scroll.ts`             | Line scroll for one clipped viewport driven by `↑`/`↓`; used by `summary-panel.tsx` |
+| `useRowScroll`             | `src/cli/components/hooks/use-row-scroll.ts`               | Row-based scroll position                                                           |
+| `useSectionScroll`         | `src/cli/components/hooks/use-section-scroll.ts`           | Section-based scroll position                                                       |
+| `useSourceGridSearchModal` | `src/cli/components/hooks/use-source-grid-search-modal.ts` | Search modal for sources                                                            |
+| `useSourceOperations`      | `src/cli/components/hooks/use-source-operations.ts`        | Source add/remove operations                                                        |
+| `useTerminalDimensions`    | `src/cli/components/hooks/use-terminal-dimensions.ts`      | Terminal width/height tracking                                                      |
+| `useTextInput`             | `src/cli/components/hooks/use-text-input.ts`               | Text input handling                                                                 |
 
 ## Build Step Logic
 
@@ -278,7 +283,7 @@ Hotkeys are centralized in `src/cli/components/wizard/hotkeys.ts`.
 
 ### Global hotkeys (handled in `wizard.tsx`)
 
-- `I`: Toggle info panel (`HOTKEY_INFO`); feature-flagged by `FEATURE_FLAGS.INFO_PANEL`.
+- `I`: Toggle info panel (`HOTKEY_INFO`). Gated by `isInfoPanelAvailable(step)` from `hotkeys.ts` — `FEATURE_FLAGS.INFO_PANEL && step !== "confirm"`, NOT the flag alone. The **close** path is deliberately ungated: `wizard.tsx` handles `store.showInfo` in an earlier branch, so `I` or `Escape` always closes an open panel. See "Info Panel — the `I` overlay" below.
 - `A` (build step with stack selected): Accept stack defaults, set `stackAction = "defaults"`, jump to `confirm` (`HOTKEY_ACCEPT_DEFAULTS`).
 - `S` (build step): Toggle focused skill scope (project/global) via `toggleSkillScope`; suppressed with toast when `isEditingFromGlobalScope` (`HOTKEY_SCOPE`).
 - `S` (agents step): Toggle focused agent scope via `toggleAgentScope`; suppressed with toast when `isEditingFromGlobalScope` (`HOTKEY_SCOPE`).
@@ -324,7 +329,10 @@ Settings step (`step-settings.tsx`):
 
 ### Hotkey helpers
 
+`hotkeys.ts` exports exactly two:
+
 - `isHotkey(input, hotkey)` - Case-insensitive character comparison.
+- `isInfoPanelAvailable(step)` - `FEATURE_FLAGS.INFO_PANEL && step !== "confirm"`. Read by BOTH the `I` branch in `wizard.tsx` and the `Info` footer hint's `isVisible` in `wizard-layout.tsx`, so the wizard cannot advertise a key it ignores. The two call sites must never diverge.
 
 Common key labels exported from `hotkeys.ts`:
 

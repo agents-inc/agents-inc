@@ -7,7 +7,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0): pointer target and inbound-link rationale re-checked and still correct; the semantic index's last row was restated — "Focus seeding (Scenario B race)" no longer describes the skill path, which D-233 + D-272 fixed with a synchronous store seed plus a mount-effect re-dispatch (the race survives only on the agent path); added the Sources-tab session diff to the index, since it is now covered in the canonical doc's Diff Projection section (D-278). No content lives here. -->
+<!-- VALIDATED 2026-07-30 · POINTER (product v0.146.0) — target and inbound-link rationale re-checked; no content lives here. -->
 
 # State Transitions (Pointer)
 

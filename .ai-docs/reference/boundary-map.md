@@ -9,29 +9,18 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-  2026-07-30 sweep (product 0.146.0). Corrected this pass:
-  - `uninstall --all` removed from the per-command flag table (D-274).
-  - New section 3.8: cross-scope reconciliation as a config-SEMANTICS write boundary
-    (D-279) — the shared step that runs before BOTH project-config writes.
-  - New section 3.9: uninstall delete boundary (unconditional manifest removal,
-    unconditional deregistration, global-uninstall pruning of registered projects).
-  - New section 2.6: the claude CLI v2 `installed_plugins.json` registry as a
-    validate-time read boundary that ERRORS rather than degrading to a scan.
-  - New section 2.7: `matrixOnly` — the network boundary `compile` and `uninstall`
-    skip to stay offline on a cold cache.
-  - Section 2.2: `loadProjectConfigFromDir()` now THROWS `ConfigLoadError` on an
-    unloadable-but-present config instead of returning `null` (D-273).
-  - Section 3.2/3.4: added `regenerateScopeConfigTypes()` and
-    `pruneGlobalEntriesFromRegisteredProjects()`.
-  - Section 7: metadata validation split into errors vs advisory warnings
-    (`splitMetadataValidationIssues`); helper-function table refreshed.
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
+     ✓ Key Files table, §1 CLI input boundaries (incl. new 1.4), §7 helper-function table and
+       the source-validator.ts parse-cause claims
+     ✗ §2-6, §8 — no schema, write-path or shell-boundary diff touched them; 2026-07-30 basis
 -->
 
 # Boundary Map
 
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
+**Last Updated:** 2026-08-01
+**Last Validated:** 2026-08-01 — **PARTIAL.** Key Files, section 1 (incl. new 1.4) and the section 7 helper table re-verified against source at 0.147.1. Sections 2-6 and 8 were not re-checked this pass and still carry their 2026-07-30 validation.
+
+> **Do not "fix" the frontmatter `last_validated` to match the line above.** It is deliberately held at **2026-07-30** because a partial pass must not advance it. The staleness dashboard reads frontmatter, not this header, so stamping the file current would report sections 2-6 and 8 as freshly checked when nothing verified them.
 
 ## Overview
 
@@ -39,29 +28,30 @@ last_validated: 2026-07-30
 
 **Key Files:**
 
-| File                                               | Purpose                                                                                                 |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `src/cli/base-command.ts`                          | Base `--source` flag definition, error handling                                                         |
-| `src/cli/hooks/init.ts`                            | Raw argv extraction of `--source` before oclif parsing                                                  |
-| `src/cli/utils/exec.ts`                            | Shell execution boundary, input validation                                                              |
-| `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits                                                                       |
-| `src/cli/lib/schemas.ts`                           | All Zod schemas (35 `export const *Schema`) for parse boundaries + metadata issue splitting             |
-| `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`)                                                              |
-| `src/cli/lib/configuration/config-loader.ts`       | jiti TypeScript config loading                                                                          |
-| `src/cli/lib/configuration/project-config.ts`      | `.claude-src/config.ts` load boundary; `ConfigLoadError` for corrupt-but-present configs (D-273)        |
-| `src/cli/lib/configuration/config-writer.ts`       | Config file generation                                                                                  |
-| `src/cli/lib/configuration/config-types-writer.ts` | Writer selection (project=import-from-global, global=standalone, D-228)                                 |
-| `src/cli/lib/installation/local-installer.ts`      | Scoped config writes, cross-scope reconciliation, propagation to and pruning of registered projects     |
-| `src/cli/lib/loading/source-loader.ts`             | Source fetch/network boundary; `matrixOnly` + `skipExtraSources` opt-outs                               |
-| `src/cli/lib/stacks/stack-plugin-compiler.ts`      | Stack plugin compilation (`compileStackPlugin`)                                                         |
-| `src/cli/lib/compiler.ts`                          | Liquid template sanitization, agent output, per-skill pluginRef derivation (`derivePluginRef`, D-217)   |
-| `src/cli/lib/skills/skill-copier.ts`               | Path traversal prevention                                                                               |
-| `src/cli/lib/plugins/plugin-settings.ts`           | Claude settings/registry JSON parsing (`installed_plugins.json` v2 registry)                            |
-| `src/cli/lib/plugins/plugin-finder.ts`             | Plugin manifest JSON parsing                                                                            |
-| `src/cli/lib/plugins/plugin-validator.ts`          | Plugin/skill/agent frontmatter validation                                                               |
-| `src/cli/lib/source-validator.ts`                  | Source directory validation (`checkDirNameMatchesSkillId` compares dir name to the SKILL.md machine id) |
-| `src/cli/commands/uninstall.tsx`                   | Filesystem DELETE boundary (plugins, skills, agents, config manifest) + registry deregistration         |
-| `src/cli/consts.ts`                                | File size limit constants                                                                               |
+| File                                               | Purpose                                                                                                                                 |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/cli/base-command.ts`                          | Base `--source` flag definition, error handling, terminal-geometry startup gate                                                         |
+| `src/cli/hooks/init.ts`                            | Raw argv extraction of `--source` before oclif parsing                                                                                  |
+| `src/cli/utils/terminal.ts`                        | Terminal-geometry predicate + message shared by both size gates (section 1.4)                                                           |
+| `src/cli/utils/exec.ts`                            | Shell execution boundary, input validation                                                                                              |
+| `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits                                                                                                       |
+| `src/cli/lib/schemas.ts`                           | All Zod schemas for parse boundaries + metadata issue splitting (schema count lives in `reference/types/zod-schemas.md`, which owns it) |
+| `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`)                                                                                              |
+| `src/cli/lib/configuration/config-loader.ts`       | jiti TypeScript config loading                                                                                                          |
+| `src/cli/lib/configuration/project-config.ts`      | `.claude-src/config.ts` load boundary; `ConfigLoadError` for corrupt-but-present configs (D-273)                                        |
+| `src/cli/lib/configuration/config-writer.ts`       | Config file generation                                                                                                                  |
+| `src/cli/lib/configuration/config-types-writer.ts` | Writer selection (project=import-from-global, global=standalone, D-228)                                                                 |
+| `src/cli/lib/installation/local-installer.ts`      | Scoped config writes, cross-scope reconciliation, propagation to and pruning of registered projects                                     |
+| `src/cli/lib/loading/source-loader.ts`             | Source fetch/network boundary; `matrixOnly` + `skipExtraSources` opt-outs                                                               |
+| `src/cli/lib/stacks/stack-plugin-compiler.ts`      | Stack plugin compilation (`compileStackPlugin`)                                                                                         |
+| `src/cli/lib/compiler.ts`                          | Liquid template sanitization, agent output, per-skill pluginRef derivation (`derivePluginRef`, D-217)                                   |
+| `src/cli/lib/skills/skill-copier.ts`               | Path traversal prevention                                                                                                               |
+| `src/cli/lib/plugins/plugin-settings.ts`           | Claude settings/registry JSON parsing (`installed_plugins.json` v2 registry)                                                            |
+| `src/cli/lib/plugins/plugin-finder.ts`             | Plugin manifest JSON parsing                                                                                                            |
+| `src/cli/lib/plugins/plugin-validator.ts`          | Plugin/skill/agent frontmatter validation                                                                                               |
+| `src/cli/lib/source-validator.ts`                  | Source directory validation (`checkDirNameMatchesSkillId` compares dir name to the SKILL.md machine id)                                 |
+| `src/cli/commands/uninstall.tsx`                   | Filesystem DELETE boundary (plugins, skills, agents, config manifest) + registry deregistration                                         |
+| `src/cli/consts.ts`                                | File size limit constants                                                                                                               |
 
 ---
 
@@ -77,7 +67,11 @@ last_validated: 2026-07-30
 | **Validation** | oclif `Flags.string()` (accepts any string), then `validateSourceFormat()` in `config.ts` |
 | **Schema**     | None (string flag); validated by `validateSourceFormat()`                                 |
 
-Most commands inherit `baseFlags` (the `--source` / `-s` flag), which is optional and accepts any string. Actual validation happens in `resolveSource()` in `config.ts`. Three commands override `static baseFlags = {}` to drop `--source`: `doctor`, `search`, and `validate`.
+Most commands inherit `baseFlags` (the `--source` / `-s` flag), which is optional and accepts any string. Actual validation happens in `resolveSource()` in `config.ts`.
+
+**Seven commands override `static baseFlags = {}` and therefore do NOT accept `--source`:** `doctor`, `search`, `validate`, `import skill`, `new skill`, `build plugins`, `build marketplace`. Verified by `grep -rln "static baseFlags = {}" src/cli/commands` at time of writing; the previous text named only the first three, which would have an agent emit `--source` on four commands that reject it.
+
+`edit` is the one command that re-declares the inheritance explicitly — its `static flags` opens with `...BaseCommand.baseFlags` rather than relying on oclif merging `baseFlags` for it.
 
 ### 1.2 Init Hook: Raw argv Extraction
 
@@ -95,26 +89,53 @@ The init hook runs before oclif parses flags. It manually extracts `--source` / 
 
 Every command extends `BaseCommand` and defines `static flags`. oclif handles type coercion, required validation, and enum constraints.
 
-| Command             | File                            | Flags (beyond `--source`)                                                                                           |
-| ------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `init`              | `commands/init.tsx`             | `--refresh` (boolean)                                                                                               |
-| `edit`              | `commands/edit.tsx`             | `--refresh` (boolean), `--project-setup` (boolean, hidden internal flag `EDIT_PROJECT_SETUP_FLAG`)                  |
-| `compile`           | `commands/compile.ts`           | `--verbose` (boolean)                                                                                               |
-| `list`              | `commands/list.tsx`             | (base only)                                                                                                         |
-| `eject`             | `commands/eject.ts`             | `--force` (boolean), `--output` (string), `--refresh` (boolean)                                                     |
-| `search`            | `commands/search.ts`            | `query` (positional, required); `baseFlags = {}` (inherits none)                                                    |
-| `update`            | `commands/update.tsx`           | `skill` (positional, optional); `--yes` (boolean)                                                                   |
-| `uninstall`         | `commands/uninstall.tsx`        | `--yes` / `-y` (boolean). **`--all` was removed (D-274)** — manifest removal is now unconditional.                  |
-| `validate`          | `commands/validate.ts`          | (none); `baseFlags = {}` (zero-flag command)                                                                        |
-| `doctor`            | `commands/doctor.ts`            | (none); `baseFlags = {}` (drops `--source`)                                                                         |
-| `import skill`      | `commands/import/skill.ts`      | `source` (positional, required); `--skill` (string), `--all` (boolean), `--list` (boolean), `--force` (boolean)     |
-| `new skill`         | `commands/new/skill.ts`         | `name` (positional, required); `--author` (string), `--category` (string), `--domain` (string), `--force` (boolean) |
-| `new agent`         | `commands/new/agent.tsx`        | `name` (positional, required); `--purpose` (string), `--force` (boolean)                                            |
-| `new marketplace`   | `commands/new/marketplace.ts`   | `name` (positional, required); `--force` (boolean)                                                                  |
-| `build plugins`     | `commands/build/plugins.ts`     | `--agents-dir` (string), `--output-dir` (string), `--skill` (string), `--verbose` (boolean)                         |
-| `build marketplace` | `commands/build/marketplace.ts` | `--name` (string), `--plugins-dir` (string), `--output` (string), `--verbose` (boolean)                             |
+| Command             | File                            | Flags (beyond `--source`)                                                                                                                                      |
+| ------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`              | `commands/init.tsx`             | `--refresh` (boolean)                                                                                                                                          |
+| `edit`              | `commands/edit.tsx`             | `--refresh` (boolean), `--project-setup` (boolean, hidden internal flag `EDIT_PROJECT_SETUP_FLAG`)                                                             |
+| `compile`           | `commands/compile.ts`           | `--verbose` (boolean)                                                                                                                                          |
+| `list`              | `commands/list.tsx`             | (base only); alias `ls`                                                                                                                                        |
+| `eject`             | `commands/eject.ts`             | `type` (**positional, optional**, enum: `agent-partials` \| `templates` \| `skills` \| `all`); `--force` (boolean), `--output` (string), `--refresh` (boolean) |
+| `search`            | `commands/search.ts`            | `query` (positional, required); `baseFlags = {}` (inherits none)                                                                                               |
+| `update`            | `commands/update.tsx`           | `skill` (positional, optional); `--yes` (boolean)                                                                                                              |
+| `uninstall`         | `commands/uninstall.tsx`        | `--yes` / `-y` (boolean). **`--all` was removed (D-274)** — manifest removal is now unconditional.                                                             |
+| `validate`          | `commands/validate.ts`          | (none); `baseFlags = {}` (zero-flag command)                                                                                                                   |
+| `doctor`            | `commands/doctor.ts`            | (none); `baseFlags = {}` (drops `--source`)                                                                                                                    |
+| `import skill`      | `commands/import/skill.ts`      | `source` (positional, required); `--skill` (string), `--all` (boolean), `--list` (boolean), `--force` (boolean); **`baseFlags = {}`**                          |
+| `new skill`         | `commands/new/skill.ts`         | `name` (positional, required); `--author` (string), `--category` (string), `--domain` (string), `--force` (boolean); **`baseFlags = {}`**                      |
+| `new agent`         | `commands/new/agent.tsx`        | `name` (positional, required); `--purpose` (string), `--force` (boolean)                                                                                       |
+| `new marketplace`   | `commands/new/marketplace.ts`   | `name` (positional, required); `--force` (boolean)                                                                                                             |
+| `build plugins`     | `commands/build/plugins.ts`     | `--agents-dir` (string), `--output-dir` (string), `--skill` (string), `--verbose` (boolean); **`baseFlags = {}`**                                              |
+| `build marketplace` | `commands/build/marketplace.ts` | `--name` (string), `--plugins-dir` (string), `--output` (string), `--verbose` (boolean); **`baseFlags = {}`**                                                  |
+
+**`eject`'s positional `type` is the only enum-constrained arg in the CLI.** oclif rejects a value outside `EJECT_TYPES` (`agent-partials`, `templates`, `skills`, `all`, declared module-private in `commands/eject.ts`) at parse time, before `run()`. It is optional — omitting it is valid and handled inside the command.
 
 **Validation pattern:** oclif validates flag types, required status, and enum `options` at parse time. String flags pass through without content validation -- downstream code validates semantics (e.g., `validateSourceFormat` for source strings).
+
+> **This table exists to place oclif parsing on the boundary map, not to be the flag reference.** [`commands/index.md`](./commands/index.md) is canonical for signatures. If the two disagree, `commands/index.md` wins — that is what happened on 2026-08-01, when this table understated the `baseFlags = {}` overrides and omitted `eject`'s positional arg while `commands/index.md` had both right.
+
+### 1.4 Terminal Geometry (Environment Input, Blocking)
+
+The one input boundary that can **halt a command before it parses anything**. Terminal dimensions are environment data (`process.stdout.columns` / `.rows`, and the `resize` event) read at two points on opposite sides of the Ink mount.
+
+| Property       | Value                                                                                                                                                 |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Direction**  | IN (environment)                                                                                                                                      |
+| **Data**       | `process.stdout.columns` / `.rows`; stdout `resize` events                                                                                            |
+| **Threshold**  | `MIN_TERMINAL_SIZE` (`COLS: 80`, `ROWS: 20`) in `src/cli/consts.ts` — one constant, both gates                                                        |
+| **Validation** | `isTerminalLargeEnough(columns, rows)` in `src/cli/utils/terminal.ts`                                                                                 |
+| **Message**    | `formatTerminalTooSmallMessage(columns)` in the same module — one wording, so the E2E `STEP_TEXT.TOO_NARROW` / `TOO_SHORT` constants match both gates |
+
+| Gate                               | File                                          | Position                    | Failure behaviour                                                                                 |
+| ---------------------------------- | --------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `BaseCommand.ensureTerminalSize()` | `src/cli/base-command.ts`                     | `init()`, before Ink mounts | **Blocks** — clears screen, prints, then awaits a `resize` listener + 500 ms poll. Does not exit. |
+| `WizardLayout` size guard          | `src/cli/components/wizard/wizard-layout.tsx` | Every render, after mount   | Returns `TerminalTooSmall` in place of the wizard tree; restores on growth with state intact.     |
+
+**Boundary contracts:**
+
+- **The startup gate blocks, it does not error.** No exit code is emitted for a too-small terminal — the command waits. Anything driving the CLI non-interactively at a small geometry hangs rather than failing, which is why the E2E harness sizes its PTY explicitly.
+- **Not a TTY, not gated at render.** `useTerminalDimensions()` falls back to 80x24 when stdout is not a TTY (piped output, CI), so the render guard passes by default off-TTY. The startup gate falls back to `MIN_TERMINAL_SIZE` itself for the same reason.
+- **`LOGO_MIN_TERMINAL_ROWS` (26) is not part of this boundary.** It gates one decorative element inside a terminal that already cleared the gate. See `architecture-overview.md` section 18.
 
 ---
 
@@ -593,6 +614,16 @@ Used for validation commands and build-time checks. Reject unknown fields via `.
 **Advisory-vs-hard metadata split:** an over-length `cliDescription` is the **only** advisory violation. `skillMetadataBaseSchema` (shared by `metadataValidationSchema` and `customMetadataValidationSchema`) keeps `.min(1).max(CLI_DESCRIPTION_MAX_LENGTH)` — 60, module-private in `schemas.ts` — as the declared contract. But the runtime loader schemas accept any length and the value only feeds wizard description text, so `commands/validate.ts` reports the `too_big` issue as a warning carrying the actual character count. `isOverLengthCliDescription()` matches on `code === "too_big"` at path `["cliDescription"]` exactly; an **empty** `cliDescription` trips `min(1)` and stays an error, as does every other issue. A skill is `valid` iff the hard-error list is empty.
 
 **Skill-directory-name rule:** `checkDirNameMatchesSkillId()` in `source-validator.ts` compares the directory name against the skill's **machine id from `SKILL.md` frontmatter**, not against `displayName`. It runs independently of whether `metadata.yaml` validated, and an unreadable/invalid `SKILL.md` frontmatter yields a "Cannot verify directory name" issue rather than a false mismatch.
+
+**Parse-failure causes are reported inconsistently across `source-validator.ts` phases (0.147.1).** Two of its `catch` blocks bound the error and discarded it; both now interpolate `getErrorMessage(error)`:
+
+| Phase                                       | Message                                                           | Carries cause? |
+| ------------------------------------------- | ----------------------------------------------------------------- | -------------- |
+| `metadata.yaml` parse (skills phase 2)      | `Failed to parse YAML: <cause>`                                   | Yes            |
+| Cross-reference load (categories/rules)     | `Cross-reference validation skipped: failed to load ...: <cause>` | Yes            |
+| `validateYamlFiles()` (config/stacks files) | `Failed to parse YAML`                                            | **No**         |
+
+`validateYamlFiles` uses a bare `catch {`, so it binds nothing and a linter cannot see it — the reason it fell outside the pass that fixed the other two. **Known gap, recorded not fixed.** The consequence at this boundary: an invalid `config/stacks.ts` or `config/skill-categories.ts` reports only the failure category, while an invalid `metadata.yaml` reports the YAML parser's line and column. Do not read "Failed to parse YAML" as a uniform contract.
 
 ---
 

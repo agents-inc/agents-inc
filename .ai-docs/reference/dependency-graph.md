@@ -6,31 +6,15 @@ related:
   - reference/architecture-overview.md
   - reference/boundary-map.md
   - reference/features/operations-layer.md
-last_validated: 2026-07-30
+last_validated: 2026-08-01
 ---
 
-<!--
-  2026-07-30 sweep (product 0.146.0). Corrected this pass:
-  - NEW operation `recompile-project-agents.ts` placed in the Operations -> Lib map,
-    plus the new `init`/`edit` -> `recompilePropagatedProjectAgents` edges (D-240).
-  - `uninstall` no longer imports zero operations — it imports `loadAgentDefs`.
-  - Command -> Direct Lib Imports rebuilt from source for init, edit, compile,
-    uninstall, validate, list, doctor (the uninstall and compile rows were the most
-    stale: `pruneGlobalEntriesFromRegisteredProjects`, `loadSkillsMatrixFromSource`,
-    `regenerateScopeConfigTypes`, `ConfigLoadError` were all missing).
-  - Store -> Lib gained `lib/configuration/scope-predicates.ts` and `skillSlotKey`,
-    plus the store's type-only edge back into `components/wizard/source-grid`.
-  - Component -> Lib corrected: `skill-agent-summary`, `step-agents`, `wizard/utils.ts`
-    and `wizard.tsx` all import `lib/wizard/` or extra matrix-provider symbols the
-    table did not list; `hooks/use-category-grid-input.ts` -> `feature-flags` is new (D-269).
-  - Utility consumer counts recounted: `utils/errors.ts` 35 -> 37,
-    `utils/type-guards.ts` 8 -> 9. Others re-verified unchanged.
--->
+<!-- VALIDATED 2026-08-01 · FULL (product 0.147.1) — every edge re-derived from source by grepping every `import` in src/cli, not from release notes. -->
 
 # Dependency Graph
 
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
+**Last Updated:** 2026-08-01
+**Last Validated:** 2026-08-01 (product 0.147.1)
 **Purpose:** Maps how the major layers of the codebase depend on each other, which commands use which operations, and which operations wrap which lib modules. Use this to understand import boundaries and find the right layer for new code.
 
 ---
@@ -78,19 +62,28 @@ last_validated: 2026-07-30
 
 **Allowed dependency directions:**
 
-| From       | May import from                                                                                 |
-| ---------- | ----------------------------------------------------------------------------------------------- |
-| Commands   | Operations, Lib, Components, Stores (none currently), Utils, Types, consts                      |
-| Operations | Lib, Utils, Types, consts                                                                       |
-| Components | Stores, Lib (matrix-provider, wizard, configuration, feature-flags), Utils, Types, consts       |
-| Stores     | Lib (matrix-provider, installation, wizard), Utils, Types, consts                               |
-| Lib        | Other Lib subdirs, Utils, Types, consts (operations only via lazy `await import`, never static) |
-| Utils      | consts, Types (none currently)                                                                  |
-| Types      | (leaf -- no internal imports)                                                                   |
+| From       | May import from                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Commands   | Operations, Lib, Components, Stores (one edge -- see below), Utils, Types, consts                                                     |
+| Operations | Lib, Utils, Types, consts, Components (type-only)                                                                                     |
+| Components | Stores, Lib (matrix-provider, wizard, configuration, feature-flags, loading), Utils, Types, consts                                    |
+| Stores     | Lib (matrix-provider, installation, configuration, wizard), Utils, Types, consts, Components (type)                                   |
+| Lib        | Other Lib subdirs, Utils, Types, consts, Components (type-only, 3 edges below); operations only via lazy `await import`, never static |
+| Utils      | consts, Types (none currently)                                                                                                        |
+| Types      | (leaf -- no internal imports)                                                                                                         |
 
-**Anti-pattern:** Commands should not import stores directly. Currently none do -- the wizard component mediates all store access.
+**Commands -> Stores is no longer an empty edge.** `commands/list.tsx` imports `hydrateWizardStore` from `stores/wizard-store.ts` and seeds the store before rendering `SkillAgentSummary`, which reads its diff state from the store rather than from props. It is the only such edge (`grep -rn 'stores/' src/cli/commands` at time of writing returns exactly one production hit). `init` and `edit` still route all store access through `components/wizard/run-wizard-session.tsx`, so the rule "the wizard component mediates store access" holds for the wizard flow specifically -- but not for the CLI as a whole. See [Command -> Store Imports](#command---store-imports).
 
-**Anti-pattern:** Lib modules MUST NOT statically import the operations layer (operations sit above lib and import back into it, so a static edge forms a load-time cycle that corrupts Vitest module mocks). When a lib function must reuse an operations helper it uses a lazy `await import(...)` inside the function body -- e.g. `installEject()` in `installation/local-installer.ts` imports `copyLocalSkills` lazily, matching the `configuration/config-types-writer.ts` precedent (finding 2026-07-19).
+**Anti-pattern:** Lib modules MUST NOT statically import the operations layer (operations sit above lib and import back into it, so a static edge forms a load-time cycle that corrupts Vitest module mocks). When a lib function must reuse an operations helper it uses a lazy `await import(...)` inside the function body -- `installEject()` in `installation/local-installer.ts` imports `copyLocalSkills` that way (finding 2026-07-19). `configuration/config-types-writer.ts` uses the same lazy technique for `loading/source-loader` + `loading/loader`; those are lib->lib, deferred for cost rather than to break a cycle. Those three are the only `await import(` call sites in `src/cli/lib/`.
+
+**Type-only edges that cross a layer downward.** Three lib modules and the store import a shape that a component owns. All four are `import type` -- no runtime edge, no load-time cycle, so they do not violate the direction rules:
+
+| Importer                                         | Imports from                      | Types                           |
+| ------------------------------------------------ | --------------------------------- | ------------------------------- |
+| `lib/wizard/build-step-logic.ts`                 | `components/wizard/category-grid` | `CategoryRow`, `CategoryOption` |
+| `lib/operations/project/write-project-config.ts` | `components/wizard/wizard`        | `WizardResultV2`                |
+| `lib/installation/local-installer.ts`            | `components/wizard/wizard`        | `WizardResultV2`                |
+| `stores/wizard-store.ts`                         | `components/wizard/source-grid`   | `SourceOption`, `SourceRow`     |
 
 ---
 
@@ -129,10 +122,10 @@ Commands that import directly from `lib/` modules in addition to (or instead of)
 | `edit`              | `lib/installation/` (detectMigrations, executeMigration, isHomeDirectory, installBaseDir, resolveInstallPaths, writeConfigFile, Installation type), `lib/matrix/matrix-provider` (matrix, getSkillById, getSkillDisplayName), `lib/configuration/scope-predicates` (activeAgentScopeMap, isActiveAt), `lib/configuration/` (loadProjectConfigFromDir), `lib/loading/` (SourceLoadResult type), `lib/plugins/` (discoverAllPluginSkills, buildMarketplacePluginRef, toClaudePluginScope), `lib/skills/` (deleteLocalSkill, migrateLocalSkillScope), `lib/wizard/` (formatScopeTag)                                                                                |
 | `compile`           | `lib/configuration` (**ConfigLoadError**, effectivelyExcludedSkillIds, loadProjectConfig, loadProjectConfigFromDir, resolveSource), `lib/stacks` (getStackSkillIds), `lib/loading` (**loadSkillsMatrixFromSource**), `lib/installation` (Installation type, **regenerateScopeConfigTypes**)                                                                                                                                                                                                                                                                                                                                                                      |
 | `doctor`            | `lib/configuration` (effectivelyExcludedSkillIds, validateProjectConfig), `lib/matrix/matrix-provider` (matrix), `lib/skills` (discoverLocalSkills), `lib/stacks` (getStackSkillIds), `lib/agents` (filterExcludedEntries, listAgentMdFiles), `lib/plugins` (getVerifiedPluginInstallPaths, parseMarketplacePluginRef), `lib/installation` (isHomeDirectory, installBaseDir, resolveInstallPaths)                                                                                                                                                                                                                                                                |
-| `eject`             | `lib/configuration/` (saveSourceToProjectConfig, resolveSource, loadProjectSourceConfig), `lib/matrix/matrix-provider` (matrix), `lib/skills/` (copySkillsToLocalFlattened)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `search`            | `lib/configuration/` (resolveAllSources), `lib/loading/` (fetchFromSource, parseFrontmatter)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `update`            | `lib/skills/` (injectForkedFromMetadata, SkillComparisonResult type)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `uninstall`         | `lib/plugins/` (listPluginNames, getProjectPluginsDir, buildMarketplacePluginRef, parseMarketplacePluginRef, toClaudePluginScope), `lib/skills/` (readForkedFromMetadata), `lib/agents/` (listAgentMdFiles), `lib/installation/` (deregisterProjectPath, isHomeDirectory, **pruneGlobalEntriesFromRegisteredProjects**, resolveInstallPaths), `lib/loading` (**loadSkillsMatrixFromSource**), `lib/configuration/project-config` (loadProjectConfigFromDir)                                                                                                                                                                                                      |
+| `eject`             | `lib/configuration/` (saveSourceToProjectConfig, resolveSource, loadProjectSourceConfig, **generateConfigSource**, **getProjectConfigPath**), `lib/matrix/matrix-provider` (matrix), `lib/skills/` (copySkillsToLocalFlattened)                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `search`            | `lib/configuration/` (resolveAllSources), `lib/loading/` (fetchFromSource, parseFrontmatter), `lib/metadata-keys` (**IMPORT_DEFAULTS**)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `update`            | `lib/skills/` (injectForkedFromMetadata, SkillComparisonResult type), `lib/loading/source-loader` (**SourceLoadResult** type)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `uninstall`         | `lib/plugins/` (listPluginNames, getProjectPluginsDir, buildMarketplacePluginRef, parseMarketplacePluginRef, toClaudePluginScope), `lib/skills/` (readForkedFromMetadata), `lib/agents/` (listAgentMdFiles), `lib/installation/` (deregisterProjectPath, isHomeDirectory, pruneGlobalEntriesFromRegisteredProjects, resolveInstallPaths), `lib/loading` (loadSkillsMatrixFromSource), `lib/configuration/project-config` (**ConfigLoadError**, loadProjectConfigFromDir)                                                                                                                                                                                         |
 | `list`              | `lib/plugins/` (getInstallationInfo, formatInstallationDisplay), `lib/installation/installation` (detectInstallation, INSTALL_MODE_LABELS), `lib/configuration/project-config` (loadProjectConfig)                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `validate`          | `lib/plugins/` (validateAllPlugins, **validatePlugin**, printPluginValidationResult, validateSkillFrontmatter, validateAgentFrontmatter, getUserPluginsDir, getProjectPluginsDir, **getInstalledPluginsRegistryPath**, **listRegisteredPluginInstalls**, ResolvedPlugin type), `lib/source-validator` (validateSource), `lib/configuration/` (isLocalSource, resolveAllSources, SourceEntry type), `lib/installation/` (resolveInstallPaths, isHomeDirectory), `lib/agents/` (listAgentMdFiles), `lib/schemas` (**splitMetadataValidationIssues**, validateSkillMetadata) — no longer imports `lib/schema-validator`                                             |
 | `import skill`      | `lib/loading/` (fetchFromSource), `lib/schemas` (importedSkillMetadataSchema), `lib/skills/skill-metadata` (writeMetadataYaml), `lib/versioning` (getCurrentDate, computeFileHash), `lib/metadata-keys` (IMPORT_DEFAULTS), `utils/string` (toTitleCase), `utils/yaml-schema` (stripYamlSchemaComment)                                                                                                                                                                                                                                                                                                                                                            |
@@ -142,24 +135,38 @@ Commands that import directly from `lib/` modules in addition to (or instead of)
 | `build plugins`     | `lib/skills` (compileAllSkillPlugins, compileSkillPlugin, printCompilationSummary), `lib/agents` (compileAllAgentPlugins, printAgentCompilationSummary), `lib/plugins` (readPluginManifest)                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `build marketplace` | `lib/marketplace-generator` (generateMarketplace, writeMarketplace, getMarketplaceStats), `lib/validate-kebab-name` (validateKebabCaseName)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
+**Two command-module edges sit outside the layer model.** `commands/new/marketplace.ts` imports `resolveAuthorOrDefault` and `scaffoldSkillFiles` from its sibling `commands/new/skill.ts` (marketplace scaffolding reuses the skill scaffolder), and `hooks/init.ts` imports `runDashboardFlow` from `commands/init.js` (the oclif init hook routes a bare invocation to the dashboard). Both are command-to-command; neither goes through operations or lib.
+
+---
+
+## Command -> Store Imports
+
+| Command | Store Import                                 | Why                                                                                                                                                                                                     |
+| ------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list`  | `stores/wizard-store` (`hydrateWizardStore`) | `SkillAgentSummary` reads installed/diff state from the store, not from props, so `list` must seed the store before rendering it. Renders no wizard, so there is no `runWizardSession` to do it for it. |
+
+No other command imports a store. `init` and `edit` reach the store only through `components/wizard/run-wizard-session.tsx`, which calls the same `hydrateWizardStore` on their behalf.
+
 ---
 
 ## Command -> Component Imports
 
 Commands that render Ink components.
 
-| Command     | Components Imported                                                                                                                                                                                                                                |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init`      | `components/wizard/run-wizard-session` (runWizardSession), `components/wizard/wizard` (WizardResultV2 type), `components/common/select-list` (SelectList), `components/common/prompt-confirm` (promptValue), `components/common/spinner` (Spinner) |
-| `edit`      | `components/wizard/run-wizard-session` (runWizardSession), `components/wizard/wizard` (WizardResultV2 type), `components/common/spinner` (Spinner)                                                                                                 |
-| `list`      | `components/wizard/skill-agent-summary` (SkillAgentSummary)                                                                                                                                                                                        |
-| `update`    | `components/common/confirm` (Confirm), `components/common/prompt-confirm` (promptConfirm)                                                                                                                                                          |
-| `uninstall` | `components/common/confirm` (Confirm), `components/common/prompt-confirm` (promptConfirm)                                                                                                                                                          |
-| `new agent` | `components/common/prompt-confirm` (promptValue); otherwise inline Ink components + `@inkjs/ui` TextInput                                                                                                                                          |
+| Command     | Components Imported                                                                                                                                                                                                                                                                                                        |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`      | `components/wizard/run-wizard-session` (runWizardSession), `components/wizard/wizard` (WizardResultV2 type), `components/hooks/use-terminal-dimensions` (**useTerminalDimensions**), `components/common/select-list` (SelectList), `components/common/prompt-confirm` (promptValue), `components/common/spinner` (Spinner) |
+| `edit`      | `components/wizard/run-wizard-session` (runWizardSession), `components/wizard/wizard` (WizardResultV2 type), `components/common/spinner` (Spinner)                                                                                                                                                                         |
+| `list`      | `components/wizard/skill-agent-summary` (SkillAgentSummary)                                                                                                                                                                                                                                                                |
+| `update`    | `components/common/confirm` (Confirm), `components/common/prompt-confirm` (promptConfirm)                                                                                                                                                                                                                                  |
+| `uninstall` | `components/common/confirm` (Confirm), `components/common/prompt-confirm` (promptConfirm)                                                                                                                                                                                                                                  |
+| `new agent` | `components/common/prompt-confirm` (promptValue); otherwise inline Ink components + `@inkjs/ui` TextInput                                                                                                                                                                                                                  |
 
 Note: `init` and `edit` render the wizard through `components/wizard/run-wizard-session.tsx` (`runWizardSession`) rather than importing the `Wizard` component directly — they only import the `WizardResultV2` type from `components/wizard/wizard`.
 
 Note: `search` was rewritten to use `@oclif/table` and no longer renders Ink components. The `components/skill-search/` directory was removed.
+
+Note: `init` is the only command that imports a component **hook** (`useTerminalDimensions`). Its dashboard view is declared inline in `init.tsx` rather than as a component file, so it consumes the hook directly instead of through a wizard component.
 
 ---
 
@@ -171,33 +178,37 @@ Each operation file and which lib modules it wraps.
 
 | Operation            | File                            | Lib Modules Used                                                                                                                           |
 | -------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `loadSource`         | `source/load-source.ts`         | `lib/loading/` (loadSkillsMatrixFromSource)                                                                                                |
+| `loadSource`         | `source/load-source.ts`         | `lib/loading/` (loadSkillsMatrixFromSource, SourceLoadResult type), `utils/logger` (enableBuffering, drainBuffer, disableBuffering)        |
 | `ensureMarketplace`  | `source/ensure-marketplace.ts`  | `lib/loading/` (fetchMarketplace), `utils/exec` (claudePluginMarketplaceExists, claudePluginMarketplaceAdd, claudePluginMarketplaceUpdate) |
 | `requireMarketplace` | `source/require-marketplace.ts` | `source/ensure-marketplace` (ensureMarketplace) — resolves-or-errors wrapper used by `BaseCommand.requireMarketplaceOrExit()`              |
 
 ### Project Operations (`lib/operations/project/`)
 
-| Operation                                                               | File                                   | Lib Modules Used                                                                                                                                                                                                                                                                                        |
-| ----------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `detectProject`                                                         | `project/detect-project.ts`            | `lib/installation/` (detectInstallation), `lib/configuration/` (loadProjectConfig)                                                                                                                                                                                                                      |
-| `detectBothInstallations`                                               | `project/detect-both-installations.ts` | `lib/installation/` (detectGlobalInstallation, detectProjectInstallation)                                                                                                                                                                                                                               |
-| `compileAgents`                                                         | `project/compile-agents.ts`            | `lib/agents/` (recompileAgents), `lib/configuration/` (loadProjectConfigFromDir), `lib/installation/` (buildAgentScopeMap)                                                                                                                                                                              |
-| `compileAgentsAllScopes`                                                | `project/compile-agents-all-scopes.ts` | `project/compile-agents` (compileAgents), `lib/installation/` (isHomeDirectory, resolveInstallPaths) — fans compileAgents out across project + global scopes; used by `init`/`edit`                                                                                                                     |
-| `recompileRegisteredProjectAgents` / `recompilePropagatedProjectAgents` | `project/recompile-project-agents.ts`  | `project/compile-agents` (compileAgents, CompilationResult type), `project/load-agent-defs` (loadAgentDefs), `skills/` (discoverInstalledSkills), `lib/installation/` (resolveInstallPaths), `utils/errors` (getErrorMessage) — **operation-to-operation composition**, the only such edge in the layer |
-| `writeProjectConfig`                                                    | `project/write-project-config.ts`      | `lib/installation/` (buildAndMergeConfig, writeScopedConfigs, resolveInstallPaths), `lib/loading/` (loadAllAgents), `lib/configuration/config-writer` (ensureBlankGlobalConfig) — returns `ConfigWriteResult.propagatedProjects`                                                                        |
-| `loadAgentDefs`                                                         | `project/load-agent-defs.ts`           | `lib/agents/` (getAgentDefinitions), `lib/loading/` (loadAllAgents)                                                                                                                                                                                                                                     |
+| Operation                                                               | File                                   | Lib Modules Used                                                                                                                                                                                                                                                                                                                                                                          |
+| ----------------------------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `detectProject`                                                         | `project/detect-project.ts`            | `lib/installation/` (detectInstallation, Installation type), `lib/configuration/` (**ConfigLoadError**, loadProjectConfig)                                                                                                                                                                                                                                                                |
+| `detectBothInstallations`                                               | `project/detect-both-installations.ts` | `lib/installation/` (detectGlobalInstallation, detectProjectInstallation, **isHomeDirectory**, Installation type)                                                                                                                                                                                                                                                                         |
+| `compileAgents`                                                         | `project/compile-agents.ts`            | `lib/agents/` (recompileAgents), `lib/agents/list-compiled-agents` (**pruneStaleCompiledAgents**), `lib/configuration/` (loadProjectConfigFromDir), `lib/installation/` (buildAgentScopeMap)                                                                                                                                                                                              |
+| `compileAgentsAllScopes`                                                | `project/compile-agents-all-scopes.ts` | `project/compile-agents` (compileAgents, CompilationResult type), `lib/installation/` (isHomeDirectory, resolveInstallPaths) — fans compileAgents out across project + global scopes; used by `init`/`edit`                                                                                                                                                                               |
+| `recompileRegisteredProjectAgents` / `recompilePropagatedProjectAgents` | `project/recompile-project-agents.ts`  | `project/compile-agents` (compileAgents, CompilationResult type), `project/load-agent-defs` (loadAgentDefs), `skills/` (discoverInstalledSkills), `lib/installation/` (resolveInstallPaths), `utils/errors` (getErrorMessage) — the deepest operation-to-operation composition in the layer                                                                                               |
+| `writeProjectConfig`                                                    | `project/write-project-config.ts`      | `lib/installation/` (buildAndMergeConfig, writeScopedConfigs, resolveInstallPaths, **isHomeDirectory**), `lib/loading/` (**loadMergedAgents**, SourceLoadResult type), `lib/configuration/` (**AuthoritativeScope** type), `lib/configuration/config-writer` (ensureBlankGlobalConfig), `components/wizard/wizard` (WizardResultV2 type) — returns `ConfigWriteResult.propagatedProjects` |
+| `loadAgentDefs`                                                         | `project/load-agent-defs.ts`           | `lib/agents/` (getAgentDefinitions), `lib/loading/` (**loadMergedAgents**)                                                                                                                                                                                                                                                                                                                |
 
 ### Skills Operations (`lib/operations/skills/`)
 
-| Operation                 | File                                  | Lib Modules Used                                                                      |
-| ------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------- |
-| `discoverInstalledSkills` | `skills/discover-skills.ts`           | `lib/plugins/` (discoverAllPluginSkills), `lib/loading/` (parseFrontmatter)           |
-| `copyLocalSkills`         | `skills/copy-local-skills.ts`         | `lib/installation/` (resolveInstallPaths), `lib/skills/` (copySkillsToLocalFlattened) |
-| `compareSkillsWithSource` | `skills/compare-skills.ts`            | `lib/skills/` (compareLocalSkillsWithSource)                                          |
-| `collectScopedSkillDirs`  | `skills/collect-scoped-skill-dirs.ts` | (none -- uses utils/fs directly)                                                      |
-| `findSkillMatch`          | `skills/find-skill-match.ts`          | `lib/skills/` (SkillComparisonResult type only)                                       |
-| `installPluginSkills`     | `skills/install-plugin-skills.ts`     | (none -- uses utils/exec directly)                                                    |
-| `uninstallPluginSkills`   | `skills/uninstall-plugin-skills.ts`   | (none -- uses utils/exec directly)                                                    |
+| Operation                 | File                                  | Lib Modules Used                                                                                                                                                 |
+| ------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `discoverInstalledSkills` | `skills/discover-skills.ts`           | `lib/plugins/` (discoverAllPluginSkills), `lib/loading/` (**loadSkillsFromDir**), `lib/installation/is-home-directory` (**isHomeDirectory**)                     |
+| `copyLocalSkills`         | `skills/copy-local-skills.ts`         | `lib/installation/` (resolveInstallPaths), `lib/skills/` (copySkillsToLocalFlattened, **deleteLocalSkill**), `lib/loading/source-loader` (SourceLoadResult type) |
+| `compareSkillsWithSource` | `skills/compare-skills.ts`            | `lib/skills/` (compareLocalSkillsWithSource), `skills/collect-scoped-skill-dirs` (**collectScopedSkillDirs** — sibling operation)                                |
+| `collectScopedSkillDirs`  | `skills/collect-scoped-skill-dirs.ts` | `lib/installation/is-home-directory` (**isHomeDirectory**); otherwise `utils/fs` directly                                                                        |
+| `findSkillMatch`          | `skills/find-skill-match.ts`          | `lib/skills/` (SkillComparisonResult type only)                                                                                                                  |
+| `installPluginSkills`     | `skills/install-plugin-skills.ts`     | `lib/plugins/` (**buildMarketplacePluginRef**, **toClaudePluginScope**), `utils/exec` (claudePluginInstall)                                                      |
+| `uninstallPluginSkills`   | `skills/uninstall-plugin-skills.ts`   | `lib/plugins/` (**buildMarketplacePluginRef**, **toClaudePluginScope**), `utils/exec` (claudePluginUninstall)                                                    |
+
+**`loadAllAgents` vs `loadMergedAgents`.** Both are exported from `lib/loading/index.ts` and neither operation uses the first. `loadAgentDefs` and `writeProjectConfig` call **`loadMergedAgents`** (source agents merged with project overrides). `loadAllAgents` is lib-internal in practice — its only production callers are `lib/loading/loader.ts` itself, `lib/loading/source-loader.ts` and `lib/agents/agent-recompiler.ts`. Picking the wrong one silently drops project-local agent overrides.
+
+**`isHomeDirectory` is imported by deep path, not through the barrel.** `discover-skills.ts` and `collect-scoped-skill-dirs.ts` both import from `lib/installation/is-home-directory.js` directly rather than `lib/installation/index.js`, avoiding pulling the whole installation barrel (and `local-installer.ts` with it) into the skills-discovery path.
 
 ---
 
@@ -291,13 +302,23 @@ Total: 9 production consumers (`wizard-store.ts` no longer imports type guards)
 
 Total: 4 production consumers
 
-### `utils/terminal.ts` (clearTerminalScreen)
+### `utils/terminal.ts` (clearTerminalScreen, isTerminalLargeEnough, formatTerminalTooSmallMessage)
 
-| Layer    | Consumer Files                         |
-| -------- | -------------------------------------- |
-| Commands | `base-command.ts`, `commands/init.tsx` |
+| Layer      | Consumer Files                                                                                   |
+| ---------- | ------------------------------------------------------------------------------------------------ |
+| Commands   | `base-command.ts` (all three), `commands/init.tsx` (`clearTerminalScreen`)                       |
+| Components | `components/wizard/wizard-layout.tsx` (`isTerminalLargeEnough`, `formatTerminalTooSmallMessage`) |
 
-Total: 2 production consumers (`base-command.ts` uses it in `ensureTerminalSize()`/`clearTerminal()`)
+Total: 3 production consumers
+
+`isTerminalLargeEnough` and `formatTerminalTooSmallMessage` were added in 0.147.0 and are the reason this module now has a **component** consumer. The terminal-size minimum is enforced at two points that must not drift:
+
+| Enforcement point                  | File                                  | When it runs                                                                          |
+| ---------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------- |
+| `BaseCommand.ensureTerminalSize()` | `base-command.ts`                     | Once in `init()`, before Ink mounts; blocks until the terminal grows                  |
+| `WizardLayout` size guard          | `components/wizard/wizard-layout.tsx` | Every render, off `useTerminalDimensions()`; replaces the wizard tree while too small |
+
+Both read `MIN_TERMINAL_SIZE` from `consts.ts` through the same two helpers, so the threshold and the message exist in one place each. Before 0.147.0 the startup gate hardcoded its own copy of the threshold while the constant in `consts.ts` had zero importers, so editing the documented constant changed nothing.
 
 ### `utils/yaml-schema.ts` (yamlSchemaComment, stripYamlSchemaComment)
 
@@ -326,9 +347,11 @@ The wizard store (`stores/wizard-store.ts`) imports from:
 | `lib/configuration/scope-predicates.ts` | `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`                                                                       |
 | `lib/wizard/`                           | `buildCategoriesForDomain`, `isCompatibleWithSelectedFrameworks`, `FRAMEWORK_CATEGORY_ID`, `orderDomains`, `skillSlotKey` |
 
-Plus one **type-only edge back into components**: `import type { SourceOption, SourceRow } from "../components/wizard/source-grid.js"`. This is the store consuming a row shape the component owns; it carries no runtime import, so it does not violate the store->components direction ban.
+Plus one **type-only edge back into components**: `import type { SourceOption, SourceRow } from "../components/wizard/source-grid.js"`. This is the store consuming a row shape the component owns; it carries no runtime import, so it does not violate the store->components direction ban. It is one of four such edges — see the type-only edge table under the layer diagram.
 
 `skillSlotKey` is load-bearing: `lib/wizard/scope-diff.ts` (the confirm step's `computeScopeDiff`) and the store's Sources-tab collectors both build their keys with it, so the two surfaces cannot drift apart on what "the same slot" means (D-278).
+
+`agentSlotKey` is exported alongside it from `lib/wizard/scope-diff.ts` (0.146.1) but has **no consumer outside its own module** — grepped at time of writing, every call site is inside `scope-diff.ts`. It is exported ahead of a second caller on purpose: routing through it from the start is what the skill side did not do, and re-deriving on `name` alone is how that side drifted. Treat its zero-consumer state as intended, not as dead code.
 
 ---
 
@@ -342,6 +365,7 @@ Plus one **type-only edge back into components**: `import type { SourceOption, S
 | `hooks/use-source-grid-search-modal.ts` | `lib/matrix/matrix-provider`       | `matrix`                                                                  |
 | `hooks/use-source-operations.ts`        | `lib/configuration/source-manager` | `addSource`, `removeSource`                                               |
 | `wizard/wizard-layout.tsx`              | `lib/feature-flags`                | `FEATURE_FLAGS`                                                           |
+| `wizard/hotkeys.ts`                     | `lib/feature-flags`                | `FEATURE_FLAGS` (gates `isInfoPanelAvailable` and the filter hotkey)      |
 | `wizard/domain-selection.tsx`           | `lib/matrix/matrix-provider`       | `matrix`                                                                  |
 | `wizard/step-agents.tsx`                | `lib/matrix/matrix-provider`       | `matrix`                                                                  |
 | `wizard/step-agents.tsx`                | `lib/wizard/`                      | `deriveScopeBadges`, `formatScopeTag`                                     |
@@ -355,13 +379,14 @@ Plus one **type-only edge back into components**: `import type { SourceOption, S
 | `wizard/skill-agent-summary.tsx`        | `lib/wizard/`                      | `computeScopeDiff`; `AgentDiffRow`, `DiffRowStatus`, `SkillDiffRow` types |
 | `wizard/wizard.tsx`                     | `lib/matrix/`                      | `validateSelection`                                                       |
 | `wizard/wizard.tsx`                     | `lib/matrix/matrix-provider`       | `getSkillById`, `findStack`                                               |
-| `wizard/wizard.tsx`                     | `lib/feature-flags`                | `FEATURE_FLAGS`                                                           |
 | `wizard/utils.ts`                       | `lib/matrix/matrix-provider`       | `findStack`                                                               |
 | `wizard/utils.ts`                       | `lib/wizard/`                      | `orderDomains`                                                            |
 | `wizard/step-settings.tsx`              | `lib/configuration/source-manager` | `getSourceSummary`, `SourceSummary`                                       |
 | `wizard/step-settings.tsx`              | `lib/configuration/config`         | `DEFAULT_SOURCE`                                                          |
 
-**Neither summary surface has a lib edge.** `wizard/step-confirm.tsx` imports only `ink` and `SummaryPanel` — it is 25 lines whose whole body is a `useInput` for `Enter`/`Esc`. `wizard/summary-panel.tsx` imports no lib module either: it composes `SkillAgentSummary` (which owns the `computeScopeDiff` call), `ScrollAffordance` and the `usePanelScroll` hook, and reaches `findStack` indirectly through `getStackName` in `wizard/utils.ts` (which carries the edge, listed above). `wizard/info-panel.tsx` no longer exists; its former `findStack` edge went with it.
+**`wizard/wizard.tsx` no longer imports `FEATURE_FLAGS`.** The 0.147.1 dead-import sweep removed it — the flag checks it used to gate now live behind `isInfoPanelAvailable()` in `wizard/hotkeys.ts`, which is where the edge moved. Its remaining lib edges are matrix-only.
+
+**Neither summary surface has a lib edge.** `wizard/step-confirm.tsx` imports only `ink` and `SummaryPanel`; its whole body is a `useInput` claiming `Enter` and `Esc`, deliberately disjoint from the `↑`/`↓` that `SummaryPanel` owns. `wizard/summary-panel.tsx` imports no lib module either: it composes `SkillAgentSummary` (which owns the `computeScopeDiff` call), `ScrollAffordance` and the `usePanelScroll` hook, and reaches `findStack` indirectly through `getStackName` in `wizard/utils.ts` (which carries the edge, listed above). `wizard/info-panel.tsx` no longer exists; its former `findStack` edge went with it. `SummaryPanel` is rendered by two surfaces — `wizard/wizard-layout.tsx` (the `I` overlay) and `wizard/step-confirm.tsx` — which is what makes the two agree by construction.
 
 **Shared overflow component:** `wizard/scroll-affordance.tsx` (`ScrollAffordance`) is consumed by exactly two components — `wizard/source-grid.tsx` and `wizard/summary-panel.tsx`. It imports only `ink` and `SCROLL_VIEWPORT` from `consts.ts` — no lib edge. `hooks/use-section-scroll.ts` and `hooks/use-panel-scroll.ts` produce the `hidden{Above,Below}` counts it renders (the former also read by `category-grid.tsx`, which discards them by design), and `use-section-scroll.ts` reads `SCROLL_VIEWPORT.MIN_VIEWPORT_ROWS` from the same constant block, but neither imports the component.
 
@@ -375,7 +400,7 @@ Plus one **type-only edge back into components**: `import type { SourceOption, S
 
 3. **`lib/matrix/matrix-provider.ts` is the most cross-cutting lib module** -- imported by commands, components, stores, and other lib modules. It provides the global matrix singleton.
 
-4. **Components access lib through a narrow set of modules**: primarily `matrix-provider`, `wizard/`, `feature-flags`, and `configuration/source-manager`. They never import from `installation/`, `plugins/`, `skills/`, or `stacks/` directly.
+4. **Components access lib through a narrow set of modules.** The complete set, from the table above: `matrix/matrix-provider`, `matrix/index`, `lib/wizard/`, `feature-flags`, `configuration/source-manager`, `configuration/index`, `configuration/config`, `loading/multi-source-loader`. Grepped at time of writing, no component imports from `installation/`, `plugins/`, `skills/`, `stacks/`, `agents/`, `compiler.ts` or `schemas.ts`.
 
 5. **`utils/fs.ts` and `utils/logger.ts` are the most-used utilities** at 52 and 55 production consumers respectively. They are consumed at every layer.
 
@@ -391,11 +416,24 @@ Plus one **type-only edge back into components**: `import type { SourceOption, S
 
 11. **`new skill`, `new agent`, `new marketplace` are feature-gated at entry** -- each command's `run()` begins with `if (!FEATURE_FLAGS.NEW_*_COMMAND) this.error(featureDisabledError("new ..."))`. All three `NEW_*_COMMAND` flags default `false` in `lib/feature-flags.ts`, so these commands hard-exit before doing any work. The shared `featureDisabledError(commandName)` message factory lives alongside the flags in the same file (see the direct-lib-import rows above where each command imports `FEATURE_FLAGS, featureDisabledError`).
 
-12. **Operation-to-operation composition exists in exactly one place** -- `project/recompile-project-agents.ts` imports `compileAgents`, `loadAgentDefs` and `discoverInstalledSkills` from sibling operations. It is a _composite_ operation by design (one call recompiles a whole registered project), not a lib wrapper. Every other operation wraps lib directly.
+12. **Operation-to-operation composition happens in four operations, not one.** Verified by grep of relative sibling imports across `lib/operations/` at time of writing:
+
+    | Operation                              | Imports from siblings                                       | Shape                                                              |
+    | -------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------ |
+    | `project/recompile-project-agents.ts`  | `compileAgents`, `loadAgentDefs`, `discoverInstalledSkills` | Deepest composite — one call recompiles a whole registered project |
+    | `project/compile-agents-all-scopes.ts` | `compileAgents`                                             | Fan-out across scopes                                              |
+    | `skills/compare-skills.ts`             | `collectScopedSkillDirs`                                    | Reuses the scope-split directory walk                              |
+    | `source/require-marketplace.ts`        | `ensureMarketplace`                                         | Resolves-or-errors wrapper                                         |
+
+    Every other operation wraps lib directly. This observation previously read "exactly one place" and was wrong for three of the four.
 
 13. **The uninstall command reaches deepest into `lib/installation/`** -- `pruneGlobalEntriesFromRegisteredProjects` + `deregisterProjectPath` + `isHomeDirectory` + `resolveInstallPaths`, plus `loadSkillsMatrixFromSource` from `lib/loading/`. There is no `uninstallProject` operation; the removal plan, the plugin teardown and the registered-project pruning all live in the command (D-274).
 
 14. **`commands/compile.ts` now depends on `lib/loading/` and `lib/installation/regenerateScopeConfigTypes`** -- previously compile touched neither. This is the `config-types.ts` refresh pass; it uses `matrixOnly: true` so the new `lib/loading/` edge does not make compile network-dependent.
+
+15. **`utils/terminal.ts` spans the pre-Ink / in-render divide by design.** Its consumers sit on both sides of the Ink mount — `base-command.ts` runs before Ink exists, `components/wizard/wizard-layout.tsx` runs on every render. Six utils modules have component consumers (`errors`, `logger`, `typed-object`, `string`, `type-guards`, `terminal`); what distinguishes this one is that both consumers implement the _same_ rule, so `utils/` is the only layer both can reach without one importing the other. See the `utils/terminal.ts` section above.
+
+16. **A dead import can survive a doc validation pass that a missing import cannot.** The 0.147.1 sweep removed 37 unused imports from production; this file was carrying at least one of them (`wizard/wizard.tsx` -> `lib/feature-flags`) as a documented edge, and had never recorded `wizard/hotkeys.ts` -> `lib/feature-flags` at all. Both defects came from validating the doc's rows against source rather than diffing source's edges against the doc's rows. Rebuild these tables by grepping every `import` in the owned directory, not by checking the rows that are already written.
 
 ---
 

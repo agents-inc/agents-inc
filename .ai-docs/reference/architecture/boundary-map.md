@@ -9,10 +9,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!--
-  2026-07-30 sweep (product 0.146.0). Pointer only — verified it still points at the
-  root-level original, which is where the 0.146.0 content landed. Date re-stamped.
--->
+<!-- VALIDATED 2026-07-30 · POINTER (product 0.146.0) — redirect to the root-level original confirmed to resolve. -->
 
 # Boundary Map
 

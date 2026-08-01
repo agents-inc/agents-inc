@@ -28,7 +28,12 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0, UX/rendering pass): corrected the setSourceSelection row to the 3-arg scope-keyed signature (D-262) and the setAllSources* rows to active-entries-only (D-265); rewrote "Focus Seeding" — it claimed CategoryGrid's post-mount effect was deleted, but D-272 re-added one that reports the drawn cell, so the skill path now has two cooperating writers, not one; gated the F hotkey rows on FEATURE_FLAGS.FILTER_INCOMPATIBLE (D-269) and added the toggleFilterIncompatible global-lock guard; corrected buildSourceRows' return shape (disabled?/added? were missing); fixed the Tombstone Lifecycle table — the "deselect a globally-installed skill mints a tombstone" row contradicted D-277, which refuses that deselect outright and left applySkillRemoval/applyAgentToggle unable to mint one at all; added a Sources-tab session-diff note to Diff Projection (D-278) -->
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
+     ✓ Global Hotkeys `I` row, Overlay Blocking, Diff Projection; re-verified unchanged: the
+       nine-HOTKEY sentinel, getStepProgress, Initial State table, DOMAIN_AGENTS, both hydration
+       sequences, the reset matrix, goBack's empty-history no-op
+     ✗ step diagram, transition tables, action->state tables, tombstones, guards, focus seeding — 2026-07-30
+-->
 
 # State Transitions
 
@@ -259,7 +264,7 @@ The wizard store is module-level singleton state, so a fresh `hydrateWizardStore
 | `setSourceSelection(skillId, src, scope)` | `skillConfigs`     | **Scope-keyed** (D-262): rewrites `source` on the ACTIVE entry at `(skillId, scope)` only, via `withActiveEntrySource`. A dual-scope skill's excluded global tombstone keeps its own source, so a project-side change cannot leak across scopes. No-op with warning if `skillId` or `src` is empty. The acting scope is supplied by `step-sources.tsx`'s `handleGridSelect` from the skill's single non-inert row. |
 | `setCustomizeSources(customize)`          | `customizeSources` | None                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `setAllSourcesEject()`                    | `skillConfigs`     | Sets `source: "eject"` on every **active** skill config. Excluded tombstones are skipped (D-265).                                                                                                                                                                                                                                                                                                                  |
-| `setAllSourcesPlugin()`                   | `skillConfigs`     | Sets `source` to the first non-`local` `availableSource` on every **active** skill config; an entry with no marketplace source keeps its current one. Excluded tombstones are skipped (D-265).                                                                                                                                                                                                                     |
+| `setAllSourcesPlugin()`                   | `skillConfigs`     | Sets `source` to the first `availableSources` entry whose `type` is not `"local"`, on every **active** skill config; an entry with no marketplace source keeps its current one. Excluded tombstones are skipped (D-265).                                                                                                                                                                                           |
 | `bindSkill(skill)`                        | `boundSkills`      | Appends to array. Silently skips (with warning) if same `id + sourceUrl` already exists.                                                                                                                                                                                                                                                                                                                           |
 
 ### UI Toggle Actions
@@ -381,13 +386,13 @@ The "defaults" shortcut case: `approach === "stack" && selectedStackId && stackA
 
 ### Global Hotkeys (wizard.tsx)
 
-| Hotkey | Key | Active When                              | Action                           | Store Method                                           |
-| ------ | --- | ---------------------------------------- | -------------------------------- | ------------------------------------------------------ |
-| `A`    | `a` | `step === "build"` + stack selected      | Accept defaults, jump to confirm | `setStackAction("defaults")` then `setStep("confirm")` |
-| `S`    | `s` | `step === "build"`                       | Toggle focused skill scope       | `toggleSkillScope(focusedSkillId)`                     |
-| `S`    | `s` | `step === "agents"`                      | Toggle focused agent scope       | `toggleAgentScope(focusedAgentId)`                     |
-| `S`    | `s` | `step === "sources"`                     | Toggle settings overlay          | `toggleSettings()`                                     |
-| `I`    | `i` | Any step (if `FEATURE_FLAGS.INFO_PANEL`) | Toggle info overlay              | `toggleInfo()`                                         |
+| Hotkey | Key | Active When                                                                                 | Action                           | Store Method                                           |
+| ------ | --- | ------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------ |
+| `A`    | `a` | `step === "build"` + stack selected                                                         | Accept defaults, jump to confirm | `setStackAction("defaults")` then `setStep("confirm")` |
+| `S`    | `s` | `step === "build"`                                                                          | Toggle focused skill scope       | `toggleSkillScope(focusedSkillId)`                     |
+| `S`    | `s` | `step === "agents"`                                                                         | Toggle focused agent scope       | `toggleAgentScope(focusedAgentId)`                     |
+| `S`    | `s` | `step === "sources"`                                                                        | Toggle settings overlay          | `toggleSettings()`                                     |
+| `I`    | `i` | `isInfoPanelAvailable(step)` — i.e. `FEATURE_FLAGS.INFO_PANEL` **and** `step !== "confirm"` | Open info overlay                | `toggleInfo()`                                         |
 
 ### Build Step Hotkeys (use-category-grid-input.ts)
 
@@ -414,6 +419,8 @@ The "defaults" shortcut case: `approach === "stack" && selectedStackId && stackA
 ### Overlay Blocking
 
 When `showSettings === true`, all input is blocked except `S` (to close settings). When `showInfo === true`, all input is blocked except `ESC` and `I` (to close info).
+
+**Opening is step-gated; closing is not.** `wizard.tsx` tests `store.showInfo` in a branch that runs BEFORE the `isInfoPanelAvailable(store.step)` check, so an already-open panel always closes on `I`/`ESC` regardless of step. Gating the close would strand an overlay opened on a step that later became disallowed. The confirm step is excluded from OPENING because it already renders the same `SummaryPanel`, and the overlay replaces the step rather than covering it — opening it there unmounted `StepConfirm` along with the only `Enter` handler, leaving no way to complete the wizard.
 
 ---
 
@@ -519,10 +526,11 @@ The snapshot is the **pre-filter baseline** (includes excluded tombstones) so th
 
 Because the snapshot is captured once in `hydrateWizardStore`, the diff remains stable across all subsequent store transitions -- it reflects "changes since entry," not "changes since last keystroke."
 
-**There is a SECOND projection over the same baseline: the Sources tab (D-278).** `buildSourceRows()` computes its own `added` / pending-removal markers from `installedSkillConfigs`, because it must attach them to source ROWS rather than to diff rows. The two projections are held together by one exported key — `skillSlotKey(id, scope)` in `scope-diff.ts` — which both `classifyDiffRow` and the store's `collectInstalledSkillSlots` / `addedSlotFlag` / `collectRemovedInstalledEntries` call. They previously derived their own keys (confirm per slot, Sources per id) and disagreed on three user-visible shapes. Two rules follow, and both are load-bearing:
+**There is a SECOND projection over the same baseline: the Sources tab (D-278).** `buildSourceRows()` computes its own `added` / pending-removal markers from `installedSkillConfigs`, because it must attach them to source ROWS rather than to diff rows. The two projections are held together by one exported key — `skillSlotKey(id, scope)` in `scope-diff.ts` — which both `classifyDiffRow` and the store's `collectInstalledSkillSlots` / `addedSlotFlag` / `collectRemovedInstalledEntries` call. They previously derived their own keys (confirm per slot, Sources per id) and disagreed on three user-visible shapes. Three rules follow, and all are load-bearing:
 
 - **Key on the `(id, scope)` slot, never on the id alone.** An id legitimately occupies slots at both scopes at once — that is the normal dual-scope shape, not an edge case. Keying on the id is what hid the adoption of a globally-installed skill at project scope (old id, new slot).
 - **Never gate a diff detector on `isEditingFromGlobalScope`.** Edit context changes what the store DOES with a change (drop vs. tombstone), never whether the change is reportable. At global scope `reconcileSkillConfigs` passes `null`, so `applySkillRemoval` drops the entry and the snapshot becomes the only surviving record — which makes such a gate self-defeating. `computeScopeDiff` has never had one.
+- **A null baseline means "everything is new", on BOTH surfaces (0.147.0).** `installedSkillConfigs` is `null` on a genuine first `init`, and the two projections must read that the same way. `classifyDiffRow` always has: `isNew = prevKeySet === null || !prevKeySet.has(key)`. The Sources tab used to carry a separate `null` branch that flagged nothing, so the confirm step listed every skill with a green `+` while the Sources tab showed no markers at all. The branch is deleted rather than mirrored — `collectInstalledSkillSlots` now returns the EMPTY SET for `null`, and an empty baseline occupies no slot, so `addedSlotFlag` marks every row. A distinct "no baseline" state is not a third answer; it is the same answer as an empty one. (`collectRemovedInstalledEntries` still returns `[]` for `null` — correctly: with no snapshot nothing can have been emptied.)
 
 The two surfaces still diverge deliberately on snapshot tombstones (the Sources tab excludes them as removal candidates; `computeScopeDiff` counts them) — see the Known Limitations table in `../component-patterns.md`, "SkillAgentSummary".
 
