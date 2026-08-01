@@ -27,9 +27,9 @@ Feature development documentation organized by lifecycle stage.
 
 #### Proposed (Research Only)
 
-| Document                                                 | Content                                                |
-| -------------------------------------------------------- | ------------------------------------------------------ |
-| [skill-consume.md](./features/proposed/skill-consume.md) | AI-assisted skill merging (`agentsinc consume`) design |
+| Document                                                 | Content                                                 |
+| -------------------------------------------------------- | ------------------------------------------------------- |
+| [skill-consume.md](./features/proposed/skill-consume.md) | AI-assisted skill merging (`agents-inc consume`) design |
 
 ## Task Tracking
 
@@ -50,13 +50,13 @@ Feature development documentation organized by lifecycle stage.
 
 ```bash
 # Initialize in a project
-agentsinc init --source /path/to/marketplace
+agents-inc init --source /path/to/marketplace
 
 # Build stack for distribution
-agentsinc build stack --stack nextjs-fullstack
+agents-inc build stack --stack nextjs-fullstack
 
 # Generate marketplace.json
-agentsinc build marketplace --plugins-dir dist/stacks
+agents-inc build marketplace --plugins-dir dist/stacks
 
 # Install via Claude CLI
 claude plugin marketplace add /path/to/dist

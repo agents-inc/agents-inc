@@ -1,6 +1,6 @@
 # CLI Commands Reference
 
-Every command available in the `agentsinc` CLI. Run `agentsinc <command> --help` for flag help; this doc is the fuller picture: purpose, invocation model, flag semantics, and current gaps.
+Every command available in the `agents-inc` CLI. Run `agents-inc <command> --help` for flag help; this doc is the fuller picture: purpose, invocation model, flag semantics, and current gaps.
 
 > **Base flag (most commands):** `--source, -s <path|url>` — Skills source path or URL. Defined on `BaseCommand.baseFlags` and inherited by every command that doesn't override it. **Seven commands override `baseFlags` to `{}`** because `--source` has no meaning there: `doctor`, `build plugins`, `build marketplace`, `new skill`, `import skill`, `search`, `validate`.
 
@@ -59,7 +59,7 @@ Re-enters the wizard with the current selections pre-loaded. Diff is shown at th
 
 - **Don't hand the skill to this project's agents** — curate `stack` in `.claude-src/config.ts`. See [Editing Your Config](../guides/editing-config.md).
 - **Take project ownership** — press `s` on the row to add a project-scoped copy alongside the global install (the row shows `[P][G]`).
-- **Really uninstall it** — run `agentsinc edit` from your home directory (`cd ~`), where the global config is the one being edited.
+- **Really uninstall it** — run `agents-inc edit` from your home directory (`cd ~`), where the global config is the one being edited.
 
 ---
 
@@ -127,7 +127,7 @@ Exports source material for user modification. Types: `agent-partials`, `templat
 
 **Flags (when enabled):** `--author/-a`, `--category/-c`, `--domain/-d`, `--force/-f`. Does not inherit `--source` (scaffolding doesn't consume a source).
 
-> **TODO:** Verify the generated `metadata.yaml` satisfies every field the CLI's skill loader expects (`parseFrontmatter`, `skillMetadataSchema`, matrix registration). After scaffolding, the new skill must appear in `agentsinc search`, `agentsinc list`, and in the wizard's skill grid — round-trip test required.
+> **TODO:** Verify the generated `metadata.yaml` satisfies every field the CLI's skill loader expects (`parseFrontmatter`, `skillMetadataSchema`, matrix registration). After scaffolding, the new skill must appear in `agents-inc search`, `agents-inc list`, and in the wizard's skill grid — round-trip test required.
 
 ---
 
@@ -145,7 +145,7 @@ Exports source material for user modification. Types: `agent-partials`, `templat
 
 **Requires (when enabled):** Anthropic's `claude` CLI on `$PATH` **and** `agent-summoner` resolvable either locally (in `<projectDir>/.claude/agents/`) or in the registered source.
 
-> **TODO:** Same as `new skill` — verify the scaffolded agent produces a valid `metadata.yaml` (agent schema, not skill schema) and that the new agent is picked up by the agent loader, appears in `agentsinc list`, and is selectable in the wizard's agents step. Round-trip test from scaffold → visible in CLI surfaces.
+> **TODO:** Same as `new skill` — verify the scaffolded agent produces a valid `metadata.yaml` (agent schema, not skill schema) and that the new agent is picked up by the agent loader, appears in `agents-inc list`, and is selectable in the wizard's agents step. Round-trip test from scaffold → visible in CLI surfaces.
 
 ---
 

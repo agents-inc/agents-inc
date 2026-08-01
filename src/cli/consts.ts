@@ -35,10 +35,13 @@ export const CACHE_DIR = path.join(os.homedir(), ".cache", DEFAULT_PLUGIN_NAME);
 
 /**
  * Promoted invocation prefix shown in user-facing messages (e.g. "Run '<CLI_INVOKE_COMMAND> init'").
- * This is the documented `npx` entry point from the README, not the registered global bin name
- * (see `bin`/`oclif.bin` in package.json, which is still `agentsinc` for global installs).
+ * This is the documented `npx` entry point, not the registered global bin name: `bin` in
+ * package.json stays `agentsinc` so existing global installs keep working.
+ *
+ * `agents-inc` rather than the scoped `@agents-inc/cli` because that is the package whose published
+ * bin matches, and it is what agentsinc.sh hands people when they copy an install command.
  */
-export const CLI_INVOKE_COMMAND = "npx @agents-inc/cli";
+export const CLI_INVOKE_COMMAND = "npx agents-inc";
 
 /**
  * Internal `edit` flag marking the invocation as the project-setup half of a `cc init`

@@ -14,7 +14,7 @@ An agent composition framework for [Claude Code](https://docs.anthropic.com/en/d
 3. Choose to eject these skills or install them as plugins ([install modes guide](docs/guides/install-modes.md))
 4. Select your subagents to compile with these skills
 5. Further customise skills and subagents in the generated `config.ts` ([editing config guide](docs/guides/editing-config.md))
-6. Compile subagents with `npx @agents-inc/cli compile` after changes
+6. Compile subagents with `npx agents-inc compile` after changes
 
 See the [Guides](#guides) section below for more.
 
@@ -29,7 +29,7 @@ https://github.com/user-attachments/assets/387b99ff-0a43-40e2-b757-9d035be5b550
 ## Getting Started
 
 ```bash
-npx @agents-inc/cli init
+npx agents-inc init
 ```
 
 | Stack                        | Technologies                                                 |
@@ -134,7 +134,7 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 | `validate`  | Validate config and skill structure |
 | `uninstall` | Remove Agents Inc from your project |
 
-Run `@agents-inc/cli --help` for full usage, or see the [full commands reference](./docs/reference/commands.md).
+Run `agents-inc --help` for full usage, or see the [full commands reference](./docs/reference/commands.md).
 
 ## Links
 

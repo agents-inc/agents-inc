@@ -271,7 +271,7 @@ Four paths escaped this rule before D-277; all four are closed:
 
 **The domain-deselect fix is invariant hardening, not a user-visible change.** `toggleDomain` has exactly two callers — `domain-selection.tsx` (the DOMAINS step) and `stack-selection.tsx` (the init-only "start from scratch" branch). `cc edit` hydrates with `initialStep: "build"` and `history: []`, so ESC cannot walk backwards into the DOMAINS step, and `cc init` in a project with a global install routes to the dashboard first. **No keypress path exists** where a domain deselect can see a globally-installed entry; the guarantee is pinned at unit level in `wizard-store.test.ts`, not by an E2E. See `.ai-docs/agent-findings/2026-07-30-domain-deselect-has-no-reachable-ui-surface-in-edit.md`.
 
-**Escape hatches for the user:** to keep a global skill out of a project, leave it out of that project's agent stacks (see `docs/guides/editing-config.md`). To uninstall it outright, edit at global scope — `agentsinc edit` from the home directory.
+**Escape hatches for the user:** to keep a global skill out of a project, leave it out of that project's agent stacks (see `docs/guides/editing-config.md`). To uninstall it outright, edit at global scope — `agents-inc edit` from the home directory.
 
 **Agent-roster rebuilds merge rather than replace.** `preselectAgentsFromDomains` retains all tombstones plus every non-project-owned entry outside the selected domains' roster, so a globally installed agent outside that roster is no longer silently uninstalled.
 

@@ -6,7 +6,7 @@ A rough overview of the Agents Inc. CLI codebase. For granular implementation de
 
 ## Overview
 
-Agents Inc. CLI (`agentsinc`) is a TypeScript CLI that manages AI agent configurations for Claude Code. It loads skill definitions from a marketplace, lets users select technology stacks via an interactive terminal wizard, compiles agent prompts from Liquid templates with selected skills injected, and installs the results as Claude plugins or local files.
+Agents Inc. CLI (`agents-inc`) is a TypeScript CLI that manages AI agent configurations for Claude Code. It loads skill definitions from a marketplace, lets users select technology stacks via an interactive terminal wizard, compiles agent prompts from Liquid templates with selected skills injected, and installs the results as Claude plugins or local files.
 
 ## Technology Stack
 
@@ -60,7 +60,7 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 ## Core Data Flow
 
 ```
-1. User runs command (e.g., `agentsinc init`)
+1. User runs command (e.g., `agents-inc init`)
 
 2. oclif init hook runs
    -> Extracts --source from raw argv

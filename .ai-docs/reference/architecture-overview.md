@@ -41,16 +41,16 @@ last_validated: 2026-07-30
 
 ## Project Identity
 
-| Field       | Value                                                                                                                                                                     |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Package     | `@agents-inc/cli`                                                                                                                                                         |
-| Version     | 0.147.1                                                                                                                                                                   |
-| Binary      | `agentsinc` (registered global bin, `package.json` `bin`/`oclif.bin`); user-facing messages promote `npx @agents-inc/cli` via `CLI_INVOKE_COMMAND` in `src/cli/consts.ts` |
-| Type        | ESM (`"type": "module"` in package.json)                                                                                                                                  |
-| Entry Point | `src/cli/index.ts` (runs oclif with `run()`)                                                                                                                              |
-| Build       | tsup -> `dist/`                                                                                                                                                           |
-| Test Runner | Vitest (`vitest.config.ts`) with 3 projects: unit, integration, commands                                                                                                  |
-| Runtime     | Node.js (also Bun-compatible based on test helpers)                                                                                                                       |
+| Field       | Value                                                                                                                                                                 |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Package     | `@agents-inc/cli`                                                                                                                                                     |
+| Version     | 0.147.1                                                                                                                                                               |
+| Binary      | `agents-inc` (registered global bin, `package.json` `bin`/`oclif.bin`); user-facing messages promote `npx agents-inc` via `CLI_INVOKE_COMMAND` in `src/cli/consts.ts` |
+| Type        | ESM (`"type": "module"` in package.json)                                                                                                                              |
+| Entry Point | `src/cli/index.ts` (runs oclif with `run()`)                                                                                                                          |
+| Build       | tsup -> `dist/`                                                                                                                                                       |
+| Test Runner | Vitest (`vitest.config.ts`) with 3 projects: unit, integration, commands                                                                                              |
+| Runtime     | Node.js (also Bun-compatible based on test helpers)                                                                                                                   |
 
 ## Technology Stack
 
@@ -180,7 +180,7 @@ src/cli/
 ## Data Flow Overview
 
 ```
-User runs command (e.g., `agentsinc init`)
+User runs command (e.g., `agents-inc init`)
   |
   v
 oclif init hook (hooks/init.ts)

@@ -1116,7 +1116,7 @@ Audited all 5 standards documents that had never been audited (Last Audited = `-
 1. Line 47: Directory structure comment claimed metadata.yaml has `category, tags, version`. Fixed to `category, author, slug, displayName, etc.` -- per MEMORY.md "metadata.yaml must NOT have version or tags fields" and actual `metadataValidationSchema` in schemas.ts.
 2. Lines 617-621: Quality Gate Checklist claimed required fields `category, author, version, cli_name, cli_description, usage_guidance` with snake_case names. Fixed to actual camelCase field names from schema: `category, author, slug, displayName, cliDescription, usageGuidance`. Removed `version` (does not exist). Removed `tags` checklist item (field does not exist). Removed `Version is an integer` checklist item.
 3. Line 620: Changed `claude-architecture-bible.md` category enum reference to `src/cli/types/generated/source-types.ts CATEGORIES` (actual location).
-4. Lines 622, 678: Changed `bun cc:validate` to `agentsinc validate` (no `cc:validate` script exists in package.json; actual CLI binary is `agentsinc`).
+4. Lines 622, 678: Changed `bun cc:validate` to `agents-inc validate` (no `cc:validate` script exists in package.json; actual CLI binary is `agents-inc`).
 
 **documentation-bible.md (0 fixes):** All file paths verified correct. Staleness thresholds match DOCUMENTATION_MAP.md implementation. Cross-references to other standards docs valid. Code examples syntactically correct.
 

@@ -47,7 +47,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "oclif": {
-    "bin": "agentsinc",
+    "bin": "agents-inc",
     "dirname": "agents-inc",
     "commands": {
       "strategy": "pattern",

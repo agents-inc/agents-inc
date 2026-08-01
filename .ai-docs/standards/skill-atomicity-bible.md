@@ -623,7 +623,7 @@ When removing valuable content that belongs in another skill:
 - [ ] `metadata.yaml` has all required fields (category, author, slug, displayName, cliDescription, usageGuidance)
 - [ ] Author uses `@` prefix (`@vince`, not `vince`)
 - [ ] Category is from allowed enum (see `src/cli/types/generated/source-types.ts` CATEGORIES)
-- [ ] `agentsinc validate` passes with no errors
+- [ ] `agents-inc validate` passes with no errors
 
 ### Import Purity
 
@@ -679,7 +679,7 @@ When removing valuable content that belongs in another skill:
 - [ ] Grep verification shows 0 violation matches
 - [ ] Full read-through confirms no violations missed
 - [ ] Transformation documented in log
-- [ ] Schema validation passes (`agentsinc validate`)
+- [ ] Schema validation passes (`agents-inc validate`)
 
 ---
 

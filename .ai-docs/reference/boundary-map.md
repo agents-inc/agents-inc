@@ -574,7 +574,7 @@ Used for validation commands and build-time checks. Reject unknown fields via `.
 
 | Schema                             | File         | Used For                                   |
 | ---------------------------------- | ------------ | ------------------------------------------ |
-| `pluginManifestValidationSchema`   | `schemas.ts` | `agentsinc validate` plugin validation     |
+| `pluginManifestValidationSchema`   | `schemas.ts` | `agents-inc validate` plugin validation    |
 | `skillFrontmatterValidationSchema` | `schemas.ts` | SKILL.md strict validation                 |
 | `agentFrontmatterValidationSchema` | `schemas.ts` | Agent frontmatter strict validation        |
 | `metadataValidationSchema`         | `schemas.ts` | Published skill metadata strict validation |

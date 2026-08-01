@@ -1057,7 +1057,7 @@ These findings affect `src/agents/` files -- a directory with no dedicated refer
 - Agent directory structure (`src/agents/{category}/{agent-name}/`)
 - Agent file roles: `identity.md`, `playbook.md`, `critical-requirements.md`, `critical-reminders.md`, `output.md`, `metadata.yaml`
 - Template injection rules: what the `agent.liquid` template injects vs what source files provide
-- Agent compilation: config.ts entry, `agentsinc compile`, scope routing
+- Agent compilation: config.ts entry, `agents-inc compile`, scope routing
 - Convention rules: arrow types, findings capture, no template duplication, no custom `<core_principles>`
 - Relationship to skills repo: agents reference skills, metadata schema alignment
 

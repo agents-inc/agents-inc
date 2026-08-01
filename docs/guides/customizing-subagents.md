@@ -5,13 +5,13 @@ Subagents are composed from three layers: partials, templates, and skills. Each 
 ## Ejecting
 
 ```bash
-agentsinc eject agent-partials   # Role-specific partials (intro, workflow, output)
-agentsinc eject templates        # Global Liquid templates shared across all subagents
-agentsinc eject skills           # Fork skills for local editing
-agentsinc eject all              # Everything at once
+agents-inc eject agent-partials   # Role-specific partials (intro, workflow, output)
+agents-inc eject templates        # Global Liquid templates shared across all subagents
+agents-inc eject skills           # Fork skills for local editing
+agents-inc eject all              # Everything at once
 ```
 
-Run `agentsinc compile` after editing any ejected files to rebuild your subagents.
+Run `agents-inc compile` after editing any ejected files to rebuild your subagents.
 
 ## Partials
 
@@ -31,8 +31,8 @@ Each subagent has five partials that can be customized:
 
 ## Configuration
 
-Skill-to-subagent mappings and load behavior (preloaded vs dynamic) are configured in `.claude-src/config.ts`. Use `agentsinc edit` to modify selections interactively, or edit the config file directly.
+Skill-to-subagent mappings and load behavior (preloaded vs dynamic) are configured in `.claude-src/config.ts`. Use `agents-inc edit` to modify selections interactively, or edit the config file directly.
 
 **Keeping a globally installed skill out of a project is a stack decision, not a selection one.** A global install cannot be deselected from inside a project — the wizard locks those rows. Instead, leave the skill out of the relevant agent's `stack` entry: the skill stays installed and available, but no subagent in this project receives it. See [Editing Your Config](./editing-config.md) for the stack shape.
 
-After making changes, run `agentsinc compile` to rebuild your subagents.
+After making changes, run `agents-inc compile` to rebuild your subagents.

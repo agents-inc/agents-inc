@@ -100,7 +100,7 @@ When asking, always present options:
 ```
 The spec says "add config display" but doesn't specify format.
 Options:
-A) Table format (matches `agentsinc list`) -- recommended for consistency
+A) Table format (matches `agents-inc list`) -- recommended for consistency
 B) YAML dump (matches config file format)
 C) Key-value pairs (simplest)
 ```

@@ -84,11 +84,11 @@ const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
 };
 ```
 
-The skill stays installed and available; it just isn't part of any agent's prompt in this project. Run `agentsinc compile` after editing.
+The skill stays installed and available; it just isn't part of any agent's prompt in this project. Run `agents-inc compile` after editing.
 
 To take genuine project ownership of a globally installed skill instead, press `s` (scope toggle) on its row in the wizard. That gives the project its own copy at project scope while the global install stays intact — the row then shows both `[P]` and `[G]`.
 
-To actually uninstall a global skill or agent, edit at global scope: run `agentsinc edit` from your home directory (`cd ~`).
+To actually uninstall a global skill or agent, edit at global scope: run `agents-inc edit` from your home directory (`cd ~`).
 
 ## Stack: Mapping Skills to Agents
 
@@ -117,6 +117,6 @@ Project-level `config-types.ts` imports and extends the global types when a glob
 
 ## After Editing
 
-Run `agentsinc compile` to rebuild your subagents with the updated configuration.
+Run `agents-inc compile` to rebuild your subagents with the updated configuration.
 
 Compile also regenerates `config-types.ts` from your edited config at every scope it compiles (global, project, or both), so the type unions always match the skills and agents currently listed in `config.ts` — a skill you added by hand becomes a valid `SkillId`, and a removed one becomes a type error.

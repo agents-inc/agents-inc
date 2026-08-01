@@ -7,12 +7,12 @@ Import skills from any external GitHub repository.
 ## Usage
 
 ```bash
-agentsinc import skill github:your-org/skills --list                        # List available skills (-l)
-agentsinc import skill github:your-org/skills --skill react-best-practices  # Import a specific skill (-n)
-agentsinc import skill github:your-org/skills --all                         # Import all skills (-a)
-agentsinc import skill github:your-org/skills --all --force                 # Overwrite existing skills (-f)
+agents-inc import skill github:your-org/skills --list                        # List available skills (-l)
+agents-inc import skill github:your-org/skills --skill react-best-practices  # Import a specific skill (-n)
+agents-inc import skill github:your-org/skills --all                         # Import all skills (-a)
+agents-inc import skill github:your-org/skills --all --force                 # Overwrite existing skills (-f)
 ```
 
 Imported skills are copied into your project and can be customized locally. Metadata tracks the original source so you can identify where a skill came from.
 
-Run `agentsinc compile` after importing to rebuild your subagents.
+Run `agents-inc compile` after importing to rebuild your subagents.
