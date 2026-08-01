@@ -2,7 +2,12 @@
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): corrected the flatly-wrong "runCLI sets HOME=cwd" claim — since D-226 it defaults to a fresh SIBLING temp dir distinct from cwd, and the auto-created dir is removed in a finally; corrected "only create-e2e-plugin-source.ts still imports runCLI" (10 spec files do); added ProjectBuilder.dualScopeWithImport to the factory table and documented the EditableOptions forkedFrom / globalSkills fields, plus the rule that globalSkills produces eject/eject pairs an s-collapse spec cannot use; refreshed the test-utils export table with the 15 helpers it omitted (pollUntil, seedDefaultSourceCache, writeConfigTypes, writeAgentFile, writeAgentStubs, configTsPath, configTypesTsPath, loadConfigOrFail, readAgentEntriesFor, completeWithLocalSources, readMarketplaceJson, renderAgentMd, renderMetadataYaml, normalizeGlobalConfig, writeTestPackageJson) and dropped the stale entries; noted createPermissionsFile's merge semantics -->
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
+     ✓ createE2ESource cardinality re-verified against e2e/helpers/create-e2e-source.ts and
+       e2e/fixtures/expected-values.ts
+     ✗ the ProjectBuilder method table, dual-scope setup, the permissions-file section, the
+       test-utils export table, CLI.run() vs runCLI() — 2026-07-30 basis
+-->
 
 # Test Data
 
@@ -73,6 +78,26 @@ The E2E source is an expensive fixture (creates 9 skills, 2 agents, 1 stack, tem
 Returns `{ sourceDir, tempDir }`. The `tempDir` is the parent -- clean it up in `afterAll`.
 
 **`createE2EPluginSource(options?)`** -- Extends the above by building plugins and generating `marketplace.json`. Returns `{ sourceDir, tempDir, marketplaceName, pluginsDir }`.
+
+### The fixture's cardinality is smaller than production's, and that changes bug signatures
+
+**One stack and nine skills, against a real marketplace carrying a dozen stacks and many more skills.** For most specs this is irrelevant. For any spec about **overflow, clipping, scrolling, or column geometry** it is the central fact, because how far a size-dependent defect reaches scales with list length — and it is currently discoverable only by reading `e2e/helpers/create-e2e-source.ts`.
+
+Worked example. The stack step bled at the advertised minimum height: the six-row ASCII logo starved the list's viewport below `SCROLL_VIEWPORT.MIN_VIEWPORT_ROWS`, the shared scroll gate stopped clipping, and rows painted over whatever was below. Against the real marketplace at 100x20 the overpaint reaches the footer:
+
+```
+SPACE  selectSt ENTER  continuele ESC  backuth, Vitest
+```
+
+so "assert the footer renders as one unbroken line" is the obvious signature — a bleed leaves every hotkey word present but splices list content between them. Against the fixture, with one stack, the list is three rows in a one-row viewport, so the overflow is **two rows**: it destroys the stack row and stops well short of the footer. **The footer assertion was green against the unfixed binary.** The one that went red was an unrelated-looking positive, `toContain(E2E_STACK_NAME)`.
+
+Consequences for spec authors:
+
+- A spec written against the symptom you observed while driving the **real** binary may assert nothing under this fixture. Mutation-verify it (revert the fix, rebuild, confirm red) — see [README § Critical Rules](./README.md).
+- Keep both assertions when both are genuine, and record inline which one carries the red here, so the next reader does not simplify the spec down to the one that does not fire.
+- Reaching for `--source` against the real marketplace is not the fix: it trades a reproducibility problem for a network one. State the cardinality's effect instead.
+
+See `.ai-docs/agent-findings/2026-07-31-e2e-fixture-smaller-than-production-changes-the-bug-signature.md`.
 
 ### Before Extending Fixtures
 

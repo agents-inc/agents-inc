@@ -2,7 +2,12 @@
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added five rule groups from the 0.145.0/0.146.0 findings — "Reading Rendered Output" (getOutput() is xterm's processed buffer, not a frame log; Ink repaints overwrite in place, so only raw output accumulates frames, and colour is unobservable under NO_COLOR so it belongs in a component test with a forced chalk level); "No dead-reckoned grid navigation" (the DOWN-clamp mis-model that silently toggled the wrong skill, plus the Tab-vs-DOWN column semantics and exact-label matching); "Fixture Selection" (ProjectBuilder.editable({globalSkills}) pins BOTH halves to eject, so an s-collapse spec built on it fails on a swallowed keystroke, not its assertion — and a fixture must establish the state its name claims, since buildSkillConfig defaults project while buildSkillConfigForId defaults global); and the harness invariant that TerminalSession, runCLI and CLI.run all resolve HOME identically -->
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1) — rules added, doc not re-verified
+     ✓ the focus-padding worked example (replaced; it described a defect fixed in 0.147.0),
+       §Reading Rendered Output +2 rules, §Weak Assertions +6 rules
+     ✗ every other rule group (leakage, timing, filesystem, production imports, index navigation,
+       strings, inline data, fixtures, harness invariants, helpers, casts, launchers) — 2026-07-30
+-->
 
 # Anti-Patterns
 
@@ -131,7 +136,9 @@ afterEach(async () => {
 
 ### Never treat `getOutput()` as a log of every frame
 
-**What:** Pressing a navigation key and then asserting on `step.getOutput()` on the assumption that "the accumulated output holds a frame where the row rendered in the form I want" — typically to dodge the focus padding a focused row adds (`+  React ` with two spaces, so `"+ React"` is not a substring).
+**What:** Pressing a navigation key and then asserting on `step.getOutput()` on the assumption that "the accumulated output holds a frame where the row rendered in the form I want" — typically to reach a row that has since scrolled out of the viewport, or one that a later repaint replaced.
+
+> **Worked example replaced 2026-08-01.** This rule previously illustrated itself with the Sources grid's focus padding (`+  React ` with two spaces, so `"+ React"` was not a substring of a focused row). **That was a product defect, and it was fixed in 0.147.0** — `rowStatusMarker` in `src/cli/components/wizard/source-grid.tsx` is now always two columns wide with the marker inside the focus highlight, so focused and unfocused rows render the name in the same column. A standards doc that keeps a live defect as its motivating example teaches every future spec to route around the defect, which is how two releases of Sources-tab specs went by with the padding documented and untested. See `.ai-docs/agent-findings/2026-07-31-focused-row-padding-defect-codified-as-a-test-rule.md`. The buffer-semantics rule below is unaffected and still correct.
 
 **Why:** `BaseStep.getOutput()` -> `TerminalSession.getFullOutput()` reads xterm's **processed buffer** (`xterm.buffer.active`) — the current screen plus whatever genuinely scrolled off. Ink redraws in place, so when a frame fits the viewport (the common case at `TERMINAL_SIZE.TALL`) each repaint OVERWRITES the previous one and nothing enters scrollback. The earlier frame is gone. Verified empirically against the real binary: a `+ web-framework-react` marker present in `getOutput()` before a `navigateDown()` is absent after it, while `getRawOutput()` still holds it.
 
@@ -140,6 +147,56 @@ afterEach(async () => {
 **Corollary — do not manufacture a different render state with a key press.** When a row renders differently focused vs unfocused (padding, chevrons, highlight), assert against the state actually on screen at capture time. If a press is unavoidable, first establish which row holds focus: `SourceGrid` seeds focus with `firstFocusableRowIndex(rows, 0)`, which SKIPS inert (locked / pending-removal) rows, so "the first row" and "the first focusable row" are frequently different — a single `navigateDown()` may move focus ONTO the row under test rather than away from it.
 
 See `.ai-docs/agent-findings/2026-07-29-e2e-getoutput-is-not-a-frame-accumulator.md`.
+
+### Never assert that text is ABSENT from a screen the session once legitimately drew
+
+**What:** `expect(step.getScreen()).not.toContain(STEP_TEXT.BUILD)` to prove a screen was replaced — the natural way to test "the wizard is gone", "the overlay closed", "the step transitioned".
+
+**Why:** `TerminalSession.getScreen()` is **not viewport-only, despite its name and its own doc comment.** It reads absolute buffer lines `0 .. viewportY + rows`, so once the session has any scrollback the range is scrollback **plus** viewport. Any text drawn earlier in the session is still matchable. The assertion tests the emulator's memory, not the process's current output — so it fails against residue whether or not the behaviour under test works, and the failure looks like a product bug.
+
+This is the **converse** of the `getOutput()` rule above, not a restatement. That rule warns against asserting a past frame was _present_; this one is about asserting a past frame is _absent_ now. `getOutput()` has the same exposure, more obviously.
+
+Shrinking a terminal is the sharpest case: the whole pre-shrink frame goes into scrollback, so the obvious test for the resize guard's "the wizard is REPLACED" contract is unsound by construction.
+
+**Instead:** prove the negative by **order** or by **behaviour**.
+
+```typescript
+// Bad: scrollback-sensitive, fails whether or not the guard works
+expect(step.getScreen()).not.toContain(STEP_TEXT.BUILD);
+
+// Good (order): the prompt is the LAST thing painted, so nothing was drawn after it.
+// Discriminating — with the guard reverted the buffer ends with the wizard footer instead.
+expect(step.getScreen()).toMatch(/Please resize\.$/);
+
+// Good (behaviour): drive the session and assert the outcome the absent element would have changed.
+```
+
+**Corollary — a resize paints twice, so a cursor-anchored raw wait does not rescue it either.** Ink's own `resized()` handler re-renders the existing tree synchronously, and only then does the dimensions hook's `setState` produce the guarded render. A raw slice taken after a pre-resize `getRawCursor()` therefore holds `[old frame] + [new frame]`, so `not.toContain("Framework")` fails there too. Any assertion anchored on a pre-resize cursor must expect both frames. `BaseStep.resizeBelowMinimum` / `resizeAboveMinimum` are built as **positive** cursor-anchored waits for exactly this reason.
+
+The doc comment on `getScreen()` was left saying the opposite deliberately — every page object depends on the method, so correcting it needs a pass that can audit which specs relied on the wrong description. Until then, [reference/testing/e2e-infrastructure.md § `getScreen()` is not viewport-only](../../reference/testing/e2e-infrastructure.md) is the authority, not the source comment. See `.ai-docs/agent-findings/2026-07-31-getscreen-is-not-viewport-only-so-absence-assertions-are-unsound.md`.
+
+### Never leave a workaround in a test's JSDoc without a spec that pins the un-worked-around form
+
+**What:** A spec that sidesteps a rendering difference — padding, chevrons, highlight width, marker spacing — to assert something else, and explains the dodge in a comment.
+
+**Why:** A JSDoc explaining a workaround is a **defect report** unless some spec asserts the form being worked around. Once the dodge is written down it propagates: every later spec inherits it, none asserts the un-worked-around form, and the defect becomes structurally invisible. The suite is green precisely because nothing looks.
+
+This is not hypothetical. Two dual-scope Sources specs carried a paragraph explaining that they capture the frame while the row is UNFOCUSED "which splits the marker from the name", and the same padding was written into this very document as the worked example for an unrelated rule (see the note under the `getOutput()` rule above). Two releases shipped with the padding documented in three places and asserted in none.
+
+**Instead:** the spec must either cite a finding for the difference, or point at the spec that asserts it head-on.
+
+```typescript
+/**
+ * Captured unfocused because <difference>. The focused form is pinned by
+ * sources-focused-row-marker-spacing.e2e.test.ts.
+ */
+```
+
+And when the underlying defect is fixed, delete the dodge paragraphs — they read as superstition otherwise.
+
+**Corollary — construct the focus, do not navigate to it.** When a spec needs a row in a particular focus state, build a fixture where that row is the only one that can hold focus (`SourceGrid` seeds with `firstFocusableRowIndex`, which skips locked and pending-removal rows) rather than pressing a key to get there. A key press manufactures a different render state and reintroduces the `getOutput()` problem above.
+
+See `.ai-docs/agent-findings/2026-07-31-focused-row-padding-defect-codified-as-a-test-rule.md`.
 
 ### Never write a colour assertion in an E2E test
 
@@ -376,6 +433,122 @@ Or better, use a matcher: `await expect(project).toHaveSettings({ hasKey: "permi
 **Why:** An empty or corrupted file passes this check.
 
 **Instead:** Use content-aware matchers: `await expect(project).toHaveConfig({ skillIds: [...] })`.
+
+### Never assert a rendering invariant at a geometry where the subject does not render
+
+**What:** A `not.toContain("<bug shape>")` captured on a clipped viewport, at a scroll offset where none of the rows the bug shape is made of are painted.
+
+**Why:** It passes for free. The frame under test contains no candidate for the match, so the assertion is about nothing — it cannot distinguish a fixed product from a broken one.
+
+**Clearing the size gate is not evidence the content is visible.** At `TERMINAL_SIZE.SHORT` the confirm step's summary viewport measures five rows, and all five are consumed by the `Marketplace` / `Stack` header block. The first summary row only appears six presses into a twelve-press scroll range.
+
+**Instead:** scroll the subject onto the screen first, then pair the negative with a **positive guard** asserting the subject IS in the very frame you captured.
+
+```typescript
+// Bad: no `+ ` row is painted at offset 0, so the bleed signature cannot appear either way
+const screen = confirm.getScreen();
+expect(screen).not.toContain("─+ ");
+
+// Good: run the viewport to the end of its range, prove the subject is painted, then assert the bug shape's absence
+await confirm.scrollSummaryToBottom();
+const screen = confirm.getScreen();
+expect(screen).toContain("+ web-developer"); // positive guard
+expect(screen).not.toContain("─+ "); // now about a painted subject
+```
+
+`ConfirmStep.scrollSummaryToBottom()` is closed-loop — it presses while the frame still reports content below and throws rather than returning short, because the summary's height depends on how many skills and agents the run selected.
+
+This is the same proof-of-execution rule the bible already applies to conditional code paths, extended to rendering.
+
+### A counter is not its content
+
+**What:** Proving a scroll happened by asserting the affordance's numbers moved — `more below` becoming `more above`, `12 more above` appearing.
+
+**Why:** The counters are the panel's own bookkeeping. They move whether or not the content does, so they are a different subject from the rows they count.
+
+Mutation evidence: pinning `contentMarginTop` to `0` in `use-panel-scroll.ts` (i.e. disabling the scroll entirely) left the frame reading `12 more above` **while showing the unscrolled header** — and both counter assertions stayed green. Only a direct assertion on a revealed row went red.
+
+**Instead:** assert a row that the movement revealed.
+
+```typescript
+// Bad: the affordance's own bookkeeping, not the content
+expect(before).toContain(STEP_TEXT.SCROLL_MORE_BELOW);
+expect(after).toContain(STEP_TEXT.SCROLL_MORE_ABOVE);
+
+// Good: a row that was not on screen before and is now
+expect(after).toContain("+ web-developer");
+```
+
+See `.ai-docs/agent-findings/2026-07-31-negative-render-assertion-needs-a-positive-subject-guard.md`.
+
+### Never call a spec a regression guard until you have watched it go red
+
+**What:** Writing a spec against a defect's reported symptom, seeing it pass after the fix, and shipping it as the guard.
+
+**Why:** Green after a fix is not evidence the spec can detect the bug. Two distinct mechanisms produce a spec that passes for the wrong reason, and neither is visible by reading the spec:
+
+1. **The fixture is smaller than production, so the defect's blast radius is different.** `createE2ESource()` writes **one** stack and **nine** skills; the real marketplace carries a dozen stacks and many more skills. For a size-dependent rendering defect, how far an overpaint reaches scales with list length. The stack-step bleed destroyed the footer against the real marketplace, but against the fixture — three rows in a one-row viewport — the overflow was two rows, destroying the stack row and stopping well short of the footer. **The footer assertion, the one matching the reported symptom and reading as the sharpest signature, passed against the unfixed binary.** The assertion that actually went red was an unrelated-looking positive: `toContain(E2E_STACK_NAME)`.
+
+2. **The assertion's subject is not painted in the captured frame** (the two rules above).
+
+**Instead:** revert the fix in `src/`, run `npm run build`, run the spec, and confirm it is red **and red for the reason the test name claims**. Then restore. Record in the spec which assertion carries the red under this fixture, so the next reader does not "simplify" the spec down to the one that does not.
+
+```typescript
+/**
+ * Both assertions are genuine and both stay. The footer line guards the
+ * production-shaped bleed (reaches the footer against a dozen stacks); the
+ * stack-row match is the one that actually goes red under this fixture's
+ * single stack. Mutation-verified against the unfixed binary.
+ */
+```
+
+This applies to repairs as much as to new specs: a "fixed" vacuous assertion nobody has watched go red is indistinguishable from the vacuum it replaced.
+
+See `.ai-docs/agent-findings/2026-07-31-e2e-fixture-smaller-than-production-changes-the-bug-signature.md`.
+
+### Never take a "before" snapshot you do not compare against
+
+**What:** `const configBefore = await readTestFile(configTsPath(dir))` followed by wizard work and then assertions that never reference `configBefore`.
+
+**Why:** A "before" snapshot is a promise that an `expect(after)` follows. This is the most dangerous shape in the weak-assertion family because the surviving assertions look thorough.
+
+`scope-toggle-config-snapshot.e2e.test.ts` — _"should compile agent at project scope and preserve global"_ — snapshotted **both** configs under a comment reading `// BEFORE: Snapshot both configs` and compared **neither**. Its two after-assertions were `toContain("web-developer")` on each config, and the fixture writes `web-developer` into both files _before_ the toggle runs. **Both were already true of the pre-state**, so the spec would have passed with the toggle keystroke silently swallowed — a documented failure mode of this harness (see the [page-object key-press rule](./README.md)).
+
+**Instead:** if a spec snapshots two files it must assert on two files — the one that should have changed (`.not.toBe(before)`, the proof the keystroke landed) and the one that should not (`.toBe(before)`).
+
+```typescript
+// Bad: true of the pre-state; passes with the interaction swallowed
+expect(projectConfigAfter).toContain("web-developer");
+expect(globalConfigAfter).toContain("web-developer");
+
+// Good: one changed, one did not — and the change is the proof the toggle landed
+expect(projectConfigAfter).not.toBe(projectConfigBefore);
+expect(globalConfigAfter).toBe(globalConfigBefore);
+```
+
+`toContain("<name>")` on the after-state is never a substitute: in a dual-scope fixture the name is usually present in both configs before the wizard runs.
+
+Related: check the scope you are actually running at. `scope-toggle-roundtrip.e2e.test.ts` asserted the global config was unchanged and dropped the project one — in a spec whose session runs at PROJECT scope, i.e. it checked the file the edit was least likely to touch and skipped the file it was most likely to touch.
+
+### Never leave an assertion helper imported but uncalled
+
+**What:** `import { expectCleanUninstall } from "../assertions/uninstall-assertions.js"` with no call site in the file.
+
+**Why:** The hand-rolled subset a spec writes instead is always narrower than the shared helper. `plugin-uninstall-edge-cases.e2e.test.ts` imported `expectCleanUninstall` and never invoked it; its _"should also remove config by default"_ spec checked only that the config directory was gone. The word "also" claims the skills and agents went too, and nothing verified that — a leftover skill directory would have survived unnoticed. `expectCleanUninstall` is precisely the helper [§ Never omit negative assertions after removals](#never-omit-negative-assertions-after-removals) tells you to reach for, so the unused import was the fingerprint of an author who knew the rule and got interrupted.
+
+**Instead:** call it, or state in the file JSDoc why the narrower check is deliberate. Applies to `expectCleanUninstall`, `expectFullInstallation`, `expectDualScopeInstallation`, `expectPhaseSuccess` and everything else under `e2e/assertions/`.
+
+### Never delete an unused binding in a test without triaging it first
+
+**What:** Clearing an `@typescript-eslint/no-unused-vars` report in a spec by deleting the binding.
+
+**Why:** In production code a dead variable is usually just dead. **In a test, the binding is very often the thing the author intended to assert on** — so it marks the exact spot where an assertion was planned and never written. A destructured `stdout` / `exitCode` / `lastFrame` that is never asserted on means the test **ran the code and checked nothing about the result**.
+
+The first pass of this rule over `e2e/` produced 15 reports, of which 8 were missing assertions — including three captured-but-unasserted exit codes, one with the missing assertion written out in English in the spec's own comment (`doctor-dual-scope.e2e.test.ts`: "the important thing is doctor runs without crashing on the extra directory", when `cc doctor` exits non-zero on any `fail` check, so "without crashing" had an exact checkable form).
+
+**Instead:** ask what the author meant to do with it. Delete only after establishing that the binding names nothing the spec should have asserted. Where the intended assertion is not obvious, **report it rather than inventing one** — and never weaken an existing assertion to make the report go away. Derive added assertions from something already present: the spec's own name, its own comment, or a sibling spec in the same file.
+
+See `.ai-docs/agent-findings/2026-08-01-e2e-specs-captured-exit-codes-and-config-snapshots-then-asserted-nothing.md` and its `src/`-side sibling `2026-08-01-unused-bindings-in-tests-mark-assertions-that-were-planned-but-never-written.md`.
 
 ---
 

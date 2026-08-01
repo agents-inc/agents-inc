@@ -18,7 +18,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added CATEGORY_EXCLUSIVITY_MATRIX, which the mock-matrices inventory omitted — it is the only fixture whose categories carry real exclusive/required flags (createMockMatrix's default categories map is empty, so exclusivity rules can never fire without it) and the only one separating "exclusive" from "exclusive AND required"; re-counted the BUILD_STEP_* family against source (still 17) and re-verified every other named constant in the mock-matrices, mock-skills, mock-agents, mock-stacks, mock-sources and mock-source-files lists — no other drift -->
+<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0 — the mock-matrices/skills/agents/stacks/sources inventories re-verified against source. -->
 
 # Mock Data Constants
 

@@ -2,7 +2,7 @@
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): recorded that BaseStep's default wait is now TIMEOUTS.WIZARD_LOAD = 45s (was 15s), so an unqualified step wait is a 45s upper bound and a misapplied waitForWizardFooter burns 45s; added the maxWorkers: 16 cap and why parallel contention is the reason keypress guards exist; added the state-change verification rule (assert config AND filesystem, and snapshot-then-compare when nothing should change) to the three-phase pattern; added the scope caveat to the wizard three-phase example — installed content lands under the global HOME, not projectDir -->
+<!-- VALIDATED 2026-07-30 · SYNC (product v0.146.0) — test-harness pass. -->
 
 # Test Structure
 

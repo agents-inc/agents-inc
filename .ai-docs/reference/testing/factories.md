@@ -18,7 +18,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added writeTestInstalledPluginsRegistry to the disk-writers helper table (claude CLI v2 installed_plugins.json fixture, previously undocumented); corrected the createTestSource example — the option is projectConfig, not config, and asPlugin / localSkills were omitted; replaced the invented `dirs.root` with the real TestDirs shape (tempDir, projectDir, sourceDir, skillsDir, agentsDir, pluginDir?, configDir?); re-verified the 38 factory exports and the 12 assertion helpers against source — no other drift -->
+<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0 — the factory-export and assertion-helper inventories re-verified against source. -->
 
 # Test Factories & Helpers
 

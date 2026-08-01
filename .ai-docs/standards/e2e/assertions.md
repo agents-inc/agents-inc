@@ -2,7 +2,12 @@
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added the three assertion utilities the doc omitted — expectFullInstallation (phase-assertions), expectNoDuplicates and normalizeConfigPreservingOrder (config-assertions); completed the expected-value constant list (E2E_SKILL, E2E_AGENT, E2E_AGENT_DISPLAY were missing); added an "Assert the Surface That Retains the Value" section covering getOutput()'s in-place-repaint loss and the *Awaiting raw-output methods; added the rule that colour is never assertable in E2E (NO_COLOR harness) and belongs in a component test; re-verified all 12 project matchers and 2 agent matchers against matchers/setup.ts — unchanged -->
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1) — one claim corrected, rules added
+     ✓ the getScreen() row under "Assert the Surface That Retains the Value";
+       §Negative Assertions +3 sub-rules
+     ✗ every matcher and assertion-utility signature, the expected-value constants, the exit-code
+       and object-equality sections, §When to Add a New Matcher — 2026-07-30 basis
+-->
 
 # Assertions
 
@@ -375,13 +380,15 @@ expect(output).toContain(STEP_TEXT.COMPILE_SUCCESS);
 
 Three output surfaces exist, and they do not hold the same thing.
 
-| Surface                                                                | What it holds                                                              | Assert on it when                                        |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `getScreen()`                                                          | The visible viewport only                                                  | The assertion must ignore scrollback                     |
-| `getOutput()` / `getFullOutput()`                                      | xterm's PROCESSED buffer: current screen + whatever genuinely scrolled off | The value is on screen at capture time                   |
-| `getRawOutput()` / `waitForRawText` / `waitForTextAfter` / `*Awaiting` | Every byte the process wrote — append-only                                 | The value may already have been overwritten by a repaint |
+| Surface                                                                | What it holds                                                                                               | Assert on it when                                        |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `getScreen()`                                                          | **Scrollback + viewport** — NOT viewport-only, despite its name and its doc comment (see the warning below) | Asserting POSITIVELY on current content                  |
+| `getOutput()` / `getFullOutput()`                                      | xterm's PROCESSED buffer: current screen + whatever genuinely scrolled off                                  | The value is on screen at capture time                   |
+| `getRawOutput()` / `waitForRawText` / `waitForTextAfter` / `*Awaiting` | Every byte the process wrote — append-only                                                                  | The value may already have been overwritten by a repaint |
 
 **`getOutput()` is not a frame log.** Ink redraws in place, so when a frame fits the viewport each repaint overwrites the previous one and nothing enters scrollback. A value that was rendered and then re-rendered differently is unrecoverable from it. Never assert "an earlier frame contained X" via `getOutput()`.
+
+**`getScreen()` is not viewport-only, so NO surface here is safe for an absence assertion.** It reads absolute buffer lines `0 .. viewportY + rows` — scrollback plus viewport. Its doc comment says "viewport only, no scrollback" and is wrong; the comment is left in place deliberately because every page object depends on the method, so correcting it needs its own audit pass. Until then, [reference/testing/e2e-infrastructure.md § `getScreen()` is not viewport-only](../../reference/testing/e2e-infrastructure.md) is the authority. Consequence: see [§ Negative Assertions](#negative-assertions) below — none of the three surfaces can carry a `not.toContain` about text the session once legitimately drew.
 
 **Toasts are always a raw-output assertion.** They render in an absolutely-positioned row Ink rewrites in place. Use the `*Awaiting` step methods (`toggleFocusedSkillAwaiting`, `selectSkillAwaiting`, `toggleFilterIncompatibleAwaiting`, `toggleFocusedAgentAwaiting`, `confirmAwaiting`), which snapshot a raw cursor before the press and wait on raw output after it. A non-anchored raw match would be satisfied by an earlier frame's residue.
 
@@ -404,6 +411,46 @@ expect(configContent).not.toContain("web-styling-tailwind");
 expect(output).not.toContain("Failed to archive");
 expect(output).not.toContain("ENOENT");
 ```
+
+Three further constraints apply to any negative assertion about **rendered output**. Each one, independently, produces an assertion that cannot fail.
+
+### 1. Never assert absence of text the session once legitimately drew
+
+Every terminal surface includes scrollback (see the corrected table above), so the assertion tests the emulator's memory rather than the process's current output. Text drawn on any earlier frame is still matchable.
+
+The resize guard is the sharpest case: shrinking the terminal pushes the entire pre-shrink frame into scrollback, so `not.toContain(STEP_TEXT.BUILD)` fails against residue **whether or not the guard works**. A cursor-anchored raw wait does not rescue it either — a resize paints twice (Ink's own `resized()` re-render, then the app's reaction to the new dimensions), so the post-cursor slice holds both frames.
+
+Prove the negative by **order** or by **behaviour**:
+
+```typescript
+// Bad: scrollback-sensitive; fails either way
+expect(step.getScreen()).not.toContain(STEP_TEXT.BUILD);
+
+// Good (order): the prompt is the LAST thing painted, so nothing was drawn after it.
+// Discriminating — with the guard reverted the buffer ends with the wizard footer.
+expect(step.getScreen()).toMatch(/Please resize\.$/);
+
+// Good (behaviour): drive the session and assert the outcome the absent element would have changed.
+```
+
+### 2. Pair every negative rendering assertion with a positive subject guard
+
+A `not.toContain("<bug shape>")` on a clipped viewport passes for free when the captured frame paints none of the rows the bug shape is made of. Assert, in the very frame you captured, that the subject IS on screen:
+
+```typescript
+await confirm.scrollSummaryToBottom();
+const screen = confirm.getScreen();
+expect(screen).toContain("+ web-developer"); // positive guard: the subject is painted
+expect(screen).not.toContain("─+ "); // now a real claim about it
+```
+
+Clearing the minimum-size gate is not evidence the content is visible — at `TERMINAL_SIZE.SHORT` the confirm panel's five rows are entirely filled by its header, and the first summary row appears six presses into the scroll range.
+
+### 3. A counter is not its content
+
+Asserting that a scroll affordance's "N more above / below" numbers moved does not establish that anything scrolled. Assert a row the movement revealed. Disabling the scroll outright left both counter assertions green while the frame showed the unscrolled header.
+
+This section extends [§ Assert the Surface That Retains the Value](#assert-the-surface-that-retains-the-value), which distinguishes WHICH surface holds a value but not whether the value was ever painted onto any of them. Full rationale, mutation evidence and the fixture-cardinality trap: [anti-patterns.md § Weak Assertions](./anti-patterns.md).
 
 ---
 

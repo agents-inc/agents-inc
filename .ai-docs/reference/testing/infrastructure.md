@@ -10,7 +10,12 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added the new src/cli/lib/permission-checker.test.tsx to the co-located test list; added an "Asserting colour in Ink component tests" subsection — chalk auto-disables on vitest's non-TTY stdout, so colour is unobservable by default and a failing colour assertion is a harness gap, not a product bug (source-grid.test.tsx now saves/restores chalk.level per block); recorded that colour is testable ONLY at the component layer because the E2E harness runs NO_COLOR; verified the three test projects, the unit include/exclude patterns and the vitest.setup.ts homedir/matrix/store hooks against source — unchanged -->
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
+     ✓ only the two added sections — "render() returns before effects flush" and "A regenerated
+       snapshot is a proposal, not a result" (its rule-6.17a extension is PROPOSED, not applied)
+     ✗ test-project/config tables, directory structure, other code patterns, test-constants
+       tables, error handling — 2026-07-30 basis
+-->
 
 # Test Infrastructure
 
@@ -344,6 +349,49 @@ The enabling pattern (see `src/cli/components/wizard/source-grid.test.tsx`, whic
 - Assert both shapes: the positive (label carries the expected colour) AND the negative (label does not fall back to `CLI_COLORS.WHITE`), so a fix that drops the focus background instead of fixing the colour cannot pass.
 
 **Colour is testable only at this layer.** The E2E harness runs with `NO_COLOR`, so every E2E spec asserts the marker, not the colour. Any contract phrased as "these two surfaces render the same colour" (e.g. `rowLabelColor` in `source-grid.tsx` vs `DIFF_COLOR` in `skill-agent-summary.tsx`) needs a component test — an E2E marker assertion does not cover it. See `.ai-docs/agent-findings/2026-07-29-ink-component-colour-assertions-need-forced-chalk-level.md`.
+
+### `render()` returns before effects flush
+
+`ink-testing-library`'s `render()` returns before the concurrent root has flushed effects. A test that mutates the stdout stub and emits an event on the next line emits into a stdout **nothing is subscribed to yet** — the `useEffect` that registers the listener has not run.
+
+The frame simply never changes, so the test reads as "the feature does not work". Without knowing why, the natural next move is to mock the hook — which throws away the only coverage of the subscription itself.
+
+**Any component test that interacts with the stdout stub — resize, or a keypress on a hook-registered handler — must await one render tick first.** `src/cli/components/wizard/wizard-layout.test.tsx` is the canonical shape: a `mountLayout()` helper that renders and then `await delay(RENDER_DELAY_MS)` before returning the instance, with the reason in its doc comment.
+
+```tsx
+const mountLayout = async (logo?: string) => {
+  const instance = render(
+    <WizardLayout version={VERSION} logo={logo}>
+      <Text>{CHILD_MARKER}</Text>
+    </WizardLayout>,
+  );
+  await delay(RENDER_DELAY_MS);
+  return instance;
+};
+```
+
+`RENDER_DELAY_MS` and `delay` come from `src/cli/lib/__tests__/test-constants.ts`. **A frame that never changes after an interaction is this bug before it is a product bug.** See `.ai-docs/agent-findings/2026-07-31-getscreen-is-not-viewport-only-so-absence-assertions-are-unsound.md` § 3.
+
+### A regenerated snapshot is a proposal, not a result
+
+`vitest -u` writes whatever the component currently renders, so a regenerated snapshot **agrees with the code by construction**. Its only value is at review time, and for a fixed-width column layout the diff a reviewer sees is a wall of aligned spaces that reads as noise unless somebody counts columns.
+
+This is not theoretical. Both column-geometry snapshots in `src/cli/components/wizard/source-grid.test.tsx` were regenerated with `-u` when the Sources grid's scope gutter was removed, both came back green, and both encoded a layout the owner had not asked for. Nothing else caught it: `tsc`, ESLint, Prettier, 57 unit tests and every E2E spec touching the Sources grid were green against the wrong layout. **Geometry has no other gate.**
+
+**Before committing a regenerated column-geometry snapshot, derive the intended column starts from the component's own width constants and check them against the emitted frame by index.** For `source-grid.tsx` those are `SCOPE_COL_WIDTH` (11), `SKILL_NAME_WIDTH` (26, widened from 24 in 0.147.0 by exactly the two-column marker width), and `SOURCE_COL_WIDTH` (18), plus a 2-column chevron prefix:
+
+| Column        | Expected start (grouped / flat) | Emitted           |
+| ------------- | ------------------------------- | ----------------- |
+| scope gutter  | 0 / absent                      | `Global` at 0     |
+| skill name    | 11 / 0                          | 13 (2-col marker) |
+| `Local` cell  | 37 / 26                         | caption+value 39  |
+| `Plugin` cell | 55 / 44                         | caption+value 57  |
+
+The flat branch must be the grouped one shifted left by exactly `SCOPE_COL_WIDTH`. State the derivation in the test's JSDoc so the next reader can re-check it without re-deriving it.
+
+> **Cross-ownership note.** The prescriptive form of this rule is **rule 6.17a in `.ai-docs/standards/clean-code-standards.md`**, which requires a whole-frame `toMatchInlineSnapshot()` per layout branch but stops short of requiring that a regenerated one be _read_. That file is owned by convention-keeper, not codex-keeper, so the extension is **proposed, not applied** — recorded here (in a codex-keeper file) so the gap is not lost. The suggestion that introduced 6.17a named this exact risk (_"a reviewer who rubber-stamps snapshot updates gets nothing"_) and shipped without an obligation closing it; the failure occurred one day later, on the very component the rule was written for. See `.ai-docs/agent-findings/2026-07-31-column-geometry-snapshots-regenerated-never-verified.md`.
+
+**E2E specs use no snapshots at all** (verified 2026-08-01: zero `toMatchSnapshot` / `toMatchInlineSnapshot` occurrences under `e2e/`), so this rule is component-test territory only.
 
 ## Test Constants (`src/cli/lib/__tests__/test-constants.ts`)
 

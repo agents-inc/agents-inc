@@ -2,7 +2,7 @@
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added the Closed-Loop Grid Navigation pattern (focusSkill's Tab-walk, the NO_COLOR cell-focus constraint, exact-label matching, Tab-vs-DOWN column semantics) — the canonical navigation recipe, previously undocumented; added a Scope-Explicit Launch pattern for launchInProject / launchInGlobal / globalHome, which every wizard example predated; added a Toast Assertion pattern for the *Awaiting methods and why the processed buffer is the wrong surface; corrected the Wizard Specific-Selection example, which called build.selectSkill("react") — labels now match EXACTLY, so it must be the rendered display title; noted the D-260 spacebar/`s` split in the Scope Testing pattern -->
+<!-- VALIDATED 2026-07-30 · SYNC (product v0.146.0) — test-harness pass. -->
 
 # Patterns
 

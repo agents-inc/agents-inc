@@ -2,7 +2,12 @@
 last_validated: 2026-07-30
 ---
 
-<!-- re-validated 2026-07-30 (product v0.146.0, test-harness pass): added the directory entries the tree omitted — assertions/, fixtures/expected-values.ts, fixtures/plugin-install-state.ts, helpers/type-check-probe.ts, pages/retry-enter.ts, pages/wizards/global-home.ts, matchers/agent-matchers.ts; added maxWorkers: 16 to the Vitest table (PTY tests drop keystrokes at full parallelism); re-counted STEP_TEXT from source (50 -> 64) and listed the omitted members; added TIMEOUTS.SETUP_DUAL and the TERMINAL_SIZE / INTERNAL_RETRIES / WizardType exports to the constants quick-reference; added SOURCE_PATHS.PLUGINS_DIST; added Critical Rules for closed-loop grid navigation and for getOutput() not being a frame log -->
+<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
+     ✓ STEP_TEXT re-counted from e2e/pages/constants.ts; §Critical Rules (four added); the
+       TERMINAL_SIZE and "Resizing mid-session" paragraphs re-read against source
+     ✗ TIMEOUTS, EXIT_CODES, SOURCE_PATHS, DIRS, FILES, INTERNAL_DELAYS, INTERNAL_RETRIES, the
+       directory tree, the Vitest config table, the test-category table — 2026-07-30 basis
+-->
 
 # E2E Testing Standards
 
@@ -163,7 +168,7 @@ All constants live in `e2e/pages/constants.ts`. Tests import from here, never fr
 
 **Files (`FILES`):** `CONFIG_TS`, `CONFIG_TYPES_TS`, `SKILL_MD`, `METADATA_YAML`, `SETTINGS_JSON`, `INSTALLED_PLUGINS_JSON`, `IDENTITY_MD`, `PLAYBOOK_MD`, `PLUGIN_JSON`
 
-**Step text (`STEP_TEXT`)** — all 72 members (re-counted on disk 2026-07-31; the previous "64" predated eight members, seven of which the table below had never listed):
+**Step text (`STEP_TEXT`)** — all 74 members (re-counted on disk 2026-08-01; the "72" recorded here on 2026-07-31 was itself short by two, `FOOTER_HOTKEY_ROW` and `LOGO_BANNER`, which no doc had ever listed). An exhaustive list that is short is worse than a glob, because it reads as authoritative — re-derive this count from `e2e/pages/constants.ts` rather than carrying it forward, and grep [reference/testing/e2e-infrastructure.md](../../reference/testing/e2e-infrastructure.md) for the old value in the same session, since it is the only other place the number is written:
 
 | Group                 | Members                                                                                                                                                                                                                                                     |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -174,10 +179,11 @@ All constants live in `e2e/pages/constants.ts`. Tests import from here, never fr
 | Sources step          | `CONFIGURED_MARKETPLACES`, `ADD_SOURCE`                                                                                                                                                                                                                     |
 | Scope group labels    | `SCOPE_GLOBAL`, `SCOPE_PROJECT`                                                                                                                                                                                                                             |
 | Dashboard             | `DASHBOARD`                                                                                                                                                                                                                                                 |
-| UI elements           | `FOOTER_SELECT`, `START_FROM_SCRATCH`, `TOGGLE_SELECTION`, `NO_INSTALLATION`                                                                                                                                                                                |
+| UI elements           | `FOOTER_SELECT`, `FOOTER_HOTKEY_ROW`, `START_FROM_SCRATCH`, `TOGGLE_SELECTION`, `NO_INSTALLATION`                                                                                                                                                           |
 | Installation output   | `INSTALLING_PLUGINS`, `INSTALLING_PLUGINS_ELLIPSIS`, `PLUGIN_NATIVE`, `SKILLS_COPIED_TO`, `AGENTS_COMPILED_TO`, `CONFIGURATION_LABEL`, `READY_TO_INSTALL`, `NO_SKILLS_FOUND`, `UNINSTALL_CANCELLED`                                                         |
 | Scope warnings        | `GLOBAL_SKILLS_BLOCKED`, `GLOBAL_AGENTS_BLOCKED`                                                                                                                                                                                                            |
 | Terminal-size warning | `TOO_NARROW`, `TOO_SHORT`, `RESIZE_PROMPT`                                                                                                                                                                                                                  |
+| Stack-step banner     | `LOGO_BANNER`                                                                                                                                                                                                                                               |
 | Scroll affordance     | `SCROLL_MORE_BELOW`, `SCROLL_MORE_ABOVE`                                                                                                                                                                                                                    |
 | Summary-panel header  | `PANEL_MARKETPLACE`, `PANEL_STACK`, `PANEL_STACK_NONE`, `SOURCE_DISPLAY_DEFAULT`                                                                                                                                                                            |
 
@@ -218,6 +224,17 @@ These are paths within a skills source directory (not a project directory). Use 
 **`getOutput()` is a buffer, not a frame log.** `getOutput()` / `getFullOutput()` return xterm's PROCESSED buffer — the current screen plus whatever genuinely scrolled off. Ink repaints overwrite in place, so a value that was rendered and then re-rendered differently is NOT retrievable from it. Never assert "some earlier frame contained X" via `getOutput()`. Assert at the moment the frame is on screen, or use a raw-output surface (`getRawOutput()`, `waitForRawText`, `waitForTextAfter`) — raw PTY output is append-only and is the only frame-accumulating surface.
 
 **Never broaden assertions.** When a strict assertion fails, investigate why — don't weaken it. If the failure is a fixture limitation, keep the strict assertion as a commented-out `// KNOWN GAP:` with an explanation. If it's a product bug, use `it.fails`.
+
+**Mutation-check every regression guard — green after a fix is not evidence.** A spec that has never been observed to fail is indistinguishable from one that cannot. Before calling a spec a guard: revert the fix in `src/`, `npm run build`, run the spec, confirm it is red **and red for the reason the test name claims**, then restore. This applies to repaired assertions as much as to new ones — a "fixed" vacuous assertion nobody has watched go red is exactly the vacuum it replaced.
+
+Two mechanisms make a spec pass for the wrong reason, and neither is visible by reading it:
+
+1. **The fixture is smaller than production, so the defect's blast radius differs.** `createE2ESource()` writes one stack and nine skills; the real marketplace carries a dozen stacks and many more. For a size-dependent rendering defect, how far an overpaint reaches scales with list length. The stack-step bleed reached the footer against the real marketplace but stopped two rows short of it against the fixture — so the footer assertion, the one matching the reported symptom, was **green against the unfixed binary**. Record in the spec which assertion carries the red under this fixture, so a later reader does not simplify it down to the one that does not.
+2. **The assertion's subject is not painted in the captured frame.** See the absence rule below.
+
+**Absence is the hardest thing to assert in a terminal, and three separate traps make it vacuous.** (a) `getScreen()` is **not** viewport-only despite its name and doc comment — it reads scrollback plus viewport, so `not.toContain(X)` matches anything the session ever drew; prove negatives by ORDER (`toMatch(/…$/)`) or by BEHAVIOUR. (b) A negative rendering assertion needs a **positive subject guard** in the same captured frame — `not.toContain("<bug shape>")` passes for free where none of the rows the shape is made of are painted, and clearing the size gate is not evidence the content is visible. (c) **A counter is not its content** — a scroll affordance's numbers move whether or not anything scrolled. Full detail: [assertions.md § Negative Assertions](./assertions.md) and [anti-patterns.md § Weak Assertions](./anti-patterns.md).
+
+**A workaround in a test's JSDoc is a defect report.** When a spec sidesteps a rendering difference to assert something else, it must cite a finding for that difference or point at the spec that pins the un-worked-around form. Otherwise every later spec inherits the dodge, none asserts the real form, and the defect becomes structurally invisible — the suite green precisely because nothing looks. This is not hypothetical: the Sources grid's focus-padding bug was written into `anti-patterns.md` as the worked example for an unrelated rule and shipped untested for two releases.
 
 **Prove the code path fired — don't just assert the contract.** When a test depends on a specific conditional code path running (e.g. `propagateGlobalChangesToProjects` fires only when `finalConfig.projects?.length` is truthy; a merger step fires only when a field is present), add a proof-of-execution assertion (file-content diff, mtime change, side-effect invariant) alongside the contract assertions. Otherwise a regression that short-circuits the path before the contract code runs produces a vacuous pass — the contract assertions hold trivially because the post-state equals the pre-state. If the pre-condition cannot be met on current `main` (blocked by a known bug), comment the proof-of-execution assertion as `// KNOWN GAP:` with a finding reference so it can be uncommented once unblocked. Cross-link to branch selectors (e.g. `writeScopedConfigs` HOME-context vs project-context) when the trigger path is ambiguous.
 
