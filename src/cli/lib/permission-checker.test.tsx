@@ -16,13 +16,39 @@ const PERMISSIONS_WITH_ALLOWS = {
   permissions: { allow: ["Read(*)", "Bash(git *)"] },
 };
 
-async function writeSettingsFile(projectDir: string, settings: Record<string, unknown>) {
+/** Denies the tool most agents need, so a parsed block renders a notice this test can see. */
+const PERMISSIONS_DENYING_BASH = {
+  permissions: { allow: ["Read(*)"], deny: ["Bash(*)"] },
+};
+
+/**
+ * Settings Claude Code writes for itself. The CLI has no list of these to be complete against —
+ * Claude Code adds keys on its own release schedule — which is exactly why it must not judge them.
+ */
+const CLAUDE_CODE_OWN_SETTINGS = {
+  model: "opusplan",
+  statusLine: { type: "command", command: "npx ccstatusline@latest" },
+  effortLevel: "high",
+  attributionSettings: { coAuthoredBy: false },
+};
+
+async function writeSettingsFile(
+  projectDir: string,
+  settings: Record<string, unknown>,
+  fileName: string = STANDARD_FILES.SETTINGS_JSON,
+) {
   const claudeDir = path.join(projectDir, CLAUDE_DIR);
   await mkdir(claudeDir, { recursive: true });
-  await writeFile(path.join(claudeDir, STANDARD_FILES.SETTINGS_JSON), JSON.stringify(settings));
+  await writeFile(path.join(claudeDir, fileName), JSON.stringify(settings));
 }
 
-describe("checkPermissions settings-file field validation", () => {
+/**
+ * settings.json belongs to Claude Code; this CLI reads one key out of it (`permissions`) and owns
+ * nothing else in the file. So no field in it — known, unknown, or invented next release — is
+ * something this CLI may warn about. What it must still do is read the permissions block out of
+ * whatever else the file happens to carry.
+ */
+describe("checkPermissions settings-file field handling", () => {
   let projectDir: string;
 
   beforeEach(async () => {
@@ -66,19 +92,19 @@ describe("checkPermissions settings-file field validation", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("warns about a genuinely unknown settings field", async () => {
+  it("does not warn about a settings field it has never heard of", async () => {
     await writeSettingsFile(projectDir, {
       ...PERMISSIONS_WITH_ALLOWS,
       someUnknownField: true,
     });
 
-    await checkPermissions(projectDir);
+    const result = await checkPermissions(projectDir);
 
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Unknown fields in settings file"));
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("someUnknownField"));
+    expect(warn).not.toHaveBeenCalled();
+    expect(result, "a field the CLI does not own must not turn into a notice either").toBeNull();
   });
 
-  it("does not report known fields alongside a genuinely unknown one", async () => {
+  it("does not warn about an unfamiliar field sitting alongside familiar ones", async () => {
     await writeSettingsFile(projectDir, {
       ...PERMISSIONS_WITH_ALLOWS,
       extraKnownMarketplaces: {},
@@ -87,7 +113,35 @@ describe("checkPermissions settings-file field validation", () => {
 
     await checkPermissions(projectDir);
 
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("extraKnownMarketplaces"));
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("says nothing about the settings Claude Code writes for itself, and still reads permissions", async () => {
+    await writeSettingsFile(projectDir, {
+      ...PERMISSIONS_WITH_ALLOWS,
+      ...CLAUDE_CODE_OWN_SETTINGS,
+    });
+
+    const result = await checkPermissions(projectDir);
+
+    expect(warn).not.toHaveBeenCalled();
+    // Null is the "permissions were read and they are fine" outcome — a file whose permissions
+    // went unread renders the "No permissions configured" notice instead.
+    expect(result, "allow rules with no restrictive deny must render no notice").toBeNull();
+  });
+
+  it("says nothing about them in settings.local.json either, and reads that file's permissions", async () => {
+    await writeSettingsFile(
+      projectDir,
+      { ...PERMISSIONS_DENYING_BASH, ...CLAUDE_CODE_OWN_SETTINGS },
+      STANDARD_FILES.SETTINGS_LOCAL_JSON,
+    );
+
+    const result = await checkPermissions(projectDir);
+
+    expect(warn).not.toHaveBeenCalled();
+    // The local file is read first, and its deny reached the notice: positive proof the
+    // permissions block was parsed out of a file full of keys this CLI ignores.
+    expect(result, "a Bash deny must still render the permission warning").not.toBeNull();
   });
 });

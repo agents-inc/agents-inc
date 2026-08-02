@@ -1,6 +1,5 @@
 import React from "react";
 import { z } from "zod";
-import { isRecord } from "../utils/type-guards.js";
 
 import { Text, Box } from "ink";
 import path from "path";
@@ -8,34 +7,23 @@ import path from "path";
 import { CLAUDE_DIR, CLI_COLORS, MAX_CONFIG_FILE_SIZE, STANDARD_FILES } from "../consts";
 import { fileExists, readFileSafe } from "../utils/fs";
 import { warn } from "../utils/logger";
-import { settingsFileSchema, warnUnknownFields } from "./schemas";
+import { settingsFileSchema } from "./schemas";
 
 type SettingsFile = z.infer<typeof settingsFileSchema>;
 type PermissionConfig = NonNullable<SettingsFile["permissions"]>;
 
-// Known Claude CLI settings.json fields (permissions is ours; the rest are managed by Claude CLI).
-// enabledPlugins and extraKnownMarketplaces are written by the Claude CLI during our own
-// plugin-install path (claudePluginInstall / claudePluginMarketplaceAdd in utils/exec.ts),
-// so a settings file produced by this CLI's operations must never trigger the unknown-field warning.
-const EXPECTED_SETTINGS_KEYS = [
-  "permissions",
-  "enabledPlugins",
-  "extraKnownMarketplaces",
-  "env",
-  "allowedTools",
-  "customInstructions",
-  "defaultModel",
-] as const;
-
-/** Reads one settings file's permissions block; undefined when absent, malformed, or empty. */
+/**
+ * Reads one settings file's permissions block; undefined when absent, malformed, or empty.
+ *
+ * settings.json belongs to Claude Code, which adds keys on its own release schedule. This CLI
+ * consumes `permissions` and owns nothing else in the file, so it stays silent about every other
+ * field rather than warning about settings it has no standing to judge (D-304).
+ */
 async function readSettingsPermissions(filePath: string): Promise<PermissionConfig | undefined> {
   if (!(await fileExists(filePath))) return undefined;
   try {
     const content = await readFileSafe(filePath, MAX_CONFIG_FILE_SIZE);
     const raw = JSON.parse(content);
-    if (isRecord(raw)) {
-      warnUnknownFields(raw, EXPECTED_SETTINGS_KEYS, `settings file '${filePath}'`);
-    }
     const result = settingsFileSchema.safeParse(raw);
     const parsed: SettingsFile = result.success ? result.data : {};
     return parsed.permissions;
