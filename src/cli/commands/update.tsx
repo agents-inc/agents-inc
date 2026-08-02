@@ -16,7 +16,10 @@ import {
   collectScopedSkillDirs,
   findSkillMatch,
   discoverInstalledSkills,
+  recompilePropagatedProjectAgents,
 } from "../lib/operations/index.js";
+import { normalizeProjectPath } from "../lib/config-gate/index.js";
+import { loadProjectConfigFromDir } from "../lib/configuration/project-config.js";
 import { CLI_INVOKE_COMMAND, LOCAL_SKILLS_PATH, SOURCE_SRC_DIR } from "../consts.js";
 import {
   ERROR_MESSAGES,
@@ -105,6 +108,7 @@ export default class Update extends BaseCommand {
       this.printUpdateResults(updateResult);
 
       const recompiledAgents = await this.recompileAfterUpdate(updateResult, context);
+      await this.refreshRegisteredProjects(updateResult, context);
 
       this.printCompletionSummary(updateResult, recompiledAgents);
     } catch (error) {
@@ -312,6 +316,63 @@ export default class Update extends BaseCommand {
       this.warn(`Could not recompile agents: ${getErrorMessage(error)}`);
       return [];
     }
+  }
+
+  /**
+   * Recompiles the agents of every OTHER registered project.
+   *
+   * `update` replaces the skill directories under `~/.claude/skills/` in place.
+   * Every registered project compiled its own `.claude/agents/*.md` from those
+   * same directories, so the moment the new content lands those agents are
+   * quoting guidance the source no longer contains — with nothing to signal it.
+   * This is the content twin of the config fan-out the gate performs for a global
+   * CONFIG change, and it reuses the same helper.
+   *
+   * It writes NO config pair — a skill's content changes nothing any config
+   * declares — so it deliberately does not go through config-gate.
+   *
+   * The cwd is excluded: `recompileAfterUpdate` has already compiled it. Failure
+   * is warned, never fatal — the skills were updated either way.
+   */
+  private async refreshRegisteredProjects(
+    updateResult: UpdateLocalSkillsResult,
+    context: UpdateContext,
+  ): Promise<void> {
+    if (updateResult.updated.length === 0) return;
+
+    try {
+      const registered = await this.registeredProjectsToRefresh(context);
+      if (registered.length === 0) return;
+
+      const { recompiledCount, failedCount, warnings } =
+        await recompilePropagatedProjectAgents(registered);
+
+      for (const warning of warnings) {
+        this.warn(warning);
+      }
+
+      const failureSuffix = failedCount > 0 ? ` (${failedCount} failed)` : "";
+      this.log(`Recompiled agents in ${recompiledCount} registered projects${failureSuffix}\n`);
+    } catch (error) {
+      this.warn(
+        `Could not refresh registered projects — their compiled agents may still quote the pre-update content: ${getErrorMessage(error)}`,
+      );
+    }
+  }
+
+  /**
+   * The registered project paths this run still owes a recompile: everything in
+   * the global config's `projects` registry except the directory the command ran
+   * in. Compared through `normalizeProjectPath`, the same rule the registrations
+   * were stored under, so a cwd reached via a symlink still matches its entry.
+   */
+  private async registeredProjectsToRefresh(context: UpdateContext): Promise<string[]> {
+    const loaded = await loadProjectConfigFromDir(context.homeDir);
+    const projects = loaded?.config.projects ?? [];
+    if (projects.length === 0) return [];
+
+    const current = normalizeProjectPath(context.projectDir);
+    return projects.filter((projectPath) => projectPath !== current);
   }
 
   private printCompletionSummary(
