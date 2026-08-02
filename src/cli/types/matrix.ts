@@ -8,8 +8,12 @@ export { CATEGORIES, DOMAINS } from "./generated/source-types";
 import type { Category, Domain } from "./generated/source-types";
 
 /** Claude model selectors for agent configuration */
-export const MODEL_NAMES = ["sonnet", "opus", "haiku", "inherit"] as const;
+export const MODEL_NAMES = ["sonnet", "opus", "haiku", "fable", "inherit"] as const;
 export type ModelName = (typeof MODEL_NAMES)[number];
+
+/** Reasoning effort levels for agent configuration */
+export const EFFORT_NAMES = ["low", "medium", "high", "xhigh", "max"] as const;
+export type EffortLevel = (typeof EFFORT_NAMES)[number];
 
 /** Agent permission modes for Claude Code tool access */
 export const PERMISSION_MODES = [

@@ -22,7 +22,11 @@
     },
     "model": {
       "type": "string",
-      "enum": ["sonnet", "opus", "haiku", "inherit"]
+      "enum": ["sonnet", "opus", "haiku", "fable", "inherit"]
+    },
+    "effort": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "xhigh", "max"]
     },
     "tools": {
       "minItems": 1,

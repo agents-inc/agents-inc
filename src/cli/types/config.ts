@@ -1,5 +1,5 @@
 import type { AgentName } from "./agents";
-import type { BoundSkill, Domain } from "./matrix";
+import type { BoundSkill, Domain, EffortLevel, ModelName } from "./matrix";
 import type { SkillId, SkillReference } from "./skills";
 import type { StackAgentConfig } from "./stacks";
 
@@ -37,12 +37,20 @@ export type SkillConfig = {
 export type AgentScopeConfig = {
   name: AgentName;
   scope: SkillScope;
+  /** Overrides the model from the agent's own metadata. Absent means "keep the metadata default". */
+  model?: ModelName;
+  /** Overrides the reasoning effort from the agent's own metadata. */
+  effort?: EffortLevel;
   excluded?: boolean;
 };
 
 /** Agent configuration for compilation - contains skills for a specific agent */
 export type CompileAgentConfig = {
   skills?: SkillReference[];
+  /** Config-level model override, preferred over the agent definition's own value. */
+  model?: ModelName;
+  /** Config-level effort override, preferred over the agent definition's own value. */
+  effort?: EffortLevel;
 };
 
 /** Compile configuration derived from stack (agents to compile from keys of `agents`) */
@@ -88,7 +96,7 @@ export type ProjectConfig = {
    * Resolved stack configuration with agent->skill mappings.
    * Keys are agent IDs, values are category->SkillAssignment[] mappings.
    * Values are normalized to SkillAssignment[] at load time (same as stacks.ts).
-   * Generated during `agentsinc init` when a stack is selected.
+   * Generated during `npx agents-inc init` when a stack is selected.
    */
   stack?: Record<string, StackAgentConfig>;
 

@@ -6,7 +6,7 @@ import { AUTHOR_HANDLE_PATTERN, KEBAB_CASE_PATTERN, LOCAL_PSEUDO_CATEGORY } from
 import { formatZodIssue } from "./schema-validator";
 import { warn } from "../utils/logger";
 import { SKILL_SLUGS, CATEGORIES } from "../types/generated/source-types";
-import { MODEL_NAMES, PERMISSION_MODES } from "../types/matrix";
+import { EFFORT_NAMES, MODEL_NAMES, PERMISSION_MODES } from "../types/matrix";
 import type {
   AgentHookAction,
   AgentHookDefinition,
@@ -21,6 +21,7 @@ import type {
   ConflictRule,
   DiscourageRule,
   Domain,
+  EffortLevel,
   Marketplace,
   MarketplaceMetadata,
   MarketplaceOwner,
@@ -48,6 +49,8 @@ export const boundSkillSchema: z.ZodType<BoundSkill> = z.object({
 });
 
 export const modelNameSchema = z.enum(MODEL_NAMES) as z.ZodType<ModelName>;
+
+export const effortLevelSchema = z.enum(EFFORT_NAMES) as z.ZodType<EffortLevel>;
 
 export const permissionModeSchema = z.enum(PERMISSION_MODES) as z.ZodType<PermissionMode>;
 
@@ -194,6 +197,7 @@ export const agentYamlConfigSchema: z.ZodType<AgentYamlConfig> = z.object({
   title: z.string(),
   description: z.string(),
   model: modelNameSchema.optional(),
+  effort: effortLevelSchema.optional(),
   tools: z.array(z.string()),
   disallowedTools: z.array(z.string()).optional(),
   permissionMode: permissionModeSchema.optional(),
@@ -236,6 +240,9 @@ export const projectConfigLoaderSchema = z
         z.object({
           name: z.string(),
           scope: z.enum(["project", "global"]),
+          /** Per-agent overrides of the agent's own metadata defaults */
+          model: modelNameSchema.optional(),
+          effort: effortLevelSchema.optional(),
           excluded: z.boolean().optional(),
         }),
       )
@@ -467,7 +474,7 @@ export type ImportedSkillMetadata = {
   [key: string]: unknown;
 };
 
-/** Metadata for skills imported via `agentsinc import skill` (tracks original source for updates) */
+/** Metadata for skills imported via `npx agents-inc import skill` (tracks original source for updates) */
 export const importedSkillMetadataSchema = z
   .object({
     forkedFrom: z
@@ -551,6 +558,7 @@ export const agentYamlGenerationSchema = z
     title: z.string().min(1),
     description: z.string().min(1),
     model: modelNameSchema.optional(),
+    effort: effortLevelSchema.optional(),
     tools: z.array(z.string()).min(1),
     disallowedTools: z.array(z.string()).optional(),
     permissionMode: permissionModeSchema.optional(),
@@ -572,6 +580,7 @@ export const agentFrontmatterValidationSchema = z
     /** Comma-separated list of denied tools */
     disallowedTools: z.string().optional(),
     model: modelNameSchema.optional(),
+    effort: effortLevelSchema.optional(),
     permissionMode: permissionModeSchema.optional(),
     /** Skill names to preload (embed in agent prompt) */
     skills: z.array(z.string().min(1)).optional(),
@@ -839,8 +848,10 @@ export function isCustomMetadata(raw: unknown): boolean {
 
 /**
  * Logs warnings for unknown fields in a parsed object compared to a list of expected keys.
- * Used at security-critical parsing boundaries (marketplace, settings) where `.passthrough()`
- * is kept for forward compatibility but unexpected fields should be surfaced.
+ * Used at security-critical parsing boundaries for files this CLI owns (marketplace.json), where
+ * `.passthrough()` is kept for forward compatibility but unexpected fields should be surfaced.
+ * A file owned by another tool is not such a boundary: an unfamiliar key there is that tool's
+ * business, and a complete expected-key list for it cannot be maintained.
  */
 export function warnUnknownFields(
   parsed: Record<string, unknown>,

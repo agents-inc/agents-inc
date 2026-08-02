@@ -427,7 +427,14 @@ function buildAgentConfigForName(
   const saved =
     savedConfigs?.find((ac) => ac.name === name && !ac.excluded && ac.scope === "project") ??
     savedConfigs?.find((ac) => ac.name === name && !ac.excluded);
-  return { name, scope: saved?.scope ?? "global" };
+  return {
+    name,
+    scope: saved?.scope ?? "global",
+    // Model and effort are the user's deliberate choice, not something the roster re-derives —
+    // they survive the rebuild on the same terms as scope.
+    ...(saved?.model !== undefined && { model: saved.model }),
+    ...(saved?.effort !== undefined && { effort: saved.effort }),
+  };
 }
 
 /** Restores skill configs for a domain: clears excluded flags on restored skills, adds new defaults for unknown skills. */
@@ -930,7 +937,7 @@ export type WizardState = {
   /**
    * Pre-populate domainSelections from a flat list of installed skill IDs.
    *
-   * Used by `agentsinc edit` to restore wizard state from existing project config.
+   * Used by `npx agents-inc edit` to restore wizard state from existing project config.
    * Looks up each skill's category and domain, warns for unresolvable skills.
    *
    * @param skillIds - Flat array of currently installed skill IDs

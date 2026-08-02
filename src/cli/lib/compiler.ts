@@ -97,6 +97,7 @@ export function sanitizeCompiledAgentData(data: CompiledAgentData): CompiledAgen
     tools: sanitizeStringArray(data.agent.tools, "agent.tools") ?? data.agent.tools,
     disallowedTools: sanitizeStringArray(data.agent.disallowedTools, "agent.disallowedTools"),
     model: sanitizeString(data.agent.model, "agent.model"),
+    effort: sanitizeString(data.agent.effort, "agent.effort"),
     permissionMode: sanitizeString(data.agent.permissionMode, "agent.permissionMode"),
   };
 

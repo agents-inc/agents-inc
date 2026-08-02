@@ -1,4 +1,4 @@
-import type { Domain, ModelName, PermissionMode } from "./matrix";
+import type { Domain, EffortLevel, ModelName, PermissionMode } from "./matrix";
 import type { PluginSkillRef, Skill, SkillId } from "./skills";
 import type { AgentName } from "./generated/source-types";
 
@@ -29,6 +29,8 @@ export type BaseAgentFields = {
   /** Brief description for Task tool */
   description: string;
   model?: ModelName;
+  /** Reasoning effort. Emitted into compiled frontmatter only when set — there is no default. */
+  effort?: EffortLevel;
   tools: string[];
   disallowedTools?: string[];
   permissionMode?: PermissionMode;
@@ -79,6 +81,7 @@ export type AgentFrontmatter = {
   disallowedTools?: string;
   /** Use "inherit" to use parent model */
   model?: ModelName;
+  effort?: EffortLevel;
   permissionMode?: PermissionMode;
   /** Skill names that are preloaded for this agent */
   skills?: SkillId[];

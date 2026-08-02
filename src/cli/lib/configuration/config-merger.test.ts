@@ -625,6 +625,26 @@ describe("config-merger", () => {
           skills: [],
         });
       });
+
+      it("should apply a changed model and effort to the existing entry for the same name and scope", () => {
+        const newConfig = buildProjectConfig({
+          name: "project",
+          agents: buildAgentConfigs(["web-developer"], { model: "haiku", effort: "xhigh" }),
+          skills: [],
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          agents: buildAgentConfigs(["web-developer"], { model: "opus", effort: "medium" }),
+          skills: [],
+        });
+
+        const result = mergeConfigs(newConfig, existingConfig);
+
+        expect(
+          result.agents,
+          "a model/effort change is the whole edit — it must land, and must not duplicate the row",
+        ).toStrictEqual(buildAgentConfigs(["web-developer"], { model: "haiku", effort: "xhigh" }));
+      });
     });
 
     describe("skills — merge by ID (new overrides existing, keeps rest)", () => {

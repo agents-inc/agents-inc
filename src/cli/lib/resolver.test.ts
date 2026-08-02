@@ -858,4 +858,43 @@ describe("resolveAgents with stack", () => {
 
     expect(result["api-developer"].skills).toStrictEqual([]);
   });
+
+  /**
+   * The agent's own metadata.yaml carries the default; the project config carries the user's
+   * choice. RESOLVE_AGENTS_DEFINITIONS pins both agents at `model: opus`, so a config value that
+   * survives resolution can only have come from the config.
+   */
+  describe("model and effort", () => {
+    it("should prefer the config model and effort over the agent metadata default", async () => {
+      const tunedConfig = createMockCompileConfig({
+        "web-developer": { model: "haiku", effort: "xhigh" },
+      });
+
+      const result = await resolveAgents(
+        RESOLVE_AGENTS_DEFINITIONS,
+        RESOLVE_AGENTS_SKILL_MAP,
+        tunedConfig,
+        "/test/path",
+      );
+
+      expect(result["web-developer"].model).toBe("haiku");
+      expect(result["web-developer"].effort).toBe("xhigh");
+    });
+
+    it("should keep the metadata model when the config sets only effort", async () => {
+      const effortOnlyConfig = createMockCompileConfig({
+        "web-developer": { effort: "low" },
+      });
+
+      const result = await resolveAgents(
+        RESOLVE_AGENTS_DEFINITIONS,
+        RESOLVE_AGENTS_SKILL_MAP,
+        effortOnlyConfig,
+        "/test/path",
+      );
+
+      expect(result["web-developer"].model).toBe("opus");
+      expect(result["web-developer"].effort).toBe("low");
+    });
+  });
 });

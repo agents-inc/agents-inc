@@ -24,7 +24,7 @@
     },
     "model": {
       "type": "string",
-      "enum": ["sonnet", "opus", "haiku", "inherit"]
+      "enum": ["sonnet", "opus", "haiku", "fable", "inherit"]
     },
     "context": {
       "type": "string",

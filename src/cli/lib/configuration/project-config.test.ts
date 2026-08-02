@@ -44,6 +44,22 @@ describe("project-config", () => {
       expect(result!.config).toStrictEqual(inputConfig);
     });
 
+    it("should preserve per-agent model and effort", async () => {
+      const inputConfig = buildProjectConfig({
+        name: "my-project",
+        agents: buildAgentConfigs(["web-developer"], { model: "haiku", effort: "xhigh" }),
+      });
+      await writeTestTsConfig(tempDir, inputConfig as Record<string, unknown>);
+
+      const result = await loadProjectConfig(tempDir);
+
+      expect(result).not.toBeNull();
+      expect(
+        result!.config.agents,
+        "an agent's model and effort are the user's deliberate choice — the loader must not strip them",
+      ).toStrictEqual(inputConfig.agents);
+    });
+
     it("should load config with stack (bare strings normalized to SkillAssignment[])", async () => {
       await writeTestTsConfig(tempDir, {
         ...buildProjectConfig({ name: "my-project" }),

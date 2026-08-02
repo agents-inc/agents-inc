@@ -3205,6 +3205,31 @@ describe("WizardStore", () => {
       expect(selectedAgents).toContain("web-developer");
     });
 
+    it("should preserve a saved agent's model and effort through the roster rebuild", () => {
+      const store = useWizardStore.getState();
+      // Preselection re-derives every rostered agent's config from scratch. The scope survives
+      // that rebuild; the user's model/effort choice has to survive it on the same terms.
+      useWizardStore.setState({
+        agentConfigs: buildAgentConfigs(["web-developer"], {
+          scope: "project",
+          model: "haiku",
+          effort: "xhigh",
+        }),
+      });
+
+      store.toggleDomain("web");
+      store.preselectAgentsFromDomains();
+
+      const { agentConfigs } = useWizardStore.getState();
+      expect(agentConfigs.filter((ac) => ac.name === "web-developer")).toStrictEqual(
+        buildAgentConfigs(["web-developer"], {
+          scope: "project",
+          model: "haiku",
+          effort: "xhigh",
+        }),
+      );
+    });
+
     it("should preserve excluded agent configs", () => {
       const store = useWizardStore.getState();
       // Set up an excluded agent config that is not in any domain's agents

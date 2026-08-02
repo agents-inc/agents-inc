@@ -184,7 +184,11 @@ export async function resolveAgents(
           name: agentName,
           title: definition.title,
           description: definition.description,
-          model: definition.model,
+          // The project config carries the user's deliberate choice; the agent's own metadata
+          // carries the default. Config wins, silently — warning on every compile for a setting
+          // someone made on purpose is noise.
+          model: agentConfig?.model ?? definition.model,
+          effort: agentConfig?.effort ?? definition.effort,
           tools: definition.tools,
           skills: resolvedSkills,
           path: definition.path,
