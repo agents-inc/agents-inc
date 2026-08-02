@@ -7,6 +7,22 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.148.0] - 2026-08-02
+
+**One module owns the global config, sub-agents gain a model and an effort, and several commands now reach outside the directory you ran them in**
+
+- **D-282** — writing `~/.claude-src/config.ts` and its `config-types.ts` sibling is now the exclusive privilege of one module, which always propagates the change to registered projects and recompiles their agents. As a result `compile`, `uninstall`, `update` and `edit` write files outside the directory you invoked them from — read the release notes before upgrading
+- **D-308** — recording a source in a project (adding a marketplace, `eject --source`) silently dropped every exclusive category from the `stack` section, unassigning those skills from their sub-agents on the next compile
+- **D-304** — `init` no longer warns about `model`, `statusLine` and `effortLevel` in `~/.claude/settings.json`; that file is Claude Code's, and this CLI reads only `permissions` from it
+- **D-281** — both `agents-inc` and `agentsinc` now work after a global install; the promoted name previously did not exist
+- **D-307** — the marketplace-sources settings overlay is withdrawn behind a flag: its `s` hotkey was stolen from the text input beneath it, so no URL containing an `s` could be typed
+- **D-309** — the config gate's private writer no longer authorises itself, closing the one bypass route that was guarded by lint alone
+- **D-305** — the plugin-install matcher now asserts the skill is on disk instead of trusting the registry record
+
+Sub-agents also gain their own model and reasoning effort, and eight previously undocumented subsystems are now written up.
+
+See [changelogs/0.148.0.md](./changelogs/0.148.0.md) for full details.
+
 ## [0.147.1] - 2026-08-01
 
 **`validate` reports why parsing failed, and the ESLint baseline goes to zero**
