@@ -5,9 +5,6 @@
   "description": "Schema for custom skill metadata.yaml files with relaxed category and slug validation.",
   "type": "object",
   "properties": {
-    "category": {
-      "type": "string"
-    },
     "author": {
       "type": "string",
       "pattern": "^@[a-z][a-z0-9-]*$"
@@ -25,12 +22,6 @@
     "usageGuidance": {
       "type": "string",
       "minLength": 10
-    },
-    "slug": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 50,
-      "pattern": "^[a-z][a-z0-9-]*$"
     },
     "contentHash": {
       "type": "string",
@@ -68,7 +59,16 @@
     },
     "custom": {
       "type": "boolean"
+    },
+    "category": {
+      "type": "string"
+    },
+    "slug": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50,
+      "pattern": "^[a-z][a-z0-9-]*$"
     }
   },
-  "required": ["category", "author", "displayName", "cliDescription", "usageGuidance", "slug"]
+  "required": ["author", "displayName", "cliDescription", "usageGuidance", "category", "slug"]
 }

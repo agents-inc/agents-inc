@@ -5,6 +5,61 @@
   "description": "Schema for skill metadata.yaml files.",
   "type": "object",
   "properties": {
+    "author": {
+      "type": "string",
+      "pattern": "^@[a-z][a-z0-9-]*$"
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 30
+    },
+    "cliDescription": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
+    "usageGuidance": {
+      "type": "string",
+      "minLength": 10
+    },
+    "contentHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{7}$"
+    },
+    "updated": {
+      "type": "string"
+    },
+    "forkedFrom": {
+      "type": "object",
+      "properties": {
+        "skillId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        }
+      },
+      "required": ["skillId", "contentHash", "date"],
+      "additionalProperties": false
+    },
+    "domain": {
+      "type": "string"
+    },
+    "custom": {
+      "type": "boolean"
+    },
     "category": {
       "type": "string",
       "enum": [
@@ -98,24 +153,6 @@
         "web-ui-components",
         "web-utilities"
       ]
-    },
-    "author": {
-      "type": "string",
-      "pattern": "^@[a-z][a-z0-9-]*$"
-    },
-    "displayName": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 30
-    },
-    "cliDescription": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 60
-    },
-    "usageGuidance": {
-      "type": "string",
-      "minLength": 10
     },
     "slug": {
       "type": "string",
@@ -343,45 +380,8 @@
         "zod-validation",
         "zustand"
       ]
-    },
-    "contentHash": {
-      "type": "string",
-      "pattern": "^[a-f0-9]{7}$"
-    },
-    "updated": {
-      "type": "string"
-    },
-    "forkedFrom": {
-      "type": "object",
-      "properties": {
-        "skillId": {
-          "type": "string"
-        },
-        "version": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "contentHash": {
-          "type": "string"
-        },
-        "source": {
-          "type": "string"
-        },
-        "date": {
-          "type": "string"
-        }
-      },
-      "required": ["skillId", "contentHash", "date"],
-      "additionalProperties": false
-    },
-    "domain": {
-      "type": "string"
-    },
-    "custom": {
-      "type": "boolean"
     }
   },
-  "required": ["category", "author", "displayName", "cliDescription", "usageGuidance", "slug"],
+  "required": ["author", "displayName", "cliDescription", "usageGuidance", "category", "slug"],
   "additionalProperties": false
 }
