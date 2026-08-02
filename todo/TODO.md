@@ -9,6 +9,9 @@
 
 | ID    | Task                                                                                                                                                                                                | Status        | Type     | Complexity |
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
+| D-307 | Wizard root `useInput` steals `s` from the add-source text input — unfixed; overlay gated off behind `WIZARD_SETTINGS_OVERLAY`.                                                                     | Ready for Dev | bug      | easy       |
+| D-280 | Prune built-in stacks: ~2 Next.js, ~2 React, one each Solid/Svelte/Astro; fate of the rest TBD.                                                                                                     | Ready for Dev | refactor | easy       |
+| D-306 | Deeper incompatibility rules — richer semantics beyond conflicts/requires; scope TBD with Vincent.                                                                                                  | Investigate   | feature  | complex    |
 | D-276 | Exclusive category: allow selecting a skill that conflicts with a global one, defaulting it to project scope.                                                                                       | Ready for Dev | feature  | complex    |
 | D-266 | Shared scroll gates (`useRowScroll`/`useSectionScroll`) disable clipping below `MIN_VIEWPORT_ROWS`, so agents/domains/build/sources bleed at short terminal heights.                                | Ready for Dev | bug      | complex    |
 | D-239 | Web UI: extract shared matrix/config-types package for a new browser skill-picker repo. [Plan](./D-239-web-ui-shared-matrix-package.md)                                                             | Investigate   | feature  | complex    |
@@ -57,8 +60,43 @@ See [docs/guides/agent-reminders.md](../docs/guides/agent-reminders.md) for the 
 
 ### Bugs
 
-**Key files**: `src/cli/stores/wizard-store.ts` (`toggleTechnology`'s exclusive-swap guard,
-`reconcileSkillConfigs`/`applySkillRemoval`), `e2e/lifecycle/init-dashboard-edit-plugin-install.e2e.test.ts`.
+#### D-307: Wizard root `useInput` steals `s` from the add-source text input
+
+**Flag status (owner decision, 2026-08-02): surface hidden, defect intact.** The settings overlay
+and its `s` hotkey are now gated behind `FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY` (default `false`,
+`feature-flags.ts`), and the 7 e2e specs that drive the overlay are `skipIf`-gated on the same flag.
+Nothing below is fixed — the flag only makes the broken path unreachable. The work here is now:
+fix the input handling, then flip the flag on, then un-gate the 7 specs.
+
+Found 2026-08-02 by an e2e author and verified empirically against the source.
+
+**Cause.** The root `useInput` in `src/cli/components/wizard/wizard.tsx` opens with a
+`store.showSettings` branch (lines 133-138) that claims `HOTKEY_SETTINGS` unconditionally. Ink fires
+every mounted `useInput` for the same keystroke, so that branch also runs while the settings
+overlay's add-source TEXT INPUT is open — the one place an `s` is data rather than a command.
+
+**Consequence.** `toggleSettings()` closes the overlay mid-word and unmounts `StepSettings` along
+with its input handler. The characters after the `s` fall through to the sources grid, where
+`HOTKEY_SET_ALL_LOCAL` (`l`) and `HOTKEY_SET_ALL_PLUGIN` (`p`) are hotkeys and Enter advances the
+step. No source URL containing an `s` can be entered interactively at all — `https` alone is enough
+to disqualify nearly every real URL.
+
+**Workaround already in tree.** `e2e/interactive/init-wizard-sources-cancel-persists.e2e.test.ts`
+reaches its marketplace through a deliberately `s`-free relative symlink path. Its JSDoc documents
+this defect and records that a spec for the defect itself belongs with the sources step's input
+handling — so that file is the reference repro, not a second place to fix.
+
+**Fix direction.** Text-input focus must suppress the root hotkey handler: scope the root `useInput`
+on whether a text input owns the keyboard. The parts are nearly there already — `StepSettings` holds
+the add-source modal in local `useModalState` and correctly scopes its own `useKeyboardNavigation`
+with `active: !addModal.isOpen` — but nothing above the step can read that flag. Lift it to one
+source of truth (a field beside `showSettings` in `wizard-store.ts`, or Ink's `isActive` option on
+the root hook) so both handlers answer the same question. `step-settings.tsx` is the only
+`useTextInput` consumer today, so the blast radius is that hook's owner plus the root branch.
+
+**Tests.** Type a URL containing `s` into the add-source input: the overlay stays open, the value
+accumulates whole, Enter registers the source, and the sources grid never sees the characters. With
+the input shut, ESC and the `s`-to-close binding must both still work.
 
 ---
 
@@ -91,6 +129,52 @@ Stack use `useRowScroll`, which never computes them — so those steps clip sile
 combination of chrome and terminal height can bleed. Detail in
 `.ai-docs/agent-findings/2026-07-31-a-precondition-checked-once-before-render-is-not-a-gate.md`
 and the sibling findings dated 2026-07-31.
+
+---
+
+### Stacks
+
+#### D-280: Prune the built-in stack list
+
+Vincent's guidance (2026-08-01): the list has grown past useful — 17 today, 6 of them Next.js
+variants (`nextjs-fullstack`, `nextjs-t3-stack`, `nextjs-supabase-fullstack`,
+`nextjs-turborepo-fullstack`, `nextjs-ai-saas`, `nextjs-saas-starter`). Target: **~2 Next.js,
+~2 React, and one each for the other front-end frameworks worth keeping (Solid, Svelte, Astro)**.
+Explicitly undecided: `vue-modern-fullstack`, `nuxt-fullstack`, `angular-modern-fullstack`,
+`expo-mobile-fullstack`, `cli-ink-oclif` — confirm keep/drop with him before cutting.
+
+Consequences to handle: the web monorepo's vendored catalog regenerates (its stack grid and
+`pruneUnknownIds` cope with dropped ids by design); a shared payload naming a dropped `stackId`
+degrades gracefully — since the `assignedStack` fidelity fix, a stack id only contributes a
+description on the `--from` path.
+
+---
+
+### Matrix rules
+
+#### D-306: Deeper incompatibility rules
+
+(was D-278; renumbered per the 2026-04-21 ID-collision finding —
+`.ai-docs/agent-findings/2026-04-21-todo-id-collisions-in-completed.md`. The completed D-278 row is
+the unrelated Sources-tab diff task.)
+
+Vincent's ask (2026-08-01): "more in-depth incompatibility rules." Scope needs pinning with him —
+the two plausible readings are already tracked in different places, so this item is the umbrella:
+
+- **Coverage (data)** — web monorepo `docs/configurator-todo.md` §7: 123 of 222 skills state no
+  relationships at all, invisible to the incompatibility rule; also asks the schema to distinguish
+  "audited, no conflicts" from "not audited yet" (today both read as two empty arrays).
+- **Surfacing (UX)** — `TODO-deferred.md` UX-07, incompatibility tooltips.
+- **Adjacent**: D-276 (exclusive/global scope conflict), D-181 (YOLO mode disables constraints),
+  D-90 (Sentry on unresolved matrix references).
+
+What is NOT tracked anywhere — and is probably the ask — is richer rule **semantics**. Today's
+vocabulary: `conflictsWith` (in-category, symmetric), `requires` (+ `needsAny` groups),
+`discourages`, `compatibleWith` (noisy; the web rule deliberately ignores it), and per-category
+exclusivity. The web derives every cross-category incompatibility purely through `requires`
+reachability. Candidate depth directions to discuss before any code: authored cross-category
+conflicts, conditional rules (conflicts only under a co-selection), machine-readable reasons
+carried in the data rather than derived, and severity tiers (block vs discourage vs warn).
 
 ---
 
