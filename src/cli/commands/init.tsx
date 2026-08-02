@@ -21,8 +21,10 @@ import {
   type SkillCopyResult,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
-import { getInstallationInfo } from "../lib/plugins/plugin-info.js";
 import type { GateReport } from "../lib/config-gate/index.js";
+import { fetchSeedConfig } from "../lib/seed/fetch-seed.js";
+import { seedToWizardResult } from "../lib/seed/seed-to-wizard.js";
+import { getInstallationInfo } from "../lib/plugins/plugin-info.js";
 import {
   loadProjectConfig,
   loadProjectConfigFromDir,
@@ -185,6 +187,20 @@ export async function runDashboardFlow(
   return true;
 }
 
+/**
+ * What `init` decided to install, and the little each producer knows that the shared spine does
+ * not. Keeping these on the value rather than branching on a flag downstream is what stops the
+ * two paths growing separate copies of the install sequence.
+ */
+type Selection = {
+  result: WizardResultV2;
+  sourceResult: SourceLoadResult;
+  /** Whether a person is at the terminal, so the permission notice may wait for them. */
+  interactive: boolean;
+  /** What to say if the selection turns out to be empty — only the producer knows why it is. */
+  emptyMessage: string;
+};
+
 export default class Init extends BaseCommand {
   static summary = `Initialize ${DEFAULT_BRANDING.NAME} in this project`;
   static description =
@@ -211,14 +227,52 @@ export default class Init extends BaseCommand {
       description: "Force refresh from remote source",
       default: false,
     }),
+    from: Flags.string({
+      description: "Install a configuration shared from agentsinc.sh by its id, without the wizard",
+      helpValue: "<id>",
+    }),
   };
 
+  /**
+   * One spine, two producers. The wizard and a shared id differ only in *where the selection
+   * comes from* — everything after it (the empty guard, the install pipeline) is identical, so it
+   * lives here once rather than being written twice and drifting.
+   */
   async run(): Promise<void> {
     const { flags } = await this.parse(Init);
     const projectDir = process.cwd();
 
-    if (await this.showDashboardIfInitialized(projectDir)) return;
+    // Only a bare `init` is diverted to the dashboard. An id is an explicit instruction to install
+    // *that* configuration, so it overrides an existing installation instead.
+    if (!flags.from && (await this.showDashboardIfInitialized(projectDir))) return;
 
+    const selection = flags.from
+      ? await this.selectionFromSharedConfig(flags.from, flags)
+      : await this.selectionFromWizard(flags, projectDir);
+
+    if (!selection) this.exit(EXIT_CODES.CANCELLED);
+
+    // A sub-agent is installable on its own — it has front-matter, a prompt and a compiled file
+    // without owning a single skill — so only a selection with neither is nothing to install.
+    if (selection.result.skills.length === 0 && selection.result.selectedAgents.length === 0) {
+      // The producer supplies the wording because only it knows why empty means what it means:
+      // nothing chosen, versus a payload this catalog cannot install.
+      this.error(selection.emptyMessage, { exit: EXIT_CODES.ERROR });
+    }
+
+    await this.handleInstallation(
+      selection.result,
+      selection.sourceResult,
+      flags,
+      selection.interactive,
+    );
+  }
+
+  /** The interactive producer: load the source, run the wizard, return what was chosen. */
+  private async selectionFromWizard(
+    flags: SourceRefreshFlags,
+    projectDir: string,
+  ): Promise<Selection | null> {
     // The blank global config is created by writeProjectConfig() once the
     // wizard succeeds, never before it renders: a cancelled init must leave no
     // artifact that the next run could mistake for an existing installation.
@@ -241,13 +295,62 @@ export default class Init extends BaseCommand {
       globalConfig,
       isGlobalRoot,
     );
-    if (!result) this.exit(EXIT_CODES.CANCELLED);
+    if (!result) return null;
 
-    if (result.skills.length === 0) {
-      this.error("No skills selected", { exit: EXIT_CODES.ERROR });
+    return {
+      result,
+      sourceResult,
+      // A person is already at the terminal, so the permission notice can wait for them.
+      interactive: true,
+      emptyMessage: "No skills selected",
+    };
+  }
+
+  /**
+   * The `--from <id>` producer: fetch and map, no wizard. Nothing here may assume a TTY — running
+   * headless is most of why the flag exists.
+   */
+  private async selectionFromSharedConfig(
+    id: string,
+    flags: SourceRefreshFlags,
+  ): Promise<Selection> {
+    this.log(`Fetching configuration ${id}...`);
+    const fetched = await fetchSeedConfig(id);
+    if (!fetched.ok) {
+      this.error(fetched.error, { exit: EXIT_CODES.ERROR });
     }
 
-    await this.handleInstallation(result, sourceResult, flags);
+    const { sourceResult } = await this.loadSourceOrFail(flags);
+    const { result, skippedSkillIds, skippedAgentNames } = seedToWizardResult(
+      fetched.payload,
+      sourceResult.matrix,
+    );
+
+    // Named, not counted. "3 skills were skipped" cannot be acted on; the ids can, and this is the
+    // one moment the user can tell whether what they shared is what they are getting.
+    if (skippedSkillIds.length > 0) {
+      this.warn(
+        `Skipped ${skippedSkillIds.length} skill(s) this catalog does not know: ${skippedSkillIds.join(", ")}`,
+      );
+    }
+    if (skippedAgentNames.length > 0) {
+      this.warn(
+        `Skipped ${skippedAgentNames.length} unknown sub-agent(s): ${skippedAgentNames.join(", ")}`,
+      );
+    }
+
+    if (result.skills.length > 0) {
+      this.log(
+        `Installing ${result.skills.length} skill(s) across ${result.selectedAgents.length} sub-agent(s)\n`,
+      );
+    }
+
+    return {
+      result,
+      sourceResult,
+      interactive: false,
+      emptyMessage: `Configuration '${id}' contains no skills this catalog can install.`,
+    };
   }
 
   private async showDashboardIfInitialized(projectDir: string): Promise<boolean> {
@@ -312,6 +415,13 @@ export default class Init extends BaseCommand {
     result: WizardResultV2,
     sourceResult: SourceLoadResult,
     flags: SourceRefreshFlags,
+    /**
+     * Whether the caller can hold the terminal. The permission notice is an Ink app with no exit
+     * of its own, so `waitUntilExit()` only ever resolves because a person is there to end it —
+     * which is fine after the wizard and a hang everywhere else. `--from` sets this false: it has
+     * to complete over a pipe and in CI.
+     */
+    interactive = true,
   ): Promise<void> {
     const projectDir = process.cwd();
     const activeSkills = result.skills.filter((s) => !s.excluded);
@@ -363,8 +473,15 @@ export default class Init extends BaseCommand {
 
       const permissionWarning = await checkPermissions(projectDir);
       if (permissionWarning) {
-        const { waitUntilExit } = render(permissionWarning);
-        await waitUntilExit();
+        if (interactive) {
+          const { waitUntilExit } = render(permissionWarning);
+          await waitUntilExit();
+        } else {
+          // Render one frame and let go. The notice is information, not a prompt — there is
+          // nothing to answer, so nothing to wait for.
+          const { unmount } = render(permissionWarning);
+          unmount();
+        }
       }
     } catch (error) {
       this.handleError(error);
