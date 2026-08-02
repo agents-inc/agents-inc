@@ -8,6 +8,14 @@ export const FEATURE_FLAGS = {
   SOURCE_SEARCH: false,
   // Controls whether the intermediate source choice screen is shown (recommended vs customize)
   SOURCE_CHOICE: false,
+  // D-307: controls whether the S key opens the marketplace-sources settings
+  // overlay on the sources step. Off: the overlay is withdrawn, not merely
+  // unadvertised. Before flipping it back on, fix the input capture that makes it
+  // unusable — the wizard root's useInput intercepts S while showSettings is
+  // true, including while the add-source TEXT INPUT is focused, so typing any URL
+  // containing an "s" closes the overlay mid-word and spills the rest of the URL
+  // into the sources grid (where l/p are hotkeys and Enter advances the step).
+  WIZARD_SETTINGS_OVERLAY: false,
   // Controls whether the I key opens the info panel overlay
   INFO_PANEL: true,
   // Controls whether the F hotkey filters incompatible skills in the build step

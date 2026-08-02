@@ -1,3 +1,14 @@
+/**
+ * `StepSettings` is still in the tree and still compiles, but the SURFACE that
+ * reaches it — the `S` hotkey on the sources step — is gated off behind
+ * `FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY` (D-307), so no user can open this
+ * component today.
+ *
+ * These specs deliberately keep running: they render the component directly, so
+ * they never depended on the hotkey, and they are what stops the component
+ * rotting while it is unreachable. The end-to-end specs that drive it THROUGH the
+ * wizard are the ones that skip with the flag.
+ */
 import { render } from "ink-testing-library";
 import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 import { TEST_SOURCE_URL } from "../../lib/__tests__/test-constants.js";

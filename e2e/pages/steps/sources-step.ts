@@ -76,6 +76,28 @@ export class SourcesStep extends BaseStep {
     await this.pressKey("\x7f");
   }
 
+  /**
+   * Add a source from the settings overlay: open the add-source input, type
+   * `url`, submit, and wait for the "Added ..." status the write produces.
+   *
+   * The overlay must already be open (see {@link openSettings}).
+   *
+   * Typed one character at a time on purpose: `useTextInput` accepts only
+   * single-character input (`input.length === 1`), so a whole string written in
+   * one PTY chunk arrives as one multi-character "paste" and is dropped
+   * silently, leaving an empty field that Enter then no-ops on.
+   */
+  async addSourceUrl(url: string): Promise<void> {
+    await this.pressAddSource();
+    for (const char of url) {
+      await this.waitForWizardFooter();
+      await this.pressKey(char);
+    }
+    await this.waitForWizardFooter();
+    await this.pressEnter();
+    await this.screen.waitForText(STEP_TEXT.SOURCE_ADDED, TIMEOUTS.INSTALL);
+  }
+
   /** Go back to build step (Escape). */
   async goBack(): Promise<BuildStep> {
     await this.waitForWizardFooter();

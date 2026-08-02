@@ -12,6 +12,7 @@ import { StepSources } from "./step-sources.js";
 import { StepSettings } from "./step-settings.js";
 import { StepAgents } from "./step-agents.js";
 import { DomainSelection } from "./domain-selection.js";
+import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
 import { validateSelection } from "../../lib/matrix/index.js";
 import { getSkillById } from "../../lib/matrix/matrix-provider.js";
 import { findStack } from "../../lib/matrix/matrix-provider.js";
@@ -29,6 +30,7 @@ import type {
   DomainSelections,
   SelectionValidation,
   SkillId,
+  StackAgentConfig,
 } from "../../types/index.js";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config.js";
 import type { StartupMessage } from "../../utils/logger.js";
@@ -40,6 +42,16 @@ export type WizardResultV2 = {
   skills: SkillConfig[];
   selectedAgents: AgentName[];
   agentConfigs: AgentScopeConfig[];
+  /**
+   * What each sub-agent holds and what preloads, when the producer knows per `(skill, sub-agent)`.
+   * A shared configuration installed with `init --from` does: it assigns each skill to named
+   * sub-agents at a named load state, and that curation is the whole of what was shared.
+   *
+   * The wizard has no per-agent granularity — a skill is selected for the project, not for one
+   * sub-agent — so it leaves this undefined and the install pipeline's ownership rules build the
+   * stack as they always have.
+   */
+  assignedStack?: Partial<Record<AgentName, StackAgentConfig>>;
   selectedStackId: string | null;
   domainSelections: DomainSelections;
   selectedDomains: Domain[];
@@ -118,8 +130,11 @@ export const Wizard: React.FC<WizardProps> = ({
   const buildStepProps = useBuildStepProps({ store, installedSkillIds });
 
   useInput((input, key) => {
-    // ESC is handled by step-settings.tsx's own useKeyboardNavigation hook
-    if (store.showSettings) {
+    // ESC is handled by step-settings.tsx's own useKeyboardNavigation hook.
+    // Flag-gated with the hotkey that opens the overlay (D-307): this branch
+    // swallows every other key while the overlay is up, so leaving it live behind
+    // a withdrawn overlay would let a stale `showSettings` deafen the wizard.
+    if (FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY && store.showSettings) {
       if (isHotkey(input, HOTKEY_SETTINGS)) {
         store.toggleSettings();
       }
@@ -178,7 +193,13 @@ export const Wizard: React.FC<WizardProps> = ({
       return;
     }
 
-    if (isHotkey(input, HOTKEY_SETTINGS) && store.step === "sources") {
+    // D-307: the marketplace-sources overlay is withdrawn, so S does nothing on
+    // the sources step. The footer never advertises it (gated on SOURCE_SEARCH).
+    if (
+      FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY &&
+      isHotkey(input, HOTKEY_SETTINGS) &&
+      store.step === "sources"
+    ) {
       store.toggleSettings();
       return;
     }

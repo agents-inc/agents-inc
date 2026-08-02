@@ -3,7 +3,11 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { STEP_TEXT } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { ensureBinaryExists } from "../helpers/test-utils.js";
+import { FEATURE_FLAGS } from "../../src/cli/lib/feature-flags.js";
 import "../matchers/setup.js";
+
+/** D-307 — the settings overlay is withdrawn; the spec that drives it skips with it. */
+const settingsOverlayEnabled = FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY;
 
 describe("init wizard — UI elements", () => {
   let wizard: InitWizard | undefined;
@@ -69,19 +73,22 @@ describe("init wizard — UI elements", () => {
       expect(output).toContain(STEP_TEXT.BUILD);
     });
 
-    it("should open settings overlay when S key is pressed during sources step", async () => {
-      wizard = await InitWizard.launch();
+    it.skipIf(!settingsOverlayEnabled)(
+      "should open settings overlay when S key is pressed during sources step",
+      async () => {
+        wizard = await InitWizard.launch();
 
-      // Navigate scratch flow to sources
-      const domain = await wizard.stack.selectScratch();
-      const build = await domain.acceptDefaults();
-      const sources = await build.passThroughScratchDomains();
+        // Navigate scratch flow to sources
+        const domain = await wizard.stack.selectScratch();
+        const build = await domain.acceptDefaults();
+        const sources = await build.passThroughScratchDomains();
 
-      await sources.openSettings();
+        await sources.openSettings();
 
-      const output = sources.getOutput();
-      expect(output).toContain(STEP_TEXT.SOURCES);
-    });
+        const output = sources.getOutput();
+        expect(output).toContain(STEP_TEXT.SOURCES);
+      },
+    );
   });
 
   describe("confirm step detail verification", () => {

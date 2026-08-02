@@ -7,9 +7,18 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
+import { FEATURE_FLAGS } from "../../src/cli/lib/feature-flags.js";
 import "../matchers/setup.js";
 
 const claudeAvailable = await isClaudeCLIAvailable();
+
+/**
+ * D-307 — the marketplace-sources settings overlay is withdrawn behind
+ * `WIZARD_SETTINGS_OVERLAY`. The specs below drive it through the `S` hotkey, so
+ * they only describe reachable behaviour while the flag is on. Kept, not deleted:
+ * they are the contract the overlay must satisfy when it returns.
+ */
+const settingsOverlayEnabled = FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY;
 
 describe("init wizard — source management", () => {
   let wizard: InitWizard | undefined;
@@ -37,7 +46,7 @@ describe("init wizard — source management", () => {
     return { wizard: w, sources };
   }
 
-  describe("source management in wizard", () => {
+  describe.skipIf(!settingsOverlayEnabled)("source management in wizard", () => {
     it("should open settings overlay when pressing S on the sources step", async () => {
       const { wizard: w, sources } = await navigateToSources();
       wizard = w;
@@ -117,7 +126,7 @@ describe("init wizard — source management", () => {
       },
     );
 
-    describe.skipIf(!claudeAvailable)("plugin-mode preservation", () => {
+    describe.skipIf(!claudeAvailable || !settingsOverlayEnabled)("plugin-mode preservation", () => {
       let pluginFixture: E2EPluginSource;
 
       beforeAll(async () => {
