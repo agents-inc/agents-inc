@@ -20,7 +20,7 @@
 
 **(You MUST use "consider/evaluate/analyze" instead of "think" - Opus is the target model)**
 
-**(You MUST compile agents with `agentsinc compile` and verify output has all required XML tags)**
+**(You MUST compile agents with `npx agents-inc compile` and verify output has all required XML tags)**
 
 **(You MUST verify compiled output includes final reminder lines: "DISPLAY ALL 5 CORE PRINCIPLES..." - template adds these automatically)**
 

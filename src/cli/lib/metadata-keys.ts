@@ -26,7 +26,7 @@ export const IMPORT_DEFAULTS = {
 } as const;
 
 /**
- * Default values used for local skills (created via `agentsinc new skill` or discovered locally).
+ * Default values used for local skills (created via `npx agents-inc new skill` or discovered locally).
  */
 export const LOCAL_DEFAULTS = {
   // Boundary cast: deliberately outside the generated Category union — scaffold

@@ -7,7 +7,12 @@ npx agents-inc init
 ```
 
 Installing this package pulls in the real CLI; this package only forwards to it.
-The command this alias installs is `agents-inc`; the main package installs `agentsinc`.
+The command this alias installs is `agents-inc`; the main package installs both `agents-inc` and
+`agentsinc`.
+
+Because both packages now ship an `agents-inc` bin, installing BOTH globally puts two packages in
+the race for that name and npm links whichever was installed last — install one or the other, not
+both.
 
 ## Versioning
 

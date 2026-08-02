@@ -19,7 +19,7 @@ Set Theme "OneDark"
 
 
 Sleep 1s
-Type "npx @agents-inc/cli init"
+Type "npx agents-inc init"
 Enter
 Sleep 3500ms
 

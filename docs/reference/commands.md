@@ -59,7 +59,7 @@ Re-enters the wizard with the current selections pre-loaded. Diff is shown at th
 
 - **Don't hand the skill to this project's agents** — curate `stack` in `.claude-src/config.ts`. See [Editing Your Config](../guides/editing-config.md).
 - **Take project ownership** — press `s` on the row to add a project-scoped copy alongside the global install (the row shows `[P][G]`).
-- **Really uninstall it** — run `agents-inc edit` from your home directory (`cd ~`), where the global config is the one being edited.
+- **Really uninstall it** — run `npx agents-inc edit` from your home directory (`cd ~`), where the global config is the one being edited.
 
 ---
 
@@ -80,6 +80,8 @@ Re-runs the agent compiler using the persisted config. Non-interactive — safe 
 **File:** `src/cli/commands/update.tsx`
 
 Pulls the latest skill content from the configured source. With no argument, updates every out-of-date skill after showing a diff and prompting for confirmation. With an argument, updates that one skill only. Always recompiles agents afterward (auto-recompile is the sensible default — users who want finer control can run `cc compile` separately).
+
+After recompiling where it ran, it also recompiles the agents of every **other** registered project, printing `Recompiled agents in N registered projects`. Those projects' compiled agents were built from the same skill directories this command just rewrote, so without it they keep quoting content the source no longer has. Unreachable projects are warned and skipped; nothing here can fail the update.
 
 **Flags:** `--yes/-y` (skip confirmation), `--source`.
 

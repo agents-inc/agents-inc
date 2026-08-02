@@ -50,13 +50,13 @@ Feature development documentation organized by lifecycle stage.
 
 ```bash
 # Initialize in a project
-agents-inc init --source /path/to/marketplace
+npx agents-inc init --source /path/to/marketplace
 
 # Build stack for distribution
-agents-inc build stack --stack nextjs-fullstack
+npx agents-inc build stack --stack nextjs-fullstack
 
 # Generate marketplace.json
-agents-inc build marketplace --plugins-dir dist/stacks
+npx agents-inc build marketplace --plugins-dir dist/stacks
 
 # Install via Claude CLI
 claude plugin marketplace add /path/to/dist

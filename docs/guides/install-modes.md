@@ -8,7 +8,7 @@ Agents Inc supports two install modes and two scopes. Both can be set per-skill 
 
 **Eject** — Skills are copied into `.claude/skills/` in your project directory. Use this when you want full ownership of the skill files or need to modify them.
 
-You can switch modes after initial install using `agents-inc edit`.
+You can switch modes after initial install using `npx agents-inc edit`.
 
 ## Scopes
 

@@ -13,6 +13,7 @@
     }
   },
   "bin": {
+    "agents-inc": "dist/index.js",
     "agentsinc": "dist/index.js"
   },
   "files": [

@@ -228,7 +228,7 @@ tools:
 ### Step 7: Compile and Verify
 
 ```bash
-agentsinc compile
+npx agents-inc compile
 ```
 
 ---
@@ -291,4 +291,4 @@ You are an expert example developer.
 2. Should I verify changes were written?
 ```
 
-**Recommendation:** Apply changes, then recompile with `agentsinc compile`
+**Recommendation:** Apply changes, then recompile with `npx agents-inc compile`

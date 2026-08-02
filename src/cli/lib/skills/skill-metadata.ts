@@ -51,7 +51,7 @@ export type LocalSkillMetadata = {
  * Result of comparing a local skill against its source repository version.
  *
  * Produced by {@link compareLocalSkillsWithSource} for each skill in the local
- * `.claude/skills/` directory. Used by `agentsinc outdated` to display update status.
+ * `.claude/skills/` directory. Used by `npx agents-inc outdated` to display update status.
  */
 export type SkillComparisonResult = {
   /** Canonical skill ID (from forkedFrom metadata, or directory name if no metadata) */

@@ -25,7 +25,7 @@ describe("CLI smoke tests", () => {
     const { exitCode, output } = await CLI.run(["--help"], { dir: projectDir });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain("agentsinc");
+    expect(output).toContain("agents-inc");
     expect(output).toContain("TOPICS");
     expect(output).toContain("compile");
     expect(output).toContain("init");
