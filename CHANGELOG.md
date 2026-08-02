@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.149.0] - 2026-08-02
+
+**`init --from <id>` installs a configuration shared from agentsinc.sh**
+
+- The website's install command is `npx agents-inc init --from <id>`, and no published CLI had that flag — every copy of it failed with `Nonexistent flag: --from`. This release is the other half of that command
+- The payload version is pinned exactly, so what installs is always what was shared; ids minted under an older format report a mismatch rather than installing something different
+- Ids the catalogue does not know are skipped and named rather than fatal, so a configuration shared before a skill was renamed still installs everything else
+
+See [changelogs/0.149.0.md](./changelogs/0.149.0.md) for full details.
+
 ## [0.148.0] - 2026-08-02
 
 **One module owns the global config, sub-agents gain a model and an effort, and several commands now reach outside the directory you ran them in**

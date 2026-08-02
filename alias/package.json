@@ -1,6 +1,6 @@
 {
   "name": "agents-inc",
-  "version": "0.148.0",
+  "version": "0.149.0",
   "description": "Runs the Agents Inc. CLI — alias for @agents-inc/cli so `npx agents-inc init` works",
   "type": "module",
   "bin": {
