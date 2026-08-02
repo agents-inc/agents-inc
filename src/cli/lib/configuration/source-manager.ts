@@ -1,10 +1,10 @@
 import type { SourceEntry } from "./config";
 import { loadProjectSourceConfig, DEFAULT_SOURCE } from "./config";
-import { writePartialProjectConfig } from "./config-writer";
+import { isHomeDirectory } from "../installation/is-home-directory";
+import { lazyGateDeps, mutateGlobal, writeProjectPartial } from "../config-gate/index.js";
 import { fetchMarketplace } from "../loading/source-fetcher";
 import { discoverLocalSkills } from "../skills/local-skill-loader";
 import { discoverAllPluginSkills } from "../plugins/plugin-discovery";
-import type { ProjectConfig } from "../../types";
 import { verbose } from "../../utils/logger";
 
 const DEFAULT_SOURCE_NAME = "public";
@@ -27,16 +27,10 @@ export async function addSource(
   const name = result.marketplace.name;
   const skillCount = result.marketplace.plugins.length;
 
-  const config = (await loadProjectSourceConfig(projectDir)) ?? {};
-  const sources = config.sources ?? [];
-
-  const exists = sources.some((s) => s.name === name);
-  if (exists) {
-    throw new Error(`Source "${name}" already exists`);
-  }
-
-  const updated: Partial<ProjectConfig> = { ...config, sources: [...sources, { name, url }] };
-  await writePartialProjectConfig(projectDir, updated);
+  await saveSourceList(projectDir, { kind: "add-source", entry: { name, url } }, (sources) => {
+    if (sources.some((s) => s.name === name)) throw new Error(`Source "${name}" already exists`);
+    return [...sources, { name, url }];
+  });
 
   verbose(`Added source "${name}" with ${skillCount} skills`);
   return { name, skillCount };
@@ -50,18 +44,42 @@ export async function removeSource(projectDir: string, name: string): Promise<vo
     throw new Error(`Cannot remove the "${DEFAULT_SOURCE_NAME}" source`);
   }
 
-  const config = (await loadProjectSourceConfig(projectDir)) ?? {};
-  const sources = config.sources ?? [];
-
-  const filtered = sources.filter((s) => s.name !== name);
-  if (filtered.length === sources.length) {
-    throw new Error(`Source "${name}" not found`);
-  }
-
-  const updated: Partial<ProjectConfig> = { ...config, sources: filtered };
-  await writePartialProjectConfig(projectDir, updated);
+  await saveSourceList(projectDir, { kind: "remove-source", name }, (sources) => {
+    const filtered = sources.filter((s) => s.name !== name);
+    if (filtered.length === sources.length) throw new Error(`Source "${name}" not found`);
+    return filtered;
+  });
 
   verbose(`Removed source "${name}"`);
+}
+
+/**
+ * Persists a change to the configured source list at whichever scope
+ * `projectDir` names.
+ *
+ * At the home directory the file is the global manifest, so the change goes
+ * through the gate: `sources` is a scalar the generated unions do not encode,
+ * but registered projects inline it, so the gate propagates the config half
+ * without regenerating any types or recompiling any agent. At project scope the
+ * config is nobody else's input and is written directly.
+ *
+ * The write is immediate rather than deferred to the end of the wizard: the
+ * sources step re-reads the persisted config to resolve what a newly added
+ * marketplace offers, and a source the user confirmed by URL is a machine-level
+ * preference that must survive an abandoned install.
+ */
+async function saveSourceList(
+  projectDir: string,
+  mutation: Parameters<typeof mutateGlobal>[0],
+  apply: (sources: SourceEntry[]) => SourceEntry[],
+): Promise<void> {
+  if (isHomeDirectory(projectDir)) {
+    await mutateGlobal(mutation, lazyGateDeps(projectDir));
+    return;
+  }
+
+  const config = (await loadProjectSourceConfig(projectDir)) ?? {};
+  await writeProjectPartial(projectDir, { ...config, sources: apply(config.sources ?? []) });
 }
 
 /**

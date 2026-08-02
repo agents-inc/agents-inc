@@ -1,11 +1,14 @@
 import os from "os";
 import path from "path";
+import { realpathSync } from "fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
 import { installEject, installPluginConfig } from "../../installation/local-installer";
+import { generateConfigSource } from "../../configuration/config-writer";
+import { writeTestSkill } from "../helpers/disk-writers.js";
 import { useWizardStore } from "../../../stores/wizard-store";
-import { STANDARD_FILES } from "../../../consts";
+import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
 import type { MergedSkillsMatrix, ProjectConfig, SkillId } from "../../../types";
 import type { SourceLoadResult } from "../../loading/source-loader";
 import { createComprehensiveMatrix } from "../factories/matrix-factories.js";
@@ -26,15 +29,28 @@ import {
 } from "../assertions/index.js";
 import { EXPECTED_AGENTS, EXPECTED_SKILLS } from "../expected-values.js";
 import { ALL_TEST_SKILLS } from "../mock-data/mock-skills";
+import { isCategory } from "../../../utils/type-guards.js";
 
 /**
  * Expected config.stack shape after init: every WEB_AND_API agent carries the
  * same category->skills assignments (the fan-out the installer produces).
+ *
+ * Callers pass the logical assignments (always arrays). The returned shape is
+ * the one config.ts carries on disk, which `readTestTsConfig` reads back
+ * unnormalized: an exclusive category holds at most one skill, so its single
+ * assignment is emitted bare, while a non-exclusive category keeps its array
+ * (`compactCategoryAssignments` in config-writer.ts).
  */
-function buildExpectedStack(assignments: Record<string, string[]>) {
-  return Object.fromEntries(
-    [...EXPECTED_AGENTS.WEB_AND_API].sort().map((name) => [name, assignments]),
+function buildExpectedStack(assignments: Record<string, string[]>, matrix: MergedSkillsMatrix) {
+  const emitted = Object.fromEntries(
+    Object.entries(assignments).map(([category, skillIds]) => [
+      category,
+      isCategory(category) && matrix.categories[category]?.exclusive === true
+        ? skillIds[0]
+        : skillIds,
+    ]),
   );
+  return Object.fromEntries([...EXPECTED_AGENTS.WEB_AND_API].sort().map((name) => [name, emitted]));
 }
 
 describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
@@ -113,7 +129,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         "web-framework": ["web-framework-react"],
         "web-styling": ["web-styling-scss-modules"],
       };
-      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments));
+      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments, matrix));
     });
 
     it("should assign skills only to agents in the user's selection", async () => {
@@ -148,7 +164,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         "api-api": ["api-framework-hono"],
         "web-framework": ["web-framework-react"],
       };
-      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments));
+      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments, matrix));
     });
 
     it("should compile agent .md files that exist and have content", async () => {
@@ -276,7 +292,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         "web-client-state": ["web-state-zustand"],
         "web-framework": ["web-framework-react"],
       };
-      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments));
+      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments, matrix));
 
       // Compiled agents should exist as .md files
       expectCompiledAgents(result, EXPECTED_AGENTS.WEB_AND_API);
@@ -360,7 +376,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         "web-styling": ["web-styling-scss-modules"],
         "web-testing": ["web-testing-vitest"],
       };
-      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments));
+      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments, matrix));
     });
 
     it("every skill ID in config.stack should be in config.skills", async () => {
@@ -400,7 +416,7 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
         "web-client-state": ["web-state-zustand"],
         "web-framework": ["web-framework-react"],
       };
-      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments));
+      expect(config.stack).toStrictEqual(buildExpectedStack(allAssignments, matrix));
     });
 
     it("no DEFAULT_AGENTS in stack when selectedAgents is populated without them", async () => {
@@ -598,6 +614,114 @@ describe("end-to-end: wizard store -> handleComplete -> installEject", () => {
 
       const config = await readTestTsConfig<ProjectConfig>(result.configPath);
       expect(config.source).toBe("github:my-org/my-marketplace");
+    });
+  });
+
+  /**
+   * A global install fans its new config out to every registered project — and
+   * owes those projects a recompile.
+   *
+   * `writeScopedConfigs` returns the project directories propagation rewrote
+   * (`ScopedConfigWriteResult.propagatedProjects`) precisely so the caller can
+   * recompile them. `writeConfigAndCompileAgents` awaits that call and throws the
+   * result away, so `installEject` at ~ leaves every registered project holding a
+   * freshly rewritten `config.ts` and compiled agents built from the config it
+   * replaced. `init` and `edit` recompile from the same signal when they drive
+   * the write themselves; through `installEject` the signal is simply lost.
+   *
+   * The stale agent `.md` is written by hand rather than compiled: the point of
+   * the assertion is that the install REPLACES whatever was there, so the
+   * pre-state only has to be distinguishable. It is made distinguishable by
+   * content, not merely by bytes — a real compile output names the skills the
+   * project's stack preloads, which the placeholder does not.
+   *
+   * CURRENTLY RED, deliberately. The propagation assertions (the registered
+   * project's `config.ts` picking up the newly installed global skill) are the
+   * proof-of-execution half and pass today; the compiled-agent assertions carry
+   * the red.
+   */
+  describe("propagation to registered projects", () => {
+    /** The skill the registered project owns and its agent preloads. */
+    const REGISTERED_PROJECT_SKILL: SkillId = "web-testing-vitest";
+
+    /** The agent the registered project owns at project scope. */
+    const REGISTERED_PROJECT_AGENT = "web-developer";
+
+    /** Placeholder body standing in for agents compiled before the global change. */
+    const STALE_AGENT_MD = `---\nname: ${REGISTERED_PROJECT_AGENT}\n---\nSTALE\n`;
+
+    it("recompiles a registered project's agents after fanning the global config out to it", async () => {
+      // --- A registered project: one project-scoped skill on disk, one
+      // project-scoped agent whose stack preloads it, and compiled agents that
+      // predate the global install about to happen.
+      const registeredDir = path.join(dirs.tempDir, "registered-project");
+      const registeredAgentsDir = path.join(registeredDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      const registeredAgentPath = path.join(registeredAgentsDir, `${REGISTERED_PROJECT_AGENT}.md`);
+      await mkdir(path.join(registeredDir, CLAUDE_SRC_DIR), { recursive: true });
+      await mkdir(registeredAgentsDir, { recursive: true });
+      await writeTestSkill(
+        path.join(registeredDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS),
+        REGISTERED_PROJECT_SKILL,
+      );
+      await writeFile(
+        path.join(registeredDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+        generateConfigSource({
+          name: "registered-project",
+          skills: buildSkillConfigs([REGISTERED_PROJECT_SKILL], { scope: "project" }),
+          agents: buildAgentConfigs([REGISTERED_PROJECT_AGENT], { scope: "project" }),
+          selectedAgents: [REGISTERED_PROJECT_AGENT],
+          stack: {
+            [REGISTERED_PROJECT_AGENT]: {
+              "web-testing": [{ id: REGISTERED_PROJECT_SKILL, preloaded: true }],
+            },
+          },
+        }),
+      );
+      await writeFile(registeredAgentPath, STALE_AGENT_MD);
+
+      // --- A prior global install that registered it. installEject merges with
+      // this config, and `projects` survives the merge.
+      await mkdir(path.join(dirs.projectDir, CLAUDE_SRC_DIR), { recursive: true });
+      await writeFile(
+        path.join(dirs.projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+        generateConfigSource({
+          name: "global",
+          skills: [],
+          agents: [],
+          projects: [realpathSync(registeredDir)],
+        }),
+      );
+
+      const selectedSkillIds: SkillId[] = ["web-framework-react", "api-framework-hono"];
+      simulateSkillSelections(selectedSkillIds, matrix, ["web", "api"]);
+      useWizardStore.getState().preselectAgentsFromDomains();
+
+      await installEject({
+        wizardResult: buildWizardResultFromStore(),
+        sourceResult,
+        projectDir: dirs.projectDir,
+      });
+
+      // Proof-of-execution: propagation ran and rewrote the registered project's
+      // config with the newly installed global rows.
+      const registeredConfig = await readTestTsConfig<ProjectConfig>(
+        path.join(registeredDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+      );
+      expect(
+        registeredConfig.skills.map((s) => s.id),
+        "propagation must inline the newly installed global skills into the registered project",
+      ).toContain("web-framework-react");
+
+      // The compiled agents follow the config they were built from.
+      const registeredAgentAfter = await readFile(registeredAgentPath, "utf-8");
+      expect(
+        registeredAgentAfter,
+        "the registered project's compiled agent must be rewritten, not left as it was before the global change",
+      ).not.toBe(STALE_AGENT_MD);
+      expect(
+        registeredAgentAfter,
+        "the rewritten agent must be a genuine compile output naming the skills its stack preloads",
+      ).toContain(REGISTERED_PROJECT_SKILL);
     });
   });
 });

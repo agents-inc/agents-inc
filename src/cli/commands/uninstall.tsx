@@ -21,12 +21,8 @@ import {
   toClaudePluginScope,
 } from "../lib/plugins/index";
 import { readForkedFromMetadata } from "../lib/skills/index";
-import {
-  deregisterProjectPath,
-  isHomeDirectory,
-  pruneGlobalEntriesFromRegisteredProjects,
-  resolveInstallPaths,
-} from "../lib/installation/index";
+import { isHomeDirectory, resolveInstallPaths } from "../lib/installation/index";
+import { lazyGateDeps, mutateGlobal, propagateGlobalRemoval } from "../lib/config-gate/index.js";
 import { loadSkillsMatrixFromSource } from "../lib/loading";
 import { loadAgentDefs } from "../lib/operations";
 import { ConfigLoadError, loadProjectConfigFromDir } from "../lib/configuration/project-config";
@@ -265,7 +261,10 @@ export default class Uninstall extends BaseCommand {
     // project-less, or corrupt global config (ConfigLoadError) must never fail the
     // uninstall — warn and move on.
     try {
-      await deregisterProjectPath(projectDir);
+      // Registration bookkeeping only: nothing inlines the `projects[]` list into a
+      // project config, so this loads neither the matrix nor the agent definitions
+      // and the uninstall stays offline.
+      await mutateGlobal({ kind: "deregister-project", projectDir }, lazyGateDeps(projectDir));
     } catch (error) {
       this.warn(`Could not update the global project registry: ${getErrorMessage(error)}`);
     }
@@ -321,17 +320,25 @@ export default class Uninstall extends BaseCommand {
    */
   private async updateRegisteredProjects(propagation: GlobalPropagationData): Promise<void> {
     try {
-      const result = await pruneGlobalEntriesFromRegisteredProjects(
-        propagation.globalConfig,
-        propagation.matrix,
-        propagation.agents,
-      );
-      for (const skippedPath of result.skipped) {
+      const report = await propagateGlobalRemoval(propagation.globalConfig, {
+        matrix: propagation.matrix,
+        agents: propagation.agents,
+      });
+      for (const skippedPath of report.propagated.skipped) {
         this.warn(registeredProjectUpdateSkipped(skippedPath));
       }
-      if (result.updated.length > 0) {
-        this.logSuccess(registeredProjectsUpdated(result.updated.length));
+      if (report.propagated.updated.length === 0) return;
+
+      this.logSuccess(registeredProjectsUpdated(report.propagated.updated.length));
+
+      // The pruned projects' compiled agents were built from the global rows this
+      // uninstall just removed, so the prune owes them a recompile too.
+      const { recompiledCount, failedCount, warnings } = report.recompile;
+      for (const warning of warnings) {
+        this.warn(warning);
       }
+      const failureSuffix = failedCount > 0 ? ` (${failedCount} failed)` : "";
+      this.log(`Recompiled agents in ${recompiledCount} registered projects${failureSuffix}`);
     } catch (error) {
       this.warn(registeredProjectsUpdateFailed(getErrorMessage(error)));
     }

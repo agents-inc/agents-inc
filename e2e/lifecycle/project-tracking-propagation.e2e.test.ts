@@ -179,19 +179,21 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
         "Project config-types must import Category as GlobalCategory",
       ).toContain("Category as GlobalCategory");
 
-      // With initProjectAllGlobal (all skills stay global-scoped), the project has
-      // no project-only items to extend, so SkillId aliases directly to GlobalSkillId.
+      // The union EXTENDS the imported alias rather than restating the global list:
+      // a standalone write would name no GlobalSkillId at all.
       expect(
         configTypesContent,
-        "Project SkillId must alias GlobalSkillId when no project-scoped skills exist",
-      ).toContain("export type SkillId = GlobalSkillId;");
+        "Project SkillId must extend GlobalSkillId, not replace it",
+      ).toMatch(/export type SkillId =\s*\|?\s*GlobalSkillId/);
 
-      // Global skill IDs are reached via GlobalSkillId — they must NOT be inlined
-      // in the project types file (the whole point of the import pattern).
+      // With initProjectAllGlobal every skill stays global-scoped, and the project's
+      // own config.ts inlines each of those rows — so its own union has to name them
+      // too. Covered by the alias alone, this file goes red the moment a later
+      // global-scope run drops one of them.
       expect(
         configTypesContent,
-        "Project config-types must NOT inline global skill IDs",
-      ).not.toContain(`"${E2E_SKILL.react.id}"`);
+        "Project config-types must name the global skill IDs its config.ts inlines",
+      ).toContain(`"${E2E_SKILL.react.id}"`);
 
       // Global config should have project registered
       const globalConfigPath = configTsPath(fakeHome);
@@ -238,7 +240,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
         projectTypesBefore,
         "Pre-condition: Phase B must emit import-and-extend project types",
       ).toContain("SkillId as GlobalSkillId");
-      expect(projectTypesBefore).toContain("export type SkillId = GlobalSkillId;");
+      expect(projectTypesBefore).toMatch(/export type SkillId =\s*\|?\s*GlobalSkillId/);
 
       // Phase C: `cc edit` at HOME and add `Vue Composition Api` to the
       // global install. This is a new global skill (not in the default
@@ -305,33 +307,29 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
         "Project config-types must still import Category as GlobalCategory after global edit",
       ).toContain("Category as GlobalCategory");
 
-      // No project-scoped skills means SkillId still aliases GlobalSkillId
-      // directly — the newly-added skill flows through the global union.
+      // Still the extend form: the imported alias is the head of the union, not a
+      // standalone list that happens to hold the same ids.
       expect(
         projectTypesAfter,
-        "Project SkillId must still alias GlobalSkillId when no project-scoped skills exist",
-      ).toContain("export type SkillId = GlobalSkillId;");
+        "Project SkillId must still extend GlobalSkillId after the global edit",
+      ).toMatch(/export type SkillId =\s*\|?\s*GlobalSkillId/);
 
-      // The newly-added global skill must be reached via GlobalSkillId — it
-      // must NOT be inlined in the project types file. A standalone write
-      // would inline it; the import-and-extend write would not.
+      // A standalone write is discriminated by the absence of the import block
+      // and of the `GlobalSkillId` union head, both asserted above. The extend
+      // form additionally declares the global rows its sibling config.ts inlines,
+      // so their presence is expected rather than evidence of a standalone write:
+      // the imported unions cover those rows only for as long as the global
+      // config still holds them.
       expect(
         projectTypesAfter,
-        "Project config-types must NOT inline the newly-added global skill ID",
-      ).not.toContain(`"${E2E_SKILL["vue-composition-api"].id}"`);
+        "the extend form must declare the newly-added global skill its config.ts now inlines",
+      ).toContain(`"${E2E_SKILL["vue-composition-api"].id}"`);
 
-      // KNOWN GAP: ideally we would assert `projectTypesAfter !==
-      // projectTypesBefore` to prove `propagateGlobalChangesToProjects`
-      // actually rewrote the file. On current main the assertion would
-      // fail because `mergeConfigs` drops the global `projects` field on
-      // edit-at-HOME, so the propagation guard skips and the project file
-      // is untouched — see .ai-docs/agent-findings/
-      // 2026-04-18-mergeConfigs-drops-projects-field.md. Once the merger
-      // preserves `projects`, swap the commented line below for an active
-      // assertion. Until then the assertions above still catch the
-      // original regression: if propagation DOES run and writes the
-      // standalone form by mistake, `not.toContain('"…-vue-…"')` fails.
-      // expect(projectTypesAfter).not.toStrictEqual(projectTypesBefore);
+      // Proof the fan-out reached this project rather than leaving it untouched.
+      expect(
+        projectTypesAfter,
+        "the global edit must have rewritten the registered project's config-types",
+      ).not.toStrictEqual(projectTypesBefore);
     },
   );
 });

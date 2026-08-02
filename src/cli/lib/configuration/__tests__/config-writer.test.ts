@@ -71,7 +71,7 @@ describe("generateConfigSource", () => {
     expect(source).not.toContain("const agents:");
   });
 
-  it("compacts stack with bare strings in arrays for non-preloaded skills", () => {
+  it("compacts a single non-preloaded skill in an exclusive category to a bare string", () => {
     const config = buildProjectConfig({
       name: "stack-project",
       stack: {
@@ -81,13 +81,14 @@ describe("generateConfigSource", () => {
       },
     });
     const source = generateConfigSource(config);
-    // Non-preloaded single skill should be a bare string inside an array
-    expect(source).toContain('"web-framework": [\n      "web-framework-react"\n    ]');
+    // web-framework is exclusive, so the array wrapper carries no information the reader needs
+    expect(source).toContain('"web-framework": "web-framework-react"');
+    expect(source).not.toMatch(/"web-framework":\s*\[/);
     // Stack should be extracted as named variable
     expect(source).toContain("const stack: Partial<Record<ProjectAgentName, StackAgentConfig>>");
   });
 
-  it("preserves preloaded flag as object in stack", () => {
+  it("preserves preloaded flag as a bare object in an exclusive category", () => {
     const config = buildProjectConfig({
       name: "preloaded-project",
       agents: buildAgentConfigs(["api-developer"]),
@@ -101,6 +102,41 @@ describe("generateConfigSource", () => {
     const source = generateConfigSource(config);
     expect(source).toContain('"preloaded": true');
     expect(source).toContain('"api-framework-hono"');
+    // api-api is exclusive: the assignment object stands alone, unwrapped
+    expect(source).not.toMatch(/"api-api":\s*\[/);
+  });
+
+  it("keeps a single-skill non-exclusive category as a one-element array", () => {
+    const config = buildProjectConfig({
+      name: "non-exclusive-project",
+      skills: buildSkillConfigs(["web-styling-tailwind"]),
+      stack: {
+        "web-developer": {
+          "web-styling": [{ id: "web-styling-tailwind", preloaded: false }],
+        },
+      },
+    });
+    const source = generateConfigSource(config);
+    // web-styling can hold several skills, so the array is load-bearing even at length one
+    expect(source).toContain('"web-styling": [\n      "web-styling-tailwind"\n    ]');
+  });
+
+  it("throws, naming the category, when an exclusive category holds two skills", () => {
+    const config = buildProjectConfig({
+      name: "over-filled-project",
+      skills: buildSkillConfigs(["web-framework-react", "web-framework-svelte"]),
+      stack: {
+        "web-developer": {
+          "web-framework": [
+            { id: "web-framework-react", preloaded: false },
+            { id: "web-framework-svelte", preloaded: false },
+          ],
+        },
+      },
+    });
+    // Silently dropping the second entry would write a config that does not match what was
+    // selected, and nothing downstream could tell. Fail where the contract breaks.
+    expect(() => generateConfigSource(config)).toThrow("web-framework");
   });
 
   it("handles config without stack", () => {
@@ -707,7 +743,7 @@ describe("generateConfigSource", () => {
       expect(marketplaceMatches).toHaveLength(1);
     });
 
-    it("preserves single-skill categories as one-element arrays in inlined stack", () => {
+    it("drops the array wrapper for single-skill exclusive categories in inlined stack", () => {
       const projectConfig = buildProjectConfig({
         name: "my-project",
         skills: buildSkillConfigs(["web-framework-react"]),
@@ -724,26 +760,24 @@ describe("generateConfigSource", () => {
       });
 
       const stackSection = extractNamedSection(source, "stack");
-      // Single-skill category must remain an array, not a bare string
-      expect(stackSection).toContain('"web-framework": [\n');
-      expect(stackSection).toContain('"web-framework-react"');
-      // Must NOT be a bare value like "web-framework": "web-framework-react"
-      expect(stackSection).not.toMatch(/"web-framework":\s*"web-framework-react"/);
+      // Exclusive category, one skill: the bare value IS the assignment
+      expect(stackSection).toMatch(/"web-framework":\s*"web-framework-react"/);
+      expect(stackSection).not.toMatch(/"web-framework":\s*\[/);
     });
 
-    it("preserves multi-skill categories as multi-element arrays in inlined stack", () => {
+    it("preserves multi-skill non-exclusive categories as multi-element arrays in inlined stack", () => {
       const projectConfig = buildProjectConfig({
         name: "my-project",
         skills: [
-          ...buildSkillConfigs(["web-framework-react"]),
-          ...buildSkillConfigs(["web-framework-svelte"]),
+          ...buildSkillConfigs(["web-styling-tailwind"]),
+          ...buildSkillConfigs(["web-styling-scss-modules"]),
         ],
         agents: buildAgentConfigs(["web-developer"]),
         stack: {
           "web-developer": {
-            "web-framework": [
-              { id: "web-framework-react", preloaded: false },
-              { id: "web-framework-svelte", preloaded: false },
+            "web-styling": [
+              { id: "web-styling-tailwind", preloaded: false },
+              { id: "web-styling-scss-modules", preloaded: false },
             ],
           },
         },
@@ -755,9 +789,9 @@ describe("generateConfigSource", () => {
 
       const stackSection = extractNamedSection(source, "stack");
       // Multi-skill category must be an array with both elements
-      expect(stackSection).toContain('"web-framework": [\n');
-      expect(stackSection).toContain('"web-framework-react"');
-      expect(stackSection).toContain('"web-framework-svelte"');
+      expect(stackSection).toContain('"web-styling": [\n');
+      expect(stackSection).toContain('"web-styling-tailwind"');
+      expect(stackSection).toContain('"web-styling-scss-modules"');
     });
 
     it("compacts non-preloaded assignments to bare strings and preserves preloaded objects in inlined stack", () => {
@@ -781,16 +815,10 @@ describe("generateConfigSource", () => {
       });
 
       const stackSection = extractNamedSection(source, "stack");
-      // Non-preloaded: bare string in array (no object wrapper)
-      expect(stackSection).toContain('"web-framework": [\n');
-      const frameworkArray = stackSection.slice(
-        stackSection.indexOf('"web-framework": ['),
-        stackSection.indexOf("]", stackSection.indexOf('"web-framework": [')) + 1,
-      );
-      expect(frameworkArray).toContain('"web-framework-react"');
-      expect(frameworkArray).not.toContain('"preloaded"');
-      expect(frameworkArray).not.toContain('"id"');
-      // Preloaded: object with preloaded: true in array
+      // Exclusive + non-preloaded: bare string, no array and no object wrapper
+      expect(stackSection).toMatch(/"web-framework":\s*"web-framework-react"/);
+      expect(stackSection).not.toMatch(/"web-framework":\s*\[/);
+      // Non-exclusive + preloaded: object with preloaded: true, still inside its array
       expect(stackSection).toContain('"web-styling": [\n');
       expect(stackSection).toContain('"preloaded": true');
       expect(stackSection).toContain('"id": "web-styling-tailwind"');
@@ -1023,27 +1051,28 @@ describe("generateConfigSource", () => {
       expect(source).toContain('"api-database-drizzle"');
     });
 
-    it("handles stack with multiple skills per category", () => {
+    it("handles stack with multiple skills per non-exclusive category", () => {
       const config = buildProjectConfig({
         name: "multi-skill-category",
         skills: [
-          ...buildSkillConfigs(["web-framework-react"]),
-          ...buildSkillConfigs(["web-meta-framework-nextjs"]),
+          ...buildSkillConfigs(["web-testing-vitest"]),
+          ...buildSkillConfigs(["web-testing-playwright-e2e"]),
         ],
         agents: buildAgentConfigs(["web-developer"]),
         stack: {
           "web-developer": {
-            "web-framework": [
-              { id: "web-framework-react", preloaded: false },
-              { id: "web-meta-framework-nextjs", preloaded: false },
+            "web-testing": [
+              { id: "web-testing-vitest", preloaded: false },
+              { id: "web-testing-playwright-e2e", preloaded: false },
             ],
           },
         },
       });
       const source = generateConfigSource(config);
       // Multiple skills should be an array of bare strings
-      expect(source).toContain('"web-framework-react"');
-      expect(source).toContain('"web-meta-framework-nextjs"');
+      expect(source).toContain('"web-testing": [\n');
+      expect(source).toContain('"web-testing-vitest"');
+      expect(source).toContain('"web-testing-playwright-e2e"');
     });
   });
 
@@ -1258,7 +1287,7 @@ describe("generateBlankGlobalConfigTypesSource", () => {
 
   it("contains auto-generated header", () => {
     const source = generateBlankGlobalConfigTypesSource();
-    expect(source).toContain("AUTO-GENERATED by agentsinc");
+    expect(source).toContain("AUTO-GENERATED by agents-inc");
     expect(source).toContain("DO NOT EDIT");
   });
 

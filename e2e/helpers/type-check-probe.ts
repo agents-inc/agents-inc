@@ -29,6 +29,9 @@ const BOGUS_TYPE_LITERAL = "__agentsinc-e2e-bogus-literal__";
 /** TypeScript's "type X is not assignable to type Y" diagnostic. */
 export const TS_NOT_ASSIGNABLE = "TS2322";
 
+/** TypeScript's "object literal may only specify known properties" diagnostic. */
+export const TS_UNKNOWN_PROPERTY = "TS2353";
+
 /** Repo-local compiler — `npx tsc` from a temp dir resolves to the wrong package. */
 const TSC_BIN = path.join(CLI_ROOT, "node_modules", "typescript", "bin", "tsc");
 
@@ -50,6 +53,9 @@ const TSC_FLAGS = [
 ] as const;
 
 const PROBE_FILENAME = "type-narrowing-probe.ts";
+
+/** The generated config a `.claude-src/` directory exists to hold. */
+const CONFIG_FILENAME = "config.ts";
 
 /**
  * Renders a probe module that imports the given aliases from a sibling
@@ -91,4 +97,37 @@ export async function probeConfigTypesNarrowing(
   } finally {
     await rm(probePath, { force: true });
   }
+}
+
+/**
+ * Type-checks an installed `config.ts` against the `config-types.ts` written
+ * beside it, and returns tsc's verdict.
+ *
+ * {@link probeConfigTypesNarrowing} asks whether the generated aliases still
+ * REJECT something; this asks the complementary question, and the one a user
+ * actually meets: does the config the CLI just wrote ACCEPT itself? A generated
+ * pair that fails here is a file the user never edited telling them their
+ * installation is invalid — the aliases are imported by config.ts on every load,
+ * so this is the exact diagnostic their editor shows.
+ *
+ * `--skipLibCheck` is added to the shared flags because the verdict must be about
+ * the generated pair: without it a diagnostic from an ambient .d.ts on the
+ * machine could fail a config that is perfectly consistent. Nothing is written to
+ * `claudeSrcDir`, so the installed tree stays byte-identical for the caller's
+ * filesystem assertions.
+ *
+ * @returns `exitCode` 0 with empty `output` when the config type-checks.
+ */
+export async function typecheckGeneratedConfig(
+  claudeSrcDir: string,
+): Promise<{ exitCode: number; output: string }> {
+  const configPath = path.join(claudeSrcDir, CONFIG_FILENAME);
+  const result = await execa("node", [TSC_BIN, ...TSC_FLAGS, "--skipLibCheck", configPath], {
+    reject: false,
+  });
+
+  return {
+    exitCode: result.exitCode ?? 1,
+    output: stripVTControlCharacters(result.stdout + result.stderr),
+  };
 }

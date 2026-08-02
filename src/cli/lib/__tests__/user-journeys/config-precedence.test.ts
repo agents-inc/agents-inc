@@ -5,10 +5,10 @@ import {
   resolveSource,
   loadProjectSourceConfig,
   getProjectConfigPath,
-  saveSourceToProjectConfig,
   SOURCE_ENV_VAR,
   DEFAULT_SOURCE,
 } from "../../configuration";
+import { writeProjectPartial } from "../../config-gate/index.js";
 import type { ProjectConfig } from "../../../types";
 import {
   createTestSource,
@@ -264,6 +264,20 @@ describe("User Journey: Project Config Save and Load", () => {
   afterEach(async () => {
     await cleanupTempDir(tempDir);
   });
+
+  /**
+   * Records `source` in a project's config the way every caller does now that
+   * the gate owns the write: read what is there, overlay the source, hand the
+   * partial to `writeProjectPartial` (see `recordSource` in `eject.ts`).
+   */
+  async function saveSourceToProjectConfig(
+    dir: string,
+    source: string,
+    fallbackName: string,
+  ): Promise<void> {
+    const existing = (await loadProjectSourceConfig(dir)) ?? {};
+    await writeProjectPartial(dir, { ...existing, source }, { fallbackName });
+  }
 
   describe("saveSourceToProjectConfig", () => {
     it("should create config directory if it does not exist", async () => {

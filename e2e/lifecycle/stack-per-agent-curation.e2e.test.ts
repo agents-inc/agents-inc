@@ -38,7 +38,12 @@ import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
 
 type StackSkillAssignment = string | { id: string; preloaded?: boolean };
 
-type Stack = Record<string, Record<string, StackSkillAssignment[]>>;
+/**
+ * A category value is the bare assignment when the category is exclusive (it can
+ * hold at most one skill, so the array wrapper carries nothing) and an array
+ * otherwise — see `compactCategoryAssignments` in config-writer.ts.
+ */
+type Stack = Record<string, Record<string, StackSkillAssignment | StackSkillAssignment[]>>;
 
 /**
  * Extracts the stack JSON from a CLI-written `config.ts` by finding the
@@ -48,8 +53,9 @@ type Stack = Record<string, Record<string, StackSkillAssignment[]>>;
  * compaction contract, which the structural loader undoes. `compactAssignment`
  * (config-writer.ts) writes `{ id, preloaded: false }` as a bare string, and
  * `normalizeAgentConfig` (stacks-loader.ts) expands it back to
- * `{ id, preloaded: false }` on load. The bare-string assertions below (e.g.
- * `toStrictEqual(["api-framework-hono"])`) are therefore only observable in the
+ * `{ id, preloaded: false }` on load — and re-wraps an exclusive category's bare
+ * value in an array. The bare assertions below (e.g.
+ * `toStrictEqual("api-framework-hono")`) are therefore only observable in the
  * config.ts text as written — a structural read cannot express them.
  */
 function extractStack(configContent: string): Stack {
@@ -77,24 +83,6 @@ function extractStack(configContent: string): Stack {
   const stackJson = configContent.slice(braceIdx, endIdx);
   // Boundary: JSON embedded inside a TypeScript file, parsed as data.
   return JSON.parse(stackJson) as Stack;
-}
-
-/**
- * Looks up a skill assignment entry (preserving preloaded flag) for a given
- * (agent, category, skillId) triple. Returns undefined when the category is
- * missing from the agent or the skill is not in that category.
- */
-function findAssignment(
-  stack: Stack,
-  agent: string,
-  category: string,
-  skillId: string,
-): StackSkillAssignment | undefined {
-  const agentStack = stack[agent];
-  if (!agentStack) return undefined;
-  const assignments = agentStack[category];
-  if (!assignments) return undefined;
-  return assignments.find((a) => (typeof a === "string" ? a === skillId : a.id === skillId));
 }
 
 describe("stack per-agent curation survives edit", () => {
@@ -198,46 +186,35 @@ describe("stack per-agent curation survives edit", () => {
         ).toBeUndefined();
 
         // Other agent still has the skill on that category, byte-for-byte.
-        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual([
-          { id: "api-framework-hono", preloaded: true },
-        ]);
+        // api-api is exclusive, so the preloaded entry stands alone.
+        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual({
+          id: "api-framework-hono",
+          preloaded: true,
+        });
 
         // --- Scenario B: newly-added skill fans out with preloaded: false ---
-        const webDeveloperZustand = findAssignment(
-          stackAfterEdit,
-          "web-developer",
-          "web-client-state",
-          "web-state-zustand",
-        );
+        // Newly-added entries default to preloaded: false, which the CLI compacts
+        // to a bare skill id; web-client-state is exclusive, so that id is the
+        // whole category value.
         expect(
-          webDeveloperZustand,
+          stackAfterEdit["web-developer"]?.["web-client-state"],
           "Newly-added web-state-zustand must appear on web-developer.web-client-state",
-        ).toBeDefined();
+        ).toStrictEqual("web-state-zustand");
 
-        const apiDeveloperZustand = findAssignment(
-          stackAfterEdit,
-          "api-developer",
-          "web-client-state",
-          "web-state-zustand",
-        );
         expect(
-          apiDeveloperZustand,
+          stackAfterEdit["api-developer"]?.["web-client-state"],
           "Newly-added web-state-zustand must fan out to api-developer.web-client-state",
-        ).toBeDefined();
-
-        // Newly-added entries default to preloaded: false. The CLI compacts
-        // `{id, preloaded: false}` to a bare string, so the assignment is the
-        // bare skill id string.
-        expect(webDeveloperZustand).toStrictEqual("web-state-zustand");
-        expect(apiDeveloperZustand).toStrictEqual("web-state-zustand");
+        ).toStrictEqual("web-state-zustand");
 
         // --- Scenario B (continued): existing preloaded: true survives ---
-        expect(stackAfterEdit["web-developer"]?.["web-framework"]).toStrictEqual([
-          { id: "web-framework-react", preloaded: true },
-        ]);
-        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual([
-          { id: "api-framework-hono", preloaded: true },
-        ]);
+        expect(stackAfterEdit["web-developer"]?.["web-framework"]).toStrictEqual({
+          id: "web-framework-react",
+          preloaded: true,
+        });
+        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual({
+          id: "api-framework-hono",
+          preloaded: true,
+        });
 
         // ================================================================
         // Phase 4: Filesystem assertions — compiled agent .md files reflect
@@ -369,9 +346,10 @@ describe("stack per-agent curation survives edit", () => {
           stackAfterEdit["web-developer"]?.["api-api"],
           "web-developer.api-api must stay absent — user's curation is authoritative",
         ).toBeUndefined();
-        expect(stackAfterEdit["web-developer"]?.["web-framework"]).toStrictEqual([
-          { id: "web-framework-react", preloaded: true },
-        ]);
+        expect(stackAfterEdit["web-developer"]?.["web-framework"]).toStrictEqual({
+          id: "web-framework-react",
+          preloaded: true,
+        });
         expect(stackAfterEdit["web-developer"]?.["web-testing"]).toStrictEqual([
           "web-testing-vitest",
         ]);
@@ -381,10 +359,11 @@ describe("stack per-agent curation survives edit", () => {
           stackAfterEdit["api-developer"],
           "api-developer stack must be seeded when the agent is newly selected this session",
         ).toBeDefined();
-        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual(["api-framework-hono"]);
-        expect(stackAfterEdit["api-developer"]?.["web-framework"]).toStrictEqual([
+        // api-api and web-framework are exclusive — one skill each, emitted bare.
+        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual("api-framework-hono");
+        expect(stackAfterEdit["api-developer"]?.["web-framework"]).toStrictEqual(
           "web-framework-react",
-        ]);
+        );
         expect(stackAfterEdit["api-developer"]?.["web-testing"]).toStrictEqual([
           "web-testing-vitest",
         ]);

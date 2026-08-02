@@ -186,12 +186,15 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       const configPath = configTsPath(fakeHome);
       const originalConfig = await readTestFile(configPath);
 
-      // Remove every api-framework-hono entry from both the skills array and the
-      // stack. `[^{}]*` (not `[^}]*`) keeps each match inside the innermost object
-      // so the surrounding stack/agent braces stay balanced — the result is a
+      // Remove every api-framework-hono object entry: its `skills[]` record, and in
+      // the stack the preloaded assignment, which the writer emits bare at the
+      // category-value position because `api-api` is exclusive. The optional
+      // `"<category>": ` prefix takes that whole property with it, so no key is left
+      // without a value. `[^{}]*` (not `[^}]*`) keeps each match inside the innermost
+      // object so the surrounding stack/agent braces stay balanced — the result is a
       // structurally VALID config in which the "api" domain simply has no skills.
       const modifiedConfig = originalConfig.replace(
-        /\{[^{}]*"id"\s*:\s*"api-framework-hono"[^{}]*\},?\s*/g,
+        /(?:"[\w-]+"\s*:\s*)?\{[^{}]*"id"\s*:\s*"api-framework-hono"[^{}]*\},?\s*/g,
         "",
       );
 

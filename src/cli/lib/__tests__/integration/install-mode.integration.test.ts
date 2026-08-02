@@ -2,11 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProjectConfig, SkillId } from "../../../types";
 import type { SkillConfig } from "../../../types/config";
 import type { SourceLoadResult } from "../../loading/source-loader";
-import {
-  installEject,
-  buildAndMergeConfig,
-  writeConfigFile,
-} from "../../installation/local-installer";
+import { installEject, buildAndMergeConfig } from "../../installation/local-installer";
+// `writeConfigFile` is a config-gate internal — no barrel exposes it, by design.
+// A test asserting on the writer itself is allowed the deep import.
+import { writeConfigFile } from "../../config-gate/propagate.js";
 import { deriveInstallMode } from "../../installation/installation";
 import {
   buildProjectConfig,

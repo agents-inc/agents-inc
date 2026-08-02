@@ -4,10 +4,8 @@ import { BaseCommand } from "../../base-command.js";
 import { resolveAuthor } from "../../lib/configuration/index.js";
 import { loadConfig } from "../../lib/configuration/config-loader.js";
 import { skillCategoriesFileSchema } from "../../lib/schemas.js";
-import {
-  loadConfigTypesDataInBackground,
-  regenerateConfigTypes,
-} from "../../lib/configuration/config-types-writer.js";
+import { loadConfigTypesDataInBackground } from "../../lib/configuration/config-types-writer.js";
+import { writeScaffoldedEntityTypes } from "../../lib/config-gate/index.js";
 import { fileExists, writeFile, ensureDir } from "../../utils/fs.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { verbose } from "../../utils/logger.js";
@@ -210,7 +208,7 @@ export default class NewSkill extends BaseCommand {
       }
 
       try {
-        await regenerateConfigTypes(projectDir, configTypesReady, {
+        await writeScaffoldedEntityTypes(projectDir, configTypesReady, {
           extraSkillIds: [name],
           extraDomains: [domain],
           extraCategories: [category],

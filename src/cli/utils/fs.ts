@@ -1,6 +1,12 @@
 import fs from "fs-extra";
 import fg from "fast-glob";
+import os from "os";
 import path from "path";
+import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../consts";
+// The gate's private token module, imported here by exception (eslint records
+// it): this file is the write choke point every pair write funnels through, and
+// `gate-token.ts` is a dependency-free leaf, so the import cannot cycle.
+import { assertGateToken } from "../lib/config-gate/gate-token.js";
 
 /**
  * True when `child` resolves to `parent` or inside it. Purely lexical
@@ -64,7 +70,29 @@ export async function glob(pattern: string, cwd: string): Promise<string[]> {
   return fg(pattern, { cwd, onlyFiles: true });
 }
 
+/**
+ * True when `resolvedPath` is one of the two halves of the global config pair.
+ *
+ * Compares resolved paths rather than matching on the filename, so it holds
+ * against every way of naming the same file — a concatenated path, a relative
+ * one, a fragment assembled at runtime — which is exactly what a static check
+ * cannot do.
+ */
+function isGlobalPairPath(resolvedPath: string): boolean {
+  const globalConfigDir = path.join(os.homedir(), CLAUDE_SRC_DIR);
+  return (
+    resolvedPath === path.join(globalConfigDir, STANDARD_FILES.CONFIG_TS) ||
+    resolvedPath === path.join(globalConfigDir, STANDARD_FILES.CONFIG_TYPES_TS)
+  );
+}
+
 export async function writeFile(filePath: string, content: string): Promise<void> {
+  // Runtime tripwire: every write in the CLI funnels through here, so a pair
+  // write attempted without the gate's token dies at its first execution
+  // whatever route it took to get here. Costs one path compare per write.
+  const resolvedPath = path.resolve(filePath);
+  if (isGlobalPairPath(resolvedPath)) assertGateToken(resolvedPath);
+
   await fs.ensureDir(path.dirname(filePath));
   await fs.writeFile(filePath, content, "utf-8");
 }

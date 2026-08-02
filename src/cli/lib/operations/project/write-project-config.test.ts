@@ -4,6 +4,7 @@ import type { WizardResultV2 } from "../../../components/wizard/wizard";
 import type { SourceLoadResult } from "../../loading/source-loader";
 import { createMockAgent } from "../../__tests__/factories/agent-factories";
 import {
+  buildGateReport,
   buildWizardResult,
   buildProjectConfig,
   buildSourceResult,
@@ -35,18 +36,18 @@ vi.mock("../../installation/index.js", async () => {
   >("../../installation/is-home-directory.js");
   return {
     buildAndMergeConfig: vi.fn(),
-    writeScopedConfigs: vi.fn(),
     resolveInstallPaths: vi.fn(),
     isHomeDirectory,
   };
 });
 
-vi.mock("../../loading/index.js", () => ({
-  loadMergedAgents: vi.fn(),
+vi.mock("../../config-gate/index.js", () => ({
+  ensureBlankPair: vi.fn(),
+  writeScopedFromWizard: vi.fn(),
 }));
 
-vi.mock("../../configuration/config-writer.js", () => ({
-  ensureBlankGlobalConfig: vi.fn(),
+vi.mock("../../loading/index.js", () => ({
+  loadMergedAgents: vi.fn(),
 }));
 
 vi.mock("../../../utils/fs.js", () => ({
@@ -54,20 +55,16 @@ vi.mock("../../../utils/fs.js", () => ({
 }));
 
 import { writeProjectConfig } from "./write-project-config";
-import {
-  buildAndMergeConfig,
-  writeScopedConfigs,
-  resolveInstallPaths,
-} from "../../installation/index.js";
+import { buildAndMergeConfig, resolveInstallPaths } from "../../installation/index.js";
 import { loadMergedAgents } from "../../loading/index.js";
-import { ensureBlankGlobalConfig } from "../../configuration/config-writer.js";
+import { ensureBlankPair, writeScopedFromWizard } from "../../config-gate/index.js";
 import { ensureDir } from "../../../utils/fs.js";
 
 const mockBuildAndMergeConfig = vi.mocked(buildAndMergeConfig);
-const mockWriteScopedConfigs = vi.mocked(writeScopedConfigs);
+const mockWriteScopedFromWizard = vi.mocked(writeScopedFromWizard);
 const mockResolveInstallPaths = vi.mocked(resolveInstallPaths);
 const mockLoadMergedAgents = vi.mocked(loadMergedAgents);
-const mockEnsureBlankGlobalConfig = vi.mocked(ensureBlankGlobalConfig);
+const mockEnsureBlankPair = vi.mocked(ensureBlankPair);
 const mockEnsureDir = vi.mocked(ensureDir);
 
 describe("write-project-config", () => {
@@ -97,8 +94,8 @@ describe("write-project-config", () => {
     });
 
     mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
-    mockEnsureBlankGlobalConfig.mockResolvedValue(false);
-    mockWriteScopedConfigs.mockResolvedValue({ propagatedProjects: [] });
+    mockEnsureBlankPair.mockResolvedValue(false);
+    mockWriteScopedFromWizard.mockResolvedValue(buildGateReport());
     mockEnsureDir.mockResolvedValue(undefined);
 
     // Default: project context (different from homedir)
@@ -123,26 +120,26 @@ describe("write-project-config", () => {
       undefined,
       undefined,
     );
-    expect(mockEnsureBlankGlobalConfig).toHaveBeenCalledWith();
-    expect(mockWriteScopedConfigs).toHaveBeenCalledWith(
+    expect(mockEnsureBlankPair).toHaveBeenCalledWith();
+    expect(mockWriteScopedFromWizard).toHaveBeenCalledWith({
       finalConfig,
-      sourceResult.matrix,
-      {},
+      matrix: sourceResult.matrix,
+      agents: {},
       projectDir,
-      configPath,
-      true,
-    );
+      projectConfigPath: configPath,
+      projectInstallationExists: true,
+    });
     expect(result).toStrictEqual({
       config: finalConfig,
       configPath,
       wasMerged: false,
       existingConfigPath: undefined,
       filesWritten: 4,
-      propagatedProjects: [],
+      propagation: buildGateReport(),
     });
   });
 
-  it("should skip ensureBlankGlobalConfig when installing from homedir", async () => {
+  it("should skip ensureBlankPair when installing from homedir", async () => {
     const homeDir = "/home/user";
     mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
 
@@ -155,22 +152,22 @@ describe("write-project-config", () => {
       projectDir: homeDir,
     });
 
-    expect(mockEnsureBlankGlobalConfig).not.toHaveBeenCalled();
-    expect(mockWriteScopedConfigs).toHaveBeenCalledWith(
+    expect(mockEnsureBlankPair).not.toHaveBeenCalled();
+    expect(mockWriteScopedFromWizard).toHaveBeenCalledWith({
       finalConfig,
-      sourceResult.matrix,
-      {},
-      homeDir,
-      configPath,
-      false,
-    );
+      matrix: sourceResult.matrix,
+      agents: {},
+      projectDir: homeDir,
+      projectConfigPath: configPath,
+      projectInstallationExists: false,
+    });
     expect(result).toStrictEqual({
       config: finalConfig,
       configPath,
       wasMerged: false,
       existingConfigPath: undefined,
       filesWritten: 2,
-      propagatedProjects: [],
+      propagation: buildGateReport(),
     });
   });
 
@@ -187,14 +184,14 @@ describe("write-project-config", () => {
     });
 
     expect(mockLoadMergedAgents).not.toHaveBeenCalled();
-    expect(mockWriteScopedConfigs).toHaveBeenCalledWith(
+    expect(mockWriteScopedFromWizard).toHaveBeenCalledWith({
       finalConfig,
-      sourceResult.matrix,
-      preloadedAgents,
+      matrix: sourceResult.matrix,
+      agents: preloadedAgents,
       projectDir,
-      configPath,
-      true,
-    );
+      projectConfigPath: configPath,
+      projectInstallationExists: true,
+    });
   });
 
   it("should load merged agents when not provided", async () => {
@@ -212,14 +209,14 @@ describe("write-project-config", () => {
     });
 
     expect(mockLoadMergedAgents).toHaveBeenCalledWith(sourceResult.sourcePath);
-    expect(mockWriteScopedConfigs).toHaveBeenCalledWith(
+    expect(mockWriteScopedFromWizard).toHaveBeenCalledWith({
       finalConfig,
-      sourceResult.matrix,
-      mergedAgents,
+      matrix: sourceResult.matrix,
+      agents: mergedAgents,
       projectDir,
-      configPath,
-      true,
-    );
+      projectConfigPath: configPath,
+      projectInstallationExists: true,
+    });
   });
 
   it("should return correct ConfigWriteResult", async () => {
@@ -242,14 +239,14 @@ describe("write-project-config", () => {
       wasMerged: true,
       existingConfigPath: "/test/project/.claude-src/config.ts.bak",
       filesWritten: 4,
-      propagatedProjects: [],
+      propagation: buildGateReport(),
     });
   });
 
   it("surfaces the registered projects propagation rewrote", async () => {
-    mockWriteScopedConfigs.mockResolvedValue({
-      propagatedProjects: ["/other/project-a", "/other/project-b"],
-    });
+    mockWriteScopedFromWizard.mockResolvedValue(
+      buildGateReport(["/other/project-a", "/other/project-b"]),
+    );
 
     const result = await writeProjectConfig({
       wizardResult,
@@ -258,8 +255,8 @@ describe("write-project-config", () => {
     });
 
     expect(
-      result.propagatedProjects,
-      "propagated project dirs must reach the caller so it can recompile their agents",
+      result.propagation.propagated.updated,
+      "propagated project dirs must reach the caller so it can report the recompile",
     ).toStrictEqual(["/other/project-a", "/other/project-b"]);
   });
 });

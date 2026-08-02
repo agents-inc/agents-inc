@@ -30,8 +30,6 @@ export {
   mergeWithExistingConfig,
 } from "./config-merger";
 
-export { saveSourceToProjectConfig } from "./config-saver";
-
 export {
   isActiveAt,
   isGlobalTombstone,
@@ -55,12 +53,18 @@ export { defaultCategories } from "./default-categories";
 export { defaultRules } from "./default-rules";
 export { defaultStacks } from "./default-stacks";
 export { loadConfig } from "./config-loader";
-export { generateConfigSource } from "./config-writer";
+
+/**
+ * Neither half's renderer is re-exported here, and neither is the writer that
+ * renders AND writes the types half. `generateConfigSource`,
+ * `generateConfigTypesSource` and `regenerateConfigTypes` remain importable from
+ * their own modules by `config-gate/**` and this directory (eslint-enforced), so
+ * the gate can drive them — a barrel re-export would hand the same reach to
+ * every command.
+ */
 export {
-  generateConfigTypesSource,
   generateProjectConfigTypesSource,
   getGlobalConfigTypesPath,
   type ConfigTypesBackgroundData,
   loadConfigTypesDataInBackground,
-  regenerateConfigTypes,
 } from "./config-types-writer";

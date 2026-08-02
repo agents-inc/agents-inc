@@ -22,11 +22,11 @@ import { validateKebabCaseName } from "../../lib/validate-kebab-name.js";
 import { FEATURE_FLAGS, featureDisabledError } from "../../lib/feature-flags.js";
 import { LOCAL_DEFAULTS } from "../../lib/metadata-keys.js";
 import { compileAllSkillPlugins } from "../../lib/skills/skill-plugin-compiler.js";
+import { loadConfigTypesDataInBackground } from "../../lib/configuration/config-types-writer.js";
 import {
-  loadConfigTypesDataInBackground,
-  regenerateConfigTypes,
-} from "../../lib/configuration/config-types-writer.js";
-import { generateConfigSource } from "../../lib/configuration/config-writer.js";
+  writeMarketplaceScaffoldConfig,
+  writeScaffoldedEntityTypes,
+} from "../../lib/config-gate/index.js";
 import { generateMarketplace, writeMarketplace } from "../../lib/marketplace-generator.js";
 import { generateSkillCategoriesTs, generateSkillRulesTs } from "../../lib/skills/generators.js";
 import type { Category, SkillId } from "../../types/index.js";
@@ -236,25 +236,25 @@ export default class NewMarketplace extends BaseCommand {
 
     const configDir = path.join(marketplaceDir, CLAUDE_SRC_DIR);
     await ensureDir(configDir);
-    // Boundary cast: custom marketplace dummy skill/category not in standard unions
-    const configContent = generateConfigSource({
-      name: marketplaceName,
-      skills: [{ id: skillName as SkillId, scope: "project", source: EJECT_SOURCE }],
-      agents: [],
-      source: ".",
-      marketplace: marketplaceName,
-      stack: {
-        "web-developer": {
-          // Boundary cast: dummy-category is not in the generated Category union
-          [LOCAL_DEFAULTS.CATEGORY as Category]: [{ id: skillName as SkillId }],
-        },
-      },
-    });
     const marketplaceComment =
       "// Marketplaces house skills only — agents are defined by consumer projects.\n\n";
-    await writeFile(
-      path.join(configDir, STANDARD_FILES.CONFIG_TS),
-      marketplaceComment + configContent,
+    await writeMarketplaceScaffoldConfig(
+      marketplaceDir,
+      // Boundary cast: custom marketplace dummy skill/category not in standard unions
+      {
+        name: marketplaceName,
+        skills: [{ id: skillName as SkillId, scope: "project", source: EJECT_SOURCE }],
+        agents: [],
+        source: ".",
+        marketplace: marketplaceName,
+        stack: {
+          "web-developer": {
+            // Boundary cast: dummy-category is not in the generated Category union
+            [LOCAL_DEFAULTS.CATEGORY as Category]: [{ id: skillName as SkillId }],
+          },
+        },
+      },
+      marketplaceComment,
     );
 
     this.log("");
@@ -309,7 +309,7 @@ export default class NewMarketplace extends BaseCommand {
 
       this.log("Generating config-types.ts...");
       const configTypesData = loadConfigTypesDataInBackground(marketplaceDir, marketplaceDir);
-      await regenerateConfigTypes(marketplaceDir, configTypesData);
+      await writeScaffoldedEntityTypes(marketplaceDir, configTypesData);
       this.logSuccess(`Generated ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TYPES_TS}`);
     } catch (error) {
       this.warn(`Build step failed: ${getErrorMessage(error)}`);

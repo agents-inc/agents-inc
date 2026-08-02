@@ -17,12 +17,12 @@ import {
   pluginInstallFailureError,
   writeProjectConfig,
   compileAgentsAllScopes,
-  recompilePropagatedProjectAgents,
   type CompilationResult,
   type SkillCopyResult,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
 import { getInstallationInfo } from "../lib/plugins/plugin-info.js";
+import type { GateReport } from "../lib/config-gate/index.js";
 import {
   loadProjectConfig,
   loadProjectConfigFromDir,
@@ -478,21 +478,19 @@ export default class Init extends BaseCommand {
     });
     this.log(`Compiled ${compileResult.compiled.length} agents\n`);
 
-    await this.recompilePropagatedProjects(configResult.propagatedProjects);
+    this.reportPropagatedRecompile(configResult.propagation);
 
     return { configResult, compileResult, agentScopeMap };
   }
 
   /**
-   * Recompiles the agents of every OTHER registered project this run's global
-   * change was propagated into — see {@link recompilePropagatedProjectAgents}
-   * for the staleness rationale and per-project failure isolation.
+   * Renders the recompile the gated write already performed on every OTHER
+   * registered project this run's global change was propagated into.
    */
-  private async recompilePropagatedProjects(projectDirs: string[]): Promise<void> {
-    if (projectDirs.length === 0) return;
+  private reportPropagatedRecompile(propagation: GateReport): void {
+    if (propagation.propagated.updated.length === 0) return;
 
-    const { recompiledCount, failedCount, warnings } =
-      await recompilePropagatedProjectAgents(projectDirs);
+    const { recompiledCount, failedCount, warnings } = propagation.recompile;
     for (const warning of warnings) {
       this.warn(warning);
     }

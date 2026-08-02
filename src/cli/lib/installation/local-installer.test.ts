@@ -15,22 +15,29 @@ vi.mock("../../consts", async (importOriginal) => {
 import { resolveInstallPaths } from "./install-base-dir";
 import {
   installEject,
-  writeScopedConfigs,
   buildEjectSkillsMap,
   buildCompileAgents,
   buildAgentScopeMap,
-  mergeGlobalConfigs,
   setConfigMetadata,
-  deregisterProjectPath,
+} from "./local-installer";
+// The pair writers this file exercises live in config-gate now and are no longer
+// re-exported by `local-installer`, which is the point of the enforcement guard:
+// nothing outside the gate may reach them through a public surface. A test is
+// allowed the deep import — it is asserting on the implementation.
+import {
+  deregisterProjectPath as deregisterProjectPathUngated,
+  mergeGlobalConfigs,
   propagateGlobalChangesToProjects,
   pruneGlobalEntriesFromRegisteredProjects,
-  regenerateScopeConfigTypes,
-  writeConfigFile,
-} from "./local-installer";
+  writeConfigFile as writeConfigFileUngated,
+} from "../config-gate/propagate.js";
+import { withGateToken } from "../config-gate/gate-token.js";
+import { writeScopeConfigTypes, writeScopedFromWizard } from "../config-gate/index.js";
 import type {
   AgentConfig,
   AgentDefinition,
   AgentName,
+  MergedSkillsMatrix,
   ProjectConfig,
   Skill,
   SkillId,
@@ -64,6 +71,7 @@ import {
   EMPTY_MATRIX,
   FULLSTACK_PAIR_MATRIX,
   FULLSTACK_TRIO_MATRIX,
+  REACT_HONO_WEB_API_DOMAINS_MATRIX,
   SINGLE_REACT_MATRIX,
 } from "../__tests__/mock-data/mock-matrices";
 import {
@@ -126,6 +134,67 @@ vi.mock("../configuration/config-generator", async (importOriginal) => {
   };
 });
 
+/**
+ * Writes a config fixture, holding the gate's write token.
+ *
+ * Some of these fixtures ARE the global pair's config half at the fake home, and
+ * the runtime tripwire in `utils/fs` refuses that path to anything outside the
+ * gate — correctly: a production caller reaching it this way would be the exact
+ * bypass the tripwire exists to stop. Here the test is standing in for the gate,
+ * seeding the prior state a spec needs, so it takes the token explicitly.
+ */
+function writeConfigFile(...args: Parameters<typeof writeConfigFileUngated>): Promise<void> {
+  return withGateToken(() => writeConfigFileUngated(...args));
+}
+
+/**
+ * Deregisters a project, holding the gate's write token.
+ *
+ * Same standing-in-for-the-gate arrangement as `writeConfigFile` above. Since
+ * D-309 no `pair-writer` or `propagate` function mints the privilege on its own
+ * behalf — the gate's PUBLIC entry points do — and `deregisterProjectPath` has no
+ * public entry left (`mutateGlobal({ kind: "deregister-project" })` replaced it
+ * in production), so its remaining callers, all specs, supply the token.
+ */
+function deregisterProjectPath(
+  ...args: Parameters<typeof deregisterProjectPathUngated>
+): Promise<void> {
+  return withGateToken(() => deregisterProjectPathUngated(...args));
+}
+
+/**
+ * Positional-argument shape of the gate's `writeScopedFromWizard`, kept so these
+ * specs read as they did when `writeScopedConfigs` was the entry point. Pure
+ * argument shuffling — the code under test is the gate's.
+ */
+async function writeScopedConfigs(
+  finalConfig: ProjectConfig,
+  matrix: MergedSkillsMatrix,
+  agents: Record<AgentName, AgentDefinition>,
+  projectDir: string,
+  projectConfigPath: string,
+  projectInstallationExists: boolean,
+): Promise<void> {
+  await writeScopedFromWizard({
+    finalConfig,
+    matrix,
+    agents,
+    projectDir,
+    projectConfigPath,
+    projectInstallationExists,
+  });
+}
+
+/** Positional-argument shape of the gate's `writeScopeConfigTypes`. */
+async function regenerateScopeConfigTypes(
+  projectDir: string,
+  config: ProjectConfig,
+  matrix: MergedSkillsMatrix,
+  agents: Record<AgentName, AgentDefinition>,
+): Promise<void> {
+  await writeScopeConfigTypes(projectDir, config, { matrix, agents });
+}
+
 // Access the mock to verify installMode is passed through
 const mockCompileAgentForPlugin = vi.mocked((await import("../compiler")).compileAgentForPlugin);
 const mockResolveAgents = vi.mocked((await import("../resolver")).resolveAgents);
@@ -140,6 +209,22 @@ const mockLoadStackById = vi.mocked((await import("../stacks/stacks-loader")).lo
 
 // Boundary cast: fictional skill ID used throughout local-installer tests
 const TEST_SKILL_ID = "meta-test-skill" as SkillId;
+
+/**
+ * The right-hand side of one `export type <alias> = ...;` in a generated
+ * config-types.ts.
+ *
+ * Asserting on the whole file would let a literal satisfy an alias it has
+ * nothing to do with — every skill id is also a substring of the emitted
+ * StackAgentConfig, and every domain name prefixes a category. Reading one
+ * alias at a time is what makes "the Domain union carries web" a claim about
+ * Domain.
+ */
+function readGeneratedUnion(typesSource: string, alias: string): string {
+  const declaration = new RegExp(`export type ${alias} =([\\s\\S]*?);`).exec(typesSource);
+  expect(declaration, `generated config-types.ts declares no ${alias}`).not.toBeNull();
+  return declaration?.[1] ?? "";
+}
 
 describe("local-installer", () => {
   let tempDir: string;
@@ -1810,17 +1895,18 @@ describe("local-installer", () => {
       expect(typesContent).toContain("Domain as GlobalDomain");
       expect(typesContent).toContain("Category as GlobalCategory");
 
-      // Project-scoped additions extend the global union
-      expect(typesContent).toContain('export type SkillId = GlobalSkillId | "web-testing-vitest"');
-      expect(typesContent).toContain('export type AgentName = GlobalAgentName | "web-reviewer"');
-
-      // Global-scoped items are NOT inlined in the project types file — they're
-      // reached via the GlobalSkillId / GlobalAgentName re-exports
-      expect(typesContent).not.toContain('"web-framework-react"');
-      expect(typesContent).not.toContain('"web-developer"');
+      // Every active entry extends the global union — the project-scoped ones and the
+      // global-scoped ones the sibling config.ts inlines, which the imported aliases would
+      // otherwise cover only until the next global-scope run narrows them.
+      expect(typesContent).toContain(
+        'export type SkillId = GlobalSkillId | "web-framework-react" | "web-testing-vitest"',
+      );
+      expect(typesContent).toContain(
+        'export type AgentName = GlobalAgentName | "web-developer" | "web-reviewer"',
+      );
     });
 
-    it("emits only the global alias when there are no project-scoped items (pure propagation case)", async () => {
+    it("extends the global alias even when every item is global-scoped (pure propagation case)", async () => {
       // Seed a global config-types.ts so getGlobalConfigTypesPath() returns non-null
       const globalClaudeSrc = path.join(fakeHome, CLAUDE_SRC_DIR);
       await mkdir(globalClaudeSrc, { recursive: true });
@@ -1862,15 +1948,15 @@ describe("local-installer", () => {
 
       const typesContent = await readFile(projectTypesPath, "utf-8");
 
-      // Import form is still used; with no project-only items the aliases reduce
-      // to the global unions directly
+      // Import form is still used — the project types extend the global ones rather
+      // than restating them
       expect(typesContent).toContain("SkillId as GlobalSkillId");
-      expect(typesContent).toContain("export type SkillId = GlobalSkillId;");
-      expect(typesContent).toContain("export type AgentName = GlobalAgentName;");
 
-      // No inlined skill IDs or agent names — everything flows through global
-      expect(typesContent).not.toContain('"web-framework-react"');
-      expect(typesContent).not.toContain('"web-developer"');
+      // The project owns nothing at project scope, yet its config.ts inlines both global
+      // rows, so its own unions still have to name them: covered by the import alone, this
+      // file goes red the moment a global-scope run drops either entry.
+      expect(typesContent).toContain('export type SkillId = GlobalSkillId | "web-framework-react"');
+      expect(typesContent).toContain('export type AgentName = GlobalAgentName | "web-developer"');
     });
 
     it("falls back to standalone config-types when no global install exists", async () => {
@@ -1910,6 +1996,137 @@ describe("local-installer", () => {
       // Standalone form: inlined unions, no "as GlobalSkillId" import
       expect(typesContent).not.toContain("as GlobalSkillId");
       expect(typesContent).toContain('"web-framework-react"');
+    });
+
+    /**
+     * The project's config.ts and its config-types.ts are written from the SAME
+     * merged config but disagree about which scopes they cover.
+     * `generateProjectConfigWithInlinedGlobal` inlines every active global row
+     * verbatim, while `buildProjectTypesExtras` only widens the imported unions
+     * with entries active at PROJECT scope. The two agree for exactly as long as
+     * the global unions still happen to contain the inlined rows — and a later
+     * global-scope run that narrows them ends that, leaving a project config.ts
+     * that names skills, categories and domains its own types reject.
+     *
+     * That is not hypothetical: it is the live state of a real installation,
+     * where a `scope: "global"` row, its stack category key and its domain each
+     * fail `tsc` against the narrowed global unions (TS2322 / TS2353).
+     *
+     * The two skills sit in distinct categories AND distinct domains so a single
+     * assertion cannot pass by accident: the project-scoped skill contributes
+     * nothing that would cover the global one's category or domain.
+     */
+    it("extends the global unions with the global-scoped entries config.ts inlines", async () => {
+      const globalClaudeSrc = path.join(fakeHome, CLAUDE_SRC_DIR);
+      await mkdir(globalClaudeSrc, { recursive: true });
+      await writeFile(
+        path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
+        "// global config-types placeholder",
+      );
+
+      const projectDir = path.join(tempDir, "project-scope-pairing");
+      const projectConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      await mkdir(path.dirname(projectConfigPath), { recursive: true });
+
+      const config = buildProjectConfig({
+        skills: [
+          // Global: web-framework / web
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          // Project: api-api / api
+          ...buildSkillConfigs(["api-framework-hono"], { scope: "project" }),
+        ],
+        agents: [
+          ...buildAgentConfigs(["web-developer"], { scope: "global" }),
+          ...buildAgentConfigs(["web-reviewer"], { scope: "project" }),
+        ],
+      });
+
+      await writeScopedConfigs(
+        config,
+        REACT_HONO_WEB_API_DOMAINS_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+        projectDir,
+        projectConfigPath,
+        false,
+      );
+
+      const projectTypesPath = path.join(
+        projectDir,
+        CLAUDE_SRC_DIR,
+        STANDARD_FILES.CONFIG_TYPES_TS,
+      );
+      const typesContent = await readFile(projectTypesPath, "utf-8");
+
+      // The sibling config.ts really does inline the global row — without this the
+      // assertions below would be asking the types to cover something nobody wrote.
+      const projectConfigContent = await readFile(projectConfigPath, "utf-8");
+      expect(projectConfigContent).toContain(
+        '{"id":"web-framework-react","scope":"global","source":"agents-inc"}',
+      );
+
+      // Control: the project-scoped entry is in the extras today.
+      expect(readGeneratedUnion(typesContent, "SkillId")).toContain('"api-framework-hono"');
+      expect(readGeneratedUnion(typesContent, "Category")).toContain('"api-api"');
+      expect(readGeneratedUnion(typesContent, "Domain")).toContain('"api"');
+
+      // The defect: the inlined global entry must be covered by the project's own
+      // unions, not merely by whatever the global unions happen to hold right now.
+      expect(readGeneratedUnion(typesContent, "SkillId")).toContain('"web-framework-react"');
+      expect(readGeneratedUnion(typesContent, "Category")).toContain('"web-framework"');
+      expect(readGeneratedUnion(typesContent, "Domain")).toContain('"web"');
+    });
+
+    /**
+     * The `domains` array is the one thing in a project config.ts that no skill row
+     * has to back. It is a wizard preference, passed through verbatim by every write
+     * and never pruned when the last skill of a domain leaves — so a union derived
+     * only from the surviving skills' categories can be narrower than the array the
+     * same writer just emitted. That is the live TS2322 on `"infra"`.
+     *
+     * `meta` here is named by the config and by nothing else: neither skill resolves
+     * to it, so only the domains array itself can put it in the union.
+     */
+    it("covers a domain the config still names after its last skill row is gone", async () => {
+      const globalClaudeSrc = path.join(fakeHome, CLAUDE_SRC_DIR);
+      await mkdir(globalClaudeSrc, { recursive: true });
+      await writeFile(
+        path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
+        "// global config-types placeholder",
+      );
+
+      const projectDir = path.join(tempDir, "project-orphaned-domain");
+      const projectConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      await mkdir(path.dirname(projectConfigPath), { recursive: true });
+
+      const config = buildProjectConfig({
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["api-framework-hono"], { scope: "project" }),
+        ],
+        agents: buildAgentConfigs(["web-reviewer"], { scope: "project" }),
+        domains: ["api", "meta"],
+      });
+
+      await writeScopedConfigs(
+        config,
+        REACT_HONO_WEB_API_DOMAINS_MATRIX,
+        emptyAgents as Record<AgentName, AgentDefinition>,
+        projectDir,
+        projectConfigPath,
+        false,
+      );
+
+      const typesContent = await readFile(
+        path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TYPES_TS),
+        "utf-8",
+      );
+
+      // The sibling config.ts really does name the domain — without this the
+      // assertion below would be asking the types to cover something nobody wrote.
+      const projectConfigContent = await readFile(projectConfigPath, "utf-8");
+      expect(projectConfigContent).toContain('const domains: Domain[] = ["api", "meta"];');
+
+      expect(readGeneratedUnion(typesContent, "Domain")).toContain('"meta"');
     });
   });
 
@@ -2024,15 +2241,15 @@ describe("local-installer", () => {
         // Import-and-extend form — not the standalone/inlined form
         expect(typesContent).toContain("import type {");
         expect(typesContent).toContain("SkillId as GlobalSkillId");
-        expect(typesContent).toContain(
-          'export type SkillId = GlobalSkillId | "web-testing-vitest"',
-        );
-        expect(typesContent).toContain('export type AgentName = GlobalAgentName | "web-reviewer"');
 
-        // Global-scoped items flow through the GlobalSkillId / GlobalAgentName
-        // re-exports — they are not inlined
-        expect(typesContent).not.toContain('"web-framework-react"');
-        expect(typesContent).not.toContain('"web-developer"');
+        // Extended with every active entry the compiled config carries, global rows
+        // included: config.ts names them, so the types beside it must accept them
+        expect(typesContent).toContain(
+          'export type SkillId = GlobalSkillId | "web-framework-react" | "web-testing-vitest"',
+        );
+        expect(typesContent).toContain(
+          'export type AgentName = GlobalAgentName | "web-developer" | "web-reviewer"',
+        );
 
         // Regeneration touches only config-types.ts — config.ts stays byte-identical
         expect(await readFile(projectConfigPath, "utf-8")).toBe(configBefore);
@@ -2698,13 +2915,18 @@ describe("local-installer", () => {
       expect(typesContent).toContain("SkillId as GlobalSkillId");
       expect(typesContent).toContain("AgentName as GlobalAgentName");
 
-      // Project-scoped items extend the global unions
-      expect(typesContent).toContain('export type SkillId = GlobalSkillId | "web-testing-vitest"');
-      expect(typesContent).toContain('export type AgentName = GlobalAgentName | "web-reviewer"');
-
-      // Global items are NOT inlined — they flow through GlobalSkillId / GlobalAgentName
-      expect(typesContent).not.toContain('"web-framework-react"');
-      expect(typesContent).not.toContain('"web-developer"');
+      // The extension covers every row the sibling config.ts names: the project's
+      // own entries AND the active global rows the writer inlines into it. The
+      // imported unions alone cover the global rows only for as long as the
+      // global config still holds them, so a project this propagation cannot
+      // reach on a later narrowing run would stop type-checking against a
+      // config.ts it still names them in.
+      expect(typesContent).toContain(
+        'export type SkillId = GlobalSkillId | "web-framework-react" | "web-testing-vitest"',
+      );
+      expect(typesContent).toContain(
+        'export type AgentName = GlobalAgentName | "web-developer" | "web-reviewer"',
+      );
     });
   });
 

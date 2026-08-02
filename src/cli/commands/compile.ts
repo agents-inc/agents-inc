@@ -29,8 +29,10 @@ import {
   INFO_MESSAGES,
   configTypesRefreshFailed,
   globalScopedAgentsHint,
+  registeredProjectUpdateSkipped,
 } from "../utils/messages";
-import { type Installation, regenerateScopeConfigTypes } from "../lib/installation";
+import { reconcileTypesFromDisk, type GateReport } from "../lib/config-gate/index.js";
+import type { Installation } from "../lib/installation";
 import type { SkillScope } from "../types/config";
 import type { AgentDefinition, AgentName, SkillDefinitionMap } from "../types";
 
@@ -126,7 +128,7 @@ export default class Compile extends BaseCommand {
 
     let totalPassesWithSkills = 0;
     for (const pass of passes) {
-      const hadSkills = await this.runCompilePass(pass, sourceFlag);
+      const hadSkills = await this.runCompilePass(pass, cwd, sourceFlag);
       if (hadSkills) totalPassesWithSkills++;
     }
 
@@ -208,7 +210,12 @@ export default class Compile extends BaseCommand {
    * Skipping avoids fetching every registered extra source (network on a cold
    * cache, plus unreachable-remote warnings) on this offline compile path.
    */
-  private async refreshConfigTypes(pass: CompilePass, sourceFlag?: string): Promise<void> {
+  private async refreshConfigTypes(
+    pass: CompilePass,
+    cwd: string,
+    sourceFlag?: string,
+  ): Promise<void> {
+    let report: GateReport;
     try {
       const loaded = await loadProjectConfigFromDir(pass.projectDir);
       if (!loaded) {
@@ -224,14 +231,48 @@ export default class Compile extends BaseCommand {
         skipExtraSources: true,
         matrixOnly: true,
       });
-      await regenerateScopeConfigTypes(pass.projectDir, loaded.config, matrix, pass.agents);
+      // `cwd` is excluded from the fan-out: when compile runs inside a registered
+      // project, the project pass compiles that project's agents itself, so
+      // letting the home pass reach it would compile them twice.
+      report = await reconcileTypesFromDisk(
+        pass.projectDir,
+        loaded.config,
+        { matrix, agents: pass.agents },
+        { currentProjectDir: cwd },
+      );
       this.log(INFO_MESSAGES.CONFIG_TYPES_REFRESHED);
     } catch (error) {
       this.warn(configTypesRefreshFailed(getErrorMessage(error)));
+      return;
     }
+
+    this.reportPropagation(report);
   }
 
-  private async runCompilePass(params: CompilePass, sourceFlag?: string): Promise<boolean> {
+  /**
+   * Renders the fan-out the refresh above performed. Kept out of the refresh's
+   * catch on purpose: a project the fan-out could not reach is reported as that,
+   * not as a failure to refresh the type unions — which did succeed.
+   */
+  private reportPropagation(report: GateReport): void {
+    for (const skippedPath of report.propagated.skipped) {
+      this.warn(registeredProjectUpdateSkipped(skippedPath));
+    }
+    for (const warning of report.recompile.warnings) {
+      this.warn(warning);
+    }
+    if (report.propagated.updated.length === 0) return;
+
+    const { recompiledCount, failedCount } = report.recompile;
+    const failureSuffix = failedCount > 0 ? ` (${failedCount} failed)` : "";
+    this.log(`Recompiled agents in ${recompiledCount} registered projects${failureSuffix}`);
+  }
+
+  private async runCompilePass(
+    params: CompilePass,
+    cwd: string,
+    sourceFlag?: string,
+  ): Promise<boolean> {
     const { label, projectDir, installation, sourcePath, scopeFilter } = params;
 
     this.log("");
@@ -248,7 +289,7 @@ export default class Compile extends BaseCommand {
       // The config loads independently of discovered skills: a hand-edited
       // config.ts can list skills while nothing is installed for this scope,
       // and its type unions must follow the config rather than stay stale.
-      await this.refreshConfigTypes(params, sourceFlag);
+      await this.refreshConfigTypes(params, cwd, sourceFlag);
       return false;
     }
 
@@ -289,7 +330,7 @@ export default class Compile extends BaseCommand {
       this.handleError(error);
     }
 
-    await this.refreshConfigTypes(params, sourceFlag);
+    await this.refreshConfigTypes(params, cwd, sourceFlag);
 
     this.log("");
     this.logSuccess(`${label} compile complete!`);

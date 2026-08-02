@@ -59,6 +59,12 @@ export const STEP_TEXT = {
   SKILL_NOT_FOUND_WARNING: "is configured but was not found", // Compile warning for a config-listed skill with no installed files
   COMPILE_PASS_NO_SKILLS: "No skills found for", // Per-pass zero-skill line: "No skills found for global/project pass, skipping"
   COMPILE_NO_SKILLS_ERROR: "No skills found. Add skills with", // Hard error when every compile pass discovered zero skills
+  PROPAGATED_RECOMPILE_ONE: "Recompiled agents in 1 registered projects", // Summary after a global-scope change fans out to one registered project
+  // Command-agnostic prefix of the same summary. `init` prints "... 1 registered
+  // projects" and `edit` prints "... 1 registered project(s)", so a spec that must
+  // hold across commands — or that asserts the line's ABSENCE before the command
+  // that owes it has been given one — anchors on this instead of a whole line.
+  PROPAGATED_RECOMPILE: "Recompiled agents in",
   LOADED: "Loaded",
   LOADED_LOCAL: "Loaded from local:",
   LOADED_SKILL: "Loaded skill:", // Verbose loader line prefix
@@ -78,6 +84,12 @@ export const STEP_TEXT = {
   // Sources step
   CONFIGURED_MARKETPLACES: "Configured marketplaces",
   ADD_SOURCE: "Add source",
+  // Status line the settings overlay paints after `addSource` resolved the
+  // marketplace and wrote it to config.ts — the sentinel proving the add
+  // COMPLETED rather than merely that the input was submitted. The full line is
+  // `Added "<name>" (<n> skills)`; the opening quote is kept so it cannot match
+  // narrative prose elsewhere in the frame.
+  SOURCE_ADDED: 'Added "',
 
   // Scope group labels. The info panel, the confirm step and the Sources grid's left-hand gutter
   // all head their per-scope blocks with these words. Paired with `SCOPE` above, which is the

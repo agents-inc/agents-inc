@@ -1,12 +1,13 @@
 import path from "path";
 import { realpathSync } from "fs";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterAll, beforeAll, afterEach } from "vitest";
 import {
   createTempDir,
   cleanupTempDir,
   ensureBinaryExists,
   fileExists,
   readTestFile,
+  runCLI,
   writeProjectConfig,
   writeConfigTypes,
   configTsPath,
@@ -14,14 +15,15 @@ import {
   loadConfigOrFail,
   createLocalSkill,
   writeAgentFile,
-  agentsPath,
   skillsPath,
   renderMetadataYaml,
   FORKED_FROM_METADATA,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
+import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
+import "../matchers/setup.js";
 
 /**
  * A GLOBAL uninstall must propagate to registered projects: before this fix,
@@ -37,8 +39,19 @@ import { CLI } from "../fixtures/cli.js";
  */
 describe("global uninstall propagates to registered projects", () => {
   let tempDir: string;
+  let sourceDir: string;
+  let sourceTempDir: string;
 
-  beforeAll(ensureBinaryExists);
+  beforeAll(async () => {
+    await ensureBinaryExists();
+    const source = await createE2ESource();
+    sourceDir = source.sourceDir;
+    sourceTempDir = source.tempDir;
+  }, TIMEOUTS.SETUP);
+
+  afterAll(async () => {
+    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
+  });
 
   afterEach(async () => {
     if (tempDir) {
@@ -105,7 +118,10 @@ describe("global uninstall propagates to registered projects", () => {
     });
     await writeAgentFile(globalHome, E2E_AGENT["web-developer"].name, { frontmatter: true });
 
-    // Snapshot the project-scoped files — they must be byte-preserved.
+    // Snapshot the project-scoped skill content — it must be byte-preserved. The
+    // project's compiled agent is a DERIVED artifact, not content: it was built
+    // from the global rows this uninstall prunes, so the prune owes it a
+    // recompile and it is asserted on separately below.
     const projectSkillMdPath = path.join(
       skillsPath(projectDir),
       E2E_SKILL.vitest.id,
@@ -116,13 +132,8 @@ describe("global uninstall propagates to registered projects", () => {
       E2E_SKILL.vitest.id,
       FILES.METADATA_YAML,
     );
-    const projectAgentMdPath = path.join(
-      agentsPath(projectDir),
-      `${E2E_AGENT["api-developer"].name}.md`,
-    );
     const skillMdBefore = await readTestFile(projectSkillMdPath);
     const skillMetaBefore = await readTestFile(projectSkillMetaPath);
-    const agentMdBefore = await readTestFile(projectAgentMdPath);
 
     // --- Global uninstall from the fake HOME.
     const { exitCode, stdout, output } = await CLI.run(
@@ -175,13 +186,126 @@ describe("global uninstall propagates to registered projects", () => {
     expect(rawTypes).not.toContain("GlobalSkillId");
     expect(rawTypes).not.toContain("export type SkillId = string");
 
-    // Project-scoped files are byte-preserved.
+    // Project-scoped skill content is byte-preserved.
     expect(await readTestFile(projectSkillMdPath)).toBe(skillMdBefore);
     expect(await readTestFile(projectSkillMetaPath)).toBe(skillMetaBefore);
-    expect(await readTestFile(projectAgentMdPath)).toBe(agentMdBefore);
+
+    // The project's own agent survives the prune and still preloads the skill it
+    // owns — recompiled from the pruned config rather than left naming removed
+    // global content.
+    await expect({ dir: projectDir }).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
+      contains: [E2E_SKILL.vitest.id],
+      notContains: [E2E_SKILL.react.id],
+    });
 
     // Doctor passes in the project afterwards — no dangling references remain.
     const doctor = await CLI.run(["doctor"], { dir: projectDir }, { env: { HOME: globalHome } });
     expect(doctor.exitCode).toBe(EXIT_CODES.SUCCESS);
+  });
+
+  /**
+   * Pruning the config is only half the job. The registered project's compiled
+   * `.claude/agents/*.md` were built from the global rows this uninstall just
+   * removed, so leaving them untouched hands the user agents that preload a
+   * skill whose files were deleted along with the global install.
+   *
+   * The test above deliberately cannot cover this: its project agent is a
+   * hand-written stub that never referenced the global skill, which is why it
+   * can assert byte-preservation. Here the agent is produced by a real
+   * `compile` while the global skill is still installed, so it genuinely
+   * preloads it.
+   *
+   * CURRENTLY RED. `uninstall` calls `pruneGlobalEntriesFromRegisteredProjects`
+   * and reports `result.updated.length`, but never recompiles the projects that
+   * result names — so the compiled agent still preloads the pruned skill and no
+   * recompile summary is printed.
+   */
+  it("recompiles a registered project's agents so they stop preloading the pruned global skill", async () => {
+    tempDir = await createTempDir();
+    const globalHome = path.join(tempDir, "global-home");
+    const projectDir = path.join(tempDir, "project");
+
+    // --- Project installation: a PROJECT-scoped api-developer whose stack
+    // preloads BOTH its own project skill and the inherited global one.
+    await writeProjectConfig(projectDir, {
+      name: "project-recompile",
+      skills: [
+        { id: E2E_SKILL.vitest.id, scope: "project", source: "eject" },
+        { id: E2E_SKILL.react.id, scope: "global", source: "eject" },
+      ],
+      agents: [{ name: E2E_AGENT["api-developer"].name, scope: "project" }],
+      domains: ["web"],
+      selectedAgents: [E2E_AGENT["api-developer"].name],
+      stack: {
+        [E2E_AGENT["api-developer"].name]: {
+          "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
+          "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: true }],
+        },
+      },
+    });
+    await writeConfigTypes(projectDir);
+    await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
+      description: "Project-scoped skill that must survive the global uninstall",
+      metadata: renderMetadataYaml({ contentHash: "hash-project-vitest" }),
+    });
+
+    // --- Global installation at the fake HOME, registering the project.
+    await writeProjectConfig(globalHome, {
+      name: "global-recompile",
+      skills: [{ id: E2E_SKILL.react.id, scope: "global", source: "eject" }],
+      agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
+      domains: ["web"],
+      selectedAgents: [E2E_AGENT["web-developer"].name],
+      stack: {
+        [E2E_AGENT["web-developer"].name]: {
+          "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
+        },
+      },
+      projects: [realpathSync(projectDir)],
+    });
+    await writeConfigTypes(globalHome);
+    await createLocalSkill(globalHome, E2E_SKILL.react.id, {
+      description: "Global skill removed by the uninstall",
+      metadata: FORKED_FROM_METADATA,
+    });
+
+    // A real compile produces the stale artifact the uninstall has to invalidate.
+    const compiled = await runCLI(["compile", "--source", sourceDir], projectDir, {
+      env: { HOME: globalHome },
+    });
+    expect(compiled.exitCode, `project compile must succeed: ${compiled.combined}`).toBe(
+      EXIT_CODES.SUCCESS,
+    );
+    await expect({ dir: projectDir }).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
+      contains: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
+    });
+
+    const { exitCode, stdout, output } = await CLI.run(
+      ["uninstall", "--yes"],
+      { dir: globalHome },
+      { env: { HOME: globalHome } },
+    );
+
+    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+    expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
+
+    // Proof the propagation half ran: the config prune landed.
+    expect(stdout).toContain(STEP_TEXT.UNINSTALL_PROJECTS_UPDATED_ONE);
+    const projectConfig = await loadConfigOrFail(projectDir);
+    expect(projectConfig.skills).toStrictEqual([
+      { id: E2E_SKILL.vitest.id, scope: "project", source: "eject" },
+    ]);
+
+    // The compiled agents follow the prune — the pruned skill is gone from the
+    // .md, and the project's own skill survives it.
+    await expect({ dir: projectDir }).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
+      contains: [E2E_SKILL.vitest.id],
+      notContains: [E2E_SKILL.react.id],
+    });
+
+    expect(
+      output,
+      "the uninstall must report recompiling the registered projects it pruned",
+    ).toContain(STEP_TEXT.PROPAGATED_RECOMPILE);
   });
 });

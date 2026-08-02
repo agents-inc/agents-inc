@@ -2,14 +2,7 @@ import { Args, Flags } from "@oclif/core";
 import path from "path";
 import os from "os";
 import { BaseCommand, type SourceRefreshFlags } from "../base-command.js";
-import {
-  copy,
-  ensureDir,
-  directoryExists,
-  fileExists,
-  listDirectories,
-  writeFile,
-} from "../utils/fs.js";
+import { copy, ensureDir, directoryExists, fileExists, listDirectories } from "../utils/fs.js";
 import {
   CLAUDE_SRC_DIR,
   DEFAULT_BRANDING,
@@ -23,14 +16,19 @@ import { type SourceLoadResult } from "../lib/loading/index.js";
 import { loadSource } from "../lib/operations/index.js";
 import { matrix } from "../lib/matrix/matrix-provider";
 import {
-  saveSourceToProjectConfig,
   resolveSource,
   loadProjectSourceConfig,
-  generateConfigSource,
   getProjectConfigPath,
 } from "../lib/configuration/index.js";
+import {
+  ensureBlankPair,
+  lazyGateDeps,
+  mutateGlobal,
+  writeProjectPartial,
+} from "../lib/config-gate/index.js";
+import { isHomeDirectory } from "../lib/installation/index.js";
 import { copySkillsToLocalFlattened, type CopiedSkill } from "../lib/skills/index.js";
-import type { MergedSkillsMatrix, ProjectConfig, SkillId } from "../types/index.js";
+import type { MergedSkillsMatrix, SkillId } from "../types/index.js";
 import { typedKeys } from "../utils/typed-object.js";
 
 const EJECT_TYPES = ["agent-partials", "templates", "skills", "all"] as const;
@@ -216,10 +214,10 @@ export default class Eject extends BaseCommand {
     sourceFlag: string | undefined,
     projectDir: string,
   ): Promise<void> {
-    if (sourceFlag) {
-      await saveSourceToProjectConfig(projectDir, sourceFlag, path.basename(projectDir));
-      this.log(`Source saved to ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
-    }
+    if (!sourceFlag) return;
+
+    await recordSource(projectDir, sourceFlag);
+    this.log(`Source saved to ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
   }
 
   private async ensureConfig(
@@ -502,7 +500,7 @@ type EnsureMinimalConfigResult = {
 };
 
 /**
- * Ensures a minimal config.ts exists so `agentsinc compile` works after eject.
+ * Ensures a minimal config.ts exists so `npx agents-inc compile` works after eject.
  *
  * If the config already exists, returns immediately with `created: false`.
  * Otherwise generates a minimal config from the resolved source and project metadata.
@@ -523,24 +521,56 @@ async function ensureMinimalConfig(
   const resolvedConfig =
     sourceResult?.sourceConfig ?? (await resolveSource(sourceFlag, projectDir));
   const existingProjectConfig = await loadProjectSourceConfig(projectDir);
-
   const source = sourceFlag || resolvedConfig.source || undefined;
-  const config: ProjectConfig = {
-    name: path.basename(projectDir),
-    skills: [],
-    agents: [],
-    ...(source ? { source } : {}),
-    ...(resolvedConfig.marketplace ? { marketplace: resolvedConfig.marketplace } : {}),
-    ...(existingProjectConfig?.author ? { author: existingProjectConfig.author } : {}),
-    ...(existingProjectConfig?.agentsSource
-      ? { agentsSource: existingProjectConfig.agentsSource }
-      : {}),
-  };
 
-  await ensureDir(path.join(projectDir, CLAUDE_SRC_DIR));
-  await writeFile(tsConfigPath, generateConfigSource(config));
+  // At the home directory the invented config IS the global manifest, and the
+  // file it opens with `import type { ProjectConfig } from "./config-types"`
+  // cannot resolve its own types without the sibling. The gate writes the pair.
+  if (isHomeDirectory(projectDir)) {
+    await ensureBlankPair();
+    if (source) await recordSource(projectDir, source);
+    return { configPath: tsConfigPath, created: true };
+  }
+
+  await writeProjectPartial(
+    projectDir,
+    {
+      skills: [],
+      agents: [],
+      ...(source ? { source } : {}),
+      ...(resolvedConfig.marketplace ? { marketplace: resolvedConfig.marketplace } : {}),
+      ...(existingProjectConfig?.author ? { author: existingProjectConfig.author } : {}),
+      ...(existingProjectConfig?.agentsSource
+        ? { agentsSource: existingProjectConfig.agentsSource }
+        : {}),
+    },
+    { fallbackName: path.basename(projectDir) },
+  );
 
   return { configPath: tsConfigPath, created: true };
+}
+
+/**
+ * Records `source` in whichever scope's config `projectDir` names. At the home
+ * directory that config is the global manifest every project's generated types
+ * import from, so the write goes through the gate: registered projects inline
+ * the scalar and follow it.
+ */
+async function recordSource(projectDir: string, source: string): Promise<void> {
+  if (isHomeDirectory(projectDir)) {
+    await mutateGlobal(
+      { kind: "set-source", source, fallbackName: path.basename(projectDir) },
+      lazyGateDeps(projectDir),
+    );
+    return;
+  }
+
+  const existing = (await loadProjectSourceConfig(projectDir)) ?? {};
+  await writeProjectPartial(
+    projectDir,
+    { ...existing, source },
+    { fallbackName: path.basename(projectDir) },
+  );
 }
 
 /** Checks whether the agents directory contains any agent subdirectories (not just _templates). */

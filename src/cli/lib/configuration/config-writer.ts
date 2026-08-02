@@ -1,52 +1,17 @@
 import os from "os";
 import path from "path";
-import type { ProjectConfig } from "../../types";
-import {
-  CLAUDE_SRC_DIR,
-  CLI_INVOKE_COMMAND,
-  DEFAULT_PLUGIN_NAME,
-  GLOBAL_CONFIG_NAME,
-  STANDARD_FILES,
-} from "../../consts";
-import { fileExists, ensureDir, writeFile } from "../../utils/fs";
-import { verbose } from "../../utils/logger";
+import type { Category, ProjectConfig } from "../../types";
+import { CLAUDE_SRC_DIR, DEFAULT_PLUGIN_NAME, GLOBAL_CONFIG_NAME } from "../../consts";
 import { isSkillAssignment } from "../../utils/type-guards";
-import { getProjectConfigPath } from "../installation/install-base-dir";
+import { matrix } from "../matrix/matrix-provider";
 import { assembleConfigTypesSource, STACK_AGENT_CONFIG_LOOSE_LINE } from "./config-types-writer";
 
-export type WritePartialConfigOptions = {
-  /** Name to invent when the partial has none. Absent → a missing name is an error. */
-  fallbackName?: string;
-};
-
 /**
- * Writes a partial project config to `.claude-src/config.ts`, filling required
- * defaults (skills/agents). With `fallbackName`, a missing `name` is invented;
- * without it, a missing `name` is an error (the config must already exist).
+ * This module renders config sources; it writes nothing. The partial-config
+ * writer and the blank-global-pair creator that used to live here are
+ * `writeProjectPartial` and `ensureBlankPair` in `config-gate/`, which is the
+ * only code allowed to put either half of the pair on disk.
  */
-export async function writePartialProjectConfig(
-  projectDir: string,
-  partial: Partial<ProjectConfig>,
-  options: WritePartialConfigOptions = {},
-): Promise<void> {
-  const name = partial.name ?? options.fallbackName;
-  if (!name) {
-    throw new Error(
-      `Cannot write config: no project config found. Run \`${CLI_INVOKE_COMMAND} init\` first.`,
-    );
-  }
-
-  const config: ProjectConfig = {
-    ...partial,
-    name,
-    skills: partial.skills ?? [],
-    agents: partial.agents ?? [],
-  };
-
-  const configPath = getProjectConfigPath(projectDir);
-  await ensureDir(path.join(projectDir, CLAUDE_SRC_DIR));
-  await writeFile(configPath, generateConfigSource(config));
-}
 
 export type ConfigSourceOptions = {
   /**
@@ -535,13 +500,9 @@ function generateProjectConfigWithInlinedGlobal(
 }
 
 /**
- * Compacts individual SkillAssignment objects within stack arrays
- * WITHOUT collapsing single-element arrays to bare values.
- * - { id: "...", preloaded: false } → "..." (bare string in array)
+ * Compacts one SkillAssignment down to the smallest form that still carries its information.
+ * - { id: "...", preloaded: false } → "..." (the flag is the default, so the id says everything)
  * - { id: "...", preloaded: true } → { id: "...", preloaded: true } (preserved)
- *
- * This is used for the inlined TypeScript config path where arrays must remain
- * as arrays to satisfy the StackAgentConfig type (SkillAssignment[]).
  */
 function compactAssignment(assignment: unknown): unknown {
   if (isSkillAssignment(assignment) && "preloaded" in assignment) {
@@ -550,17 +511,53 @@ function compactAssignment(assignment: unknown): unknown {
   return assignment;
 }
 
-function compactCategories(categories: Record<string, unknown[]>): Record<string, unknown[]> {
+/**
+ * True when the active matrix DECLARES this category as holding at most one skill. Read from the
+ * matrix singleton so a source repo's category overrides are honoured. A category the matrix does
+ * not declare is deliberately NOT treated as exclusive — the same rule local-installer applies.
+ */
+function isExclusiveCategory(category: string): boolean {
+  // Boundary cast: category keys come from JSON-cleaned config data, not the Category union
+  return matrix.categories[category as Category]?.exclusive === true;
+}
+
+/**
+ * The emitted value for one category's assignments.
+ *
+ * An exclusive category can only ever hold one skill, so its array wrapper carries nothing the
+ * reader needs and the bare value IS the assignment. Non-exclusive categories keep their array
+ * even at length one — there the wrapper is load-bearing, because a second skill may join.
+ *
+ * Two skills in an exclusive category means the caller built something the config cannot express.
+ * Dropping the extra would write a config that does not match what was selected, and nothing
+ * downstream could tell, so it fails here instead.
+ */
+function compactCategoryAssignments(category: string, assignments: unknown[]): unknown {
+  const compacted = assignments.map(compactAssignment);
+  if (!isExclusiveCategory(category)) return compacted;
+
+  if (compacted.length > 1) {
+    throw new Error(
+      `Category '${category}' is exclusive but holds ${compacted.length} skills: ${JSON.stringify(compacted)}`,
+    );
+  }
+  return compacted[0];
+}
+
+function compactCategories(categories: Record<string, unknown[]>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(categories)
       .filter(([, assignments]) => Array.isArray(assignments) && assignments.length > 0)
-      .map(([category, assignments]) => [category, assignments.map(compactAssignment)]),
+      .map(([category, assignments]) => [
+        category,
+        compactCategoryAssignments(category, assignments),
+      ]),
   );
 }
 
 function compactStackAssignments(
   stack: Record<string, Record<string, unknown[]>>,
-): Record<string, Record<string, unknown[]>> {
+): Record<string, Record<string, unknown>> {
   return Object.fromEntries(
     Object.entries(stack)
       .map(([agent, categories]) => [agent, compactCategories(categories)] as const)
@@ -603,30 +600,4 @@ export function generateBlankGlobalConfigTypesSource(): string {
     category: "never",
     stackAgentConfig: STACK_AGENT_CONFIG_LOOSE_LINE,
   });
-}
-
-/**
- * Ensures a blank global config exists at ~/.claude-src/.
- * Creates config.ts (empty arrays) and config-types.ts (never types) if they don't exist.
- * Returns true if files were created, false if they already existed.
- */
-export async function ensureBlankGlobalConfig(): Promise<boolean> {
-  const globalConfigDir = path.join(os.homedir(), CLAUDE_SRC_DIR);
-  const configPath = path.join(globalConfigDir, STANDARD_FILES.CONFIG_TS);
-
-  if (await fileExists(configPath)) {
-    verbose("Global config already exists, skipping blank creation");
-    return false;
-  }
-
-  await ensureDir(globalConfigDir);
-
-  const configSource = generateBlankGlobalConfigSource();
-  const typesSource = generateBlankGlobalConfigTypesSource();
-
-  await writeFile(configPath, configSource);
-  await writeFile(path.join(globalConfigDir, STANDARD_FILES.CONFIG_TYPES_TS), typesSource);
-
-  verbose(`Created blank global config at ${globalConfigDir}`);
-  return true;
 }

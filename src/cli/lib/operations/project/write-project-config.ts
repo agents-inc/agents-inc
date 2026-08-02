@@ -1,13 +1,16 @@
 import path from "path";
 import {
   buildAndMergeConfig,
-  writeScopedConfigs,
   resolveInstallPaths,
   isHomeDirectory,
 } from "../../installation/index.js";
 import { loadMergedAgents, type SourceLoadResult } from "../../loading/index.js";
 import type { AuthoritativeScope } from "../../configuration/index.js";
-import { ensureBlankGlobalConfig } from "../../configuration/config-writer.js";
+import {
+  ensureBlankPair,
+  writeScopedFromWizard,
+  type GateReport,
+} from "../../config-gate/index.js";
 import { ensureDir } from "../../../utils/fs.js";
 import type { ProjectConfig, AgentDefinition, AgentName } from "../../../types/index.js";
 import type { WizardResultV2 } from "../../../components/wizard/wizard.js";
@@ -34,11 +37,11 @@ export type ConfigWriteResult = {
   existingConfigPath?: string;
   filesWritten: number;
   /**
-   * Registered project directories whose config was rewritten by propagation of
-   * this write's global changes. Their compiled agents are now stale — the
-   * caller recompiles them with `recompileRegisteredProjectAgents`.
+   * What the gated write did: what moved in the global config, which registered
+   * projects it fanned out to, and the recompile it drove in them. The caller
+   * renders it; the work is already done.
    */
-  propagatedProjects: string[];
+  propagation: GateReport;
 };
 
 /**
@@ -47,8 +50,9 @@ export type ConfigWriteResult = {
  * Handles the full config pipeline:
  * 1. buildAndMergeConfig() — generates config from wizard result, merges with existing
  * 2. loadAllAgents() — loads agent definitions for config-types generation
- * 3. ensureBlankGlobalConfig() — ensures global config exists (when in project context)
- * 4. writeScopedConfigs() — writes config.ts and config-types.ts split by scope
+ * 3. ensureBlankPair() — ensures the global config pair exists (when in project context)
+ * 4. writeScopedFromWizard() — writes config.ts and config-types.ts split by scope,
+ *    fans global changes out to registered projects and recompiles their agents
  */
 export async function writeProjectConfig(options: ConfigWriteOptions): Promise<ConfigWriteResult> {
   const { wizardResult, sourceResult, projectDir, sourceFlag } = options;
@@ -75,17 +79,17 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
   const isProjectContext = !isHomeDirectory(projectDir);
 
   if (isProjectContext) {
-    await ensureBlankGlobalConfig();
+    await ensureBlankPair();
   }
 
-  const { propagatedProjects } = await writeScopedConfigs(
+  const propagation = await writeScopedFromWizard({
     finalConfig,
-    sourceResult.matrix,
+    matrix: sourceResult.matrix,
     agents,
     projectDir,
-    projectPaths.configPath,
-    isProjectContext,
-  );
+    projectConfigPath: projectPaths.configPath,
+    projectInstallationExists: isProjectContext,
+  });
 
   return {
     config: finalConfig,
@@ -93,6 +97,6 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
     wasMerged: mergeResult.merged,
     existingConfigPath: mergeResult.existingConfigPath,
     filesWritten: isProjectContext ? 4 : 2,
-    propagatedProjects,
+    propagation,
   };
 }

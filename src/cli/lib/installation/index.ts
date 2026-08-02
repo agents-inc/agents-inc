@@ -8,6 +8,12 @@ export {
   getInstallationOrThrow,
 } from "./installation";
 
+/**
+ * No config-pair writer is re-exported here. Writing `config.ts` /
+ * `config-types.ts` — directly, by propagation, or by regenerating a scope's
+ * types — is `src/cli/lib/config-gate/index.ts`'s exclusive surface, and a
+ * barrel that re-exported the raw writers would be a supported way around it.
+ */
 export {
   type EjectInstallOptions,
   type EjectInstallResult,
@@ -15,16 +21,10 @@ export {
   installEject,
   installPluginConfig,
   buildAndMergeConfig,
-  writeConfigFile,
-  writeScopedConfigs,
   setConfigMetadata,
   buildEjectSkillsMap,
   buildCompileAgents,
   buildAgentScopeMap,
-  deregisterProjectPath,
-  propagateGlobalChangesToProjects,
-  pruneGlobalEntriesFromRegisteredProjects,
-  regenerateScopeConfigTypes,
 } from "./local-installer";
 
 export { isHomeDirectory } from "./is-home-directory";

@@ -16,8 +16,8 @@ import { resolveSource } from "../../lib/configuration/index.js";
 import {
   type ConfigTypesBackgroundData,
   loadConfigTypesDataInBackground,
-  regenerateConfigTypes,
 } from "../../lib/configuration/config-types-writer.js";
+import { writeScaffoldedEntityTypes } from "../../lib/config-gate/index.js";
 import { EXIT_CODES } from "../../lib/exit-codes.js";
 import { FEATURE_FLAGS, featureDisabledError } from "../../lib/feature-flags.js";
 import { modelNameSchema } from "../../lib/schemas.js";
@@ -225,7 +225,7 @@ export default class NewAgent extends BaseCommand {
     agentName: string,
   ): Promise<void> {
     try {
-      await regenerateConfigTypes(projectDir, configTypesReady, {
+      await writeScaffoldedEntityTypes(projectDir, configTypesReady, {
         extraAgentNames: [agentName],
       });
     } catch (error) {

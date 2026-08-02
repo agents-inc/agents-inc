@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { TEST_SOURCE_URL } from "../../__tests__/test-constants.js";
 import path from "path";
-import { writeFile } from "fs/promises";
+import { mkdir, writeFile } from "fs/promises";
 import { generateConfigSource } from "../config-writer";
 import { loadConfig } from "../config-loader";
+import { loadProjectConfig } from "../project-config";
 import { createTempDir, cleanupTempDir } from "../../__tests__/test-fs-utils";
 import { buildSkillConfigs } from "../../__tests__/helpers/wizard-simulation.js";
 import {
@@ -12,7 +13,7 @@ import {
 } from "../../__tests__/factories/config-factories.js";
 import { expectAgentConfigs, expectSkillConfigs } from "../../__tests__/assertions/index.js";
 import type { ProjectConfig } from "../../../types";
-import { STANDARD_FILES } from "../../../consts";
+import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
 import { EXPECTED_SKILLS } from "../../__tests__/expected-values";
 
 let tempDir: string;
@@ -26,21 +27,42 @@ afterEach(async () => {
 });
 
 /**
+ * Strips the type-only import, type annotations, and `satisfies` — none is needed at runtime,
+ * and jiti cannot resolve the config-types path in a bare temp dir.
+ */
+function stripTypeOnlySyntax(source: string): string {
+  return source
+    .replace(/import type \{[^}]+\} from "\.\/config-types";\n/, "")
+    .replace(/ satisfies ProjectConfig/, "")
+    .replace(/const (\w+): [^=]+=/g, "const $1 =");
+}
+
+/**
  * Helper: write generated config source and load it back via jiti.
- * Strips the type-only import, type annotations, and `satisfies` (not needed at runtime).
  */
 async function writeAndLoad(config: ProjectConfig): Promise<unknown> {
-  let source = generateConfigSource(config);
-  // Remove type-only import and satisfies (not needed at runtime, jiti may not resolve the path)
-  source = source.replace(/import type \{[^}]+\} from "\.\/config-types";\n/, "");
-  source = source.replace(/ satisfies ProjectConfig/, "");
-  // Strip type annotations from const declarations
-  source = source.replace(/const (\w+): [^=]+=/g, "const $1 =");
-
   const configPath = path.join(tempDir, STANDARD_FILES.CONFIG_TS);
-  await writeFile(configPath, source);
+  await writeFile(configPath, stripTypeOnlySyntax(generateConfigSource(config)));
 
   return loadConfig(configPath);
+}
+
+/**
+ * Helper: write generated config source where a project keeps it and load it through the project
+ * loader, so the stack normalizer runs. `writeAndLoad` above deliberately skips that — it pins
+ * the literal emitted shape; this one pins what consumers actually receive.
+ */
+async function writeAndLoadProjectConfig(config: ProjectConfig): Promise<ProjectConfig> {
+  const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
+  await mkdir(claudeSrcDir, { recursive: true });
+  await writeFile(
+    path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
+    stripTypeOnlySyntax(generateConfigSource(config)),
+  );
+
+  const loaded = await loadProjectConfig(tempDir);
+  if (!loaded) throw new Error("the generated config.ts must be loadable");
+  return loaded.config;
 }
 
 /**
@@ -83,9 +105,31 @@ describe("config round-trip", () => {
     expectAgentConfigs(loaded, buildAgentConfigs(["web-developer", "api-developer"]));
     expectSkillConfigs(loaded, buildSkillConfigs(["web-framework-react", "api-framework-hono"]));
 
-    // After compaction, bare strings inside arrays
+    // web-framework is exclusive, so the array wrapper goes too — the bare string IS the entry
     const webDev = loaded.stack?.["web-developer"] as Record<string, unknown>;
-    expect(webDev["web-framework"]).toStrictEqual(["web-framework-react"]);
+    expect(webDev["web-framework"]).toStrictEqual("web-framework-react");
+  });
+
+  it("normalizes a bare exclusive-category entry back to SkillAssignment[] on load", async () => {
+    const config = buildProjectConfig({
+      name: "bare-entry-project",
+      agents: buildAgentConfigs(["web-developer"]),
+      skills: buildSkillConfigs(["web-framework-react"]),
+      stack: {
+        "web-developer": {
+          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+        },
+      },
+    });
+
+    // The file on disk carries the bare form...
+    expect(generateConfigSource(config)).toMatch(/"web-framework":\s*"web-framework-react"/);
+
+    // ...and every consumer downstream of the loader still sees SkillAssignment[].
+    const loaded = await writeAndLoadProjectConfig(config);
+    expect(loaded.stack?.["web-developer"]).toStrictEqual({
+      "web-framework": [{ id: "web-framework-react", preloaded: false }],
+    });
   });
 
   it("round-trips a config with preloaded stack skills", async () => {
@@ -102,8 +146,8 @@ describe("config round-trip", () => {
 
     const loaded = (await writeAndLoad(config)) as ProjectConfig;
     const apiDev = loaded.stack?.["api-developer"] as Record<string, unknown>;
-    // Preloaded stays as object inside array
-    expect(apiDev["api-api"]).toStrictEqual([{ id: "api-framework-hono", preloaded: true }]);
+    // Preloaded stays an object; api-api is exclusive, so it stands alone rather than in an array
+    expect(apiDev["api-api"]).toStrictEqual({ id: "api-framework-hono", preloaded: true });
   });
 
   it("round-trips a full config with all optional fields", async () => {

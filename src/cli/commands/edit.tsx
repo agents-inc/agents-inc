@@ -1,4 +1,3 @@
-import os from "os";
 import path from "path";
 
 import chalk from "chalk";
@@ -29,7 +28,6 @@ import {
   writeProjectConfig,
   type ConfigWriteResult,
   compileAgentsAllScopes,
-  recompilePropagatedProjectAgents,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
 import { Spinner } from "../components/common/spinner.js";
@@ -41,11 +39,14 @@ import {
   isHomeDirectory,
   installBaseDir,
   resolveInstallPaths,
-  writeConfigFile,
 } from "../lib/installation/index.js";
+import {
+  applyMigratedGlobalSources,
+  mutateGlobal,
+  type GateReport,
+} from "../lib/config-gate/index.js";
 import { matrix, getSkillById, getSkillDisplayName } from "../lib/matrix/matrix-provider";
 import { activeAgentScopeMap, isActiveAt } from "../lib/configuration/scope-predicates.js";
-import { loadProjectConfigFromDir } from "../lib/configuration/index.js";
 import type { SourceLoadResult } from "../lib/loading/index.js";
 import {
   discoverAllPluginSkills,
@@ -84,32 +85,8 @@ function formatDualScopeTransition(displayName: string, to: SkillScope): string 
   return chalk.hex(color)(`  ${prefix} ${displayName} [P]`);
 }
 
-/** The migrated `source` for an active-global entry, or the entry unchanged. */
-function withMigratedSource(
-  skill: SkillConfig,
-  migratedSources: ReadonlyMap<SkillId, string>,
-): SkillConfig {
-  if (!isActiveAt(skill, "global")) return skill;
-  const source = migratedSources.get(skill.id);
-  if (source === undefined || source === skill.source) return skill;
-  return { ...skill, source };
-}
-
-/**
- * @internal Exported for testing
- *
- * Rewrites `source` on exactly the active-global entries listed in `migratedSources`,
- * returning every other entry — including global entries this session did not migrate —
- * identical by reference. `changed` is false when nothing needed rewriting, so the caller
- * can skip the global write entirely.
- */
-export function applyMigratedGlobalSources(
-  globalSkills: SkillConfig[],
-  migratedSources: ReadonlyMap<SkillId, string>,
-): { skills: SkillConfig[]; changed: boolean } {
-  const skills = globalSkills.map((skill) => withMigratedSource(skill, migratedSources));
-  return { skills, changed: skills.some((skill, index) => skill !== globalSkills[index]) };
-}
+/** @internal Re-exported for testing — the transform itself lives inside the gate. */
+export { applyMigratedGlobalSources };
 
 type EditContext = {
   installation: Installation;
@@ -213,7 +190,7 @@ export default class Edit extends BaseCommand {
       context,
       cwd,
     );
-    await this.recordGlobalSourceMigrations(migratedSkillIds, filteredResult.skills, cwd);
+    await this.recordGlobalSourceMigrations(migratedSkillIds, filteredResult.skills, cwd, context);
     await this.applyScopeChanges(changes, filteredResult, context, cwd);
     await this.applySourceChanges(changes, activeOldSkills, cwd, migratedSkillIds);
     await this.applyPluginChanges(changes, filteredResult, activeOldSkills, context, cwd);
@@ -342,13 +319,20 @@ export default class Edit extends BaseCommand {
    * project directory is a supported flow (`scope-aware-local-copy` lifecycle tests).
    *
    * Runs BEFORE `writeConfigAndCompile`, so the global config written here is the one
-   * `writeScopedConfigs` reloads, keeps (existing wins in `mergeGlobalConfigs`) and inlines
-   * into the project config — both files then tell the same story.
+   * the wizard write reloads, keeps (existing wins in `mergeGlobalConfigs`) and inlines
+   * into the project config — both files then tell the same story. That second write
+   * classifies as a no-op against what this one left on disk, so the fan-out below
+   * happens once.
+   *
+   * The migrated `source` decides the reference form a compiled agent emits, so every
+   * OTHER registered project's config and agents are stale until this write fans out —
+   * which is why it goes through the gate rather than straight to the file.
    */
   private async recordGlobalSourceMigrations(
     migratedSkillIds: Set<SkillId>,
     newSkills: SkillConfig[],
     cwd: string,
+    context: EditContext,
   ): Promise<void> {
     // A global-context edit writes the whole global config from the wizard result already.
     if (isHomeDirectory(cwd)) return;
@@ -360,19 +344,15 @@ export default class Edit extends BaseCommand {
     );
     if (migratedSources.size === 0) return;
 
-    const existingGlobal = await loadProjectConfigFromDir(os.homedir());
-    // No global config yet — `writeScopedConfigs` writes the global split verbatim,
-    // migrated source included, so there is nothing to reconcile.
-    if (!existingGlobal) return;
-
-    const { skills, changed } = applyMigratedGlobalSources(
-      existingGlobal.config.skills,
-      migratedSources,
-    );
-    if (!changed) return;
-
     try {
-      await writeConfigFile({ ...existingGlobal.config, skills }, existingGlobal.configPath);
+      const report = await mutateGlobal(
+        { kind: "migrate-skill-sources", sources: migratedSources },
+        {
+          loadMatrix: async () => context.sourceResult.matrix,
+          loadAgents: async () => (await loadAgentDefs({ projectDir: cwd })).agents,
+        },
+      );
+      this.reportPropagatedRecompile(report);
     } catch (error) {
       this.warn(`Could not record global source change: ${getErrorMessage(error)}`);
     }
@@ -765,20 +745,18 @@ export default class Edit extends BaseCommand {
     }
 
     if (configResult) {
-      await this.recompilePropagatedProjects(configResult.propagatedProjects);
+      this.reportPropagatedRecompile(configResult.propagation);
     }
   }
 
   /**
-   * Recompiles the agents of every OTHER registered project this run's global
-   * change was propagated into — see {@link recompilePropagatedProjectAgents}
-   * for the staleness rationale and per-project failure isolation.
+   * Renders the recompile the gated write already performed on every OTHER
+   * registered project this run's global change was propagated into.
    */
-  private async recompilePropagatedProjects(projectDirs: string[]): Promise<void> {
-    if (projectDirs.length === 0) return;
+  private reportPropagatedRecompile(propagation: GateReport): void {
+    if (propagation.propagated.updated.length === 0) return;
 
-    const { recompiledCount, failedCount, warnings } =
-      await recompilePropagatedProjectAgents(projectDirs);
+    const { recompiledCount, failedCount, warnings } = propagation.recompile;
     for (const warning of warnings) {
       this.warn(warning);
     }
