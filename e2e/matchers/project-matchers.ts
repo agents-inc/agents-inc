@@ -40,11 +40,52 @@ type ClaudeSettingsFile = {
 
 type PluginInstallationRecord = {
   scope: string;
+  installPath?: string;
 };
 
 type InstalledPluginsFile = {
   plugins?: Record<string, PluginInstallationRecord[]>;
 };
+
+/** Skill content lives under `<installPath>/skills/<pluginId>/SKILL.md`. */
+function installedSkillMdPath(installPath: string, pluginId: string): string {
+  return path.join(installPath, DIRS.SKILLS, pluginId, FILES.SKILL_MD);
+}
+
+/** The skill id half of a `<skillId>@<marketplace>` registry key. */
+function pluginIdFromKey(pluginKey: string): string {
+  return pluginKey.split("@")[0] ?? pluginKey;
+}
+
+/**
+ * Why an installation record does not stand for installed content, or null when
+ * it does.
+ *
+ * A record and the files it names are written by two separate acts of
+ * `claude plugin install`, so the record alone proves only that something was
+ * *registered*. The content is what a skill is, so that is what gets checked:
+ * the path the record itself names must exist and must hold this plugin's
+ * SKILL.md. The path is read from the record rather than reconstructed from the
+ * cache layout — a matcher that rebuilt the path would stop noticing a record
+ * pointing somewhere else entirely.
+ */
+async function describeMissingContent(
+  installation: PluginInstallationRecord,
+  pluginId: string,
+): Promise<string | null> {
+  const { installPath } = installation;
+  if (!installPath) {
+    return `installation ${JSON.stringify(installation)} carries no installPath`;
+  }
+  if (!(await directoryExists(installPath))) {
+    return `installPath "${installPath}" does not exist`;
+  }
+  const skillMdPath = installedSkillMdPath(installPath, pluginId);
+  if (!(await fileExists(skillMdPath))) {
+    return `installPath "${installPath}" exists but has no ${skillMdPath}`;
+  }
+  return null;
+}
 
 export const projectMatchers = {
   /**
@@ -257,8 +298,14 @@ export const projectMatchers = {
   },
 
   /**
-   * Checks that a plugin's installation record exists in the global registry
-   * at <dir>/.claude/plugins/installed_plugins.json.
+   * Checks that a plugin is really installed: its record exists in the registry
+   * at <dir>/.claude/plugins/installed_plugins.json AND every installation the
+   * record lists resolves to real skill content on disk.
+   *
+   * The content check is not incidental. A registry entry is what the Claude CLI
+   * writes *about* an install, so on its own it passes for an install that
+   * registered a path and copied nothing — the exact shape of a "plugins never
+   * installed" report. Only the files make the claim true.
    */
   async toHavePluginInRegistry(received: { dir: string }, pluginKey: string, scope?: PluginScope) {
     const registryPath = path.join(
@@ -285,6 +332,18 @@ export const projectMatchers = {
         pass: false,
         message: () => `Expected plugin "${pluginKey}" to be in registry but it was not found`,
       };
+    }
+
+    const pluginId = pluginIdFromKey(pluginKey);
+    for (const installation of installations) {
+      const missingContent = await describeMissingContent(installation, pluginId);
+      if (missingContent) {
+        return {
+          pass: false,
+          message: () =>
+            `Expected plugin "${pluginKey}" to be installed, but its registry entry has no content on disk: ${missingContent}`,
+        };
+      }
     }
 
     if (scope) {

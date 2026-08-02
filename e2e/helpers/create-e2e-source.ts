@@ -178,10 +178,20 @@ const apiDeveloperAgentConfig: StackAgentConfig = {
  */
 export const E2E_STACK_NAME = "E2E Test Stack";
 
+/**
+ * Stack id and description as written into the source's `config/stacks.ts`.
+ *
+ * The id is what a shared configuration's `stackId` must name for `init --from` to resolve the
+ * stack at all, and the description is what the installed `config.ts` records for it — the config
+ * has no `stackId` field, so the description is the only trace the stack leaves.
+ */
+export const E2E_STACK_ID = "e2e-test-stack";
+export const E2E_STACK_DESCRIPTION = "Minimal stack for E2E testing";
+
 const E2E_STACK: Stack = {
-  id: "e2e-test-stack",
+  id: E2E_STACK_ID,
   name: E2E_STACK_NAME,
-  description: "Minimal stack for E2E testing",
+  description: E2E_STACK_DESCRIPTION,
   agents: {
     "web-developer": webDeveloperAgentConfig,
     "api-developer": apiDeveloperAgentConfig,
@@ -198,7 +208,8 @@ name: {{ agent.name }}
 description: {{ agent.description }}
 tools: {{ agent.tools | join: ", " }}
 model: {{ agent.model }}
-permissionMode: {{ agent.permissionMode }}
+{% if agent.effort %}effort: {{ agent.effort }}
+{% endif %}permissionMode: {{ agent.permissionMode }}
 {% if preloadedSkillIds.size > 0 %}skills:
 {% for skillId in preloadedSkillIds %}  - {{ skillId }}
 {% endfor %}{% endif %}---

@@ -28,8 +28,22 @@ export type AgentFrontmatterExpectations = {
   name?: string;
   description?: string;
   model?: string;
+  effort?: string;
+  /**
+   * No `effort` key at all. An agent's effort has no default — it is emitted only when a config
+   * or the agent's own metadata names one — so "absent" is a distinct outcome from any value and
+   * needs its own expectation. Read off the parsed YAML rather than the raw text, because
+   * `effort` occurs in agent prose too.
+   */
+  noEffort?: boolean;
   tools?: readonly string[];
+  /** Preloads that must be present. Extra entries pass — use `exactSkills` to forbid them. */
   skills?: readonly string[];
+  /**
+   * The whole preload list, in order. `skills` is a subset check, so it passes on an agent that
+   * preloads everything it holds — the exact failure mode a preload-fidelity spec exists to catch.
+   */
+  exactSkills?: readonly string[];
   hasSkills?: boolean;
   noSkills?: boolean;
 };
@@ -80,6 +94,7 @@ export const agentMatchers = {
       ["name", expectations.name],
       ["description", expectations.description],
       ["model", expectations.model],
+      ["effort", expectations.effort],
     ] as const;
     for (const [field, expected] of scalarChecks) {
       if (expected !== undefined && fm[field] !== expected) {
@@ -89,6 +104,14 @@ export const agentMatchers = {
             `Expected agent frontmatter ${field} to be "${expected}" but got "${fm[field]}"`,
         };
       }
+    }
+
+    if (expectations.noEffort && fm.effort !== undefined) {
+      return {
+        pass: false,
+        message: () =>
+          `Expected agent "${agentName}" frontmatter to carry no effort but got "${fm.effort}"`,
+      };
     }
 
     if (expectations.tools) {
@@ -112,6 +135,19 @@ export const agentMatchers = {
           pass: false,
           message: () =>
             `Expected agent frontmatter skills to contain "${missingSkill}" but found: ${JSON.stringify(skills)}`,
+        };
+      }
+    }
+
+    if (expectations.exactSkills) {
+      const expected = [...expectations.exactSkills];
+      const matches =
+        skills.length === expected.length && expected.every((skill, i) => skills[i] === skill);
+      if (!matches) {
+        return {
+          pass: false,
+          message: () =>
+            `Expected agent frontmatter skills to be exactly ${JSON.stringify(expected)} but found: ${JSON.stringify(skills)}`,
         };
       }
     }
@@ -154,7 +190,11 @@ export const agentMatchers = {
     }
 
     const content = await readFile(agentPath, "utf-8");
-    const body = content.split(/^---\n[\s\S]*?\n---\n/m)[1] ?? content;
+    // Strip the leading frontmatter block ONLY. `split()` cuts on EVERY match, and a compiled
+    // agent's body is full of `---` horizontal rules, so taking element [1] returned the first
+    // ~1KB of a ~39KB file: every `skillIds` expectation was unsatisfiable and every `noSkillIds`
+    // one passed on absence from a slice nothing is rendered into.
+    const body = content.replace(/^---\n[\s\S]*?\n---\n/, "");
 
     const missingId = expectations.skillIds?.find((id) => !body.includes(id));
     if (missingId) {

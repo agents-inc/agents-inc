@@ -1,5 +1,5 @@
 import { E2E_AGENT_TITLES, E2E_SKILL_TITLES } from "../helpers/create-e2e-source.js";
-import type { AgentName, SkillId, SkillSlug } from "../../src/cli/types/index.js";
+import type { AgentName, ModelName, SkillId, SkillSlug } from "../../src/cli/types/index.js";
 
 /**
  * Agent display titles as the wizard renders them in the agents step — the
@@ -17,6 +17,13 @@ export { E2E_AGENT_TITLES as E2E_AGENT_DISPLAY } from "../helpers/create-e2e-sou
  * `config/stacks.ts`.
  */
 export { E2E_STACK_NAME as E2E_STACK_DISPLAY } from "../helpers/create-e2e-source.js";
+
+/**
+ * Stack id and description as the source declares them. `E2E_STACK_ID` is what a shared
+ * configuration's `stackId` must name; `E2E_STACK_DESCRIPTION` is what the installed config.ts
+ * records for that stack, since the config has no `stackId` field of its own.
+ */
+export { E2E_STACK_ID, E2E_STACK_DESCRIPTION } from "../helpers/create-e2e-source.js";
 
 // E2E source skills (from create-e2e-source.ts)
 export const E2E_SKILL_IDS = [
@@ -111,6 +118,25 @@ export const E2E_AGENT = {
     display: E2E_AGENT_TITLES["api-developer"],
   },
 } as const satisfies Partial<Record<AgentName, { name: AgentName; display: string }>>;
+
+/**
+ * Sub-agents that reach a compiled file from the CLI's OWN bundled definitions (`src/agents/`),
+ * not from anything `createE2ESource` writes.
+ *
+ * A shared configuration may name any sub-agent in the CLI's vocabulary, and the compiler resolves
+ * it from the bundled definitions — which is what lets one install cover four models or five
+ * efforts at once rather than needing one install per value. `defaultModel` is the value that
+ * agent's bundled `metadata.yaml` declares, so a spec asserting "no override, so the metadata
+ * default survives" has an authoritative expected value instead of a guess. `api-tester` is the
+ * one whose default is NOT `opus`, which is why the default-preserving specs use it: an assertion
+ * of `opus` there would pass on a hardcoded fallback.
+ */
+export const E2E_BUILTIN_AGENT = {
+  "web-tester": { name: "web-tester", defaultModel: "opus" },
+  "web-reviewer": { name: "web-reviewer", defaultModel: "opus" },
+  "cli-developer": { name: "cli-developer", defaultModel: "opus" },
+  "api-tester": { name: "api-tester", defaultModel: "sonnet" },
+} as const satisfies Partial<Record<AgentName, { name: AgentName; defaultModel: ModelName }>>;
 
 // Derive from E2E source agent definitions (create-e2e-source.ts).
 // The `satisfies` clauses sit on the member arrays rather than on the whole
