@@ -34,7 +34,7 @@ last_validated: 2026-07-30
 **Last Updated:** 2026-07-30
 **Last Validated:** 2026-07-30
 
-> Merge semantics for `ProjectConfig` — the invariants that `writeScopedConfigs`, `cc edit`, and cross-project propagation rely on. Two distinct merge functions live in two modules and obey two different policies. Mixing them up is the recurring source of data-loss bugs in the config pipeline (see D-220, D-221, D-222, and the agent findings under `.ai-docs/agent-findings/`).
+> Merge semantics for `ProjectConfig` — the invariants that `writeScopedFromWizard`, `cc edit`, and cross-project propagation rely on. Two distinct merge functions live in two modules and obey two different policies. Mixing them up is the recurring source of data-loss bugs in the config pipeline (see D-220, D-221, D-222, and the agent findings under `.ai-docs/agent-findings/`).
 
 ## The Two Merge Functions
 
@@ -43,7 +43,7 @@ There are only two actual merge functions in the config pipeline. `additiveMerge
 | Function               | File                                                                  | Policy                                                                                                                         | Called from                                        |
 | ---------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
 | `mergeConfigs`         | `src/cli/lib/configuration/config-merger.ts`                          | **Replace-on-match**: `newConfig` is authoritative for every referenced name/id. Existing preserved only when absent from new. | `mergeWithExistingConfig` (wizard save, `cc edit`) |
-| `mergeGlobalConfigs`   | `src/cli/lib/installation/local-installer.ts`                         | **Additive**: existing is preserved as-is; only truly-new items are appended. Never removes.                                   | `writeScopedConfigs` project-context branch        |
+| `mergeGlobalConfigs`   | `src/cli/lib/config-gate/propagate.ts`                                | **Additive**: existing is preserved as-is; only truly-new items are appended. Never removes.                                   | `writeScopedFromWizard` project branch             |
 | `additiveMergeStack`   | `src/cli/lib/installation/local-installer.ts` (private, not exported) | Deep-additive over `Partial<Record<AgentName, StackAgentConfig>>` — agent → category → skill triple.                           | `mergeGlobalConfigs`                               |
 | `mergeAgentCategories` | `src/cli/lib/installation/local-installer.ts` (private)               | Mutates a cloned agent stack in place; appends missing categories and skill assignments.                                       | `additiveMergeStack`                               |
 
@@ -102,6 +102,8 @@ Compound keys are the reason dual-scope active/tombstone pairs can coexist and t
 
 Helpers: `agentKey(a)` and `skillKey(s)` in `config-merger.ts`.
 
+**`model` and `effort` are NOT part of the identity key.** A key match replaces the whole entry, so the merge is whole-entry, never field-level — see [features/model-and-effort.md](../features/model-and-effort.md).
+
 D-221 root cause: the prior name-only key collapsed distinct-scope entries onto one slot, and the positional `.map()` over existing rewrote every collision — multiplying duplicates and failing to drop stale rows on scope migration. Compound keys + replace-on-match fixed both.
 
 ### Tombstones Under Merge
@@ -125,7 +127,7 @@ if (existingConfig.projects && !newConfig.projects) {
 ```
 
 **Why it matters:** `cc edit` from `$HOME` takes the pipeline
-`writeProjectConfig → buildAndMergeConfig → mergeWithExistingConfig → mergeConfigs → writeScopedConfigs (home-context branch)`.
+`writeProjectConfig → buildAndMergeConfig → mergeWithExistingConfig → mergeConfigs → writeScopedFromWizard (home branch)`.
 Before the fix the written global config lost its `"projects": [...]` entry, and the home-context propagation guard `if (finalConfig.projects?.length)` was falsy — so `propagateGlobalChangesToProjects` never ran. With the field preserved, home-context propagation is now reachable.
 
 **History:** originally reported as a bug in `.ai-docs/agent-findings/2026-04-18-mergeConfigs-drops-projects-field.md`; the fix (and the docs-stale note) is `.ai-docs/agent-findings/2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`.
@@ -151,7 +153,7 @@ The `merged: false` path never calls `mergeConfigs` — there is nothing to reco
 
 **Signature:** `mergeGlobalConfigs(existing: ProjectConfig, incoming: ProjectConfig): { config, changed }`
 
-Invoked only from `writeScopedConfigs` project-context branch after `splitConfigByScope(finalConfig).global`. The `incoming` side is this-project's global contribution; `existing` is the on-disk shared global config that other projects may have contributed to.
+Invoked only from `writeScopedFromWizard`'s project branch (through `resolveEffectiveGlobalConfig`) after `splitConfigByScope(finalConfig).global`. The `incoming` side is this-project's global contribution; `existing` is the on-disk shared global config that other projects may have contributed to.
 
 | Field                    | Rule                                                                                                                                                                                                                           |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -201,7 +203,7 @@ The triple rule in one sentence: **an (agent, category, skill-id) triple is adde
 | `marketplace`/`source` | Existing wins (`source` only when new is undefined) | Fill-only (`existing ?? incoming`)   |
 | Called where           | `cc edit`, wizard save                              | Project-context global write         |
 
-A `cc edit` from a project directory traverses both: `mergeConfigs` reconciles the wizard output with the project's on-disk view, then `writeScopedConfigs` splits by scope and feeds the global half through `mergeGlobalConfigs` to update the shared global config without trampling other projects.
+A `cc edit` from a project directory traverses both: `mergeConfigs` reconciles the wizard output with the project's on-disk view, then `writeScopedFromWizard` splits by scope and feeds the global half through `mergeGlobalConfigs` to update the shared global config without trampling other projects.
 
 ### Tombstone Flow End-to-End
 
@@ -218,7 +220,8 @@ The reverse (P→G) relies on `mergeConfigs` step 2 to drop the tombstone: `newC
 - Compound key helpers: `agentKey`, `skillKey` in `config-merger.ts`.
 - `mergeConfigs`, `mergeWithExistingConfig`: `config-merger.ts`.
 - `mergeGlobalConfigs`, `additiveMergeStack`, `mergeAgentCategories`: `local-installer.ts`.
-- Call site threading `mergeGlobalConfigs` into writes: `writeScopedConfigs` project-context branch in `local-installer.ts`.
+- Call site threading `mergeGlobalConfigs` into writes: `writeScopedFromWizard`'s project branch, via `resolveEffectiveGlobalConfig` in `config-gate/propagate.ts`.
+- **Its `changed` flag no longer gates propagation.** Since the config-gate landed (2026-08-02) the fan-out is driven by `classifyGlobalChange`, which diffs the config on disk against the one being written; `mergeGlobalConfigs`' `changed` survives only as part of `effective.changed`, gating the write-skip. This closes the blind spot where a per-skill `source` change on an already-present entry set no merge flag and therefore propagated nothing.
 - Call site threading `mergeConfigs` into writes: `buildAndMergeConfig` → `writeProjectConfig` operation.
 - `ConfigLoadError`, `loadProjectConfig`, `loadProjectConfigFromDir`: `src/cli/lib/configuration/project-config.ts`.
 - Post-split cross-scope reconciliation (NOT in either merger): `reconcileProjectSplitAgainstGlobal` in `local-installer.ts`.

@@ -95,25 +95,28 @@ The single oclif lifecycle hook, registered in `package.json` under `oclif.hooks
 
 **Flags:**
 
-| Flag      | Type    | Description               |
-| --------- | ------- | ------------------------- |
-| --refresh | boolean | Force refresh from remote |
-| --source  | string  | Skills source path or URL |
+| Flag      | Type    | Description                                                                    |
+| --------- | ------- | ------------------------------------------------------------------------------ |
+| --refresh | boolean | Force refresh from remote                                                      |
+| --source  | string  | Skills source path or URL                                                      |
+| --from    | string  | Install a configuration shared from agentsinc.sh by its id, without the wizard |
+
+> **`init` is one spine with two producers.** `--from <id>` fetches a shared seed payload and converts it to a `WizardResultV2` (`selectionFromSharedConfig`); a bare `init` runs the wizard (`selectionFromWizard`). Everything after the producer — the empty guard and the whole install pipeline — is identical. `--from` also bypasses the dashboard diversion, because an id is an explicit instruction to install _that_ configuration. Wire contract and mapping: [features/seed-contract.md](../features/seed-contract.md).
 
 **Flow:**
 
-1. `showDashboardIfInitialized(projectDir)` -- delegates to `runDashboardFlow(projectDir, config, "init", log)`. `detectInstallation()` detects an existing install; if found, `showDashboard()` renders the Dashboard component with quick actions (Edit/Compile/Doctor/List), then `config.runCommand(selected, argv)` delegates. The dashboard passes its origin: an `init`-originated Edit selection carries the hidden `--project-setup` flag (`dashboardCommandArgv()`); a bare-`cc` (`"standalone"`) Edit carries none. In non-interactive (no TTY): prints `formatDashboardText()` and returns null. Returns before the wizard when a dashboard was shown.
+1. `showDashboardIfInitialized(projectDir)` -- **skipped entirely when `--from` is present.** delegates to `runDashboardFlow(projectDir, config, "init", log)`. `detectInstallation()` detects an existing install; if found, `showDashboard()` renders the Dashboard component with quick actions (Edit/Compile/Doctor/List), then `config.runCommand(selected, argv)` delegates. The dashboard passes its origin: an `init`-originated Edit selection carries the hidden `--project-setup` flag (`dashboardCommandArgv()`); a bare-`cc` (`"standalone"`) Edit carries none. In non-interactive (no TTY): prints `formatDashboardText()` and returns null. Returns before the wizard when a dashboard was shown.
 2. If not initialized: render `<Spinner>`, then `Promise.all([loadSourceOrFail(flags), loadGlobalConfigIfExists()])` -- **Operation: `loadSource()`** loads the skills matrix (with startup message capture); `loadGlobalConfigIfExists()` loads global config to pre-hydrate the wizard.
-3. `runWizard()` -- hydrates the wizard store and renders `<Wizard>` via `runWizardSession()` (not a direct `render()` + `waitUntilExit()`). Returns `WizardResultV2 | null`; `null` exits `EXIT_CODES.CANCELLED`.
-4. Guard: if `result.skills.length === 0`, `this.error("No skills selected", { exit: EXIT_CODES.ERROR })`.
+3. Producer: `selectionFromSharedConfig(flags.from, flags)` when `--from` is set, else `selectionFromWizard(flags, projectDir)` -- the latter hydrates the wizard store and renders `<Wizard>` via `runWizardSession()` (not a direct `render()` + `waitUntilExit()`). A `null` selection exits `EXIT_CODES.CANCELLED`.
+4. Guard: if `selection.result.skills.length === 0 && selection.result.selectedAgents.length === 0`, `this.error(selection.emptyMessage, { exit: EXIT_CODES.ERROR })`. **Both must be empty** -- a sub-agent is installable on its own, so an agent-only selection with zero skills installs successfully. The producer supplies the wording, because only it knows whether empty means "nothing chosen" or "a payload this catalog cannot install".
 5. `handleInstallation()`: `deriveInstallMode()` determines eject/plugin/mixed from active (non-excluded) skills.
 6. If plugin/mixed: `requireMarketplaceOrExit()` (BaseCommand) resolves/registers the marketplace up front, BEFORE any filesystem mutation. **No fallback to eject** -- an unresolvable marketplace hard-errors (`EXIT_CODES.ERROR`).
 7. If eject/mixed: `copyEjectSkillsStep()` -- **Operation: `copyLocalSkills()`** copies eject-source skills split by scope.
 8. If plugin/mixed: `installPluginsStep()` -- **Operation: `installPluginSkills()`**; hard-errors (`pluginInstallFailureError`) on any per-skill failure before config is written.
-9. `writeConfigAndCompile()`: **Operation: `writeProjectConfig()`** (writes `.claude-src/config.ts`; `ensureBlankGlobalConfig()` runs inside this operation, not in the command), **Operation: `loadAgentDefs()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`** (compiles agents across scopes; single home-root pass or split global+project passes), then `recompilePropagatedProjects(configResult.propagatedProjects)`.
-10. `checkPermissions()` -- render permission warning (Ink) if needed, awaiting `waitUntilExit()`. Reading a settings file runs `warnUnknownFields(raw, EXPECTED_SETTINGS_KEYS, ...)`; `EXPECTED_SETTINGS_KEYS` (`src/cli/lib/permission-checker.tsx`) includes `enabledPlugins` and `extraKnownMarketplaces` because the Claude CLI writes both during this CLI's own plugin-install path -- a settings file this CLI produced must never trigger the unknown-field warning. Genuinely unknown fields still warn.
+9. `writeConfigAndCompile()`: **Operation: `writeProjectConfig()`** (writes `.claude-src/config.ts` through the config-gate; `ensureBlankPair()` runs inside this operation, not in the command), **Operation: `loadAgentDefs()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`** (compiles agents across scopes; single home-root pass or split global+project passes), then `reportPropagatedRecompile(configResult.propagation)`.
+10. `checkPermissions()` -- render permission warning (Ink) if needed, awaiting `waitUntilExit()`. Reading a settings file takes its `permissions` block and warns about nothing else in it (D-304): `settings.json` belongs to Claude Code, so `readSettingsPermissions` (`src/cli/lib/permission-checker.tsx`) judges no field of it. A malformed file still warns and is skipped.
 
-**Propagated-project recompile (D-240).** `writeProjectConfig` returns `ConfigWriteResult.propagatedProjects` -- the registered project directories whose `config.ts` this run's global change was fanned out into. Their compiled agents are now stale, so `recompilePropagatedProjects()` feeds the list to **Operation: `recompilePropagatedProjectAgents()`**, which recompiles each project at project scope with per-project failure isolation. Empty list is a no-op (nothing logged). Per-project warnings are re-emitted via `this.warn()`; the summary line reads `Recompiled agents in N registered projects` with a ` (N failed)` suffix when any failed.
+**Propagated-project recompile (D-240, contract rewritten 2026-08-02).** `writeProjectConfig` returns `ConfigWriteResult.propagation`, a `GateReport`. The registered projects whose `config.ts` this run's global change fanned into have **already been recompiled by the config-gate**, at project scope with per-project failure isolation; the command only renders. `reportPropagatedRecompile()` early-returns on an empty `propagated.updated` (nothing logged), re-emits `recompile.warnings` via `this.warn()`, and prints `Recompiled agents in N registered projects` with a ` (N failed)` suffix when any failed. `init` and `compile` use that exact wording; `edit` prints `registered project(s)`. Both forms are asserted by `e2e/pages/constants.ts`, so do not unify them.
 
 **Not-installed detection.** `detectInstallationInDir` (`src/cli/lib/installation/installation.ts`) returns `null` for a config that declares neither skills nor agents, so a content-less config reads as NOT installed and `init` routes to the setup wizard instead of the dashboard. It also returns `null` when the config file vanished between the `fileExists` probe and the load. A **corrupt** config is different: `loadProjectConfigFromDir` throws `ConfigLoadError`, which propagates to the caller rather than becoming a phantom eject installation.
 
@@ -160,13 +163,13 @@ Plus a hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`
 6. **No-change branch** (`!hasAnyChanges(changes)`): logs `"No changes made."` and returns -- UNLESS `isProjectSetup` (`flags[EDIT_PROJECT_SETUP_FLAG] && !isHomeDirectory(cwd)`), in which case it still runs `writeConfigAndCompile()` to materialise the project (init dashboard flow)
 7. `logChangeSummary()` -- styled diff using display names from matrix, scope labels `[G]`/`[P]`, green `+` for G-to-P scope migrations, dual-scope `[P]` add/remove lines
 8. `applyMigrations()` -- `detectMigrations()` + `executeMigration()` for eject-to-plugin and plugin-to-eject mode switches; returns migrated `Set<SkillId>`
-9. `recordGlobalSourceMigrations()` -- rewrites `source` on active-global entries this run migrated, in the global config (project-context runs only)
+9. `recordGlobalSourceMigrations()` -- rewrites `source` on active-global entries this run migrated, in the global config (project-context runs only), via `config-gate::mutateGlobal({ kind: "migrate-skill-sources" })`. Since the per-skill `source` decides the reference form a compiled agent emits (D-217), this classifies T1: the gate fans the change out to every OTHER registered project and recompiles their agents, and `reportPropagatedRecompile` renders the result. Runs BEFORE step 15, whose own write then classifies as a byte-identical no-op, so nothing fans out twice.
 10. `applyScopeChanges()` -- `migrateLocalSkillScope()` for eject skills, `migratePluginSkillScopes()` for plugin skills (marketplace required)
 11. `applySourceChanges()` -- `deleteLocalSkill()` on the old scope dir for non-migration eject-source changes
 12. `applyPluginChanges()` -- **Operation: `installPluginSkills()`** for added plugins (hard-errors on failure), **Operation: `uninstallPluginSkills()`** for removed; marketplace via `requireMarketplaceOrExit()`
 13. `copyNewLocalSkills()` -- **Operation: `copyLocalSkills()`** for newly added eject-source skills
 14. `removeDeletedLocalSkills()` -- `deleteLocalSkill()` for fully-deselected eject skills (D-233)
-15. `writeConfigAndCompile()` -- **Operation: `loadAgentDefs()`**, **Operation: `writeProjectConfig()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`**, then `recompilePropagatedProjects(configResult.propagatedProjects)` -- **Operation: `recompilePropagatedProjectAgents()`** (D-240; same contract as `init`)
+15. `writeConfigAndCompile()` -- **Operation: `loadAgentDefs()`**, **Operation: `writeProjectConfig()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`**, then `reportPropagatedRecompile(configResult.propagation)` (D-240; same contract as `init`, but the summary line reads `registered project(s)`)
 16. `cleanupStaleAgentFiles()` -- remove old agent .md files after scope changes / deselection
 
 **Global immutability (D-277).** A globally installed skill or agent cannot be deselected from a project in any flow, `init` included, so `removedSkills` / `removedAgents` never contain an active global entry when the edit runs at project scope. Domain deselection is a view filter that drops only project-owned skills. The rule is enforced in the wizard store, not in this command -- see `reference/concepts/scope-system.md`.
@@ -214,7 +217,9 @@ Plus a hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`
    f. `refreshConfigTypes()`
 7. After all passes, if no pass had skills, hard-error `No skills found. Add skills with '<bin> add <skill>' ...` (`EXIT_CODES.ERROR`).
 
-**`config-types.ts` regeneration.** The documented workflow is to hand-edit `config.ts` then run `compile`, so every pass regenerates the type unions for the scope it compiled via `regenerateScopeConfigTypes(projectDir, config, matrix, agents)` (`src/cli/lib/installation/local-installer.ts`), matching the wizard write path exactly: standalone narrowed unions at global scope (`writeStandaloneConfigTypes`), import-and-extend at project scope (`regenerateConfigTypes`). Success logs `INFO_MESSAGES.CONFIG_TYPES_REFRESHED`. When `loadProjectConfigFromDir` finds no config the refresh is skipped at verbose level. **Any failure downgrades to a warning** (`configTypesRefreshFailed(reason)`) -- the compiled agents are already written and remain valid; only the unions may be stale.
+**`config-types.ts` regeneration.** The documented workflow is to hand-edit `config.ts` then run `compile`, so every pass regenerates the type unions for the scope it compiled via `reconcileTypesFromDisk(projectDir, config, { matrix, agents }, { currentProjectDir: cwd })` (`src/cli/lib/config-gate/index.ts`), matching the wizard write path exactly: standalone narrowed unions at global scope, import-and-extend at project scope (`regenerateConfigTypes`). The hand-edited `config.ts` is an input and is never rewritten. Success logs `INFO_MESSAGES.CONFIG_TYPES_REFRESHED`. When `loadProjectConfigFromDir` finds no config the refresh is skipped at verbose level. **Any failure downgrades to a warning** (`configTypesRefreshFailed(reason)`) -- the compiled agents are already written and remain valid; only the unions may be stale.
+
+**A home pass also propagates (new 2026-08-02).** `compile` at `$HOME` fans the hand-edited global config out to every registered project and recompiles their agents, printing `Recompiled agents in N registered projects`; unreachable projects are warned via `registeredProjectUpdateSkipped(path)`. The fan-out is unconditional because a hand edit leaves no prior state to classify against, so every registered project's inlined copy must be assumed stale. `currentProjectDir: cwd` excludes the project whose own pass will compile it, so a `compile` inside a registered project does not compile it twice. `reportPropagation()` runs OUTSIDE the refresh's `catch`, so an unreachable project is reported as that and not as a failed refresh.
 
 The matrix for that refresh is loaded with `loadSkillsMatrixFromSource({ sourceFlag, projectDir, skipExtraSources: true, matrixOnly: true })`. `matrixOnly` skips the `fetchFromSource` clone for the default source (the matrix is the pre-computed `BUILT_IN_MATRIX` anyway) so `compile` stays offline on a cold cache; `sourcePath` comes back empty. `skipExtraSources` is not a divergence from the wizard's fully tagged load -- extra sources only annotate `availableSources`/`activeSource` for wizard UI tagging and the config-types writer never reads them, so the emitted types are byte-identical (pinned by the `skipExtraSources` parity test in `local-installer.test.ts`).
 
@@ -224,7 +229,8 @@ The matrix for that refresh is loaded with `loadSkillsMatrixFromSource({ sourceF
 
 - `src/cli/lib/operations/index.ts` -- `detectBothInstallations`, `loadAgentDefs`, `compileAgents`, `discoverInstalledSkills`
 - `src/cli/lib/configuration/index.ts` -- `resolveSource`, `loadProjectConfig`, `loadProjectConfigFromDir`, `effectivelyExcludedSkillIds`, `ConfigLoadError`
-- `src/cli/lib/installation/index.ts` -- `regenerateScopeConfigTypes`, `Installation`
+- `src/cli/lib/installation/index.ts` -- `Installation`
+- `src/cli/lib/config-gate/index.ts` -- `reconcileTypesFromDisk`, `GateReport`
 - `src/cli/lib/loading/index.ts` -- `loadSkillsMatrixFromSource` (with `matrixOnly` + `skipExtraSources`)
 - `src/cli/lib/stacks/index.ts` -- `getStackSkillIds`
 - `src/cli/utils/messages.ts` -- `configTypesRefreshFailed`, `globalScopedAgentsHint`, `INFO_MESSAGES.CONFIG_TYPES_REFRESHED`
@@ -334,7 +340,16 @@ Installation: <name>
 | --refresh |       | boolean | Force refresh from remote source     |
 | --source  | -s    | string  | Skills source path or URL            |
 
-**Key dependencies:** **Operation: `loadSource()`**. Uses `saveSourceToProjectConfig()`, `resolveSource()`, `loadProjectSourceConfig()` from configuration. `copySkillsToLocalFlattened()` from skills.
+**Key dependencies:** **Operation: `loadSource()`**. Uses `resolveSource()`, `loadProjectSourceConfig()` from configuration; `ensureBlankPair()`, `mutateGlobal()`, `writeProjectPartial()`, `lazyGateDeps()` from the config-gate; `copySkillsToLocalFlattened()` from skills.
+
+**Config writes are scope-branched through the config-gate (2026-08-02).** `recordSource()` and `ensureMinimalConfig()` each branch on `isHomeDirectory(projectDir)`:
+
+| Scope       | `recordSource`                                                                                                                    | `ensureMinimalConfig` (create-only-if-absent)                          |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `$HOME`     | `mutateGlobal({ kind: "set-source", ... })` — registered projects inline the scalar, so the gate fans the config half out to them | `ensureBlankPair()` then `recordSource()`                              |
+| project dir | `writeProjectPartial(projectDir, { ...existing, source })`                                                                        | `writeProjectPartial(...)` with the resolved source/marketplace/author |
+
+**Behaviour change: `eject` at `~` now writes the `config-types.ts` sibling.** The invented config's first line is `import type { ProjectConfig } from "./config-types"`, which could not resolve because the old `ensureBlankGlobalConfig` wrote `config.ts` alone. `ensureBlankPair()` writes both halves. The `"Source saved to…"` / `"Created…"` lines and the create-only-if-absent rule are unchanged.
 
 ### `search` (src/cli/commands/search.ts)
 
@@ -385,11 +400,13 @@ Installation: <name>
 1. `isGlobalUninstall = isHomeDirectory(projectDir)`. When global, `prepareGlobalPropagation()` runs **first** -- the `projects[]` registry and the source used to regenerate each project's `config-types.ts` both live in the global config this run is about to delete.
 2. `uninstallPlugins()` when `hasPlugins`; a throw here hard-errors (`EXIT_CODES.ERROR`).
 3. `removeLocalFiles()` -- `removeMatchingSkills` (only dirs carrying `forkedFrom` metadata; others are skipped with a warning), `removeMatchingAgents` (only basenames listed in `config.agents`), then `cleanupEmptyDirs`. A throw hard-errors.
-4. **Global uninstall:** `updateRegisteredProjects(propagation)` and return. **Project uninstall:** `deregisterProjectPath(projectDir)`.
+4. **Global uninstall:** `updateRegisteredProjects(propagation)` and return. **Project uninstall:** `mutateGlobal({ kind: "deregister-project", projectDir }, lazyGateDeps(projectDir))`.
 
 **Config manifest + directory cleanup.** `removeConfigManifest` deletes `config.ts` and `config-types.ts` from `.claude-src/`, then `removeDirIfEmpty(claudeSrcDir)` removes `.claude-src/` **only when it is empty afterwards** -- user-owned content there (e.g. ejected templates) keeps the directory alive. Logging: `Removed .claude-src/` when the directory went, otherwise `Removed CLI config from .claude-src/`. `.claude/` is removed only when empty, else `Kept .claude/ (contains user content)`.
 
-**Project uninstall -- deregistration.** Always calls `deregisterProjectPath(projectDir)` so future global edits stop propagating back into a removed project. Failure is **warned, not swallowed**: `Could not update the global project registry: <reason>`. A missing, project-less, or corrupt (`ConfigLoadError`) global config must never fail the uninstall.
+**Project uninstall -- deregistration.** Always calls `config-gate::mutateGlobal({ kind: "deregister-project", projectDir })` so future global edits stop propagating back into a removed project. Failure is **warned, not swallowed**: `Could not update the global project registry: <reason>`. A missing, project-less, or corrupt (`ConfigLoadError`) global config must never fail the uninstall. **The uninstall stays offline:** a `projects[]`-only change is classified as having no consequences, so the lazy matrix/agent loaders handed to the gate are never called, and the types half is not rewritten (nothing derives a union from the registration list).
+
+**Global uninstall -- prune AND recompile (2026-08-02).** `updateRegisteredProjects` calls `config-gate::propagateGlobalRemoval(propagation.globalConfig, { matrix, agents })`, which prunes the CLI-inlined global rows from every registered project and **recompiles those projects' agents** — they were compiled against the rows this uninstall just removed. It writes no pair (the pair it would derive from has just been deleted, which is why it is a dedicated entry point rather than a flag on a writing one). Rendering order: one `registeredProjectUpdateSkipped(path)` warn per skipped project, then `registeredProjectsUpdated(n)`, then each recompile warning, then `Recompiled agents in N registered projects` with a ` (N failed)` suffix. Any throw becomes `registeredProjectsUpdateFailed(reason)` — a failure here must never abort the uninstall.
 
 **Corrupt PROJECT config -- uninstall proceeds (0.146.1).** `loadUninstallConfig(projectDir, onLoadFailed)` wraps the `loadProjectConfigFromDir` call in `detectUninstallTarget`:
 
@@ -420,7 +437,7 @@ Previously a `ConfigLoadError` escaped `run()` and killed the command precisely 
 
 **Exported for testing (`@internal`):** `UninstallTarget` type, `getCliInstalledPluginKeys(config)`, `uninstallPlugins(target, projectDir, onUninstalled?)`.
 
-**Key dependencies:** `listPluginNames()`, `getProjectPluginsDir()`, `buildMarketplacePluginRef()`, `parseMarketplacePluginRef()`, `toClaudePluginScope()` from plugins. `readForkedFromMetadata()` from skills. `loadProjectConfigFromDir()` from configuration. `deregisterProjectPath()`, `isHomeDirectory()`, `pruneGlobalEntriesFromRegisteredProjects()`, `resolveInstallPaths()` from installation. `loadSkillsMatrixFromSource()` from loading. **Operation: `loadAgentDefs()`**. `listAgentMdFiles()` from agents. `claudePluginUninstallBestEffort()`, `isClaudeCLIAvailable()` from exec. `promptConfirm()` from `components/common/prompt-confirm.tsx`, `Confirm` from `components/common/confirm.tsx`. `registeredProjectsUpdated()`, `registeredProjectUpdateSkipped()`, `registeredProjectsUpdateFailed()` from `utils/messages.ts`.
+**Key dependencies:** `listPluginNames()`, `getProjectPluginsDir()`, `buildMarketplacePluginRef()`, `parseMarketplacePluginRef()`, `toClaudePluginScope()` from plugins. `readForkedFromMetadata()` from skills. `loadProjectConfigFromDir()` from configuration. `lazyGateDeps()`, `mutateGlobal()`, `propagateGlobalRemoval()` from the config-gate. `isHomeDirectory()`, `resolveInstallPaths()` from installation. `loadSkillsMatrixFromSource()` from loading. **Operation: `loadAgentDefs()`**. `listAgentMdFiles()` from agents. `claudePluginUninstallBestEffort()`, `isClaudeCLIAvailable()` from exec. `promptConfirm()` from `components/common/prompt-confirm.tsx`, `Confirm` from `components/common/confirm.tsx`. `registeredProjectsUpdated()`, `registeredProjectUpdateSkipped()`, `registeredProjectsUpdateFailed()` from `utils/messages.ts`.
 
 ### `update` (src/cli/commands/update.tsx)
 
@@ -441,7 +458,11 @@ Previously a `ConfigLoadError` escaped `run()` and killed the command precisely 
 
 Agents are always recompiled after a successful update (`recompileAfterUpdate()`); there is no flag to skip recompilation.
 
-**Key dependencies:** **Operation: `loadSource()`**, **Operation: `compareSkillsWithSource()`**, **Operation: `collectScopedSkillDirs()`**, **Operation: `findSkillMatch()`**, **Operation: `compileAgents()`**, **Operation: `discoverInstalledSkills()`**. Uses `injectForkedFromMetadata()` from skills.
+**Registered-project refresh (2026-08-02).** `refreshRegisteredProjects()` runs after `recompileAfterUpdate()` and before the completion summary, and only when at least one skill was updated. It reads `projects[]` off the global config (`loadProjectConfigFromDir(homeDir)`), drops the cwd — compared through `config-gate::normalizeProjectPath`, the same rule the registrations were stored under, so a symlinked cwd still matches — and hands the rest to `recompilePropagatedProjectAgents()`, the same helper the gate's fan-out uses. It re-emits that summary's warnings via `this.warn()` and prints `Recompiled agents in N registered projects` with a ` (N failed)` suffix, matching `init`'s wording exactly.
+
+This is a CONTENT fan-out, not a config one: `update` rewrites `~/.claude/skills/<dir>/` in place, which every registered project's compiled agents were built from, while changing nothing any `config.ts` declares. So it **writes no config pair and deliberately does not go through config-gate** — there is no global change to classify and nothing to propagate. The whole block is wrapped in a warn-and-continue: the skills were updated either way.
+
+**Key dependencies:** **Operation: `loadSource()`**, **Operation: `compareSkillsWithSource()`**, **Operation: `collectScopedSkillDirs()`**, **Operation: `findSkillMatch()`**, **Operation: `compileAgents()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `recompilePropagatedProjectAgents()`**. Uses `injectForkedFromMetadata()` from skills, `loadProjectConfigFromDir()` from configuration, and `normalizeProjectPath()` from the config-gate.
 
 ### `import skill` (src/cli/commands/import/skill.ts)
 

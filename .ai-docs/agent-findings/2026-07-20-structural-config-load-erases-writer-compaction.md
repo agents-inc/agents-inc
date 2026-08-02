@@ -15,7 +15,7 @@ category: testing
 domain: e2e
 root_cause: rule-not-specific-enough
 status: partial
-partial_note: Comment corrected in the affected spec file; the local `extractStack`/`findAssignment` helpers and the local `Stack` type intentionally remain, because removing them would change six assertions.
+partial_note: Comment corrected in the affected spec file; the local `extractStack` helper and the local `Stack` type intentionally remain, because removing them would change six assertions. UPDATED 2026-08-01 — `findAssignment` no longer remains: the strengthening this finding declined as out of scope (see "Did not touch findAssignment either" below) was carried out by a later task that owned the file's assertions, and is written up in `2026-08-01-local-extractor-in-e2e-spec-needs-its-own-tests-to-be-trusted.md`. The `extractStack` half and the unwritten Proposed Standard are what keep this finding `partial`.
 ---
 
 ## What Was Wrong

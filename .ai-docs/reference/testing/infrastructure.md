@@ -167,6 +167,8 @@ Script tests (included in `unit` project via `scripts/**/*.test.ts`):
 scripts/generate-source-types.test.ts  # Tests for the union type code generator
 ```
 
+Test surface for both generators — 34 cases here, **zero** for `scripts/generate-json-schemas.ts`, and why the latter cannot currently have one: [features/code-generation.md](../features/code-generation.md).
+
 Co-located unit tests (next to source files):
 
 ```
@@ -185,7 +187,6 @@ src/cli/lib/configuration/__tests__/define-config.test.ts
 src/cli/lib/configuration/config.test.ts
 src/cli/lib/configuration/config-generator.test.ts
 src/cli/lib/configuration/config-merger.test.ts
-src/cli/lib/configuration/config-saver.test.ts
 src/cli/lib/configuration/project-config.test.ts
 src/cli/lib/configuration/source-manager.test.ts
 src/cli/lib/installation/installation.test.ts

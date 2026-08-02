@@ -386,13 +386,13 @@ The "defaults" shortcut case: `approach === "stack" && selectedStackId && stackA
 
 ### Global Hotkeys (wizard.tsx)
 
-| Hotkey | Key | Active When                                                                                 | Action                           | Store Method                                           |
-| ------ | --- | ------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------ |
-| `A`    | `a` | `step === "build"` + stack selected                                                         | Accept defaults, jump to confirm | `setStackAction("defaults")` then `setStep("confirm")` |
-| `S`    | `s` | `step === "build"`                                                                          | Toggle focused skill scope       | `toggleSkillScope(focusedSkillId)`                     |
-| `S`    | `s` | `step === "agents"`                                                                         | Toggle focused agent scope       | `toggleAgentScope(focusedAgentId)`                     |
-| `S`    | `s` | `step === "sources"`                                                                        | Toggle settings overlay          | `toggleSettings()`                                     |
-| `I`    | `i` | `isInfoPanelAvailable(step)` — i.e. `FEATURE_FLAGS.INFO_PANEL` **and** `step !== "confirm"` | Open info overlay                | `toggleInfo()`                                         |
+| Hotkey | Key | Active When                                                                                         | Action                           | Store Method                                           |
+| ------ | --- | --------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------ |
+| `A`    | `a` | `step === "build"` + stack selected                                                                 | Accept defaults, jump to confirm | `setStackAction("defaults")` then `setStep("confirm")` |
+| `S`    | `s` | `step === "build"`                                                                                  | Toggle focused skill scope       | `toggleSkillScope(focusedSkillId)`                     |
+| `S`    | `s` | `step === "agents"`                                                                                 | Toggle focused agent scope       | `toggleAgentScope(focusedAgentId)`                     |
+| `S`    | `s` | `step === "sources"` **and** `FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY` (`false` — inert today, D-307) | Toggle settings overlay          | `toggleSettings()`                                     |
+| `I`    | `i` | `isInfoPanelAvailable(step)` — i.e. `FEATURE_FLAGS.INFO_PANEL` **and** `step !== "confirm"`         | Open info overlay                | `toggleInfo()`                                         |
 
 ### Build Step Hotkeys (use-category-grid-input.ts)
 
@@ -418,7 +418,7 @@ The "defaults" shortcut case: `approach === "stack" && selectedStackId && stackA
 
 ### Overlay Blocking
 
-When `showSettings === true`, all input is blocked except `S` (to close settings). When `showInfo === true`, all input is blocked except `ESC` and `I` (to close info).
+When `showSettings === true`, all input is blocked except `S` (to close settings) — but that whole branch is gated on `FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY` alongside the hotkey that opens it (D-307), so with the flag off it never runs and `showSettings` never becomes true. When `showInfo === true`, all input is blocked except `ESC` and `I` (to close info).
 
 **Opening is step-gated; closing is not.** `wizard.tsx` tests `store.showInfo` in a branch that runs BEFORE the `isInfoPanelAvailable(store.step)` check, so an already-open panel always closes on `I`/`ESC` regardless of step. Gating the close would strand an overlay opened on a step that later became disallowed. The confirm step is excluded from OPENING because it already renders the same `SummaryPanel`, and the overlay replaces the step rather than covering it — opening it there unmounted `StepConfirm` along with the only `Enter` handler, leaving no way to complete the wizard.
 

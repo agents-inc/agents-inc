@@ -179,9 +179,22 @@ type CategoryPath = Category | "local";
 Derived from the `MODEL_NAMES` const array (same array consumed by `modelNameSchema`):
 
 ```typescript
-export const MODEL_NAMES = ["sonnet", "opus", "haiku", "inherit"] as const;
+export const MODEL_NAMES = ["sonnet", "opus", "haiku", "fable", "inherit"] as const;
 export type ModelName = (typeof MODEL_NAMES)[number];
 ```
+
+Full resolution chain for `model` and its `effort` sibling — precedence, the two compile-config builders, and the Liquid emission asymmetry: [features/model-and-effort.md](../features/model-and-effort.md).
+
+### EffortLevel (`src/cli/types/matrix.ts`)
+
+Derived from the `EFFORT_NAMES` const array (same array consumed by `effortLevelSchema`):
+
+```typescript
+export const EFFORT_NAMES = ["low", "medium", "high", "xhigh", "max"] as const;
+export type EffortLevel = (typeof EFFORT_NAMES)[number];
+```
+
+Unlike `model`, `effort` has **no render-time default** — when unset it emits no frontmatter key at all. See [features/model-and-effort.md](../features/model-and-effort.md).
 
 ### PermissionMode (`src/cli/types/matrix.ts`)
 
@@ -280,7 +293,7 @@ The primary read model for the wizard and CLI commands:
 Unified project configuration stored at `.claude-src/config.ts`. No `version` field (removed under D-231; `config.ts` is a TypeScript module, not a versioned schema).
 
 - `name`, `description?`, `author?`
-- `agents: AgentScopeConfig[]` - Per-agent scope config (`{ name, scope, excluded? }`)
+- `agents: AgentScopeConfig[]` - Per-agent scope config (`{ name, scope, model?, effort?, excluded? }`)
 - `skills: SkillConfig[]` - Per-skill scope+source config (`{ id, scope, source, excluded? }`)
 - `stack?: Record<string, StackAgentConfig>`
 - `source?`, `marketplace?`, `agentsSource?`
@@ -306,7 +319,11 @@ Per-agent configuration entry used inside `ProjectConfig.agents` (mirrors `Skill
 
 - `name: AgentName`
 - `scope: "project" | "global"`
+- `model?: ModelName` — overrides the model from the agent's own metadata; absent means "keep the metadata default"
+- `effort?: EffortLevel` — overrides the reasoning effort from the agent's own metadata
 - `excluded?: boolean`
+
+`model` / `effort` are the only two tunable fields that survive into a compiled agent; the wire-format mapping that produces them from a shared seed is in [features/seed-contract.md](../features/seed-contract.md), and the full resolution chain in [features/model-and-effort.md](../features/model-and-effort.md).
 
 ### SkillScope & ClaudePluginScope (`src/cli/types/config.ts`)
 
@@ -544,7 +561,7 @@ Steers whether a skill renders as a single editable `SourceRow`, a locked global
 **From CLAUDE.md and memory:**
 
 1. Union types are generated from source (`bun run generate:types`) for finite sets
-2. `SkillId`, `Domain`, `Category`, and `AgentName` have NO standalone Zod schema in `schemas.ts` — they are accepted as lenient `z.string() as z.ZodType<...>` casts at parse boundaries, and narrowed at runtime with the `isSkillId()`/`isCategory()`/`isDomain()`/`isAgentName()` type guards. Only `SkillSlug`, `ModelName`, and `PermissionMode` have `z.enum(...)` bridge schemas; `CategoryPath` uses a `z.string().refine()`
+2. `SkillId`, `Domain`, `Category`, and `AgentName` have NO standalone Zod schema in `schemas.ts` — they are accepted as lenient `z.string() as z.ZodType<...>` casts at parse boundaries, and narrowed at runtime with the `isSkillId()`/`isCategory()`/`isDomain()`/`isAgentName()` type guards. Only `SkillSlug`, `ModelName`, `EffortLevel`, and `PermissionMode` have `z.enum(...)` bridge schemas; `CategoryPath` uses a `z.string().refine()`
 3. Boundary casts only at data entry points (YAML parse, JSON parse, CLI args) with comments
 4. Use `typedEntries()` / `typedKeys()` from `src/cli/utils/typed-object.ts` instead of raw `Object.entries()`/`Object.keys()`
 5. Zod schemas at parse boundaries; post-safeParse `as T` casts are intentional (`.passthrough()` widens type)

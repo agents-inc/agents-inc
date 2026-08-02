@@ -22,6 +22,7 @@ keywords:
     D-268,
     D-277,
     D-279,
+    D-304,
   ]
 related:
   - reference/features/compilation-pipeline.md
@@ -185,13 +186,9 @@ type InstallationInfo = {
 
 **File:** `src/cli/lib/permission-checker.tsx`
 
-`readSettingsPermissions()` calls `warnUnknownFields(raw, EXPECTED_SETTINGS_KEYS, ...)` on every `settings.json` / `settings.local.json` it reads. The expected-key list is exactly:
+`readSettingsPermissions()` reads `permissions` out of every `settings.json` / `settings.local.json` and says nothing about any other field (D-304). The file belongs to Claude Code, which adds keys on its own release schedule, so no expected-key list for it can be kept complete — the CLI consumes one key and owns none. `settingsFileSchema` models only `permissions` and passes the rest through untouched. Unknown-field warnings remain for files this CLI does own (`marketplace.json`, via `source-fetcher.ts`).
 
-```
-permissions | enabledPlugins | extraKnownMarketplaces | env | allowedTools | customInstructions | defaultModel
-```
-
-`enabledPlugins` and `extraKnownMarketplaces` are written by the Claude CLI **during this CLI's own plugin-install path** (`claudePluginInstall` / `claudePluginMarketplaceAdd` in `src/cli/utils/exec.ts`), so a settings file this CLI's operations produced must never trigger the unknown-field warning. Before 0.145.0 `extraKnownMarketplaces` was absent from the list and every run after a plugin install warned about a key the CLI itself had written. Genuinely unknown fields still warn.
+Until 0.147.x this path ran `warnUnknownFields(raw, EXPECTED_SETTINGS_KEYS, ...)`, and the list needed a new entry every time Claude Code (or this CLI's own plugin-install path, which writes `enabledPlugins` and `extraKnownMarketplaces`) grew one — a race the list could not win.
 
 `settings.local.json` wins over `settings.json` for the `permissions` block; a malformed file warns and is skipped rather than throwing.
 
@@ -248,7 +245,9 @@ Compiles a stack (a named agent + skill bundle) into a self-contained Claude Cod
 
 **Version stamping:** `determinePluginVersion(newHash, pluginDir, getPluginManifestPath)` (`src/cli/lib/versioning.ts`) compares a private `hashStackConfig()` digest (name + description + sorted skill ids + sorted agent names) against the existing manifest's content hash; `writeContentHash()` persists the new hash. The manifest comes from `generateStackPluginManifest()` (see Manifest Generation).
 
-**Consumers:** `src/cli/lib/stacks/stack-installer.ts` — `compileStackToTemp()` compiles into an `os.tmpdir()` directory and returns a `cleanup()`; `installStackAsPlugin()` either installs a marketplace-qualified ref (`buildMarketplacePluginRef(stackId, marketplace)`) or compiles locally to temp and runs `claudePluginInstall(result.pluginPath, "project", projectDir)`.
+**Consumers:** `src/cli/lib/stacks/stack-installer.ts` — `compileStackToTemp()` compiles into an `os.tmpdir()` directory and returns a `cleanup()`; `installStackAsPlugin()` either installs a marketplace-qualified ref (`buildMarketplacePluginRef(stackId, marketplace)`) or compiles locally to temp and runs `claudePluginInstall(result.pluginPath, "project", projectDir)`. `StackInstallOptions` / `StackInstallResult` shapes — and the trap that the marketplace arm returns empty `agents`/`skills` and an unprefixed plugin name while the local arm does not — are in [leaf-exports.md](../leaf-exports.md).
+
+**Config-level `model` / `effort` overrides do NOT reach the stack-plugin compile path.** `convertStackToCompileConfig` (`lib/resolver.ts`), the builder `stack-plugin-compiler.ts` uses, maps every agent to `{}`. See [model-and-effort.md](./model-and-effort.md).
 
 ## Stale Plugin Pruning (`build plugins`)
 
@@ -390,23 +389,28 @@ Skills copied locally via eject workflow.
 
 ### Scope-Aware Installation
 
-`writeScopedConfigs()` in `src/cli/lib/installation/local-installer.ts` is the single scope-splitting writer. Signature:
+`writeScopedFromWizard()` in `src/cli/lib/config-gate/index.ts` is the single scope-splitting writer. Signature:
 
 ```typescript
-writeScopedConfigs(
-  finalConfig: ProjectConfig,
-  matrix: MergedSkillsMatrix,
-  agents: Record<AgentName, AgentDefinition>,
-  projectDir: string,
-  projectConfigPath: string,
-  projectInstallationExists: boolean,
-): Promise<ScopedConfigWriteResult>
+writeScopedFromWizard(args: {
+  finalConfig: ProjectConfig;
+  matrix: MergedSkillsMatrix;
+  agents: Record<AgentName, AgentDefinition>;
+  projectDir: string;
+  projectConfigPath: string;
+  projectInstallationExists: boolean;
+}): Promise<GateReport>
 
-type ScopedConfigWriteResult = {
-  /** Registered project dirs whose config.ts / config-types.ts this write rewrote
-   *  via propagation. Their compiled agents still reflect the pre-change global
-   *  data, so the CALLER owns recompiling them. */
-  propagatedProjects: string[];
+type GateReport = {
+  /** True when either half of the global pair was actually rewritten. */
+  globalWritten: boolean;
+  /** What moved between the config on disk and the one written. */
+  changes: GlobalChangeSet;
+  /** Registered project dirs this write's propagation rewrote, and the ones it
+   *  could not reach. */
+  propagated: { updated: string[]; skipped: string[] };
+  /** The recompile the GATE already performed in `propagated.updated`. */
+  recompile: { recompiledCount: number; failedCount: number; warnings: string[] };
 };
 ```
 
@@ -415,58 +419,61 @@ type ScopedConfigWriteResult = {
 
 **Two branches, keyed on `isHomeDirectory(projectDir)`:**
 
-| Branch                   | Behaviour                                                                                                                                                                                |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Home root (global scope) | Write `finalConfig` directly + `writeStandaloneConfigTypes`, then propagate to every entry in `finalConfig.projects`                                                                     |
-| Project context          | `splitConfigByScope(finalConfig)` -> `resolveEffectiveGlobalConfig` (merge + register) -> conditional global write -> propagate on `globalDataChanged` -> **reconcile** -> project write |
+| Branch                   | Behaviour                                                                                                                                                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Home root (global scope) | Classify against the config on disk -> `writeGlobalPair(finalConfig)` (both halves, write-if-changed) -> propagate to every entry in `finalConfig.projects` -> recompile those projects                                |
+| Project context          | `splitConfigByScope(finalConfig)` -> `resolveEffectiveGlobalConfig` (merge + register) -> classify -> conditional global pair write -> propagate + recompile per the tier -> **reconcile** -> `writeProjectConfigPair` |
 
 **Project-branch write gate:** the project `config.ts` is written when `projectInstallationExists` OR the reconciled project split has any skills/agents. Creating a project config holding only `import globalConfig` + `{ ...globalConfig }` is pointless, so that case is skipped with a `verbose()` note.
 
-**Callers of `writeScopedConfigs` (exactly two):**
+**Callers of `writeScopedFromWizard` (exactly two):**
 
 | Caller                                                                            | Path                                                                                           |
 | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `writeProjectConfig()` — `src/cli/lib/operations/project/write-project-config.ts` | The LIVE path. `init` and `edit` reach `writeScopedConfigs` only through here.                 |
+| `writeProjectConfig()` — `src/cli/lib/operations/project/write-project-config.ts` | The LIVE path. `init` and `edit` reach the gate only through here.                             |
 | `writeConfigAndCompileAgents()` (private, `local-installer.ts`)                   | Only reached from `installEject` / `installPluginConfig` — both dead code (see the note above) |
 
-Both pass `!isHomeDirectory(projectDir)` as `projectInstallationExists`. In the project branch that argument is therefore always `true`, so the `hasProjectItems` disjunct and the skip branch are currently unreachable in production — the parameter name describes an intent no caller supplies. `writeProjectConfig` re-exposes the result as `ConfigWriteResult.propagatedProjects`.
+Both pass `!isHomeDirectory(projectDir)` as `projectInstallationExists`. In the project branch that argument is therefore always `true`, so the `hasProjectItems` disjunct and the skip branch are currently unreachable in production — the parameter name describes an intent no caller supplies. `writeProjectConfig` re-exposes the result as `ConfigWriteResult.propagation`.
 
-Key helper functions in `local-installer.ts`:
+Key config-write functions, now in `src/cli/lib/config-gate/` (`index.ts` is the module's only public surface; nothing below is re-exported by `installation/index.ts`):
 
-| Function                                                         | Exported | Purpose                                                                                          |
-| ---------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------ |
-| `setConfigMetadata()`                                            | yes      | Set source/marketplace/domains on config                                                         |
-| `buildAndMergeConfig()`                                          | yes      | Build config from wizard and merge with existing                                                 |
-| `writeConfigFile()`                                              | yes      | Write config.ts using `generateConfigSource()`                                                   |
-| `buildCompileAgents()`                                           | yes      | Build agent compile config from `ProjectConfig`                                                  |
-| `buildAgentScopeMap()`                                           | yes      | Map agent names to their scope (`activeAgentScopeMap`)                                           |
-| `writeScopedConfigs()`                                           | yes      | Split and write configs by scope; returns `propagatedProjects`                                   |
-| `mergeGlobalConfigs()`                                           | yes      | Additive merge of new global items into the existing global config (never removes)               |
-| `propagateGlobalChangesToProjects()`                             | yes      | Rewrite every registered project's `config.ts` + `config-types.ts` against fresh global data     |
-| `pruneGlobalEntriesFromRegisteredProjects()`                     | yes      | Global-uninstall variant: propagates an EMPTIED global config so all global rows/tombstones drop |
-| `deregisterProjectPath()`                                        | yes      | Remove a project from the global `projects[]` registry                                           |
-| `regenerateScopeConfigTypes()`                                   | yes      | Regenerate one scope's `config-types.ts` from its persisted config (used by `compile`)           |
-| `registerProjectPath()`                                          | no       | Add this project to global `projects[]`, filtering stale entries                                 |
-| `resolveEffectiveGlobalConfig()`                                 | no       | Merge + register; returns `{ config, globalDataChanged, changed }`                               |
-| `reconcileProjectSplitAgainstGlobal()`                           | no       | Cross-scope masking + self-heal — see Cross-Scope Reconciliation below                           |
-| `writeStandaloneConfigTypes()`                                   | no       | Standalone (non-importing) `config-types.ts`                                                     |
-| `buildProjectTypesExtras()` / `buildConfigTypesBackgroundData()` | no       | Inputs for `regenerateConfigTypes` (project extends global unions)                               |
+| Function                                                                   | Exported | Purpose                                                                                            |
+| -------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `setConfigMetadata()` (`local-installer.ts`)                               | yes      | Set source/marketplace/domains on config                                                           |
+| `buildAndMergeConfig()` (`local-installer.ts`)                             | yes      | Build config from wizard and merge with existing                                                   |
+| `buildCompileAgents()` (`local-installer.ts`)                              | yes      | Build agent compile config from `ProjectConfig`                                                    |
+| `buildAgentScopeMap()` (`local-installer.ts`)                              | yes      | Map agent names to their scope (`activeAgentScopeMap`)                                             |
+| `writeScopedFromWizard()`                                                  | gate     | Split and write configs by scope; propagates, recompiles, returns `GateReport`                     |
+| `reconcileTypesFromDisk()`                                                 | gate     | Regenerate one scope's `config-types.ts` from its persisted config (used by `compile`)             |
+| `mutateGlobal()` / `propagateGlobalRemoval()` / `ensureBlankPair()`        | gate     | Typed global mutation; global-uninstall prune + recompile; blank-pair creation                     |
+| `writeProjectPartial()` / `writeMarketplaceScaffoldConfig()`               | gate     | Project-only config writes; both throw `GlobalPairWriteViolation` at `$HOME`                       |
+| `mergeGlobalConfigs()`                                                     | gate     | Additive merge of new global items into the existing global config (never removes)                 |
+| `writeConfigFile()`                                                        | private  | Write config.ts using `generateConfigSource()`                                                     |
+| `writeProjectConfigPair()`                                                 | private  | The ONE writer of a project's `config.ts` + `config-types.ts`, used by both emitting sites (D-282) |
+| `propagateGlobalChangesToProjects()`                                       | private  | Rewrite every registered project's `config.ts` + `config-types.ts` against fresh global data       |
+| `pruneGlobalEntriesFromRegisteredProjects()`                               | private  | Global-uninstall variant: propagates an EMPTIED global config so all global rows/tombstones drop   |
+| `registerProjectPath()` / `deregisterProjectPath()`                        | private  | Maintain the global `projects[]` registry (deregistration is reached via `mutateGlobal`)           |
+| `resolveEffectiveGlobalConfig()`                                           | private  | Merge + register; returns `{ config, globalDataChanged, changed }`                                 |
+| `reconcileProjectSplitAgainstGlobal()`                                     | private  | Cross-scope masking + self-heal — see Cross-Scope Reconciliation below                             |
+| `classifyGlobalChange()` / `consequenceTier()`                             | private  | Decide what a write owes: T1 propagate+recompile, T2 config-half fan-out, T3 nothing, T4 no write  |
+| `writeGlobalPair()` / `writeGlobalConfigHalf()` / `writeGlobalTypesHalf()` | private  | The only writers of `~/.claude-src/config.ts` and `config-types.ts`; token-held, write-if-changed  |
+| `buildProjectTypesExtras()` / `buildConfigTypesBackgroundData()`           | private  | Inputs for `regenerateConfigTypes` (project extends global unions)                                 |
 
-Path resolution lives outside `local-installer.ts`: `resolveInstallPaths(projectDir, scope)` (returns `InstallPaths`), `installBaseDir()`, `getProjectConfigPath()` in `src/cli/lib/installation/install-base-dir.ts`, and `isHomeDirectory()` in `src/cli/lib/installation/is-home-directory.ts`.
+Path resolution lives outside both modules: `resolveInstallPaths(projectDir, scope)` (returns `InstallPaths`), `installBaseDir()`, `getProjectConfigPath()` in `src/cli/lib/installation/install-base-dir.ts`, and `isHomeDirectory()` in `src/cli/lib/installation/is-home-directory.ts`.
 
 ### Propagation Then Recompile (D-240 / D-256)
 
 `propagateGlobalChangesToProjects()` rewrites a registered project's `config.ts` and `config-types.ts` but **never touches its compiled `.claude/agents/*.md`**. Before D-240 that left the compiled agents emitting whatever skill-reference form the OLD global data dictated — so a global plugin-to-eject switch left stale `name:name` plugin references in every registered project (D-256).
 
-The fix is caller-side, driven by the returned `propagatedProjects`:
+The fix was caller-side until 2026-08-02 and is now **inside the write**: a caller that must remember to recompile is a caller that can forget, and two of them did (`edit`'s project-context source migration, the global `uninstall`).
 
-| Step | Symbol                                       | File                                                         | Role                                                                                                                        |
-| ---- | -------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| 1    | `ScopedConfigWriteResult.propagatedProjects` | `local-installer.ts`                                         | The paths propagation rewrote                                                                                               |
-| 2    | `ConfigWriteResult.propagatedProjects`       | `src/cli/lib/operations/project/write-project-config.ts`     | Passed straight through to the command                                                                                      |
-| 3    | `recompilePropagatedProjectAgents(dirs)`     | `src/cli/lib/operations/project/recompile-project-agents.ts` | Sequential loop with per-project failure isolation; returns `PropagatedRecompileSummary`                                    |
-| 4    | `recompileRegisteredProjectAgents(dir)`      | same file                                                    | Recompiles ONE project's **project-scoped** agents (global agents were already done by the triggering operation's own pass) |
-| —    | Callers                                      | `src/cli/commands/init.tsx`, `src/cli/commands/edit.tsx`     | Both call `this.recompilePropagatedProjects(configResult.propagatedProjects)`                                               |
+| Step | Symbol                                   | File                                                         | Role                                                                                                                                                                             |
+| ---- | ---------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `propagateGlobalChangesToProjects(...)`  | `src/cli/lib/config-gate/propagate.ts`                       | Rewrites each registered project's pair; returns `{ updated, skipped }`                                                                                                          |
+| 2    | `recompilePropagated(updated)`           | `src/cli/lib/config-gate/recompile.ts`                       | Runs in the same call, for a T1 change only; lazily imports the operation below                                                                                                  |
+| 3    | `recompilePropagatedProjectAgents(dirs)` | `src/cli/lib/operations/project/recompile-project-agents.ts` | Sequential loop with per-project failure isolation; returns `PropagatedRecompileSummary`                                                                                         |
+| 4    | `recompileRegisteredProjectAgents(dir)`  | same file                                                    | Recompiles ONE project's **project-scoped** agents (global agents were already done by the triggering operation's own pass)                                                      |
+| —    | Renderers                                | `init.tsx`, `edit.tsx`, `compile.ts`, `uninstall.tsx`        | Each prints `GateReport.recompile`; the work is already done. `edit` prints `registered project(s)`, the others `registered projects` — both forms are asserted by e2e constants |
 
 `recompileRegisteredProjectAgents` passes `skills` explicitly (from `discoverInstalledSkills`) — without it `recompileAgents` falls back to `discoverAllPluginSkills`, which sees plugin skills only and would strip every global-local and project-local skill from the compiled agents.
 
@@ -512,7 +519,7 @@ Install mode is derived at runtime from the skills array via `deriveInstallMode(
 
 ## Cross-Scope Reconciliation (Masking)
 
-**File:** `src/cli/lib/installation/local-installer.ts`. Every reconciliation helper named below is **module-private** — none is exported or re-exported through `installation/index.ts`. Only the two write sites (`propagateGlobalChangesToProjects`, `writeScopedConfigs`) are public.
+**File:** `src/cli/lib/config-gate/propagate.ts`. Every reconciliation helper named below is **module-private** — none is exported through `config-gate/index.ts`, and `installation/index.ts` no longer re-exports anything in this area. The two write sites (`propagateGlobalChangesToProjects`, the project branch of `writeScopedFromWizard`) both funnel into the shared `writeProjectConfigPair`.
 
 ### Why it exists
 
@@ -521,7 +528,7 @@ Two production call sites write a project `config.ts` with the global config inl
 | Write site                                                      | Reconciled                                                            |
 | --------------------------------------------------------------- | --------------------------------------------------------------------- |
 | `propagateGlobalChangesToProjects()` (a global change fans out) | yes — via `reconcileProjectSplitAgainstGlobal`                        |
-| project-scope save branch of `writeScopedConfigs()`             | yes — via the SAME helper, added in 0.146.0 (previously: none at all) |
+| project branch of `writeScopedFromWizard()`                     | yes — via the SAME helper, added in 0.146.0 (previously: none at all) |
 
 Findings: `2026-07-29-project-config-written-by-two-paths-only-one-reconciled.md` (the asymmetry), `2026-07-29-category-exclusivity-enforced-only-in-a-keypress-handler.md` (exclusivity was enforced only in `toggleTechnology`, a keypress handler).
 
@@ -747,22 +754,21 @@ For each `config.skills` entry it emits the primary key `buildMarketplacePluginR
 
 ### `src/cli/lib/installation/index.ts`
 
-| Source module          | Re-exported symbols                                                                                                                                                                                                                                                                                                                                                                                     |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `installation.ts`      | `InstallMode`, `Installation`, `detectGlobalInstallation`, `INSTALL_MODE_LABELS`, `detectInstallation`, `detectProjectInstallation`, `getInstallationOrThrow`, `deriveInstallMode`                                                                                                                                                                                                                      |
-| `local-installer.ts`   | `EjectInstallOptions`, `EjectInstallResult`, `PluginConfigResult`, `installEject`, `installPluginConfig`, `buildAndMergeConfig`, `writeConfigFile`, `writeScopedConfigs`, `setConfigMetadata`, `buildEjectSkillsMap`, `buildCompileAgents`, `buildAgentScopeMap`, `deregisterProjectPath`, `propagateGlobalChangesToProjects`, `pruneGlobalEntriesFromRegisteredProjects`, `regenerateScopeConfigTypes` |
-| `install-base-dir.ts`  | `installBaseDir`, `resolveInstallPaths`, `InstallPaths`                                                                                                                                                                                                                                                                                                                                                 |
-| `is-home-directory.ts` | `isHomeDirectory`                                                                                                                                                                                                                                                                                                                                                                                       |
-| `mode-migrator.ts`     | `SkillMigration`, `MigrationPlan`, `MigrationResult`, `detectMigrations`, `executeMigration`                                                                                                                                                                                                                                                                                                            |
+| Source module          | Re-exported symbols                                                                                                                                                                                                                                                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `installation.ts`      | `InstallMode`, `Installation`, `detectGlobalInstallation`, `INSTALL_MODE_LABELS`, `detectInstallation`, `detectProjectInstallation`, `getInstallationOrThrow`, `deriveInstallMode`                                                                                                                                          |
+| `local-installer.ts`   | `EjectInstallOptions`, `EjectInstallResult`, `PluginConfigResult`, `installEject`, `installPluginConfig`, `buildAndMergeConfig`, `setConfigMetadata`, `buildEjectSkillsMap`, `buildCompileAgents`, `buildAgentScopeMap` — **no config-pair writer is re-exported here**; that surface is `src/cli/lib/config-gate/index.ts` |
+| `install-base-dir.ts`  | `installBaseDir`, `resolveInstallPaths`, `InstallPaths`                                                                                                                                                                                                                                                                     |
+| `is-home-directory.ts` | `isHomeDirectory`                                                                                                                                                                                                                                                                                                           |
+| `mode-migrator.ts`     | `SkillMigration`, `MigrationPlan`, `MigrationResult`, `detectMigrations`, `executeMigration`                                                                                                                                                                                                                                |
 
 **Exported by the module but deliberately absent from the barrel** — importers take these by direct path, or not at all:
 
-| Symbol                                                                                                                                                                                                                                                                                                         | Module                | Note                                               |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------- |
-| `mergeGlobalConfigs`                                                                                                                                                                                                                                                                                           | `local-installer.ts`  | Exported for unit testing only                     |
-| `ScopedConfigWriteResult`                                                                                                                                                                                                                                                                                      | `local-installer.ts`  | Consumed structurally by `write-project-config.ts` |
-| `getProjectConfigPath`                                                                                                                                                                                                                                                                                         | `install-base-dir.ts` | Direct-path import                                 |
-| Every reconciliation helper (`reconcileProjectSplitAgainstGlobal`, `maskColliding*`, `dropOrphanedDerived*`, `retainProjectOwned*`, `retainReconciled*`, `buildProjectCollisionTest`, `categoryOfSkill`, `isExclusiveCategory`, `activeProjectCategories`, `computeRemovedGlobalSkillIds`, `globalHasActive*`) | `local-installer.ts`  | Module-private — not exported at all               |
+| Symbol                                                                                                                                                                                                                                                                                                         | Module                     | Note                                                                      |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------- |
+| `mergeGlobalConfigs`                                                                                                                                                                                                                                                                                           | `config-gate/index.ts`     | Re-exported from the gate as a pure function                              |
+| `getProjectConfigPath`                                                                                                                                                                                                                                                                                         | `install-base-dir.ts`      | Direct-path import                                                        |
+| Every reconciliation helper (`reconcileProjectSplitAgainstGlobal`, `maskColliding*`, `dropOrphanedDerived*`, `retainProjectOwned*`, `retainReconciled*`, `buildProjectCollisionTest`, `categoryOfSkill`, `isExclusiveCategory`, `activeProjectCategories`, `computeRemovedGlobalSkillIds`, `globalHasActive*`) | `config-gate/propagate.ts` | Gate-private — eslint bans importing any `config-gate/*` file but `index` |
 
 ## Known Limitations
 

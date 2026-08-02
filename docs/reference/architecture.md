@@ -79,7 +79,8 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 5. Installation
    -> installPluginConfig()
    -> Copies skills to project, generates TypeScript config
-   -> writeScopedConfigs() splits config into global + project scopes
+   -> config-gate::writeScopedFromWizard() splits config into global + project scopes,
+      fans the global change out to registered projects and recompiles their agents
 
 6. Compilation
    -> Reads agent partials (intro.md, workflow.md, etc.)

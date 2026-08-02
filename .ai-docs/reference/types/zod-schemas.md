@@ -23,15 +23,17 @@ last_validated: 2026-08-01
 
 All schemas in `src/cli/lib/schemas.ts`. Zod major version **4** (`"zod": "^4.3.6"` in `package.json`) — `.passthrough()` and `.strict()` are still the idioms in use; the file does not use `z.looseObject` / `z.strictObject`.
 
-**35 exported schemas total**, verified by counting `export const *Schema` declarations in source. Breakdown, which sums to the total:
+**36 exported schemas total**, verified by counting `export const *Schema` declarations in source. Breakdown, which sums to the total:
 
 | Table                                                                        | Count  |
 | ---------------------------------------------------------------------------- | ------ |
-| [Bridge](#bridge-schemas-union-type-validation)                              | 4      |
+| [Bridge](#bridge-schemas-union-type-validation)                              | 5      |
 | [Loader](#loader-schemas-lenient-passthrough)                                | 8      |
 | [Structural](#structural-schemas-data-shapes)                                | 16     |
 | [Strict validation](#strict-validation-schemas-strict-reject-unknown-fields) | 7      |
-| **Total**                                                                    | **35** |
+| **Total**                                                                    | **36** |
+
+> **This doc's scope is `src/cli/lib/schemas.ts` only** (see the first line of this section), so the count above is narrower than "every Zod schema in the CLI". `src/cli/lib/seed/seed-schema.ts` is a Zod schema **outside** this doc's scope — see [features/seed-contract.md](../features/seed-contract.md). Ten of the schemas below are additionally emitted as JSON Schema by `scripts/generate-json-schemas.ts`, and the JSON-Schema-visible shape differs from the Zod shape in specific ways (`superRefine` invisible, `as z.ZodType<T>` casts invisible, plain `z.object` closing to `additionalProperties: false`) — see [features/code-generation.md](../features/code-generation.md).
 
 `schemas.ts` also exports one type (`ImportedSkillMetadata`), one type (`MetadataIssueSplit`), and five functions — see [Utility Functions](#utility-functions).
 
@@ -42,7 +44,10 @@ All schemas in `src/cli/lib/schemas.ts`. Zod major version **4** (`"zod": "^4.3.
 | `skillSlugSchema`      | SkillSlug union      | `z.enum(SKILL_SLUGS)` bridge                            |
 | `categoryPathSchema`   | CategoryPath         | `z.string().refine()` (category / `local` / kebab-case) |
 | `modelNameSchema`      | ModelName union      | `z.enum(MODEL_NAMES)` bridge                            |
+| `effortLevelSchema`    | EffortLevel union    | `z.enum(EFFORT_NAMES)` bridge                           |
 | `permissionModeSchema` | PermissionMode union | `z.enum(PERMISSION_MODES)` bridge                       |
+
+`effortLevelSchema` has four consumers (`agentYamlConfigSchema`, `projectConfigLoaderSchema.agents`, `agentYamlGenerationSchema`, `agentFrontmatterValidationSchema`) — the full `model` / `effort` chain is in [features/model-and-effort.md](../features/model-and-effort.md).
 
 There is no standalone `skillIdSchema`, `domainSchema`, `categorySchema`, `agentNameSchema`, or `skillSourceTypeSchema` in `schemas.ts`. `SkillId` / `Domain` values are accepted via inline `z.string() as z.ZodType<...>` casts inside the object schemas that consume them (e.g. `boundSkillSchema`, `skillFrontmatterLoaderSchema`, `skillAssignmentSchema`, `matrixRawMetadataSchema`).
 

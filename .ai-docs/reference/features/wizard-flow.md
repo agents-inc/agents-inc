@@ -97,7 +97,7 @@ Wizard (src/cli/components/wizard/wizard.tsx)
   |     |     |     |-> ScrollAffordance (scroll-affordance.tsx) - overflow hint
   |
   |-> Overlays:
-        |-> StepSettings (step-settings.tsx) - Source management (S hotkey on sources step; always functional, footer label gated by SOURCE_SEARCH)
+        |-> StepSettings (step-settings.tsx) - Source management (WITHDRAWN: the S hotkey that opens it is gated on WIZARD_SETTINGS_OVERLAY, default false; footer label separately gated by SOURCE_SEARCH)
 ```
 
 Additional wizard components (not in the step render tree):
@@ -109,12 +109,13 @@ Additional wizard components (not in the step render tree):
 
 Feature flags live in `FEATURE_FLAGS` (`src/cli/lib/feature-flags.ts`). The wizard-relevant flags:
 
-| Flag                  | Default | Controls                                                                                                                                                                                                                                                |
-| --------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SOURCE_SEARCH`       | `false` | Search pill in source grid, settings overlay access                                                                                                                                                                                                     |
-| `SOURCE_CHOICE`       | `false` | Intermediate "recommended vs customize" screen in sources step                                                                                                                                                                                          |
-| `INFO_PANEL`          | `true`  | `I` opens the `SummaryPanel` overlay in `wizard-layout.tsx`, and guards the overlay's own render branch there. Necessary but not sufficient for the key: the step gate lives with it inside `isInfoPanelAvailable(step)`, which also excludes `confirm` |
-| `FILTER_INCOMPATIBLE` | `false` | `F` key filters incompatible skills in the build step (D-269). Gates BOTH the keypress in `use-category-grid-input.ts` and the footer hint in `wizard-layout.tsx`; `toggleFilterIncompatible` stays intact and dormant for a one-flag re-enable.        |
+| Flag                      | Default | Controls                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SOURCE_SEARCH`           | `false` | Search pill in source grid; also gates the `Settings` footer label                                                                                                                                                                                                                                                                                         |
+| `WIZARD_SETTINGS_OVERLAY` | `false` | `S` opens the marketplace-sources overlay on the sources step (D-307). Gates BOTH sites in `wizard.tsx`: the hotkey on the sources step and the `store.showSettings` early-return in the root input handler. `StepSettings` and `toggleSettings` stay intact for a one-flag re-enable — but the input capture must be fixed first (see the flag's comment) |
+| `SOURCE_CHOICE`           | `false` | Intermediate "recommended vs customize" screen in sources step                                                                                                                                                                                                                                                                                             |
+| `INFO_PANEL`              | `true`  | `I` opens the `SummaryPanel` overlay in `wizard-layout.tsx`, and guards the overlay's own render branch there. Necessary but not sufficient for the key: the step gate lives with it inside `isInfoPanelAvailable(step)`, which also excludes `confirm`                                                                                                    |
+| `FILTER_INCOMPATIBLE`     | `false` | `F` key filters incompatible skills in the build step (D-269). Gates BOTH the keypress in `use-category-grid-input.ts` and the footer hint in `wizard-layout.tsx`; `toggleFilterIncompatible` stays intact and dormant for a one-flag re-enable.                                                                                                           |
 
 The same object also holds three command-gating flags outside the wizard: `NEW_SKILL_COMMAND`, `NEW_AGENT_COMMAND`, `NEW_MARKETPLACE_COMMAND` (all `false`) — see `commands.md`.
 
@@ -178,6 +179,8 @@ export type WizardResultV2 = {
 };
 ```
 
+> **`WizardResultV2` has a second producer.** `seedToWizardResult` (`lib/seed/seed-to-wizard.ts`) builds one from a shared seed payload, reached via `init --from`, without ever rendering the wizard. It is also the only producer that sets the optional `assignedStack` field. See [seed-contract.md](./seed-contract.md).
+
 ## Wizard Hooks
 
 | Hook                       | File                                                       | Purpose                                                                             |
@@ -203,7 +206,7 @@ export type WizardResultV2 = {
 
 Contains non-UI logic extracted from the build step for testability:
 
-- `validateBuildStep()` - Validate build step selections (required categories)
+- `validateBuildStep()` - Validate build step selections (required categories). **Cannot return `valid: false`, and has no production caller** — see [leaf-exports.md](../leaf-exports.md) § `BuildStepValidation`
 - `isCompatibleWithSelectedFrameworks()` - Check if a skill is compatible with selected framework skills
 - `buildCategoriesForDomain()` - Build category row data for a domain
 - `FRAMEWORK_CATEGORY_ID` - the `"web-framework"` category id the framework-first filter pivots on
@@ -287,8 +290,8 @@ Hotkeys are centralized in `src/cli/components/wizard/hotkeys.ts`.
 - `A` (build step with stack selected): Accept stack defaults, set `stackAction = "defaults"`, jump to `confirm` (`HOTKEY_ACCEPT_DEFAULTS`).
 - `S` (build step): Toggle focused skill scope (project/global) via `toggleSkillScope`; suppressed with toast when `isEditingFromGlobalScope` (`HOTKEY_SCOPE`).
 - `S` (agents step): Toggle focused agent scope via `toggleAgentScope`; suppressed with toast when `isEditingFromGlobalScope` (`HOTKEY_SCOPE`).
-- `S` (sources step): Toggle settings overlay via `toggleSettings` (`HOTKEY_SETTINGS`). Always functional; footer label is gated by `SOURCE_SEARCH`.
-- `S` (settings overlay): Closes the overlay (same `HOTKEY_SETTINGS`).
+- `S` (sources step): Toggle settings overlay via `toggleSettings` (`HOTKEY_SETTINGS`). **Gated on `FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY` (default false), so it is inert today** — the press falls through and the user stays on the sources grid. The footer label is separately gated by `SOURCE_SEARCH`, so no key is advertised either.
+- `S` (settings overlay): Closes the overlay (same `HOTKEY_SETTINGS`). The `store.showSettings` branch that handles it — an early return that swallows every other key while the overlay is up — carries the SAME flag gate, so nothing can be stranded behind a stale flag while the overlay is withdrawn.
 - `Escape` (in wizard.tsx): Explicit no-op. Each step owns ESC handling (see Cancellation below).
 
 ### Cancellation semantics
@@ -401,7 +404,9 @@ Pressing `I` opens a panel in `wizard-layout.tsx` that replaces the step content
 
 `src/cli/components/wizard/step-settings.tsx`
 
-**Not a `WizardStep`.** `StepSettings` is an overlay, not a member of `WIZARD_STEP_ORDER`. `wizard.tsx` renders it in place of the step content when the `showSettings` store flag is true (toggled by the `toggleSettings` action, bound to the `S` hotkey on the sources step). It is a sibling of the `I` summary overlay, not part of the step render tree or the `history` stack.
+**WITHDRAWN behind `FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY` (default false, D-307).** No keypress reaches this overlay today: the `S` binding on the sources step is flag-gated, so `showSettings` never becomes true and the render branch below is unreachable. The component, its store field and its action all stay in the tree, and its component specs (`step-settings.test.tsx`) keep running against it directly; the E2E specs that drive it THROUGH the wizard skip on the same flag. Re-enabling is one flag flip plus the input fix named in the flag's comment.
+
+**Not a `WizardStep`.** `StepSettings` is an overlay, not a member of `WIZARD_STEP_ORDER`. `wizard.tsx` renders it in place of the step content when the `showSettings` store flag is true (toggled by the `toggleSettings` action, bound — when the flag is on — to the `S` hotkey on the sources step). It is a sibling of the `I` summary overlay, not part of the step render tree or the `history` stack.
 
 **Props:**
 

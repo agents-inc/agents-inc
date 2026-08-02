@@ -258,14 +258,14 @@ type ConfigWriteResult = {
 };
 ```
 
-**`propagatedProjects` (D-240)** originates in `writeScopedConfigs`'s `ScopedConfigWriteResult` (`src/cli/lib/installation/local-installer.ts`) and carries `propagateGlobalChangesToProjects(...).updated` — projects that actually got rewritten. `skipped` (unreachable / failing) dirs are excluded. It is `[]` when:
+**`propagation: GateReport` (D-240)** originates in `writeScopedFromWizard` (`src/cli/lib/config-gate/index.ts`). Its `propagated.updated` carries `propagateGlobalChangesToProjects(...).updated` — projects that actually got rewritten; `propagated.skipped` carries the unreachable / failing ones, which the wizard commands do not render. Its `recompile` describes work the gate **already did**. `propagated.updated` is `[]` when:
 
 - the home branch's config declares no `projects` (a home write is always a global write, so there is no change gate on that branch), or
 - the project branch's global data did not change (`globalDataChanged === false`), or the effective global config has no `projects`.
 
 `init.tsx` and `edit.tsx` each early-return on an empty list before calling `recompilePropagatedProjectAgents`.
 
-**There is no `globalConfigPath` on this result.** It was declared optional, never assigned by `writeProjectConfig` and never read by any caller, so it was deleted. The global config path is derived at the write site via `getProjectConfigPath(os.homedir())` inside `writeScopedConfigs`.
+**There is no `globalConfigPath` on this result.** It was declared optional, never assigned by `writeProjectConfig` and never read by any caller, so it was deleted. The global config path is derived at the write site via `getProjectConfigPath(os.homedir())` inside `writeScopedFromWizard`.
 
 ### `DiscoveredSkills`
 

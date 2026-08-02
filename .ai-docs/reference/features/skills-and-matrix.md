@@ -37,15 +37,15 @@ last_validated: 2026-07-30
 
 ## Key Concepts
 
-| Concept            | Description                                                                 |
-| ------------------ | --------------------------------------------------------------------------- |
-| Skill Categories   | `config/skill-categories.ts` - category definitions (domains, display info) |
-| Skill Rules        | `config/skill-rules.ts` - relationship rules between skills                 |
-| Skill Metadata     | Per-skill `SKILL.md` frontmatter + `metadata.yaml`                          |
-| MergedSkillsMatrix | Combined read model after categories + rules + skill metadata merge         |
-| Skill Slug         | Short kebab-case key (e.g., "react") used in relationship rules             |
-| Slug Map           | Bidirectional `SkillSlug <-> SkillId` mapping built during merge            |
-| Source             | Where skills come from (public marketplace, private, local)                 |
+| Concept            | Description                                                                                                                                                                                               |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Skill Categories   | `config/skill-categories.ts` - category definitions (domains, display info) — a **source-repo** path; CLI built-in fallback is `lib/configuration/default-categories.ts`                                  |
+| Skill Rules        | `config/skill-rules.ts` - relationship rules between skills — a **source-repo** path; CLI built-in fallback is `lib/configuration/default-rules.ts`, see [built-in-catalogue.md](./built-in-catalogue.md) |
+| Skill Metadata     | Per-skill `SKILL.md` frontmatter + `metadata.yaml`                                                                                                                                                        |
+| MergedSkillsMatrix | Combined read model after categories + rules + skill metadata merge                                                                                                                                       |
+| Skill Slug         | Short kebab-case key (e.g., "react") used in relationship rules                                                                                                                                           |
+| Slug Map           | Bidirectional `SkillSlug <-> SkillId` mapping built during merge                                                                                                                                          |
+| Source             | Where skills come from (public marketplace, private, local)                                                                                                                                               |
 
 ## Current Counts (2026-07-30)
 
@@ -92,15 +92,17 @@ fails that test until a matching `defaultCategories` entry is added — see Know
 | `generators.ts`            | `src/cli/lib/skills/generators.ts`            | Generate skill-categories.ts and skill-rules.ts content |
 | `index.ts`                 | `src/cli/lib/skills/index.ts`                 | Barrel exports                                          |
 
+Per-function inventory for `skill-fetcher.ts`, `skill-metadata.ts`, `skill-copier.ts`, `local-skill-loader.ts` and `skill-plugin-compiler.ts` — including which exports have no production caller: [skills/skill-primitives.md](../skills/skill-primitives.md).
+
 ### Loading System (`src/cli/lib/loading/`)
 
-| File                     | Path                                         | Purpose                              |
-| ------------------------ | -------------------------------------------- | ------------------------------------ |
-| `source-loader.ts`       | `src/cli/lib/loading/source-loader.ts`       | Load matrix from resolved source     |
-| `source-fetcher.ts`      | `src/cli/lib/loading/source-fetcher.ts`      | Fetch/cache remote sources via giget |
-| `multi-source-loader.ts` | `src/cli/lib/loading/multi-source-loader.ts` | Load skills from multiple sources    |
-| `loader.ts`              | `src/cli/lib/loading/loader.ts`              | YAML/frontmatter parsing utilities   |
-| `index.ts`               | `src/cli/lib/loading/index.ts`               | Barrel exports                       |
+| File                     | Path                                         | Purpose                                                                                             |
+| ------------------------ | -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `source-loader.ts`       | `src/cli/lib/loading/source-loader.ts`       | Load matrix from resolved source                                                                    |
+| `source-fetcher.ts`      | `src/cli/lib/loading/source-fetcher.ts`      | Fetch/cache remote sources via giget — see [source-fetch-and-cache.md](./source-fetch-and-cache.md) |
+| `multi-source-loader.ts` | `src/cli/lib/loading/multi-source-loader.ts` | Load skills from multiple sources                                                                   |
+| `loader.ts`              | `src/cli/lib/loading/loader.ts`              | YAML/frontmatter parsing utilities                                                                  |
+| `index.ts`               | `src/cli/lib/loading/index.ts`               | Barrel exports                                                                                      |
 
 ## Data Flow
 
@@ -243,14 +245,14 @@ export type SourceLoadOptions = {
 };
 ```
 
-| Option             | Default         | Effect                                                                                                                                                                     |
-| ------------------ | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sourceFlag`       | `undefined`     | Explicit source, passed to `resolveSource()`                                                                                                                               |
-| `projectDir`       | `process.cwd()` | Directory used for config resolution, local-skill discovery, and extra-source resolution                                                                                   |
-| `forceRefresh`     | `false`         | Bypass the giget cache in `fetchFromSource()` / `fetchMarketplace()`                                                                                                       |
-| `devMode`          | `false`         | Forces the local-load branch even for the default source (skips `BUILT_IN_MATRIX`)                                                                                         |
-| `skipExtraSources` | `false`         | Skips `loadSkillsFromAllSources()` — no `availableSources` / `activeSource` tagging on any `ResolvedSkill`                                                                 |
-| `matrixOnly`       | `false`         | Default source only: skips the `fetchFromSource()` clone, so the load stays offline on a cold cache. `sourcePath` comes back `""`. Local paths / custom remotes unaffected |
+| Option             | Default         | Effect                                                                                                                                                                                                             |
+| ------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sourceFlag`       | `undefined`     | Explicit source, passed to `resolveSource()`                                                                                                                                                                       |
+| `projectDir`       | `process.cwd()` | Directory used for config resolution, local-skill discovery, and extra-source resolution                                                                                                                           |
+| `forceRefresh`     | `false`         | Bypass the giget cache in `fetchFromSource()` / `fetchMarketplace()` — for what actually observes the flag (it is NOT forwarded to the local branch), see [source-fetch-and-cache.md](./source-fetch-and-cache.md) |
+| `devMode`          | `false`         | Forces the local-load branch even for the default source (skips `BUILT_IN_MATRIX`)                                                                                                                                 |
+| `skipExtraSources` | `false`         | Skips `loadSkillsFromAllSources()` — no `availableSources` / `activeSource` tagging on any `ResolvedSkill`                                                                                                         |
+| `matrixOnly`       | `false`         | Default source only: skips the `fetchFromSource()` clone, so the load stays offline on a cold cache. `sourcePath` comes back `""`. Local paths / custom remotes unaffected                                         |
 
 ### `matrixOnly`
 
@@ -396,6 +398,8 @@ Checked per-skill by exported functions:
 
 **Function:** `validateSelection()` in `src/cli/lib/matrix/matrix-resolver.ts`
 
+> **`valid` is hard-coded `true`.** `validateSelection` computes a merged result and then discards its `valid` flag, returning `valid: true` regardless of how many errors it collected. Read `errors`, never `valid`. See [leaf-exports.md](../leaf-exports.md) § `ValidationPartial`.
+
 Runs four validation passes via helper functions:
 
 | Function                    | What it validates                              |
@@ -537,7 +541,7 @@ Content-hashing and plugin-version utilities shared by the skill, agent, and sta
 
 **Hashing helpers:**
 
-- `computeSkillFolderHash(skillPath)` - SHA-256 hash of a skill directory's content files and content dirs (`SKILL_CONTENT_FILES` + `SKILL_CONTENT_DIRS` from `metadata-keys.ts`); used for `forkedFrom.contentHash` in metadata to detect local modifications
+- `computeSkillFolderHash(skillPath)` - SHA-256 hash of a skill directory's content files and content dirs (`SKILL_CONTENT_FILES` + `SKILL_CONTENT_DIRS` from `metadata-keys.ts`); feeds plugin `.content-hash` / version bumping. It does **NOT** feed `forkedFrom.contentHash` — both sides of that comparison use `computeFileHash` on `SKILL.md` alone (write: `generateSkillHash` in `skill-copier.ts`; read: `computeSourceHash` in `skill-metadata.ts`). See [skills/skill-primitives.md](../skills/skill-primitives.md) § The two hashers.
 - `computeStringHash(content)` - SHA-256 hex digest truncated to `HASH_PREFIX_LENGTH`; the primitive the other hashers build on
 - `computeFileHash(filePath)` - Reads a file and returns `computeStringHash()` of its contents
 - `getCurrentDate()` - Current date as an ISO `YYYY-MM-DD` string
@@ -572,7 +576,7 @@ Generates config file content for custom skills:
 | `stack-installer.ts`       | `src/cli/lib/stacks/stack-installer.ts`       | Install stack as plugin        |
 | `stack-plugin-compiler.ts` | `src/cli/lib/stacks/stack-plugin-compiler.ts` | Compile stack as plugin bundle |
 
-Stacks are pre-configured bundles of skills mapped to agents. Defined in `config/stacks.ts`.
+Stacks are pre-configured bundles of skills mapped to agents. Defined in `config/stacks.ts` **in a source repo**; the CLI's own built-in catalogue is `lib/configuration/default-stacks.ts` — see [built-in-catalogue.md](./built-in-catalogue.md), which also covers the three different source-vs-default precedence rules.
 
 **Key functions (`stacks-loader.ts`):**
 

@@ -470,7 +470,7 @@ await verifyConfig(projectDir, { skillIds: ["api-framework-hono"] });
 
 ## 10. Anti-Patterns
 
-**10.1 Never import production functions to call them directly.** E2E tests spawn the CLI binary. Importing `installEject()`, `splitConfigByScope()`, or `writeScopedConfigs()` makes it a unit/integration test, not E2E. Use `e2e/pages/constants.ts` for paths (`DIRS.CLAUDE`), exit codes (`EXIT_CODES`), and text (`STEP_TEXT`) instead of importing from `src/cli/`. Acceptable imports from `src/cli/`: type-only imports (`SkillId`, `AgentName`), `isClaudeCLIAvailable` for guards, and `exec.ts` functions for smoke tests.
+**10.1 Never import production functions to call them directly.** E2E tests spawn the CLI binary. Importing `installEject()`, `splitConfigByScope()`, or `writeScopedFromWizard()` makes it a unit/integration test, not E2E. Use `e2e/pages/constants.ts` for paths (`DIRS.CLAUDE`), exit codes (`EXIT_CODES`), and text (`STEP_TEXT`) instead of importing from `src/cli/`. Acceptable imports from `src/cli/`: type-only imports (`SkillId`, `AgentName`), `isClaudeCLIAvailable` for guards, and `exec.ts` functions for smoke tests.
 
 **10.2 Never use `as SkillId` casts on valid union members.** Strings like `"web-framework-react"` are already valid `SkillId` literals. Only cast test-only IDs (e.g., `"web-custom-e2e-widget" as SkillId`), and extract those to file-level constants with a single cast.
 

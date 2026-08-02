@@ -4,10 +4,10 @@ last_validated: 2026-08-01
 
 # Documentation Map
 
-**Last Updated:** 2026-08-01
+**Last Updated:** 2026-08-02 (third pass appended: **`2026-08-02 (c)` — coverage expansion**, eight NEW reference docs integrated. This is the first pass in this window that ADDS tracked areas rather than re-checking existing ones: `Seed Contract` moves `[NOT-STARTED]` -> `[DONE]` and seven previously-undocumented areas are opened and closed in the same pass. Eight dashboard rows added at 0 days stale on a genuine FULL basis; **no existing row re-derived and no existing `last_validated` advanced**. Eight contradictions between the new docs and existing ones were resolved in favour of the code. A fourth pass is appended above it: **`2026-08-02 (d)` — standards coverage**, additive over `standards/clean-code-standards.md` only. Four enforced-but-unwritten conventions written as `clean-code-standards.md` rules 4.7 / 5.7 / 6.19 / 15.8-15.10, and the cite-by-symbol rule into `documentation-bible.md`; one stale rule and six rotten line citations corrected; **no reference doc touched and no `last_validated` advanced**. A fifth pass is appended above both: **`2026-08-02 (e)` — cite-by-symbol enforcement**, which brings the three (c)-pass docs that shipped with source line citations into compliance with the rule (d) had just written. 545 line-number tokens converted to symbol citations across `features/source-fetch-and-cache.md`, `skills/skill-primitives.md` and `leaf-exports.md`; `grep -rEc '\.tsx?:[0-9]+' .ai-docs/reference/` now returns zero tree-wide. Two claims found WRONG while locating the cited symbols were corrected. **Citation form only — no content re-validated, so no `last_validated` advanced**)
 **Product Version:** 0.147.1
-**Total Areas:** 32 (18 original + 14 new from restructure)
-**Documented:** 32 (100%)
+**Total Areas:** 40 (18 original + 14 from restructure + 8 from the 2026-08-02 (c) coverage expansion)
+**Documented:** 40 (100%)
 **In Progress:** 0
 **Needs Validation:** 1 (`testing/e2e-infrastructure.md` — **narrowed, not cleared** on 2026-08-01. `commands/index.md`'s flag was **DISCHARGED**. See both rows below.)
 **Last Validated:** 2026-08-01 (**index rebuild** closing the 0.146.1 + 0.147.0 + 0.147.1 release bundle and the four-keeper reference/standards sweep that followed it. **The staleness dashboard was rebuilt from the `last_validated` frontmatter actually on disk** — all 41 `reference/**/*.md` files re-read this session, no date carried forward from the previous table and none inferred from a prose annotation. Changes: product 0.146.0 → 0.147.1; five files newly stamped `2026-08-01` and ten carrying dated PARTIAL annotations that deliberately did NOT move their dates; `commands/index.md`'s `NEEDS-VALIDATION` discharged; `testing/e2e-infrastructure.md`'s narrowed; **the "Known Tooling Gaps" ESLint baseline corrected from 150 problems to ZERO** — verified by running the tool, not by reading the release notes; source counts 347 → 350 and E2E 197 → 204, both re-counted with `find`; 5-invariant audit re-run with Invariant 4 verified **by name**. Prior — 2026-07-30 reconciliation pass: E2E counts 196 → 197; the agent-findings total removed from this map and delegated to `reference/findings-impact-report.md` per the count-ownership registry; two rows flagged `NEEDS-VALIDATION`; "Known Tooling Gaps" added.)
@@ -93,6 +93,24 @@ row annotation for what the partial pass actually checked.
 | config/config-merger.md | 2 | 14 | OK |
 | config/scope-split.md | 2 | 14 | OK |
 
+### New Files (2026-08-02 (c) coverage expansion)
+
+All eight created 2026-08-02 on a **FULL** basis — every claim in each was derived from source in the
+session that wrote it, so `0` days stale is genuine here and is not a partial pass stamping itself
+current. **Date basis for this block is 2026-08-02**, one day later than the block above; do not
+recompute the older rows from it.
+
+| Doc                                | Days Stale | Threshold | Status               |
+| ---------------------------------- | ---------- | --------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| features/seed-contract.md          | **0**      | 14        | OK — FULL 2026-08-02 | <!-- FULL 2026-08-02 · new document. Owns: the 13-spec/3-file unit count (verified by RUNNING vitest) and the 27-spec per-file e2e count for the init-from family (safe to count by `it(` ONLY because that family contains no it.each — verified). Does NOT restate the e2e/commands file count. **Non-calendar trigger: re-validate whenever `packages/matrix/src/seed.ts` in the web monorepo changes.** Nothing automated links the two copies of the vendored schema — a 14-day timer will not catch a same-day web-side edit -->                                                                                                                                                                                                                                                                                                                                           |
+| features/model-and-effort.md       | **0**      | 14        | OK — FULL 2026-08-02 | <!-- FULL 2026-08-02 · new document. Liquid emission rows verified by RENDERING the template, not by reading engine docs. Tracks resolver.ts + compiler.ts + agent.liquid. Deliberately declines the exported-schema count (types/zod-schemas.md) and the AgentName union size (type-system.md) -->                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| features/code-generation.md        | **0**      | 14        | OK — FULL 2026-08-02 | <!-- FULL 2026-08-02 · new document. **Owns two counts: SCHEMA_ENTRIES = 10 and files in src/schemas/ = 12.** Their DISAGREEMENT is the invariant (10 generated + 2 hand-written), so a doc that declines to state the numbers cannot state the invariant. Neither generator was executed — both write into the tracked tree -->                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| features/built-in-catalogue.md     | **0**      | 14        | OK — FULL 2026-08-02 | <!-- FULL 2026-08-02 · new document. **Owns the built-in stack count (17) and the per-relationship-kind rule counts.** All quantities derived by EVALUATING the modules, never by counting source lines. Headline operational fact: for the default source these files are not executed at runtime at all — `BUILT_IN_MATRIX` short-circuits them -->                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| features/source-fetch-and-cache.md | **0**      | 14        | OK — FULL 2026-08-02 | <!-- FULL 2026-08-02 · new document. **Non-calendar trigger: a `giget` version change invalidates it regardless of date** — it replicates a private algorithm of that dependency, and the only tests touching the remote branch mock giget entirely, so the suite cannot catch a layout change. Carries its own drift checklist · **2026-08-02 (e): all 78 source line citations converted to symbol citations; content NOT re-validated, so this row's basis is still the (c) FULL pass.** One claim corrected in passing: the `fetchMarketplace` call-site table named `tagPublicFallback`, which does not exist — the function is `tagPublicSourceSkills`. The `giget dist :NNN` citations are DELIBERATELY left as line numbers: they point into a content-hashed `node_modules` chunk, not into our source, and the doc already carries its own re-location instruction --> |
+| skills/skill-primitives.md         | **0**      | 14        | OK — FULL 2026-08-02 | <!-- FULL 2026-08-02 · new document; first member of the new `skills/` directory. Function-level inventory for the five undocumented lib/skills modules. Cheapest re-validation: diff `grep -c "^export" src/cli/lib/skills/*.ts` against the Reachability table row count, then re-run `vitest run src/cli/lib/skills/` to re-derive the 118 · **2026-08-02 (e): all 94 source line citations converted to symbol citations; content NOT re-validated, so this row's basis is still the (c) FULL pass.** One citation corrected in passing: the mocking-style note cited `skill-copier.test.ts:11` for `initializeMatrix`, which is the `consts` import — the claim held, the pointer was one line off, and converting it to the symbol removed the class of error -->                                                                                                          |
+| build-and-packaging.md             | **0**      | 30        | OK — FULL 2026-08-02 | <!-- FULL 2026-08-02 · new document. **Owns the packaging counts** (tarball entries/sizes, shipped test-file count, entry-glob count); re-derive with `npm pack --dry-run --ignore-scripts --json`, always with `--ignore-scripts` so the `prepare`/husky lifecycle cannot run. 30-day threshold is deliberate: inputs are tsup.config.ts and package.json, both stable. Its §6 tarball figures move with the working tree and are annotated with the command that re-derives them -->                                                                                                                                                                                                                                                                                                                                                                                           |
+| leaf-exports.md                    | **0**      | 30        | OK — FULL 2026-08-02 | <!-- FULL 2026-08-02 · new document. **STAGING AREA with a defined end state** — entries move to their owning doc on that doc's next FULL pass, and the file is DELETED when empty. Do not add new exports here. 30-day threshold reflects low churn (it documents dormant/leaf surface). Its own census caught the map's stale corpus arithmetic · **2026-08-02 (e): all 62 source line citations converted to symbol citations; content NOT re-validated, so this row's basis is still the (c) FULL pass.** Its five doc-to-doc line refs INTO the two docs reflowed by the same pass were converted to section references — those, and only those, would have been silently invalidated by the reflow. Doc-to-doc line refs into UNMODIFIED docs are left as found and remain a known rot surface -->                                                                         |
+
 **Status values:** `OK` = within threshold, `DUE` = at or past threshold, `OVERDUE` = at or past 2x threshold, `OK (pointer)` = redirect targets resolve (see Pointer Freshness Rule).
 
 **Date basis:** 2026-08-01. Every row re-derived from disk frontmatter this session.
@@ -137,7 +155,14 @@ comments. A hidden warning protects nothing, so they are stated here in the body
 > — its gap is closed in the doc and the pass additionally re-derived the full command inventory and
 > every flag/arg table from source with zero mismatches.
 
-**Tracked vs untracked (Invariant 4):** 41 on disk = **32 tracked** + **9 untracked pointers**. There are **11 pointer files** in total; 2 of them (`type-system.md`, `test-infrastructure.md`) are tracked because they are the surviving row for a split area, so 11 − 2 = 9 untracked.
+**Tracked vs untracked (Invariant 4):** **49 on disk = 40 tracked + 9 untracked pointers.** Re-derived from disk 2026-08-02 (c) with `find .ai-docs/reference -name '*.md' | wc -l`, not by incrementing the previous total. There are **11 pointer files** in total; 2 of them (`type-system.md`, `test-infrastructure.md`) are tracked because they are the surviving row for a split area, so 11 − 2 = 9 untracked. The pointer set is unchanged by the (c) pass — all eight new files are substantial bodies (435–634 lines), none is a redirect.
+
+> **The 41 = 32 + 9 arithmetic above was correct until 2026-08-02 (c) and is now superseded.** It is
+> recorded here rather than silently overwritten because the failure mode it invites is specific:
+> the (c) pass found a keeper computing an "absent from all 41 reference docs" census against the
+> stale corpus, which reported five already-covered symbols as uncovered and produced one flatly
+> wrong claim before it was caught. **Enumerate the corpus with `find` at the start of any census;
+> never take the total from this map.**
 
 The 9 untracked pointers, **verified BY NAME this session by opening each file and confirming its
 body is a redirect table** — never inferred from path depth, and never carried forward from the
@@ -214,6 +239,8 @@ reference/
     factories.md             # Split from test-infrastructure.md (full content)
     mock-data.md             # Split from test-infrastructure.md (full content)
     e2e-infrastructure.md    # Split from test-infrastructure.md (full content)
+  skills/                    # NEW 2026-08-02 (c)
+    skill-primitives.md      # Function inventory for the five undocumented lib/skills modules
   features/
     compilation-pipeline.md  # Stays (unchanged)
     configuration.md         # Stays (unchanged, pointed to by config/configuration.md)
@@ -222,6 +249,13 @@ reference/
     agent-system.md          # Stays (unchanged)
     operations-layer.md      # Stays (unchanged)
     wizard-flow.md           # Stays (unchanged, pointed to by wizard/flow.md)
+    seed-contract.md         # NEW 2026-08-02 (c): the init --from wire contract
+    model-and-effort.md      # NEW 2026-08-02 (c): the model/effort tuning axis, end to end
+    code-generation.md       # NEW 2026-08-02 (c): the two scripts/ generators and their output
+    built-in-catalogue.md    # NEW 2026-08-02 (c): defaultStacks / defaultRules fallback data
+    source-fetch-and-cache.md # NEW 2026-08-02 (c): giget fetch, cache key, ID-targeted read path
+  build-and-packaging.md     # NEW 2026-08-02 (c): tsup entry contract, publish surface, oclif block
+  leaf-exports.md            # NEW 2026-08-02 (c): STAGING AREA — drains into owning docs, then deleted
   findings-impact-report.md  # Stays (unchanged)
 ```
 
@@ -278,22 +312,39 @@ reference/
 | Config Merger Contract  | [DONE] | `reference/config/config-merger.md`       | 2026-07-30   | 2026-07-30     | Untouched by the 2026-08-01 sweep. Source-identity contract still unlanded (findings Pattern B). Validate in 14 days                                                                         |
 | Config Scope Split      | [DONE] | `reference/config/scope-split.md`         | 2026-07-30   | 2026-07-30     | Untouched by the 2026-08-01 sweep. Validate in 14 days                                                                                                                                       |
 
+### New Files (2026-08-02 (c) coverage expansion)
+
+Eight areas opened and closed in one pass. Each row's `Last Validated` is a genuine FULL basis —
+these are new documents whose every claim was derived from source in the session that wrote them, so
+the "a PARTIAL pass must not move the date" rule does not bite here.
+
+| Area                   | Status | File                                           | Last Updated | Last Validated | Next Action                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------- | ------ | ---------------------------------------------- | ------------ | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Seed Contract          | [DONE] | `reference/features/seed-contract.md`          | 2026-08-02   | **2026-08-02** | **NEW, FULL 2026-08-02** — every file under `lib/seed/` read end to end plus BOTH copies of the vendored schema. Closes the `[NOT-STARTED]` area opened by the (b) pass. Validate in 14 days. **Priority trigger, not just cadence: re-validate whenever `packages/matrix/src/seed.ts` in the web monorepo changes** — nothing automated links the two copies                                  |
+| Model & Effort Axis    | [DONE] | `reference/features/model-and-effort.md`       | 2026-08-02   | **2026-08-02** | **NEW, FULL 2026-08-02** — Liquid emission verified by rendering the template. Tracks `resolver.ts`, `compiler.ts` and `agent.liquid`. Corrected four live drift claims in sibling docs (see `crossRefs` in the (c) history entry). Validate in 14 days                                                                                                                                        |
+| Code Generation        | [DONE] | `reference/features/code-generation.md`        | 2026-08-02   | **2026-08-02** | **NEW, FULL 2026-08-02.** Owns the `SCHEMA_ENTRIES` count (10) and the `src/schemas/` file count (12) per the count-ownership registry — the 10-vs-12 gap IS the invariant. Records that `injectSubcategoryPropertyNames` is currently **inert** (findings Pattern V). Validate in 14 days                                                                                                     |
+| Built-in Catalogue     | [DONE] | `reference/features/built-in-catalogue.md`     | 2026-08-02   | **2026-08-02** | **NEW, FULL 2026-08-02.** Owns the built-in stack count and per-relationship-kind rule counts. Quantities derived by EVALUATING the modules. Headline: for the default source these files are not executed at runtime — `BUILT_IN_MATRIX` short-circuits them, so an edit here is invisible until `generate:types` re-runs. Validate in 14 days                                                |
+| Source Fetch & Cache   | [DONE] | `reference/features/source-fetch-and-cache.md` | 2026-08-02   | **2026-08-02** | **NEW, FULL 2026-08-02.** Closes the 6-export gap under `lib/loading` (`sanitizeSourceForCache`, `getGigetCacheDir`, `FetchOptions`, `FetchResult`, `loadSkillsByIds`, `LoadSkillsFromDirOptions`). Validate in 14 days **AND on any `giget` version change** — it replicates a private algorithm of that dependency and the suite mocks giget entirely                                        |
+| Skill Primitives       | [DONE] | `reference/skills/skill-primitives.md`         | 2026-08-02   | **2026-08-02** | **NEW, FULL 2026-08-02.** First member of the new `skills/` directory; the two remaining `lib/skills` splits (`source-switcher.ts`, `generators.ts`) belong beside it. Corrected `skills-and-matrix.md`'s `computeSkillFolderHash` claim. Validate in 14 days                                                                                                                                  |
+| Build & Packaging      | [DONE] | `reference/build-and-packaging.md`             | 2026-08-02   | **2026-08-02** | **NEW, FULL 2026-08-02.** Owns the packaging counts; re-derive with `npm pack --dry-run --ignore-scripts --json` (the `--ignore-scripts` is load-bearing — `prepare` runs husky, which sets `core.hooksPath` via git). Two live gaps recorded: the built `config-loader` jiti alias resolves outside the installed package, and zero `.d.ts` ship. **Validate in 30 days** (inputs are stable) |
+| Leaf Exports (staging) | [DONE] | `reference/leaf-exports.md`                    | 2026-08-02   | **2026-08-02** | **NEW, FULL 2026-08-02. STAGING AREA — this file has an end state.** Entries migrate to their owning doc on that doc's next FULL pass; the file is DELETED once empty. Do not add new exports to it. Validate in 30 days                                                                                                                                                                       |
+
 ## Standards Documentation
 
 Prescriptive rules for code quality, testing, and content authoring. Lighter validation cadence -- validate when convention-keeper proposes updates, or quarterly.
 
-| Area                          | File                                  | Last Moved | Last Audited | Scope disambiguator                                                                                                                                                                                                                                                                                                                                  |
-| ----------------------------- | ------------------------------------- | ---------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Clean Code Standards          | `standards/clean-code-standards.md`   | 2026-03-25 | 2026-04-21   |                                                                                                                                                                                                                                                                                                                                                      |
-| E2E Testing Bible             | `standards/e2e-testing-bible.md`      | 2026-03-25 | 2026-07-30   | PARTIAL 2026-08-01, deliberately NOT re-stamped. Prior: rewritten 2026-07-30 (inverted `HOME=cwd` claims removed)                                                                                                                                                                                                                                    |
-| E2E Sub-Standards             | `standards/e2e/` (7 files)            | 2026-03-25 | 2026-07-30   | All 7 still at 2026-07-30. **Five received dated PARTIAL passes 2026-08-01 and correctly did NOT re-stamp** (README, anti-patterns, assertions, page-objects, test-data); `patterns.md` and `test-structure.md` were untouched. `README.md`'s `STEP_TEXT` count is corrected to **74** and now agrees with `reference/testing/e2e-infrastructure.md` |
-| Prompt Engineering (phrasing) | `standards/prompt-bible.md`           | 2026-03-25 | 2026-04-21   | XML tags, delegation prompt shape, per-delegation boilerplate — **what to say**                                                                                                                                                                                                                                                                      |
-| Loop Prompts (cadence)        | `standards/loop-prompts-bible.md`     | 2026-03-25 | 2026-04-21   | Ralph-loop iter discipline, completion promise, synthesis passes — **when/how often**                                                                                                                                                                                                                                                                |
-| Skill Atomicity               | `standards/skill-atomicity-bible.md`  | 2026-03-25 | 2026-04-02   |                                                                                                                                                                                                                                                                                                                                                      |
-| Skill Atomicity Primer        | `standards/skill-atomicity-primer.md` | 2026-03-25 | 2026-04-02   |                                                                                                                                                                                                                                                                                                                                                      |
-| TypeScript Types              | `standards/typescript-types-bible.md` | 2026-03-25 | 2026-04-02   |                                                                                                                                                                                                                                                                                                                                                      |
-| Documentation Standards       | `standards/documentation-bible.md`    | 2026-03-25 | 2026-07-30   | Count-ownership rule, Pointer Freshness Rule, Heading Diff rule, rebuilt hook table, Known-Limitations clause. **FOUR open cross-surface defects reported against it** by the 2026-08-01 findings regeneration — see that report's "Cross-surface defects reported, not fixed" table. Convention-keeper's domain                                     |
-| Commit Protocol               | `standards/commit-protocol.md`        | 2026-03-25 | 2026-04-02   |                                                                                                                                                                                                                                                                                                                                                      |
+| Area                          | File                                  | Last Moved | Last Audited | Scope disambiguator                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------- | ------------------------------------- | ---------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Clean Code Standards          | `standards/clean-code-standards.md`   | 2026-03-25 | 2026-04-21   | COVERAGE PASS 2026-08-02 (d), deliberately NOT re-stamped — additive only. New: **4.7** (`CLI_INVOKE_COMMAND` instruction form), **5.7** (writes funnel through `utils/fs.ts`), **6.19** (flag-gated suites use `describe.skipIf`), **15.8-15.10** (config-gate exclusive write privilege, corrected `config-types.ts` writer selection, propagate-and-recompile contract). **15.8 previously named `writeStandaloneConfigTypes`, which no longer exists in `src/`**                                                           |
+| E2E Testing Bible             | `standards/e2e-testing-bible.md`      | 2026-03-25 | 2026-07-30   | PARTIAL 2026-08-01, deliberately NOT re-stamped. Prior: rewritten 2026-07-30 (inverted `HOME=cwd` claims removed)                                                                                                                                                                                                                                                                                                                                                                                                              |
+| E2E Sub-Standards             | `standards/e2e/` (7 files)            | 2026-03-25 | 2026-07-30   | All 7 still at 2026-07-30. **Five received dated PARTIAL passes 2026-08-01 and correctly did NOT re-stamp** (README, anti-patterns, assertions, page-objects, test-data); `patterns.md` and `test-structure.md` were untouched. `README.md`'s `STEP_TEXT` count is corrected to **74** and now agrees with `reference/testing/e2e-infrastructure.md`                                                                                                                                                                           |
+| Prompt Engineering (phrasing) | `standards/prompt-bible.md`           | 2026-03-25 | 2026-04-21   | XML tags, delegation prompt shape, per-delegation boilerplate — **what to say**                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Loop Prompts (cadence)        | `standards/loop-prompts-bible.md`     | 2026-03-25 | 2026-04-21   | Ralph-loop iter discipline, completion promise, synthesis passes — **when/how often**                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Skill Atomicity               | `standards/skill-atomicity-bible.md`  | 2026-03-25 | 2026-04-02   |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Skill Atomicity Primer        | `standards/skill-atomicity-primer.md` | 2026-03-25 | 2026-04-02   |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| TypeScript Types              | `standards/typescript-types-bible.md` | 2026-03-25 | 2026-04-02   |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Documentation Standards       | `standards/documentation-bible.md`    | 2026-03-25 | 2026-07-30   | Count-ownership rule, Pointer Freshness Rule, Heading Diff rule, rebuilt hook table, Known-Limitations clause. **FOUR open cross-surface defects reported against it** by the 2026-08-01 findings regeneration — see that report's "Cross-surface defects reported, not fixed" table. Convention-keeper's domain. PARTIAL 2026-08-02 (d), deliberately NOT re-stamped: the **"No Source Line Numbers — Cite by Symbol"** rule is now stated here, and every other place in the file that instructed the opposite was corrected |
+| Commit Protocol               | `standards/commit-protocol.md`        | 2026-03-25 | 2026-04-02   |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 ## Known Tooling Gaps
 
@@ -372,8 +423,21 @@ site, because it is true of every declaration file.
 - **No `no-restricted-syntax` rule for task-IDs in test names.** Deliberately left out to keep the
   initial rule set stock, so `agent-findings/2026-07-17-d167-task-id-recurrence-no-lint-guard.md`
   remains unclosed.
-- **`prettier --check .` still fails** on pre-existing `.ai-docs/**/*.md` files. Unrelated to
-  ESLint, but noted here because `prepublishOnly` runs it **first** and will stop there.
+- **`prettier --check .` still fails — but NOT on `.ai-docs` any more (corrected 2026-08-02 (c)).**
+  This entry previously named `.ai-docs/**/*.md` as the blocker. Verified this session **by running
+  the tool**: `npx prettier --check ".ai-docs/**/*.md"` exits `0` ("All matched files use Prettier
+  code style!"), across all 49 reference files including the eight new ones. The single remaining
+  offender is **`src/cli/lib/seed/fetch-seed.ts`**. The consequence is unchanged and still correct —
+  `prepublishOnly` runs `format:check` **first** and will stop there — but the cause has moved, and
+  an agent told to go fix `.ai-docs` will find nothing to fix. Not corrected in place by the (c)
+  pass: that pass was scoped to `.ai-docs/` and `src/` was out of bounds.
+- **Neither code generator runs in any gate.** `generate:types`, `generate:schemas` and
+  `generate:schemas:check` appear in `prepublishOnly`, `.husky/pre-commit` and the workflows
+  **zero** times; the only `.github/workflows/` file is a cross-repo dispatch, so there is no CI
+  build or test gate at all. `typecheck:scripts` is likewise in no composite gate, which is how
+  `scripts/` stayed untypechecked long enough to hide a phantom field and two fabricated SkillIds.
+  Checked-in generated output can therefore drift from its source silently. See
+  `reference/features/code-generation.md`.
   Adoption write-up and the option chosen:
   `agent-findings/2026-07-30-eslint-precommit-gate-has-no-config-and-cannot-run.md` (`status:
 resolved`). The burndown to zero is written up across three 2026-08-01 findings:
@@ -444,6 +508,20 @@ Routing one through the other silently changes merge behaviour around tombstones
 - Boundary Map: [DONE] (`architecture/boundary-map.md` + `boundary-map.md`)
 - State Transitions: [DONE] (`wizard/state-transitions.md` CANONICAL + `state-transitions.md` POINTER)
 - Findings Impact Report: [DONE]
+- **Seed Contract: [DONE]** (`features/seed-contract.md`) — closed 2026-08-02 (c). Opened as `[NOT-STARTED]` by the (b) pass, which found it by diffing `commands/init.tsx`'s imports against `dependency-graph.md`. **`types/zod-schemas.md` deliberately does not cover it** — that doc scopes itself to `src/cli/lib/schemas.ts` by its own first line, so its count is not wrong, merely narrower than "every Zod schema in the CLI"; a reader who assumes otherwise misses `seed-schema.ts` entirely. That scope note is now written into `zod-schemas.md` itself rather than living only here.
+- Model & Effort Axis: [DONE] (`features/model-and-effort.md`)
+- Code Generation: [DONE] (`features/code-generation.md`)
+- Built-in Catalogue: [DONE] (`features/built-in-catalogue.md`)
+- Source Fetch & Cache: [DONE] (`features/source-fetch-and-cache.md`)
+- Skill Primitives: [DONE] (`skills/skill-primitives.md`)
+- Build & Packaging: [DONE] (`build-and-packaging.md`)
+- Leaf Exports: [DONE] (`leaf-exports.md`) — **staging area, not a permanent home.** Drains into owning docs and is deleted when empty
+
+**Deferred gaps opened by the 2026-08-02 (c) pass (not closed):**
+
+- **`lib/skills/source-switcher.ts` + `generators.ts`: [NOT-STARTED]** — the two remaining `lib/skills` modules. They exist today only as prose inside `features/skills-and-matrix.md`; `skills/skill-primitives.md` deliberately scoped them out and is the directory they belong in. `source-switcher.ts` has 8 unit specs (derived by subtraction from the 118 in that directory), `generators.ts` emits `skill-categories.ts` / `skill-rules.ts` content for a source repo.
+- **`agent.liquid`'s camelCase frontmatter fields: [NOT-STARTED]** — a rendering probe run during the (c) pass proved `agent.permission_mode` and `agent.disallowed_tools` in the template never resolve the camelCase `permissionMode` / `disallowedTools` on `AgentConfig`, so `permissionMode` always emits `default` and `disallowedTools` never emits at all. Recorded as a contrast in `features/model-and-effort.md` (establishing that single-token `model`/`effort` are unaffected) but **NOT traced to its callers**. This looks like a live defect, not a doc gap; it belongs to whoever owns `features/compilation-pipeline.md`, and the warning attached to it is: do not "normalise" `model`/`effort` into the same shape while fixing it.
+- **`generate-json-schemas.ts` has zero tests: [NOT-STARTED]** — and cannot currently have one, because `generate()` is invoked unconditionally at module scope with a hardcoded output directory. Recorded in `features/code-generation.md` § Known gaps. Its sibling generator has 34.
 
 **Cross-Cutting Concepts (NEW):**
 
@@ -454,6 +532,335 @@ Routing one through the other silently changes merge behaviour around tombstones
 ## Validation History
 
 > **Read every entry below as a point-in-time record, not a current claim.** Counts, line numbers and version strings inside a dated entry were true on that entry's date and have NOT been re-verified since. **Never quote a number out of the Validation History.** Current verified counts live only in their owning documents — see the count-ownership registry in `standards/documentation-bible.md`. Entries predating 2026-07-30 also contain source line numbers, which project convention now bans in documentation; they are left in place as historical record and must not be copied forward.
+
+### 2026-08-02 (e) -- cite-by-symbol enforcement: the three docs that shipped with line numbers
+
+Citation-form pass over `reference/` only. Scope: **`reference/features/source-fetch-and-cache.md`,
+`reference/skills/skill-primitives.md`, `reference/leaf-exports.md` and this map. No `src/`, `e2e/`,
+`docs/`, `todo/`, `standards/` or package file touched. No git command of any kind run.
+`generate:schemas:check` never invoked.** No `last_validated` advanced — the pass changed how claims
+point at code, not whether they hold; each of the three rows carries a dated annotation saying so.
+
+**The breach.** The (d) pass wrote the cite-by-symbol rule into `documentation-bible.md` after
+finding that all six line citations in `clean-code-standards.md` § 7.2 had rotted, one onto a path
+that no longer exists. The (c) pass, run the same day, had already shipped eight new reference docs —
+three of which carried source line citations. All 41 older reference docs carry zero. The three were
+the entire remaining population.
+
+| Doc                                  | `.ts:NN` citation sites (pre-pass) | Line-number tokens converted |
+| ------------------------------------ | ---------------------------------- | ---------------------------- |
+| `skills/skill-primitives.md`         | 94                                 | 210                          |
+| `features/source-fetch-and-cache.md` | 78                                 | 197                          |
+| `leaf-exports.md`                    | 62                                 | 138 (+ 8 doc-to-doc)         |
+
+Token count exceeds site count because a single citation frequently carried a continuation list
+(`` `types/matrix.ts:214`, `:220` ``) or a bare `` `:NN` `` back-reference inside the same paragraph.
+
+**Every citation was converted by reading the code at the cited location**, not by stripping `:NN`.
+Where a citation pointed at a declaration, it became the declaration's name; where it pointed inside
+a function, it became the enclosing function plus, when the paragraph needed the precision, the local
+binding (`categoryUnion`, `agentsDirRelPath`, `alreadyInPlace`, `gigetCacheRoot`, `displayPath`).
+Where it pointed at a test, it became the spec or `describe` title. Where the enclosing symbol added
+nothing over a column that already named it — an inventory table's `Line` column beside its `Export`
+column — the column was dropped rather than reworded, per the bible's "prefer the symbol column".
+
+**Two claims were WRONG and are corrected**, both found only because verifying a line number forces
+you to open the file:
+
+1. `source-fetch-and-cache.md`'s `fetchMarketplace` call-site table named the caller
+   **`tagPublicFallback`**. No such symbol exists anywhere in `src/` or `e2e/`; the function at that
+   location is `tagPublicSourceSkills`. A grep for the documented name returned only the doc itself.
+2. `skill-primitives.md` cited `skill-copier.test.ts:11` for "seeds the matrix singleton with
+   `initializeMatrix`". Line 11 is the `consts` import; `initializeMatrix` is imported on line 12.
+   The claim held, the pointer did not — which is exactly the failure mode the rule exists to remove.
+
+**Two citation classes were deliberately left alone**, and a later pass should decide about them
+rather than assume this one missed them:
+
+- **Doc-to-doc line refs** (`` [other-doc.md](...) `:399-402` ``). Out of the stated scope, and
+  converting them means choosing section anchors in files this pass was not asked to open. **The
+  five that pointed into the two docs this pass reflowed were converted** — those the reflow would
+  have silently invalidated. The rest are unchanged and remain a rot surface.
+- **`giget dist :NNN` refs** in `source-fetch-and-cache.md`. They point into
+  `node_modules/giget/dist/shared/giget.<hash>.mjs`, a content-hashed third-party bundle, not into
+  our source. The doc already states the chunk name changes on reinstall and gives the grep that
+  re-locates it, and it names the giget symbols (`cacheDirectory`, `sourceProtoRe`, `inputRegex`)
+  alongside every line number.
+
+**Verification.** `grep -rEc '\.tsx?:[0-9]+' .ai-docs/reference/` returns zero across all 48 files.
+The other five (c)-pass docs (`seed-contract.md`, `model-and-effort.md`, `code-generation.md`,
+`build-and-packaging.md`, `built-in-catalogue.md`) were checked for stragglers in every form —
+`.ts:NN`, bare `` `:NN` ``, and prose "lines N-M" — and carry none. `prettier --check` passes on all
+four touched files. Thirty-four named symbols were re-located in source by grep after conversion.
+
+### 2026-08-02 (d) -- standards coverage pass: four conventions in force, none written down
+
+Additive pass over `standards/` only. Scope: **`standards/clean-code-standards.md`,
+`standards/documentation-bible.md` and this map. No `src/`, `e2e/`, `docs/`, `todo/`, package file or
+`reference/` doc touched. No git command of any kind run. `generate:schemas:check` never invoked.**
+Neither file's `last_validated` advanced — the pass added rules, it did not re-verify either file;
+both carry a dated PARTIAL annotation saying so.
+
+**Four conventions were enforced in code and absent from `standards/`.** Each was verified against
+the mechanism that enforces it before being written:
+
+| New rule   | Convention                                                           | Enforced by                                                                                                                       |
+| ---------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 4.7        | User-facing instructions read `${CLI_INVOKE_COMMAND} <cmd>`          | `consts.ts` — the constant's own JSDoc states the convention; `bin` in `package.json` registers both `agents-inc` and `agentsinc` |
+| 5.7        | Every write funnels through `writeFile()` in `utils/fs.ts`           | `eslint.config.js` `FS_WRITE_PATHS` over `src/**`, with `utils/fs.ts` the single exemption                                        |
+| 6.19       | A flag-gated suite uses `describe.skipIf(!FEATURE_FLAGS.X)`          | `lib/feature-flags.ts` + the three `WIZARD_SETTINGS_OVERLAY` E2E suites                                                           |
+| 15.8-15.10 | The global config pair is `config-gate/`'s exclusive write privilege | four layers: barrel privacy, `eslint.config.js`, the tripwire in `utils/fs.ts`, `__tests__/config-gate-enforcement.test.ts`       |
+
+**One rule was wrong, not merely missing.** Old 15.8 told callers to write a GLOBAL `config-types.ts`
+via `writeStandaloneConfigTypes`. That function **does not exist in `src/`** (`grep`: only two `e2e/`
+JSDoc mentions survive), and the write it described is now exactly what the gate refuses. Rewritten
+as 15.8-15.9 against `config-gate/index.ts` and `configuration/config-types-writer.ts`.
+
+**Two claims handed to this pass were checked and did not hold.** Both are recorded rather than
+written down, because a standards doc that overstates is worse than one that is silent:
+
+1. **"Flag-gated tests use `skipIf`, as done for the marketplace/new-agent commands."** They do not:
+   all six `new skill` / `new agent` / `new marketplace` suites are `describe.skip`, as are the two
+   `FILTER_INCOMPATIBLE` E2E suites. `skipIf` on a flag has exactly three sites, all
+   `WIZARD_SETTINGS_OVERLAY`. 6.19 states the ratio (3 vs 8) rather than implying a settled practice.
+2. **"Documentation carries no source line numbers."** The claim holds and the rule is now written —
+   but the counter-evidence had to be counted before that could be said. `reference/` carries **223**
+   `file.ts:NN` citations, and they are **not** spread across the corpus: **all 41 pre-(c) reference
+   docs carry zero**, and all 223 sit in three of the eight docs the (c) pass just landed
+   (`features/source-fetch-and-cache.md` 68, `skills/skill-primitives.md` 62, `leaf-exports.md` 57).
+   So the convention was in force and three new docs breached it — the opposite of the "not really a
+   rule" reading a bare corpus-wide count invites. **Those three are `reference/`, out of this pass's
+   write scope; whoever next takes a FULL pass on them owns the conversion.**
+
+**The rule is now stated, and its counter-examples were the proof.** `standards/documentation-bible.md`
+gains **"No Source Line Numbers — Cite by Symbol"** (replacing "Line Numbers and Staleness", whose
+per-document staleness guidance is kept), plus corrections everywhere else in that file that
+instructed the opposite: Core Principle 3, validation step 1, the claim-verification table (`Line
+number` row -> `Symbol name`), the "Current" doc-health bullet, the self-correction trigger table
+(one row corrected, one added), and the critical reminders. `grep "line number"` on that file now
+returns only the new rule and its grounding.
+
+Grounding, re-derived this session: **all six line citations in `clean-code-standards.md` § 7.2
+pointed at the wrong construct.** `project-config.ts:39` landed on a JSDoc line (the cast is in
+`loadProjectConfigFromDir`); `loader.ts:33` on a blank line; `wizard-store.ts:146` on a `/**`;
+`metadata-keys.ts:21` on a comment for the cast one line below; `base-command.ts:23` on **a path that
+does not exist** (the file is `src/cli/base-command.ts`); and `loader.ts:155` described a
+directory-name -> `SkillId` cast that **loader.ts no longer contains at all** — that cast now lives in
+`classifyLocalSkill` in `skills/skill-metadata.ts`. All six rewritten as symbol citations. Note the
+last one: it is not a stale line, it is a stale EXAMPLE that a line number made unfalsifiable.
+
+**Already covered, changed nothing.** The count-ownership rule (a countable fact is owned by exactly
+one doc, others link) is fully stated in `standards/documentation-bible.md` under "A Count Lives in
+Exactly One Document", including the ownership registry and the 39-vs-35 Zod incident that grounds it.
+
+**Left for the map's owner.** This entry's own preamble says line numbers are banned "in
+documentation" and that pre-2026-07-30 history entries keep them as historical record. That is now
+consistent with `standards/`, so no edit was made — but the preamble is the only place the ban was
+written before today, and it is in a section explicitly labelled non-authoritative.
+
+### 2026-08-02 (c) -- coverage expansion: eight new reference docs integrated
+
+The first pass in this window that **adds** tracked areas rather than re-checking existing ones.
+Eight documents were written against source by separate keepers and integrated here. Scope:
+**`.ai-docs/` only. No source, test, `todo/`, `e2e/` or `docs/` file touched. No git command of any
+kind run. `generate:schemas:check` never invoked.**
+
+**Tracked areas 32 -> 40. Reference files on disk 41 -> 49.** Both re-derived with `find`, not
+incremented — see the superseded-arithmetic callout under Invariant 4, which records why.
+
+**Eight new docs, all `[DONE]` on a genuine FULL basis:** `features/seed-contract.md`,
+`features/model-and-effort.md`, `features/code-generation.md`, `features/built-in-catalogue.md`,
+`features/source-fetch-and-cache.md`, `skills/skill-primitives.md`, `build-and-packaging.md`,
+`leaf-exports.md`. Each is 435–634 lines, none is a pointer, and `skills/` is a new directory.
+**The `[NOT-STARTED]` Seed Contract area opened by the (b) pass is closed by the first of these.**
+
+**Verification performed by this integration pass, not taken on trust.** All eight files confirmed
+present on disk, and **one claim per doc was independently re-checked against source**:
+
+| Doc                    | Claim spot-checked                                                            | Result                                                                           |
+| ---------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| seed-contract          | `SEED_VERSION = 3`, consumed as `z.literal(SEED_VERSION)`                     | Confirmed in `lib/seed/seed-schema.ts`                                           |
+| model-and-effort       | `MODEL_NAMES` has five members including `fable`                              | Confirmed in `types/matrix.ts`                                                   |
+| code-generation        | `SCHEMA_ENTRIES` = 10 entries against 12 files in `src/schemas/`              | Confirmed — the 11th `filename:` hit is the type declaration, not an entry       |
+| built-in-catalogue     | 17 stacks, pinned by `EXPECTED_STACK_COUNT`                                   | Confirmed in `default-stacks.ts` + its spec                                      |
+| source-fetch-and-cache | `MAX_MARKETPLACE_PLUGINS` is **enforced**, not merely available               | Confirmed — `source-fetcher.ts` throws above the limit                           |
+| skill-primitives       | `computeFileHash(SKILL.md)`, not `computeSkillFolderHash`, feeds `forkedFrom` | Confirmed — `generateSkillHash` in `skill-copier.ts`                             |
+| build-and-packaging    | `config-exports.ts` exports 9 symbols across 7 statements                     | Confirmed (4 values + 5 types)                                                   |
+| leaf-exports           | `METADATA_KEYS` has exactly one importer and one referenced key               | Confirmed — `matrix-loader.ts`, and the use is message text, not a property read |
+
+**Eight contradictions found between the new docs and existing ones. All resolved in favour of the
+code**, each verified against source before editing:
+
+| Existing doc                           | Was                                                                                               | Now                                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `boundary-map.md`                      | `MAX_MARKETPLACE_PLUGINS` "(available for marketplace size validation)"                           | `source-fetcher.ts` (`fetchMarketplace`) — it throws; the constant is live                       |
+| `types/core-types.md`                  | `MODEL_NAMES` listed with four members                                                            | Five, `fable` added; an `EffortLevel` section added (the doc had none)                           |
+| `types/core-types.md`                  | "Only `SkillSlug`, `ModelName`, `PermissionMode` have `z.enum` bridges"                           | `EffortLevel` added — it is a fourth                                                             |
+| `types/core-types.md` + `store-map.md` | `AgentScopeConfig` as `{ name, scope, excluded? }` (three places)                                 | `model?` / `effort?` added — they are declared on the type                                       |
+| `types/zod-schemas.md`                 | 35 exported schemas, Bridge table of 4                                                            | **36**, Bridge table of **5** (`effortLevelSchema`) — moved together so the breakdown still sums |
+| `features/agent-system.md`             | `ModelName` as four members (two places); `agent.schema.json` paired with `agentYamlConfigSchema` | Five members; the JSON Schema is **generated** from `agentYamlGenerationSchema`                  |
+| `features/skills-and-matrix.md`        | `computeSkillFolderHash` "used for `forkedFrom.contentHash`"                                      | It feeds plugin versioning; both sides of that comparison use `computeFileHash(SKILL.md)`        |
+| `commands/index.md`                    | `init` flag table lacked `--from`; guard was `skills.length === 0` with `"No skills selected"`    | `--from` documented; guard is skills **AND** agents empty, message from `selection.emptyMessage` |
+
+The last of these was the most consequential: an agent-only payload with zero skills installs
+successfully today, and the doc said it errored.
+
+**One stale claim in this map corrected by running the tool:** the "Known Tooling Gaps" entry
+naming `.ai-docs/**/*.md` as the `prettier --check .` blocker. `.ai-docs` is clean (exit `0`, all 49
+reference files); the offender is `src/cli/lib/seed/fetch-seed.ts`, left unfixed because `src/` was
+outside this pass's write scope. A second gap entry was added: **neither generator, nor
+`generate:schemas:check`, nor `typecheck:scripts`, runs in any gate** — there is no CI build or test
+workflow at all.
+
+**Cross-references added into 20 existing docs** (link-style only, no rewrites): `boundary-map.md`
+(incl. a new §6.5 recording the seed fetch as an input boundary), `dependency-graph.md` (note 14b's
+"no reference doc yet describes the seed contract" repointed — it was the single place a reader was
+told the doc did not exist), `commands/index.md`, `types/core-types.md`, `types/zod-schemas.md`,
+`type-system.md`, `store-map.md`, `architecture-overview.md`, `component-patterns.md`,
+`utilities.md`, `concepts/scope-system.md`, `config/config-writer.md`, `config/config-merger.md`,
+`features/{configuration,skills-and-matrix,agent-system,compilation-pipeline,plugin-system,operations-layer,wizard-flow}.md`,
+`testing/infrastructure.md`, `testing/e2e-infrastructure.md` (which gained the missing
+`seed-config-store.ts` fixture row — a real loopback HTTP server, the only socket-binding fixture in
+that directory).
+
+**Three deferred gaps opened, not closed** — recorded under Technical Areas: the two remaining
+`lib/skills` modules; `generate-json-schemas.ts`'s complete absence of tests; and the
+`agent.permission_mode` / `agent.disallowed_tools` template fields that never resolve their
+camelCase sources, which is a probable live defect rather than a doc gap and is handed to whoever
+owns `compilation-pipeline.md`.
+
+**Two non-calendar validation triggers now exist**, and neither is expressible as a staleness
+threshold. `features/seed-contract.md` depends on a file in a **different repository**
+(`agents-inc-web-monorepo/packages/matrix/src/seed.ts`) with no shared package, sync script or test
+linking the two copies. `features/source-fetch-and-cache.md` replicates a **private** algorithm of
+`giget`, and every test touching that branch mocks giget entirely, so the suite cannot detect a
+layout change. A 14-day timer catches neither; both rows say so.
+
+**Method note carried forward.** Three of the eight writers independently reported catching
+themselves mid-pass: one attributed a behaviour to `matrix-resolver.ts` on the strength of a grep
+hit that turned out to be an unrelated exclusivity check; one wrote a claim about a `?? false`
+coalesce that a doc it had not read already refuted; one counted e2e specs by `it(` and had to
+verify the absence of `it.each` before the number was safe. All three were caught by opening the
+file rather than trusting the grep. **This is the same failure the `dependency-graph.md` rule
+exists for: validate by diffing against source, never by checking the rows you already have.**
+
+### 2026-08-02 (b) -- post-landing reconciliation (PARTIAL passes, no dates advanced)
+
+Ran after the 2026-08-02 (a) sweep below, against the code as it stood at the END of the day —
+the token-mint move (D-309), the `writeProjectPartial` normalization (D-308), the
+`WIZARD_SETTINGS_OVERLAY` withdrawal (D-307), `update`'s registered-project refresh and the dual
+`bin` mapping all landed after (a) had already annotated several files. Scope: **`.ai-docs/` only.
+No source, test, `todo/`, `e2e/` or `docs/` file touched. No git command run.**
+
+**No `last_validated` frontmatter was advanced.** All eight files received PARTIAL passes and each
+carries a dated `PARTIAL 2026-08-02 (b)` annotation above the prior one, which is preserved.
+Days Stale in the dashboard is unchanged and still correct; do not recompute it from this entry.
+
+**Statements corrected from FALSE to true (5):**
+
+| Was                                                                                  | Now                                                                               | Verified against                                                                                       |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Guard test is **17 specs** (in BOTH `boundary-map.md` and `config/config-writer.md`) | **23** — and the quantity now exists in ONE doc                                   | Ran the file: `vitest run src/cli/lib/__tests__/config-gate-enforcement.test.ts` → `23 passed`         |
+| Settings overlay "opened from the sources step via HOTKEY_SETTINGS"                  | Withdrawn: both call sites gated on `FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY`       | `feature-flags.ts` (`false`) + the two gated branches in `components/wizard/wizard.tsx`                |
+| `store-map.md` described `showSettings` / `toggleSettings` as live                   | Both annotated dormant, matching the `filterIncompatible` pair's existing wording | Same; `toggleSettings` has no reachable production caller                                              |
+| Binary is `agents-inc` (single registered bin)                                       | `bin` maps **both** `agents-inc` and `agentsinc`; `oclif.bin` stays the one name  | `package.json` `bin` block; the convention comment beside `CLI_INVOKE_COMMAND` in `consts.ts`          |
+| `dependency-graph.md` rows for `init`, `update`, `eject`                             | Missing edges added (see below)                                                   | Enumerated every `commands/**` lib import from source and DIFFED against the rows, per its own note 16 |
+
+**The spec count was fixed by ownership, not just by arithmetic.** Two reference docs restated it
+and BOTH read 17, so correcting both would have rebuilt the same trap. `config/config-writer.md` is
+now declared the owner; `boundary-map.md`'s row names the file instead of the number. The count is
+23 **executable specs**, not 23 `it(` calls — two `it.each` blocks contribute two cases each, which
+is why counting by grep gives 21 and is wrong. That distinction is recorded in the owning doc.
+
+**Missing import edges recorded (`dependency-graph.md`).** The (a) pass states in its own ✗ that it
+covered `edit / compile / eject / uninstall / new *` — **`init` and `update` were never checked,
+and both were wrong**:
+
+- `init` → `lib/config-gate/` (`GateReport` type) and → **`lib/seed/`** (`fetchSeedConfig`,
+  `seedToWizardResult`). The entire `lib/seed/` module was absent from the file.
+- `update` → `recompilePropagatedProjectAgents` (operations), → `lib/config-gate/`
+  (`normalizeProjectPath`), → `lib/configuration/project-config` (`loadProjectConfigFromDir`).
+- `eject` → `lib/loading/` (`SourceLoadResult` type) — pre-existing, found by the same diff.
+- Notes **14a** (update is now a CONTENT fan-out; it writes no pair and deliberately does not go
+  through the gate, which is why `normalizeProjectPath` is exported as a pure matcher) and **14b**
+  (init is the sole consumer of `lib/seed/`) added. `lib/exit-codes` remains correctly excluded by
+  the table's own scope note.
+
+**New coverage added (not corrections):** the `AUTO-GENERATED by agents-inc — DO NOT EDIT` stamp
+emitted by `assembleConfigTypesSource`, including the asymmetry that the CONFIG half carries no
+stamp because it is the hand-editable one (`generateBlankGlobalConfigSource` confirmed stamp-free);
+the `npx agents-inc <cmd>` phrasing convention, which lived only in `consts.ts`; and
+`toHavePluginInRegistry`'s content assertions, which were described as a bare registry lookup.
+
+**Checked and found already correct — recorded because a clean result is only evidence if the check
+is named.** The D-309 mint move is stated accurately in `config/config-writer.md` (§L3 and the
+entry list — seven minting entries, matching the seven `withGateToken` sites in `index.ts`) and in
+`boundary-map.md`'s Data OUT chain; **no doc anywhere still claims `pair-writer` mints its own
+token**, which was the specific risk this pass was asked to sweep for. D-308's
+`writeProjectPartial` normalization, `buildProjectTypesExtras`'s widening, D-304's settings.json
+warn removal, and `update`'s `refreshRegisteredProjects` write-up in `commands/index.md` were all
+already accurate and unchanged.
+
+**One coverage gap opened, not closed:** `src/cli/lib/seed/` has no reference doc. Recorded as
+`[NOT-STARTED]` under Technical Areas with the reason it is worth documenting. Deliberately NOT
+folded into `types/zod-schemas.md`, which scopes itself to `lib/schemas.ts` by its own first line.
+
+**Files touched (8):** `reference/config/config-writer.md`, `reference/boundary-map.md`,
+`reference/architecture-overview.md`, `reference/store-map.md`, `reference/dependency-graph.md`,
+`reference/utilities.md`, `reference/testing/e2e-infrastructure.md`, `DOCUMENTATION_MAP.md`.
+All pass `prettier --check`; the four that failed after editing were re-formatted. **Every one of
+the 41 files under `reference/` is now prettier-clean**, and this map was clean before this pass
+edited it — its only formatting failure was in the block above, which was then fixed. That narrows
+the "prettier fails on `.ai-docs`" entry under Known Tooling Gaps to `standards/`, which this pass
+did not check and does not own.
+
+### 2026-08-02 -- config-gate landing: doc sweep (PARTIAL passes, no dates advanced)
+
+Ran after `src/cli/lib/config-gate/` landed and made a set of previously-true statements false.
+Scope: **documentation and `todo/` only. No source or test file touched. No git command run.**
+
+**No `last_validated` frontmatter was advanced.** Every file below received a PARTIAL pass — the
+config-write surface was re-derived from source, nothing else was — so per the rule at the top of
+this map each carries a dated `PARTIAL 2026-08-02` annotation in its body while its stamp stays
+where it was. Days Stale in the dashboard is therefore unchanged and still correct; do not
+recompute it from this entry.
+
+**Files given a `PARTIAL 2026-08-02` body annotation (4):** `reference/config/config-writer.md`,
+`reference/architecture-overview.md`, `reference/boundary-map.md`,
+`reference/features/operations-layer.md`, plus `reference/dependency-graph.md` (its 2026-08-01 FULL
+basis is preserved beneath the new annotation).
+
+**Files corrected without an annotation (targeted dead-name / behaviour fixes only):**
+`reference/features/configuration.md`, `reference/features/plugin-system.md`,
+`reference/features/agent-system.md`, `reference/features/compilation-pipeline.md`,
+`reference/concepts/scope-system.md`, `reference/concepts/tombstone-pattern.md`,
+`reference/config/config-merger.md`, `reference/config/scope-split.md`,
+`reference/config/configuration.md`, `reference/commands/index.md`, `reference/commands/edit.md`,
+`reference/types/operations-types.md`, `reference/findings-impact-report.md`,
+`reference/testing/infrastructure.md`, `reference/testing/e2e-infrastructure.md`,
+`standards/e2e/README.md`, `standards/e2e-testing-bible.md`, `docs/reference/architecture.md`.
+
+**Dead names swept from live docs.** `writeScopedConfigs`, `regenerateScopeConfigTypes`,
+`writePartialProjectConfig`, `ensureBlankGlobalConfig`, `saveSourceToProjectConfig`,
+`writeStandaloneConfigTypes`, `ScopedConfigWriteResult` and `config-saver.ts` no longer name live
+code. Remaining occurrences are deliberate: historical records (`agent-findings/`, `changelogs/`,
+`todo/TODO-completed.md`, this Validation History) and explicit "the former X" phrasings that
+exist so a reader searching the old name lands on the replacement.
+
+**STEP_TEXT count corrected: 75 -> 77**, re-derived from `e2e/pages/constants.ts` (not carried
+forward). `PROPAGATED_RECOMPILE` and `SOURCE_ADDED` were added by the config-gate work. Both
+owning documents were updated in the same session per the count-ownership rule:
+`reference/testing/e2e-infrastructure.md` and `standards/e2e/README.md`.
+
+**Two behaviour changes recorded in the command docs** (there is no unreleased-changelog
+convention in `changelogs/`, so none was invented): `eject` at `~` now writes the `config-types.ts`
+sibling alongside `config.ts`, and `new marketplace` at `$HOME` is refused by the gate rather than
+merged (that command is behind an off compile-time flag, so no user is affected today).
+
+**The D-240 contract is rewritten, not deprecated.** "A write that propagates RECOMPILES the
+propagated projects' agents itself and returns a `GateReport`; callers render the report." The
+previous caller-owned contract was honoured by `init` and `edit` only, which is why `edit`'s
+project-context source migration and the global `uninstall` both left stale compiled agents.
 
 ### 2026-08-01 -- Index rebuild (0.146.1 + 0.147.0 + 0.147.1 bundle, post four-keeper sweep)
 

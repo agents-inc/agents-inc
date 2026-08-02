@@ -92,7 +92,7 @@ An agent is omitted from its partition's stack when no category slot survives (l
 | `selectedAgents` | names in the global agent partition, or `undefined` when that side is empty            | names NOT in the global agent partition, or `undefined` when that side is empty |
 | everything else  | `...config` spread (descriptions, author, source, marketplace, agentsSource, projects) | `...config` spread                                                              |
 
-The `...config` spread copies every remaining scalar/array to BOTH splits — including `projects`. The authoritative copy is in whichever split the caller writes. In practice the project-context branch of `writeScopedConfigs` overwrites `effectiveGlobalConfig` from an `existing`-spread path, so the duplicated `projects` in `globalConfig` never reaches disk.
+The `...config` spread copies every remaining scalar/array to BOTH splits — including `projects`. The authoritative copy is in whichever split the caller writes. In practice the project branch of `writeScopedFromWizard` overwrites `effectiveGlobalConfig` from an `existing`-spread path, so the duplicated `projects` in `globalConfig` never reaches disk.
 
 ## Tombstone Routing Rationale
 
@@ -169,9 +169,9 @@ The OMIT branch is the load-bearing D-220 semantic: a user who previously remove
 - `computeNewlyAddedSkillIds`, `computeScopeEligibilityGained` — `src/cli/lib/installation/local-installer.ts`.
 - `isActiveAt`, `activeAgentScopeMap`, `activeSkillScopeMap`, `effectivelyExcludedSkillIds` — `src/cli/lib/configuration/scope-predicates.ts` (shared predicates consumed by the generator and the delta helpers).
 - Post-split reconciliation applied to the project half before every write: `reconcileProjectSplitAgainstGlobal` — `src/cli/lib/installation/local-installer.ts`.
-- Call site threading split into writes: `writeScopedConfigs` project-context branch in `local-installer.ts`. Note `splitConfigByScope` is NOT called by `propagateGlobalChangesToProjects` — that path derives its project half from the loaded on-disk config via `retainProjectOwnedSkills` / `retainProjectOwnedAgents` instead.
+- Call site threading split into writes: `writeScopedFromWizard`'s project branch in `config-gate/index.ts`. Note `splitConfigByScope` is NOT called by `propagateGlobalChangesToProjects` — that path derives its project half from the loaded on-disk config via `retainProjectOwnedSkills` / `retainProjectOwnedAgents` instead.
 - `splitConfigByScope` is not re-exported by `src/cli/lib/configuration/index.ts`; import it from `./config-generator`.
-- Unit tests: `config-generator.test.ts` (generator + split), `local-installer.test.ts` (delta helpers + scope-split behavior in `writeScopedConfigs`).
+- Unit tests: `config-generator.test.ts` (generator + split), `local-installer.test.ts` (delta helpers + scope-split behaviour, driven through the gate).
 
 ## Findings That Shaped This Doc
 

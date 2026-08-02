@@ -51,7 +51,7 @@ Re-counted from source on **2026-07-30** (product v0.146.0). Every count below w
 | `Domain`    | 9       | `DOMAINS`                                |
 | `AgentName` | 23      | `AGENT_NAMES`                            |
 
-Authoritative source: `src/cli/types/generated/source-types.ts`. Regenerate with `bun run generate:types`.
+Authoritative source: `src/cli/types/generated/source-types.ts`. Regenerate with `bun run generate:types` — pipeline, phase ordering and traps: [features/code-generation.md](./features/code-generation.md).
 
 **Category definitions (separate file, separate count).** `defaultCategories` in `src/cli/lib/configuration/default-categories.ts` defines **all 89** members as of 0.145.0 — previously 51, with the other 38 auto-synthesized at load time (humanized name, `order: 999`, `exclusive: false`). Of the 89: **27 are `exclusive: true`**, **6 are `required: true`**. Pinned against the generated union by `src/cli/lib/configuration/__tests__/default-categories.test.ts`.
 

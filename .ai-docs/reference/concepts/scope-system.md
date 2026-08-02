@@ -10,7 +10,8 @@ keywords:
     resolveInstallPaths,
     installBaseDir,
     isHomeDirectory,
-    writeScopedConfigs,
+    writeScopedFromWizard,
+    config-gate,
     splitConfigByScope,
     scope-predicates,
     isActiveAt,
@@ -91,9 +92,13 @@ type SkillConfig = {
 type AgentScopeConfig = {
   name: AgentName;
   scope: SkillScope;
+  model?: ModelName;
+  effort?: EffortLevel;
   excluded?: boolean;
 };
 ```
+
+A shared seed payload carries **per-agent scope independently of skill scope**; `agentScopeConfig` in `lib/seed/seed-to-wizard.ts` defaults an absent scope to `"project"`. See [features/seed-contract.md](../features/seed-contract.md). The `model` / `effort` pair is documented in [features/model-and-effort.md](../features/model-and-effort.md).
 
 ## Scope Predicates
 
@@ -134,15 +139,15 @@ Splits a `ProjectConfig` into global and project partitions by skill/agent scope
 
 > **Detailed partition rules, stack routing, and delta pipeline:** See [config/scope-split.md](../config/scope-split.md).
 
-**Writer:** `writeScopedConfigs()` in `src/cli/lib/installation/local-installer.ts`
+**Writer:** `writeScopedFromWizard()` in `src/cli/lib/config-gate/index.ts`
 
 Writes:
 
 1. Global config to `~/.claude-src/config.ts` (standalone) — merged into any existing global config via `mergeGlobalConfigs()`, then written only when `resolveEffectiveGlobalConfig()` reports a change
 2. Project config to `{projectDir}/.claude-src/config.ts` (self-contained snapshot via `generateProjectConfigWithInlinedGlobal()` -- both global and project entries inlined, no import/spread). The split is passed through `reconcileProjectSplitAgainstGlobal()` **first** -- see [Cross-Scope Reconciliation](#cross-scope-reconciliation-before-project-writes) below.
-3. Config-types files: the global config-types is standalone (`writeStandaloneConfigTypes`); the project config-types is written via `regenerateConfigTypes`, whose global-aware branch imports `GlobalSkillId`/`GlobalAgentName` from the global types and extends them with project-only additions when a global install exists (falls back to standalone otherwise)
+3. Config-types files: the global config-types is standalone (emitted only by `config-gate/pair-writer.ts`); the project config-types is written via `regenerateConfigTypes`, whose global-aware branch imports `GlobalSkillId`/`GlobalAgentName` from the global types and extends them with every entry its own `config.ts` names — the inlined global rows included, so the pair stays valid when a later global-scope run narrows those unions (falls back to standalone when no global install exists)
 
-When installing from the home directory (detected via `isHomeDirectory(projectDir)` in `src/cli/lib/installation/is-home-directory.ts`, which compares `fs.realpathSync` of the dir and `os.homedir()`), scope splitting is skipped: a single standalone global config is written via `writeConfigFile` + `writeStandaloneConfigTypes`, and changes propagate to all registered projects via `propagateGlobalChangesToProjects`.
+When installing from the home directory (detected via `isHomeDirectory(projectDir)` in `src/cli/lib/installation/is-home-directory.ts`, which compares `fs.realpathSync` of the dir and `os.homedir()`), scope splitting is skipped: a single standalone global config pair is written via `writeGlobalPair` (both halves from one config, each skipped when unchanged), and changes propagate to all registered projects via `propagateGlobalChangesToProjects` — which also recompiles those projects' agents (D-240).
 
 ## Cross-Scope Reconciliation Before Project Writes
 
@@ -152,10 +157,10 @@ Splitting by scope is **not sufficient** on its own. A project config is written
 
 **Two project-config write paths exist, and this step now runs immediately before both:**
 
-| Write path                                            | File                 | Trigger                                                 |
-| ----------------------------------------------------- | -------------------- | ------------------------------------------------------- |
-| `propagateGlobalChangesToProjects`                    | `local-installer.ts` | A global change fanning out to every registered project |
-| The project-scope save branch of `writeScopedConfigs` | `local-installer.ts` | An ordinary project `init` / `edit`                     |
+| Write path                                    | File                   | Trigger                                                 |
+| --------------------------------------------- | ---------------------- | ------------------------------------------------------- |
+| `propagateGlobalChangesToProjects`            | `local-installer.ts`   | A global change fanning out to every registered project |
+| The project branch of `writeScopedFromWizard` | `config-gate/index.ts` | An ordinary project `init` / `edit`                     |
 
 Before D-279 only the first reconciled at all; the project's own save path handed the raw split straight to the inlining writer. Either path alone can produce the malformed shape, so both must run it.
 
@@ -172,7 +177,7 @@ Before D-279 only the first reconciled at all; the project's own save path hande
 
 `generateConfigSource()` in `src/cli/lib/configuration/config-writer.ts`:
 
-- When `isProjectConfig: true` with `globalConfig` provided (the standard path used by `writeScopedConfigs`): generates a self-contained config snapshot via `generateProjectConfigWithInlinedGlobal()`. Both global and project entries for the same skill ID are preserved (no deduplication). Global entries appear under a `// global` comment, project entries under `// project`. Excluded global entries (tombstones) replace their active global counterparts.
+- When `isProjectConfig: true` with `globalConfig` provided (the standard path used by `writeProjectConfigPair`): generates a self-contained config snapshot via `generateProjectConfigWithInlinedGlobal()`. Both global and project entries for the same skill ID are preserved (no deduplication). Global entries appear under a `// global` comment, project entries under `// project`. Excluded global entries (tombstones) replace their active global counterparts.
 - When `isProjectConfig: true` without `globalConfig` (fallback path): generates a config that imports from the global config and spreads global arrays into skills, agents, and domains.
 
 ## Wizard Scope Guards
@@ -271,7 +276,7 @@ Four paths escaped this rule before D-277; all four are closed:
 
 **The domain-deselect fix is invariant hardening, not a user-visible change.** `toggleDomain` has exactly two callers — `domain-selection.tsx` (the DOMAINS step) and `stack-selection.tsx` (the init-only "start from scratch" branch). `cc edit` hydrates with `initialStep: "build"` and `history: []`, so ESC cannot walk backwards into the DOMAINS step, and `cc init` in a project with a global install routes to the dashboard first. **No keypress path exists** where a domain deselect can see a globally-installed entry; the guarantee is pinned at unit level in `wizard-store.test.ts`, not by an E2E. See `.ai-docs/agent-findings/2026-07-30-domain-deselect-has-no-reachable-ui-surface-in-edit.md`.
 
-**Escape hatches for the user:** to keep a global skill out of a project, leave it out of that project's agent stacks (see `docs/guides/editing-config.md`). To uninstall it outright, edit at global scope — `agents-inc edit` from the home directory.
+**Escape hatches for the user:** to keep a global skill out of a project, leave it out of that project's agent stacks (see `docs/guides/editing-config.md`). To uninstall it outright, edit at global scope — `npx agents-inc edit` from the home directory.
 
 **Agent-roster rebuilds merge rather than replace.** `preselectAgentsFromDomains` retains all tombstones plus every non-project-owned entry outside the selected domains' roster, so a globally installed agent outside that roster is no longer silently uninstalled.
 
@@ -290,6 +295,6 @@ Global skills are merged with project-local skills during source loading — see
 During installation, skills and agents are split by scope before path-dependent operations:
 
 1. `splitConfigByScope()` partitions the merged config
-2. `writeScopedConfigs()` writes global and project configs separately
+2. `writeScopedFromWizard()` writes global and project configs separately
 3. Plugin install/uninstall operations split by scope (`filter(s => s.scope === "global")` / `filter(s => s.scope !== "global")`)
 4. Local skill copy operations split by scope via `resolveInstallPaths()`

@@ -2,7 +2,11 @@
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · SYNC (product 0.146.0) — index-consistency pass. -->
+<!-- VALIDATED 2026-08-02 · PARTIAL
+     ✓ "No Source Line Numbers" (new section), Core Principle 3, the validation-process
+       claim table, self-correction triggers, critical reminders
+     ✗ every other section — still on the 2026-07-30 basis
+-->
 
 # Documentation Bible -- Agents Inc. CLI
 
@@ -17,7 +21,7 @@ last_validated: 2026-07-30
 
 **2. AI-Centric Focus** - Structure for AI parsing: tables, explicit paths, code blocks. No tutorials or explanations of general concepts.
 
-**3. Path Verification** - Every file path MUST be verified to exist before documenting. Every line number MUST be checked against source.
+**3. Path Verification** - Every file path MUST be verified to exist before documenting, and every symbol cited MUST be verified to exist in it. Cite by symbol, never by line number (see "No Source Line Numbers").
 
 **4. Write Verification** - Re-read every file after editing. Never report success without verification.
 
@@ -201,12 +205,17 @@ Three accepted forms for referring to a source file. Pick ONE for a given doc's 
 
 **Agent findings** set canonical paths once in `affected_files:`; prose inside the finding may then use bare names because the header supplies the context.
 
-### Line Numbers and Staleness
+### No Source Line Numbers — Cite by Symbol
 
-Line numbers in documentation go stale as code changes. The validation process handles this:
+**Documentation cites a path and a SYMBOL, never a line number.** Write `` `classifyLocalSkill` in `skills/skill-metadata.ts` ``, not `` `skill-metadata.ts:240` ``. A symbol name survives every edit above it and is greppable; a line number rots on the next unrelated insertion, silently, and reads as authoritative while it does. The same applies to `agent-findings` `partial_note:` fields, which are claims about current code rather than historical record.
 
-- **Line numbers are approximate** - They indicate where to look, not exact positions
-- **Validated dates** track when line numbers were last confirmed against source
+Grounding: all six line citations in `standards/clean-code-standards.md` § 7.2 were checked in the 2026-08-02 (d) pass and **all six pointed at the wrong construct**, one of them at a path that no longer exists. Nothing had reported them as stale because nothing re-derives a line number.
+
+Line ranges in an inventory TABLE whose whole purpose is to locate a declaration are the one tolerated exception, and they still carry the same rot; prefer the symbol column.
+
+**Staleness is tracked per document, not per citation:**
+
+- **Validated dates** track when a doc's claims were last confirmed against source
 - **DOCUMENTATION_MAP.md** tracks validation status for every document
 - **Volatile areas** (store-map, wizard-flow) need validation every 7-14 days
 - **Stable areas** (architecture, utilities) can go 30 days between validations
@@ -217,21 +226,21 @@ The project uses adversarial audits to keep documentation accurate. See the Vali
 
 **Validation steps:**
 
-1. Read every claim in the document (file paths, line numbers, function signatures, counts)
+1. Read every claim in the document (file paths, symbol names, function signatures, counts)
 2. Verify each claim against actual source code using Read/Grep/Glob tools
 3. Fix errors, add omissions
 4. Update the "Last Validated" date in `DOCUMENTATION_MAP.md`
 
 **What to verify:**
 
-| Claim Type                 | How to Verify                                         |
-| -------------------------- | ----------------------------------------------------- |
-| File path                  | Read the file -- does it exist?                       |
-| Line number                | Read the file at that line -- does the content match? |
-| Function signature         | Read the source -- does the signature match exactly?  |
-| Count (e.g., "10 entries") | Grep/count the actual entries                         |
-| Type definition            | Read the type file -- do fields match?                |
-| Data flow description      | Trace through the actual code path                    |
+| Claim Type                 | How to Verify                                        |
+| -------------------------- | ---------------------------------------------------- |
+| File path                  | Read the file -- does it exist?                      |
+| Symbol name                | Grep the file -- is it still declared there?         |
+| Function signature         | Read the source -- does the signature match exactly? |
+| Count (e.g., "10 entries") | Grep/count the actual entries                        |
+| Type definition            | Read the type file -- do fields match?               |
+| Data flow description      | Trace through the actual code path                   |
 
 ### Re-Validation Triggers (Beyond Calendar Cadence)
 
@@ -539,7 +548,7 @@ For a new root-level reference doc in `.ai-docs/`:
 - **Specific** -- every claim has a file path and line reference
 - **Verifiable** -- every claim can be checked against source code
 - **Structured** -- tables and code blocks, not prose
-- **Current** -- validation dates are recent, line numbers match source
+- **Current** -- validation dates are recent, cited symbols still exist in the files named
 - **Minimal** -- documents WHERE things are and WHAT they do, not WHY or HOW in general
 
 ### What to Avoid
@@ -560,7 +569,8 @@ If you notice yourself doing any of these, stop and correct:
 | Trigger                                              | Correction                                             |
 | ---------------------------------------------------- | ------------------------------------------------------ |
 | Documenting without reading code first               | Stop. Read the actual source files.                    |
-| Using generic descriptions instead of file paths     | Stop. Replace with specific paths and line numbers.    |
+| Using generic descriptions instead of file paths     | Stop. Replace with a specific path plus a symbol name. |
+| Citing a source line number                          | Stop. Cite the enclosing symbol instead.               |
 | Describing patterns based on assumptions             | Stop. Verify with Grep/Glob/Read.                      |
 | Writing tutorial-style content                       | Stop. Focus on WHERE things are and WHAT they do.      |
 | Duplicating content from `.claude/skills/`           | Stop. Add a cross-reference instead.                   |
@@ -574,7 +584,7 @@ If you notice yourself doing any of these, stop and correct:
 
 **(You MUST read actual code files before documenting -- never document based on assumptions)**
 
-**(You MUST verify every file path and line number against actual source code)**
+**(You MUST verify every file path and every cited symbol against actual source code -- and cite symbols, never line numbers)**
 
 **(You MUST re-read files after editing to verify changes were written)**
 

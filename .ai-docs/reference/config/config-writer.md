@@ -4,12 +4,19 @@ area: config
 keywords:
   [
     config-writer,
+    config-gate,
     generateConfigSource,
     generateProjectConfigWithInlinedGlobal,
     config-types-writer,
     scope-split,
     global-config,
-    writeScopedConfigs,
+    writeScopedFromWizard,
+    writeProjectConfigPair,
+    reconcileTypesFromDisk,
+    mutateGlobal,
+    propagateGlobalRemoval,
+    ensureBlankPair,
+    writeProjectPartial,
     propagateGlobalChangesToProjects,
     buildProjectTypesExtras,
     projectInstallationExists,
@@ -28,9 +35,9 @@ keywords:
     dropOrphanedDerivedMasks,
     buildProjectCollisionTest,
     isExclusiveCategory,
-    regenerateScopeConfigTypes,
     pruneGlobalEntriesFromRegisteredProjects,
-    ScopedConfigWriteResult,
+    GateReport,
+    GlobalChangeSet,
     recompilePropagatedProjectAgents,
     normalizeProjectPath,
   ]
@@ -43,6 +50,22 @@ related:
 last_validated: 2026-07-30
 ---
 
+<!-- PARTIAL 2026-08-02 (b) · post-landing reconciliation (`last_validated` deliberately NOT moved)
+     ✓ the L4 guard-test spec count only: corrected 17 -> 23 by RUNNING the file
+       (`vitest run src/cli/lib/__tests__/config-gate-enforcement.test.ts` reports 23 passed),
+       not by counting `it(` lines — two `it.each` blocks contribute two cases each. This doc
+       is declared the owner of that count; boundary-map.md's restatement was removed rather
+       than corrected, per the count-ownership rule.
+     ✗ nothing else re-checked beyond the 2026-08-02 (a) basis below
+-->
+<!-- PARTIAL 2026-08-02 · config-gate landing (`last_validated` deliberately NOT moved)
+     ✓ every write site, entry point and caller re-derived from src/cli/lib/config-gate/
+       (index.ts, pair-writer.ts, classify.ts, propagate.ts, recompile.ts, gate-token.ts)
+       and from the migrated call sites — the writer-selection table, the wizard-write
+       branches, propagation callers, the D-240 row, buildProjectTypesExtras
+     ✗ generateConfigSource internals, union-emission internals, both observability
+       gaps, cross-scope masking rules — still on the 2026-07-30 / 2026-08-01 basis
+-->
 <!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
      ✓ "Path normalization", "registerProjectPath — stale-filter semantics" and
        "deregisterProjectPath — removal semantics" only
@@ -61,16 +84,24 @@ last_validated: 2026-07-30
 
 **File:** `src/cli/lib/configuration/config-writer.ts`
 
-Replaced the former `writeProjectSourceConfig()`. Generates TypeScript source strings from `ProjectConfig`.
+Replaced the former `writeProjectSourceConfig()`. **Renders only — it writes nothing.** Every function below returns a TypeScript source string; the module has held no filesystem call since the config-gate landed (2026-08-02), because a rendered pair half that any caller may then write is exactly the ungated write the gate exists to prevent.
 
-| Function                                 | Purpose                                                                                                                                          |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `generateConfigSource()`                 | Main entry: generates config.ts source string                                                                                                    |
-| `writePartialProjectConfig()`            | Writes a `Partial<ProjectConfig>` to `.claude-src/config.ts`, filling `skills`/`agents` defaults; optional `fallbackName` invents a missing name |
-| `generateBlankGlobalConfigSource()`      | Blank global config (empty arrays)                                                                                                               |
-| `generateBlankGlobalConfigTypesSource()` | Blank config-types.ts (all types = `never`)                                                                                                      |
-| `ensureBlankGlobalConfig()`              | Creates blank global config at `~/.claude-src/` if missing                                                                                       |
-| `getGlobalConfigImportPath()`            | Returns absolute path to `~/.claude-src/`                                                                                                        |
+| Function                                 | Purpose                                       |
+| ---------------------------------------- | --------------------------------------------- |
+| `generateConfigSource()`                 | Main entry: generates config.ts source string |
+| `generateBlankGlobalConfigSource()`      | Blank global config (empty arrays)            |
+| `generateBlankGlobalConfigTypesSource()` | Blank config-types.ts (all types = `never`)   |
+| `getGlobalConfigImportPath()`            | Returns absolute path to `~/.claude-src/`     |
+
+`generateConfigSource` is import-restricted: eslint's L2(c) block admits it only inside `config-gate/**` and `configuration/**` (see [The config-gate](#the-config-gate) below).
+
+**Two writers moved out of this module and one module was deleted.** All three were ways to put a config half on disk without the gate:
+
+| Was                                                          | Now                                                                                                                             |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `config-writer.ts::writePartialProjectConfig()`              | `config-gate::writeProjectPartial()` — same defaults and `fallbackName`, plus a `GlobalPairWriteViolation` throw at `$HOME`     |
+| `config-writer.ts::ensureBlankGlobalConfig()`                | `config-gate::ensureBlankPair()` — writes BOTH halves, where the old function wrote `config.ts` alone                           |
+| `configuration/config-saver.ts::saveSourceToProjectConfig()` | `config-gate::mutateGlobal({ kind: "set-source" })` at `$HOME`, `writeProjectPartial()` at project scope; the module is deleted |
 
 The `generateConfigSource()` function accepts an optional `ConfigSourceOptions` parameter:
 
@@ -83,6 +114,8 @@ The `generateConfigSource()` function accepts an optional `ConfigSourceOptions` 
 
 Generates `config-types.ts` files with typed union types narrowed to installed items.
 
+The two emitted template halves (`PROJECT_CONFIG_TYPES_BEFORE`, `PROJECT_CONFIG_INTERFACE_AFTER`), `ProjectConfigTypesOptions`, and why `ProjectAgentName` / `SelectedAgentName` are emitted **strings** rather than exports: [leaf-exports.md](../leaf-exports.md). The `model?` / `effort?` lines these templates emit: [features/model-and-effort.md](../features/model-and-effort.md). Generated configs import from the sibling `./config-types`, never from the package — which is why shipping zero `.d.ts` has been survivable; see [build-and-packaging.md](../build-and-packaging.md), which also records that the documented `@agents-inc/cli/config` jiti alias does **not** resolve under the built CLI.
+
 | Function                             | Purpose                                           |
 | ------------------------------------ | ------------------------------------------------- |
 | `generateConfigTypesSource()`        | Generate standalone config-types.ts from matrix   |
@@ -92,6 +125,10 @@ Generates `config-types.ts` files with typed union types narrowed to installed i
 | `getGlobalConfigTypesPath()`         | Check if global config-types.ts exists            |
 
 When a global installation exists, project `config-types.ts` imports from global and extends with project-only types. Types are narrowed to only installed items (not the full matrix).
+
+**`regenerateConfigTypes` refuses the home directory.** Its first statement is `if (isHomeDirectory(projectDir)) throw new GlobalPairWriteViolation(...)`: `~/.claude-src/config-types.ts` is the global pair's types half, which only the gate writes. The throw is deliberately upstream of `utils/fs.ts`'s runtime tripwire — it names the offending entry point rather than a path, and it still fires in a unit test that mocks `utils/fs`. `generateConfigTypesSource`, `assembleConfigTypesSource` and `regenerateConfigTypes` are also import-restricted to `config-gate/**` and `configuration/**`.
+
+**Every emitted `config-types.ts` opens with a generated-file stamp.** `assembleConfigTypesSource` prefixes the output with the single line `// AUTO-GENERATED by agents-inc — DO NOT EDIT`, ahead of the import block when there is one. It is the ONE place the stamp is written: the blank-global variant (`generateBlankGlobalConfigTypesSource`, which lives in `config-writer.ts`) gets it by routing through the same assembler rather than by carrying its own copy. The product name in that stamp is the `agents-inc` spelling, matching the primary `bin` name and `CLI_INVOKE_COMMAND` — it is emitted content, so a rename has to change this string too. Note the asymmetry: the stamp goes on the TYPES half only. `config.ts` carries none, because it is the hand-editable half — the documented workflow is "edit `config.ts`, then compile", and `reconcileTypesFromDisk` treats the file on disk as the truth and never rewrites it.
 
 ### Union Emission Internals
 
@@ -112,134 +149,218 @@ The four narrowed unions (`SkillId`, `AgentName`, `Domain`, `Category`) in a sta
 
 **`EMPTY_UNION_TYPE` handling.** The module-level constant `EMPTY_UNION_TYPE = "never"` is returned by `formatUnion`, `formatMaybeSectionedUnion`, and `formatSectionedUnion` for an empty member list. `never` is the union identity element: an empty install accepts no member, and a project union that extends an empty global union (`never | "web-framework-react"`) still narrows correctly. Emitting `string` instead would absorb every literal and silently disable type-checking of the generated `config.ts`. This matches `generateBlankGlobalConfigTypesSource`, which emits `never` for the same empty state.
 
+## The config-gate
+
+**Directory:** `src/cli/lib/config-gate/` — `index.ts` is its entire public surface.
+
+Since 2026-08-02, writing `~/.claude-src/config.ts` and its `config-types.ts` sibling (together, **the global pair**) is this module's exclusive privilege. The reason is that the write owes consequences no caller can be relied on to remember: every registered project inlines a snapshot of the global config, so a global write leaves those snapshots stale until the change is fanned out, and their compiled agents stale until those projects are recompiled. Two audited gaps were exactly that — a project-context source migration in `edit` (propagated nothing) and a global `uninstall` (counted the propagated projects but never recompiled them). The gate carries out the consequences itself and hands the caller a `GateReport` to render.
+
+| Private file     | Holds                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pair-writer.ts` | The only code that writes either half. `writeGlobalConfigHalf`, `writeGlobalTypesHalf`, `writeGlobalTypesHalfFromData`, `writeGlobalPair`, `ensureBlankPair`.                                                                                                                                                                                                 |
+| `classify.ts`    | `classifyGlobalChange(prev, next) → GlobalChangeSet`, and the tier predicates that read it.                                                                                                                                                                                                                                                                   |
+| `propagate.ts`   | `writeConfigFile`, `writeProjectConfigPair`, `propagateGlobalChangesToProjects`, `pruneGlobalEntriesFromRegisteredProjects`, `resolveEffectiveGlobalConfig`, `mergeGlobalConfigs`, `registerProjectPath`, `deregisterProjectPath`, `normalizeProjectPath`, `reconcileProjectSplitAgainstGlobal`, `buildProjectTypesExtras`, `buildConfigTypesBackgroundData`. |
+| `recompile.ts`   | `recompilePropagated` — lazily imports `operations/project/recompile-project-agents.js` (a static import would form a load-time `lib → operations → lib` cycle).                                                                                                                                                                                              |
+| `gate-token.ts`  | The `AsyncLocalStorage` write privilege: `withGateToken`, `hasGateToken`, `assertGateToken`, and the `GlobalPairWriteViolation` error.                                                                                                                                                                                                                        |
+| `deps.ts`        | `GateDeps` — loaded matrix + agents, or lazy loaders that classification may decide never to call.                                                                                                                                                                                                                                                            |
+
+### Consequence tiers
+
+`classifyGlobalChange` diffs the config on disk against the config about to be written, over `JSON.parse(JSON.stringify(...))`-normalized forms so an explicitly-`undefined` field and an absent one compare equal. `consequenceTier` reduces the resulting `GlobalChangeSet` to the work owed:
+
+| Tier   | Trigger                                                                                                                     | Pair halves written | Propagates | Regenerates project types | Recompiles | Loads matrix/agents |
+| ------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------- | ---------- | ------------------------- | ---------- | ------------------- |
+| **T1** | skills added/removed/`source`-changed/otherwise changed, agents added/removed/changed, `stack`, `domains`, `selectedAgents` | both                | yes        | yes                       | yes        | yes                 |
+| **T2** | scalars only (any key that is neither one of the five extracted fields nor `projects`)                                      | config half         | yes        | no                        | no         | matrix only         |
+| **T3** | `projects[]` only                                                                                                           | config half         | no         | no                        | no         | no                  |
+| **T4** | nothing moved                                                                                                               | none                | no         | no                        | no         | no                  |
+
+T2 exists because project configs inline the global **scalars** verbatim (`generateConfigSource` emits `source`, `marketplace`, `sources`, `author` into project output), while no generated union is derived from them. A per-skill `source` change is T1, not T2: the compiled reference form depends on it (`<id>:<id>` for a marketplace-sourced skill, the bare id for an ejected one, D-217), so a source change that skipped the recompile would leave every registered project's agents naming a reference that no longer resolves. T3 is the reason a project `uninstall` stays offline — `resolveGateDeps` never calls the lazy loaders for a tier with no consequences.
+
+### Public entry points
+
+| Entry                                              | Used by                                                                                                       | What it writes                                                                        |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `writeScopedFromWizard(args)`                      | `write-project-config.ts` (init/edit), `local-installer::writeConfigAndCompileAgents` (eject/plugin installs) | The scoped pair(s) — see the branches below                                           |
+| `reconcileTypesFromDisk(dir, config, deps, opts?)` | `commands/compile.ts`                                                                                         | The types half only; `config.ts` on disk is the input and is never rewritten          |
+| `writeScaffoldedEntityTypes(dir, data, extras?)`   | `new/skill.ts`, `new/agent.tsx`, `new/marketplace.ts`                                                         | The types half only, after a scaffolded entity widened the unions                     |
+| `mutateGlobal(mutation, deps)`                     | `edit.tsx`, `uninstall.tsx`, `eject.ts`, `configuration/source-manager.ts`                                    | The global config half, then whatever the classification obliges                      |
+| `propagateGlobalRemoval(preRemovalConfig, deps)`   | `uninstall.tsx` (GLOBAL uninstall)                                                                            | Nothing — the pair was just deleted; it prunes and recompiles the registered projects |
+| `ensureBlankPair()`                                | `write-project-config.ts`, `eject.ts`                                                                         | Both blank halves at `~/.claude-src/`, only when `config.ts` is absent                |
+| `writeProjectPartial(dir, partial, opts?)`         | `eject.ts`, `configuration/source-manager.ts`                                                                 | A PROJECT `config.ts` only; throws `GlobalPairWriteViolation` at `$HOME`              |
+| `writeMarketplaceScaffoldConfig(dir, config, ...)` | `new/marketplace.ts`                                                                                          | A scaffolded marketplace's `config.ts`; throws `GlobalPairWriteViolation` at `$HOME`  |
+| `lazyGateDeps(projectDir)`                         | `uninstall.tsx`, `eject.ts`, `source-manager.ts`                                                              | (loaders only) `matrixOnly: true, skipExtraSources: true` matrix + `loadAgentDefs`    |
+
+`applyMigratedGlobalSources`, `mergeGlobalConfigs` and `normalizeProjectPath` are also exported, as pure functions the migration path, the merge documentation and any reader that must MATCH a `projects[]` entry refer to; none of them writes.
+
+**Every entry that writes or drives a write opens the gate token around its whole flow (D-309)** — `writeScopedFromWizard`, `writeScopeConfigTypes`, `reconcileTypesFromDisk`, `writeScaffoldedEntityTypes`, `mutateGlobal`, `propagateGlobalRemoval`, `ensureBlankPair`. `propagateGlobalRemoval` is included even though it reaches only project pairs today: the rule is "a gate entry holds the privilege for its flow", not "the ones whose current implementation needs it". `writeProjectPartial` and `writeMarketplaceScaffoldConfig` are the two exceptions — both refuse `$HOME` as their first act and then write a project's or a marketplace's own config, which the tripwire never guards.
+
+**`writeProjectPartial` normalizes the incoming stack (D-308).** Its callers all read with the LENIENT loader (`loadProjectSourceConfig`), which passes the on-disk stack through untouched, and the writer emits an exclusive category in its BARE form (`"web-framework": "web-framework-react"`, no array). On a load / re-emit round trip that bare value reaches `compactCategories`, which keeps only non-empty arrays — so the category was silently dropped and the user lost an assignment they never touched. The entry now runs `normalizeStackRecord` (the same call `loadProjectConfigFromDir` makes) before filling required fields. The static import is cycle-free because `config-gate/index.ts` already pulls `stacks-loader` in transitively through `configuration/project-config`.
+
+### Enforcement — four layers
+
+A bypass has to defeat all four:
+
+1. **Module privacy (L1).** `installation/index.ts` and `configuration/index.ts` re-export no pair writer. `config-writer.ts` and `config-types-writer.ts` keep their renderers but no longer write; `config-saver.ts` is deleted. A stale `import { writeConfigFile } from "../lib/installation"` is now a TS2305 compile error.
+2. **eslint (L2).** (a) `config-gate/*` is unimportable except `index*`, statically and — via a `no-restricted-syntax` `ImportExpression` selector — dynamically; (b) `writeFile`/`writeFileSync`/`appendFile`/`appendFileSync`/`outputFile` may not be imported from `fs`, `node:fs`, `fs/promises`, `node:fs/promises` or `fs-extra` anywhere in `src/**` outside `utils/fs.ts`; (c) `generateConfigSource`, `generateConfigTypesSource`, `assembleConfigTypesSource` and `regenerateConfigTypes` are import-restricted to `config-gate/**` and `configuration/**`. Tests and e2e are exempt from all three.
+3. **Runtime tripwire (L3).** `src/cli/utils/fs.ts::writeFile` resolves its target and calls `assertGateToken` when it is either half of the pair. Every write in the CLI funnels through that function, and the check is a path comparison, so it catches a concatenated or variable-held path that no static rule can see. **Only `config-gate/index.ts`'s public entry points open the token (D-309)**, each around its whole consequence flow; `pair-writer.ts` and `propagate.ts` REQUIRE it and mint nothing. That is what makes the first three layers load-bearing rather than decorative: while `pair-writer` opened the token inside its own functions, any caller that reached that module — a dynamic import, a re-export — arrived already authorized and the tripwire had nothing to refuse. Authorization is now a property of how the write was ENTERED.
+4. **Guard test (L4).** `src/cli/lib/__tests__/config-gate-enforcement.test.ts` (**23 specs** — this doc owns that count; no other doc may restate it) pins the barrel deletions by name, exercises the real (`importActual`) `utils/fs.writeFile` against both pair paths inside and outside `withGateToken`, asserts the three `$HOME` refusals, proves the private `pair-writer` refuses a caller that reached it by dynamic import (the D-309 spec — it both throws `GlobalPairWriteViolation` and leaves no `config.ts` behind), and runs a source scanner over `src/**` that fails any non-gate file matching BOTH a write primitive AND a pair reference — with a fixture self-test proving the scanner flags the canonical rogue snippet. The count is 23 executable specs, not 23 `it(` calls: two `it.each` blocks contribute two cases each (config half / types half, refused and gated).
+
+The one residual bypass is a dynamic `import("node:fs")` with a fragment-concatenated path and an eslint-disable. That is three deliberate steps, not drift, and closing it would need process-wide `fs` interception.
+
 ## Writer Selection Rule
 
-When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts` where `projectDir` is not the global install root), call `regenerateConfigTypes`. When writing a GLOBAL `config-types.ts` (`~/.claude-src/config-types.ts`), call `writeStandaloneConfigTypes` / `generateConfigTypesSource` directly. Never call `writeStandaloneConfigTypes` for a project path — it bypasses the import-from-global branch in `regenerateConfigTypes` and produces duplicated standalone unions.
+When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts` where `projectDir` is not the global install root), the import-from-global writer `regenerateConfigTypes` applies. When writing the GLOBAL `config-types.ts` (`~/.claude-src/config-types.ts`), the standalone unions apply — and only `pair-writer.ts` may emit them. The former `writeStandaloneConfigTypes` helper no longer exists in any form: `grep` returns nothing, because `pair-writer.ts`'s private `renderStandaloneTypes` took its place and is unreachable from outside the gate.
 
-Call sites in `src/cli/lib/installation/local-installer.ts`:
+| Write site                                                 | Target path                                   | config.ts writer                                             | config-types.ts writer                               |
+| ---------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------- |
+| `writeScopedFromWizard` — home branch                      | `~/.claude-src/config.ts` + types             | `writeGlobalPair`                                            | `writeGlobalPair` (same call, same config)           |
+| `writeScopedFromWizard` — project branch, global write     | `~/.claude-src/config.ts` + types             | `writeGlobalPair`                                            | `writeGlobalPair` (same call, same config)           |
+| `writeScopedFromWizard` — project branch, project write    | `<projectDir>/.claude-src/config.ts` + types  | `writeProjectConfigPair`                                     | `writeProjectConfigPair` → `regenerateConfigTypes`   |
+| `propagateGlobalChangesToProjects` — per-project loop      | `<projectPath>/.claude-src/config.ts` + types | `writeProjectConfigPair`                                     | `writeProjectConfigPair` → `regenerateConfigTypes`   |
+| `mutateGlobal` — after a transform                         | `~/.claude-src/config.ts`                     | `writeGlobalConfigHalf`                                      | (none — a scalar/registration change moves no union) |
+| `reconcileTypesFromDisk` / `writeScopeConfigTypes` — home  | `~/.claude-src/config-types.ts`               | (none — types only)                                          | `writeGlobalTypesHalf`                               |
+| `reconcileTypesFromDisk` / `writeScopeConfigTypes` — other | `<dir>/.claude-src/config-types.ts`           | (none — types only)                                          | `regenerateConfigTypes`                              |
+| `writeScaffoldedEntityTypes` — home                        | `~/.claude-src/config-types.ts`               | (none — types only)                                          | `writeGlobalTypesHalfFromData`                       |
+| `writeScaffoldedEntityTypes` — other                       | `<dir>/.claude-src/config-types.ts`           | (none — types only)                                          | `regenerateConfigTypes`                              |
+| `ensureBlankPair`                                          | `~/.claude-src/config.ts` + types             | `generateBlankGlobalConfigSource`                            | `generateBlankGlobalConfigTypesSource`               |
+| `writeProjectPartial`                                      | `<projectDir>/.claude-src/config.ts`          | `normalizeStackRecord` → `generateConfigSource` (no options) | (none)                                               |
+| `writeMarketplaceScaffoldConfig`                           | `<marketplaceDir>/.claude-src/config.ts`      | `generateConfigSource` (no options)                          | (none)                                               |
 
-| Write site                                                       | Target path                                   | config.ts writer                      | config-types.ts writer       |
-| ---------------------------------------------------------------- | --------------------------------------------- | ------------------------------------- | ---------------------------- |
-| `writeScopedConfigs` — home-context branch (`!isProjectContext`) | `~/.claude-src/config.ts` + types             | `writeConfigFile`                     | `writeStandaloneConfigTypes` |
-| `writeScopedConfigs` — project-context global write              | `~/.claude-src/config.ts` + types             | `writeConfigFile`                     | `writeStandaloneConfigTypes` |
-| `writeScopedConfigs` — project-context project write             | `<projectDir>/.claude-src/config.ts` + types  | `writeConfigFile` (w/ `globalConfig`) | `regenerateConfigTypes`      |
-| `propagateGlobalChangesToProjects` — per-project loop            | `<projectPath>/.claude-src/config.ts` + types | `writeConfigFile` (w/ `globalConfig`) | `regenerateConfigTypes`      |
-| `regenerateScopeConfigTypes` — home leg                          | `~/.claude-src/config-types.ts`               | (none — types only)                   | `writeStandaloneConfigTypes` |
-| `regenerateScopeConfigTypes` — project leg                       | `<projectDir>/.claude-src/config-types.ts`    | (none — types only)                   | `regenerateConfigTypes`      |
+**Write-if-changed.** Every pair write goes through `pair-writer.ts::writeIfChanged`, which skips the write when the file already holds exactly those bytes. Coherence between the two halves does not depend on it — both are always derived from the same config in the same call — but it keeps a projects-only or scalar-only change from churning the mtime of files other tools watch. The boolean a pair writer returns (`GateReport.globalWritten`) means "at least one half was actually rewritten", not "a write was attempted".
 
-`writeStandaloneConfigTypes` is a private helper. Only the three global-types write sites above invoke it; no code outside `local-installer.ts` calls it.
+**`ensureBlankPair` writes both halves.** Its predecessor `ensureBlankGlobalConfig` wrote `config.ts` alone, whose first line is `import type { ProjectConfig } from "./config-types"` — so an `eject` at `~` with no prior install left a config that could not resolve its own types. This is a **behaviour change** landed with the gate; see the `eject` section of [commands/index.md](../commands/index.md).
 
-### `regenerateScopeConfigTypes` — the scope-dispatching entry point
+### Config-types write sites outside the gate
 
-```
-regenerateScopeConfigTypes(projectDir, config, matrix, agents)
-  isHomeDirectory(projectDir) → writeStandaloneConfigTypes(getProjectConfigPath(projectDir), matrix, agents, config)
-  otherwise                   → regenerateConfigTypes(projectDir, Promise.resolve(buildConfigTypesBackgroundData(matrix, agents)), buildProjectTypesExtras(config, matrix))
-```
+There are none. Every caller below reaches a gate entry point, and `regenerateConfigTypes` itself throws at `$HOME`:
 
-It exists so a caller holding a persisted `ProjectConfig` and nothing else applies the D-228 selection rule without re-deriving it. Exported from `local-installer.ts` and re-exported by `src/cli/lib/installation/index.ts`.
+| Caller                                                       | Target                                         | Gate entry                   | Notes                                                                                                       |
+| ------------------------------------------------------------ | ---------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `Compile.refreshConfigTypes` (`src/cli/commands/compile.ts`) | the compiling pass's scope                     | `reconcileTypesFromDisk`     | Once per pass, including the `totalSkillCount === 0` early return. Failure warns. At home it also fans out. |
+| `uninstall.tsx` (GLOBAL)                                     | every registered project                       | `propagateGlobalRemoval`     | Runs AFTER the global manifest removal so project types fall back to standalone.                            |
+| `src/cli/commands/new/skill.ts`                              | `<projectDir>/.claude-src/config-types.ts`     | `writeScaffoldedEntityTypes` | Feature-gated command; passes the just-created skill as `extras`.                                           |
+| `src/cli/commands/new/agent.tsx`                             | `<projectDir>/.claude-src/config-types.ts`     | `writeScaffoldedEntityTypes` | Feature-gated command; passes the just-created agent as `extras`.                                           |
+| `src/cli/commands/new/marketplace.ts`                        | `<marketplaceDir>/.claude-src/config-types.ts` | `writeScaffoldedEntityTypes` | Feature-gated command; no extras. Its `config.ts` goes through `writeMarketplaceScaffoldConfig`.            |
 
-### Config-types write sites outside `local-installer.ts`
+`new skill` and `new agent` run at `process.cwd()`, which may be the home directory. That leg used to fall through to the raw writer's un-narrowed branch (unions covering the whole matrix); `writeScaffoldedEntityTypes` now reads the config off disk and narrows to it. `new marketplace` at `$HOME` is **refused** outright rather than merged — scaffolding there would replace the pair's config half with a config declaring one dummy skill. All three commands are behind compile-time feature flags that are off, so no user is affected today.
 
-| Caller                                                       | Target                                         | Writer                       | Notes                                                                             |
-| ------------------------------------------------------------ | ---------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------- |
-| `Compile.refreshConfigTypes` (`src/cli/commands/compile.ts`) | the compiling pass's scope                     | `regenerateScopeConfigTypes` | Once per pass, including the `totalSkillCount === 0` early return. Failure warns. |
-| `uninstall.tsx` → `pruneGlobalEntriesFromRegisteredProjects` | every registered project                       | `regenerateConfigTypes`      | Runs AFTER the global manifest removal so project types fall back to standalone.  |
-| `src/cli/commands/new/skill.ts`                              | `<projectDir>/.claude-src/config-types.ts`     | `regenerateConfigTypes`      | Feature-gated command; passes the just-created skill as `extras`.                 |
-| `src/cli/commands/new/agent.tsx`                             | `<projectDir>/.claude-src/config-types.ts`     | `regenerateConfigTypes`      | Feature-gated command; passes the just-created agent as `extras`.                 |
-| `src/cli/commands/new/marketplace.ts`                        | `<marketplaceDir>/.claude-src/config-types.ts` | `regenerateConfigTypes`      | Feature-gated command; no extras.                                                 |
-
-All five obey the rule by construction — none calls `writeStandaloneConfigTypes` (it is not exported).
-
-`regenerateConfigTypes` calls are fed already-loaded matrix/agent data via helpers in `local-installer.ts`:
+`regenerateConfigTypes` calls are fed already-loaded matrix/agent data via helpers in `config-gate/propagate.ts`:
 
 - `buildConfigTypesBackgroundData(matrix, agents)` — wraps loaded matrix + agents into `ConfigTypesBackgroundData` (no re-load).
-- `buildProjectTypesExtras(finalConfig, matrix)` — derives project-only `extraSkillIds`, `extraAgentNames`, `extraCategories`, `extraDomains` from the project-scoped entries of the final config.
+- `buildProjectTypesExtras(config, matrix)` — derives `extraSkillIds`, `extraAgentNames`, `extraCategories`, `extraDomains` from **every active (non-excluded)** entry of the config it is given, at either scope, plus that config's own `domains` array and stack category keys. The narrower project-only derivation left the project's unions unable to name the global rows `generateProjectConfigWithInlinedGlobal` writes into the sibling `config.ts`: they were covered only while the global unions still held them, so a later global-scope run that narrowed those unions turned an untouched project's generated config into a type error.
 
-This rule was hardened under task D-228 (project-branch types must use `regenerateConfigTypes`, not `writeStandaloneConfigTypes`).
+This rule was hardened under task D-228 (project-branch types must use `regenerateConfigTypes`) and D-282 (both project-pair write sites must feed `buildProjectTypesExtras` the same effective config — see `writeProjectConfigPair` below).
 
-## `writeScopedConfigs` Branches
+## `writeScopedFromWizard` Branches
 
-**Signature:** `writeScopedConfigs(finalConfig, matrix, agents, projectDir, projectConfigPath, projectInstallationExists): Promise<ScopedConfigWriteResult>`
-where `ScopedConfigWriteResult = { propagatedProjects: string[] }` — the registered project directories this write's propagation rewrote. It is **not** `void`: the caller owns recompiling those projects' agents, because propagation touches only `.claude-src/*.ts` (D-240; see "Propagated-project recompilation" below).
+**Signature:** `writeScopedFromWizard({ finalConfig, matrix, agents, projectDir, projectConfigPath, projectInstallationExists }): Promise<GateReport>` — the same six inputs the former `writeScopedConfigs` took, object-wrapped.
 
-The function has a single top-level fork on `isProjectContext`. Every downstream branch below sits under one of the two top halves.
+```
+GateReport = {
+  globalWritten: boolean            // at least one half of the global pair was actually rewritten
+  changes: GlobalChangeSet          // what moved, as classify.ts saw it
+  propagated: { updated: string[]; skipped: string[] }
+  recompile: PropagatedRecompileSummary   // { recompiledCount, failedCount, warnings }
+}
+```
+
+It is **not** `void`, and — unlike the `ScopedConfigWriteResult` it replaces — it is not a to-do list. The recompile named in `recompile` has already run by the time the promise resolves; the caller renders the report (D-240 as rewritten, below).
+
+The function has a single top-level fork on `isHomeDirectory(projectDir)`. Every downstream branch below sits under one of the two top halves.
 
 ### Context detection — `projectInstallationExists` is a context flag, not a disk check
 
-Both `writeScopedConfigs` and its upstream callers compute the "does a project installation exist?" signal via `!isHomeDirectory(projectDir)`, whose body is the symlink-resolved comparison (with a plain-string fallback when a path cannot be resolved):
+Both `writeScopedFromWizard` and its upstream callers compute the "does a project installation exist?" signal via `!isHomeDirectory(projectDir)`, whose body is the symlink-resolved comparison (with a plain-string fallback when a path cannot be resolved):
 
 ```
 fs.realpathSync(projectDir) !== fs.realpathSync(os.homedir())
 ```
 
-It is computed at these call sites in `local-installer.ts` / `write-project-config.ts`:
+It is computed at these call sites in `config-gate/index.ts` / `local-installer.ts` / `write-project-config.ts`:
 
-- `writeScopedConfigs` computes it locally as `isProjectContext` (shadowing the passed-in `projectInstallationExists` for the global-vs-project fork — see "Parameter redundancy" below).
+- `writeScopedFromWizard` re-derives it as `isHomeDirectory(projectDir)` for the global-vs-project fork, ignoring the passed-in `projectInstallationExists` for that decision — see "Parameter redundancy" below.
 - `installPluginConfig` and `installEject` each compute it as `isProjectInstall` and thread it through `writeConfigAndCompileAgents` into the `projectInstallationExists` parameter.
 - `writeProjectConfig` (operations layer, `src/cli/lib/operations/project/write-project-config.ts`) computes it as `isProjectContext` and passes it in.
 
 **This is a context flag, not a disk check.** It returns `true` whenever `projectDir !== $HOME` after symlink resolution, regardless of whether `.claude-src/config.ts` actually exists on disk. A fresh `cc init` in a brand-new project directory sets the flag to `true` before any config file has been written. The variable name suggests disk presence but the implementation is "we are running inside a project, not from home".
 
-Consequences for the `writeScopedConfigs` project-context skip branch:
+Consequences for the project-branch skip:
 
 ```
 if (projectInstallationExists || hasProjectItems) { /* write project config */ }
 else { /* skipped */ }
 ```
 
-In production the flag is always `true` for any `cc init` / `cc edit` invoked from a project directory — which is the only way to reach the `writeScopedConfigs` project-context path in the first place. The `else` branch is effectively unreachable from production entry points: if `isProjectContext` is `false`, the function returned in the home-context branch above; if `isProjectContext` is `true`, `projectInstallationExists` is also `true` (same computation), so the guard short-circuits. The `|| hasProjectItems` half of the guard exists for unit tests that call `writeScopedConfigs` directly with a mocked-out `projectInstallationExists = false` to exercise the project-items-only path.
+In production the flag is always `true` for any `cc init` / `cc edit` invoked from a project directory — which is the only way to reach the project branch in the first place. The `else` branch is effectively unreachable from production entry points: if `isHomeDirectory(projectDir)` is true the function returned in the home branch above; otherwise `projectInstallationExists` is also `true` (same computation), so the guard short-circuits. The `|| hasProjectItems` half of the guard exists for unit tests that call the entry point directly with a mocked-out `projectInstallationExists = false` to exercise the project-items-only path.
 
 **Debugger's trap:** if you are trying to observe the skip branch firing in a real scenario and cannot, it is because the flag is context-derived and always `true` in project-context calls. The skip branch is test-theatre surface area, not a runtime switch.
 
-### Home-context branch (`!isProjectContext`)
+### Home branch (`isHomeDirectory(projectDir)`)
 
-Taken when `projectDir === $HOME`. Up to three actions:
+Taken when `projectDir === $HOME`. Four actions:
 
-1. `writeConfigFile(finalConfig, projectConfigPath)` — writes `~/.claude-src/config.ts` as a standalone config (no `globalConfig` option, so no inlining preamble).
-2. `writeStandaloneConfigTypes(projectConfigPath, matrix, agents, finalConfig)` — writes `~/.claude-src/config-types.ts`.
-3. If `finalConfig.projects` is empty or absent, return `{ propagatedProjects: [] }`. Otherwise call `propagateGlobalChangesToProjects` (no `currentProjectDir` — every registered project gets the propagation) and return `{ propagatedProjects: result.updated }`.
+1. Load the config already on disk at `$HOME` via `loadProjectConfigFromDir(homeDir)` — the classification's `prev`.
+2. `classifyGlobalChange(prior, finalConfig)` → `GlobalChangeSet`.
+3. `writeGlobalPair(finalConfig, projectConfigPath, matrix, agents)` — both halves from one config, each written only if its bytes moved. The config half is standalone (no inlining preamble); the types half is the standalone unions narrowed to `finalConfig`.
+4. `applyConsequences` — if the tier propagates and `finalConfig.projects?.length`, `propagateGlobalChangesToProjects` (no `currentProjectDir`, so every registered project is reached), then `recompilePropagated(updated)` when the tier regenerates types.
 
-**Step 3 is now reachable (was previously gated by a merger bug):** `mergeConfigs` used to drop the `projects` field from merged configs, so `cc edit` at HOME left `finalConfig.projects` `undefined`, the guard was falsy, and home-context propagation never fired. `mergeConfigs` now preserves `existingConfig.projects` (see [config-merger.md](./config-merger.md) → "`projects` Field Preservation" and finding `2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`), so a `cc edit` at HOME whose merged config carries registered projects does reach `propagateGlobalChangesToProjects`.
+**Step 4 is reachable (was previously gated by a merger bug):** `mergeConfigs` used to drop the `projects` field from merged configs, so `cc edit` at HOME left `finalConfig.projects` `undefined`, the guard was falsy, and home-context propagation never fired. `mergeConfigs` now preserves `existingConfig.projects` (see [config-merger.md](./config-merger.md) → "`projects` Field Preservation" and finding `2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`).
 
-### Project-context branch (`isProjectContext`)
+### Project branch
 
 Taken when `projectDir !== $HOME`. Splits the final config by scope and handles global and project halves separately.
 
-**Global half** (steps 3–4 are delegated to the `resolveEffectiveGlobalConfig` helper, which returns `{ config, globalDataChanged, changed }`; step 2's load runs in `writeScopedConfigs` and is passed into the helper as `existingGlobalConfig`):
+**Global half** (steps 3–4 are delegated to the `resolveEffectiveGlobalConfig` helper, which returns `{ config, globalDataChanged, changed }`; step 2's load runs in the entry point and is passed into the helper as `existingGlobalConfig`):
 
 1. `splitConfigByScope(finalConfig)` → `{ global, project }`. Global half = entries with `scope === "global"`. See [scope-split.md](./scope-split.md) for the full partition rules (tombstone routing, stack partitioning, delta pipeline).
-2. Load existing global config via `loadProjectConfigFromDir(homeDir)` (in `writeScopedConfigs`, before calling the helper).
-3. In `resolveEffectiveGlobalConfig`: if the global split has skills/agents, merge them into the existing global via `mergeGlobalConfigs` (deep-additive, never removes; also fill-only for `marketplace`/`source` — see [config-merger.md](./config-merger.md)); when there are no global items the existing config is used unchanged (`changed: false`). Tracks `globalDataChanged` (= the merge's `changed`).
-4. Still in the helper: `registerProjectPath(mergedConfig, projectDir)` — adds the current project to the global `projects` array (normalized via `normalizeProjectPath`, stale entries filtered). `needsGlobalWrite = globalDataChanged || registration.changed`.
-5. If `needsGlobalWrite`, `ensureDir` then write `~/.claude-src/config.ts` via `writeConfigFile` and `~/.claude-src/config-types.ts` via `writeStandaloneConfigTypes`.
-6. If `globalDataChanged && effectiveGlobalConfig.projects?.length`, call `propagateGlobalChangesToProjects(..., projectDir)` — the `projectDir` argument ensures the current project is skipped in the loop.
+2. Load existing global config via `loadProjectConfigFromDir(homeDir)`.
+3. In `resolveEffectiveGlobalConfig`: if the global split has skills/agents, merge them into the existing global via `mergeGlobalConfigs` (deep-additive, never removes; also fill-only for `marketplace`/`source` — see [config-merger.md](./config-merger.md)); when there are no global items the existing config is used unchanged (`changed: false`).
+4. Still in the helper: `registerProjectPath(mergedConfig, projectDir)` — adds the current project to the global `projects` array (normalized via `normalizeProjectPath`, stale entries filtered). `effective.changed = merged.changed || registration.changed`.
+5. `classifyGlobalChange(existingGlobal?.config, effectiveGlobalConfig)` — the diff, taken against what is actually on disk.
+6. If `effective.changed`, `ensureDir` then `writeGlobalPair(effectiveGlobalConfig, globalConfigPath, matrix, agents)`; otherwise verbose-log `"Global config unchanged, skipping write"`.
+7. `applyConsequences(effectiveGlobalConfig, changes, deps, projectDir)` — propagation and recompile are driven by the **classification**, with `projectDir` passed as `currentProjectDir` so the current project is skipped in the loop.
+
+**The propagation trigger changed here.** It used to be `mergeGlobalConfigs`' `globalDataChanged` flag; it is now the classified change set. That is strictly a superset of the old behaviour: the merge's flag was blind to a per-skill `source` change on an entry that already existed, which is precisely the T1 case whose compiled reference form would go stale. `mergeGlobalConfigs`' `changed` survives as `effective.changed`, gating only the write-skip.
 
 **Project half:**
 
-7. `reconcileProjectSplitAgainstGlobal(projectSplitConfig, effectiveGlobalConfig, matrix)` → `reconciledProjectConfig`. Without this the raw split goes straight to the inlining writer and a project-owned skill plus a colliding live global install both land as active entries (D-279 — see "Cross-Scope Reconciliation" below).
-8. `hasProjectItems` is computed from the **reconciled** config (`reconciledProjectConfig.skills.length > 0 || reconciledProjectConfig.agents.length > 0`), not from the raw split — reconciliation only ever adds mask rows, so it can flip the guard true but never false.
-9. If `projectInstallationExists || hasProjectItems`, write `<projectDir>/.claude-src/config.ts` via `writeConfigFile(reconciledProjectConfig, ...)` with `isProjectConfig: true, globalConfig: effectiveGlobalConfig` (triggers `generateProjectConfigWithInlinedGlobal`).
-10. Same guard: write `<projectDir>/.claude-src/config-types.ts` via `regenerateConfigTypes` using `buildConfigTypesBackgroundData` + `buildProjectTypesExtras(finalConfig, matrix)`. Note the extras are derived from `finalConfig` (the full cross-scope config), not from `reconciledProjectConfig`.
+8. `reconcileProjectSplitAgainstGlobal(projectSplitConfig, effectiveGlobalConfig, matrix)` → `reconciledProjectConfig`. Without this the raw split goes straight to the inlining writer and a project-owned skill plus a colliding live global install both land as active entries (D-279 — see "Cross-Scope Reconciliation" below).
+9. `hasProjectItems` is computed from the **reconciled** config (`reconciledProjectConfig.skills.length > 0 || reconciledProjectConfig.agents.length > 0`), not from the raw split — reconciliation only ever adds mask rows, so it can flip the guard true but never false.
+10. If `projectInstallationExists || hasProjectItems`, `ensureDir` then `writeProjectConfigPair(projectDir, reconciledProjectConfig, effectiveGlobalConfig, matrix, agents)` — one call writing both halves from the same reconciled data.
 11. Else: verbose-log "Skipped project config".
-12. Return `{ propagatedProjects }` (populated at step 6, otherwise `[]`).
+12. Return the `GateReport`.
 
 ### Parameter redundancy
 
-The `projectInstallationExists` parameter is computed the same way as `isProjectContext` inside the function. In production it is always redundant with the local `isProjectContext`. It is retained because:
+The `projectInstallationExists` parameter is computed the same way as the entry point's own `isHomeDirectory(projectDir)` fork. In production it is always redundant. It is retained because:
 
-- Unit tests in `local-installer.test.ts` mock `fs.realpathSync` to force the home-context and project-context branches independently of the passed-in flag.
+- Unit tests mock `fs.realpathSync` to force the home and project branches independently of the passed-in flag.
 - The `|| hasProjectItems` escape hatch in the project-half guard lets tests exercise the "project items only, no installation" path without faking disk state.
+
+### `writeProjectConfigPair` — the single project-pair writer (D-282)
+
+```
+writeProjectConfigPair(projectDir, reconciledSplit, effectiveGlobal, matrix, agents, options?)
+  writeConfigFile(reconciledSplit, getProjectConfigPath(projectDir), { isProjectConfig: true, globalConfig: effectiveGlobal })
+  if (options.regenerateTypes === false) return
+  regenerateConfigTypes(projectDir, Promise.resolve(buildConfigTypesBackgroundData(matrix, agents)),
+                        buildProjectTypesExtras(inlinedProjectView(reconciledSplit, effectiveGlobal), matrix))
+```
+
+Both sites that emit a project pair call it: the project branch above (step 10) and the per-project propagation loop. That is the point. Each site previously fed `buildProjectTypesExtras` a different config — the wizard branch passed the full cross-scope `finalConfig`, propagation passed the project split alone, which holds no active global rows — so a project whose last write came through propagation got a `config-types.ts` declaring fewer literals than its sibling `config.ts` used. `inlinedProjectView` builds the effective view once (the project's reconciled rows unioned with everything the global config contributes: skills, agents, domains, stack) and both halves are derived from it in the same call, so they cannot describe different configs.
+
+`options.regenerateTypes: false` is passed only by a T2 fan-out, where the config half carries a changed scalar and no union has moved.
 
 ## `propagateGlobalChangesToProjects`
 
 **Purpose:** After a global-scope change, rewrite every registered project's `config.ts` (re-inlined global snapshot) and `config-types.ts` (import-from-global form).
 
-**Callers (three production sites):**
+**Callers — all three are inside `config-gate/`. No command calls it directly, and neither barrel re-exports it.**
 
-1. `writeScopedConfigs` home-context branch — fires on home edits when `finalConfig.projects?.length`. Reachable now that `mergeConfigs` preserves `projects` (see below).
-2. `writeScopedConfigs` project-context branch — fires on project edits that change global data (`globalDataChanged`). `projectDir` is passed as `currentProjectDir` so the current project is skipped (it is already being written in the enclosing flow).
-3. `pruneGlobalEntriesFromRegisteredProjects(globalConfig, matrix, agents)` — the global-uninstall fan-out (D-274). It re-enters this same function with an EMPTIED global config (`{ ...globalConfig, skills: [], agents: [], selectedAgents: [] }`) and no `currentProjectDir`, so every global skill/agent reads as removed: inlined global rows and their tombstones drop out, `selectedAgents` and per-agent stack refs lose their global-only names/ids, and each project's `config-types.ts` is regenerated. `selectedAgents` must be emptied alongside the arrays because the project writer re-unions the global `selectedAgents` into the project's. Called from `uninstall.tsx::updateRegisteredProjects` AFTER the global `.claude-src` manifest is removed, so the regenerated project types fall back to the standalone form instead of importing a deleted global `config-types.ts`.
+1. `applyConsequences` — the shared tail of `writeScopedFromWizard` (both branches) and `mutateGlobal`. Fires when `consequenceTier(changes)` propagates (T1 or T2) and the effective global config has registered projects. In the project branch, `projectDir` is passed as `currentProjectDir` so the current project is skipped (it is already being written in the enclosing flow). T2 passes `{ regenerateTypes: false }`.
+2. `reconcileTypesFromDisk` at the home directory — an **unconditional** fan-out (see below).
+3. `pruneGlobalEntriesFromRegisteredProjects(globalConfig, matrix, agents)` — the global-uninstall fan-out (D-274), reached through the `propagateGlobalRemoval` entry point. It re-enters this same function with an EMPTIED global config (`{ ...globalConfig, skills: [], agents: [], selectedAgents: [] }`) and no `currentProjectDir`, so every global skill/agent reads as removed: inlined global rows and their tombstones drop out, `selectedAgents` and per-agent stack refs lose their global-only names/ids, and each project's `config-types.ts` is regenerated. `selectedAgents` must be emptied alongside the arrays because the project writer re-unions the global `selectedAgents` into the project's. Called from `uninstall.tsx::updateRegisteredProjects` AFTER the global `.claude-src` manifest is removed, so the regenerated project types fall back to the standalone form instead of importing a deleted global `config-types.ts`.
 
 **Per-project loop logic:**
 
@@ -252,8 +373,7 @@ The `projectInstallationExists` parameter is computed the same way as `isProject
   - `stack`: `retainReconciledStack` — prunes assignments referencing a global skill just removed at global scope (`computeRemovedGlobalSkillIds` from `projectConfig.skills` vs the new `globalConfig`); untouched projects get byte-identical output.
   - `selectedAgents`: `retainReconciledSelectedAgents` — drops names not backed by a project-owned active agent or a still-active global agent.
 - **Self-heal, then re-mask.** `reconcileProjectSplitAgainstGlobal(projectSplit, globalConfig, matrix)` drops masks whose collision has cleared (`dropOrphanedDerivedMasks` for skills, `dropOrphanedDerivedAgentMasks` for agents — D-277) and then re-derives masks for live global entries the project still collides with (`maskCollidingGlobalSkills` / `maskCollidingGlobalAgents`). Self-heal runs first on both axes so a cleared collision is removed rather than immediately re-derived.
-- **Overwrite config.ts.** `writeConfigFile(projectSplit, projectConfigPath, { isProjectConfig: true, globalConfig })` — re-inlines the new global data.
-- **Overwrite config-types.ts.** `regenerateConfigTypes(projectPath, Promise.resolve(buildConfigTypesBackgroundData(matrix, agents)), buildProjectTypesExtras(projectSplit, matrix))` — emits the import-from-global form with project-only extras.
+- **Overwrite the pair.** `writeProjectConfigPair(projectPath, projectSplit, globalConfig, matrix, agents, { regenerateTypes })` — the same writer the wizard's project branch uses, so both halves are derived from the same effective view (D-282, above). `regenerateTypes` is `false` only for a T2 (scalars-only) fan-out, where the config half carries the changed scalar and no union moved.
 
 ### Stack reconciliation — `computeRemovedGlobalSkillIds` + `retainReconciledStack` (D-233 Scenario C)
 
@@ -264,39 +384,58 @@ The `stack` field of `projectSplit` is not a simple filter — it is reconciled 
 
 **Byte-identical-for-unaffected-projects invariant.** `retainReconciledStack` early-returns the **same** `stack` reference when `!stack || removedGlobalSkillIds.size === 0`. A propagation triggered by a global change that removes no skill the project references therefore yields an identical `stack` object, and the re-emitted `config.ts` is byte-for-byte unchanged. Only projects that actually referenced a removed global skill see a diff. This is what lets a single global edit fan out across every registered project without churning configs that were not affected.
 
-**What it rewrites:** only the two `.claude-src/*.ts` files (`config.ts` + `config-types.ts`). It never touches the project's `.claude/skills/` tree, and it never recompiles anything itself.
+**What `propagateGlobalChangesToProjects` itself rewrites:** only the two `.claude-src/*.ts` files (`config.ts` + `config-types.ts`). It never touches the project's `.claude/skills/` tree, and it never recompiles anything. The recompile is its caller's — which is always the gate.
 
-### Propagated-project recompilation (D-240 — closed)
+### Propagated-project recompilation (D-240 — closed, contract rewritten 2026-08-02)
 
-Propagation being config-only used to leave a registered project's compiled `.claude/agents/<name>.md` embedding a removed global skill until that project was next edited directly. That gap is closed by a caller-side pipeline, not by propagation itself:
+Propagation being config-only used to leave a registered project's compiled `.claude/agents/<name>.md` embedding a removed global skill until that project was next edited directly. The first fix returned the propagated directories and made the **caller** recompile them. That contract was itself the defect class: only `init.tsx` and `edit.tsx`'s wizard tail ever honoured it, so a project-context source migration in `edit` and a global `uninstall` (which counted the propagated projects and stopped) both left stale agents behind.
+
+**The contract now:** a write that propagates recompiles the propagated projects' agents itself and returns a `GateReport`; the caller renders the report.
 
 ```
-writeScopedConfigs        -> ScopedConfigWriteResult.propagatedProjects
-writeProjectConfig        -> ConfigWriteResult.propagatedProjects
-init.tsx / edit.tsx       -> recompilePropagatedProjectAgents(projectDirs)
-                               -> recompileRegisteredProjectAgents(dir)   [per project]
+config-gate::applyConsequences
+  -> propagateGlobalChangesToProjects(...)          [config pairs]
+  -> recompilePropagated(propagated.updated)         [T1 only]
+       -> recompilePropagatedProjectAgents(projectDirs)
+            -> recompileRegisteredProjectAgents(dir)  [per project]
 ```
+
+A report the caller may only log cannot go stale the way a to-do list can, and per-project failure isolation already lived in `recompilePropagatedProjectAgents`, so internalizing the recompile added no new failure mode. `recompile.ts` imports the operations module **lazily** (`await import(...)`) because a static `lib → operations` import would form a load-time cycle — the same rule `installEject`'s `copyLocalSkills` import follows.
+
+**Ordering.** The propagated-project recompile now runs inside the write, before the command's own cwd compile. That is safe because skill files are final before every write path reaches it: `init` copies skills first, `edit` runs `executeMigration` first, and a plugin install hard-errors before the write (D-229).
 
 `recompileRegisteredProjectAgents` (`src/cli/lib/operations/project/recompile-project-agents.ts`) compiles **project scope only** (`scopeFilter: "project"`) — the global agents were already recompiled by the triggering operation's own pass, and repeating a global pass per project would rewrite `~/.claude/agents` once per registered project for no gain. It passes `discoverInstalledSkills(projectDir).allSkills` explicitly, because the default fallback sees plugin skills only and would strip every global-local and project-local skill from the compiled output. Agent partials always come from the CLI itself, so no per-project marketplace resolution happens.
 
-`recompilePropagatedProjectAgents(projectDirs)` loops sequentially with per-project failure isolation and returns `{ recompiledCount, failedCount, warnings }` — one project's unreadable config or broken template must not abort the loop. Warnings are surfaced by the calling command.
+`recompilePropagatedProjectAgents(projectDirs)` loops sequentially with per-project failure isolation and returns `PropagatedRecompileSummary = { recompiledCount, failedCount, warnings }` — one project's unreadable config or broken template must not abort the loop. It is `GateReport.recompile` verbatim. Warnings are surfaced by the calling command.
+
+**Per-command line formats differ and must be preserved.** `init.tsx` and `compile.ts` print `Recompiled agents in N registered projects`; `edit.tsx` prints `... registered project(s)`. Both forms are asserted by e2e page constants — a printer refactor that unifies them turns those specs red.
 
 Finding: `.ai-docs/agent-findings/2026-07-18-propagation-skips-agent-recompile.md` (the original gap report).
 
-**Dependency on `projects` field.** The whole flow is gated on `globalConfig.projects`. The array is maintained exclusively by `registerProjectPath` (during project-context writes in `writeScopedConfigs`) and `deregisterProjectPath` (called from `uninstall`). `mergeConfigs` now preserves `projects` from the existing config, so a home-context `cc edit` retains a `finalConfig.projects` array and the home-context propagation guard fires. The project-context branch was always reachable because it reads `projects` off `effectiveGlobalConfig`, which is built from a `...existing` spread that preserves the field.
+**Dependency on `projects` field.** The whole flow is gated on `globalConfig.projects`. The array is maintained exclusively by `registerProjectPath` (during project-branch writes in `writeScopedFromWizard`) and the gate's `deregister-project` mutation (called from `uninstall`). `mergeConfigs` now preserves `projects` from the existing config, so a home-context `cc edit` retains a `finalConfig.projects` array and the home-branch propagation guard fires. The project branch was always reachable because it reads `projects` off `effectiveGlobalConfig`, which is built from a `...existing` spread that preserves the field.
+
+### `reconcileTypesFromDisk` — why its fan-out is unconditional
+
+`compile` refreshes the type unions from the config **already on disk**, which is the documented hand-edit workflow ("edit `config.ts`, then run `compile`"). The config half is therefore an input and is never rewritten — an e2e asserts byte-identity of the hand-edited file.
+
+That also means there is no `prev` to diff against: a hand edit leaves no record of what it changed, so nothing can be classified. At the home directory the only safe assumption is that every registered project's inlined copy is stale, so the fan-out and the recompile run every time, and `compile` prints the `init`-format recompile line. At project and marketplace directories nothing is propagated — a project config is nobody else's input.
+
+`compile` passes `currentProjectDir: cwd`, so when it runs inside a registered project the home pass skips that project; the project pass compiles its agents itself.
 
 ## Cross-Scope Reconciliation — `reconcileProjectSplitAgainstGlobal` (D-279)
 
-**File:** `src/cli/lib/installation/local-installer.ts`
+**File:** `src/cli/lib/config-gate/propagate.ts`
 
-One helper, called at **every** site that writes a project `config.ts` with the global config inlined. Enumerating the write sites by name is the checkable form of the claim: a grep for `writeConfigFile(..., { isProjectConfig: true, globalConfig })` that returns a third site with no reconciliation call is an immediately visible defect.
+One helper, called at **every** site that writes a project `config.ts` with the global config inlined. Both such sites now go through `writeProjectConfigPair`, so the enumeration is a two-row table and a third row cannot appear without a new caller of that writer:
 
-| Write site                                                                     | Reconciliation call                                                                     |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `writeScopedConfigs` project-context branch (ordinary project `init` / `edit`) | `reconcileProjectSplitAgainstGlobal(projectSplitConfig, effectiveGlobalConfig, matrix)` |
-| `propagateGlobalChangesToProjects` per-project loop                            | `reconcileProjectSplitAgainstGlobal(projectSplit, globalConfig, matrix)`                |
+| Write site                                                                | Reconciliation call                                                                     |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `writeScopedFromWizard` project branch (ordinary project `init` / `edit`) | `reconcileProjectSplitAgainstGlobal(projectSplitConfig, effectiveGlobalConfig, matrix)` |
+| `propagateGlobalChangesToProjects` per-project loop                       | `reconcileProjectSplitAgainstGlobal(projectSplit, globalConfig, matrix)`                |
 
-Before D-279 only the propagation site reconciled, and only on identity. The `writeScopedConfigs` site performed none at all, so a project owning a skill at project scope while the same id was already active globally got TWO active entries in its own `config.ts` with no propagation involved. `doctor` reported the install clean and `validate` exited 0, because neither checks config semantics.
+Both call it BEFORE `writeProjectConfigPair`, not inside it — reconciliation needs the split each site derives its own way (a scope split from the wizard, a retain-and-prune pass from the loaded project config in propagation).
+
+Before D-279 only the propagation site reconciled, and only on identity. The wizard's project-branch site performed none at all, so a project owning a skill at project scope while the same id was already active globally got TWO active entries in its own `config.ts` with no propagation involved. `doctor` reported the install clean and `validate` exited 0, because neither checks config semantics.
 
 ### Composition
 
@@ -344,35 +483,40 @@ Findings: `2026-07-29-project-config-written-by-two-paths-only-one-reconciled.md
 
 ## `projects` Field Lifecycle
 
-The `projects: string[]` field on the GLOBAL `ProjectConfig` at `~/.claude-src/config.ts` is the registry of every project directory that has invoked `cc init` / `cc edit` and triggered a global write. It drives `propagateGlobalChangesToProjects` — the per-project types/config fan-out on global edits. Only two functions read or write the field, and both sit in `src/cli/lib/installation/local-installer.ts`.
+The `projects: string[]` field on the GLOBAL `ProjectConfig` at `~/.claude-src/config.ts` is the registry of every project directory that has invoked `cc init` / `cc edit` and triggered a global write. It drives `propagateGlobalChangesToProjects` — the per-project types/config fan-out on global edits. Only the gate reads or writes the field; every function below lives in `src/cli/lib/config-gate/propagate.ts`.
 
 ### Ownership
 
-| Function                           | Operation             | Trigger                                                                                    | Persists field? |
-| ---------------------------------- | --------------------- | ------------------------------------------------------------------------------------------ | --------------- |
-| `registerProjectPath`              | Append + stale-filter | `writeScopedConfigs` project-context branch (every project-context write)                  | Yes             |
-| `deregisterProjectPath`            | Remove                | Every PROJECT `uninstall` (`src/cli/commands/uninstall.tsx`) — unconditional since D-274   | Yes             |
-| `propagateGlobalChangesToProjects` | Read-only             | Post-global-write in `writeScopedConfigs` (both branches) and the global-uninstall fan-out | No              |
+| Function                                       | Operation             | Trigger                                                                                                            | Persists field? |
+| ---------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------- |
+| `registerProjectPath`                          | Append + stale-filter | `writeScopedFromWizard` project branch, via `resolveEffectiveGlobalConfig` (every project-context write)           | Yes             |
+| `mutateGlobal({ kind: "deregister-project" })` | Remove                | Every PROJECT `uninstall` (`src/cli/commands/uninstall.tsx`) — unconditional since D-274                           | Yes             |
+| `propagateGlobalChangesToProjects`             | Read-only             | Post-global-write in `applyConsequences`, in `reconcileTypesFromDisk` at home, and in the global-uninstall fan-out | No              |
 
-**D-274 changed the deregister trigger.** `uninstall --all` no longer exists; plain `uninstall` does what `--all` used to do, and the config manifest (`.claude-src/config.ts` + `config-types.ts`) is removed unconditionally, with `.claude-src/` itself removed once empty. A project uninstall therefore ALWAYS calls `deregisterProjectPath(projectDir)`. The call is wrapped in a `try/catch` that warns (`"Could not update the global project registry: ..."`) — a missing, project-less, or corrupt (`ConfigLoadError`) global config must never fail the uninstall. A GLOBAL uninstall does not deregister; it runs `pruneGlobalEntriesFromRegisteredProjects` instead.
+**D-274 changed the deregister trigger.** `uninstall --all` no longer exists; plain `uninstall` does what `--all` used to do, and the config manifest (`.claude-src/config.ts` + `config-types.ts`) is removed unconditionally, with `.claude-src/` itself removed once empty. A project uninstall therefore ALWAYS deregisters. The call is wrapped in a `try/catch` that warns (`"Could not update the global project registry: ..."`) — a missing, project-less, or corrupt (`ConfigLoadError`) global config must never fail the uninstall. A GLOBAL uninstall does not deregister; it runs `propagateGlobalRemoval` (→ `pruneGlobalEntriesFromRegisteredProjects`) instead.
+
+**The deregistration is classified T3, which is why the uninstall stays offline.** `uninstall.tsx` hands `mutateGlobal` the `lazyGateDeps(projectDir)` loaders rather than a loaded matrix; a `projects[]`-only change propagates nothing, so `resolveGateDeps` never calls them and nothing is fetched. The types half is not rewritten either — no union is derived from the registration list, so the derived content would be byte-identical and `writeIfChanged` would skip it anyway.
+
+`propagate.ts` still carries a standalone `deregisterProjectPath(projectDir)`. It is on **no production path** since the gate landed — `mutateGlobal`'s `deregister-project` variant replaced it at the only call site — and is reachable from tests only. Since D-309 it no longer opens the gate token for its one config-half write: private code does not mint the privilege, and with no public entry left to move the mint up to, its remaining (spec) callers wrap the call in `withGateToken` themselves.
 
 No other code in the project writes `globalConfig.projects`. `generateConfigSource` in `config-writer.ts` strips `projects` from PROJECT config output via the shared `cleanForEmission(config, { dropProjects })` helper — a single `delete cleaned.projects` gated on `dropProjects`. The two project-config writers pass `dropProjects: true` (the inlined-global path cleans BOTH the project config and the inlined global snapshot; the global-import path cleans the project config), while the standalone writer passes `dropProjects: false`. The field is therefore emitted only in the GLOBAL (standalone) config source.
 
 ### Path normalization — `normalizeProjectPath`
 
-Every value compared against `projects[]` goes through **one module-private helper** in `src/cli/lib/installation/local-installer.ts`:
+Every value compared against `projects[]` goes through **one helper** in `src/cli/lib/config-gate/propagate.ts`:
 
 ```
 normalizeProjectPath(projectDir) -> fs.realpathSync(projectDir)
 ```
 
-| Site                                                      | What it normalizes                                            |
-| --------------------------------------------------------- | ------------------------------------------------------------- |
-| `registerProjectPath`                                     | The path matched against, and appended to, `projects[]`       |
-| `deregisterProjectPath`                                   | The path the `projects[]` filter removes                      |
-| `propagateGlobalChangesToProjects` — current-project skip | `currentProjectDir`, compared against each `projects[]` entry |
+| Site                                                      | What it normalizes                                                       |
+| --------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `registerProjectPath`                                     | The path matched against, and appended to, `projects[]`                  |
+| `mutateGlobal({ kind: "deregister-project" })`            | The path the `projects[]` filter removes (`applyMutation` normalizes it) |
+| `deregisterProjectPath` (gate-internal, no longer called) | The path the `projects[]` filter removes                                 |
+| `propagateGlobalChangesToProjects` — current-project skip | `currentProjectDir`, compared against each `projects[]` entry            |
 
-**Rule going forward: any site that matches a directory against the `projects[]` registry MUST call `normalizeProjectPath` and must not roll its own normalization.** Entries are written and read back under a single rule, so a path stored by one site matches byte-for-byte at the others. The helper is not exported; a fourth site therefore either lives in `local-installer.ts` or forces a deliberate export — which is the point at which the rule gets re-examined rather than silently forked.
+**Rule going forward: any site that matches a directory against the `projects[]` registry MUST call `normalizeProjectPath` and must not roll its own normalization.** Entries are written and read back under a single rule, so a path stored by one site matches byte-for-byte at the others. The helper is exported from `propagate.ts` but that module is gate-private and `config-gate/index.ts` does not re-export it, so a new site either lives inside `config-gate/` or forces a deliberate widening of the gate's public surface — which is the point at which the rule gets re-examined rather than silently forked.
 
 **Scope of the rule.** It governs the `projects[]` registry only. `isHomeDirectory` (`src/cli/lib/installation/is-home-directory.ts`) also compares symlink-resolved directories, but against `$HOME` rather than against a persisted registry, and it keeps its own plain-string `catch` fallback. Do not unify the two — nothing `isHomeDirectory` compares was ever written to disk under a normalization that must be matched later.
 
@@ -380,11 +524,11 @@ normalizeProjectPath(projectDir) -> fs.realpathSync(projectDir)
 
 **Where the throw lands.** The helper is reached late on every path, so a non-existent directory degrades rather than crashing an operation mid-write:
 
-| Caller                                                    | Reached only after                                                                                                                         | On throw                                                                                                                                                                                                           |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `registerProjectPath`                                     | n/a — normalizes first                                                                                                                     | Propagates; the directory is the one currently being written to, so it exists                                                                                                                                      |
-| `deregisterProjectPath`                                   | the `loadProjectConfigFromDir(homeDir)` global-config load AND the `!existingGlobal?.config?.projects?.length` empty-registry early return | Propagates uncaught to the **pre-existing** warn-and-continue guard in `executeUninstall` (`src/cli/commands/uninstall.tsx`): `Could not update the global project registry: <reason>`. The uninstall never fails. |
-| `propagateGlobalChangesToProjects` — current-project skip | the `projects.length === 0` early return, and only when `currentProjectDir` was passed                                                     | Propagates to the caller (`writeScopedConfigs`); the directory is the project being installed, so it exists                                                                                                        |
+| Caller                                                    | Reached only after                                                                                                             | On throw                                                                                                                                                                                                           |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `registerProjectPath`                                     | n/a — normalizes first                                                                                                         | Propagates; the directory is the one currently being written to, so it exists                                                                                                                                      |
+| `mutateGlobal({ kind: "deregister-project" })`            | the `loadProjectConfigFromDir(homeDir)` global-config load AND the `projects.length === 0` early return inside `applyMutation` | Propagates uncaught to the **pre-existing** warn-and-continue guard in `executeUninstall` (`src/cli/commands/uninstall.tsx`): `Could not update the global project registry: <reason>`. The uninstall never fails. |
+| `propagateGlobalChangesToProjects` — current-project skip | the `projects.length === 0` early return, and only when `currentProjectDir` was passed                                         | Propagates to the caller (`writeScopedFromWizard`); the directory is the project being installed, so it exists                                                                                                     |
 
 ### `registerProjectPath` — stale-filter semantics
 
@@ -399,11 +543,13 @@ Append rule:
 
 The stale filter does not warn, error, or deregister — it silently drops. A project that was deleted on disk without `cc uninstall` has its global registration harvested on the next unrelated project write.
 
-### `deregisterProjectPath` — removal semantics
+### Deregistration — removal semantics
+
+Since the gate landed, deregistration is `mutateGlobal({ kind: "deregister-project", projectDir })`; the semantics below are unchanged and now live in `applyMutation`'s `deregister-project` case plus the shared `mutateGlobal` write. (The older standalone `deregisterProjectPath` still compiles inside `propagate.ts` with the same rules, but nothing in production calls it.)
 
 Normalization: `normalizeProjectPath(projectDir)` — `fs.realpathSync`, resolves symlinks. The **same** helper `registerProjectPath` stored the entry under, so the filter matches.
 
-**Normalization asymmetry — CLOSED. Do not reintroduce it.** `deregisterProjectPath` previously normalized with `path.resolve`, which does not resolve symlinks, while `registerProjectPath` stored `fs.realpathSync`. Where a symlink sat above the project root the registered entry (realpath) never matched the deregister input, so the deregister was a silent no-op — the exact "registry keeps propagating into an uninstalled project" failure D-274 set out to prevent. On Linux with no symlinked ancestor the two agreed, which is why the Linux E2E coverage passed throughout; macOS (`/tmp` → `/private/tmp`) and any `~/dev/repo` → `/data/repo` layout leaked registrations forever.
+**Normalization asymmetry — CLOSED. Do not reintroduce it.** The deregister path previously normalized with `path.resolve`, which does not resolve symlinks, while `registerProjectPath` stored `fs.realpathSync`. Where a symlink sat above the project root the registered entry (realpath) never matched the deregister input, so the deregister was a silent no-op — the exact "registry keeps propagating into an uninstalled project" failure D-274 set out to prevent. On Linux with no symlinked ancestor the two agreed, which is why the Linux E2E coverage passed throughout; macOS (`/tmp` → `/private/tmp`) and any `~/dev/repo` → `/data/repo` layout leaked registrations forever.
 
 **The invariant that now holds:** all three registry sites call the single `normalizeProjectPath` helper (see "Path normalization" above), so there is one implementation of the rule and no second one to drift against. This entry is kept rather than deleted because the constraint is invisible in the fixed code — a future edit that inlines `path.resolve` at either end reads as harmless and silently restores the defect.
 
@@ -411,9 +557,9 @@ The general rule, still binding: **a value written to config under one normaliza
 
 > **Correction (2026-07-30):** this paragraph previously described the 2026-04-21 finding as "still marked `partial` on disk, and its `partial_note` describing `path.resolve` as current code is now stale". That was accurate when written and has since been acted on — the finding is now `superseded`, and the false `partial_note` (which also pinned two line numbers that had both moved) was removed rather than rewritten. The two findings had never been cross-linked, which is why resolving one left the other asserting a live bug; see `2026-07-30-sibling-finding-left-open-when-its-duplicate-was-resolved.md` for the proposed pipeline rule.
 
-Filter rule: removes any `projects` entry equal to the normalized path. Writes the updated global config only if the filter actually shortened the array. Early-returns silently if no global config exists or `projects` is empty.
+Filter rule: removes any `projects` entry equal to the normalized path. Writes the updated global config only if the filter actually shortened the array (`applyMutation` returns `null` otherwise, and `mutateGlobal` reports a no-op). Early-returns silently if no global config exists or `projects` is empty.
 
-Does NOT touch `propagateGlobalChangesToProjects` — deregistration is a pure removal and does not rebuild other projects' configs.
+Does NOT reach `propagateGlobalChangesToProjects` — deregistration classifies T3, and a T3 change is not propagated. Deregistration is a pure removal and does not rebuild other projects' configs.
 
 ### `propagateGlobalChangesToProjects` — filter/skip semantics
 
@@ -429,19 +575,20 @@ Per entry in `globalConfig.projects`:
 
 The function never throws and never deregisters stale entries — a skipped project remains in `globalConfig.projects` until `registerProjectPath` sweeps it on the next project-context write. The two sets are returned as `{ updated: string[]; skipped: string[] }`. Whether `skipped` reaches the user depends entirely on which caller invoked the function (below).
 
-### Propagation observability — caller-dependent since D-274
+### Propagation observability — command-dependent
 
-`skipped` is no longer architecturally orphaned; it is consumed by exactly one of the three production callers.
+Since the gate landed, both sets travel to every caller in the same shape (`GateReport.propagated`). What differs is which command renders which field. Two of the four rendering surfaces name `skipped`; two still drop it.
 
-| Caller                                                                                     | Reads `updated`                                                          | Reads `skipped`                                                                     |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| `writeScopedConfigs` home-context branch                                                   | `result.updated.length` → `verbose()` + returned                         | **No** — never referenced                                                           |
-| `writeScopedConfigs` project-context branch                                                | `propagation.updated.length` → `verbose()` + returned                    | **No** — never referenced                                                           |
-| `uninstall.tsx::updateRegisteredProjects` (via `pruneGlobalEntriesFromRegisteredProjects`) | `result.updated.length > 0` → `logSuccess(registeredProjectsUpdated(n))` | **Yes** — one `this.warn(registeredProjectUpdateSkipped(path))` per skipped project |
+| Command surface                                              | Reads `updated`                                                      | Reads `skipped`                                                                     |
+| ------------------------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `init.tsx::reportPropagatedRecompile`                        | `updated.length === 0` early-return, then the recompile summary line | **No** — never referenced                                                           |
+| `edit.tsx::reportPropagatedRecompile`                        | same                                                                 | **No** — never referenced                                                           |
+| `compile.ts::reportPropagation`                              | `updated.length === 0` early-return, then the recompile summary line | **Yes** — one `this.warn(registeredProjectUpdateSkipped(path))` per skipped project |
+| `uninstall.tsx::updateRegisteredProjects` (global uninstall) | `updated.length > 0` → `logSuccess(registeredProjectsUpdated(n))`    | **Yes** — one `this.warn(registeredProjectUpdateSkipped(path))` per skipped project |
 
-So a skipped project is **user-visible on a global uninstall** and **invisible on every init/edit propagation**. Both `writeScopedConfigs` branches now also surface `updated` upward via `ScopedConfigWriteResult.propagatedProjects`, which the commands consume for recompilation — but `skipped` still stops at the function boundary on those paths.
+So a skipped project is **user-visible on a global uninstall and on `compile`**, and **invisible on every init/edit propagation**. The gate's `verbose()` aggregate (`Propagated global changes to N project(s)`) fires on every path.
 
-**Per-branch user-visible signal on the init/edit paths.** `verbose()` only prints when the user passed `--verbose`. Without that flag, every skip branch is invisible and the process exit code is unaffected — `writeScopedConfigs` resolves normally regardless of skip count.
+**Per-branch user-visible signal on the init/edit paths.** `verbose()` only prints when the user passed `--verbose`. Without that flag, every skip branch is invisible and the process exit code is unaffected — the gate resolves normally regardless of skip count.
 
 | Skip branch                                                         | `verbose()` log line                                                        | User-visible without `--verbose` | Exit code impact | Return-value signal                                    |
 | ------------------------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------- | ---------------- | ------------------------------------------------------ |
@@ -456,28 +603,28 @@ Note the `loadProjectConfigFromDir` throw branch now also covers `ConfigLoadErro
 
 **What this means for a debugger.** Reproducing a silent skip on the init/edit paths requires `--verbose` or direct inspection of `skipped` in a unit test. E2E tests that assert propagation succeeded (e.g., `e2e/lifecycle/project-tracking-propagation.e2e.test.ts`) verify `updated` side effects on disk, not `skipped`. A regression that causes all registered projects to silently skip would still pass every test that only checks `updated` for the current project and the exit code.
 
-**Gap summary.** On the two `writeScopedConfigs` paths there is still no standard-output warning, no non-zero exit, no persistent marker, and no E2E assertion that a skipped project fell out of propagation. See finding `.ai-docs/agent-findings/2026-04-21-propagation-skipped-observability-gap.md`; the uninstall path is the pattern the other two could adopt.
+**Gap summary.** On the `init` and `edit` paths there is still no standard-output warning, no non-zero exit, no persistent marker, and no E2E assertion that a skipped project fell out of propagation — even though the gate now hands them the `skipped` list. See finding `.ai-docs/agent-findings/2026-04-21-propagation-skipped-observability-gap.md`; `compile` and `uninstall` are the pattern the other two could adopt, and adopting it is now a four-line printer change rather than a plumbing change.
 
-**No pre-existing ticket covers this observability gap.** D-216 (`todo/D-216-global-config-propagation.md`) tracks the propagation feature mechanics (scope defaults, `writeStandaloneConfigTypes`-vs-`regenerateConfigTypes` at project branch). The `mergeConfigs`-drops-projects finding (`.ai-docs/agent-findings/2026-04-18-mergeConfigs-drops-projects-field.md`, now fixed — see `2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`) tracked one historical reason home-context propagation did not fire, but not the missing signal when per-project skips occur. The normalization-asymmetry findings (`2026-04-21-d233-projects-normalization-asymmetry.md`, `2026-07-25-register-deregister-path-normalization-asymmetry.md`) cover a register/deregister path mismatch — now closed by `normalizeProjectPath` — not the runtime-skip visibility. See finding `.ai-docs/agent-findings/2026-04-21-propagation-skipped-observability-gap.md` for the proposed remediation options.
+**No pre-existing ticket covers this observability gap.** D-216 (`todo/D-216-global-config-propagation.md`) tracks the propagation feature mechanics (scope defaults, standalone-vs-import-and-extend types at the project branch). The `mergeConfigs`-drops-projects finding (`.ai-docs/agent-findings/2026-04-18-mergeConfigs-drops-projects-field.md`, now fixed — see `2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`) tracked one historical reason home-context propagation did not fire, but not the missing signal when per-project skips occur. The normalization-asymmetry findings (`2026-04-21-d233-projects-normalization-asymmetry.md`, `2026-07-25-register-deregister-path-normalization-asymmetry.md`) cover a register/deregister path mismatch — now closed by `normalizeProjectPath` — not the runtime-skip visibility. See finding `.ai-docs/agent-findings/2026-04-21-propagation-skipped-observability-gap.md` for the proposed remediation options.
 
 ### Registration observability
 
 Same architectural class as Propagation observability above (silent drop, caller cannot distinguish, no user signal), different trigger surface. `registerProjectPath`'s stale-filter sweep harvests `projects` entries whose `<entry>/.claude-src/config.ts` is missing on disk. The sweep is the only place stale entries are collected — it runs on every project-context write to global config.
 
-**What gets dropped.** Any `projects` entry whose joined `<entry>/<CLAUDE_SRC_DIR>/<STANDARD_FILES.CONFIG_TS>` fails `fileExists`. Cause is deterministic-only: the config file is absent from disk. Causes in practice: project directory deleted without running `uninstall`, `.claude-src/` manually removed, or path renamed on disk after registration. A fourth cause — a symlinked project whose `deregisterProjectPath` silently no-op'd — is **historical only**: the normalization asymmetry that produced it is closed (see "Path normalization" above), so no new such entries are created; a registry written before the fix may still carry one, and the sweep harvests it like any other.
+**What gets dropped.** Any `projects` entry whose joined `<entry>/<CLAUDE_SRC_DIR>/<STANDARD_FILES.CONFIG_TS>` fails `fileExists`. Cause is deterministic-only: the config file is absent from disk. Causes in practice: project directory deleted without running `uninstall`, `.claude-src/` manually removed, or path renamed on disk after registration. A fourth cause — a symlinked project whose deregistration silently no-op'd — is **historical only**: the normalization asymmetry that produced it is closed (see "Path normalization" above), so no new such entries are created; a registry written before the fix may still carry one, and the sweep harvests it like any other.
 
 **How many are dropped.** The count is computed implicitly as `existing.length - valid.length` but is never stored, returned, or logged. The returned `changed` flag collapses "N stale entries swept" and "current path was appended" into a single boolean — callers cannot distinguish a sweep from an append.
 
 **User-visible signal.**
 
-| Surface                                              | Signal on sweep                                                                                                                             |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Inside-loop log (`verbose()` / `warn()`)             | None — the filter has zero log statements                                                                                                   |
-| Return value                                         | Dropped count not returned; `changed` is a union of "swept" + "appended"                                                                    |
-| Caller (`writeScopedConfigs` project-context branch) | Reads only `regResult.changed` as part of `needsGlobalWrite = globalDataChanged \|\| regResult.changed`. Never branches on sweep-vs-append. |
-| Standard output                                      | None                                                                                                                                        |
-| Exit code                                            | None — `writeScopedConfigs` resolves normally; its `ScopedConfigWriteResult` carries only `propagatedProjects`, never registration deltas   |
-| Persistent marker                                    | None — the entry is removed from the next-written global config silently                                                                    |
+| Surface                                  | Signal on sweep                                                                                                                                |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Inside-loop log (`verbose()` / `warn()`) | None — the filter has zero log statements                                                                                                      |
+| Return value                             | Dropped count not returned; `changed` is a union of "swept" + "appended"                                                                       |
+| Caller (`resolveEffectiveGlobalConfig`)  | Folds `registration.changed` into `effective.changed`, which gates only the write-skip. Never branches on sweep-vs-append.                     |
+| Standard output                          | None                                                                                                                                           |
+| Exit code                                | None — the gate resolves normally. `GateReport.changes.projectsChanged` is a boolean that fires for a sweep and an append alike, never a count |
+| Persistent marker                        | None — the entry is removed from the next-written global config silently                                                                       |
 
 **What this means for the user.** A project that fell off disk is harvested from `globalConfig.projects` on the next unrelated project-context write. Nothing tells the user the registry shrank. If the user later restores the project directory or moves it back, they must re-run `cc init` / `cc edit` from inside it to re-register — the stale sweep gives no warning that this step is needed.
 
@@ -489,16 +636,16 @@ Same architectural class as Propagation observability above (silent drop, caller
 
 `mergeConfigs` in `src/cli/lib/configuration/config-merger.ts` builds `const merged = { ...newConfig }` and copies `existingConfig.projects` forward via `if (existingConfig.projects && !newConfig.projects)`. `newConfig` originates from `buildEjectConfig`, which never sets `projects`, so the guard always fires when the existing global config had registrations. Every write path now preserves the field.
 
-| Write path                                  | Goes through `mergeConfigs`?                                           | `projects` preserved? | Propagation reachable? |
-| ------------------------------------------- | ---------------------------------------------------------------------- | --------------------- | ---------------------- |
-| `writeScopedConfigs` project-context global | No — uses `mergeGlobalConfigs` with `{ ...existing, ... }` spread      | Yes (via spread)      | Yes                    |
-| `writeScopedConfigs` home-context           | Yes — `buildAndMergeConfig → mergeConfigs` before `writeScopedConfigs` | Yes (guard copies it) | Yes                    |
-| `registerProjectPath` output                | No — direct `{ ...globalConfig, projects: [...] }` spread              | Yes                   | n/a (writes only)      |
-| `deregisterProjectPath` output              | No — direct `{ ...existingGlobal.config, projects: filtered }` spread  | Yes                   | n/a                    |
+| Write path                                     | Goes through `mergeConfigs`?                                            | `projects` preserved? | Propagation reachable? |
+| ---------------------------------------------- | ----------------------------------------------------------------------- | --------------------- | ---------------------- |
+| `writeScopedFromWizard` project branch, global | No — uses `mergeGlobalConfigs` with `{ ...existing, ... }` spread       | Yes (via spread)      | Yes                    |
+| `writeScopedFromWizard` home branch            | Yes — `buildAndMergeConfig → mergeConfigs` before the gate is called    | Yes (guard copies it) | Yes                    |
+| `registerProjectPath` output                   | No — direct `{ ...globalConfig, projects: [...] }` spread               | Yes                   | n/a (writes only)      |
+| `mutateGlobal` output                          | No — `applyMutation` spreads the loaded config and overwrites one field | Yes                   | Per tier               |
 
-`register`/`deregister` load GLOBAL config fresh from disk via `loadProjectConfigFromDir(homeDir)`, spread the full loaded object, overwrite only `projects`, and call `writeConfigFile` directly — they never invoke `mergeConfigs`.
+Registration and deregistration load GLOBAL config fresh from disk via `loadProjectConfigFromDir(homeDir)`, spread the full loaded object, overwrite only `projects`, and write the config half — they never invoke `mergeConfigs`.
 
-Since D-273 that load THROWS `ConfigLoadError` on a corrupt global config instead of returning `null`. `deregisterProjectPath` does not catch it — `uninstall.tsx` wraps the call and warns, so a corrupt global config degrades to "registry not updated" rather than a failed uninstall. `resolveEffectiveGlobalConfig`'s caller in `writeScopedConfigs` does NOT wrap its `loadProjectConfigFromDir(homeDir)`, so a corrupt global config aborts a project write before anything is persisted.
+Since D-273 that load THROWS `ConfigLoadError` on a corrupt global config instead of returning `null`. `mutateGlobal` does not catch it — `uninstall.tsx` wraps the call and warns, so a corrupt global config degrades to "registry not updated" rather than a failed uninstall. `writeScopedFromWizard` does NOT wrap its `loadProjectConfigFromDir(homeDir)` (used both as the classification's `prev` and as `resolveEffectiveGlobalConfig`'s input), so a corrupt global config aborts a project write before anything is persisted.
 
 **History:** the home-context path previously dropped `projects` in `mergeConfigs`, making the `if (finalConfig.projects?.length)` propagation guard vacuously falsy for a `cc edit` at HOME. That is fixed (finding `2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`); the earlier D-228 "vacuous pass" E2E workaround in `.ai-docs/agent-findings/2026-04-21-d228-e2e-vacuous-pass-via-home-edit.md` is the historical record.
 
@@ -506,26 +653,32 @@ Since D-273 that load THROWS `ConfigLoadError` on a corrupt global config instea
 
 **Purpose:** Derive the four extras that `regenerateConfigTypes` needs to extend the global unions with project-only additions.
 
-**Filters.** Input is `finalConfig` (the full cross-scope config, not the project split). The function selects entries passing `isActiveAt(entry, "project")` (`scope-predicates.ts`) from both `skills` and `agents`. Excluded tombstones are dropped — their type should still flow in from the global union, not be re-declared as a project-local extra.
+**Filters.** The function keeps every **non-excluded** entry of the config it is handed, at either scope — `skills.filter(s => !s.excluded)` and `agents.filter(a => !a.excluded)`, not a project-scope predicate. Excluded tombstones are dropped; their type flows in from the global union instead of being re-declared as a project-local extra.
+
+The scope-blind filter is deliberate and is the fix recorded as the 2026-08-02 extras widening: `generateProjectConfigWithInlinedGlobal` writes the active global rows into the project's own `config.ts` verbatim, and the imported `Global*` unions cover those rows only while the global config still happens to hold them. A later global-scope run that narrowed those unions turned an untouched project's generated config into a type error (TS2322 on a skill id or domain, TS2353 on a stack category key).
+
+**What it is handed matters as much as what it keeps.** The two project-pair write sites pass `inlinedProjectView(reconciledSplit, effectiveGlobal)` via `writeProjectConfigPair` — the project's own reconciled rows unioned with everything the global config contributes (D-282). `writeScopeConfigTypes`'s non-home leg passes the config it was given directly.
 
 **Derivation rules.** Returns `Required<ConfigTypesExtras>`; the two derived sets go through the shared exported helpers in `config-types-writer.ts`, not inline expressions:
 
-| Extra             | Source                                                                                                                             |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `extraSkillIds`   | `unique(projectSkills.map(s => s.id))`                                                                                             |
-| `extraAgentNames` | `unique(projectAgents.map(a => a.name))`                                                                                           |
-| `extraCategories` | `deriveCategories(projectSkills.map(s => s.id), matrix)` — `matrix.skills[id]?.category` filtered by `isNonLocalCategory`, deduped |
-| `extraDomains`    | `deriveDomains(projectCategories, matrix)` — `matrix.categories[cat]?.domain`, `undefined` dropped, deduped                        |
+| Extra             | Source                                                                                                                                                                       |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extraSkillIds`   | `unique(activeSkills.map(s => s.id))`                                                                                                                                        |
+| `extraAgentNames` | `unique(activeAgents.map(a => a.name))`                                                                                                                                      |
+| `extraCategories` | `unique([...deriveCategories(extraSkillIds, matrix), ...stackCategories(config.stack)])` — matrix-derived categories PLUS the category keys the emitted stack actually holds |
+| `extraDomains`    | `unique([...deriveDomains(extraCategories, matrix), ...(config.domains ?? [])])` — matrix-derived domains PLUS the config's own `domains` array                              |
+
+**Why the stack keys and the `domains` array are unioned in.** `domains` is a wizard preference no skill row has to back, and neither it nor a stack entry is pruned when the last skill that would derive it leaves. Deriving either from the skill rows alone therefore under-declares the unions relative to what the sibling `config.ts` emits.
 
 **Category/domain derivation via matrix lookup.** Categories and domains are not stored on `SkillConfig` — they are attributes of the matrix entry keyed by skill ID. The derivation walks:
 
 ```
-project SkillConfig.id  -->  matrix.skills[id].category  -->  matrix.categories[category].domain
+SkillConfig.id  -->  matrix.skills[id].category  -->  matrix.categories[category].domain
 ```
 
-The `"local"` category is excluded because it is a catch-all sentinel, not a real narrowed type. A project skill whose matrix entry is absent (optional-chaining to `undefined`) is silently dropped — in practice all project skill IDs should resolve against the merged matrix, and absence indicates a stale config; the silent drop is defensive.
+The `"local"` category is excluded because it is a catch-all sentinel, not a real narrowed type. A skill whose matrix entry is absent (optional-chaining to `undefined`) is silently dropped — in practice all skill IDs should resolve against the merged matrix, and absence indicates a stale config; the silent drop is defensive.
 
-The `extraDomains` derivation is category-sourced, not skill-sourced: it maps over `projectCategories` (already deduped and de-"local"'d), not over `projectSkills`. A domain is included iff at least one project-scoped skill belongs to a category in that domain.
+The `deriveDomains` half is category-sourced, not skill-sourced: it maps over `extraCategories` (already deduped and de-"local"'d), not over the skill rows.
 
 ## `buildConfigTypesBackgroundData`
 
@@ -534,13 +687,13 @@ Simple passthrough wrapper. Accepts an already-loaded `matrix` and `agents` reco
 - `agentNames = typedKeys(agents)`
 - `customAgentNames = agentNames.filter(name => agents[name]?.custom === true)`
 
-`regenerateConfigTypes` accepts its background data as a promise. The two project-types call sites in `local-installer.ts` wrap the synchronous helper output in `Promise.resolve(...)` because no background loading is needed — the caller has already resolved the matrix and agents for use in the enclosing `writeScopedConfigs` flow.
+`regenerateConfigTypes` accepts its background data as a promise. The gate's call sites (`writeProjectConfigPair`, `writeScopeConfigTypes`'s non-home leg) wrap the synchronous helper output in `Promise.resolve(...)` because no background loading is needed — the matrix and agents are already resolved, either handed in by the caller or loaded once by `resolveGateDeps`. Only `new marketplace` still passes a genuinely deferred `loadConfigTypesDataInBackground(...)` promise.
 
 ## Config-to-Compile Bridge — `buildCompileAgents` / `buildAgentScopeMap`
 
 **File:** `src/cli/lib/installation/local-installer.ts`
 
-After `writeScopedConfigs` persists `config.ts`, the same final `ProjectConfig` is converted into the shape the agent compiler consumes. Both helpers are called from the shared install tail `writeConfigAndCompileAgents`: `buildCompileAgents(finalConfig, agents)` fills `CompileConfig.agents`, and `buildAgentScopeMap(finalConfig)` is threaded into `compileAndWriteAgents`. This is the bridge from the persisted config (source of truth) to the compiler's per-agent skill inputs.
+After `writeScopedFromWizard` persists `config.ts`, the same final `ProjectConfig` is converted into the shape the agent compiler consumes. Both helpers are called from the shared install tail `writeConfigAndCompileAgents`: `buildCompileAgents(finalConfig, agents)` fills `CompileConfig.agents`, and `buildAgentScopeMap(finalConfig)` is threaded into `compileAndWriteAgents`. This is the bridge from the persisted config (source of truth) to the compiler's per-agent skill inputs.
 
 ### `buildCompileAgents(config, agents)`
 

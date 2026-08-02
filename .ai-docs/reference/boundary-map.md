@@ -1,7 +1,7 @@
 ---
 scope: reference
 area: architecture
-keywords: [boundaries, input, parse, write, exec, security]
+keywords: [boundaries, input, parse, write, exec, security, config-gate, privileged-zone]
 related:
   - reference/architecture-overview.md
   - reference/type-system.md
@@ -9,6 +9,18 @@ related:
 last_validated: 2026-07-30
 ---
 
+<!-- PARTIAL 2026-08-02 (b) · post-landing reconciliation (`last_validated` deliberately NOT moved)
+     ✓ §3.4a enforcement layer (4) only. It restated the guard-test spec count as `17`; the
+       true figure is 23 (verified by running the file). The QUANTITY was REMOVED rather than
+       corrected — config/config-writer.md owns it — so this surface can no longer rot.
+     ✗ nothing else re-checked beyond the 2026-08-02 (a) basis below
+-->
+<!-- PARTIAL 2026-08-02 · config-gate landing (`last_validated` deliberately NOT moved)
+     ✓ §3.1, §3.2, §3.4, the new §3.4a privileged-zone table, the D-279 boundary row and
+       the Data OUT generation chain — re-derived from src/cli/lib/config-gate/,
+       eslint.config.js and src/cli/utils/fs.ts
+     ✗ §1, §2, §4-8 — untouched by this pass; still on the 2026-08-01 / 2026-07-30 basis
+-->
 <!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
      ✓ Key Files table, §1 CLI input boundaries (incl. new 1.4), §7 helper-function table and
        the source-validator.ts parse-cause claims
@@ -34,14 +46,15 @@ last_validated: 2026-07-30
 | `src/cli/hooks/init.ts`                            | Raw argv extraction of `--source` before oclif parsing                                                                                  |
 | `src/cli/utils/terminal.ts`                        | Terminal-geometry predicate + message shared by both size gates (section 1.4)                                                           |
 | `src/cli/utils/exec.ts`                            | Shell execution boundary, input validation                                                                                              |
-| `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits                                                                                                       |
+| `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits; `writeFile()` holds the runtime tripwire on the global config pair (section 3.4a)                    |
+| `src/cli/lib/config-gate/`                         | The only code permitted to write `~/.claude-src/config.ts` + `config-types.ts` — `index.ts` is its whole public surface (section 3.4a)  |
 | `src/cli/lib/schemas.ts`                           | All Zod schemas for parse boundaries + metadata issue splitting (schema count lives in `reference/types/zod-schemas.md`, which owns it) |
 | `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`)                                                                                              |
 | `src/cli/lib/configuration/config-loader.ts`       | jiti TypeScript config loading                                                                                                          |
 | `src/cli/lib/configuration/project-config.ts`      | `.claude-src/config.ts` load boundary; `ConfigLoadError` for corrupt-but-present configs (D-273)                                        |
 | `src/cli/lib/configuration/config-writer.ts`       | Config file generation                                                                                                                  |
 | `src/cli/lib/configuration/config-types-writer.ts` | Writer selection (project=import-from-global, global=standalone, D-228)                                                                 |
-| `src/cli/lib/installation/local-installer.ts`      | Scoped config writes, cross-scope reconciliation, propagation to and pruning of registered projects                                     |
+| `src/cli/lib/installation/local-installer.ts`      | Config build/merge + agent compilation; writes no config file since 2026-08-02                                                          |
 | `src/cli/lib/loading/source-loader.ts`             | Source fetch/network boundary; `matrixOnly` + `skipExtraSources` opt-outs                                                               |
 | `src/cli/lib/stacks/stack-plugin-compiler.ts`      | Stack plugin compilation (`compileStackPlugin`)                                                                                         |
 | `src/cli/lib/compiler.ts`                          | Liquid template sanitization, agent output, per-skill pluginRef derivation (`derivePluginRef`, D-217)                                   |
@@ -151,13 +164,13 @@ Default size limit: `MAX_CONFIG_FILE_SIZE` (1 MB, in `consts.ts`).
 
 ### 2.2 TypeScript Config via `loadConfig` (jiti)
 
-| Property       | Value                                                                                              |
-| -------------- | -------------------------------------------------------------------------------------------------- |
-| **Location**   | `src/cli/lib/configuration/config-loader.ts`                                                       |
-| **Direction**  | IN                                                                                                 |
-| **Data**       | `.claude-src/config.ts`, `config/stacks.ts`, `config/skill-categories.ts`, `config/skill-rules.ts` |
-| **Validation** | Optional Zod schema via `schema.safeParse()`                                                       |
-| **Mechanism**  | jiti dynamic import with module cache disabled, alias for `@agents-inc/cli/config`                 |
+| Property       | Value                                                                                                                                                                                                                                                                                                                                                          |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Location**   | `src/cli/lib/configuration/config-loader.ts`                                                                                                                                                                                                                                                                                                                   |
+| **Direction**  | IN                                                                                                                                                                                                                                                                                                                                                             |
+| **Data**       | `.claude-src/config.ts`, plus `config/stacks.ts`, `config/skill-categories.ts`, `config/skill-rules.ts` — **paths in a skills-source / marketplace repo, not in this repository** (this repo has no `config/` directory; the CLI's own fallbacks are `lib/configuration/default-*.ts`, see [features/built-in-catalogue.md](./features/built-in-catalogue.md)) |
+| **Validation** | Optional Zod schema via `schema.safeParse()`                                                                                                                                                                                                                                                                                                                   |
+| **Mechanism**  | jiti dynamic import with module cache disabled, alias for `@agents-inc/cli/config`                                                                                                                                                                                                                                                                             |
 
 Callers:
 
@@ -217,7 +230,7 @@ Caller handling of `ConfigLoadError` is tabulated in `architecture-overview.md` 
 | `MAX_PLUGIN_FILE_SIZE`      | 1 MB   | `consts.ts` | `plugin-finder.ts`, `plugin-validator.ts`, `versioning.ts`, `marketplace-generator.ts` |
 | `MAX_MARKETPLACE_FILE_SIZE` | 10 MB  | `consts.ts` | `source-fetcher.ts`                                                                    |
 | `MAX_JSON_NESTING_DEPTH`    | 10     | `consts.ts` | `source-fetcher.ts` (marketplace.json)                                                 |
-| `MAX_MARKETPLACE_PLUGINS`   | 10,000 | `consts.ts` | (available for marketplace size validation)                                            |
+| `MAX_MARKETPLACE_PLUGINS`   | 10,000 | `consts.ts` | `source-fetcher.ts` (`fetchMarketplace`)                                               |
 
 All enforced via `readFileSafe()` in `utils/fs.ts` which checks `stats.size` before reading.
 
@@ -263,30 +276,33 @@ Both combinations are byte-identical to the wizard's fully-tagged load for confi
 
 ### 3.1 Config Writer
 
-| Function                                 | File                             | What It Writes                         | Where                          |
-| ---------------------------------------- | -------------------------------- | -------------------------------------- | ------------------------------ |
-| `generateConfigSource()`                 | `configuration/config-writer.ts` | TypeScript config source               | Returns string (caller writes) |
-| `ensureBlankGlobalConfig()`              | `configuration/config-writer.ts` | Global `config.ts` + `config-types.ts` | `~/.claude-src/`               |
-| `generateBlankGlobalConfigSource()`      | `configuration/config-writer.ts` | Empty global config                    | Returns string                 |
-| `generateBlankGlobalConfigTypesSource()` | `configuration/config-writer.ts` | Never-type config types                | Returns string                 |
+`configuration/config-writer.ts` **writes nothing** — every export returns a string. Since 2026-08-02 the only code that puts either half of the global config pair on disk is `src/cli/lib/config-gate/` (see 3.4a).
+
+| Function                                 | File                             | What It Writes           | Where                        |
+| ---------------------------------------- | -------------------------------- | ------------------------ | ---------------------------- |
+| `generateConfigSource()`                 | `configuration/config-writer.ts` | TypeScript config source | Returns string (gate writes) |
+| `generateBlankGlobalConfigSource()`      | `configuration/config-writer.ts` | Empty global config      | Returns string               |
+| `generateBlankGlobalConfigTypesSource()` | `configuration/config-writer.ts` | Never-type config types  | Returns string               |
 
 Config writer uses `JSON.parse(JSON.stringify(x))` to strip undefined values before generating TypeScript source.
 
 ### 3.2 Config Types Writer
 
-| Function                             | File                                   | What It Writes                                                          | Where                                   |
-| ------------------------------------ | -------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------- |
-| `writeStandaloneConfigTypes()`       | `installation/local-installer.ts`      | Fully inlined union types (global path only)                            | `~/.claude-src/config-types.ts`         |
-| `regenerateConfigTypes()`            | `configuration/config-types-writer.ts` | Project config-types.ts; emits import-from-global when global exists    | `<project>/.claude-src/config-types.ts` |
-| `generateConfigTypesSource()`        | `configuration/config-types-writer.ts` | Standalone union source string                                          | Returns string                          |
-| `generateProjectConfigTypesSource()` | `configuration/config-types-writer.ts` | Project source extending global types via `import type`                 | Returns string                          |
-| `loadConfigTypesDataInBackground()`  | `configuration/config-types-writer.ts` | (reads matrix+agents for regen)                                         | Loads in background                     |
-| `getGlobalConfigTypesPath()`         | `configuration/config-types-writer.ts` | (reads, not writes)                                                     | `~/.claude-src/config-types.ts`         |
-| `regenerateScopeConfigTypes()`       | `installation/local-installer.ts`      | Scope-dispatching wrapper — applies the D-228 rule from one entry point | Whichever scope's `config-types.ts`     |
+| Function                             | File                                   | What It Writes                                                       | Where                                   |
+| ------------------------------------ | -------------------------------------- | -------------------------------------------------------------------- | --------------------------------------- |
+| `writeGlobalTypesHalf()`             | `config-gate/pair-writer.ts`           | Standalone union types narrowed to the config (global path only)     | `~/.claude-src/config-types.ts`         |
+| `writeGlobalTypesHalfFromData()`     | `config-gate/pair-writer.ts`           | Same, from background-loaded union inputs (scaffolded entities)      | `~/.claude-src/config-types.ts`         |
+| `regenerateConfigTypes()`            | `configuration/config-types-writer.ts` | Project config-types.ts; emits import-from-global when global exists | `<project>/.claude-src/config-types.ts` |
+| `generateConfigTypesSource()`        | `configuration/config-types-writer.ts` | Standalone union source string                                       | Returns string                          |
+| `generateProjectConfigTypesSource()` | `configuration/config-types-writer.ts` | Project source extending global types via `import type`              | Returns string                          |
+| `loadConfigTypesDataInBackground()`  | `configuration/config-types-writer.ts` | (reads matrix+agents for regen)                                      | Loads in background                     |
+| `getGlobalConfigTypesPath()`         | `configuration/config-types-writer.ts` | (reads, not writes)                                                  | `~/.claude-src/config-types.ts`         |
+| `reconcileTypesFromDisk()`           | `config-gate/index.ts`                 | Scope-dispatching entry — applies the D-228 rule from one place      | Whichever scope's `config-types.ts`     |
+| `writeScaffoldedEntityTypes()`       | `config-gate/index.ts`                 | Same dispatch for `new skill` / `new agent` / `new marketplace`      | Whichever scope's `config-types.ts`     |
 
-**Writer Selection Rule (D-228):** Project path writes go through `regenerateConfigTypes()` — it detects an existing global install and emits `import type { SkillId as GlobalSkillId, ... } from "<relpath>/config-types"` instead of duplicating global unions. Global path writes use `writeStandaloneConfigTypes()` directly. Never call `writeStandaloneConfigTypes()` for a project path — it bypasses the import-from-global branch.
+**Writer Selection Rule (D-228):** Project path writes go through `regenerateConfigTypes()` — it detects an existing global install and emits `import type { SkillId as GlobalSkillId, ... } from "<relpath>/config-types"` instead of duplicating global unions. Global path writes go through `config-gate/pair-writer.ts`. The rule is enforced, not advised: `regenerateConfigTypes()` throws `GlobalPairWriteViolation` when handed the home directory, and the standalone renderer is private to `pair-writer.ts` (the former `writeStandaloneConfigTypes()` export is gone).
 
-`regenerateScopeConfigTypes(projectDir, config, matrix, agents)` is the one place that dispatch lives outside `writeScopedConfigs`: `isHomeDirectory(projectDir)` -> standalone, otherwise import-and-extend. `commands/compile.ts` calls it once per compile pass, including the pass that found no installed skills — the persisted config, not the discovered skills, drives the unions.
+`reconcileTypesFromDisk(projectDir, config, deps, opts?)` holds the dispatch: `isHomeDirectory(projectDir)` -> standalone half, otherwise import-and-extend. `commands/compile.ts` calls it once per compile pass, including the pass that found no installed skills — the persisted config, not the discovered skills, drives the unions. At `$HOME` it also fans the config out to every registered project and recompiles their agents, unconditionally: a hand-edited `config.ts` leaves no prior state to classify against.
 
 ### 3.3 Skill Copier
 
@@ -296,20 +312,35 @@ Config writer uses `JSON.parse(JSON.stringify(x))` to strip undefined values bef
 
 Path traversal validation via `validateSkillPath()` in `skill-copier.ts` -- resolves paths and verifies they stay within the expected parent directory.
 
+Function-level inventory and the copy layering (`copySkillTo`, `copySkill`, `copySkillFromSource`, and the two flattened branches that stamp no `forkedFrom` provenance): [skills/skill-primitives.md](./skills/skill-primitives.md).
+
 ### 3.4 Local Installer
 
-| Function                                     | File                              | What It Writes                                                                                                             | Where                                              |
-| -------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `writeScopedConfigs()`                       | `installation/local-installer.ts` | Scoped config.ts files (global + project)                                                                                  | `.claude-src/config.ts` per scope                  |
-| `compileAndWriteAgents()`                    | `installation/local-installer.ts` | Compiled agent markdown files                                                                                              | `.claude/agents/<name>.md` (project or `~/`)       |
-| `propagateGlobalChangesToProjects()`         | `installation/local-installer.ts` | Re-writes `config.ts` + `config-types.ts` for registered projects                                                          | each tracked project's `.claude-src/`              |
-| `pruneGlobalEntriesFromRegisteredProjects()` | `installation/local-installer.ts` | Same, with an EMPTIED global config so every inlined global row, tombstone, `selectedAgents` name and stack ref is dropped | each tracked project's `.claude-src/`              |
-| `writeStandaloneConfigTypes()`               | `installation/local-installer.ts` | Inlined global unions (global path only, see 3.2)                                                                          | `~/.claude-src/config-types.ts`                    |
-| `regenerateScopeConfigTypes()`               | `installation/local-installer.ts` | Scope-dispatched `config-types.ts` refresh (used by `compile`)                                                             | the compiled scope's `.claude-src/config-types.ts` |
+| Function                  | File                              | What It Writes                | Where                                        |
+| ------------------------- | --------------------------------- | ----------------------------- | -------------------------------------------- |
+| `compileAndWriteAgents()` | `installation/local-installer.ts` | Compiled agent markdown files | `.claude/agents/<name>.md` (project or `~/`) |
 
-Project-scoped `config-types.ts` writes delegate to `regenerateConfigTypes()` (see 3.2).
+`local-installer.ts` no longer writes any config file. Every scoped-config writer it used to own moved into `config-gate/` on 2026-08-02; the module now builds and merges configs (`buildAndMergeConfig`, `buildCompileAgents`, `buildAgentScopeMap`) and hands them to the gate.
 
-**Return-channel contract:** `writeScopedConfigs()` returns `ScopedConfigWriteResult { propagatedProjects: string[] }` — the registered project directories this write rewrote. The caller owns recompiling them; `init.tsx` and `edit.tsx` do so via `recompilePropagatedProjectAgents()` (D-240). `propagateGlobalChangesToProjects()` and `pruneGlobalEntriesFromRegisteredProjects()` both return `{ updated, skipped }`; `skipped` is surfaced to the user by `commands/uninstall.tsx` via `registeredProjectUpdateSkipped()`.
+### 3.4a The config-gate — the only writer of the global pair
+
+**Privileged zone:** `src/cli/lib/config-gate/**`, plus `configuration/config-types-writer.ts` (which the gate drives) and `utils/fs.ts` (which holds the tripwire). Nothing else in `src/` may write `~/.claude-src/config.ts` or `~/.claude-src/config-types.ts`.
+
+| Function                                     | File                         | What It Writes                                                                                                             | Where                                 |
+| -------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `writeGlobalPair()`                          | `config-gate/pair-writer.ts` | Both halves from one config, each skipped when its bytes are unchanged                                                     | `~/.claude-src/`                      |
+| `writeGlobalConfigHalf()`                    | `config-gate/pair-writer.ts` | The config half alone (scalar / registration mutations)                                                                    | `~/.claude-src/config.ts`             |
+| `ensureBlankPair()`                          | `config-gate/pair-writer.ts` | Blank `config.ts` + `config-types.ts` when none exists                                                                     | `~/.claude-src/`                      |
+| `writeScopedFromWizard()`                    | `config-gate/index.ts`       | Scoped config pairs (global + project), then propagates and recompiles                                                     | `.claude-src/` per scope              |
+| `writeProjectConfigPair()`                   | `config-gate/propagate.ts`   | ONE project's `config.ts` + `config-types.ts` from the same effective config (D-282)                                       | `<project>/.claude-src/`              |
+| `propagateGlobalChangesToProjects()`         | `config-gate/propagate.ts`   | Re-writes the pair for every registered project                                                                            | each tracked project's `.claude-src/` |
+| `pruneGlobalEntriesFromRegisteredProjects()` | `config-gate/propagate.ts`   | Same, with an EMPTIED global config so every inlined global row, tombstone, `selectedAgents` name and stack ref is dropped | each tracked project's `.claude-src/` |
+| `writeProjectPartial()`                      | `config-gate/index.ts`       | A PROJECT `config.ts` from a `Partial<ProjectConfig>`; throws at `$HOME`                                                   | `<project>/.claude-src/config.ts`     |
+| `writeMarketplaceScaffoldConfig()`           | `config-gate/index.ts`       | A scaffolded marketplace `config.ts`; throws at `$HOME`                                                                    | `<marketplace>/.claude-src/config.ts` |
+
+**Enforcement (four layers):** (1) neither `installation/index.ts` nor `configuration/index.ts` re-exports a pair writer, and `configuration/config-saver.ts` is deleted; (2) eslint bans importing `config-gate/*` other than `index*` (statically and via `ImportExpression`), bans importing any `writeFile`-family symbol from `fs`/`node:fs`/`fs/promises`/`node:fs/promises`/`fs-extra` outside `utils/fs.ts`, and restricts the pair renderers to `config-gate/**` + `configuration/**`; (3) `utils/fs.ts::writeFile` resolves its target and calls `assertGateToken` when it is either pair path, throwing `GlobalPairWriteViolation`; (4) `src/cli/lib/__tests__/config-gate-enforcement.test.ts` pins the barrel deletions by name, exercises the real `writeFile` inside and outside `withGateToken`, asserts the three `$HOME` refusals, proves the private `pair-writer` refuses a caller that reached it by dynamic import, and source-scans `src/**` for any file holding both a write primitive and a pair reference. **Its spec count is owned by [config/config-writer.md](config/config-writer.md#enforcement--four-layers) and deliberately not restated here** — this row carried a stale `17` through the D-309 landing, which is exactly the drift the count-ownership rule exists to stop.
+
+**Return-channel contract:** every gate entry returns a `GateReport { globalWritten, changes, propagated: { updated, skipped }, recompile }`. It is a **record of completed work**, not a to-do list: a write that propagates has already recompiled the propagated projects' agents (D-240, contract rewritten 2026-08-02). `skipped` is surfaced to the user by `commands/uninstall.tsx` and `commands/compile.ts` via `registeredProjectUpdateSkipped()`; `init.tsx` and `edit.tsx` render only the recompile summary.
 
 **Ordering constraint:** `pruneGlobalEntriesFromRegisteredProjects()` must run **after** the global `.claude-src` manifest is deleted, so each project's regenerated `config-types.ts` falls back to the standalone form instead of importing from a now-missing global `config-types.ts`.
 
@@ -341,13 +372,13 @@ Template root resolution in `createLiquidEngine()` in `compiler.ts`: checks loca
 
 A **write-time invariant boundary**, distinct from the schema boundaries above: it does not validate incoming bytes, it enforces that the config the CLI is about to emit is semantically coherent across scopes. Before D-279 only one of the two project-config write paths reconciled at all, so `doctor` reported clean and `validate` exited 0 on a config carrying two live skills in an exclusive category.
 
-| Property       | Value                                                                                                                        |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Location**   | `src/cli/lib/installation/local-installer.ts`                                                                                |
-| **Function**   | `reconcileProjectSplitAgainstGlobal(projectSplit, globalConfig, matrix)` (module-private)                                    |
-| **Direction**  | OUT (pre-write)                                                                                                              |
-| **Applied at** | `propagateGlobalChangesToProjects()` **and** the project-scope save branch of `writeScopedConfigs()` — both, unconditionally |
-| **Invariant**  | A project's `config.ts` may not hold a live global entry that collides with what the project owns at project scope           |
+| Property       | Value                                                                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Location**   | `src/cli/lib/config-gate/propagate.ts`                                                                                                                                         |
+| **Function**   | `reconcileProjectSplitAgainstGlobal(projectSplit, globalConfig, matrix)` (gate-private)                                                                                        |
+| **Direction**  | OUT (pre-write)                                                                                                                                                                |
+| **Applied at** | `propagateGlobalChangesToProjects()` **and** the project branch of `writeScopedFromWizard()` — both, unconditionally, immediately before the shared `writeProjectConfigPair()` |
+| **Invariant**  | A project's `config.ts` may not hold a live global entry that collides with what the project owns at project scope                                                             |
 
 **Collision test** (`buildProjectCollisionTest()`, shared by the mask producer and the self-heal):
 
@@ -534,6 +565,20 @@ Recursively checks that parsed JSON/YAML does not exceed max nesting depth. Prev
 
 This is the most heavily validated parse boundary: size limit (10 MB), nesting depth (10), and full Zod schema validation.
 
+Fetch and cache mechanics behind this boundary (the local/remote fork, the cache key, giget replication): [features/source-fetch-and-cache.md](./features/source-fetch-and-cache.md).
+
+### 6.5 Shared Seed Config Fetch (`init --from`)
+
+| Property       | Value                                                                                                       |
+| -------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Location**   | `src/cli/lib/seed/fetch-seed.ts`                                                                            |
+| **Direction**  | IN                                                                                                          |
+| **Data**       | JSON seed payload from `AGENTS_INC_API_URL` (default `https://api.agentsinc.sh`), reached via `init --from` |
+| **Validation** | `seedPayloadSchema.safeParse()` — version-pinned (`z.literal(SEED_VERSION)`), unknown keys stripped         |
+| **Mechanism**  | `fetch()`; never throws — every failure is returned as a message (`FetchSeedResult` union)                  |
+
+The wire contract, the version-discard policy and the payload -> `WizardResultV2` mapping: [features/seed-contract.md](./features/seed-contract.md).
+
 ### 6.5 Marketplace Generation
 
 | Function                                        | File                       | Direction                                           |
@@ -584,19 +629,19 @@ Used for validation commands and build-time checks. Reject unknown fields via `.
 
 ### Utility Schemas (Shared Building Blocks)
 
-| Schema                   | File         | Used In                                         |
-| ------------------------ | ------------ | ----------------------------------------------- |
-| `skillIdSchema`          | `schemas.ts` | Validated against generated `SKILL_IDS` array   |
-| `skillSlugSchema`        | `schemas.ts` | Validated against generated `SKILL_SLUGS` array |
-| `categorySchema`         | `schemas.ts` | Validated against generated `CATEGORIES` array  |
-| `categoryPathSchema`     | `schemas.ts` | Known category, "local", or kebab-case          |
-| `domainSchema`           | `schemas.ts` | Validated against generated `DOMAINS` array     |
-| `agentNameSchema`        | `schemas.ts` | Validated against generated `AGENT_NAMES` array |
-| `modelNameSchema`        | `schemas.ts` | `"sonnet" \| "opus" \| "haiku" \| "inherit"`    |
-| `permissionModeSchema`   | `schemas.ts` | Agent permission modes                          |
-| `skillAssignmentSchema`  | `schemas.ts` | Skill assignment objects                        |
-| `stackAgentConfigSchema` | `schemas.ts` | Per-agent stack categories                      |
-| `boundSkillSchema`       | `schemas.ts` | Bound skill entries                             |
+| Schema                   | File         | Used In                                                                                                  |
+| ------------------------ | ------------ | -------------------------------------------------------------------------------------------------------- |
+| `skillIdSchema`          | `schemas.ts` | Validated against generated `SKILL_IDS` array                                                            |
+| `skillSlugSchema`        | `schemas.ts` | Validated against generated `SKILL_SLUGS` array                                                          |
+| `categorySchema`         | `schemas.ts` | Validated against generated `CATEGORIES` array                                                           |
+| `categoryPathSchema`     | `schemas.ts` | Known category, "local", or kebab-case                                                                   |
+| `domainSchema`           | `schemas.ts` | Validated against generated `DOMAINS` array                                                              |
+| `agentNameSchema`        | `schemas.ts` | Validated against generated `AGENT_NAMES` array                                                          |
+| `modelNameSchema`        | `schemas.ts` | `z.enum(MODEL_NAMES)` — five members, see [features/model-and-effort.md](./features/model-and-effort.md) |
+| `permissionModeSchema`   | `schemas.ts` | Agent permission modes                                                                                   |
+| `skillAssignmentSchema`  | `schemas.ts` | Skill assignment objects                                                                                 |
+| `stackAgentConfigSchema` | `schemas.ts` | Per-agent stack categories                                                                               |
+| `boundSkillSchema`       | `schemas.ts` | Bound skill entries                                                                                      |
 
 ### Helper Functions
 
@@ -648,8 +693,13 @@ Shell output  --> JSON.parse(stdout) --> marketplaceInfoListSchema.safeParse() (
 
 ```
 Project config --> reconcileProjectSplitAgainstGlobal() (self-heal masks, then mask collisions)
-                   --> JSON.parse(JSON.stringify(x)) to strip undefined --> generateConfigSource() --> writeFile()
-Config types   --> regenerateScopeConfigTypes() --> {writeStandaloneConfigTypes | regenerateConfigTypes} --> writeFile()
+                   --> writeProjectConfigPair() --> JSON.parse(JSON.stringify(x)) to strip undefined
+                   --> generateConfigSource() --> writeFile()
+Global pair    --> config-gate/index.ts entry opens withGateToken(...) around the whole flow
+                   --> classifyGlobalChange() (tier T1..T4) --> writeIfChanged() --> writeFile()
+                   --> propagateGlobalChangesToProjects() --> recompilePropagated()   [T1]
+Config types   --> {reconcileTypesFromDisk | writeScaffoldedEntityTypes}
+                   --> {pair-writer.renderStandaloneTypes | regenerateConfigTypes} --> writeFile()
 Agent data     --> sanitizeCompiledAgentData() --> Liquid template rendering --> writeFile()
 Skill files    --> validateSkillPath() (traversal check) --> copy()
 Shell commands --> validate{PluginPath|PluginName|MarketplaceSource}() --> spawn() with args array

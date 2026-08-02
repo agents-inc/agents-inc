@@ -36,19 +36,19 @@ last_validated: 2026-08-01
 
 ## Where Content Lives
 
-| Topic                                                                                                 | Destination                                                                                          |
-| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Config file locations, `ProjectConfig` / `SkillConfig` / `AgentScopeConfig` shapes, source resolution | [../features/configuration.md](../features/configuration.md)                                         |
-| `ConfigLoadError` — missing vs blank vs unloadable config (D-273)                                     | [../features/configuration.md](../features/configuration.md)                                         |
-| `defaultCategories` definitions, exclusive/required counts, ordering rule                             | [../features/configuration.md](../features/configuration.md)                                         |
-| D-279 cross-scope reconciliation (masking, self-heal, mask lifetime)                                  | [../features/configuration.md](../features/configuration.md), [config-writer.md](./config-writer.md) |
-| Config writer internals, `generateProjectConfigWithInlinedGlobal`, union emission                     | [config-writer.md](./config-writer.md)                                                               |
-| `writeScopedConfigs` branches, `propagateGlobalChangesToProjects`, the `projects` registry lifecycle  | [config-writer.md](./config-writer.md)                                                               |
-| `config-types.ts` writer selection, `regenerateScopeConfigTypes`, compile/uninstall regeneration      | [config-writer.md](./config-writer.md)                                                               |
-| Merge semantics: `mergeConfigs`, `mergeGlobalConfigs`, `additiveMergeStack`, `mergeAgentCategories`   | [config-merger.md](./config-merger.md)                                                               |
-| Scope partitioning: `splitConfigByScope`, the D-220 delta pipeline                                    | [scope-split.md](./scope-split.md)                                                                   |
-| Cross-cutting scope model (project vs global paths, install-path resolution)                          | [../concepts/scope-system.md](../concepts/scope-system.md)                                           |
-| Tombstone / derived-mask lifecycle                                                                    | [../concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md)                                 |
+| Topic                                                                                                   | Destination                                                                                          |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Config file locations, `ProjectConfig` / `SkillConfig` / `AgentScopeConfig` shapes, source resolution   | [../features/configuration.md](../features/configuration.md)                                         |
+| `ConfigLoadError` — missing vs blank vs unloadable config (D-273)                                       | [../features/configuration.md](../features/configuration.md)                                         |
+| `defaultCategories` definitions, exclusive/required counts, ordering rule                               | [../features/configuration.md](../features/configuration.md)                                         |
+| D-279 cross-scope reconciliation (masking, self-heal, mask lifetime)                                    | [../features/configuration.md](../features/configuration.md), [config-writer.md](./config-writer.md) |
+| Config writer internals, `generateProjectConfigWithInlinedGlobal`, union emission                       | [config-writer.md](./config-writer.md)                                                               |
+| `writeScopedFromWizard` branches, `propagateGlobalChangesToProjects`, the `projects` registry lifecycle | [config-writer.md](./config-writer.md)                                                               |
+| `config-types.ts` writer selection, `reconcileTypesFromDisk`, the config-gate and its enforcement       | [config-writer.md](./config-writer.md)                                                               |
+| Merge semantics: `mergeConfigs`, `mergeGlobalConfigs`, `additiveMergeStack`, `mergeAgentCategories`     | [config-merger.md](./config-merger.md)                                                               |
+| Scope partitioning: `splitConfigByScope`, the D-220 delta pipeline                                      | [scope-split.md](./scope-split.md)                                                                   |
+| Cross-cutting scope model (project vs global paths, install-path resolution)                            | [../concepts/scope-system.md](../concepts/scope-system.md)                                           |
+| Tombstone / derived-mask lifecycle                                                                      | [../concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md)                                 |
 
 ## Why This Path Is Kept
 

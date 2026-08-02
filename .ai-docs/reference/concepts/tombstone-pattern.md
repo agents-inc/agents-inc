@@ -120,7 +120,7 @@ So the `s` scope toggle is the only wizard route to a tombstone, and it always p
 
 ### 1b. Creation outside the wizard — derived conflict masks
 
-The wizard-store rows above are no longer the only creation site. `reconcileProjectSplitAgainstGlobal` (`src/cli/lib/installation/local-installer.ts`) runs immediately before **both** project-config write sites — `propagateGlobalChangesToProjects` and the project-scope save branch of `writeScopedConfigs` — and synthesizes a tombstone (a **derived conflict mask**) when a live global entry collides with the project's own state:
+The wizard-store rows above are no longer the only creation site. `reconcileProjectSplitAgainstGlobal` (`src/cli/lib/config-gate/propagate.ts`) runs immediately before **both** project-config write sites — `propagateGlobalChangesToProjects` and the project branch of `writeScopedFromWizard`, which since D-282 share the single `writeProjectConfigPair` writer — and synthesizes a tombstone (a **derived conflict mask**) when a live global entry collides with the project's own state:
 
 | Collision                                                                                                                  | Helper                                                    | Effect                                                                                                                                                     |
 | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -263,6 +263,8 @@ Internal component within `category-grid.tsx` that renders a single skill option
 
 **Compatibility labels:** `getCompatibilityLabel()` returns labels shown on focus (with labels mode) or always for requiredBy/unmetRequirements. Labels include: `(required by X)`, `(incompatible)`, `(recommended)`, `(discouraged)`, or the unmet-requirements reason.
 
+> The sibling export in that module, `validateBuildStep()`, returns `valid: true` on both branches and has **no production caller** — see [leaf-exports.md](./leaf-exports.md) § `BuildStepValidation`.
+
 **Cell ordering (D-272):** the options in each `CategoryRow` are sorted by `displayName`, lowercased, using remeda's `sortBy` in `buildCategoriesForDomain()` (`src/cli/lib/wizard/build-step-logic.ts`). Before this the order followed matrix and `readdir` insertion order, so the grid reshuffled between runs and between source types. The lowercased ordinal comparison is deliberately locale-independent, so the order is identical on every machine — which is what makes a positional E2E walk over the grid meaningful. Category ROWS are ordered separately, by `cat.order ?? 0`.
 
 **Focus dispatch (two writers, by design).** `focusedSkillId` is written from both the store and the grid, and the pair is what keeps store state equal to what is drawn:

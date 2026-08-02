@@ -2,6 +2,13 @@
 last_validated: 2026-07-30
 ---
 
+<!-- VALIDATED 2026-08-02 · PARTIAL
+     ✓ 4.7, 5.7, 6.19, 15.8-15.10 — written against eslint.config.js, lib/config-gate/,
+       __tests__/config-gate-enforcement.test.ts, utils/fs.ts, lib/feature-flags.ts, consts.ts
+     ✓ 7.2 — all six example citations re-derived; every one had rotted
+     ✗ every other rule — still on the 2026-07-30 basis
+-->
+
 # Clean Code Standards
 
 Enforceable rules from 70+ refactoring tasks across 9 iterations. Each rule is reviewer-checkable.
@@ -134,6 +141,15 @@ path.join(dir, ".claude", "agents")               path.join(dir, CLAUDE_DIR, "ag
 <Text>maintained by {DEFAULT_BRANDING.NAME}</Text>
 ```
 
+**4.7 Every user-facing command instruction reads `${CLI_INVOKE_COMMAND} <cmd>`.** Interpolate the constant from `consts.ts` (value `"npx agents-inc"`); never hardcode the prefix in a message. Docs, code comments and agent playbooks write the same `npx agents-inc <cmd>` form literally. Prose that merely NAMES a command ("the `agents-inc list` table") stays bare. `bin` in `package.json` registers both `agents-inc` and `agentsinc`, so an existing global install answers to either — only the first is promoted.
+
+```ts
+// BAD
+this.error("No installation found. Run 'npx agents-inc init' first.");
+// GOOD
+this.error(`No installation found. Run '${CLI_INVOKE_COMMAND} init' first.`);
+```
+
 ---
 
 ## 5. Security
@@ -165,6 +181,8 @@ try {
 ```
 
 **5.6 Enforce file size limits at parsing boundaries.** Use `readFileSafe(path, maxSizeBytes)` from `utils/fs.ts` for untrusted files. Named size constants in `consts.ts`: `MAX_MARKETPLACE_FILE_SIZE`, `MAX_PLUGIN_FILE_SIZE`, `MAX_CONFIG_FILE_SIZE`.
+
+**5.7 Write through `writeFile()` from `utils/fs.ts`.** ESLint bans importing `writeFile`, `writeFileSync`, `appendFile`, `appendFileSync` or `outputFile` from `fs`, `node:fs`, `fs/promises`, `node:fs/promises` or `fs-extra` anywhere under `src/`. `utils/fs.ts` is the single write choke point: it holds the runtime tripwire for the global config pair (15.8), and it `ensureDir`s the parent, so a preceding `mkdir` is redundant. Tests and `e2e/` are exempt; `utils/fs.ts` itself is the one production exemption, because it IS the wrapper.
 
 ---
 
@@ -294,6 +312,17 @@ This narrows 6.17 rather than contradicting it — snapshotting is already one o
 
 **6.18** Never define parser/extractor helpers with non-trivial logic inside a test file (loops, regex scans, state machines that pick data out of rendered output or config text). If a helper is genuinely reusable across tests, live it in `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested. Instead, assert directly on raw output with `toContain`, `toMatchInlineSnapshot`, or a structural load (e.g. `loadProjectConfig` for `config.ts`).
 
+**6.19** Gate a feature-flagged suite on the flag, not `describe.skip`. When a suite is unrunnable only because `FEATURE_FLAGS.X` in `lib/feature-flags.ts` is off, write `describe.skipIf(!FEATURE_FLAGS.X)`: the suite re-enables itself when the flag flips, and coverage tracks the flag instead of an agent's memory. This works in `e2e/` too — the spec imports the flag from source at collection time, even though the CLI under test runs as a separate process. A component spec that renders the flagged component directly keeps running unconditionally; only the specs that reach it through the gated surface skip with the flag.
+
+```ts
+// BAD — stays dead after the flag flips back on
+describe.skip("source management in wizard", () => { ... });
+// GOOD
+describe.skipIf(!FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY)("source management in wizard", () => { ... });
+```
+
+Current state: three suites use the flag-gated form (all `WIZARD_SETTINGS_OVERLAY`), and eight `describe.skip` blocks predate this rule — the six `new skill` / `new agent` / `new marketplace` suites and the two `FILTER_INCOMPATIBLE` E2E suites. Convert one when you touch it. Their recorded reason ("`vi.mock` cannot reach the flag inlined into the dist bundle") argues against mocking the flag, not against reading it.
+
 ---
 
 ## 7. Type Safety
@@ -307,15 +336,15 @@ This narrows 6.17 rather than contradicting it — snapshotting is already one o
 
 **7.2** Boundary casts (`as T`) are acceptable **only** at data entry points where typed code meets untyped data. Every cast requires a `// Boundary cast: <reason>` comment. If you cannot write the reason, the cast should not exist. The six acceptable categories:
 
-1. **YAML/JSON parse** -- after Zod validation of parsed data. The Zod schema validates structure; the cast narrows the output type (especially with `.passthrough()`, see 7.5). Examples: `project-config.ts:39`, `loader.ts:33`.
+1. **YAML/JSON parse** -- after Zod validation of parsed data. The Zod schema validates structure; the cast narrows the output type (especially with `.passthrough()`, see 7.5). Examples: `loadProjectConfigFromDir` in `configuration/project-config.ts`, `loadAgentsFromDir` in `loading/loader.ts`.
 
-2. **Filesystem** -- directory names and filenames are untyped strings that correspond to typed identifiers by convention. Example: `loader.ts:155` casts keys from a directory-name-keyed map to `SkillId`.
+2. **Filesystem** -- directory names and filenames are untyped strings that correspond to typed identifiers by convention. Example: `classifyLocalSkill` in `skills/skill-metadata.ts` casts a map key (a directory name) to `SkillId`.
 
-3. **Type narrowing after runtime validation** -- a value's compile-time type is wider than what runtime checks have established. The cast narrows to the validated subset. Example: `wizard-store.ts:146` casts `CategoryPath` to `Category` after domain lookup confirms existence.
+3. **Type narrowing after runtime validation** -- a value's compile-time type is wider than what runtime checks have established. The cast narrows to the validated subset. Example: `resolveSkillForPopulation` in `wizard-store.ts` casts `CategoryPath` to `Category` after domain lookup confirms existence.
 
-4. **Data definition** -- literal data structures where TypeScript can verify the values but the container type is wider than the union. Example: `metadata-keys.ts:21` casts `"imported"` to `CategoryPath` in a constant definition.
+4. **Data definition** -- literal data structures where TypeScript can verify the values but the container type is wider than the union. Example: `IMPORT_DEFAULTS.CATEGORY` in `metadata-keys.ts` casts `"imported"` to `CategoryPath` in a constant definition.
 
-5. **Framework (oclif)** -- framework types don't declare custom properties attached at runtime. Example: `base-command.ts:23` casts oclif's `Config` to access `sourceConfig` attached in the init hook.
+5. **Framework (oclif)** -- framework types don't declare custom properties attached at runtime. Example: the `sourceConfig` getter in `base-command.ts` casts oclif's `Config` to reach the value attached in the init hook.
 
 6. **Test fixtures** -- test helpers that construct mock data are data entry boundaries. Partial mocks and intentionally invalid data are acceptable with a comment. Example: `mock-skills.ts` casts fictional skill IDs for test isolation.
 
@@ -523,7 +552,20 @@ const skills = category.skills;
 
 **15.7 Hard-error before destructive writes when install intent cannot be honored.** Per-skill install failures (e.g., `installPluginSkills().failed.length > 0`) must `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs — otherwise the config persists entries claiming `source: "<marketplace>"` for skills that never installed, and no `cc` command can self-heal the orphan. Uninstall failures are diagnostic-only and may continue. See `2026-04-20-d229-plugin-install-failure-orphan-config.md`.
 
-**15.8 Writer selection for `config-types.ts`.** When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts`), call `regenerateConfigTypes`. When writing a GLOBAL `config-types.ts` (`~/.claude-src/config-types.ts`), call `writeStandaloneConfigTypes` / `generateConfigTypesSource`. Never call `writeStandaloneConfigTypes` for a project path — it bypasses the import-from-global branch and produces duplicated standalone unions. See `.ai-docs/reference/config/config-writer.md`.
+**15.8 The global config pair is `config-gate/`'s exclusive privilege.** `~/.claude-src/config.ts` and its `config-types.ts` sibling may only be written through the public entries exported from `src/cli/lib/config-gate/index.ts`. Those entries are the only code that mints the write token, because the write owes consequences (propagate to registered projects, recompile their agents — 15.10) that no caller can be relied on to remember. Four layers hold it:
+
+| Layer               | Where                                             | What it stops                                                                                                                                                               |
+| ------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L1 module privacy   | `installation/index.ts`, `configuration/index.ts` | Neither barrel re-exports a raw pair writer, so reaching one is a compile error rather than an import away                                                                  |
+| L2 ESLint           | `eslint.config.js`                                | Importing any `config-gate/` file but `index`, statically or via `import()`; raw `fs` writes (5.7); the pair-source renderers `generateConfigSource` / `*ConfigTypesSource` |
+| L3 runtime tripwire | `writeFile()` in `utils/fs.ts`                    | Any pair write whose async call tree holds no token — throws `GlobalPairWriteViolation`, whatever route reached the primitive                                               |
+| L4 guard test       | `lib/__tests__/config-gate-enforcement.test.ts`   | Barrel leaks, plus a source scan for any module that both writes and names the pair — because L1-L3 each guard a named entry point and a bypass is written by naming none   |
+
+Exactly two files outside the gate may import its private modules, both enforcement guards, both pinned **by name** in the guard test: `utils/fs.ts` (needs `assertGateToken`) and `configuration/config-types-writer.ts` (needs `GlobalPairWriteViolation` to refuse a home-directory write by name). Do not add a third. Specs are exempt from the ESLint bans — a test asserting on a writer has to import it — but not from the tripwire or the source scan.
+
+**15.9 Writer selection for `config-types.ts`.** A PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts`) is written by `regenerateConfigTypes`, which emits the import-from-global form and throws `GlobalPairWriteViolation` if handed the home directory. The GLOBAL half has no direct writer: call the gate's `writeScopeConfigTypes` / `writeScaffoldedEntityTypes` / `reconcileTypesFromDisk`, which dispatch on `isHomeDirectory(projectDir)` themselves. Never branch on scope at the call site. See `.ai-docs/reference/config/config-writer.md`.
+
+**15.10 A gated write carries out its own consequences and reports them.** A `config-gate` entry that propagates a global change also recompiles the projects it rewrote, and returns a `GateReport` whose `propagated` / `recompile` fields the caller renders — `init`, `edit`, `compile` and `uninstall` each do. Never re-implement the fan-out at a call site, and never discard the report: both audited gaps in the previous contract (a project-context source migration, a global uninstall) were a caller forgetting to recompile. 15.6 applies to the report like any other multi-field result.
 
 ---
 

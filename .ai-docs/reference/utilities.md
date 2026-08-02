@@ -23,6 +23,14 @@ related:
 last_validated: 2026-08-01
 ---
 
+<!-- PARTIAL 2026-08-02 · CLI_INVOKE_COMMAND only (`last_validated` deliberately NOT moved from 2026-08-01)
+     ✓ the CLI_INVOKE_COMMAND row. Its parenthetical said the registered global bin name "is
+       still `agents-inc`", which is now only half the truth: package.json `bin` maps BOTH
+       `agents-inc` and `agentsinc` to dist/index.js (package.json lines 15-18), while
+       `oclif.bin` stays the single name. The `npx agents-inc <cmd>` phrasing convention
+       recorded beside the constant in consts.ts was also not carried here at all.
+     ✗ nothing else re-checked; the file stands on its 2026-08-01 FULL basis below
+-->
 <!-- VALIDATED 2026-08-01 · FULL (product 0.147.1) — every exhaustive list re-derived from source
      this session, including a diff of consts.ts's export list against this doc's headings. -->
 
@@ -366,29 +374,29 @@ both interpolate `STANDARD_FILES.CONFIG_TYPES_TS` rather than hardcoding `config
 
 ### Paths
 
-| Constant                  | Value                        | Purpose                                              |
-| ------------------------- | ---------------------------- | ---------------------------------------------------- |
-| `PROJECT_ROOT`            | CLI package root             | Base for template resolution                         |
-| `GLOBAL_INSTALL_ROOT`     | `os.homedir()`               | Root for global installations                        |
-| `CLAUDE_DIR`              | `.claude`                    | Claude config directory                              |
-| `CLAUDE_SRC_DIR`          | `.claude-src`                | Source config directory                              |
-| `PLUGINS_SUBDIR`          | `plugins`                    | Plugins subdirectory                                 |
-| `PLUGIN_MANIFEST_DIR`     | `.claude-plugin`             | Plugin manifest directory                            |
-| `PLUGIN_MANIFEST_FILE`    | `plugin.json`                | Plugin manifest filename                             |
-| `MARKETPLACE_JSON`        | `marketplace.json`           | Marketplace manifest filename                        |
-| `PLUGINS_DIST_PATH`       | `dist/plugins`               | Compiled plugin output dir (marketplace-relative)    |
-| `DEFAULT_PLUGIN_NAME`     | `agents-inc`                 | Default plugin name                                  |
-| `CACHE_DIR`               | `~/.cache/agents-inc`        | Source cache directory                               |
-| `SKILL_CATEGORIES_PATH`   | `config/skill-categories.ts` | Skill categories config file                         |
-| `SKILL_RULES_PATH`        | `config/skill-rules.ts`      | Skill rules config file                              |
-| `STACKS_FILE_PATH`        | `config/stacks.ts`           | Stacks config file                                   |
-| `SOURCE_SRC_DIR`          | `src`                        | Source root dir inside a marketplace/source repo     |
-| `SKILLS_DIR_PATH`         | `src/skills`                 | Skills source directory (`${SOURCE_SRC_DIR}/skills`) |
-| `LOCAL_SKILLS_PATH`       | `.claude/skills`             | Local skills directory                               |
-| `EJECT_SOURCE`            | `eject`                      | Synthetic source name for ejected (copied) skills    |
-| `LOCAL_PSEUDO_CATEGORY`   | `local`                      | Pseudo-category for local skills (not a `Category`)  |
-| `GLOBAL_CONFIG_NAME`      | `global`                     | `name` field written into a global-scope config      |
-| `EDIT_PROJECT_SETUP_FLAG` | `project-setup`              | Hidden `edit` flag marking the setup half of `init`  |
+| Constant                  | Value                        | Purpose                                                                                                                                                   |
+| ------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PROJECT_ROOT`            | CLI package root             | Base for template resolution                                                                                                                              |
+| `GLOBAL_INSTALL_ROOT`     | `os.homedir()`               | Root for global installations                                                                                                                             |
+| `CLAUDE_DIR`              | `.claude`                    | Claude config directory                                                                                                                                   |
+| `CLAUDE_SRC_DIR`          | `.claude-src`                | Source config directory                                                                                                                                   |
+| `PLUGINS_SUBDIR`          | `plugins`                    | Plugins subdirectory                                                                                                                                      |
+| `PLUGIN_MANIFEST_DIR`     | `.claude-plugin`             | Plugin manifest directory                                                                                                                                 |
+| `PLUGIN_MANIFEST_FILE`    | `plugin.json`                | Plugin manifest filename                                                                                                                                  |
+| `MARKETPLACE_JSON`        | `marketplace.json`           | Marketplace manifest filename                                                                                                                             |
+| `PLUGINS_DIST_PATH`       | `dist/plugins`               | Compiled plugin output dir (marketplace-relative)                                                                                                         |
+| `DEFAULT_PLUGIN_NAME`     | `agents-inc`                 | Default plugin name                                                                                                                                       |
+| `CACHE_DIR`               | `~/.cache/agents-inc`        | Source cache directory. Consumed by `lib/loading/source-fetcher.ts`; layout in [features/source-fetch-and-cache.md](./features/source-fetch-and-cache.md) |
+| `SKILL_CATEGORIES_PATH`   | `config/skill-categories.ts` | Skill categories config file                                                                                                                              |
+| `SKILL_RULES_PATH`        | `config/skill-rules.ts`      | Skill rules config file                                                                                                                                   |
+| `STACKS_FILE_PATH`        | `config/stacks.ts`           | Stacks config file                                                                                                                                        |
+| `SOURCE_SRC_DIR`          | `src`                        | Source root dir inside a marketplace/source repo                                                                                                          |
+| `SKILLS_DIR_PATH`         | `src/skills`                 | Skills source directory (`${SOURCE_SRC_DIR}/skills`)                                                                                                      |
+| `LOCAL_SKILLS_PATH`       | `.claude/skills`             | Local skills directory                                                                                                                                    |
+| `EJECT_SOURCE`            | `eject`                      | Synthetic source name for ejected (copied) skills                                                                                                         |
+| `LOCAL_PSEUDO_CATEGORY`   | `local`                      | Pseudo-category for local skills (not a `Category`)                                                                                                       |
+| `GLOBAL_CONFIG_NAME`      | `global`                     | `name` field written into a global-scope config                                                                                                           |
+| `EDIT_PROJECT_SETUP_FLAG` | `project-setup`              | Hidden `edit` flag marking the setup half of `init`                                                                                                       |
 
 Helper: `marketplaceManifestPath(dir: string): string` joins `dir` + `PLUGIN_MANIFEST_DIR` + `MARKETPLACE_JSON`.
 
@@ -444,18 +452,18 @@ Helper: `marketplaceManifestPath(dir: string): string` joins `dir` + `PLUGIN_MAN
 
 ### Branding and Naming
 
-| Constant                     | Value                                                              | Purpose                                                                                                                                            |
-| ---------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLI_INVOKE_COMMAND`         | `npx agents-inc`                                                   | Promoted invocation prefix shown in user-facing messages (registered global bin name is still `agents-inc` — see `package.json` `bin`/`oclif.bin`) |
-| `DEFAULT_BRANDING.NAME`      | `Agents Inc.`                                                      | Default product name                                                                                                                               |
-| `DEFAULT_BRANDING.TAGLINE`   | `AI-powered development tools`                                     | Default tagline                                                                                                                                    |
-| `DEFAULT_PUBLIC_SOURCE_NAME` | `agents-inc` (= `DEFAULT_PLUGIN_NAME`)                             | Fallback marketplace/source name                                                                                                                   |
-| `PUBLIC_SOURCE_NAME`         | `public`                                                           | Canonical name of the built-in public source                                                                                                       |
-| `SOURCE_DISPLAY_NAMES`       | `{ public: "Public", eject: "Eject", "agents-inc": "Agents Inc" }` | Inline human-readable source type labels                                                                                                           |
-| `SOURCE_HEADER_NAMES`        | `{ eject: "Local", "agents-inc": "Plugin", public: "Public" }`     | Column-header labels for the source grid (distinct from inline labels)                                                                             |
-| `DEFAULT_VERSION`            | `1.0.0`                                                            | Default skill version                                                                                                                              |
-| `DEFAULT_DISPLAY_VERSION`    | `0.0.0`                                                            | Indicates no version explicitly set                                                                                                                |
-| `ALL_SKILLS_EJECTED_LABEL`   | `All skills ejected`                                               | Summary-panel `Marketplace` row when no skill has a marketplace source (distinct state from an empty set, which falls back to the public default)  |
+| Constant                     | Value                                                              | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLI_INVOKE_COMMAND`         | `npx agents-inc`                                                   | Promoted invocation prefix shown in user-facing messages. `package.json` `bin` registers BOTH `agents-inc` and `agentsinc` for `dist/index.js`; `oclif.bin` is `agents-inc` alone. **Convention (recorded beside the constant in `consts.ts`): every user-facing instruction in this repo — messages, docs, code comments, agent playbooks — writes commands in this `npx agents-inc <cmd>` form. Prose that merely NAMES a command ("the `agents-inc list` table") does not.** |
+| `DEFAULT_BRANDING.NAME`      | `Agents Inc.`                                                      | Default product name                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `DEFAULT_BRANDING.TAGLINE`   | `AI-powered development tools`                                     | Default tagline                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `DEFAULT_PUBLIC_SOURCE_NAME` | `agents-inc` (= `DEFAULT_PLUGIN_NAME`)                             | Fallback marketplace/source name                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `PUBLIC_SOURCE_NAME`         | `public`                                                           | Canonical name of the built-in public source                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `SOURCE_DISPLAY_NAMES`       | `{ public: "Public", eject: "Eject", "agents-inc": "Agents Inc" }` | Inline human-readable source type labels                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `SOURCE_HEADER_NAMES`        | `{ eject: "Local", "agents-inc": "Plugin", public: "Public" }`     | Column-header labels for the source grid (distinct from inline labels)                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `DEFAULT_VERSION`            | `1.0.0`                                                            | Default skill version                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `DEFAULT_DISPLAY_VERSION`    | `0.0.0`                                                            | Indicates no version explicitly set                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `ALL_SKILLS_EJECTED_LABEL`   | `All skills ejected`                                               | Summary-panel `Marketplace` row when no skill has a marketplace source (distinct state from an empty set, which falls back to the public default)                                                                                                                                                                                                                                                                                                                               |
 
 `ALL_SKILLS_EJECTED_LABEL` has exactly one production consumer: `formatSkillMarketplaces(skillConfigs: SkillConfig[])` in `src/cli/components/wizard/summary-panel.tsx`. Three distinct cases, in source order:
 
@@ -555,6 +563,8 @@ back the stack-step bleed. Consumer: `terminalHasRoomForLogo` in
 ### Schema Paths
 
 `SCHEMA_PATHS` object. Full `raw.githubusercontent.com/.../src/schemas/<suffix>` URLs for yaml-language-server `$schema` comments:
+
+> Two of these keys — `projectConfig` and `projectSourceConfig` — point at the two **hand-maintained** schemas in `src/schemas/`; the other ten files there are generated. Only `metadata` and `customMetadata` have runtime call sites. See [features/code-generation.md](./features/code-generation.md).
 
 | Key                   | Schema URL suffix                   |
 | --------------------- | ----------------------------------- |
