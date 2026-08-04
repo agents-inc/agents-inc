@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # So a run can be started by hand. Added after the repository was renamed to
+  # agents-inc/agents-inc and the first push afterwards fired no run at all —
+  # the commit reached main, Actions stayed enabled and the workflow stayed
+  # active, but no event arrived. Without this there was no way to ask for one:
+  # re-running an earlier run re-runs that commit, not the one you care about.
+  workflow_dispatch:
 
 # A superseded run has nothing to say about the commit that replaced it.
 concurrency:
