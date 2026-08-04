@@ -1,0 +1,146 @@
+<p align="center">
+  <img alt="Agents Inc" src="./assets/logo.svg" width="300">
+</p>
+
+# Agents Inc
+
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
+An agent composition framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Compose specialized subagents from atomic skills:
+
+1. Select a pre-built stack to customise or start from scratch
+2. Select your skills from an interactive grid, organized by domain with compatibility filtering and global/local customising
+3. Choose to eject these skills or install them as plugins ([install modes guide](https://github.com/agents-inc/cli/blob/main/docs/cli/guides/install-modes.md))
+4. Select your subagents to compile with these skills
+5. Further customise skills and subagents in the generated `config.ts` ([editing config guide](https://github.com/agents-inc/cli/blob/main/docs/cli/guides/editing-config.md))
+6. Compile subagents with `npx agents-inc compile` after changes
+
+See the [Guides](#guides) section below for more.
+
+<br />
+
+<img src="./assets/demo.gif" alt="Agents Inc init wizard">
+
+### Walkthrough (recommended)
+
+https://github.com/user-attachments/assets/387b99ff-0a43-40e2-b757-9d035be5b550
+
+## Getting Started
+
+```bash
+npx agents-inc init
+```
+
+| Stack                        | Technologies                                                 |
+| ---------------------------- | ------------------------------------------------------------ |
+| `nextjs-fullstack`           | Next.js + React + Hono + Drizzle + Better Auth + Zustand     |
+| `nextjs-t3-stack`            | Next.js + tRPC + Prisma + NextAuth + Tailwind                |
+| `nextjs-supabase-fullstack`  | Next.js + Supabase + Drizzle + Better Auth                   |
+| `nextjs-turborepo-fullstack` | Next.js + Turborepo + pnpm Workspaces + Hono + Drizzle       |
+| `nextjs-ai-saas`             | Next.js + Vercel AI + Anthropic + Drizzle + Pinecone         |
+| `nextjs-saas-starter`        | Next.js + Better Auth + Stripe + Drizzle + Resend + PostHog  |
+| `react-old-school`           | React + Redux Toolkit + SCSS Modules + Vite + Vitest         |
+| `react-hono-fullstack`       | React + Vite + Hono + Drizzle + Better Auth                  |
+| `remix-fullstack`            | Remix + Hono + Drizzle + Better Auth                         |
+| `sveltekit-fullstack`        | SvelteKit + Hono + Drizzle + Better Auth                     |
+| `solidjs-fullstack`          | SolidJS + Hono + Drizzle + Better Auth + Vitest              |
+| `astro-content-fullstack`    | Astro + Hono + Drizzle                                       |
+| `vue-modern-fullstack`       | Vue 3 + Pinia + Hono + Drizzle + Better Auth                 |
+| `nuxt-fullstack`             | Nuxt + Hono + Drizzle + Better Auth                          |
+| `angular-modern-fullstack`   | Angular + NgRx + Hono + Drizzle + Better Auth                |
+| `expo-mobile-fullstack`      | Expo + React Native + Zustand + React Query + Hono + Drizzle |
+| `cli-ink-oclif`              | oclif + Ink + Zustand + Vitest                               |
+
+## Guides
+
+| Guide                                                                                                                       | Description                                                          |
+| --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [Global-first setup](https://github.com/agents-inc/cli/blob/main/docs/cli/guides/global-first-setup.md)                     | Why global scope is the right default and when to use project scope  |
+| [Install modes](https://github.com/agents-inc/cli/blob/main/docs/cli/guides/install-modes.md)                               | Plugin vs local install, global vs project scope                     |
+| [Editing your config](https://github.com/agents-inc/cli/blob/main/docs/cli/guides/editing-config.md)                        | Skill mappings, preloaded vs dynamic loading, and config structure   |
+| [Customizing subagents](https://github.com/agents-inc/cli/blob/main/docs/cli/guides/customizing-subagents.md)               | Eject and modify partials, templates, and skills                     |
+| [Writing custom skills and subagents](https://github.com/agents-inc/cli/blob/main/docs/cli/guides/writing-custom-skills.md) | Author skills and subagents from scratch or iterate on existing ones |
+| [Importing third-party skills](https://github.com/agents-inc/cli/blob/main/docs/cli/guides/importing-skills.md)             | Install skills from external repositories                            |
+| [Creating a marketplace](https://github.com/agents-inc/cli/blob/main/docs/cli/guides/creating-a-marketplace.md)             | Build a personal or org-level marketplace with curated skills        |
+| [Using the codex-keeper subagent](https://github.com/agents-inc/cli/blob/main/docs/cli/guides/using-codex-keeper.md)        | Generate and maintain AI-focused reference documentation             |
+
+## Skills
+
+150+ skills across 8 domains:
+
+| Domain | Skills                                                                                                                                                                     |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Web    | React, Vue, Angular, Svelte, SolidJS, Next.js, Remix, Nuxt, SvelteKit, Astro, Qwik, Tailwind, SCSS Modules, Zustand, Redux, Pinia, Vitest, Playwright, Storybook, and more |
+| API    | Hono, Express, Fastify, NestJS, Elysia, Drizzle, Prisma, PostgreSQL, MongoDB, Redis, Stripe, and more                                                                      |
+| AI     | Anthropic SDK, OpenAI SDK, Vercel AI SDK, LangChain, LlamaIndex, Pinecone, ChromaDB, and more                                                                              |
+| Mobile | React Native, Expo                                                                                                                                                         |
+| Infra  | Docker, GitHub Actions, Cloudflare Workers                                                                                                                                 |
+| Shared | Turborepo, ESLint + Prettier, Code Reviewing, Auth Security                                                                                                                |
+| Meta   | Research Methodology, CLI Reviewing                                                                                                                                        |
+
+Browse the full catalog on the [Plugin Marketplace](https://github.com/agents-inc/skills).
+
+## Subagents
+
+| Category         | Subagents                                                          |
+| ---------------- | ------------------------------------------------------------------ |
+| Developers       | `web-developer` `api-developer` `cli-developer` `web-architecture` |
+| Reviewers        | `web-reviewer` `api-reviewer` `cli-reviewer`                       |
+| Testers          | `web-tester` `cli-tester`                                          |
+| Researchers      | `web-researcher` `api-researcher`                                  |
+| Planning         | `web-pm`                                                           |
+| Pattern Analysis | `pattern-scout` `web-pattern-critique`                             |
+| Documentation    | `codex-keeper`                                                     |
+| Meta             | `skill-summoner` `agent-summoner` `convention-keeper`              |
+
+Each subagent is composed from modular partials (role, workflow, output format) plus its assigned skills. Everything is ejectable.
+
+## Commands
+
+### Core
+
+| Command   | Description                                                                 |
+| --------- | --------------------------------------------------------------------------- |
+| `init`    | Interactive setup wizard: pick a stack, customize skills, compile subagents |
+| `edit`    | Modify skill selection via the interactive wizard                           |
+| `compile` | Recompile subagents after changes                                           |
+| `update`  | Pull latest skills from source                                              |
+| `search`  | Search skills across all sources                                            |
+
+### Customization
+
+| Command           | Description                                                               |
+| ----------------- | ------------------------------------------------------------------------- |
+| `eject <type>`    | Export for customization (`agent-partials`, `templates`, `skills`, `all`) |
+| `import skill`    | Import a skill from an external GitHub repository                         |
+| `new skill`       | (IN PROGRESS) Scaffold a new local skill                                  |
+| `new agent`       | (IN PROGRESS) Scaffold a new custom subagent                              |
+| `new marketplace` | (IN PROGRESS) Scaffold a new marketplace project                          |
+
+### Build
+
+| Command             | Description                                    |
+| ------------------- | ---------------------------------------------- |
+| `build marketplace` | Generate `marketplace.json` from source skills |
+| `build plugins`     | Build skill and agent plugins for distribution |
+
+### Diagnostics
+
+| Command     | Description                         |
+| ----------- | ----------------------------------- |
+| `doctor`    | Diagnose setup issues               |
+| `list`      | Show installed skills and agents    |
+| `validate`  | Validate config and skill structure |
+| `uninstall` | Remove Agents Inc from your project |
+
+Run `agents-inc --help` for full usage, or see the [full commands reference](https://github.com/agents-inc/cli/blob/main/docs/cli/reference/commands.md).
+
+## Links
+
+- [Plugin Marketplace](https://github.com/agents-inc/skills): browse and discover skills
+- [Architecture Reference](https://github.com/agents-inc/cli/blob/main/docs/cli/reference/architecture.md): full system documentation
+
+## License
+
+MIT

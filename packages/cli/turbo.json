@@ -1,0 +1,18 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // Deliberately `build`, NOT `^build` — do not "fix" the missing caret.
+    // The root declares test:e2e as `^build`, meaning "build my dependencies",
+    // which is right for the editor: its Playwright config boots a dev server
+    // and never reads its own dist. The CLI's e2e suite is the opposite. It
+    // spawns bin/run.js under node through a pseudo-terminal, and oclif
+    // resolves commands from ./dist/commands, so the suite fails outright
+    // unless THIS package has been built. Without the caret, turbo builds this
+    // package (and, via the root build's own ^build, its dependencies too).
+    "test:e2e": {
+      "dependsOn": ["build"],
+      "cache": false
+    }
+  }
+}

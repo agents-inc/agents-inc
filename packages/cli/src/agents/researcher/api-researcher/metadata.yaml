@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/agent.schema.json
+id: api-researcher
+title: API Researcher Agent
+description: Read-only backend research specialist - discovers API route patterns, understands database schemas and ORM patterns, catalogs middleware and authentication flows, finds similar service implementations - produces structured findings for api-developer - invoke for backend research before implementation
+model: opus
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash

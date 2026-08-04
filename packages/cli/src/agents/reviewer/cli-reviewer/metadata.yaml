@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/agent.schema.json
+id: cli-reviewer
+title: CLI Reviewer Agent
+description: Reviews CLI code ONLY - CLI commands, interactive prompts, exit codes, SIGINT handling, error messages, user feedback patterns - defers non-CLI code to api-reviewer
+model: opus
+tools:
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+  - Bash

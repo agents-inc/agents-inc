@@ -1,0 +1,30 @@
+# Build output
+dist/
+
+# Dependencies
+node_modules/
+
+# Cache
+.cache/
+*.cache
+
+# Coverage
+coverage/
+
+# Compiled output
+*.js.map
+
+# Backup files
+.claude_backup/
+
+# Private working files. These used to be hidden from Prettier by the .gitignore
+# that sat here back when this package WAS the repository root — Prettier reads
+# .gitignore by default, but only the one in its working directory. The rules now
+# live in the root .gitignore re-anchored as `packages/cli/todo/*`, which Prettier
+# never sees when `format`/`format:check` run from this directory. Restating them
+# here keeps `prettier --check .` agreeing with git from either place.
+CLAUDE.md
+V2.md
+todo/*
+!todo/TODO.md
+!todo/TODO-completed.md

@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/agent.schema.json
+id: codex-keeper
+title: Codex Keeper Agent
+description: Creates AI-focused reference documentation (architecture, types, store maps, commands) that helps other agents understand where and how to implement features. Works incrementally, tracking progress over time.
+model: opus
+tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash

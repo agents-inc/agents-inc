@@ -1,151 +1,44 @@
 {
-  "name": "@agents-inc/cli",
-  "version": "0.149.0",
-  "description": "CLI for managing Agents Inc. skills, stacks, and agents for Claude Code",
-  "type": "module",
-  "main": "dist/index.js",
-  "exports": {
-    ".": {
-      "import": "./dist/index.js"
-    },
-    "./config": {
-      "import": "./dist/config-exports.js"
-    }
-  },
-  "bin": {
-    "agents-inc": "dist/index.js",
-    "agentsinc": "dist/index.js"
-  },
-  "files": [
-    "dist/",
-    "assets/",
-    "config/",
-    "src/agents/",
-    "src/schemas/",
-    "LICENSE",
-    "README.md",
-    "CHANGELOG.md"
-  ],
-  "keywords": [
-    "cli",
-    "claude",
-    "claude-code",
-    "skills",
-    "composable skills",
-    "agents",
-    "stacks",
-    "plugins",
-    "ai",
-    "anthropic",
-    "developer-tools",
-    "productivity",
-    "prompt-engineering",
-    "ai-tools"
-  ],
-  "sideEffects": false,
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
-  },
-  "oclif": {
-    "bin": "agents-inc",
-    "dirname": "agents-inc",
-    "commands": {
-      "strategy": "pattern",
-      "target": "./dist/commands"
-    },
-    "plugins": [
-      "@oclif/plugin-help",
-      "@oclif/plugin-autocomplete",
-      "@oclif/plugin-not-found",
-      "@oclif/plugin-warn-if-update-available"
-    ],
-    "hooks": {
-      "init": [
-        "./dist/hooks/init"
-      ]
-    },
-    "topicSeparator": " "
-  },
+  "name": "agents-inc-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "//": "Prettier is declared once, here. Prettier walks up from each file to the nearest config, so this covers every workspace including packages/*-config. It is also why packages/cli keeps its own formatting for free: packages/cli/prettier.config.mjs sits nearer to the CLI's files than this field does, so it wins for everything under packages/cli and this config never touches them. Prettier does NOT walk up for .prettierignore, which is why `format` runs from the root rather than fanning out through turbo — see the scripts below.",
+  "prettier": "@workspace/prettier-config",
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "agentsinc": "node dist/index.js",
-    "agentsinc:dev": "bun src/cli/index.ts",
-    "test": "vitest run",
-    "pretest:e2e": "npm run build",
-    "test:e2e": "vitest --config e2e/vitest.config.ts --run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "lint": "eslint .",
-    "typecheck": "tsc --noEmit && echo '✓ No TypeScript errors'",
-    "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
+    "//prepare": "Moved here from packages/cli when the CLI stopped being the repository root. Git hooks live in .husky/ at the root of the repository, so the package that installs them has to be the root package.",
     "prepare": "husky",
-    "generate:types": "bun scripts/generate-source-types.ts",
-    "generate:schemas": "npx tsx scripts/generate-json-schemas.ts",
-    "generate:schemas:check": "npm run generate:schemas && git diff --exit-code src/schemas/",
-    "prepublishOnly": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm run test"
+    "build": "turbo build",
+    "deploy": "turbo deploy",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "//format": "One run from the root, deliberately not `turbo format`. Prettier reads .prettierignore only from its working directory, so fanning out per workspace made the root ignore invisible and reformatted the vendored catalog it exists to protect — which then reads as drift against the generator. The glob stays as it was: widening it to md/json is a separate decision, not part of fixing this.",
+    "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "typecheck": "turbo typecheck",
+    "deps:check": "syncpack lint",
+    "deps:fix": "syncpack fix-mismatches",
+    "test:e2e": "turbo test:e2e",
+    "test": "turbo test"
   },
+  "//lint-staged": "Formatting only. ESLint used to sit here as a second entry, carried over from when packages/cli was the repository root and its eslint.config.js therefore sat beside .husky/. lint-staged runs its commands from the git root, and ESLint 9 flat config is looked up from the working directory and its ancestors — never beside the file being linted — so after the merge that entry failed on every commit staging a .ts file. It cannot be repaired in place: each workspace keeps its own eslint.config.js one level down, and packages/cli is on ESLint 9 while apps/* and the other packages/* are on ESLint 10, so no single config and no single binary at the root could lint them all. Linting moved to the turbo line in .husky/pre-commit, which gives each workspace its own eslint in its own directory. Prettier stays here precisely because it does NOT want per-workspace working directories — see the note on `format` above.",
   "lint-staged": {
-    "*.{ts,js,json,yaml,yml,md}": "prettier --write",
-    "*.{ts,tsx}": "eslint --no-warn-ignored"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/agents-inc/cli.git"
-  },
-  "author": "Vincent Bollaert",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/agents-inc/cli/issues"
-  },
-  "homepage": "https://github.com/agents-inc/cli#readme",
-  "dependencies": {
-    "@inkjs/ui": "^2.0.0",
-    "@oclif/core": "^4.0.0",
-    "@oclif/plugin-autocomplete": "^3.0.0",
-    "@oclif/plugin-help": "^6.0.0",
-    "@oclif/plugin-not-found": "^3.0.0",
-    "@oclif/plugin-warn-if-update-available": "^3.0.0",
-    "@oclif/table": "^0.5.0",
-    "execa": "^9.0.0",
-    "fast-glob": "^3.3.0",
-    "fs-extra": "^11.2.0",
-    "giget": "^1.2.0",
-    "gray-matter": "^4.0.3",
-    "ink": "^5.0.0",
-    "jiti": "2.4.2",
-    "liquidjs": "^10.24.0",
-    "react": "^18.2.0",
-    "remeda": "^2.33.6",
-    "yaml": "^2.8.2",
-    "zod": "^4.3.6",
-    "zustand": "^5.0.0"
+    "*.{ts,tsx,js,json,yaml,yml,md}": "prettier --write"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
-    "@lydell/node-pty": "^1.2.0-beta.3",
-    "@oclif/test": "^4.0.0",
-    "@types/fs-extra": "^11.0.0",
-    "@types/node": "^22.0.0",
-    "@types/react": "^18.2.0",
-    "@vitest/coverage-v8": "^4.0.18",
-    "@xterm/headless": "^6.0.0",
-    "eslint": "^9.39.5",
-    "eslint-config-prettier": "^10.1.8",
+    "@workspace/prettier-config": "workspace:*",
     "husky": "^9.1.7",
-    "ink-testing-library": "^4.0.0",
     "lint-staged": "^15.2.0",
-    "prettier": "^3.2.0",
-    "tree-kill": "^1.2.2",
-    "tsup": "^8.0.0",
-    "typescript": "^5.7.0",
-    "typescript-eslint": "^8.65.0",
-    "vitest": "^4.0.18"
+    "prettier": "^3.8.3",
+    "prettier-plugin-tailwindcss": "^0.8.0",
+    "syncpack": "^15.3.2",
+    "turbo": "^2.9.18",
+    "typescript": "~6"
   },
+  "packageManager": "bun@1.2.6",
   "engines": {
-    "node": ">=18.0.0"
-  }
+    "node": ">=20"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
 }
