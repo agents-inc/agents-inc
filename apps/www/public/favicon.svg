@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <title>Agents Inc</title>
+  <!--
+    Derived from packages/cli/assets/logo.svg, which is a 324x430 full-body
+    figure wrapping a raster PNG. That shape is unusable as an icon: at 16px
+    the head would be about seven pixels across. This is its head and
+    shoulders, cropped square (source pixels 12,0 300x300), resampled to
+    the 32x32 grid a favicon is actually drawn at and traced to flat rects, so
+    it stays crisp instead of being a scaled-down photograph of a logo.
+    The five colours are the five the source resolves to at this size.
+  -->
+  <path fill="#ffffff" d="M0 0h32v32H0z"/>
+  <path fill="#0d0d04" d="M9 0h14v1h-14zM6 1h20v1h-20zM6 2h5v1h-5zM13 2h3v1h-3zM17 2h4v1h-4zM22 2h4v1h-4zM3 3h10v1h-10zM15 3h4v1h-4zM21 3h9v1h-9zM2 4h7v1h-7zM10 4h3v1h-3zM15 4h4v1h-4zM21 4h2v1h-2zM25 4h5v1h-5zM2 5h1v1h-1zM6 5h4v1h-4zM11 5h3v1h-3zM15 5h4v1h-4zM20 5h2v1h-2zM24 5h3v1h-3zM29 5h1v1h-1zM0 6h6v1h-6zM9 6h2v1h-2zM12 6h6v1h-6zM20 6h2v1h-2zM23 6h3v1h-3zM28 6h4v1h-4zM0 7h11v1h-11zM13 7h5v1h-5zM19 7h2v1h-2zM22 7h3v1h-3zM26 7h6v1h-6zM0 8h12v1h-12zM13 8h5v1h-5zM19 8h1v1h-1zM21 8h3v1h-3zM25 8h7v1h-7zM0 9h5v1h-5zM12 9h8v1h-8zM27 9h5v1h-5zM0 10h2v1h-2zM4 10h1v1h-1zM12 10h8v1h-8zM27 10h1v1h-1zM30 10h2v1h-2zM0 11h5v1h-5zM27 11h5v1h-5zM0 12h5v1h-5zM27 12h5v1h-5zM0 13h3v1h-3zM29 13h3v1h-3zM0 14h3v1h-3zM29 14h3v1h-3zM2 15h7v1h-7zM10 15h4v1h-4zM18 15h5v1h-5zM25 15h5v1h-5zM2 16h5v1h-5zM9 16h13v1h-13zM24 16h1v1h-1zM26 16h3v1h-3zM2 17h4v1h-4zM8 17h1v1h-1zM10 17h4v1h-4zM18 17h3v1h-3zM23 17h1v1h-1zM25 17h4v1h-4zM2 18h4v1h-4zM7 18h7v1h-7zM18 18h2v1h-2zM22 18h1v1h-1zM24 18h5v1h-5zM2 19h1v1h-1zM5 19h2v1h-2zM8 19h4v1h-4zM19 19h3v1h-3zM23 19h5v1h-5zM2 20h1v1h-1zM15 24h2v1h-2zM15 25h2v1h-2zM15 26h3v1h-3zM15 27h2v1h-2zM15 28h2v1h-2zM15 29h2v1h-2zM15 30h2v1h-2zM23 30h3v1h-3zM15 31h2v1h-2z"/>
+  <path fill="#2c2a27" d="M11 2h2v1h-2zM16 2h1v1h-1zM21 2h1v1h-1zM13 3h2v1h-2zM19 3h2v1h-2zM9 4h1v1h-1zM13 4h2v1h-2zM19 4h2v1h-2zM23 4h2v1h-2zM3 5h3v1h-3zM10 5h1v1h-1zM14 5h1v1h-1zM19 5h1v1h-1zM22 5h2v1h-2zM27 5h2v1h-2zM6 6h3v1h-3zM11 6h1v1h-1zM18 6h2v1h-2zM22 6h1v1h-1zM26 6h2v1h-2zM11 7h2v1h-2zM18 7h1v1h-1zM21 7h1v1h-1zM25 7h1v1h-1zM12 8h1v1h-1zM18 8h1v1h-1zM20 8h1v1h-1zM24 8h1v1h-1zM2 10h2v1h-2zM28 10h2v1h-2zM9 15h1v1h-1zM23 15h2v1h-2zM7 16h2v1h-2zM22 16h2v1h-2zM25 16h1v1h-1zM6 17h2v1h-2zM9 17h1v1h-1zM21 17h2v1h-2zM24 17h1v1h-1zM30 17h1v1h-1zM6 18h1v1h-1zM20 18h2v1h-2zM23 18h1v1h-1zM30 18h1v1h-1zM7 19h1v1h-1zM22 19h1v1h-1zM29 19h1v1h-1zM31 20h1v1h-1zM0 24h10v1h-10zM23 24h9v1h-9zM0 25h10v1h-10zM23 25h9v1h-9zM0 26h11v1h-11zM22 26h10v1h-10zM0 27h12v1h-12zM20 27h12v1h-12zM0 28h12v1h-12zM20 28h12v1h-12zM0 29h14v1h-14zM19 29h13v1h-13zM0 30h14v1h-14zM19 30h4v1h-4zM26 30h6v1h-6zM0 31h15v1h-15zM17 31h15v1h-15z"/>
+  <path fill="#d97757" d="M5 9h7v1h-7zM20 9h7v1h-7zM5 10h7v1h-7zM20 10h7v1h-7zM5 11h22v1h-22zM5 12h22v1h-22zM3 13h26v1h-26zM3 14h26v1h-26zM14 15h4v1h-4zM30 15h2v1h-2zM29 16h3v1h-3zM14 17h4v1h-4zM31 17h1v1h-1zM14 18h4v1h-4zM31 18h1v1h-1zM3 19h2v1h-2zM12 19h7v1h-7zM28 19h1v1h-1zM30 19h2v1h-2zM3 20h28v1h-28zM3 21h28v1h-28zM3 22h26v1h-26zM3 23h26v1h-26z"/>
+  <path fill="#fcfbf8" d="M29 17h1v1h-1zM29 18h1v1h-1zM10 24h5v1h-5zM17 24h6v1h-6zM10 25h5v1h-5zM17 25h6v1h-6zM11 26h4v1h-4zM18 26h4v1h-4zM12 27h3v1h-3zM17 27h3v1h-3zM12 28h3v1h-3zM17 28h3v1h-3zM14 29h1v1h-1zM17 29h2v1h-2zM14 30h1v1h-1zM17 30h2v1h-2z"/>
+</svg>

@@ -1,0 +1,5 @@
+# Astro's generated types and content-collection cache. The repository root
+# already ignores dist/, node_modules/ and .turbo/ at every level; .astro/ is
+# the one thing it does not know about, because this is the first Astro
+# workspace.
+.astro/

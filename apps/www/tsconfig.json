@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+
+  // Two bases, applied in order: the house one first, Astro's on top. Astro's
+  // preset is not optional — `.astro` files are type-checked as JSX with
+  // `jsxImportSource: "astro"`, and `astro sync` writes the generated ambient
+  // types to .astro/types.d.ts, which its `include` picks up. Later entries in
+  // an `extends` array win, so anything Astro must own it owns, and everything
+  // it does not touch stays on the shared config.
+  "extends": [
+    "@workspace/typescript-config/base.json",
+    "astro/tsconfigs/strict"
+  ],
+  "compilerOptions": {
+    // base.json stops at ES2022 with no DOM, which is right for a library but
+    // not for a site: theme-provider.astro's inline script touches
+    // document.documentElement.
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+
+    // No `paths` entry for `vite`, deliberately, and this is worth knowing if
+    // Astro is ever downgraded: Astro 5 pinned Vite 6 in its own nested
+    // node_modules while the root held Vite 8 for apps/editor, and tsc read the
+    // two copies as two unrelated sets of types — so handing @tailwindcss/vite
+    // (which resolved the hoisted copy) to Astro's `vite.plugins` did not
+    // type-check, exactly like the duplicate @types/react problem documented
+    // in apps/editor/tsconfig.app.json. Astro 7 is on Vite 8 and nests nothing,
+    // so there is one copy and nothing to map.
+  },
+  "include": [".astro/types.d.ts", "**/*"],
+  // eslint.config.js is ESLint's, not the site's: Astro's preset turns on
+  // allowJs, so leaving it in would type-check a config file whose own
+  // dependencies ship no types.
+  "exclude": ["dist", "eslint.config.js"]
+}

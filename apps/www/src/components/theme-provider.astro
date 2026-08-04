@@ -1,0 +1,36 @@
+---
+/**
+ * THE THEME DECISION: one theme, light, and no toggle.
+ *
+ * Why: this design system's dark mode is explicitly not designed yet.
+ * globals.css declares `@custom-variant dark (&:is(.dark *))` but ships no
+ * `.dark` token block at all, so there is nothing for a dark theme to render
+ * as. Keeping Starlight's toggle would have offered a switch into its stock
+ * blue-grey dark palette, which shares nothing with the landing page — and the
+ * landing page has no toggle, so the two halves of one site would disagree
+ * about whether the feature exists. A missing control looks deliberate; a
+ * control that leads somewhere unstyled looks broken.
+ *
+ * Why this file rather than CSS alone: Starlight's Page.astro hardcodes
+ * `data-theme="dark"` on the <html> element and is not in the overridable
+ * component list. The colour mapping in src/styles/site.css is unlayered, so
+ * the palette is already correct whatever that attribute says — but Starlight
+ * gates a few things on the attribute itself rather than on the variables,
+ * most visibly which Expressive Code theme paints the code blocks. Setting it
+ * here settles those too.
+ *
+ * This replaces Starlight's own ThemeProvider, which is where the localStorage
+ * and `prefers-color-scheme` lookup lived. The <template id="theme-icons"> it
+ * also rendered is only read by ThemeSelect, which is likewise overridden away
+ * — so nothing is left looking for it.
+ *
+ * Known limit: with JavaScript disabled the attribute stays at Page.astro's
+ * `dark`. The page still renders in the design's palette, because the mapping
+ * is CSS; only the code blocks fall back to Starlight's dark syntax theme.
+ */
+---
+
+{/* Inlined, and in <head>, so the attribute is set before the first paint. */}
+<script is:inline>
+  document.documentElement.dataset.theme = "light"
+</script>

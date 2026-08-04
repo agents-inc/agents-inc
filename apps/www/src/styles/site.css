@@ -1,0 +1,161 @@
+/**
+ * The one stylesheet for this site. Loaded twice, on purpose: Starlight pulls
+ * it in through `customCss`, and the landing page and 404 import it directly.
+ * Vite dedupes it, and keeping a single file means the landing page and the
+ * docs cannot drift apart.
+ *
+ * It does four things, in this order:
+ *   1. fixes the cascade-layer order, before anything else declares one
+ *   2. imports the real design system
+ *   3. teaches Tailwind about .astro/.md, which globals.css does not scan
+ *   4. reconciles Starlight with the design language — radius, then colour
+ */
+
+/**
+ * LAYER ORDER. This has to be the first statement in the file: the position of
+ * a cascade layer is fixed by where its name *first* appears, and both of the
+ * imports below declare layers of their own — Tailwind declares
+ * `theme, base, components, utilities`, Starlight declares `starlight.*`.
+ * Whichever loaded first would otherwise decide the order by accident.
+ *
+ * The order chosen here means:
+ *   · `base` is lowest, so Tailwind's preflight cannot flatten Starlight's
+ *     prose styles (its margins, list markers and heading sizes are the whole
+ *     point of a documentation theme)
+ *   · `starlight` sits above it, so the docs look like the docs
+ *   · Tailwind's `utilities` is highest, so a utility class still wins
+ *     wherever one is used — on the landing page, or inside a docs page
+ *
+ * Re-declaring these names later is a no-op, so the two imports below cannot
+ * disturb it.
+ */
+@layer base, starlight, theme, components, utilities;
+
+/**
+ * The design system itself: Tailwind v4, the shadcn semantic variables, the
+ * Configurator v5 palette, the type scale, and the Inter / IBM Plex Mono
+ * webfonts. Everything below is expressed in tokens defined there — no colour
+ * is repeated here.
+ */
+@import "@workspace/ui/globals.css";
+
+/**
+ * globals.css only scans `.ts` and `.tsx` under `apps`, which was written for
+ * React apps and matches almost nothing in this workspace. Paths are relative
+ * to this file, so `../` is `apps/www/src/`.
+ */
+@source "../**/*.{astro,md,mdx,ts}";
+
+/* ── Starlight, reconciled ─────────────────────────────────────────────────
+ *
+ * Everything below is UNLAYERED, and that is the mechanism rather than an
+ * oversight. Every one of Starlight's own rules is wrapped in `@layer
+ * starlight.base | .reset | .core | .content | .components | .utils`, and an
+ * unlayered declaration beats *any* layered one in the same origin no matter
+ * how specific the layered selector is. So a single flat rule here overrides
+ * seventeen scattered ones without having to match or out-specify them, and
+ * without caring where Starlight moves them next release.
+ *
+ * The cost of that mechanism, stated plainly: unlayered also beats Tailwind's
+ * `utilities` layer, so the radius reset below wins over `rounded-*` too. That
+ * is the intended behaviour here — see the note on it — but it is the reason
+ * this block stays as small as it is. Anything that should merely be a default
+ * belongs in a layer, not here.
+ */
+
+/**
+ * RULE 1 OF THE DESIGN LANGUAGE: radius 0 everywhere, without exception.
+ *
+ * `--radius: 0` in globals.css only reaches things that read it. Starlight
+ * hardcodes its corners instead — seventeen `border-radius` declarations
+ * across twelve files (badges, cards, link cards, the search modal, the
+ * sidebar's active item, pagination, the mobile menu button, the steps
+ * markers) — so none of them see it. This one rule replaces all seventeen.
+ *
+ * It is deliberately absolute rather than scoped to the docs: "without
+ * exception" is the design's own wording, so `rounded-full` losing to it on
+ * the landing page is the rule working, not a regression.
+ */
+*,
+*::before,
+*::after {
+  border-radius: 0;
+}
+
+/**
+ * COLOUR. Starlight themes itself entirely through its own `--sl-color-*`
+ * custom properties, and defines two full sets of them: dark on `:root`, light
+ * on `:root[data-theme='light']`, both inside `@layer starlight.base`. Being
+ * unlayered, the single set below wins over both — so the site renders in the
+ * design's palette whichever value the `data-theme` attribute happens to hold,
+ * including in the no-JS case where it stays at the `dark` that Starlight's
+ * unoverridable Page.astro hardcodes.
+ *
+ * `@astrojs/starlight-tailwind` was considered for this and rejected. It maps
+ * `--sl-color-*` onto Tailwind's `--color-gray-*` and `--color-accent-*`
+ * scales. This design system has neither: its greys are a named, warm ramp
+ * (`ink` → `dots`) and its single accent is `brand`, so the plugin would
+ * either pull in Tailwind's stock cool greys — defeating the entire point of
+ * importing the design system — or force us to invent an `accent-50…950`
+ * scale that no design decision backs. Mapping the ~18 values by hand against
+ * real tokens is both smaller and honest.
+ *
+ * The ramp is mapped by *lightness*, matching Starlight's light-mode scale
+ * (white 10% → black 100%) rather than by name. In light mode Starlight
+ * inverts the names, so `--sl-color-white` is the darkest ink and
+ * `--sl-color-black` is the page.
+ */
+:root,
+::backdrop {
+  color-scheme: light;
+
+  /* The nine-step ramp. Starlight derives its text, surface and hairline
+     semantics from these, so most of the theme follows from this block. */
+  --sl-color-white: var(--color-ink); /* headings, strongest ink */
+  --sl-color-gray-1: var(--color-ink-2);
+  --sl-color-gray-2: var(--color-ink-3); /* body text */
+  --sl-color-gray-3: var(--color-subtle);
+  --sl-color-gray-4: var(--color-faint);
+  --sl-color-gray-5: var(--color-dots);
+  --sl-color-gray-6: var(--color-badge); /* inline-code surface */
+  --sl-color-gray-7: var(--color-column); /* nav band */
+  --sl-color-black: var(--color-page); /* the page itself */
+
+  /* The three accent steps. The design has exactly one accent — amber marks
+     what the user deliberately chose — so these are its three real values,
+     not a generated scale. */
+  --sl-color-accent-low: var(--color-wash);
+  --sl-color-accent: var(--color-brand);
+  --sl-color-accent-high: var(--color-brand-ink);
+
+  /* The backdrop behind the search modal and the mobile menu. The design
+     already has exactly one of these. */
+  --sl-color-backdrop-overlay: var(--color-veil);
+
+  /* The five hue numbers behind Starlight's asides (note / tip / caution /
+     danger) and its badges. Only `orange` has a counterpart here: 34 is the
+     hue of `--color-brand` (#b0762c), so a caution aside reads as the
+     design's amber. The other four are Starlight's own defaults, restated
+     rather than changed — this design system defines no green, blue, purple
+     or red, and asides still have to be told apart. Giving them a home in
+     the palette is a design decision, and it is a one-line change here when
+     someone makes it. */
+  --sl-hue-orange: 34;
+  --sl-hue-green: 101;
+  --sl-hue-blue: 234;
+  --sl-hue-purple: 281;
+  --sl-hue-red: 339;
+
+  /* Three semantics that do not fall out of the ramp correctly. Starlight
+     derives all of its rules from `gray-6`, but this palette's lines are
+     their own tokens and sit a good deal darker than its lightest surface —
+     mapping `gray-6` to `--color-hairline` instead would have fixed the
+     lines and turned every inline code span into a beige chip. */
+  --sl-color-hairline: var(--color-hairline);
+  --sl-color-hairline-light: var(--color-divider);
+  --sl-color-hairline-shade: var(--color-divider);
+
+  /* Rule 3: Inter for human language, IBM Plex Mono for every label and id. */
+  --sl-font: var(--font-sans);
+  --sl-font-mono: var(--font-mono);
+}

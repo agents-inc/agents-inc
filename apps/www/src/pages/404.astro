@@ -1,0 +1,35 @@
+---
+/**
+ * Hand-built, because Starlight's own 404 route is disabled in astro.config.ts
+ * — it would have claimed `/404` for the whole site, wrapping a landing-page
+ * miss in the documentation chrome. See the `disable404Route` comment there.
+ *
+ * PLACEHOLDER copy, like index.astro.
+ */
+import "../styles/site.css"
+
+const HOME_PATH = "/"
+const DOCS_PATH = "/docs"
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Page not found | Agents Inc</title>
+    <meta name="robots" content="noindex" />
+  </head>
+  <!-- No colour classes on <body>: globals.css already styles it in @layer base. -->
+  <body>
+    <main class="mx-auto max-w-2xl p-gutter">
+      <h1 class="text-25 text-ink font-medium">Page not found</h1>
+      <p class="text-13 text-subtle mt-4">
+        That page does not exist.
+      </p>
+      <p class="text-13 mt-4">
+        <a href={HOME_PATH}>Home</a> &middot; <a href={DOCS_PATH}>Documentation</a>
+      </p>
+    </main>
+  </body>
+</html>

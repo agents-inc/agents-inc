@@ -1,0 +1,124 @@
+---
+title: Why Agents Inc
+description: Hand-written Claude Code sub-agents duplicate each other and go stale. Agents Inc breaks expertise into atomic skills and compiles them into sub-agents instead.
+---
+
+## The problem
+
+Claude Code sub-agents are worth having. A `web-developer` that already knows
+your framework, your styling approach and your test runner gives better answers
+than a general assistant you re-brief every session.
+
+The trouble starts at the second one. A sub-agent is a markdown file: some
+frontmatter and a long prompt. Once you have a `web-developer`, a `web-tester`
+and a `web-reviewer`, all three need to know the same things about React, the
+same things about your test runner, the same things about your conventions — so
+you paste those paragraphs into all three. Now you have three copies.
+
+Then React 19 changes how refs work. You update the paragraph in
+`web-developer.md`, because that is the file you happened to be in. The other
+two keep telling Claude to use `forwardRef` for another four months, and you
+find out when a review comment is confidently wrong.
+
+That is the whole failure mode, and it is boring: **prompt files duplicate each
+other, drift apart, and cannot be composed.** Nothing about them is reusable.
+Starting a project on a different stack means opening the old files and deleting
+the parts that do not apply, which is how most people end up with a folder of
+bespoke agent markdown that nobody maintains.
+
+## The approach
+
+Expertise is broken into **skills**. A skill is one atomic, reusable unit —
+one library or one practice. React is a skill. Tailwind is a skill. Zod is a
+skill. Vitest is a skill. Code review is a skill. The default catalogue has 222
+of them, and it lives in its own repository:
+[github.com/agents-inc/skills](https://github.com/agents-inc/skills).
+
+You select the skills matching the stack you actually use. Then the CLI
+**compiles** those skills into sub-agents.
+
+That compile step is the mechanism, and it is worth being precise about.
+Each sub-agent definition is not a prompt file — it is a set of partials:
+`identity.md`, `playbook.md`, `output.md`, `critical-requirements.md`,
+`critical-reminders.md`, plus a `metadata.yaml`. The compiler reads those
+partials, builds a template context containing the skills assigned to that
+sub-agent, and renders everything through a Liquid template. The output is one
+markdown file per sub-agent in `.claude/agents/`.
+
+Two consequences follow from that, and they are the entire argument:
+
+- **The React knowledge exists once.** Every sub-agent that needs it points at
+  the same skill. There is no second copy to forget.
+- **Recompiling propagates.** Update a skill, run `npx agents-inc compile`, and
+  every sub-agent built from it is rewritten. Your `web-developer`,
+  `web-tester` and `web-reviewer` cannot disagree about React, because none of
+  them owns the text.
+
+A skill reaches a sub-agent one of two ways. **Preloaded** embeds the skill
+content directly in the compiled prompt, for things the sub-agent always needs.
+**Dynamic** (the default) leaves it to be loaded on demand through Claude Code's
+Skill tool, which keeps the prompt lean. You choose per skill, per sub-agent.
+See [Editing your config](/docs/guides/editing-config).
+
+## What you actually get
+
+After `npx agents-inc init`:
+
+- **Compiled sub-agents** in `.claude/agents/`, one markdown file each. The
+  catalogue currently defines 23 of them — developers, reviewers, testers,
+  researchers, planners and a few meta ones — and you pick which to compile.
+- **A config file** at `.claude-src/config.ts`. Plain TypeScript, meant to be
+  edited by hand. It lists your skills, your sub-agents, and the `stack`
+  mapping that decides which skills each sub-agent receives.
+- **Generated types** at `.claude-src/config-types.ts`, narrowed to the skills
+  and sub-agents you actually installed, so a typo in a skill id is a type
+  error rather than a silent no-op.
+- **The skills themselves**, installed one of two ways. In **plugin** mode
+  (the default) they are Claude Code plugins under `.claude/plugins/` and
+  nothing is copied into your project. In **eject** mode they are copied into
+  `.claude/skills/` and you own the files outright. This is per skill, not a
+  global switch, and you can change it later with `npx agents-inc edit`. See
+  [Install modes](/docs/concepts/install-modes).
+
+Skills and sub-agents can be installed at **global** scope
+(`~/.claude-src/config.ts`, shared by every project) or **project** scope, and
+you can mix the two. Global is the recommended default — see
+[Global-first setup](/docs/guides/global-first-setup).
+
+Everything is ejectable. If you decide the compiler's `web-reviewer` is wrong
+for you, `npx agents-inc eject agent-partials` (or `templates`, or `skills`, or
+`all`) hands you the source material to modify. You are not locked into
+anyone's prompt. See
+[Customizing subagents](/docs/guides/customizing-subagents).
+
+## Who this is not for
+
+**You have one project and two hand-written sub-agents that work.** Then this
+is probably not worth the setup. Two files do not drift the way six do, you can
+hold both in your head, and the twenty minutes spent here buys you nothing you
+do not already have. Come back when you are copying a paragraph into a third
+file.
+
+**You want one fixed, hand-tuned prompt.** Compilation means the file in
+`.claude/agents/` is an output. Editing it directly works right up until the
+next `compile` overwrites it. The supported way to customise is to eject the
+partials and edit those — a real answer, but a slower loop than editing one
+markdown file, and if you only have one sub-agent it is not a trade worth
+making.
+
+**Your stack is not in the catalogue.** 222 skills is a lot, but it is not
+everything. You can import skills from a third-party GitHub repository
+([Importing skills](/docs/guides/importing-skills)) and write your own
+([Writing custom skills](/docs/guides/writing-custom-skills)) — but if
+essentially nothing you work with is covered, you would be authoring the
+catalogue as well as using it, and that is a much bigger commitment than this
+page is asking you to make.
+
+**You are not using Claude Code.** The output is Claude Code sub-agent files
+and Claude Code plugins. Nothing here targets another agent runtime.
+
+## Next
+
+- [Quickstart](/docs/quickstart) — run it and see what lands on disk.
+- [CLI or web](/docs/cli-or-web) — if you would rather select skills in a
+  visual grid than a terminal.

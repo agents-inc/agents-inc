@@ -1,0 +1,45 @@
+---
+title: Skills
+description: The atomic unit of expertise — what a skill is, what it looks like on disk, and how skills relate to sub-agents and stacks.
+---
+
+:::caution[Two options below need a currently disabled command]
+The `new skill` and `new marketplace` commands behind [Write your own](/docs/guides/writing-custom-skills) and [Run your own marketplace](/docs/guides/creating-a-marketplace) are switched off in the released CLI while they are being improved. Running either exits with a non-zero status and prints `The <name> command is currently disabled while being improved.`
+
+Both guides list what still works in the meantime — ejecting existing skills, importing from GitHub, and building a marketplace repository by hand. [Import skills](/docs/guides/importing-skills) is unaffected.
+:::
+
+A **skill** is one atomic, reusable unit of expertise: one library or one practice, written once. React is a skill. Zod is a skill. Vitest is a skill.
+
+Skills exist so that expertise is not copied into agent prompts by hand. You pick the skills that match the stack you actually use, and the CLI compiles them into [sub-agents](/docs/concepts/sub-agents). Change a skill and recompile, and every agent that uses it updates.
+
+## What a skill is on disk
+
+```
+skills/{skill-name}/
+  SKILL.md         # The skill content
+  metadata.yaml    # Name, domain, category, relationships
+```
+
+Both files are required — the CLI's loader validates the pair, and `agents-inc validate` reports any skill missing either one.
+
+## How skills are organised
+
+Each skill belongs to a **domain** (web, api, ai, mobile, infra, shared, meta) and a **category** within it (`web-framework`, `web-client-state`, `api-api`, and so on). A category can be marked exclusive, which is what makes the wizard treat it as a radio group — you get one framework, not three.
+
+Skills also declare relationships to each other (`requires`, `conflictsWith`). Those relationships drive the compatibility filtering you see while selecting.
+
+## Where skills come from
+
+The official marketplace at [agents-inc/skills](https://github.com/agents-inc/skills) is the default source and currently ships 222 skills. You are not limited to it:
+
+- [Import skills](/docs/guides/importing-skills) from any GitHub repository.
+- [Write your own](/docs/guides/writing-custom-skills) for project-specific knowledge.
+- [Run your own marketplace](/docs/guides/creating-a-marketplace) curated for your team's conventions.
+
+## How a skill reaches an agent
+
+Two separate decisions:
+
+- **Install mode** — whether the skill's files live in a Claude Code plugin or are copied into your project. See [Install modes](/docs/concepts/install-modes).
+- **Load behaviour** — whether the skill is embedded in the compiled agent prompt (`preloaded: true`) or fetched at runtime through Claude Code's Skill tool. Dynamic is the default and keeps prompts lean. See [Editing your config](/docs/guides/editing-config).

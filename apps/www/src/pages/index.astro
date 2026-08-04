@@ -1,0 +1,442 @@
+---
+/**
+ * The marketing landing page.
+ *
+ * Its one job is the thing people say they struggle with most: understanding
+ * *why* they would use this. A visitor who reads only the top third should be
+ * able to say what it is and what it does for them. Everything here is
+ * subordinate to that — which is why the sections are the five of the research
+ * note's "minimum first ship" (nav · hero · what-it-is · free-and-open-source ·
+ * footer) and not the twelve-section plan beside it.
+ *
+ * This page is not a Starlight page. It gets no sidebar, no docs header and no
+ * prefetch script; it shares only the design tokens, via the stylesheet below.
+ *
+ * Every class here is the design language already running in apps/editor — the
+ * command block is packages/ui's CommandBlock, the outline CTA is its Button's
+ * `outline` variant, the mono section headings are its DialogPaneHeading, and
+ * the mark and nav links are the editor's NavRail. Nothing new was
+ * invented for this page; where a value looks arbitrary it was copied.
+ */
+import "../styles/site.css"
+
+/**
+ * The eyebrow's three facts are real signal, so two of them are read from the
+ * package that actually ships rather than restated here — a hand-copied
+ * version is wrong from the first release after somebody forgets it.
+ */
+import cliPackage from "../../../../packages/cli/package.json"
+
+/**
+ * The third is not readable the same way. The catalogue is a generated
+ * `SKILL_IDS` array in packages/matrix/src/vendor/generated/source-types.ts,
+ * and parsing a TypeScript literal at build time to count it would be worse
+ * than the staleness it prevents. Counted there on 2026-08-03: SKILL_IDS,
+ * SKILL_SLUGS and SKILL_MAP all hold 222 entries.
+ *
+ * NOTE for whoever finds a different number in the READMEs: both of them say
+ * "150+ skills", and both are out of date against that catalogue.
+ */
+const SKILL_COUNT = 222
+
+/**
+ * The command in the hero is the first one a new user would actually run, and
+ * it is the only one on the page. `init` with no flags starts the wizard from
+ * nothing, which is exactly what a first-time visitor wants.
+ */
+const INSTALL_COMMAND = "npx agents-inc init"
+
+const DOCS_PATH = "/docs"
+
+/**
+ * Where the editor lives TODAY: the apex, on its own. The one-hostname
+ * split decided on 2026-08-03 — `/` this page, `/docs` Starlight, `/editor`
+ * today's apps/editor — is a separate piece of work that is not live, and it is
+ * WWW-03 ("Domains and the app split") in todo/www.md, which carries the old
+ * identifier: item 10 of docs/web/editor-todo.md.
+ *
+ * WHEN THAT SPLIT LANDS: change this to "/editor". Until then it has to be
+ * the absolute URL, because a shipped page cannot carry a link that 404s and
+ * `/editor` is exactly that — this page's own build serves nothing there.
+ */
+const EDITOR_URL = "https://agentsinc.sh"
+
+const GITHUB_REPO_URL = "https://github.com/agents-inc/cli"
+const SKILLS_REPO_URL = "https://github.com/agents-inc/skills"
+
+const PAGE_TITLE = "Agents Inc — compose Claude Code sub-agents from skills"
+const PAGE_DESCRIPTION =
+  "An agent composition framework for Claude Code. Pick the skills matching your stack and the CLI compiles them into sub-agents."
+
+// NavRail's own class, verbatim. The active-state variants are dropped: this
+// page has one link per destination and none of them point at itself.
+const NAV_LINK_CLASS =
+  "font-mono text-11 font-medium tracking-[.07em] whitespace-nowrap uppercase text-muted-foreground hover:text-ink"
+
+// DialogPaneHeading, verbatim — the design's existing section heading.
+const SECTION_HEADING_CLASS =
+  "font-mono text-9 font-semibold tracking-[.13em] text-ink uppercase"
+
+// install-dialog's prose: the one paragraph style in the design.
+const PARAGRAPH_CLASS = "text-11 leading-[1.5] text-ink-3"
+
+// Its inline literal, too — a file path or a command inside a sentence.
+const INLINE_CODE_CLASS = "font-mono text-10 text-ink not-italic"
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{PAGE_TITLE}</title>
+    <meta name="description" content={PAGE_DESCRIPTION} />
+  </head>
+  <!-- No colour classes on <body>: globals.css already styles it in @layer base. -->
+  <body>
+    {/*
+      Every developer-facing note below this line is a JSX-style comment rather
+      than an HTML one, because Astro strips these from the output and ships
+      the others. The one HTML comment above is the scaffold's own and is left
+      as it was found.
+
+      Rule 5 of the design language — whitespace separates content, not rules —
+      so there is no hairline under this header and none between any two
+      sections below. The only borders on the page enclose something: the mark,
+      the command block, the outline button and the video slot.
+    */}
+    {/*
+      `px-8 sm:px-gutter` on all three wrappers, and it is the only responsive
+      thing on the page. The 60px gutter is the design's structural constant
+      and it is right everywhere the product itself runs, because the product
+      is a three-column desktop editor — but it is a desktop constant.
+      Held at 60px on a 390px phone it leaves a 258px column, which is where
+      this copy stops being readable. The editor carries no breakpoints
+      at all for that reason; a landing page is the one surface that has to
+      survive a phone, so it carries exactly one.
+    */}
+    <header class="mx-auto flex max-w-3xl items-center gap-4 px-8 pt-10 sm:px-gutter">
+      <a href="/" class="flex items-center gap-[0.6875rem]" aria-label="Agents Inc, home">
+        <span
+          class="flex size-[2.375rem] shrink-0 items-center justify-center border border-brand font-mono text-12 font-semibold tracking-[.02em] text-brand-ink"
+          aria-hidden="true">a-i</span
+        >
+        {/* The mark alone below `sm`, which is how the editor's own rail
+            carries the brand anyway. On a phone the wordmark and three nav
+            links do not fit one line together, and the mark is the half that
+            survives losing its partner. The link keeps its aria-label either
+            way, so what is announced does not change with the viewport. */}
+        <span
+          class="hidden font-mono text-11 font-medium tracking-[.07em] text-ink uppercase sm:inline"
+          >Agents Inc</span
+        >
+      </a>
+
+      <nav class="ml-auto flex items-center gap-[1.125rem]" aria-label="Main">
+        <a href={DOCS_PATH} class={NAV_LINK_CLASS}>Docs</a>
+        <a
+          href={SKILLS_REPO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          class={NAV_LINK_CLASS}>Skills</a
+        >
+        <a
+          href={GITHUB_REPO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          class={NAV_LINK_CLASS}>GitHub</a
+        >
+      </nav>
+    </header>
+
+    <main class="mx-auto max-w-3xl px-8 pt-gutter pb-gutter sm:px-gutter">
+      <section aria-labelledby="headline">
+        {/* Muted, not amber: rule 4 reserves the accent for what the user
+            deliberately chose, and an eyebrow is not a choice. */}
+        <p class="font-mono text-9 font-medium tracking-[.13em] text-muted-foreground uppercase">
+          {cliPackage.license} &middot; v{cliPackage.version} &middot; {SKILL_COUNT} skills
+        </p>
+
+        {/* The headline names the PAIN, not the mechanism. The version it
+            replaced — "Compose Claude Code sub-agents from atomic skills" —
+            presumed the reader already knew what a Claude Code sub-agent was
+            and why composing them mattered, which is the one thing a stranger
+            does not know. Pain first, mechanism second, in that order. */}
+        <h1 id="headline" class="mt-4 max-w-xl text-25 leading-[1.4] font-medium text-ink">
+          Hand-written Claude Code sub-agents duplicate each other and go stale
+        </h1>
+
+        {/* THE PROBLEM, in the hero rather than 870px down the page. This was
+            its own section under an h2 until 2026-08-03, and it is here now
+            because a visitor who reads only the top third has to meet the
+            problem — measured at 1440x900, that h2 sat at y=872, on the very
+            bottom edge of the fold. The section it used to be is gone rather
+            than duplicated; "The approach" below answers this paragraph.
+
+            The wording is the `why` page's, which says it better than this
+            page ever did: prompt files "duplicate each other, drift apart, and
+            cannot be composed". Concrete rather than abstract on purpose — the
+            same paragraph pasted three times is the thing people recognise. */}
+        <p class="mt-4 max-w-xl text-13 leading-[1.5] text-ink-3">
+          A sub-agent is a specialised Claude Code assistant with its own instructions —
+          in practice, a long prompt file. Once you have three of them, all three need the
+          same paragraph about React, so you paste it into all three. Then React changes,
+          and you update one.
+        </p>
+
+        {/* And only now the mechanism, kept to two sentences: the fuller
+            version is "The approach" below, and repeating it verbatim here
+            would just be the same paragraph twice. */}
+        <p class="mt-4 max-w-xl text-13 leading-[1.5] text-ink-3">
+          Agents Inc breaks that expertise into atomic skills instead and compiles them
+          into sub-agents. The React knowledge exists once; recompile, and every sub-agent
+          built from it is rewritten.
+        </p>
+
+        <div class="mt-8 flex flex-wrap items-start gap-[0.6875rem]">
+          <div>
+            {/*
+              packages/ui's CommandBlock, `copyable`, rebuilt in plain markup
+              because this site deliberately ships no React.
+
+              Deliberately not a button element: browsers make button text
+              unselectable, so if the script below never runs, the one command
+              on the page could not be copied at all. A div keeps the text
+              selectable, and the script adds the role, the tab stop and the
+              label — so with no JavaScript this degrades to exactly what it
+              looks like, a line of shell you can select.
+
+              The dollar sign is decoration, not content: it is aria-hidden and
+              sits outside the code element, so selecting the line copies only
+              the command.
+            */}
+            <div
+              id="install-command"
+              data-command={INSTALL_COMMAND}
+              class="cursor-pointer border border-hairline bg-code px-[0.6875rem] py-[0.5rem] font-mono text-11_5 font-medium text-ink outline-none hover:border-rule focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <span aria-hidden="true" class="pr-[0.4375rem] text-brand select-none">$</span
+              ><code class="font-mono">{INSTALL_COMMAND}</code>
+            </div>
+
+            {/* Always in the layout, and reserving one line of its own text,
+                so the block never shifts under the cursor the moment it is
+                clicked. Empty until the script fills it in — "click to copy"
+                would be a lie on a page whose JavaScript failed. */}
+            <p
+              id="install-command-note"
+              aria-live="polite"
+              class="min-h-[1lh] pt-1.5 font-mono text-8 font-medium tracking-[.13em] text-muted-foreground uppercase data-[copied]:text-brand-ink"
+            >
+            </p>
+          </div>
+
+          {/* The Button primitive's `outline` variant, same reason as above.
+              A different action to a different place, so it is not a second
+              copy of the primary one. */}
+          <a
+            href={EDITOR_URL}
+            class="inline-flex shrink-0 cursor-pointer items-center justify-center border border-rule bg-cell px-[0.9375rem] py-[0.625rem] font-mono text-9_5 font-semibold tracking-[.11em] whitespace-nowrap text-ink-3 uppercase outline-none select-none hover:border-dialog-border hover:text-ink focus-visible:ring-1 focus-visible:ring-ring"
+            >Build a stack &rarr;</a
+          >
+        </div>
+      </section>
+
+      {/* WHAT IT IS. The problem used to open this run of sections; it is in
+          the hero now, so what remains is what this does instead and — because
+          it is the question people actually ask — how the terminal and the web
+          editor relate. */}
+      <section class="mt-gutter max-w-xl" aria-labelledby="the-approach">
+        <h2 id="the-approach" class={SECTION_HEADING_CLASS}>The approach</h2>
+        <p class={`mt-3 ${PARAGRAPH_CLASS}`}>
+          A skill is one atomic, reusable unit — one library or one practice: React,
+          Tailwind, Zod, Vitest, Hono. You choose the ones matching the stack you actually
+          use, and the CLI compiles them into sub-agents. Change a skill, recompile, and
+          every sub-agent using it picks up the change. A stack is a named selection you can
+          start from, save and share.
+        </p>
+      </section>
+
+      <section class="mt-8 max-w-xl" aria-labelledby="two-front-doors">
+        <h2 id="two-front-doors" class={SECTION_HEADING_CLASS}>Two front doors</h2>
+        <p class={`mt-3 ${PARAGRAPH_CLASS}`}>
+          <em class={INLINE_CODE_CLASS}>{INSTALL_COMMAND}</em> runs the whole selection as a
+          wizard in your terminal. The editor is that same selection as a visual grid:
+          it hands back an id, and you give the id to the same command as{" "}
+          <em class={INLINE_CODE_CLASS}>--from &lt;id&gt;</em>. Same catalogue, same output —
+          use whichever you prefer.
+        </p>
+      </section>
+
+      {/*
+        RECORDING SLOT — EMPTY ON PURPOSE, AND HOLDING ITS SPACE.
+
+        The visual here is a terminal recording and specifically NOT a
+        screenshot of the editor: an editor screenshot is what
+        makes a page like this read as a web app rather than as a tool.
+
+        WHY IT IS DOWN HERE rather than in the hero, where it was until
+        2026-08-03. Measured at 1440x900 it started at y=409 and ran about
+        400px tall, so the whole second half of the fold was one empty
+        rectangle and every block that does the explaining was pushed below
+        it — "The problem" heading landed at y=872, on the edge. A slot
+        that cannot do its job until somebody records a video must not be the
+        thing standing between a visitor and the explanation. Below the
+        explanation it costs nothing while empty and pays off when filled,
+        because by then the reader has been told what they are looking at.
+
+        WHY IT STILL RESERVES ITS SPACE. Collapsing it to nothing would only
+        move the problem: the page would settle at one height now and shove
+        everything below it down the day a real file lands. `aspect-video` on
+        a fixed-width box holds exactly the space the file will occupy.
+
+        WHY max-w-xl. Same measure as every paragraph on this page, so it
+        reads as part of the column rather than as a banner across it. It also
+        shrinks: measured at 1440 wide, 634px across and 356px tall, where
+        full-bleed in `main` it was 725px across and 408px tall.
+
+        TO FILL IT IN: drop the file into apps/www/public/ and replace the
+        whole <div> below with
+
+          <video
+            class="block aspect-video w-full border border-hairline"
+            src="/demo.mp4"
+            poster="/demo-poster.png"
+            autoplay muted loop playsinline preload="metadata"
+            aria-label="The agents-inc init wizard, recorded"
+          ></video>
+
+        Keep `aspect-video` (or set width and height on the element) so the
+        reserved space still matches the file and the page does not jump.
+
+        Two recordings already exist in the repo. Neither is wired up here,
+        and both need a decision before they are:
+          · packages/cli/assets/demo.gif — the VHS recording, 1400x1200
+            (7:6) and 2.4 MB. Heavy, and the wrong shape for the box below;
+            if it is used anyway, change `aspect-video` to `aspect-[7/6]` in
+            the same place.
+          · the walkthrough video linked from packages/cli/README.md, hosted
+            on GitHub's user-attachments CDN. Not a same-origin asset, so it
+            would need downloading into public/ rather than hotlinking.
+      */}
+      <div
+        class="mt-gutter flex aspect-video w-full max-w-xl items-center justify-center border border-hairline bg-code"
+      >
+        {/* `subtle`, not the quieter `faint` one step below it: `faint` on
+            this surface measures 3.4:1, under the 4.5:1 this size of text
+            needs. `subtle` is 5.4:1 and is still the quietest step that
+            clears it. */}
+        <span class="font-mono text-8 font-medium tracking-[.13em] text-subtle uppercase"
+          >terminal recording</span
+        >
+      </div>
+
+      {/* FREE AND OPEN SOURCE. This sits where a commercial site puts pricing
+          and does the same job: it answers "what does this cost me" before
+          anyone has to go looking. No star count and no contributor avatars —
+          both would have to be fetched, and a number nobody measured is worse
+          than no number. */}
+      <section class="mt-gutter max-w-xl" aria-labelledby="free-and-open-source">
+        <h2 id="free-and-open-source" class={SECTION_HEADING_CLASS}>Free and open source</h2>
+        <p class={`mt-3 ${PARAGRAPH_CLASS}`}>
+          Agents Inc is {cliPackage.license} licensed and free to use. The CLI and the skill
+          catalogue are both public repositories — read them, fork them, or open a pull
+          request.
+        </p>
+        <p class="mt-4 flex flex-wrap gap-x-[1.125rem] gap-y-2">
+          <a
+            href={GITHUB_REPO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            class={NAV_LINK_CLASS}>CLI repository</a
+          >
+          <a
+            href={SKILLS_REPO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            class={NAV_LINK_CLASS}>Skills repository</a
+          >
+        </p>
+      </section>
+    </main>
+
+    <footer
+      class="mx-auto flex max-w-3xl flex-wrap items-center gap-x-[1.125rem] gap-y-2 px-8 pb-gutter font-mono text-9 font-medium tracking-[.13em] text-muted-foreground uppercase sm:px-gutter"
+    >
+      <span>{cliPackage.license} licensed</span>
+      <span>v{cliPackage.version}</span>
+      {/* The resting colour is restated on each anchor, not inherited from the
+          row: globals.css colours every bare `a` amber in @layer base, and
+          rule 4 reserves amber for what the user deliberately chose — which a
+          footer link is not. */}
+      <a href={DOCS_PATH} class="ml-auto text-muted-foreground hover:text-ink">Docs</a>
+      <a
+        href={GITHUB_REPO_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="text-muted-foreground hover:text-ink">GitHub</a
+      >
+    </footer>
+
+    <script>
+      /**
+       * The hero command's click-to-copy, and the only script on this page.
+       *
+       * Written as an enhancement rather than as the block's behaviour: the
+       * markup ships as a plain, selectable line of shell, and everything that
+       * makes it look interactive — the role, the tab stop, the label, the
+       * "click to copy" prompt — is added here, so a reader whose JavaScript
+       * never arrives is never offered a control that does nothing.
+       *
+       * The copied state is carried on a `data-copied` attribute rather than by
+       * swapping class names from here, so both colours appear literally in the
+       * markup above and Tailwind's scanner cannot miss either one.
+       */
+      const COPIED_DECAY_MS = 2_000
+      const COPY_PROMPT = "click to copy"
+      const COPIED_NOTE = "copied"
+
+      const block = document.getElementById("install-command")
+      const note = document.getElementById("install-command-note")
+      const command = block?.dataset.command
+
+      // No clipboard API — an insecure origin, or an old browser — means there
+      // is nothing to enhance, and the block stays what it already is.
+      if (block && note && command && navigator.clipboard) {
+        block.setAttribute("role", "button")
+        block.setAttribute("tabindex", "0")
+        block.setAttribute("aria-label", `Copy ${command}`)
+        note.textContent = COPY_PROMPT
+
+        let resetTimer: number | undefined
+
+        const copy = async () => {
+          try {
+            await navigator.clipboard.writeText(command)
+          } catch {
+            // A denied permission is the user's answer, not an error to report.
+            return
+          }
+
+          note.textContent = COPIED_NOTE
+          note.dataset.copied = ""
+
+          window.clearTimeout(resetTimer)
+          resetTimer = window.setTimeout(() => {
+            note.textContent = COPY_PROMPT
+            delete note.dataset.copied
+          }, COPIED_DECAY_MS)
+        }
+
+        block.addEventListener("click", () => void copy())
+        block.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return
+          // Space would scroll the page, Enter would do nothing; both have to
+          // be claimed because this is a div wearing a button's role.
+          event.preventDefault()
+          void copy()
+        })
+      }
+    </script>
+  </body>
+</html>
