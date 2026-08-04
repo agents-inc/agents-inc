@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.150.0] - 2026-08-04
+
+**The CLI is published as `agents-inc` — one package where there were two**
+
+- `agents-inc` used to be a three-line package that imported `@agents-inc/cli`; it now carries the CLI itself, and `@agents-inc/cli` is deprecated pointing at it. `npx agents-inc init` behaves exactly as before, minus a resolution hop, and both `agents-inc` and `agentsinc` remain registered binaries
+- The alias had to be republished at a matching version on every release or `npx` would keep serving repeat users the CLI build they first pulled. That guard was a manual step, and it had already failed once in the way it was designed to fail — silently. One package cannot fall out of step with itself
+- `@agents-inc/cli` keeps working: deprecating does not remove. A hand-written config importing `@agents-inc/cli/config` still loads too — the current spelling is `agents-inc/config` and the loader accepts both. Configs written by `init` never named the package at all
+
+See [changelogs/0.150.0.md](./changelogs/0.150.0.md) for full details.
+
 ## [0.149.2] - 2026-08-04
 
 **The repository was renamed, and the schema address moved with it**

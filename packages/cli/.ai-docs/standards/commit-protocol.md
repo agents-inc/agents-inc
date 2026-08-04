@@ -44,7 +44,7 @@ When creating multiple commits in sequence:
 
 Every release MUST complete all steps. No exceptions.
 
-- [ ] Bump version in `package.json` **and `alias/package.json` to the same number, always, in the same commit.** They are one version, not two — see "Two packages, one version" below.
+- [ ] Bump version in `package.json`
 - [ ] Create `changelogs/{version}.md` with full release notes
 - [ ] Prepend brief summary to `CHANGELOG.md` with link to detailed file
 - [ ] Release commit title uses em-dash (`—`, not `-`) separator: `chore(release): {version} — {summary}`
@@ -52,23 +52,7 @@ Every release MUST complete all steps. No exceptions.
 - [ ] Every ticket with a `### D-xxx` subheading in the detailed `changelogs/{version}.md` MUST have at least one corresponding bullet in the `CHANGELOG.md` summary block for that release. Zero tolerance for "cleanup tickets" that get folded into prose without their own bullet — if a ticket earned a detailed subheading, it earned a summary bullet. Mechanically checkable: grep `### D-` in the detailed file, grep `D-xxx` in the corresponding `CHANGELOG.md` block, diff the sets.
 - [ ] Every `.ai-docs/agent-findings/*.md` path cited in the changelog must exist on disk
 - [ ] Never edit old entries in `CHANGELOG.md` or old `changelogs/` files
-- [ ] Publish both: `npm publish`, then `cd alias && npm publish`. A release that ships one without the other is not a release.
-
-### Two packages, one version
-
-`agents-inc` is a thin alias package whose only dependency is `@agents-inc/cli`. It exists because
-`npx agents-inc` is the invocation we promote everywhere — the README, the CLI's own messages, and
-the install command `agentsinc.sh` hands people when they copy it.
-
-**Bump and publish both, every time, at the same number.** The alias's contents never change, so this
-looks like pointless churn. It is not: `npx` caches by package spec and reuses a cached install
-wholesale, _including the `@agents-inc/cli` it resolved on first run_. An alias whose version never
-moves leaves every repeat `npx agents-inc` user pinned to whatever CLI version they first pulled —
-indefinitely, and silently. The version bump is the only thing that busts that cache.
-
-The failure is invisible from the inside. `@agents-inc/cli` publishes fine, the changelog is right,
-a fresh machine works, and the people affected are precisely the returning users who cannot tell
-they are running last month's build. Assume it is broken unless both were published.
+- [ ] Publish: `npm publish` from `packages/cli`
 
 ### CHANGELOG.md Format (Summary)
 

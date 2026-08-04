@@ -37,11 +37,12 @@ export const CACHE_DIR = path.join(os.homedir(), ".cache", DEFAULT_PLUGIN_NAME);
  * Promoted invocation prefix shown in user-facing messages (e.g. "Run '<CLI_INVOKE_COMMAND> init'").
  *
  * `bin` in package.json registers BOTH names — `agents-inc` (primary, matching this constant and
- * the alias package) and `agentsinc` (kept so existing global installs keep working). A global
- * install of `@agents-inc/cli` therefore answers to either spelling.
+ * the package name) and `agentsinc` (kept so existing global installs keep working). A global
+ * install therefore answers to either spelling.
  *
- * `agents-inc` rather than the scoped `@agents-inc/cli` because that is the package whose published
- * bin matches, and it is what agentsinc.sh hands people when they copy an install command.
+ * `agents-inc` rather than `agentsinc` because it is the published package name, so `npx
+ * agents-inc` resolves with nothing installed, and it is what agentsinc.sh hands people when they
+ * copy an install command.
  *
  * CONVENTION: every user-facing instruction in this repo — messages, docs, code comments, agent
  * playbooks — writes commands in this `npx agents-inc <cmd>` form. Prose that merely names a

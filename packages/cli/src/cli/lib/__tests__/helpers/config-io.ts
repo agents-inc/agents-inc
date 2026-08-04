@@ -10,7 +10,7 @@ import { VALID_PACKAGE_JSON_FILE } from "../mock-data/mock-source-files.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/** Resolve @agents-inc/cli/config to the source config-exports.ts so jiti can load it in dev. */
+/** Resolve agents-inc/config to the source config-exports.ts so jiti can load it in dev. */
 const CONFIG_EXPORTS_PATH = path.resolve(__dirname, "../../../config-exports.ts");
 
 export async function readTestYaml<T>(filePath: string): Promise<T> {
@@ -33,7 +33,13 @@ export async function readTestTsConfig<T>(filePath: string): Promise<T> {
   const jiti = createJiti(import.meta.url, {
     moduleCache: false,
     interopDefault: true,
-    alias: { "@agents-inc/cli/config": CONFIG_EXPORTS_PATH },
+    // Both spellings, matching config-loader.ts: `@agents-inc/cli/config` is the name the CLI
+    // published under until 0.150.0, kept so a config hand-written against it still loads. See
+    // config-loader.ts for the full reason, and REPO-24 in todo/repo.md for removing it.
+    alias: {
+      "agents-inc/config": CONFIG_EXPORTS_PATH,
+      "@agents-inc/cli/config": CONFIG_EXPORTS_PATH,
+    },
   });
   // Boundary cast: jiti returns unknown, caller provides expected type
   const result = await jiti.import(filePath, { default: true });

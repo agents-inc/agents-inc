@@ -23,7 +23,7 @@ Everything the CLI can do — the full command reference, the stack list, the sk
 │   ├── editor/           the editor (Vite + React, deployed to Cloudflare)
 │   └── server/           the API worker (Hono)
 ├── packages/
-│   ├── cli/              the published CLI — this is @agents-inc/cli on npm
+│   ├── cli/              the published CLI — this is agents-inc on npm
 │   ├── matrix/           the skill catalog the web app reads
 │   ├── ui/               the design system shared by the web app
 │   ├── eslint-config/    shared configs
@@ -37,9 +37,7 @@ Everything the CLI can do — the full command reference, the stack list, the sk
 └── .husky/
 ```
 
-`packages/cli` is the only workspace that publishes to npm. Its `README.md` is the one npm shows, which is why the product documentation lives there rather than here.
-
-`packages/cli/alias/` holds the tiny `agents-inc` alias package that makes `npx agents-inc` work. It is deliberately outside the `packages/*` workspace glob: it is published by hand, in lockstep with the CLI.
+`packages/cli` is the only workspace that publishes to npm, as `agents-inc`. Its `README.md` is the one npm shows, which is why the product documentation lives there rather than here.
 
 ## Working in it
 

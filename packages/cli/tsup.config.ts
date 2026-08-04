@@ -5,7 +5,7 @@ import path from "path";
 export default defineConfig({
   entry: [
     "src/cli/index.ts", // oclif entry point
-    "src/cli/config-exports.ts", // library export for @agents-inc/cli/config
+    "src/cli/config-exports.ts", // library export for agents-inc/config
     "src/cli/commands/**/*.{ts,tsx}", // oclif commands (some use JSX)
     "src/cli/hooks/**/*.ts", // oclif hooks
     "src/cli/components/**/*.tsx", // Ink components

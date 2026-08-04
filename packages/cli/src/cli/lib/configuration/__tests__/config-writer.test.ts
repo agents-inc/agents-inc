@@ -153,7 +153,7 @@ describe("generateConfigSource", () => {
     const importLine = source.split("\n")[0];
     expect(importLine).toBe('import type { ProjectConfig } from "./config-types";');
     expect(source).not.toContain("defineConfig");
-    expect(source).not.toContain("@agents-inc/cli/config");
+    expect(source).not.toContain("agents-inc/config");
   });
 
   it("imports SkillConfig and AgentScopeConfig when skills and agents are present", () => {

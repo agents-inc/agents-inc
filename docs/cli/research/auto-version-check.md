@@ -6,9 +6,9 @@
 
 **Package identity:**
 
-- Package name: `@agents-inc/cli` (from `package.json:2`)
+- Package name: `agents-inc` (from `package.json:2`)
 - Current version: `0.35.0` (from `package.json:3`)
-- Published to npm: `https://registry.npmjs.org/@agents-inc/cli`
+- Published to npm: `https://registry.npmjs.org/agents-inc`
 - GitHub repo: `https://github.com/agents-inc/agents-inc`
 
 **Where version is currently rendered:**
@@ -37,7 +37,7 @@ The project already has `@oclif/plugin-warn-if-update-available` v3.1.55 install
 
 This plugin works as follows (from `node_modules/@oclif/plugin-warn-if-update-available/lib/hooks/init/check-update.js`):
 
-1. **On every CLI init hook**, it checks a cached version file at `~/Library/Caches/agents-inc/version` (macOS) or `~/.cache/@agents-inc/cli/version` (Linux).
+1. **On every CLI init hook**, it checks a cached version file at `~/Library/Caches/agents-inc/version` (macOS) or `~/.cache/agents-inc/version` (Linux).
 
 2. **If the cache file is stale** (default: 60 days `timeoutInDays`), it spawns a **background child process** (`get-version.js`) that:
    - Fetches `https://registry.npmjs.org/@agents-inc%2fcli` (the full npm registry endpoint)
@@ -82,7 +82,7 @@ Since `@oclif/plugin-warn-if-update-available` already maintains a version cache
 Implement a custom version check that:
 
 1. Spawns a background process or uses `fetch()` with `AbortController` timeout
-2. Checks `https://registry.npmjs.org/@agents-inc/cli/latest` (returns `{"name": "@agents-inc/cli", "version": "0.35.0", ...}`)
+2. Checks `https://registry.npmjs.org/agents-inc/latest` (returns `{"name": "agents-inc", "version": "0.35.0", ...}`)
 3. Caches the result locally (e.g., `~/.cache/agents-inc/version-check.json` with a timestamp)
 4. Passes result to the wizard via Zustand store or React state
 
@@ -339,7 +339,7 @@ The `clearGigetCache()` function should also be called during TTL-triggered refr
    ```json
    "warn-if-update-available": {
      "timeoutInDays": 1,
-     "message": "@agents-inc/cli update available: v<%= config.version %> -> v<%= latest %>"
+     "message": "agents-inc update available: v<%= config.version %> -> v<%= latest %>"
    }
    ```
 

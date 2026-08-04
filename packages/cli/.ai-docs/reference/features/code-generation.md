@@ -120,8 +120,8 @@ of the monorepo moved: a path under `packages/cli/` sets the CLI side; any other
 or `packages/` sets the web side; a root tooling file (`package.json`, `bun.lock`, `turbo.json`,
 `tsconfig.json`, or anything under `.husky/` or `.github/`) sets **both**, because it changes how
 both sides install, build and run. Each side that is set then runs that side's **whole**
-`lint test test:e2e` set through turbo — `--filter=@agents-inc/cli` for the CLI,
-`--filter='!@agents-inc/cli'` for the web. Only `packages/cli` and `apps/editor` define `test:e2e`, so
+`lint test test:e2e` set through turbo — `--filter=agents-inc` for the CLI,
+`--filter='!agents-inc'` for the web. Only `packages/cli` and `apps/editor` define `test:e2e`, so
 each side runs the end-to-end suite it owns and nothing else, and a commit confined to documentation
 or other root files sets neither flag and runs neither suite. ESLint runs here rather than in
 `lint-staged` because flat config is resolved from the working directory, and every workspace keeps

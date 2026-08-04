@@ -103,14 +103,16 @@ Both are exported three ways, and the third is the mechanism behind "override or
 | --------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Direct module import                          | `stacks-loader.ts`, `source-loader.ts`, `scripts/generate-source-types.ts`, the pinning tests |
 | `src/cli/lib/configuration/index.ts` (barrel) | Internal; listed on the barrel surface in [configuration.md](./configuration.md)              |
-| `src/cli/config-exports.ts`                   | **Public.** Published as `@agents-inc/cli/config` (`package.json` `exports` → `./config`)     |
+| `src/cli/config-exports.ts`                   | **Public.** Published as `agents-inc/config` (`package.json` `exports` → `./config`)          |
 
 `config-exports.ts` re-exports `defineConfig`, `defaultCategories`, `defaultRules`, `defaultStacks`
 and the types `Stack`, `StackAgentConfig`, `CategoryMap`, `SkillRulesConfig`, `ProjectConfig`. A
 source repo's own `config/stacks.ts` can therefore write
-`import { defaultStacks } from "@agents-inc/cli/config"` and spread it. `config-loader.ts` makes
-this work under jiti by aliasing `"@agents-inc/cli/config"` to the local `config-exports.ts`, so the
-import resolves whether the source repo is loaded from disk in dev or from a fetched clone.
+`import { defaultStacks } from "agents-inc/config"` and spread it. `config-loader.ts` makes this
+work under jiti by aliasing `"agents-inc/config"` to the local `config-exports.ts`, so the import
+resolves whether the source repo is loaded from disk in dev or from a fetched clone. The same map
+still carries `"@agents-inc/cli/config"`, the spelling the package published under before 0.150.0,
+so a source repo written against it keeps loading; REPO-24 in `todo/repo.md` tracks its removal.
 
 ## `defaultStacks`
 

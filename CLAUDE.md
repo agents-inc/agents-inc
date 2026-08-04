@@ -8,7 +8,7 @@ publishes to npm.
 
 | Workspace           | What it is                                             |
 | ------------------- | ------------------------------------------------------ |
-| `packages/cli`      | the published CLI — `@agents-inc/cli` on npm           |
+| `packages/cli`      | the published CLI — `agents-inc` on npm                |
 | `apps/editor`       | the editor (Vite + React, deployed to Cloudflare)      |
 | `apps/www`          | the Astro site — landing page at `/`, docs at `/docs`  |
 | `apps/server`       | the API worker (Hono)                                  |

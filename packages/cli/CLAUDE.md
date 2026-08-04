@@ -89,7 +89,7 @@ This file provides behavioral rules and conventions. For codebase reference docu
 - ALWAYS tell sub-agents: "If you fix an anti-pattern or discover a missing standard, write a finding to `.ai-docs/agent-findings/` using the template in `.ai-docs/agent-findings/TEMPLATE.md`"
 
 ### Releasing
-- ALWAYS bump `alias/package.json` to the **same version as `package.json`, in the same commit**, and publish both. `agents-inc` is a thin alias over `@agents-inc/cli`, and `npx agents-inc` is the invocation promoted everywhere. `npx` caches by package spec, so an alias whose version never moves pins every repeat user to the CLI build they first pulled — silently, and invisibly from our side, since a fresh machine works fine. See `.ai-docs/standards/commit-protocol.md`.
+- ALWAYS follow the release checklist in `.ai-docs/standards/commit-protocol.md`. This package publishes as `agents-inc` — one package, one version, one `npm publish`. There is no second package to bump; the `agents-inc` alias that used to shadow it was folded into this one in 0.150.0.
 
 ### Scope Awareness
 - ALWAYS use `resolveInstallPaths(projectDir, scope)` with the explicit scope parameter when resolving skill/agent directories

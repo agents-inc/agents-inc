@@ -7,7 +7,7 @@ import { getErrorMessage } from "../../utils/errors";
 import { formatZodIssues } from "../schemas";
 import type { z } from "zod";
 
-/** Resolve @agents-inc/cli/config to the source config-exports.ts so jiti can load it in dev. */
+/** Resolve agents-inc/config to the source config-exports.ts so jiti can load it in dev. */
 const CONFIG_EXPORTS_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../config-exports.ts",
@@ -32,7 +32,15 @@ export async function loadConfig<T>(configPath: string, schema?: z.ZodType<T>): 
     const jiti = createJiti(import.meta.url, {
       moduleCache: false,
       interopDefault: true,
-      alias: { "@agents-inc/cli/config": CONFIG_EXPORTS_PATH },
+      // Both spellings on purpose. `@agents-inc/cli/config` is the package name the CLI published
+      // under until 0.150.0, and a config hand-written against the documentation of the day imports
+      // it — but nothing answers to that name in node_modules now that the CLI ships as
+      // `agents-inc`, so dropping the key would stop such a config loading on upgrade. Removing it
+      // once nobody is on the old package: REPO-24 in todo/repo.md.
+      alias: {
+        "agents-inc/config": CONFIG_EXPORTS_PATH,
+        "@agents-inc/cli/config": CONFIG_EXPORTS_PATH,
+      },
     });
 
     raw = await jiti.import(configPath, { default: true });

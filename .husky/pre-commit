@@ -60,9 +60,9 @@ fi
 # end-to-end suite it owns and nothing else. A commit touching only docs or
 # other root files sets neither flag and runs neither suite.
 if [ "$run_cli" = yes ]; then
-	bunx turbo run lint test test:e2e --filter=@agents-inc/cli
+	bunx turbo run lint test test:e2e --filter=agents-inc
 fi
 
 if [ "$run_web" = yes ]; then
-	bunx turbo run lint test test:e2e --filter='!@agents-inc/cli'
+	bunx turbo run lint test test:e2e --filter='!agents-inc'
 fi

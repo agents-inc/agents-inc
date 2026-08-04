@@ -68,7 +68,7 @@ is exactly one lockfile, `bun.lock`, at the root.
 
 | Workspace                    | Package name        | Owns                                                                    |
 | ---------------------------- | ------------------- | ----------------------------------------------------------------------- |
-| `packages/cli`               | `@agents-inc/cli`   | The CLI. The only published workspace                                   |
+| `packages/cli`               | `agents-inc`        | The CLI. The only published workspace                                   |
 | `packages/matrix`            | `@workspace/matrix` | The vendored skill catalog the web app reads, plus the seed wire schema |
 | `packages/ui`                | `@workspace/ui`     | The design system: tokens and primitives                                |
 | `packages/eslint-config`     | —                   | Shared flat configs                                                     |
@@ -207,7 +207,7 @@ vendored catalog and fails if it drifted: a check, not a cross-repo pull request
 ## Dependency versions
 
 `.syncpackrc.cjs` keeps shared dependency versions in step across workspaces, with one declared
-exception for `@agents-inc/cli`.
+exception for `agents-inc`.
 
 > **The repository deliberately runs two majors of several tools, and three workarounds exist only
 > to hold that split together. This is scaffolding with a scheduled end, not architecture — it is

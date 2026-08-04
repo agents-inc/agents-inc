@@ -60,7 +60,7 @@ last_validated: 2026-07-30
 
 | Field       | Value                                                                                                                                                                                                                                                                                                                                                                    |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Package     | `@agents-inc/cli`                                                                                                                                                                                                                                                                                                                                                        |
+| Package     | `agents-inc`                                                                                                                                                                                                                                                                                                                                                             |
 | Version     | 0.147.1                                                                                                                                                                                                                                                                                                                                                                  |
 | Binary      | `package.json` `bin` registers **two** names for `dist/index.js` — `agents-inc` (primary) and `agentsinc` (kept so existing global installs keep working), so a global install answers to either spelling. `oclif.bin` / `oclif.dirname` are the single name `agents-inc`. User-facing messages promote `npx agents-inc` via `CLI_INVOKE_COMMAND` in `src/cli/consts.ts` |
 | Type        | ESM (`"type": "module"` in package.json)                                                                                                                                                                                                                                                                                                                                 |
@@ -90,7 +90,7 @@ last_validated: 2026-07-30
 src/cli/
   index.ts                  # CLI entry: oclif run()
   base-command.ts           # BaseCommand class (shared flags, error handling)
-  config-exports.ts         # Public API re-exports for @agents-inc/cli/config
+  config-exports.ts         # Public API re-exports for agents-inc/config
   consts.ts                 # ALL global constants (paths, colors, symbols, limits)
   commands/                 # oclif command classes (one per CLI command)
     build/                  # Build subcommands (marketplace, plugins) — no `stack` subcommand
@@ -141,7 +141,7 @@ src/cli/
     configuration/          # Config loader/merger/writer/generator/source-manager/config-types-writer/project-config/default-*
       project-config.ts     # loadProjectConfigFromDir(), loadProjectConfig(), validateProjectConfig(), ConfigLoadError
       scope-predicates.ts   # isActiveAt(), isGlobalTombstone(), isProjectOwned(), activeAgentScopeMap()
-      define-config.ts      # defineConfig() helper re-exported through @agents-inc/cli/config
+      define-config.ts      # defineConfig() helper re-exported through agents-inc/config
       default-categories.ts # defaultCategories — 89 category definitions, pinned 1:1 against the generated `Category` union
     installation/           # Install mode detection, local installer, mode migrator
       installation.ts       # detectInstallation(), detectProjectInstallation(), detectGlobalInstallation(), getInstallationOrThrow(), deriveInstallMode()

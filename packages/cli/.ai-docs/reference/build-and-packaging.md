@@ -314,15 +314,13 @@ The `bin` rationale (why two names) is owned by
 [architecture-overview.md](./architecture-overview.md) -> Project Identity. Do not restate it here.
 
 `"sideEffects": false` is declared, and `dist/index.js` is not side-effect free — it calls
-`run()` at module scope. The claim is a bundler hint that Node's ESM loader ignores, which is why the
-sibling `agents-inc` alias package (`alias/package.json`, a thin wrapper whose entire body is
-`import "@agents-inc/cli";`, depending on `"@agents-inc/cli": "*"`) works: it relies on exactly the
-import-time side effect the field disclaims. A consumer bundling this package with a `sideEffects`-
-honouring bundler could legally elide that import.
+`run()` at module scope. The claim is a bundler hint that Node's ESM loader ignores, so `npx
+agents-inc` and a global install are unaffected. A consumer bundling this package with a
+`sideEffects`-honouring bundler could legally elide `import "agents-inc"` and get nothing.
 
 ---
 
-## 7. The library API — `@agents-inc/cli/config`
+## 7. The library API — `agents-inc/config`
 
 `src/cli/config-exports.ts` is seven `export` statements naming **nine** symbols — four values and
 five types — and nothing else:
@@ -347,14 +345,14 @@ here — deliberately, and with the two gaps below in mind.
 ### Gap 1 — the surface ships no type declarations
 
 `dts: false` means the package contains **zero `.d.ts` files** and declares no `types` condition. A
-consumer writing `import { defineConfig } from "@agents-inc/cli/config"` in a type-checked project
+consumer writing `import { defineConfig } from "agents-inc/config"` in a type-checked project
 gets an untyped module.
 
 This is tolerable because it is not how types actually reach users. Generated configs never import
 the package at all — `generateConfigSource` in `src/cli/lib/configuration/config-writer.ts` emits
 `import type { ProjectConfig } from "./config-types";`, pointing at the locally generated sibling
 that carries the narrowed unions, and a config-writer unit test asserts the generated source does
-**not** contain `@agents-inc/cli/config`. Enabling `dts` would produce declarations for the whole
+**not** contain `agents-inc/config`. Enabling `dts` would produce declarations for the whole
 bundle, not just this file. It is worth knowing which of those two facts you are relying on before
 changing either.
 
@@ -368,21 +366,26 @@ const CONFIG_EXPORTS_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../config-exports.ts",
 );
-// ... createJiti(import.meta.url, { alias: { "@agents-inc/cli/config": CONFIG_EXPORTS_PATH } })
+// ... createJiti(import.meta.url, {
+//       alias: {
+//         "agents-inc/config": CONFIG_EXPORTS_PATH,
+//         "@agents-inc/cli/config": CONFIG_EXPORTS_PATH, // pre-0.150.0 spelling, REPO-24
+//       },
+//     })
 ```
 
 The relative walk is correct **for the source tree**: from
 `src/cli/lib/configuration/`, `../../config-exports.ts` is `src/cli/config-exports.ts`. After
 bundling, that module lives in a flat `dist/chunk-*.js` (§4), so `import.meta.url`'s directory is
 `<pkg>/dist` and the same walk lands **two levels above the package** — for an npm install, at
-`node_modules/@agents-inc/config-exports.ts`, which does not exist.
+`node_modules/config-exports.ts`, which does not exist.
 
 jiti does not fall back to normal resolution when an alias target is missing; probed directly against
 this repo's jiti, an alias pointing at a non-existent file throws
 `Error: Cannot find module '<target>'`, which `loadConfig` rewraps as
 `Failed to load config from '<configPath>'`. So under the built CLI, any hand-written
-`.claude-src/config.ts` that imports `@agents-inc/cli/config` fails to load — and that import is
-precisely the shape `docs/reference/architecture.md` documents to users.
+`.claude-src/config.ts` that imports `agents-inc/config` fails to load — under either spelling, since
+both alias keys resolve to the same missing path.
 
 Nothing in the generated-config path is affected (see Gap 1), which is why this has stayed invisible.
 `src/cli/lib/__tests__/helpers/config-io.ts` carries the same alias with a `../../../` walk correct
@@ -495,7 +498,7 @@ and `scripts/**`, so the 16 compiled `.test.js` files in `dist/` are never colle
 6. **Source-relative path arithmetic breaks after bundling unless it is build-aware.** `consts.ts`
    compensates with its `isInDist` branch; `config-loader.ts` does not, and its jiti alias resolves
    outside the installed package (§7 Gap 2).
-7. **`@agents-inc/cli/config` ships no type declarations** despite being the advertised library
+7. **`agents-inc/config` ships no type declarations** despite being the advertised library
    surface (§7 Gap 1).
 8. **Overriding `--out-dir` splits the build in half.** `onSuccess` hard-codes the literal `"dist"`
    while the bundle honours the flag (§3).

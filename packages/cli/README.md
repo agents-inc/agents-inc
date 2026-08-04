@@ -54,8 +54,8 @@ npx agents-inc init
 
 ## Guides
 
-| Guide                                                                                                                       | Description                                                          |
-| --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Guide                                                                                                                              | Description                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | [Global-first setup](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/global-first-setup.md)                     | Why global scope is the right default and when to use project scope  |
 | [Install modes](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/install-modes.md)                               | Plugin vs local install, global vs project scope                     |
 | [Editing your config](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/editing-config.md)                        | Skill mappings, preloaded vs dynamic loading, and config structure   |

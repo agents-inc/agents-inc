@@ -26,7 +26,7 @@ Skills can also be installed straight from Claude Code, without the CLI:
 
 [github.com/agents-inc/agents-inc](https://github.com/agents-inc/agents-inc)
 
-The source for `@agents-inc/cli` — the wizard, the compiler, and this site. MIT licensed. Issues and pull requests are welcome here.
+The source for `agents-inc` — the wizard, the compiler, and this site. MIT licensed. Issues and pull requests are welcome here.
 
 ## Changelog
 

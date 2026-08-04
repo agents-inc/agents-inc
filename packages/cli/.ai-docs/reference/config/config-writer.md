@@ -154,7 +154,7 @@ Three consequences worth holding together:
 
 Generates `config-types.ts` files with typed union types narrowed to installed items.
 
-The two emitted template halves (`PROJECT_CONFIG_TYPES_BEFORE`, `PROJECT_CONFIG_INTERFACE_AFTER`), `ProjectConfigTypesOptions`, and why `ProjectAgentName` / `SelectedAgentName` are emitted **strings** rather than exports: [leaf-exports.md](../leaf-exports.md). The `model?` / `effort?` lines these templates emit: [features/model-and-effort.md](../features/model-and-effort.md). Generated configs import from the sibling `./config-types`, never from the package — which is why shipping zero `.d.ts` has been survivable; see [build-and-packaging.md](../build-and-packaging.md), which also records that the documented `@agents-inc/cli/config` jiti alias does **not** resolve under the built CLI.
+The two emitted template halves (`PROJECT_CONFIG_TYPES_BEFORE`, `PROJECT_CONFIG_INTERFACE_AFTER`), `ProjectConfigTypesOptions`, and why `ProjectAgentName` / `SelectedAgentName` are emitted **strings** rather than exports: [leaf-exports.md](../leaf-exports.md). The `model?` / `effort?` lines these templates emit: [features/model-and-effort.md](../features/model-and-effort.md). Generated configs import from the sibling `./config-types`, never from the package — which is why shipping zero `.d.ts` has been survivable; see [build-and-packaging.md](../build-and-packaging.md), which also records that the documented `agents-inc/config` jiti alias does **not** resolve under the built CLI.
 
 | Function                             | Purpose                                           |
 | ------------------------------------ | ------------------------------------------------- |

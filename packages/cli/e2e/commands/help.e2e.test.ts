@@ -133,7 +133,7 @@ describe("help and version", () => {
     const result = await CLI.run(["--version"], { dir: tempDir });
 
     expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(result.stdout).toMatch(/@agents-inc\/cli\/\d+\.\d+\.\d+/);
+    expect(result.stdout).toMatch(/agents-inc\/\d+\.\d+\.\d+/);
   });
 
   it("should show error for unknown command", async () => {

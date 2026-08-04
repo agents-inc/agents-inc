@@ -180,7 +180,7 @@ export async function ensureBinaryExists(): Promise<void> {
   const binExists = await fileExists(BIN_RUN);
   if (!binExists) {
     throw new Error(
-      `CLI binary not found at ${BIN_RUN}. Run 'bun run build' from packages/cli, or 'bunx turbo run build --filter=@agents-inc/cli' from the repository root, before running E2E tests.`,
+      `CLI binary not found at ${BIN_RUN}. Run 'bun run build' from packages/cli, or 'bunx turbo run build --filter=agents-inc' from the repository root, before running E2E tests.`,
     );
   }
 }
