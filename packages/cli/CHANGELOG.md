@@ -7,6 +7,15 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.149.1] - 2026-08-04
+
+**Schema addresses follow the CLI's new location, and three shipped prompt files are repaired**
+
+- The CLI's sources moved under `packages/cli/`, so the `$schema` address it writes into generated metadata moved with them. Files generated before this release point at an address that no longer resolves — the editor quietly stops validating them rather than reporting anything, and regenerating fixes it
+- Three shipped agent prompt files had a closing tag absorbed into a markdown table by Prettier 3.9.6, which the move to bun brought in. They are structural markers in prompts an agent reads, so the repair matters even though nothing had begun reading past one yet
+
+See [changelogs/0.149.1.md](./changelogs/0.149.1.md) for full details.
+
 ## [0.149.0] - 2026-08-02
 
 **`init --from <id>` installs a configuration shared from agentsinc.sh**
