@@ -114,16 +114,20 @@ Source resolution follows a 5-tier precedence (flag > env > project > global > d
 
 ```typescript
 // .claude-src/config.ts
-import { defineConfig } from "@agents-inc/cli/config"
+import type { ProjectConfig } from "./config-types"
 
-export default defineConfig({
+export default {
   skills: [
     { id: "web-framework-react", scope: "project" },
     { id: "web-styling-tailwind", scope: "global" },
   ],
   agents: [{ name: "web-developer", scope: "project", model: "sonnet" }],
-})
+} satisfies ProjectConfig
 ```
+
+This is the shape the CLI writes, and `config-writer.test.ts` asserts it never writes any other. The
+import is type-only, so it disappears at compile time and the config resolves without this package
+being reachable at all — which is why it is the form to copy.
 
 | Install Mode | Skills Location     | Agents Location   | Config                  |
 | ------------ | ------------------- | ----------------- | ----------------------- |

@@ -22,6 +22,7 @@ with that deploy. Nothing after REPO-05 depends on order.
 | REPO-21 (was the rename plan, 2026-08-04)                            | Collapse the two npm packages into one — `agents-inc` becomes the real CLI                | Ready for Dev    | refactor | easy       |
 | REPO-22 (new, 2026-08-04)                                            | CI has no job timeout — a hung suite runs for six hours before GitHub stops it            | Ready for Dev    | bug      | easy       |
 | REPO-23 (new, 2026-08-04)                                            | Revisit `retry: 2` and the e2e worker cap now that the CI hang is fixed                   | Investigate      | refactor | easy       |
+| REPO-24 (new, 2026-08-04)                                            | Drop the `@agents-inc/cli/config` jiti alias once nobody is on the old package            | Investigate      | refactor | easy       |
 | REPO-04 (was editor-todo item 13)                                    | Nothing is configured to deploy `apps/www` — no wrangler, route, deploy script or task    | Ready for Dev    | feature  | complex    |
 | REPO-05 (was editor-todo item 18)                                    | Cloudflare, Sentry and PostHog are still registered as `agents-inc-web`                   | Ready for Dev    | refactor | complex    |
 | REPO-06 (was monorepo-merge "Unify the tool versions")               | ESLint 10, TypeScript 6, React 19, Vitest 4 — and delete three split-only workarounds     | Ready for Dev    | refactor | complex    |
@@ -129,7 +130,7 @@ whole exercise.** ESLint, TypeScript and Vitest are close to mechanical by compa
 
 Leaving it costs nothing today, but every future dependency decision has to be made twice.
 
-### The three workarounds that must be deleted with it
+### The four workarounds that must be deleted with it
 
 **This row is the only place these are recorded.** They exist solely to hold the version split
 together, they are deliberately not documented as architecture anywhere, and leaving any of them in
@@ -151,15 +152,27 @@ place after the versions match would silently let the split come back.
    asked for them, so the worker's Vitest 3 was handed Vitest 4's internals and died on startup —
    **zero tests ran, not even a failure.** The config now redirects those internal lookups to the
    Vitest sitting next to it.
+4. **The root `package.json` — `react` and `@types/react` at 18, imported by nothing.** Added
+   2026-08-04 with REPO-21. Items 1 and 2 above say "the root slot for React's type definitions went
+   to React 18, because the CLI needs it for Ink" — that was true, but it was never decided. It fell
+   out of the workspace being named `@agents-inc/cli`, which bun resolved ahead of `editor` and
+   `@workspace/ui`. Renaming the package to `agents-inc` moved it behind them and handed the slot to
+   React 19. Ink declares React as a **peer** dependency, so it never gets a nested copy and always
+   takes the hoisted one; the CLI's own files kept resolving their nested React 18. Two React
+   instances in one tree, and **353 unit tests died on an error about React children that names
+   nothing to do with any of this.** Declaring the pair at the root wins the slot deterministically,
+   because the root workspace's own dependencies always sit at the root of `node_modules`. Nothing at
+   the root imports React and nothing should.
 
-All three carry their full explanation in a comment at the site. All three were verified still
+All four carry their full explanation in a comment at the site. Items 1-3 were verified still
 present on 2026-08-04.
 
-**A fourth thing goes with them.** `.syncpackrc.cjs` carries a version group that suppresses
-CLI-versus-web disagreements so `bun run deps:check` stays quiet. Its own comment says to delete the
-group once the versions are unified — leaving it in place afterwards would silently let the CLI drift
-again. **That comment names this row by ID**, and so does the syncpack label beside it, so renaming or
-retiring REPO-06 means editing `.syncpackrc.cjs` with it.
+**A fifth thing goes with them.** `.syncpackrc.cjs` carries two version groups: one suppresses
+CLI-versus-web disagreements so `bun run deps:check` stays quiet, the other stops the root React pin
+in item 4 being reported as drift. Both comments say to delete the group once the versions are
+unified — leaving either in place afterwards would silently let the CLI drift again. **Those comments
+name this row by ID**, and so do the syncpack labels beside them, so renaming or retiring REPO-06
+means editing `.syncpackrc.cjs` with it.
 
 ---
 
@@ -417,3 +430,29 @@ genuinely wrong — but it was never the cause, and the right value has still ne
 against a working run.
 
 Neither is urgent. Both want one green baseline first, and then a measurement rather than a guess.
+
+---
+
+#### REPO-24: Drop the old config import alias
+
+`config-loader.ts` tells jiti how to resolve imports **inside a user's config file**. After REPO-21 it
+carries two spellings: `agents-inc/config`, which is current, and `@agents-inc/cli/config`, which is
+compatibility.
+
+**Why the old one has to exist at all.** Anyone who hand-wrote a config following the documentation
+imports from `@agents-inc/cli/config`. After the collapse they have `agents-inc` installed and
+nothing under the old name in `node_modules`, so without the alias their config stops loading on
+upgrade. Note this only affects hand-authored configs importing real data — `defaultStacks`,
+`defaultCategories`, `defaultRules`. Everything `init` generates uses a relative type-only import and
+never touches either spelling.
+
+**Why it should not stay.** It is a live reference to a package name that will exist nowhere else in
+the repository. Left indefinitely it reads as current rather than as a bridge, and the next person to
+find it has to work out which.
+
+**When to remove it.** When downloads of `@agents-inc/cli` are indistinguishable from bot traffic —
+check `npm view @agents-inc/cli` against the deprecation date, or the npm downloads API. Given the
+audience is a few dozen real users, that should be a short wait rather than a long one. Removing it
+is deleting one key from a map; the risk is only that someone still on an old hand-written config
+finds it stops loading, with an error naming the import, which is a recoverable failure rather than a
+silent one.
