@@ -13,6 +13,15 @@
     "test:e2e": {
       "dependsOn": ["build"],
       "cache": false
+    },
+    // Same reason, and it is easy to miss because it only bites on a clean
+    // checkout. The `commands` suites drive oclif in-process rather than
+    // spawning it, so they look like ordinary unit tests — but oclif still
+    // resolves command modules from ./dist/commands, and dist is gitignored.
+    // Locally a stale dist makes them pass; in CI 205 tests across 17 files
+    // failed with exit 127 the first time this ran on a fresh clone.
+    "test": {
+      "dependsOn": ["build"]
     }
   }
 }
