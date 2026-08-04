@@ -208,23 +208,24 @@ describe("SummaryPanel component", () => {
     describe("stack id the matrix does not hold", () => {
       silenceConsole(["error"]);
 
-      it("should surface it as an error instead of labelling the row with the raw id", async () => {
+      it("should surface it as an error instead of labelling the row with the raw id", () => {
         useWizardStore.setState({ selectedStackId: UNKNOWN_STACK_ID });
 
         // Ink's error boundary catches the throw and paints the message, so the
-        // frame — not a rejected render() — is where the assertion lands. It
-        // paints on a *re-render*, though, so the first frame can still be
-        // empty: this read is a race, and it is only ever lost on a slower
-        // machine. Locally it passed 15 times out of 15 and failed on CI's
-        // first honest run of this suite. Hence the wait every other async
-        // assertion in this file already does.
-        const { lastFrame, unmount } = render(<SummaryPanel />);
+        // frames — not a rejected render() — are where the assertion lands.
+        // Every frame, though, and never `lastFrame()`: catching the throw also
+        // exits the app, and Ink's exit path appends a bare "\n" of its own
+        // whenever `CI` is set in the environment (`unmount` in ink.js guards
+        // that write with `is-in-ci`). It is the last frame written without
+        // being one the panel painted, so `lastFrame()` reads Ink's teardown
+        // under CI and the painted error everywhere else. Nothing here is
+        // timing-dependent — both writes land synchronously inside `render`.
+        const { frames, unmount } = render(<SummaryPanel />);
         cleanup = unmount;
-        await delay(RENDER_DELAY_MS);
 
-        const output = lastFrame();
-        expect(output).toContain(`Stack not found: ${UNKNOWN_STACK_ID}`);
-        expect(output).not.toContain(`Stack ${UNKNOWN_STACK_ID}`);
+        const paintedFrames = frames.join("\n");
+        expect(paintedFrames).toContain(`Stack not found: ${UNKNOWN_STACK_ID}`);
+        expect(paintedFrames).not.toContain(`Stack ${UNKNOWN_STACK_ID}`);
       });
     });
   });
