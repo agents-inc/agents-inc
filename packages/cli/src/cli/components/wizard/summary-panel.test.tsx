@@ -208,13 +208,19 @@ describe("SummaryPanel component", () => {
     describe("stack id the matrix does not hold", () => {
       silenceConsole(["error"]);
 
-      it("should surface it as an error instead of labelling the row with the raw id", () => {
+      it("should surface it as an error instead of labelling the row with the raw id", async () => {
         useWizardStore.setState({ selectedStackId: UNKNOWN_STACK_ID });
 
         // Ink's error boundary catches the throw and paints the message, so the
-        // frame — not a rejected render() — is where the assertion lands.
+        // frame — not a rejected render() — is where the assertion lands. It
+        // paints on a *re-render*, though, so the first frame can still be
+        // empty: this read is a race, and it is only ever lost on a slower
+        // machine. Locally it passed 15 times out of 15 and failed on CI's
+        // first honest run of this suite. Hence the wait every other async
+        // assertion in this file already does.
         const { lastFrame, unmount } = render(<SummaryPanel />);
         cleanup = unmount;
+        await delay(RENDER_DELAY_MS);
 
         const output = lastFrame();
         expect(output).toContain(`Stack not found: ${UNKNOWN_STACK_ID}`);
