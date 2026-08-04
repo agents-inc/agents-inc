@@ -22,6 +22,8 @@ with that deploy. Nothing after REPO-05 depends on order.
 | REPO-19 (new, found in the first CI run)                             | The CLI's unit suite needs a build no CI step runs — 205 tests fail on a clean checkout   | Ready for Dev    | bug      | easy       |
 | REPO-20 (new, found in the first CI run)                             | The deploy job has no Cloudflare credentials, so every push to `main` fails it            | Ready for Dev    | bug      | easy       |
 | REPO-21 (new, 2026-08-04)                                            | Rename the org, repos and published package to `agentsinc` — one sequence, four phases    | Ready for Dev    | refactor | complex    |
+| REPO-22 (new, 2026-08-04)                                            | CI has no job timeout — a hung suite runs for six hours before GitHub stops it            | Ready for Dev    | bug      | easy       |
+| REPO-23 (new, 2026-08-04)                                            | Revisit `retry: 2` and the e2e worker cap now that the CI hang is fixed                   | Investigate      | refactor | easy       |
 | REPO-04 (was editor-todo item 13)                                    | Nothing is configured to deploy `apps/www` — no wrangler, route, deploy script or task    | Ready for Dev    | feature  | complex    |
 | REPO-05 (was editor-todo item 18)                                    | Cloudflare, Sentry and PostHog are still registered as `agents-inc-web`                   | Ready for Dev    | refactor | complex    |
 | REPO-06 (was monorepo-merge "Unify the tool versions")               | ESLint 10, TypeScript 6, React 19, Vitest 4 — and delete three split-only workarounds     | Ready for Dev    | refactor | complex    |
@@ -526,3 +528,35 @@ costs most if it is wrong.
 
 7. **`npx agents-inc init` still works.** Deprecating does not break a package, but confirm it, since
    it is what existing users will keep running until they read the warning.
+
+---
+
+#### REPO-22: CI has no job timeout
+
+Nothing stopped the run that hung for 49 minutes, and nothing would have stopped it at six hours —
+that is GitHub's default and the only limit in play. Two runs burned roughly seventy minutes of
+runner time producing no signal at all.
+
+`timeout-minutes` on each job in `.github/workflows/ci.yml`. The end-to-end suite is the one that
+needs a real number rather than a guess: it has never completed on a runner, so set it once a green
+run gives an honest baseline, and until then set it generously — the point is to bound a hang, not
+to police duration.
+
+---
+
+#### REPO-23: Revisit `retry: 2` and the worker cap
+
+Both settings in `packages/cli/e2e/vitest.config.ts` were tuned against symptoms that are now partly
+explained.
+
+**`retry: 2`** exists to absorb pseudo-terminal flakiness. Some of that flakiness was very likely the
+CI-detection bug fixed in `bd22dcac` — on any machine where `CI` happened to be set, Ink wrote no
+frames and every wait timed out. Worth finding out how much of it survives the fix, because retries
+currently triple the cost of a genuine failure and hide how long a failing run really takes.
+
+**`maxWorkers`** was changed to `Math.min(16, availableParallelism())` in `f572b0eb` on a wrong
+diagnosis of the hang. It stands on its own terms — 16 PTY-driven workers on a 4-core runner is
+genuinely wrong — but it was never the cause, and the right value has still never been measured
+against a working run.
+
+Neither is urgent. Both want one green baseline first, and then a measurement rather than a guess.

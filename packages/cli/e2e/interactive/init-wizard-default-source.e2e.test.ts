@@ -117,7 +117,14 @@ describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", ()
   );
 });
 
-describe("init wizard — default source eject mode ENOENT", () => {
+// Guarded for the same reason as the block above, and the guard was simply
+// missed here. This one is worth stating explicitly, though: the test asserts
+// that init completes *without* an ENOENT, and a machine with no `claude` on
+// its PATH produces `spawn claude ENOENT` for a reason that has nothing to do
+// with the defect being tested. So without the guard the failure mode this
+// test exists to catch is indistinguishable from an absent dependency — it
+// cannot tell a real regression from a runner that never had the binary.
+describe.skipIf(!claudeAvailable)("init wizard — default source eject mode ENOENT", () => {
   let wizard: InitWizard | undefined;
 
   beforeAll(ensureBinaryExists);
