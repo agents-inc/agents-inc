@@ -21,6 +21,7 @@ with that deploy. Nothing after REPO-05 depends on order.
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
 | REPO-19 (new, found in the first CI run)                             | The CLI's unit suite needs a build no CI step runs — 205 tests fail on a clean checkout   | Ready for Dev    | bug      | easy       |
 | REPO-20 (new, found in the first CI run)                             | The deploy job has no Cloudflare credentials, so every push to `main` fails it            | Ready for Dev    | bug      | easy       |
+| REPO-21 (new, 2026-08-04)                                            | Rename the org, repos and published package to `agentsinc` — one sequence, four phases    | Ready for Dev    | refactor | complex    |
 | REPO-04 (was editor-todo item 13)                                    | Nothing is configured to deploy `apps/www` — no wrangler, route, deploy script or task    | Ready for Dev    | feature  | complex    |
 | REPO-05 (was editor-todo item 18)                                    | Cloudflare, Sentry and PostHog are still registered as `agents-inc-web`                   | Ready for Dev    | refactor | complex    |
 | REPO-06 (was monorepo-merge "Unify the tool versions")               | ESLint 10, TypeScript 6, React 19, Vitest 4 — and delete three split-only workarounds     | Ready for Dev    | refactor | complex    |
@@ -455,3 +456,73 @@ deliberately kept for contributors (REPO-14).
 path is already pushed, so editing the working tree stops it reaching new commits and leaves history
 exactly as REPO-15 describes. Only the cheap half is smaller here: three files, one line each. Not a
 bug, not blocking, and not an agent's call.
+
+---
+
+#### REPO-21: Rename everything to `agentsinc`
+
+The domain is `agentsinc.sh` and the npm org is already `agentsinc`; only GitHub and the published
+package still say `agents-inc`. Cheapest now — real usage is a few dozen unique cloners a day
+against mostly-bot npm downloads, and every month the old marketplace id lands on more machines.
+
+**GitHub goes first.** Renaming makes the new URLs live while redirects keep the old ones working.
+Changing the addresses in code first would 404 until the rename caught up.
+
+**1 · GitHub — yours.** Rename the org and the `cli` repo. Then **register a placeholder org holding
+`agents-inc`**: if someone claims the freed name every redirect dies, including the schema addresses
+already written into users' files.
+
+**2 · Code — an agent can do all of it.** `git remote set-url` · `package.json` name, scope config
+and a single `bin` entry · delete `packages/cli/alias/` with the lockstep rule and release-checklist
+step 8, since unscoped needs no cache-busting republish · `DEFAULT_PLUGIN_NAME` and `DEFAULT_SOURCE`,
+which agree by construction because `extractSourceName` derives the marketplace name from the source
+path · `SCHEMA_BASE_URL`, the 23 shipped metadata files and `output.md` · the 12 absolute README
+links, the 20 `apps/www` source links, the `.ai-docs` references · changelog and a bump to
+**0.150.0**, since 0.x puts a breaking change in the minor.
+
+**3 · npm — yours.** `npm publish` from `packages/cli` — unscoped is public by default, no `--access`
+flag. Then `npm deprecate` both old packages pointing at the new one. No in-CLI notice, by decision.
+
+**4 · External services — yours, separate.** Sentry and Cloudflare still read `agents-inc-web`. That
+is REPO-05 and rides with the deploy work.
+
+**The one thing that genuinely breaks** is the marketplace id: existing installs carry
+`<skill>@agents-inc` in `settings.json` and the CLI stops recognising them. A re-run of `init`, not
+a migration.
+
+### What to verify, and when
+
+Redirects cover most of this, but each one is an assumption until it is checked. Ordered by what
+costs most if it is wrong.
+
+**Straight after the GitHub rename:**
+
+1. **`extraKnownMarketplaces` still resolves.** Existing installs point at
+   `github:agents-inc/skills`. Git follows GitHub's redirect — the push already proved that — but if
+   the plugin fetcher goes through the API instead, it may not. If it does not, `update` breaks for
+   every existing user rather than degrading. This is the one worth checking first.
+2. **The schema addresses still resolve.** `raw.githubusercontent.com/agents-inc/cli/…` is written
+   into metadata files already on users' machines. Raw did survive the last rename —
+   `claude-collective` still serves those files today — so this should hold, but confirm it rather
+   than inherit the assumption.
+3. **The placeholder org actually holds the old name.** Everything above depends on it.
+
+**Before publishing:**
+
+4. **`agentsinc` is still unclaimed on npm.** It was free when checked; it is the one piece of this
+   somebody else can take.
+5. **`npm publish --dry-run` ships the right files.** The `files` list still names a `config/` folder
+   that has never existed (REPO-13).
+
+**After changing `DEFAULT_PLUGIN_NAME` — and this one has no redirect behind it:**
+
+6. **What the CLI actually does when it meets an old plugin ref.** Existing `settings.json` files
+   carry `<skill>@agents-inc` and the new build looks for `@agentsinc`. "A re-run of `init`" assumes
+   it degrades quietly. Test `update`, `uninstall` and `compile` against a settings file holding the
+   old refs and find out whether they ignore them, report them, or throw. If it throws, that is a
+   worse first impression than a rename warrants and wants handling.
+
+**After the deprecation:**
+
+7. **`npx agents-inc init` still works.** Deprecating does not break a package, but confirm it, since
+   it is what existing users will keep running until they read the warning.
