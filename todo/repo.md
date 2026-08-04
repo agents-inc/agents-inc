@@ -1,7 +1,7 @@
 # Repository — build tracker
 
-Outstanding work on the repository itself: committing and pushing the merge, deploying, tool
-versions, external service names, and what this repository publishes. Its sibling trackers: the
+Outstanding work on the repository itself: getting CI green again, deploying, tool versions,
+external service names, and what this repository publishes. Its sibling trackers: the
 configurator is [`editor.md`](./editor.md), the site is [`www.md`](./www.md), the API worker is
 [`server.md`](./server.md), and the CLI is [`cli.md`](./cli.md).
 
@@ -12,81 +12,103 @@ There is no done column and nothing is struck through. Landed items get one line
 **Rows are one-liners.** Detail lives below the table under the item's ID. Each ID permanently
 carries the identifier the item had before this folder existed.
 
-**Roughly ordered by what to do first.** REPO-01 to REPO-05 are a sequence — the merge is committed,
-then pushed, then the remote is right, then the site can deploy, and the Worker rename rides along
+**Roughly ordered by what to do first.** REPO-19 and REPO-20 lead because they are failing right now:
+the merge is pushed, CI ran for the first time on 2026-08-04, and two of its three jobs went red.
+After those, REPO-04 and REPO-05 are a pair — the site can deploy, and the Worker rename rides along
 with that deploy. Nothing after REPO-05 depends on order.
 
-| ID                                                                   | Task                                                                                       | Status           | Type     | Complexity |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------- | -------- | ---------- |
-| REPO-01 (was monorepo-merge "Commit it")                             | Commit the staged merge — 1,477 paths queued, `git commit` and nothing else                | Ready for Dev    | refactor | easy       |
-| REPO-02 (was editor-todo item 13)                                    | Push the merge before deploying the site; twenty source links depend on that order         | Ready for Dev    | refactor | easy       |
-| REPO-03 (was editor-todo item 13)                                    | `git remote` still points at `claude-collective/cli`, which GitHub no longer resolves      | Ready for Dev    | bug      | easy       |
-| REPO-04 (was editor-todo item 13)                                    | Nothing is configured to deploy `apps/www` — no wrangler, route, deploy script or task     | Ready for Dev    | feature  | complex    |
-| REPO-05 (was editor-todo item 18)                                    | Cloudflare, Sentry and PostHog are still registered as `agents-inc-web`                    | Ready for Dev    | refactor | complex    |
-| REPO-06 (was monorepo-merge "Unify the tool versions")               | ESLint 10, TypeScript 6, React 19, Vitest 4 — and delete three split-only workarounds      | Ready for Dev    | refactor | complex    |
-| REPO-07 (was monorepo-merge "Delete ~/dev/agents-inc-web-monorepo")  | Delete the old web monorepo once this repository is trusted                                | Needs Assistance | refactor | easy       |
-| REPO-08 (was monorepo-merge "Consider renaming the repository")      | `agents-inc/cli` holds more than the CLI; three things depend on the current name          | Needs Assistance | refactor | complex    |
-| REPO-09 (was monorepo-merge "Decide what a local `.env` should say") | A local `.env` can ship a live site whose every request goes to your own machine           | Needs Assistance | bug      | easy       |
-| REPO-10 (was monorepo-merge "Three gaps in the safety nets")         | Catalog check blind to new files, build scripts never typechecked, 1,179 md files rebuild  | Ready for Dev    | bug      | complex    |
-| REPO-11 (was monorepo-merge "16 compiled test files")                | The published package ships 16 compiled test files, 32 with their source maps              | Ready for Dev    | bug      | easy       |
-| REPO-12 (was monorepo-merge "Two npm calls")                         | `generate:schemas` still runs `npx tsx` and `npm run` in a bun-only repo                   | Ready for Dev    | refactor | easy       |
-| REPO-13 (was monorepo-merge "Small leftovers")                       | `files` names a `config/` folder that does not exist; a CI comment says 88 E2E specs       | Ready for Dev    | bug      | easy       |
-| REPO-14 (was editor-todo item 15)                                    | `docs/cli/` and the site hold the same ten documents and nobody owns the source            | Needs Assistance | refactor | complex    |
-| REPO-15 (was editor-todo item 16)                                    | The repository publishes `.ai-docs/` and `todo/` — leave them, or stop shipping them       | Needs Assistance | refactor | complex    |
-| REPO-16 (was editor-todo item 17)                                    | `/home/vince/dev/skills` is in eight tracked files at `HEAD`                               | Needs Assistance | bug      | easy       |
-| REPO-17 (new, found while extracting)                                | No `CLAUDE.md` at the repository root, so nothing points an agent at the documentation map | Ready for Dev    | feature  | easy       |
-| REPO-18 (new, found while extracting)                                | Four source references will dangle when the old tracker files are deleted                  | Ready for Dev    | bug      | easy       |
+| ID                                                                   | Task                                                                                      | Status           | Type     | Complexity |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
+| REPO-19 (new, found in the first CI run)                             | The CLI's unit suite needs a build no CI step runs — 205 tests fail on a clean checkout   | Ready for Dev    | bug      | easy       |
+| REPO-20 (new, found in the first CI run)                             | The deploy job has no Cloudflare credentials, so every push to `main` fails it            | Ready for Dev    | bug      | easy       |
+| REPO-04 (was editor-todo item 13)                                    | Nothing is configured to deploy `apps/www` — no wrangler, route, deploy script or task    | Ready for Dev    | feature  | complex    |
+| REPO-05 (was editor-todo item 18)                                    | Cloudflare, Sentry and PostHog are still registered as `agents-inc-web`                   | Ready for Dev    | refactor | complex    |
+| REPO-06 (was monorepo-merge "Unify the tool versions")               | ESLint 10, TypeScript 6, React 19, Vitest 4 — and delete three split-only workarounds     | Ready for Dev    | refactor | complex    |
+| REPO-07 (was monorepo-merge "Delete ~/dev/agents-inc-web-monorepo")  | Delete the old web monorepo once this repository is trusted                               | Needs Assistance | refactor | easy       |
+| REPO-08 (was monorepo-merge "Consider renaming the repository")      | `agents-inc/cli` holds more than the CLI; three things depend on the current name         | Needs Assistance | refactor | complex    |
+| REPO-09 (was monorepo-merge "Decide what a local `.env` should say") | A local `.env` can ship a live site whose every request goes to your own machine          | Needs Assistance | bug      | easy       |
+| REPO-10 (was monorepo-merge "Three gaps in the safety nets")         | Catalog check blind to new files, build scripts never typechecked, 1,179 md files rebuild | Ready for Dev    | bug      | complex    |
+| REPO-11 (was monorepo-merge "16 compiled test files")                | The published package ships 16 compiled test files, 32 with their source maps             | Ready for Dev    | bug      | easy       |
+| REPO-12 (was monorepo-merge "Two npm calls")                         | `generate:schemas` still runs `npx tsx` and `npm run` in a bun-only repo                  | Ready for Dev    | refactor | easy       |
+| REPO-13 (was monorepo-merge "Small leftovers")                       | `files` names a `config/` folder that does not exist; a CI comment says 88 E2E specs      | Ready for Dev    | bug      | easy       |
+| REPO-03 (was editor-todo item 13)                                    | `git remote` still names `claude-collective/cli`; GitHub redirects it, so this is tidying | Ready for Dev    | refactor | easy       |
+| REPO-14 (was editor-todo item 15)                                    | `docs/cli/` and the site hold the same ten documents and nobody owns the source           | Needs Assistance | refactor | complex    |
+| REPO-15 (was editor-todo item 16)                                    | The repository publishes `.ai-docs/` and `todo/` — leave them, or stop shipping them      | Needs Assistance | refactor | complex    |
+| REPO-16 (was editor-todo item 17)                                    | `/home/vince/dev/skills` is in eight tracked files at `HEAD`                              | Needs Assistance | bug      | easy       |
 
 ---
 
 ## Active items
 
-#### REPO-01: Commit the staged merge
+#### REPO-19: The CLI's unit suite needs a build that nothing runs
 
-Everything is staged — the merge and the `apps/www` site together, 1,477 paths — and it needs nothing
-but `git commit`. Confirmed still uncommitted on 2026-08-04: `HEAD` is the `0.149.0` release commit
-and `git status --porcelain` reports 1,479 staged paths.
+**CI is red on `main` right now.** Run `30927505922`, job `check-cli`, step
+`bun run test --filter=@agents-inc/cli`: **205 tests failed across 17 files**, out of 5,319 tests in
+137 files. The biggest are `validate.test.ts` (32 of 47), `build/marketplace.test.ts` (30 of 38),
+`uninstall.test.ts` (24 of 35) and `eject.test.ts` (20 of 52); the smallest is
+`summary-panel.test.tsx` at 1 of 17. `edit.test.ts` loses 2 of 64.
 
-**Until this is committed, CI has never run once:** the workflow file is itself one of the files
-waiting to be added.
+**Every one of them fails the same way, and the failure is exit code 127.** The assertions read
+`expected 127 to be 2` and `expected 127 to be undefined`. 127 is what `@oclif/plugin-not-found` exits
+with — `node_modules/@oclif/plugin-not-found/lib/index.js:38` — when the command a test asked for does
+not exist.
 
-**Know this before you run it: the commit hook will run both full suites**, because the change
-touches both sides of the repository. That is around seven minutes. Both are green, so let it run.
-**Do not reach for `--no-verify` out of habit** — it also skips the formatting pass, and formatting
-is what gates publishing.
+**The command does not exist because nothing built the package.** The suite drives oclif in-process
+through `runCliCommand`, but oclif still resolves the command modules themselves from disk:
+`packages/cli/package.json` declares `oclif.commands.target` as `./dist/commands` and
+`oclif.hooks.init` as `./dist/hooks/init`, and `dist` is gitignored (`.gitignore:17`). On a clean
+checkout there is no `dist/`, so oclif finds no commands at all and answers every invocation with
+"not found".
 
-The site builds and passes; its own unfinished parts are in [`www.md`](./www.md), and none of them
-blocks a commit.
+**Why no CI step built it — this is the part to fix.** The root `turbo.json` declares
+`"test": { "dependsOn": ["^build"] }`. The caret is topological: it means _build my dependencies
+first_, not _build me_. `packages/cli` has no in-repo workspace dependencies, so it resolves to an
+empty list. Checked rather than reasoned — `bunx turbo run test --filter=@agents-inc/cli --dry=json`
+reports `@agents-inc/cli#test` with `dependencies: []`. The `check-cli` job runs install, typecheck,
+lint, test and test:e2e, and no build anywhere.
+
+**The fix already exists one file away, put there for exactly this reason.**
+`packages/cli/turbo.json` overrides `test:e2e` to `"dependsOn": ["build"]` — no caret — and carries a
+comment telling the next reader not to "fix" the missing caret, because the CLI's own suite reads its
+own `dist`. **`test` wants the same override**, which is one more entry in a file that already holds
+one just like it.
+
+**The merge exposed this rather than caused it.** These tests have never run on a clean checkout
+before: the CLI had no CI of its own until the merge added it, which `ci.yml` says in its own words —
+"The CLI shipped from this repository for eight months with no CI of its own." The suite passes on a
+developer machine only because `dist/` survives from an earlier build.
 
 ---
 
-#### REPO-02: Push the merge before deploying the site
+#### REPO-20: The deploy job has no credentials, so nothing deploys
 
-**Twenty links into the source code return 404 today, and they are nevertheless the right links.**
-They point at `packages/cli/…`; the published repository still has `src/`, `.ai-docs/` and `todo/`
-sitting at its root, because the merge exists only in the local working tree. The site itself lives
-inside that merged repository, so it can only ever be deployed from a pushed merge — and the moment
-`main` carries the merge, `packages/cli/…` is the correct path and all twenty resolve.
+**The second red job in run `30927505922`.** `deploy` gives up after 2.5 seconds of turbo time — 0 of
+4 tasks successful, `server#deploy` the one that failed. wrangler says it plainly: "In a
+non-interactive environment, it's necessary to set a `CLOUDFLARE_API_TOKEN` environment variable for
+wrangler to work."
 
-Verified rather than assumed: `main` and `origin/main` are the same commit, and that commit's root
-holds `src/`, not `packages/`.
+**The variables are empty, not wrong.** The workflow log prints the step's environment, and
+`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `SENTRY_AUTH_TOKEN` and `VITE_SENTRY_DSN` all print
+blank. The job declares `environment: production` and reads all four from `secrets` in the deploy
+step's `env` block (`.github/workflows/ci.yml:114-135`). **This repository has never deployed
+anything**, so nobody ever
+added them to its `production` environment — the web monorepo's secrets did not travel with the code.
 
-This is the same decision as the CLI's JSON-schema addresses, which the merge deliberately moved to
-`packages/cli/src/schemas` for exactly this reason. One decision seen twice, not two accidents.
+**Only the Cloudflare pair is what fails the job.** The two empty Sentry values are harmless by the
+workflow's own account: its comment says an absent DSN disables reporting and an absent token skips
+source-map upload. They are named here because they are the same gap and the same visit to fix.
 
-**So there is nothing here to fix. What would be a defect is the wrong order, and that is the thing
-to write down: push the merge before deploying the site** — and before anything else that depends on
-the new layout goes out. In that order the links were always right. In the other order they are
-broken for every visitor, and the source links are the first place a reader would notice.
+**Nothing deploying is the safe outcome today.** `apps/www` is not ready to be live and has no deploy
+script at all — that is REPO-04 — so what actually failed was `apps/server`, the API Worker. Shipping
+a half-configured site by accident would be the worse failure.
 
----
+**But it will be red on every push to `main` until somebody acts**, and a job that is always red stops
+being read, which is how the next real failure gets missed. Two ways out: add the secrets, or gate the
+job so it does not run until there is something to deploy.
 
-#### REPO-03: `git remote` points at a repository GitHub no longer resolves
-
-`git remote` in this repository still points at `claude-collective/cli`. Verified 2026-08-04 —
-`origin` is `https://github.com/claude-collective/cli.git` for both fetch and push.
-
-Separate from REPO-02's twenty links, and worth fixing **before you push anything**.
+**Whoever fixes this is already doing REPO-04 and REPO-05.** Both of those put the same person in the
+Cloudflare dashboard — REPO-04 to create a Worker for the site, REPO-05 to rename the editor's — and
+the Sentry half is REPO-05's slug rename. Done on its own, this is two visits instead of one.
 
 ---
 
@@ -209,7 +231,8 @@ present on 2026-08-04.
 **A fourth thing goes with them.** `.syncpackrc.cjs` carries a version group that suppresses
 CLI-versus-web disagreements so `bun run deps:check` stays quiet. Its own comment says to delete the
 group once the versions are unified — leaving it in place afterwards would silently let the CLI drift
-again. That comment is also one of REPO-18's dangling references.
+again. **That comment names this row by ID**, and so does the syncpack label beside it, so renaming or
+retiring REPO-06 means editing `.syncpackrc.cjs` with it.
 
 ---
 
@@ -219,7 +242,18 @@ The old web repository is left on disk untouched. Nothing was moved out of it �
 copied, so it is still a complete working copy of the web half.
 
 **That is the safety net, but it is also a second place the same code lives, and an easy one to edit
-by mistake.** Delete it after the merge is committed and CI has run once.
+by mistake.** This item used to say "delete it after the merge is committed and CI has run once".
+
+**Both of those have now happened, so here is what they said.** The merge is committed as six commits
+and pushed — `main` and `origin/main` are both `d5fa4027`. CI ran on that push and **failed**, but it
+failed on the two items at the top of this tracker and on nothing else: the CLI's unit suite (REPO-19)
+and the deploy job's missing credentials (REPO-20). **The job that covers the copied web code,
+`check-web`, passed in full** — vendored-catalog check, typechecks, lint, unit suites and the
+Playwright run.
+
+So the question this item was waiting on is answered for the web half: it survived the move. Deleting
+the old repository is now a judgement about how long you want the safety net, not a condition anyone
+is still waiting on.
 
 ---
 
@@ -276,6 +310,15 @@ Sixteen compiled test files, 32 with their source maps.
 **This predates the merge:** the build's file pattern picks up tests sitting next to the components
 they test. Users download them and never run them.
 
+**Recounted on 2026-08-04 from the published package rather than from the working tree.**
+`npm pack @agents-inc/cli@0.149.1` in an empty directory gives 16 `dist/**/*.test.js` files and their
+16 `.map` siblings. **The two figures above are right as they stand.**
+
+**A recount can easily come out at 50, and 50 would be wrong.** Searching the tarball's `dist/` paths
+for the letters "test" also matches 18 files under `dist/src/agents/tester/` — the tester agents'
+own prompt material, which the package is supposed to ship. Match on the `.test.js` suffix, not on
+the word.
+
 ---
 
 #### REPO-12: Two npm calls left in a bun-only repo
@@ -294,6 +337,27 @@ executes TypeScript, so it wants a moment's thought rather than a blind replacem
   `packages/cli/package.json`). Harmless, and it never existed, so this is not merge damage.
 - **A comment in the CI workflow says the web end-to-end suite has 88 specs** (`.github/workflows/ci.yml:55`).
   It has 177 tests across 17 files.
+
+---
+
+#### REPO-03: `git remote` still names the repository's old owner
+
+`git remote` in this repository still points at `claude-collective/cli`. Verified 2026-08-04 —
+`origin` is `https://github.com/claude-collective/cli.git` for both fetch and push.
+
+**It resolves, and that corrects what this item used to claim.** This row used to say GitHub "no
+longer resolves" the old name and that it had to be fixed before anything was pushed. Both halves
+were wrong. GitHub keeps a permanent redirect when a repository is renamed:
+`https://github.com/claude-collective/cli` answers `301` pointing at `https://github.com/agents-inc/cli`,
+and `main/packages/cli/src/schemas/agent-frontmatter.schema.json` returns `200` fetched under either
+name — both checked directly. The merge was in fact pushed through this remote, unchanged, and it
+worked.
+
+**So this is tidying rather than risk**, which is why it now sits down here with the other small
+leftovers instead of near the top. Two reasons to still do it. `git remote -v` tells a new contributor
+a name the project no longer uses, and every `git push` quietly relies on a redirect that is GitHub's
+courtesy rather than a guarantee — it would stop working if somebody else ever claimed the old name.
+The fix is one command: `git remote set-url origin https://github.com/agents-inc/cli.git`.
 
 ---
 
@@ -391,43 +455,3 @@ deliberately kept for contributors (REPO-14).
 path is already pushed, so editing the working tree stops it reaching new commits and leaves history
 exactly as REPO-15 describes. Only the cheap half is smaller here: three files, one line each. Not a
 bug, not blocking, and not an agent's call.
-
----
-
-#### REPO-17: No `CLAUDE.md` at the repository root
-
-Verified 2026-08-04: there is no `CLAUDE.md` at the root of this repository. There is one at
-`packages/cli/CLAUDE.md`, named explicitly in `.gitignore` so it survives.
-
-**Why it matters now and did not before.** Before the merge, the CLI _was_ the repository root, so an
-agent starting a session landed next to `CLAUDE.md` and it pointed onward at
-`packages/cli/.ai-docs/DOCUMENTATION_MAP.md` — a 295 KB index of everything. Agents now start at the
-root, where nothing points them anywhere. They find the conventions of one workspace only by
-wandering into it.
-
-The root file wants to do the job the layout table in `README.md` does for humans: say what each
-workspace is, which tracker in this folder owns it, and where the CLI's documentation map lives.
-
----
-
-#### REPO-18: Four source references will dangle when the old files are deleted
-
-The three trackers this folder replaces — `docs/web/editor-todo.md`, `docs/monorepo-merge.md` and
-`docs/web/cli-integration.md` — are being deleted. Four references point into them or into a file
-that has already moved. All four verified at these exact lines on 2026-08-04.
-
-| Where                                        | What it says                                             | What it should say                                                                                                   |
-| -------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `README.md:83`                               | links `docs/monorepo-merge.md` under "read next"         | this folder — `todo/repo.md`                                                                                         |
-| `.syncpackrc.cjs:30`                         | comment: delete this group, "see docs/monorepo-merge.md" | REPO-06                                                                                                              |
-| `.syncpackrc.cjs:33`                         | syncpack label naming `docs/monorepo-merge.md`           | REPO-06                                                                                                              |
-| `packages/cli/e2e/helpers/test-utils.ts:340` | "see FINDINGS.md, Finding 7"                             | `.ai-docs/reference/testing/harness-decisions.md` § 1.1, "The post-install permission notice has no exit of its own" |
-
-**Three more references are of the same shape but are handled differently, and should not be edited
-without a decision.** `apps/www/astro.config.ts:41`, `apps/www/src/pages/index.astro:55` and the CLI
-tracker's deeper-incompatibility-rules item all cite the old trackers **by item number** — "item 10
-of `docs/web/editor-todo.md`" and "`docs/web/editor-todo.md` §7". Those citations stay traceable
-because every row in this folder permanently records its old identifier: item 10 is
-[`www.md`](./www.md) WWW-03 and §7 is [`editor.md`](./editor.md) EDITOR-06. What still dangles is the
-file path each comment names. Whether to rewrite three source comments or leave the old identifiers
-to carry them is a judgement call, not a defect.
