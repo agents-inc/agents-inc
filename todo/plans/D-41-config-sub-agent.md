@@ -204,7 +204,7 @@ description: Agents Inc CLI configuration expertise — creates and validates me
 ### metadata.yaml
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/metadata.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/metadata.schema.json
 category: shared-tooling
 author: "@vince"
 displayName: Agents Inc
@@ -422,14 +422,14 @@ source: github:agents-inc/skills
 
 Generated YAML files should include `$schema` comments:
 
-| File                  | Schema URL                                                                                                         |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| metadata.yaml         | `https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/metadata.schema.json`              |
-| stacks.yaml           | `https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/stacks.schema.json`                |
-| skills-matrix.yaml    | `https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/skills-matrix.schema.json`         |
-| config.yaml (project) | `https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/project-config.schema.json`        |
-| config.yaml (source)  | `https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/project-source-config.schema.json` |
-| agent.yaml            | `https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/agent.schema.json`                 |
+| File                  | Schema URL                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| metadata.yaml         | `https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/metadata.schema.json`              |
+| stacks.yaml           | `https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/stacks.schema.json`                |
+| skills-matrix.yaml    | `https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/skills-matrix.schema.json`         |
+| config.yaml (project) | `https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/project-config.schema.json`        |
+| config.yaml (source)  | `https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/project-source-config.schema.json` |
+| agent.yaml            | `https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json`                 |
 
 Format: `# yaml-language-server: $schema={url}` as the first line.
 

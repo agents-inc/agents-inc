@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/agent.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
 id: infra-reviewer
 title: Infrastructure Reviewer Agent
 description: Reviews infrastructure code ONLY - Dockerfiles, CI/CD pipelines, deployment configs, secret handling, env management, build optimization, IaC - defers application code to api-reviewer/web-reviewer

@@ -2,7 +2,7 @@ import starlight from "@astrojs/starlight"
 import tailwindcss from "@tailwindcss/vite"
 import { defineConfig } from "astro/config"
 
-const GITHUB_REPO_URL = "https://github.com/agents-inc/cli"
+const GITHUB_REPO_URL = "https://github.com/agents-inc/agents-inc"
 const SKILLS_REPO_URL = "https://github.com/agents-inc/skills"
 const CHANGELOG_URL = `${GITHUB_REPO_URL}/releases`
 

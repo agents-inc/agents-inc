@@ -14,7 +14,7 @@ Provide your skill definition in this structure:
 ### metadata.yaml
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/metadata.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/metadata.schema.json
 category: [domain]-[category]
 slug: [technology]
 domain: [domain]

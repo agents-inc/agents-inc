@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/agent.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
 id: convention-keeper
 title: Convention Keeper Agent
 description: Reviews accumulated findings from sub-agent work, cross-references against existing standards docs, and proposes targeted documentation updates to prevent recurrence of anti-patterns

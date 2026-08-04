@@ -12,29 +12,25 @@ There is no done column and nothing is struck through. Landed items get one line
 **Rows are one-liners.** Detail lives below the table under the item's ID. Each ID permanently
 carries the identifier the item had before this folder existed.
 
-**Roughly ordered by what to do first.** REPO-19 and REPO-20 lead because they are failing right now:
-the merge is pushed, CI ran for the first time on 2026-08-04, and two of its three jobs went red.
-After those, REPO-04 and REPO-05 are a pair — the site can deploy, and the Worker rename rides along
+**Roughly ordered by what to do first.** CI has been green on all three jobs since 2026-08-04, so
+nothing here is on fire. REPO-21 is the largest piece of work and the one everything else waits
+behind. REPO-04 and REPO-05 are a pair — the site can deploy, and the Worker rename rides along
 with that deploy. Nothing after REPO-05 depends on order.
 
 | ID                                                                   | Task                                                                                      | Status           | Type     | Complexity |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
-| REPO-19 (new, found in the first CI run)                             | The CLI's unit suite needs a build no CI step runs — 205 tests fail on a clean checkout   | Ready for Dev    | bug      | easy       |
-| REPO-20 (new, found in the first CI run)                             | The deploy job has no Cloudflare credentials, so every push to `main` fails it            | Ready for Dev    | bug      | easy       |
-| REPO-21 (new, 2026-08-04)                                            | Rename the org, repos and published package to `agentsinc` — one sequence, four phases    | Ready for Dev    | refactor | complex    |
+| REPO-21 (was the rename plan, 2026-08-04)                            | Collapse the two npm packages into one — `agents-inc` becomes the real CLI                | Ready for Dev    | refactor | easy       |
 | REPO-22 (new, 2026-08-04)                                            | CI has no job timeout — a hung suite runs for six hours before GitHub stops it            | Ready for Dev    | bug      | easy       |
 | REPO-23 (new, 2026-08-04)                                            | Revisit `retry: 2` and the e2e worker cap now that the CI hang is fixed                   | Investigate      | refactor | easy       |
 | REPO-04 (was editor-todo item 13)                                    | Nothing is configured to deploy `apps/www` — no wrangler, route, deploy script or task    | Ready for Dev    | feature  | complex    |
 | REPO-05 (was editor-todo item 18)                                    | Cloudflare, Sentry and PostHog are still registered as `agents-inc-web`                   | Ready for Dev    | refactor | complex    |
 | REPO-06 (was monorepo-merge "Unify the tool versions")               | ESLint 10, TypeScript 6, React 19, Vitest 4 — and delete three split-only workarounds     | Ready for Dev    | refactor | complex    |
 | REPO-07 (was monorepo-merge "Delete ~/dev/agents-inc-web-monorepo")  | Delete the old web monorepo once this repository is trusted                               | Needs Assistance | refactor | easy       |
-| REPO-08 (was monorepo-merge "Consider renaming the repository")      | `agents-inc/cli` holds more than the CLI; three things depend on the current name         | Needs Assistance | refactor | complex    |
 | REPO-09 (was monorepo-merge "Decide what a local `.env` should say") | A local `.env` can ship a live site whose every request goes to your own machine          | Needs Assistance | bug      | easy       |
 | REPO-10 (was monorepo-merge "Three gaps in the safety nets")         | Catalog check blind to new files, build scripts never typechecked, 1,179 md files rebuild | Ready for Dev    | bug      | complex    |
 | REPO-11 (was monorepo-merge "16 compiled test files")                | The published package ships 16 compiled test files, 32 with their source maps             | Ready for Dev    | bug      | easy       |
 | REPO-12 (was monorepo-merge "Two npm calls")                         | `generate:schemas` still runs `npx tsx` and `npm run` in a bun-only repo                  | Ready for Dev    | refactor | easy       |
 | REPO-13 (was monorepo-merge "Small leftovers")                       | `files` names a `config/` folder that does not exist; a CI comment says 88 E2E specs      | Ready for Dev    | bug      | easy       |
-| REPO-03 (was editor-todo item 13)                                    | `git remote` still names `claude-collective/cli`; GitHub redirects it, so this is tidying | Ready for Dev    | refactor | easy       |
 | REPO-14 (was editor-todo item 15)                                    | `docs/cli/` and the site hold the same ten documents and nobody owns the source           | Needs Assistance | refactor | complex    |
 | REPO-15 (was editor-todo item 16)                                    | The repository publishes `.ai-docs/` and `todo/` — leave them, or stop shipping them      | Needs Assistance | refactor | complex    |
 | REPO-16 (was editor-todo item 17)                                    | `/home/vince/dev/skills` is in eight tracked files at `HEAD`                              | Needs Assistance | bug      | easy       |
@@ -42,78 +38,6 @@ with that deploy. Nothing after REPO-05 depends on order.
 ---
 
 ## Active items
-
-#### REPO-19: The CLI's unit suite needs a build that nothing runs
-
-**CI is red on `main` right now.** Run `30927505922`, job `check-cli`, step
-`bun run test --filter=@agents-inc/cli`: **205 tests failed across 17 files**, out of 5,319 tests in
-137 files. The biggest are `validate.test.ts` (32 of 47), `build/marketplace.test.ts` (30 of 38),
-`uninstall.test.ts` (24 of 35) and `eject.test.ts` (20 of 52); the smallest is
-`summary-panel.test.tsx` at 1 of 17. `edit.test.ts` loses 2 of 64.
-
-**Every one of them fails the same way, and the failure is exit code 127.** The assertions read
-`expected 127 to be 2` and `expected 127 to be undefined`. 127 is what `@oclif/plugin-not-found` exits
-with — `node_modules/@oclif/plugin-not-found/lib/index.js:38` — when the command a test asked for does
-not exist.
-
-**The command does not exist because nothing built the package.** The suite drives oclif in-process
-through `runCliCommand`, but oclif still resolves the command modules themselves from disk:
-`packages/cli/package.json` declares `oclif.commands.target` as `./dist/commands` and
-`oclif.hooks.init` as `./dist/hooks/init`, and `dist` is gitignored (`.gitignore:17`). On a clean
-checkout there is no `dist/`, so oclif finds no commands at all and answers every invocation with
-"not found".
-
-**Why no CI step built it — this is the part to fix.** The root `turbo.json` declares
-`"test": { "dependsOn": ["^build"] }`. The caret is topological: it means _build my dependencies
-first_, not _build me_. `packages/cli` has no in-repo workspace dependencies, so it resolves to an
-empty list. Checked rather than reasoned — `bunx turbo run test --filter=@agents-inc/cli --dry=json`
-reports `@agents-inc/cli#test` with `dependencies: []`. The `check-cli` job runs install, typecheck,
-lint, test and test:e2e, and no build anywhere.
-
-**The fix already exists one file away, put there for exactly this reason.**
-`packages/cli/turbo.json` overrides `test:e2e` to `"dependsOn": ["build"]` — no caret — and carries a
-comment telling the next reader not to "fix" the missing caret, because the CLI's own suite reads its
-own `dist`. **`test` wants the same override**, which is one more entry in a file that already holds
-one just like it.
-
-**The merge exposed this rather than caused it.** These tests have never run on a clean checkout
-before: the CLI had no CI of its own until the merge added it, which `ci.yml` says in its own words —
-"The CLI shipped from this repository for eight months with no CI of its own." The suite passes on a
-developer machine only because `dist/` survives from an earlier build.
-
----
-
-#### REPO-20: The deploy job has no credentials, so nothing deploys
-
-**The second red job in run `30927505922`.** `deploy` gives up after 2.5 seconds of turbo time — 0 of
-4 tasks successful, `server#deploy` the one that failed. wrangler says it plainly: "In a
-non-interactive environment, it's necessary to set a `CLOUDFLARE_API_TOKEN` environment variable for
-wrangler to work."
-
-**The variables are empty, not wrong.** The workflow log prints the step's environment, and
-`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `SENTRY_AUTH_TOKEN` and `VITE_SENTRY_DSN` all print
-blank. The job declares `environment: production` and reads all four from `secrets` in the deploy
-step's `env` block (`.github/workflows/ci.yml:114-135`). **This repository has never deployed
-anything**, so nobody ever
-added them to its `production` environment — the web monorepo's secrets did not travel with the code.
-
-**Only the Cloudflare pair is what fails the job.** The two empty Sentry values are harmless by the
-workflow's own account: its comment says an absent DSN disables reporting and an absent token skips
-source-map upload. They are named here because they are the same gap and the same visit to fix.
-
-**Nothing deploying is the safe outcome today.** `apps/www` is not ready to be live and has no deploy
-script at all — that is REPO-04 — so what actually failed was `apps/server`, the API Worker. Shipping
-a half-configured site by accident would be the worse failure.
-
-**But it will be red on every push to `main` until somebody acts**, and a job that is always red stops
-being read, which is how the next real failure gets missed. Two ways out: add the secrets, or gate the
-job so it does not run until there is something to deploy.
-
-**Whoever fixes this is already doing REPO-04 and REPO-05.** Both of those put the same person in the
-Cloudflare dashboard — REPO-04 to create a Worker for the site, REPO-05 to rename the editor's — and
-the Sentry half is REPO-05's slug rename. Done on its own, this is two visits instead of one.
-
----
 
 #### REPO-04: Nothing is configured to deploy `apps/www`
 
@@ -249,30 +173,13 @@ by mistake.** This item used to say "delete it after the merge is committed and 
 
 **Both of those have now happened, so here is what they said.** The merge is committed as six commits
 and pushed — `main` and `origin/main` are both `d5fa4027`. CI ran on that push and **failed**, but it
-failed on the two items at the top of this tracker and on nothing else: the CLI's unit suite (REPO-19)
-and the deploy job's missing credentials (REPO-20). **The job that covers the copied web code,
-`check-web`, passed in full** — vendored-catalog check, typechecks, lint, unit suites and the
+failed twice on CI gaps rather than on the merge, both since fixed. It has since gone green on all
+three jobs. **The job that covers the copied web code, `check-web`, passed in full from the start** — vendored-catalog check, typechecks, lint, unit suites and the
 Playwright run.
 
 So the question this item was waiting on is answered for the web half: it survived the move. Deleting
 the old repository is now a judgement about how long you want the safety net, not a condition anyone
 is still waiting on.
-
----
-
-#### REPO-08: Consider renaming the repository
-
-`agents-inc/cli` holds more than the CLI now.
-
-**Three things depend on the current name and will each need updating:**
-
-1. The `repository` URLs in the two published `package.json` files.
-2. The twelve absolute `github.com` links added to the CLI's README during the merge — they became
-   absolute because npm shows that README on the package page, where relative links that climb out of
-   the package do not resolve.
-3. The schema address the CLI writes into every metadata file it generates. **That last one is the
-   one to be careful with** — it is a live web address, it is written into users' files, and it has
-   already moved once during this merge.
 
 ---
 
@@ -343,27 +250,6 @@ executes TypeScript, so it wants a moment's thought rather than a blind replacem
 
 ---
 
-#### REPO-03: `git remote` still names the repository's old owner
-
-`git remote` in this repository still points at `claude-collective/cli`. Verified 2026-08-04 —
-`origin` is `https://github.com/claude-collective/cli.git` for both fetch and push.
-
-**It resolves, and that corrects what this item used to claim.** This row used to say GitHub "no
-longer resolves" the old name and that it had to be fixed before anything was pushed. Both halves
-were wrong. GitHub keeps a permanent redirect when a repository is renamed:
-`https://github.com/claude-collective/cli` answers `301` pointing at `https://github.com/agents-inc/cli`,
-and `main/packages/cli/src/schemas/agent-frontmatter.schema.json` returns `200` fetched under either
-name — both checked directly. The merge was in fact pushed through this remote, unchanged, and it
-worked.
-
-**So this is tidying rather than risk**, which is why it now sits down here with the other small
-leftovers instead of near the top. Two reasons to still do it. `git remote -v` tells a new contributor
-a name the project no longer uses, and every `git push` quietly relies on a redirect that is GitHub's
-courtesy rather than a guarantee — it would stop working if somebody else ever claimed the old name.
-The fix is one command: `git remote set-url origin https://github.com/agents-inc/cli.git`.
-
----
-
 #### REPO-14: Two copies of the same ten documents, and nobody owns the source
 
 Ten documents exist twice: the originals under `docs/cli/guides/` and `docs/cli/reference/`, and the
@@ -405,7 +291,7 @@ retire the files they live in.
 
 #### REPO-15: The repository publishes its own internal notes
 
-**The fact, verified.** `github.com/agents-inc/cli` already serves `.ai-docs/` and `todo/` from the
+**The fact, verified.** `github.com/agents-inc/agents-inc` already serves `.ai-docs/` and `todo/` from the
 root of the repository, publicly, and has done for months. Checked directly: `main` and `origin/main`
 are the same commit, that commit's tree carries `.ai-docs/` with 233 files and `todo/` with 2, the
 first of them landed on 2026-02-25, and 246 of the repository's 1,290 commits touch them. The merge
@@ -461,75 +347,46 @@ bug, not blocking, and not an agent's call.
 
 ---
 
-#### REPO-21: Rename everything to `agentsinc`
+#### REPO-21: Collapse the two npm packages into one
 
-The domain is `agentsinc.sh` and the npm org is already `agentsinc`; only GitHub and the published
-package still say `agents-inc`. Cheapest now — real usage is a few dozen unique cloners a day
-against mostly-bot npm downloads, and every month the old marketplace id lands on more machines.
+**This replaces the rename plan, which is dead.** `agentsinc` on GitHub is an organisation called
+AGENTS.inc, created 2013-08-13, ten followers, no public repos — dormant but twelve years old and not
+a squatter by GitHub's definition, so a dispute would fail. Without the org the rename produces
+_three_ names instead of today's two: npm and the marketplace saying `agentsinc`, GitHub saying
+`agents-inc`. Worse than doing nothing.
 
-**GitHub goes first.** Renaming makes the new URLs live while redirects keep the old ones working.
-Changing the addresses in code first would 404 until the rename caught up.
+And nothing is actually inconsistent today. The GitHub org, the npm scope, the unscoped package and
+the marketplace id all say `agents-inc`. Only the domain differs, because `agents-inc.sh` reads
+badly — a constraint of the domain, not a naming decision.
 
-**1 · GitHub — yours.** Rename the org and the `cli` repo. Then **register a placeholder org holding
-`agents-inc`**: if someone claims the freed name every redirect dies, including the schema addresses
-already written into users' files.
+**What survives is the part that was never about the name.** Two packages are published where one
+would do: `@agents-inc/cli` is the CLI, and `agents-inc` is a three-line shim that imports it so
+`npx agents-inc init` works without the scope.
 
-**2 · Code — an agent can do all of it.** `git remote set-url` · `package.json` name, scope config
-and a single `bin` entry · delete `packages/cli/alias/` with the lockstep rule and release-checklist
-step 8, since unscoped needs no cache-busting republish · `DEFAULT_PLUGIN_NAME` and `DEFAULT_SOURCE`,
-which agree by construction because `extractSourceName` derives the marketplace name from the source
-path · `SCHEMA_BASE_URL`, the 23 shipped metadata files and `output.md` · the 12 absolute README
-links, the 20 `apps/www` source links, the `.ai-docs` references · changelog and a bump to
-**0.150.0**, since 0.x puts a breaking change in the minor.
+The shim is not free. Its own README explains why it must be republished at the same version on
+every release: `npx` caches by package spec, so an unbumped `agents-inc` keeps serving whatever it
+resolved to first. It is step 8 of the release checklist, and forgetting it hands users a stale CLI
+with no error — a silent failure guarded by a manual step.
 
-**3 · npm — yours.** `npm publish` from `packages/cli` — unscoped is public by default, no `--access`
-flag. Then `npm deprecate` both old packages pointing at the new one. No in-CLI notice, by decision.
+**Make the unscoped package the real one.** `agents-inc@0.150.0` ships the CLI instead of the shim;
+`@agents-inc/cli` is deprecated pointing at it.
 
-**4 · External services — yours, separate.** Sentry and Cloudflare still read `agents-inc-web`. That
-is REPO-05 and rides with the deploy work.
+**Nothing breaks.** `npx agents-inc init` behaves exactly as now, minus a hop. `DEFAULT_PLUGIN_NAME`
+does not move, so no existing install's `<skill>@agents-inc` refs are touched. The schema addresses
+do not move. The GitHub org and repo do not move. Generated configs import from `./config-types`, a
+relative path — verified — so no config file on disk references the package name at all.
 
-**The one thing that genuinely breaks** is the marketplace id: existing installs carry
-`<skill>@agents-inc` in `settings.json` and the CLI stops recognising them. A re-run of `init`, not
-a migration.
+**The work:** `packages/cli/package.json` name → `agents-inc` · delete `packages/cli/alias/` · delete
+the lockstep rule from the release checklist in `.ai-docs/standards/commit-protocol.md` · the
+`./config` subpath becomes `agents-inc/config`, so keep `config-loader.ts`'s jiti alias accepting
+both spellings for anything hand-authored against the old one · `bin` already registers both
+`agents-inc` and `agentsinc` and needs no change.
 
-### What to verify, and when
+**Publish order:** `agents-inc@0.150.0` first, then `npm deprecate @agents-inc/cli` pointing at it.
+Minor rather than patch — packaging changes, behaviour does not.
 
-Redirects cover most of this, but each one is an assumption until it is checked. Ordered by what
-costs most if it is wrong.
-
-**Straight after the GitHub rename:**
-
-1. **`extraKnownMarketplaces` still resolves.** Existing installs point at
-   `github:agents-inc/skills`. Git follows GitHub's redirect — the push already proved that — but if
-   the plugin fetcher goes through the API instead, it may not. If it does not, `update` breaks for
-   every existing user rather than degrading. This is the one worth checking first.
-2. **The schema addresses still resolve.** `raw.githubusercontent.com/agents-inc/cli/…` is written
-   into metadata files already on users' machines. Raw did survive the last rename —
-   `claude-collective` still serves those files today — so this should hold, but confirm it rather
-   than inherit the assumption.
-3. **The placeholder org actually holds the old name.** Everything above depends on it.
-
-**Before publishing:**
-
-4. **`agentsinc` is still unclaimed on npm.** It was free when checked; it is the one piece of this
-   somebody else can take.
-5. **`npm publish --dry-run` ships the right files.** The `files` list still names a `config/` folder
-   that has never existed (REPO-13).
-
-**After changing `DEFAULT_PLUGIN_NAME` — and this one has no redirect behind it:**
-
-6. **What the CLI actually does when it meets an old plugin ref.** Existing `settings.json` files
-   carry `<skill>@agents-inc` and the new build looks for `@agentsinc`. "A re-run of `init`" assumes
-   it degrades quietly. Test `update`, `uninstall` and `compile` against a settings file holding the
-   old refs and find out whether they ignore them, report them, or throw. If it throws, that is a
-   worse first impression than a rename warrants and wants handling.
-
-**After the deprecation:**
-
-7. **`npx agents-inc init` still works.** Deprecating does not break a package, but confirm it, since
-   it is what existing users will keep running until they read the warning.
-
----
+**Check after:** `npx agents-inc init` from a cleared `npx` cache · `@agents-inc/cli` still installs,
+since deprecating does not remove · a config importing `@agents-inc/cli/config` still loads.
 
 #### REPO-22: CI has no job timeout
 

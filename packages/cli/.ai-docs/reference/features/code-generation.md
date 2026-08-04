@@ -358,7 +358,7 @@ no test and cannot get one without that guard being added first.
 ### `src/schemas/*.json`
 
 `SCHEMA_PATHS` in `src/cli/consts.ts` builds
-`https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/<file>` URLs from the private
+`https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/<file>` URLs from the private
 `SCHEMA_PKG_PREFIX` constant, for `# yaml-language-server: $schema=` comments emitted by
 `yamlSchemaComment()` (`src/cli/utils/yaml-schema.ts`). The key/URL table is owned by
 `reference/utilities.md` — not restated here. Two facts that belong to _this_ doc:

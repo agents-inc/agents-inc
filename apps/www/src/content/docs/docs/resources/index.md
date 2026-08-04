@@ -24,12 +24,12 @@ Skills can also be installed straight from Claude Code, without the CLI:
 
 ## CLI repository
 
-[github.com/agents-inc/cli](https://github.com/agents-inc/cli)
+[github.com/agents-inc/agents-inc](https://github.com/agents-inc/agents-inc)
 
 The source for `@agents-inc/cli` — the wizard, the compiler, and this site. MIT licensed. Issues and pull requests are welcome here.
 
 ## Changelog
 
-[packages/cli/CHANGELOG.md](https://github.com/agents-inc/cli/blob/main/packages/cli/CHANGELOG.md)
+[packages/cli/CHANGELOG.md](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/CHANGELOG.md)
 
-A summary index of every release, following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic versioning. Each release also has fuller notes in its own file under [`changelogs/`](https://github.com/agents-inc/cli/tree/main/packages/cli/changelogs).
+A summary index of every release, following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic versioning. Each release also has fuller notes in its own file under [`changelogs/`](https://github.com/agents-inc/agents-inc/tree/main/packages/cli/changelogs).

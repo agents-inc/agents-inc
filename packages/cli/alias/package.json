@@ -1,6 +1,6 @@
 {
   "name": "agents-inc",
-  "version": "0.149.1",
+  "version": "0.149.2",
   "description": "Runs the Agents Inc. CLI — alias for @agents-inc/cli so `npx agents-inc init` works",
   "type": "module",
   "bin": {
@@ -19,8 +19,8 @@
   "author": "Vincent Bollaert",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/agents-inc/cli.git",
+    "url": "git+https://github.com/agents-inc/agents-inc.git",
     "directory": "alias"
   },
-  "homepage": "https://github.com/agents-inc/cli#readme"
+  "homepage": "https://github.com/agents-inc/agents-inc#readme"
 }

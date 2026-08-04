@@ -38,7 +38,7 @@ Interactive = renders an Ink UI. Hybrid = interactive only when prompting for co
 
 ### `init`
 
-**File:** [`src/cli/commands/init.tsx`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/init.tsx)
+**File:** [`src/cli/commands/init.tsx`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/init.tsx)
 
 Greenfield setup. Detects if already installed (shows dashboard), otherwise opens the wizard: stack → sources → build → agents → confirm. Writes config and compiles agents.
 
@@ -52,7 +52,7 @@ Greenfield setup. Detects if already installed (shows dashboard), otherwise open
 
 ### `edit`
 
-**File:** [`src/cli/commands/edit.tsx`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/edit.tsx)
+**File:** [`src/cli/commands/edit.tsx`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/edit.tsx)
 
 Re-enters the wizard with the current selections pre-loaded. Diff is shown at the confirm step. On confirm: re-copies locals, installs/uninstalls plugins, re-writes config, recompiles agents.
 
@@ -70,7 +70,7 @@ Re-enters the wizard with the current selections pre-loaded. Diff is shown at th
 
 ### `compile`
 
-**File:** [`src/cli/commands/compile.ts`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/compile.ts)
+**File:** [`src/cli/commands/compile.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/compile.ts)
 
 Re-runs the agent compiler using the persisted config. Non-interactive — safe in scripts and CI. Dual-pass (global + project) when both installations exist.
 
@@ -82,7 +82,7 @@ Re-runs the agent compiler using the persisted config. Non-interactive — safe 
 
 ### `update [skill]`
 
-**File:** [`src/cli/commands/update.tsx`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/update.tsx)
+**File:** [`src/cli/commands/update.tsx`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/update.tsx)
 
 Pulls the latest skill content from the configured source. With no argument, updates every out-of-date skill after showing a diff and prompting for confirmation. With an argument, updates that one skill only. Always recompiles agents afterward (auto-recompile is the sensible default — users who want finer control can run `cc compile` separately).
 
@@ -96,7 +96,7 @@ After recompiling where it ran, it also recompiles the agents of every **other**
 
 ### `search <query>`
 
-**File:** [`src/cli/commands/search.ts`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/search.ts)
+**File:** [`src/cli/commands/search.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/search.ts)
 
 Read-only catalog browse. Takes one required positional arg and zero flags. Searches every registered source (primary + extras) by `id`, `displayName`, `slug`, `description`, or `category`. Prints an `@oclif/table` with columns ID / Source / Category / Description.
 
@@ -112,7 +112,7 @@ Read-only catalog browse. Takes one required positional arg and zero flags. Sear
 
 ### `eject <type>`
 
-**File:** [`src/cli/commands/eject.ts`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/eject.ts)
+**File:** [`src/cli/commands/eject.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/eject.ts)
 
 Exports source material for user modification. Types: `agent-partials`, `templates`, `skills`, `all`.
 
@@ -122,7 +122,7 @@ Exports source material for user modification. Types: `agent-partials`, `templat
 
 ### `new skill <name>` ⚠️ disabled
 
-**File:** [`src/cli/commands/new/skill.ts`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/new/skill.ts)
+**File:** [`src/cli/commands/new/skill.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/new/skill.ts)
 
 **Currently disabled behind `FEATURE_FLAGS.NEW_SKILL_COMMAND` (default `false`)** while it is being improved. Running it exits non-zero with the message: The `new skill` command is currently disabled while being improved. The `scaffoldSkillFiles` library function is NOT gated — `new marketplace` still calls it internally to create its starter skill.
 
@@ -136,7 +136,7 @@ Exports source material for user modification. Types: `agent-partials`, `templat
 
 ### `new agent <name>` ⚠️ disabled
 
-**File:** [`src/cli/commands/new/agent.tsx`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/new/agent.tsx)
+**File:** [`src/cli/commands/new/agent.tsx`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/new/agent.tsx)
 
 **Currently disabled behind `FEATURE_FLAGS.NEW_AGENT_COMMAND` (default `false`)** while it is being improved. Running it exits non-zero with the message: The `new agent` command is currently disabled while being improved.
 
@@ -152,7 +152,7 @@ Exports source material for user modification. Types: `agent-partials`, `templat
 
 ### `new marketplace <name>` ⚠️ disabled
 
-**File:** [`src/cli/commands/new/marketplace.ts`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/new/marketplace.ts)
+**File:** [`src/cli/commands/new/marketplace.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/new/marketplace.ts)
 
 **Currently disabled behind `FEATURE_FLAGS.NEW_MARKETPLACE_COMMAND` (default `false`)** while it is being improved. Running it exits non-zero with the message: The `new marketplace` command is currently disabled while being improved. The scaffold itself works; the problem is what happens when the scaffolded marketplace is later consumed via `cc init --source <that-marketplace>` — matrix composition has ~20 hardening gaps that make consumption unreliable (silent ID overwrites, orphaned custom skills, extras can't participate in relationships, schema drift, etc.). Scaffolding a marketplace today creates infrastructure built on a shaky foundation.
 
@@ -164,7 +164,7 @@ Exports source material for user modification. Types: `agent-partials`, `templat
 
 ### `import skill <source>`
 
-**File:** [`src/cli/commands/import/skill.ts`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/import/skill.ts)
+**File:** [`src/cli/commands/import/skill.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/import/skill.ts)
 
 Imports skills from a GitHub repo (`github:owner/repo`, `owner/repo`, or URL). Skills dir is hardcoded to `skills/` (no longer a flag). Source fetches go through `giget` with default caching.
 
@@ -178,7 +178,7 @@ Imports skills from a GitHub repo (`github:owner/repo`, `owner/repo`, or URL). S
 
 ### `build plugins`
 
-**File:** [`src/cli/commands/build/plugins.ts`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/build/plugins.ts)
+**File:** [`src/cli/commands/build/plugins.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/build/plugins.ts)
 
 Compiles skills (and optionally agents) from a source tree into standalone Claude Code plugins. Used by marketplace authors. Skills dir is hardcoded to `src/skills/` (marketplace convention — no longer a flag).
 
@@ -188,7 +188,7 @@ Compiles skills (and optionally agents) from a source tree into standalone Claud
 
 ### `build marketplace`
 
-**File:** [`src/cli/commands/build/marketplace.ts`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/build/marketplace.ts)
+**File:** [`src/cli/commands/build/marketplace.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/build/marketplace.ts)
 
 Walks `--plugins-dir` and writes a `marketplace.json` describing every plugin. **Reads marketplace identity from `package.json` at cwd** — `name`, `version`, `description` are required fields; `author` is optional (warns when missing but continues).
 
@@ -212,7 +212,7 @@ The `MarketplaceIdentity` type is derived from `z.infer<typeof packageJsonSchema
 
 ### `doctor`
 
-**File:** [`src/cli/commands/doctor.ts`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/doctor.ts)
+**File:** [`src/cli/commands/doctor.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/doctor.ts)
 
 Runs health checks: config parse, skills resolved, agents compiled, orphans, installed skill files, source reachable. Exits non-zero if any check fails. No flags — details are always emitted (diagnostic commands shouldn't have a "hide info" mode).
 
@@ -228,7 +228,7 @@ Runs health checks: config parse, skills resolved, agents compiled, orphans, ins
 
 ### `list`
 
-**File:** [`src/cli/commands/list.tsx`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/list.tsx)
+**File:** [`src/cli/commands/list.tsx`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/list.tsx)
 
 Prints the installation's mode, source, and a scope-grouped skill/agent summary. Ink component when TTY; plain text fallback otherwise.
 
@@ -238,7 +238,7 @@ Prints the installation's mode, source, and a scope-grouped skill/agent summary.
 
 ### `validate`
 
-**File:** [`src/cli/commands/validate.ts`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/validate.ts)
+**File:** [`src/cli/commands/validate.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/validate.ts)
 
 Takes no arguments. Runs four validation passes over everything the CLI knows about, aggregates the results into one summary line, and exits non-zero if any pass produced an error.
 
@@ -294,7 +294,7 @@ Result: 0 error(s), 0 warning(s)
 
 ### `uninstall`
 
-**File:** [`src/cli/commands/uninstall.tsx`](https://github.com/agents-inc/cli/blob/main/packages/cli/src/cli/commands/uninstall.tsx)
+**File:** [`src/cli/commands/uninstall.tsx`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/uninstall.tsx)
 
 Removes CLI-managed plugins, CLI-installed skills (matched by `forked-from` metadata), compiled agents, and the `.claude-src/` config manifest (`config.ts` + `config-types.ts`). Manifest removal is unconditional — there is no flag gating it (the former `--all` flag is removed). Empty `.claude/` and `.claude-src/` directories are cleaned up afterwards; user-created content is preserved. Also deregisters the project from the global config's project registry (best-effort). A global uninstall (run from the home directory) additionally updates each registered project's `config.ts`/`config-types.ts` to drop the removed global-scoped entries (best-effort — unreachable projects are warned and skipped).
 

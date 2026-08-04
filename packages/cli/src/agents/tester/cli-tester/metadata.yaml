@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/agent.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
 id: cli-tester
 title: CLI Tester Agent
 description: Tests CLI applications - wizard flows, commands, keyboard interactions, file system outputs - invoke BEFORE or AFTER cli-developer implements features

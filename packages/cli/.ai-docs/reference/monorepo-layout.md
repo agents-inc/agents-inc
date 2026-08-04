@@ -218,7 +218,7 @@ exception for `@agents-inc/cli`.
 ## The schema base URL moved with the package
 
 `SCHEMA_BASE_URL` in `packages/cli/src/cli/consts.ts` is
-`https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas`. The CLI writes
+`https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas`. The CLI writes
 this address into every metadata file it generates, so it is a **live URL in users' files** — it is
 not an internal path and it does not follow a local refactor. It already moved once, when the CLI
 went one directory deeper. Renaming the repository moves it again; see the outstanding work.

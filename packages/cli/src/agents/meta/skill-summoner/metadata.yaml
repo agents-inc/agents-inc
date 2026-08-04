@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/agent.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
 id: skill-summoner
 title: Skill Summoner Agent
 description: Creates technology-specific skills by researching best practices and comparing with codebase standards - use for state management, styling, API frameworks, and other technology skills

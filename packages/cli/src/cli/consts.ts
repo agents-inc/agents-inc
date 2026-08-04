@@ -122,10 +122,14 @@ export const DEFAULT_DISPLAY_VERSION = "0.0.0";
 
 // JSON Schema URLs for yaml-language-server $schema comments.
 // Uses raw.githubusercontent.com so schemas resolve without requiring the CLI as a dependency.
-// The path mirrors this package's location in the monorepo (packages/cli) — if the package
-// ever moves, this prefix must move with it or every generated $schema comment 404s.
+// The prefix encodes two things that have each moved once: the repository name (renamed to
+// agents-inc/agents-inc on 2026-08-04, when it stopped being only the CLI) and this package's
+// location inside it (packages/cli, since the monorepo merge). If either moves again this must
+// move with it, or every generated $schema comment 404s. GitHub redirects the old forms — files
+// written before each move still resolve, verified two renames deep — but a redirect is a
+// courtesy, so what we emit should be the current address rather than rely on one.
 const SCHEMA_PKG_PREFIX =
-  "https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas";
+  "https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas";
 
 export const SCHEMA_PATHS = {
   agent: `${SCHEMA_PKG_PREFIX}/agent.schema.json`,

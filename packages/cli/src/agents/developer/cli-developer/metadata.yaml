@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/cli/main/packages/cli/src/schemas/agent.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
 id: cli-developer
 title: CLI Developer Agent
 description: Implements CLI features from detailed specs - CLI commands, interactive prompts, option parsing, config hierarchies, exit codes - surgical execution following existing patterns - invoke AFTER pm creates spec

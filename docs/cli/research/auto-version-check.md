@@ -9,7 +9,7 @@
 - Package name: `@agents-inc/cli` (from `package.json:2`)
 - Current version: `0.35.0` (from `package.json:3`)
 - Published to npm: `https://registry.npmjs.org/@agents-inc/cli`
-- GitHub repo: `https://github.com/agents-inc/cli`
+- GitHub repo: `https://github.com/agents-inc/agents-inc`
 
 **Where version is currently rendered:**
 
