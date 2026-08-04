@@ -1,0 +1,11 @@
+{
+  "extends": "@workspace/typescript-config/node.json",
+  "compilerOptions": {
+    "paths": {
+      "@workspace/matrix": ["./src/index.ts"],
+      "@workspace/matrix/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "scripts"],
+  "exclude": ["node_modules", "dist"]
+}

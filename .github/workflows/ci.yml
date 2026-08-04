@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A superseded run has nothing to say about the commit that replaced it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_VERSION: 1.2.6
+
+jobs:
+  check-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - run: bun install --frozen-lockfile
+
+      # packages/matrix holds a vendored copy of the CLI's catalog, and it goes
+      # stale whenever the CLI's types or agent metadata are edited without
+      # regenerating it. That used to be a cross-repo dispatch that opened a
+      # pull request, because the two halves lived in different repositories.
+      # They do not any more: a commit that changes the catalog can carry the
+      # regenerated output with it, so this is a check rather than a PR.
+      #
+      # It runs before the suites on purpose. A stale catalog means something
+      # was left uncommitted, and saying so takes seconds — waiting out the E2E
+      # run first would only delay the same answer.
+      - name: Regenerate the vendored catalog
+        working-directory: packages/matrix
+        run: bun run generate
+
+      - name: The vendored catalog must match what is committed
+        run: |
+          if ! git diff --exit-code -- packages/matrix; then
+            echo "::error::The vendored catalog is out of date. Run 'bun run generate' in packages/matrix and commit the result."
+            exit 1
+          fi
+
+      # The CLI is filtered out of every turbo run below: check-cli owns it, and
+      # running it in both jobs would pay for it twice.
+      - run: bun run typecheck --filter='!@agents-inc/cli'
+      - run: bun run lint --filter='!@agents-inc/cli'
+      - run: bun run test --filter='!@agents-inc/cli'
+
+      # The 88 E2E specs are the suite that actually covers wiring, so they
+      # gate the deploy rather than running after it. Only chromium is
+      # configured, so only chromium is installed.
+      - run: bunx playwright install --with-deps chromium
+        working-directory: apps/editor
+      - run: bun run test:e2e --filter='!@agents-inc/cli'
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/editor/playwright-report/
+          retention-days: 7
+
+  # The CLI shipped from this repository for eight months with no CI of its own.
+  # It has one now, and it is a separate job because its end-to-end suite drives
+  # a real pseudo-terminal and takes minutes — long enough that sharing a job
+  # with the web checks would hide which half is slow, and long enough that the
+  # deploy below deliberately does not wait for it.
+  check-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run typecheck --filter=@agents-inc/cli
+      - run: bun run lint --filter=@agents-inc/cli
+      - run: bun run test --filter=@agents-inc/cli
+      - run: bun run test:e2e --filter=@agents-inc/cli
+
+  deploy:
+    # check-web only, and check-cli deliberately absent. Nothing the CLI's
+    # pseudo-terminal suite covers can change what Cloudflare serves, so gating
+    # on it would add minutes to every web deploy in exchange for no signal
+    # about the thing being deployed. check-cli still runs on the same commit
+    # and still turns the commit red when it fails — it just does not hold the
+    # door.
+    needs: check-web
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - run: bun install --frozen-lockfile
+
+      # `turbo deploy` builds first. VITE_API_URL is inlined into the bundle at
+      # that point, so it belongs on this step and not on a separate build —
+      # and it is declared in turbo.json's `env` so the cache keys on it.
+      - run: bun run deploy
+        env:
+          VITE_API_URL: https://api.agentsinc.sh
+          # Slugs are public identifiers — they appear in every Sentry URL, so
+          # they are config rather than secrets. The DSN is public too (it
+          # ships inside the bundle), but is kept alongside the token so there
+          # is one place to look. All four are safe to leave unset: an absent
+          # DSN disables reporting, an absent token skips source maps.
+          SENTRY_ORG: vince-inc
+          # KEEPS THE OLD NAME ON PURPOSE. This is a project slug in an
+          # external Sentry account, not a path, and it did not follow the
+          # apps/web → apps/editor rename. Pointing it at a slug that does not
+          # exist in Sentry makes every source-map upload fail. It can only be
+          # changed after the project is renamed in Sentry itself.
+          SENTRY_PROJECT: agents-inc-web
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # Absent means PostHog is never downloaded at all — the SDK is a
+          # separate chunk that only loads when a key exists.
+          VITE_POSTHOG_KEY: ${{ secrets.VITE_POSTHOG_KEY }}
+          VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

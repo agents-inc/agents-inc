@@ -1,18 +1,41 @@
-# Build output
+# Prettier reads .prettierignore from its working directory only, so this file
+# is the one that counts for the root `format` script. Entries whose only slash
+# is the trailing one are not anchored — they match at every depth, so `dist/`
+# and `node_modules/` below already cover packages/cli, apps/editor and the rest.
+# There is nothing to repeat per workspace.
+
 dist/
-
-# Dependencies
 node_modules/
+.turbo/
+coverage/
+bun.lock
 
-# Cache
+# Caches and compiler leftovers
 .cache/
 *.cache
-
-# Coverage
-coverage/
-
-# Compiled output
 *.js.map
+# Astro's generated types and content-collection cache in apps/www. Rewritten
+# by every `astro sync`, so reformatting them is pure churn. The trailing slash
+# makes this a directory match — `.astro` source files are untouched.
+.astro/
 
 # Backup files
 .claude_backup/
+
+# Copied verbatim from the agents-inc CLI, or emitted by a generator. Reformatting either would
+# create diff noise on every regeneration.
+packages/matrix/src/vendor/
+packages/matrix/src/generated/
+apps/editor/src/lib/skill-icons.ts
+# Emitted by `wrangler types`; regenerating it would undo any reformatting anyway.
+apps/server/worker-configuration.d.ts
+test-results/
+playwright-report/
+
+# The Skill Olympics corpus (todo plan D-162). `contestants/` is third-party skill text copied
+# verbatim from other authors, and `arena/` holds the outputs those skills produced — the very
+# artefacts being scored on the rubric. Reformatting either would rewrite the evidence. The plan
+# and catalog markdown beside them are ours and stay formatted.
+todo/plans/D-162-skill-olympics/arena/
+todo/plans/D-162-skill-olympics/contestants/
+todo/plans/D-162-skill-olympics/test-cases/

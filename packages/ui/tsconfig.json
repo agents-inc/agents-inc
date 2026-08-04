@@ -1,0 +1,33 @@
+{
+  "extends": "@workspace/typescript-config/react-library.json",
+
+  // The `react` entries pin which copy of @types/react this package compiles against.
+  // The repository holds two on purpose: packages/cli renders its terminal UI with Ink, which
+  // needs React 18, and everything in the browser half is on React 19. bun installs a flat
+  // node_modules, so exactly one of the two wins the root slot and every dependency without a
+  // nested copy of its own resolves to whichever one that is. @base-ui/react is such a
+  // dependency — it accepts `^17 || ^18 || ^19` as a peer, so nothing ever forced a copy next
+  // to it — and when the CLI joined the workspace the root slot became React 18. base-ui's
+  // props were then typed as React 18 while the values this package hands them are React 19,
+  // which is why passing children or spreading props into a base-ui component stopped
+  // compiling. bun supports neither nested "overrides" nor scoped "resolutions", so the
+  // root install layout cannot say "React 19 for the browser half only"; tsc can. Nothing is
+  // wrong at runtime — apps/editor bundles this source and resolves react from its own React 19.
+  // Both candidates are listed because the fallback keeps working whichever version bun
+  // happens to hoist: the nested copy exists only while the root slot is React 18.
+  "compilerOptions": {
+    "paths": {
+      "@workspace/ui/*": ["./src/*"],
+      "react": [
+        "./node_modules/@types/react",
+        "../../node_modules/@types/react"
+      ],
+      "react/*": [
+        "./node_modules/@types/react/*",
+        "../../node_modules/@types/react/*"
+      ]
+    }
+  },
+  "include": ["."],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,12 +1,100 @@
+# Most patterns below have no slash in them, so git matches them at every level:
+# the root, apps/*, and packages/* alike. The few that do contain a slash are
+# anchored to this directory and are grouped at the bottom, where they are
+# called out.
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies and build output
 node_modules
 dist
+dist-ssr
+*.local
+
+# Caches
+.turbo
+.cache
+*.tsbuildinfo
+
+# env files (can opt-in for committing if needed)
+.env*
+# ...but the templates are the documentation for what each one is.
+!.env.example
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Claude Code working files, at any level
 .claude
 .claude-src
+.claude-design/
 CLAUDE.md
-.cache
-
 V2.md
 
-todo/*
-!todo/TODO.md
-!todo/TODO-completed.md
+# Playwright. These are anchored, and correctly so: only apps/editor runs
+# Playwright, and it sits at the same depth it did in the web repository.
+apps/editor/test-results/
+apps/editor/playwright-report/
+apps/editor/blob-report/
+apps/editor/.playwright/
+
+# wrangler local state
+.wrangler
+
+# The CLI's private working notes, all but two of them. This pattern contains a
+# slash, so it is anchored to this file's directory — which is why it had to be
+# re-pointed at packages/cli when the CLI moved a level down. Left as `todo/*`
+# it would have matched nothing and committed every note.
+packages/cli/todo/*
+!packages/cli/todo/TODO.md
+!packages/cli/todo/TODO-completed.md
+
+# Four files the unanchored CLAUDE.md and V2.md rules above would otherwise
+# swallow. The root CLAUDE.md is new rather than moved: agents start a session
+# at the root, and until it existed nothing there pointed them at the CLI's
+# documentation map. The other three — the CLI's own working instructions, its
+# V2 design note, and one compiler test fixture — were tracked at the repository
+# root for the whole of the CLI's history, so being tracked already those rules
+# never applied to them; the merge moved them a level down, where the rules do
+# match, fresh, so each needs naming here. The fixture is read from disk by
+# compiler.test.ts; CI clones fresh, so leaving it uncommitted fails the CLI
+# suite. All four are anchored to their exact paths — the root file by a leading
+# slash, since an unanchored !CLAUDE.md would un-ignore every one in the tree —
+# so every other CLAUDE.md and V2.md in the repository stays ignored.
+!/CLAUDE.md
+!packages/cli/CLAUDE.md
+!packages/cli/V2.md
+!packages/cli/src/cli/lib/__tests__/fixtures/stacks/default/CLAUDE.md
+
+# The Skill Olympics corpus (todo plan D-162), excluded outright — the plan and
+# its 879 supporting files both. `contestants/` is third-party skill text copied
+# verbatim from other authors, and `arena/` and `test-cases/` hold the outputs
+# those skills produced, the artefacts the benchmark's rubric scores. This
+# pattern contains a slash, so it is anchored to this file's directory.
+#
+# The root .prettierignore names those same three subdirectories, for a related
+# reason rather than the same one: reformatting them would rewrite the evidence
+# being measured. It is deliberately left as it is — a gitignored file can still
+# be formatted locally, so the two rules do different jobs and neither replaces
+# the other.
+#
+# D-162 is a live item, so todo/cli.md is written to match: it gives the plan
+# and catalog as plain paths rather than links and says outright that they exist
+# only on the maintainer's machine. Turning them back into links would ship a
+# tracker whose references resolve for one person and nobody else.
+todo/plans/D-162-skill-olympics/

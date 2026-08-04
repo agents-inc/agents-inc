@@ -1,0 +1,50 @@
+{
+  "name": "editor",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint",
+    "typecheck": "tsc -b --noEmit",
+    "preview": "vite preview",
+    "deploy": "wrangler deploy",
+    "generate:icons": "bun scripts/generate-skill-icons.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@sentry/react": "^10.69.0",
+    "@tanstack/react-router": "^1.170.18",
+    "@workspace/matrix": "workspace:*",
+    "@workspace/ui": "workspace:*",
+    "posthog-js": "^1.409.5",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "simple-icons": "^16.27.1",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@sentry/vite-plugin": "^5.4.0",
+    "@tailwindcss/vite": "^4",
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6",
+    "@workspace/eslint-config": "workspace:*",
+    "@workspace/prettier-config": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
+    "@workspace/vitest-config": "workspace:*",
+    "eslint": "^10",
+    "typescript": "~6",
+    "vite": "^8",
+    "vitest": "^3",
+    "wrangler": "^4"
+  }
+}

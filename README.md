@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="Agents Inc" src="./assets/logo.svg" width="300">
+  <img alt="Agents Inc" src="./packages/cli/assets/logo.svg" width="300">
 </p>
 
 # Agents Inc
@@ -7,139 +7,82 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-An agent composition framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Compose specialized subagents from atomic skills:
-
-1. Select a pre-built stack to customise or start from scratch
-2. Select your skills from an interactive grid, organized by domain with compatibility filtering and global/local customising
-3. Choose to eject these skills or install them as plugins ([install modes guide](docs/guides/install-modes.md))
-4. Select your subagents to compile with these skills
-5. Further customise skills and subagents in the generated `config.ts` ([editing config guide](docs/guides/editing-config.md))
-6. Compile subagents with `npx agents-inc compile` after changes
-
-See the [Guides](#guides) section below for more.
-
-<br />
-
-<img src="./assets/demo.gif" alt="Agents Inc init wizard">
-
-### Walkthrough (recommended)
-
-https://github.com/user-attachments/assets/387b99ff-0a43-40e2-b757-9d035be5b550
-
-## Getting Started
+An agent composition framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Compose specialized subagents from atomic skills: pick a stack, choose your skills from an interactive grid, and compile subagents that carry exactly the skills you selected.
 
 ```bash
 npx agents-inc init
 ```
 
-| Stack                        | Technologies                                                 |
-| ---------------------------- | ------------------------------------------------------------ |
-| `nextjs-fullstack`           | Next.js + React + Hono + Drizzle + Better Auth + Zustand     |
-| `nextjs-t3-stack`            | Next.js + tRPC + Prisma + NextAuth + Tailwind                |
-| `nextjs-supabase-fullstack`  | Next.js + Supabase + Drizzle + Better Auth                   |
-| `nextjs-turborepo-fullstack` | Next.js + Turborepo + pnpm Workspaces + Hono + Drizzle       |
-| `nextjs-ai-saas`             | Next.js + Vercel AI + Anthropic + Drizzle + Pinecone         |
-| `nextjs-saas-starter`        | Next.js + Better Auth + Stripe + Drizzle + Resend + PostHog  |
-| `react-old-school`           | React + Redux Toolkit + SCSS Modules + Vite + Vitest         |
-| `react-hono-fullstack`       | React + Vite + Hono + Drizzle + Better Auth                  |
-| `remix-fullstack`            | Remix + Hono + Drizzle + Better Auth                         |
-| `sveltekit-fullstack`        | SvelteKit + Hono + Drizzle + Better Auth                     |
-| `solidjs-fullstack`          | SolidJS + Hono + Drizzle + Better Auth + Vitest              |
-| `astro-content-fullstack`    | Astro + Hono + Drizzle                                       |
-| `vue-modern-fullstack`       | Vue 3 + Pinia + Hono + Drizzle + Better Auth                 |
-| `nuxt-fullstack`             | Nuxt + Hono + Drizzle + Better Auth                          |
-| `angular-modern-fullstack`   | Angular + NgRx + Hono + Drizzle + Better Auth                |
-| `expo-mobile-fullstack`      | Expo + React Native + Zustand + React Query + Hono + Drizzle |
-| `cli-ink-oclif`              | oclif + Ink + Zustand + Vitest                               |
+Everything the CLI can do — the full command reference, the stack list, the skill catalog and the guides — lives in **[packages/cli/README.md](./packages/cli/README.md)**. This file describes the repository itself.
 
-## Guides
+## Repository layout
 
-| Guide                                                                       | Description                                                          |
-| --------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [Global-first setup](docs/guides/global-first-setup.md)                     | Why global scope is the right default and when to use project scope  |
-| [Install modes](docs/guides/install-modes.md)                               | Plugin vs local install, global vs project scope                     |
-| [Editing your config](docs/guides/editing-config.md)                        | Skill mappings, preloaded vs dynamic loading, and config structure   |
-| [Customizing subagents](docs/guides/customizing-subagents.md)               | Eject and modify partials, templates, and skills                     |
-| [Writing custom skills and subagents](docs/guides/writing-custom-skills.md) | Author skills and subagents from scratch or iterate on existing ones |
-| [Importing third-party skills](docs/guides/importing-skills.md)             | Install skills from external repositories                            |
-| [Creating a marketplace](docs/guides/creating-a-marketplace.md)             | Build a personal or org-level marketplace with curated skills        |
-| [Using the codex-keeper subagent](docs/guides/using-codex-keeper.md)        | Generate and maintain AI-focused reference documentation             |
+```
+/
+├── apps/
+│   ├── editor/           the editor (Vite + React, deployed to Cloudflare)
+│   └── server/           the API worker (Hono)
+├── packages/
+│   ├── cli/              the published CLI — this is @agents-inc/cli on npm
+│   ├── matrix/           the skill catalog the web app reads
+│   ├── ui/               the design system shared by the web app
+│   ├── eslint-config/    shared configs
+│   ├── prettier-config/
+│   ├── typescript-config/
+│   └── vitest-config/
+├── docs/
+│   ├── cli/              the CLI's product documentation
+│   └── web/              the web planning notes
+├── .github/workflows/
+└── .husky/
+```
 
-## Skills
+`packages/cli` is the only workspace that publishes to npm. Its `README.md` is the one npm shows, which is why the product documentation lives there rather than here.
 
-150+ skills across 8 domains:
+`packages/cli/alias/` holds the tiny `agents-inc` alias package that makes `npx agents-inc` work. It is deliberately outside the `packages/*` workspace glob: it is published by hand, in lockstep with the CLI.
 
-| Domain | Skills                                                                                                                                                                     |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Web    | React, Vue, Angular, Svelte, SolidJS, Next.js, Remix, Nuxt, SvelteKit, Astro, Qwik, Tailwind, SCSS Modules, Zustand, Redux, Pinia, Vitest, Playwright, Storybook, and more |
-| API    | Hono, Express, Fastify, NestJS, Elysia, Drizzle, Prisma, PostgreSQL, MongoDB, Redis, Stripe, and more                                                                      |
-| AI     | Anthropic SDK, OpenAI SDK, Vercel AI SDK, LangChain, LlamaIndex, Pinecone, ChromaDB, and more                                                                              |
-| Mobile | React Native, Expo                                                                                                                                                         |
-| Infra  | Docker, GitHub Actions, Cloudflare Workers                                                                                                                                 |
-| Shared | Turborepo, ESLint + Prettier, Code Reviewing, Auth Security                                                                                                                |
-| Meta   | Research Methodology, CLI Reviewing                                                                                                                                        |
+## Working in it
 
-Browse the full catalog on the [Plugin Marketplace](https://github.com/agents-inc/skills).
+The repository uses [bun](https://bun.sh) and [Turborepo](https://turborepo.com). One install covers every workspace:
 
-## Subagents
+```bash
+bun install
+```
 
-| Category         | Subagents                                                          |
-| ---------------- | ------------------------------------------------------------------ |
-| Developers       | `web-developer` `api-developer` `cli-developer` `web-architecture` |
-| Reviewers        | `web-reviewer` `api-reviewer` `cli-reviewer`                       |
-| Testers          | `web-tester` `cli-tester`                                          |
-| Researchers      | `web-researcher` `api-researcher`                                  |
-| Planning         | `web-pm`                                                           |
-| Pattern Analysis | `pattern-scout` `web-pattern-critique`                             |
-| Documentation    | `codex-keeper`                                                     |
-| Meta             | `skill-summoner` `agent-summoner` `convention-keeper`              |
+The web app then needs one variable before it will build. `apps/editor/src/env.schema.ts` supplies a localhost default for `bun dev`, but deliberately withholds it in production mode — a deployed bundle silently pointing at localhost is the exact failure it exists to prevent — and `vite build` is a production build. So copy the template once:
 
-Each subagent is composed from modular partials (role, workflow, output format) plus its assigned skills. Everything is ejectable.
+```bash
+cp apps/editor/.env.example apps/editor/.env
+```
 
-## Commands
+Without it `bun run build` stops at `editor#build` with `Invalid environment: VITE_API_URL`. CI never hits this: the check job does not build the web app, and the deploy job sets `VITE_API_URL` to the real API explicitly.
 
-### Core
+The root scripts fan out through turbo to whichever workspaces define the matching task, so `bun run build` builds the CLI, the web app and the worker in dependency order:
 
-| Command   | Description                                                                 |
-| --------- | --------------------------------------------------------------------------- |
-| `init`    | Interactive setup wizard: pick a stack, customize skills, compile subagents |
-| `edit`    | Modify skill selection via the interactive wizard                           |
-| `compile` | Recompile subagents after changes                                           |
-| `update`  | Pull latest skills from source                                              |
-| `search`  | Search skills across all sources                                            |
+| Script               | What it does                                                |
+| -------------------- | ----------------------------------------------------------- |
+| `bun run build`      | Builds every workspace                                      |
+| `bun run dev`        | Starts every workspace's dev task                           |
+| `bun run lint`       | Lints every workspace                                       |
+| `bun run typecheck`  | Typechecks every workspace                                  |
+| `bun run test`       | Runs the unit tests                                         |
+| `bun run test:e2e`   | Runs the end-to-end suites                                  |
+| `bun run deploy`     | Deploys the Cloudflare workspaces                           |
+| `bun run format`     | Formats the repo (one run from the root, not through turbo) |
+| `bun run deps:check` | Reports dependency version mismatches                       |
 
-### Customization
+Two of those do not fan out, on purpose, and the reasons are written down where they apply:
 
-| Command           | Description                                                               |
-| ----------------- | ------------------------------------------------------------------------- |
-| `eject <type>`    | Export for customization (`agent-partials`, `templates`, `skills`, `all`) |
-| `import skill`    | Import a skill from an external GitHub repository                         |
-| `new skill`       | (IN PROGRESS) Scaffold a new local skill                                  |
-| `new agent`       | (IN PROGRESS) Scaffold a new custom subagent                              |
-| `new marketplace` | (IN PROGRESS) Scaffold a new marketplace project                          |
+- **`format`** runs once from the root because Prettier reads `.prettierignore` only from its working directory. See the `//format` note in `package.json`.
+- **Formatting inside `packages/cli`** is still the CLI's own — 100 columns, semicolons, double quotes. Prettier picks the nearest config walking up from each file, so `packages/cli/prettier.config.mjs` wins there and the root config never touches it.
 
-### Build
+`bun run deps:check` will not complain that the CLI and the web app disagree on React, Vitest, TypeScript and ESLint. That split is deliberate for now and is excluded in `.syncpackrc.cjs`; unifying the versions is REPO-06 in [todo/repo.md](./todo/repo.md).
 
-| Command             | Description                                    |
-| ------------------- | ---------------------------------------------- |
-| `build marketplace` | Generate `marketplace.json` from source skills |
-| `build plugins`     | Build skill and agent plugins for distribution |
+## Where to read next
 
-### Diagnostics
-
-| Command     | Description                         |
-| ----------- | ----------------------------------- |
-| `doctor`    | Diagnose setup issues               |
-| `list`      | Show installed skills and agents    |
-| `validate`  | Validate config and skill structure |
-| `uninstall` | Remove Agents Inc from your project |
-
-Run `agents-inc --help` for full usage, or see the [full commands reference](./docs/reference/commands.md).
-
-## Links
-
-- [Plugin Marketplace](https://github.com/agents-inc/skills): browse and discover skills
-- [Architecture Reference](./docs/reference/architecture.md): full system documentation
+- **[todo/](./todo/)** — everything still outstanding, one tracker per workspace: [repo.md](./todo/repo.md) for this repository itself, then `cli.md`, `editor.md`, `www.md` and `server.md`
+- **[packages/cli/README.md](./packages/cli/README.md)** — the CLI: commands, stacks, skills, subagents
+- **[docs/cli/index.md](./docs/cli/index.md)** — the CLI's full documentation
 
 ## License
 

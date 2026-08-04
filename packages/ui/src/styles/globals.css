@@ -1,0 +1,306 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+@custom-variant dark (&:is(.dark *));
+/* Relative to this file (packages/ui/src/styles/), so reaching apps/ takes four levels up. */
+@source "../../../../apps/**/*.{ts,tsx}";
+@source "../**/*.{ts,tsx}";
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --font-sans: "Inter Variable", sans-serif;
+
+  /* ── Configurator v5 ─────────────────────────────────────────────────
+       Source of truth: .claude-design/README.md § Design tokens, reconciled
+       against the literal declarations in design/Configurator v5.dc.html.
+
+       Five rules generate the whole language:
+         1. radius 0 everywhere, without exception
+         2. borders only where they mean something — cell hairlines collapse
+            into one shared lattice; the only real border is amber selection
+         3. Inter for human names, IBM Plex Mono for every label/id/badge
+         4. one accent colour: amber marks what the user deliberately chose
+         5. whitespace separates content, not rules
+
+       The shadcn semantic vars in :root are remapped to this same palette so
+       generated components inherit the language without per-component
+       overrides — apps must never restyle a primitive locally. */
+
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Surfaces */
+  --color-page: #ffffff; /* page + both side columns */
+  --color-column: #fdfdfc; /* main column field, barely perceptible */
+  --color-cell: #ffffff; /* stack + skill cells */
+  --color-cell-hover: #fdfcfa;
+  --color-row-hover: #faf9f5; /* search-result rows */
+  --color-logo-slot: #f4f2ec; /* 26px monogram placeholder */
+  --color-badge: #f8f7f3; /* plugin / project chips at default */
+  --color-wash: #f7eeda; /* any amber-marked chip, cell or highlight */
+  --color-matrix: #f2f0e8; /* assigned-but-lazy matrix cell */
+  --color-matrix-ink: #5f5c52; /* its label */
+  --color-code: #faf9f5; /* command blocks */
+  --color-veil: rgb(28 26 22 / 0.34);
+
+  /* Ink — the design ranks text with tiny contrast steps, so all five stay.
+       The README's `--muted` (#7a7669) is deliberately absent here: shadcn
+       already binds --color-muted to the *surface* token, and redefining it in
+       this same block would silently turn every `bg-muted` into dark grey.
+       #7a7669 is reachable as `muted-foreground`, which :root maps to it. */
+  --color-ink: #242320; /* names, active nav, emphasis */
+  --color-ink-2: #3a382f;
+  --color-ink-3: #4a473c;
+  --color-subtle: #6a675c; /* README's --muted-2 */
+  --color-faint: #8b8778;
+  --color-dots: #c4c0b3; /* the ••• glyph at rest */
+
+  /* Accent — deliberate choice / non-default value. Named `brand` rather
+       than `accent` so it cannot collide with shadcn's --accent, which is a
+       hover *surface* and must stay neutral here. */
+  --color-brand: #b0762c; /* outlines, logo border, caret, links */
+  --color-brand-ink: #a06a1c; /* amber text */
+  --color-brand-border: #dcbd85;
+  --color-brand-faint: #c2a56a;
+  --color-brand-hover: #8c5c1f;
+  --color-brand-glow: #e2c894; /* badge hover ring */
+  --color-brand-dim: #c08e3c; /* staged-pill dismiss glyph */
+
+  /* Roster — the right panel's own greys and tints (README turns 73–84).
+       The panel reads one step quieter than the main column, so its ink and
+       its off-state sit outside the shared ramp. */
+  --color-roster-ink: #161513; /* an enabled agent's name */
+  --color-roster-off: #b4b0a2; /* disabled agents and skills */
+  --color-roster-band: #ece8dc; /* domain band hairlines */
+  --color-roster-empty: #c0bcae; /* "no skills — base agent" */
+  --color-roster-hover: #faf8f3; /* agent row hover */
+  --color-skill-hover: #fdf9f0; /* skill row hover */
+  --color-flash: #f9f1de; /* assignment pulse on newly hit agents */
+  --color-use-ink: #a8a496; /* where-used number at rest */
+  /* The one tooltip surface (89a/90j): flat, no border, no shadow, no accent
+       edge — shared by the where-used popup and the options panel's info tip. */
+  --color-tip-field: #f6f4ed;
+  /* The agent row's effort meter: an empty square's outline, and the fill on
+       an agent that is switched off. A filled square on a live agent is
+       `brand`, so it needs no token of its own. */
+  --color-meter-border: #d5d0c1;
+  --color-meter-off: #c8c4b6;
+
+  /* Band — the stuck filter bar (84a). The page's one dark surface, so it is
+       the one place the palette inverts: the ramp above is tuned for ink on
+       white and reads as mud on #242320. The band itself is `ink`. */
+  --color-band-ink: #f2eee2; /* search text */
+  --color-band-faint: #a8a294; /* its placeholder */
+  --color-band-dim: #8f8b7d; /* a chip at rest */
+  --color-band-hover: #d8d3c4; /* a chip under the pointer */
+  --color-band-brand: #e3b06a; /* the caret, and a chosen chip */
+  --color-band-chip: rgb(255 255 255 / 0.045); /* a chip's lift */
+  --color-band-chip-hover: rgb(255 255 255 / 0.09);
+  --color-band-wash: rgb(176 118 44 / 0.22); /* a chosen chip's lift */
+  --color-band-edge: #55524a; /* add-skill's hairline, the band's only one */
+  --color-band-edge-hover: #8a8578;
+
+  /* Lines */
+  --color-hairline: #dcd7c9; /* the cell lattice, dialog rules */
+  --color-rule: #cfcabb; /* section dividers, panel border */
+  --color-divider: #e4e0d4; /* column dividers, roster rules, segments */
+  --color-chip-border: #ddd9cc;
+  --color-field-border: #b6b0a0; /* search field, filter bar */
+  --color-dialog-border: #a9a292;
+  --color-matrix-border: #d8d3c4;
+  --color-line-hover: #c4bfae; /* chip / segment hover */
+
+  /* 60px is the page's structural constant: main-column padding, the air
+       above and below every divider, and the roster's top padding. */
+  --spacing-gutter: 3.75rem;
+
+  /* Shadows stay in px: they are decorative, a 10% blur difference is
+       imperceptible, and the app has only these two. */
+  --shadow-panel: 0 2px 8px rgb(0 0 0 / 0.07);
+  --shadow-dialog: 0 20px 60px rgb(0 0 0 / 0.22);
+
+  /* The design's type scale, taken from the `font:` shorthands in
+       Configurator v5.dc.html. It uses half-pixel steps freely and at these
+       sizes 8px vs 8.5px is a visible weight difference, so they are kept
+       rather than rounded. `_` stands in for the decimal point: `text-9_5`.
+
+       Every size declares `normal` line-height because the design sets none —
+       Tailwind's preflight would otherwise impose 1.5, which is far too airy
+       for 7-10px label text. The handful of places the design *does* specify
+       one use a `leading-*` utility at the call site.
+
+       NOTE: tailwind-merge must be taught this scale or component defaults
+       like `text-sm` survive alongside it — see lib/utils.ts. */
+  --text-7: 0.4375rem;
+  --text-7--line-height: normal;
+  --text-7_5: 0.46875rem;
+  --text-7_5--line-height: normal;
+  --text-8: 0.5rem;
+  --text-8--line-height: normal;
+  --text-8_5: 0.53125rem;
+  --text-8_5--line-height: normal;
+  --text-9: 0.5625rem;
+  --text-9--line-height: normal;
+  --text-9_5: 0.59375rem;
+  --text-9_5--line-height: normal;
+  --text-10: 0.625rem;
+  --text-10--line-height: normal;
+  --text-10_5: 0.65625rem;
+  --text-10_5--line-height: normal;
+  --text-11: 0.6875rem;
+  --text-11--line-height: normal;
+  --text-11_5: 0.71875rem;
+  --text-11_5--line-height: normal;
+  --text-12: 0.75rem;
+  --text-12--line-height: normal;
+  --text-13: 0.8125rem;
+  --text-13--line-height: normal;
+  --text-13_5: 0.84375rem;
+  --text-13_5--line-height: normal;
+  --text-15: 0.9375rem;
+  --text-15--line-height: normal;
+  --text-25: 1.5625rem;
+  --text-25--line-height: normal;
+}
+
+:root {
+  /**
+     * THE SIZING KNOB. Every dimension in the app is expressed in `rem`, so this
+     * one percentage scales the whole design uniformly — type, padding, gaps,
+     * column widths, the 60px gutter and the sticky offsets all move together.
+     * 100% is the design's native size; 110% is the current setting, which is
+     * what "10% zoomed in" looks like.
+     *
+     * A percentage rather than a px value so it compounds with the reader's own
+     * browser font-size preference instead of overriding it.
+     *
+     * Two things deliberately do NOT scale, and must stay in px:
+     *   · borders and the 1px lattice hairlines — 1.1px renders as a blurry
+     *     sub-pixel line and the collapsed grid is the whole visual language
+     *   · viewport units, so the sticky rails stay exactly one screen tall
+     * This is also why the app is not simply CSS `zoom`, which would scale both.
+     */
+  font-size: 110%;
+
+  /* shadcn semantics remapped onto the v5 palette above. */
+  --background: #ffffff;
+  --foreground: #242320;
+  --card: #ffffff;
+  --card-foreground: #242320;
+  --popover: #ffffff;
+  --popover-foreground: #242320;
+  --primary: #242320; /* the only filled elements: ＋ add skill, Install */
+  --primary-foreground: #ffffff;
+  --secondary: #f8f7f3;
+  --secondary-foreground: #4a473c;
+  --muted: #f4f2ec;
+  --muted-foreground: #7a7669;
+  /* Hover is neutral by design. Amber means "the user chose this", so it
+       must never appear on a state the user merely hovered. */
+  --accent: #faf9f5;
+  --accent-foreground: #242320;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: #dcd7c9;
+  --input: #b6b0a0;
+  --ring: #b0762c;
+  --chart-1: #b0762c;
+  --chart-2: #a06a1c;
+  --chart-3: #c2a56a;
+  --chart-4: #7a7669;
+  --chart-5: #cfcabb;
+  --radius: 0px; /* rule 1 — no exceptions */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #7a7669;
+  --sidebar-primary: #242320;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #faf9f5;
+  --sidebar-accent-foreground: #242320;
+  --sidebar-border: #e4e0d4;
+  --sidebar-ring: #b0762c;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  a {
+    color: var(--color-brand);
+  }
+  a:hover {
+    color: var(--color-brand-hover);
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* Split-rail scrollbars (design 83o): a 14px hit area drawing a 2px line —
+   the thumb wears a white border so only a hairline of it shows — greying up
+   on hover. Applied to the page itself and, via `.rail-scrollbar`, to the
+   roster's own scroller. Stays in px: it frames the viewport, not content. */
+html::-webkit-scrollbar,
+.rail-scrollbar::-webkit-scrollbar {
+  width: 14px;
+}
+html::-webkit-scrollbar-track,
+.rail-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+html::-webkit-scrollbar-thumb,
+.rail-scrollbar::-webkit-scrollbar-thumb {
+  background: #cdc8b8;
+  border: 6px solid #ffffff;
+  border-right-width: 5px;
+}
+html:hover::-webkit-scrollbar-thumb,
+.rail-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: #8b8778;
+}

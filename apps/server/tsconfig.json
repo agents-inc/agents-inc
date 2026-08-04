@@ -1,0 +1,9 @@
+{
+  "extends": "@workspace/typescript-config/base.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "types": ["@cloudflare/vitest-pool-workers"]
+  },
+  "include": ["src", "worker-configuration.d.ts", "vitest.config.ts"]
+}

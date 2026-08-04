@@ -1,0 +1,12 @@
+{
+  "name": "@workspace/vitest-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./node": "./node.js"
+  },
+  "dependencies": {
+    "vitest": "^3"
+  }
+}

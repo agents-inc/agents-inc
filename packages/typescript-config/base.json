@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Base",
+
+  // No noUnusedLocals / noUnusedParameters anywhere in this package. Every workspace here holds
+  // code it does not author — packages/matrix vendors the CLI's types verbatim, packages/ui holds
+  // shadcn output that `shadcn add` overwrites, and apps/editor pulls both in through path aliases.
+  // tsc has no per-directory escape, so the rule is ESLint's (@typescript-eslint/no-unused-vars),
+  // which can ignore those directories and still enforce on our own source.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}

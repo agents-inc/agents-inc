@@ -1,0 +1,47 @@
+// The config-sharing API: stores seed payloads in KV under content-addressed
+// short ids. Local dev and tests simulate KV; only deploys touch the real
+// namespace.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "agents-inc-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-10-01",
+  "observability": { "enabled": true },
+  "upload_source_maps": true,
+  "kv_namespaces": [
+    { "binding": "CONFIGS", "id": "6a69c245741c40c9b6a1f3d22935b7d2" }
+  ],
+  "vars": {
+    // The one origin allowed to POST from a browser; the CLI's GET is not a
+    // browser and needs no CORS at all. The top level is the *local* value:
+    // `wrangler dev` reads it, and so does vitest via `configPath`, which is
+    // what `index.test.ts`'s CORS cases assert against.
+    "WEB_ORIGIN": "http://localhost:5173",
+    // Which Sentry project `/monitoring` will relay to, and only that one.
+    // Not secret — both already ship inside the browser bundle as part of the
+    // DSN — but kept as config so the open-relay guard has something to check
+    // against rather than a literal in the handler.
+    "SENTRY_INGEST_HOST": "o4509197991346176.ingest.de.sentry.io",
+    "SENTRY_PROJECT_ID": "4511832531796048"
+  },
+  "env": {
+    // Deploys always pass `--env production` (see package.json). Named
+    // environments inherit *nothing* from the top level — every binding and
+    // var below is a deliberate restatement, not a duplicate, and dropping one
+    // would remove it at the edge rather than fall back.
+    "production": {
+      "name": "agents-inc-api",
+      "routes": [{ "pattern": "api.agentsinc.sh", "custom_domain": true }],
+      "observability": { "enabled": true },
+      "upload_source_maps": true,
+      "kv_namespaces": [
+        { "binding": "CONFIGS", "id": "6a69c245741c40c9b6a1f3d22935b7d2" }
+      ],
+      "vars": {
+        "WEB_ORIGIN": "https://agentsinc.sh",
+        "SENTRY_INGEST_HOST": "o4509197991346176.ingest.de.sentry.io",
+        "SENTRY_PROJECT_ID": "4511832531796048"
+      }
+    }
+  }
+}

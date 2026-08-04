@@ -1,3 +1,68 @@
-npx lint-staged
-bun run test
-bun run test:e2e
+# Format only what is staged.
+bunx lint-staged
+
+# Then lint and the suites, scoped by side: the whole CLI suite if anything in
+# the CLI changed, the whole web suite if anything in the web changed.
+#
+# ESLint runs here rather than in lint-staged because lint-staged runs its
+# commands from the git root, and ESLint 9 flat config is looked up from the
+# working directory, never beside the file being linted. Every workspace keeps
+# its own eslint.config.js one level down, and packages/cli is on ESLint 9
+# while the rest are on ESLint 10 — so there is no root config and no root
+# binary that could lint all of them. Verified by running it: from the root,
+# `eslint packages/cli/src/cli/consts.ts` exits 2 with "couldn't find an
+# eslint.config file"; the same file linted from packages/cli exits 0. Turbo
+# gives each workspace its own eslint, run in its own directory.
+#
+# The cost of linting a whole workspace rather than just its staged files is
+# small next to the suites already on this line — packages/cli lints in ~7s and
+# apps/editor in ~2s, and turbo caches both — and it is what catches the
+# cross-file rules, like the config-gate import bans, that a per-file run
+# cannot see.
+#
+# This used to be `--filter='...[HEAD]'`, turbo's changed-package filter, which
+# runs the packages a commit touched plus their dependents. That looks smarter
+# and it was wrong: a commit to packages/matrix selected matrix and apps/editor,
+# but not apps/server, which depends on matrix too, so a change that broke the
+# worker committed clean. Scoping by side is coarse on purpose — it cannot miss
+# a dependent, because it never tries to work out what the dependents are.
+# Please do not narrow it again.
+
+# This list answers "which side moved", not "which files should I lint" — so no
+# --diff-filter (a commit that only deletes a CLI file still has to run the CLI
+# suite) and --no-renames, which splits a move into both of its paths.
+staged=$(git diff --cached --name-only --no-renames)
+
+run_cli=no
+run_web=no
+
+if printf '%s\n' "$staged" | grep -q '^packages/cli/'; then
+	run_cli=yes
+fi
+
+# The web side is everything under apps/ or packages/ except the CLI's own
+# paths — hence the second grep, which drops them. A commit confined to
+# packages/cli leaves nothing behind, so this stays unset.
+if printf '%s\n' "$staged" | grep -E '^(apps|packages)/' | grep -qv '^packages/cli/'; then
+	run_web=yes
+fi
+
+# Root tooling changes how both sides install, build and run.
+if printf '%s\n' "$staged" | grep -qE '^(package\.json|bun\.lock|turbo\.json|tsconfig\.json)$|^(\.husky|\.github)/'; then
+	run_cli=yes
+	run_web=yes
+fi
+
+# Every grep above sits inside an `if` on purpose: husky runs this with `sh -e`,
+# so a bare grep that matched nothing would fail the commit on its own.
+#
+# Only packages/cli and apps/editor define test:e2e, so each side runs the
+# end-to-end suite it owns and nothing else. A commit touching only docs or
+# other root files sets neither flag and runs neither suite.
+if [ "$run_cli" = yes ]; then
+	bunx turbo run lint test test:e2e --filter=@agents-inc/cli
+fi
+
+if [ "$run_web" = yes ]; then
+	bunx turbo run lint test test:e2e --filter='!@agents-inc/cli'
+fi
