@@ -104,6 +104,14 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # The committed JSON schemas must match what the Zod schemas generate —
+      # the CLI's own generated matrix went stale for weeks because nothing
+      # regenerated and compared. The types generator cannot run here (it reads
+      # the sibling skills checkout, which the runner does not have); its check
+      # lives in prepublishOnly, on the machine that publishes.
+      - run: bun run generate:schemas:check
+        working-directory: packages/cli
+
       - run: bun run typecheck --filter=agents-inc
       - run: bun run lint --filter=agents-inc
       - run: bun run test --filter=agents-inc

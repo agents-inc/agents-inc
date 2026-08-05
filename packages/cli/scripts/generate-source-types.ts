@@ -391,7 +391,7 @@ function generate(): void {
 
   // Format generated files with prettier
   console.log("Formatting generated files...\n");
-  execSync(`npx prettier --write "${outDir}/"`, { stdio: "inherit" });
+  execSync(`bunx prettier --write "${outDir}/"`, { stdio: "inherit" });
 }
 
 // Only run when executed directly (not when imported by tests)

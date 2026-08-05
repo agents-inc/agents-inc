@@ -1,6 +1,6 @@
 /**
  * Generates JSON Schema files from Zod schemas.
- * Run: npx tsx scripts/generate-json-schemas.ts
+ * Run: bun run generate:schemas
  */
 import { z } from "zod";
 import { execSync } from "child_process";
@@ -215,7 +215,7 @@ function generate(): void {
 
   // Format generated files with prettier
   console.log("Formatting schema files...\n");
-  execSync(`npx prettier --write "${SCHEMAS_DIR}/"`, { stdio: "inherit" });
+  execSync(`bunx prettier --write "${SCHEMAS_DIR}/"`, { stdio: "inherit" });
 }
 
 generate();

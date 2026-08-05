@@ -78,12 +78,13 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit && echo '✓ No TypeScript errors'",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json --noEmit && tsc -p e2e/tsconfig.json --noEmit && echo '✓ No TypeScript errors'",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
     "generate:types": "bun scripts/generate-source-types.ts",
-    "generate:schemas": "npx tsx scripts/generate-json-schemas.ts",
-    "generate:schemas:check": "npm run generate:schemas && git diff --exit-code src/schemas/",
-    "prepublishOnly": "bun run format:check && bun run lint && bun run typecheck && bun run build && bun run test"
+    "generate:schemas": "bun scripts/generate-json-schemas.ts",
+    "generate:schemas:check": "bun run generate:schemas && git diff --exit-code src/schemas/",
+    "generate:types:check": "bun run generate:types && git diff --exit-code src/cli/types/generated/",
+    "prepublishOnly": "bun run format:check && bun run lint && bun run typecheck && bun run generate:schemas:check && bun run generate:types:check && bun run build && bun run test"
   },
   "repository": {
     "type": "git",
