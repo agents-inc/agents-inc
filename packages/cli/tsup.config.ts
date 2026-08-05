@@ -1,4 +1,5 @@
 import { defineConfig } from "tsup";
+import fg from "fast-glob";
 import fs from "fs-extra";
 import path from "path";
 
@@ -32,6 +33,23 @@ export default defineConfig({
   // Note: We need to handle multiple entry points - outDir will create structure
   outDir: "dist",
   onSuccess: async () => {
+    // Belt over the entry negations above. The same tsup has three times been
+    // observed emitting the compiled tests despite them — never reproducible
+    // on demand, provenance never pinned, most recently inside a publish gate
+    // (packaging.test.ts is the tripwire that caught every occurrence).
+    // Whatever the trigger is, deleting the artifacts here makes the
+    // no-shipped-tests invariant unconditional instead of probabilistic.
+    const strayTests = await fg(["**/*.test.js", "**/*.test.js.map", "**/*.test.d.ts"], {
+      cwd: "dist",
+      absolute: true,
+    });
+    for (const stray of strayTests) {
+      await fs.remove(stray);
+    }
+    if (strayTests.length > 0) {
+      console.log(`Removed ${strayTests.length} stray compiled test artifacts from dist/`);
+    }
+
     // Copy config/ (stacks.ts etc.) to dist/config/
     // so it's available regardless of how PROJECT_ROOT resolves at runtime
     const srcConfig = "config";
