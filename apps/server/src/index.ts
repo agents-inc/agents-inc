@@ -73,20 +73,15 @@ const app = new OpenAPIHono<{ Bindings: Env }>()
 // Registered before the routes so a preflight never reaches them. Only the
 // configured web origin may call from a browser; the CLI is not a browser and
 // is unaffected.
-app.use(
-  "/configs/*",
-  cors({ origin: (origin, c) => (origin === c.env.WEB_ORIGIN ? origin : null) })
-)
-app.use(
-  "/configs",
-  cors({ origin: (origin, c) => (origin === c.env.WEB_ORIGIN ? origin : null) })
-)
+const allowOnlyWebOrigin = cors({
+  origin: (origin, c) => (origin === c.env.WEB_ORIGIN ? origin : null),
+})
+
+app.use("/configs/*", allowOnlyWebOrigin)
+app.use("/configs", allowOnlyWebOrigin)
 // The tunnel is called cross-origin from the web app, and an envelope's
 // content type is not CORS-safelisted, so it preflights like the rest.
-app.use(
-  "/monitoring",
-  cors({ origin: (origin, c) => (origin === c.env.WEB_ORIGIN ? origin : null) })
-)
+app.use("/monitoring", allowOnlyWebOrigin)
 
 // Refused on the declared length alone — bodies without one parse as usual and
 // the JSON validator rejects anything that is not a payload anyway.

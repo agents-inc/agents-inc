@@ -25,6 +25,9 @@ import {
 } from "@/features/configure/lib/derive"
 import { useInstallCommand } from "@/features/configure/lib/use-install-command"
 import { track } from "@/lib/analytics/track"
+import type { AddedSkill } from "@/stores/added-skills-store"
+import type { ConfigSelection } from "@/features/configure/lib/derive"
+import { useUiStore } from "@/stores/ui-store"
 
 // The line under the command, which is also where the id's absence is
 // explained rather than left as a silently shorter command.
@@ -34,9 +37,6 @@ const COMMAND_NOTES = {
   failed: "id unavailable — this command starts a fresh wizard",
   copied: "copied",
 } as const
-import type { AddedSkill } from "@/stores/added-skills-store"
-import type { ConfigSelection } from "@/features/configure/lib/derive"
-import { useUiStore } from "@/stores/ui-store"
 
 function ScopeGroup({
   label,

@@ -133,6 +133,16 @@ export function extractAgents(cliRootPath: string): AgentEntry[] {
 
 // -- Phase 1: Generate source-types.ts ---------------------------------------
 
+function assertUnique(values: string[], label: string): void {
+  if (new Set(values).size === values.length) return;
+
+  const dupes = values.filter((value, index) => values.indexOf(value) !== index);
+  throw new Error(`Duplicate ${label}: ${[...new Set(dupes)].join(", ")}`);
+}
+
+/** One quoted-and-comma'd line per value — the body of an emitted `[...]` or `{...}` literal. */
+const quotedLines = (values: readonly string[]) => values.map((value) => `"${value}",`);
+
 export function generatePhase1(
   skills: ExtractedSkillMetadata[],
   agentEntries: AgentEntry[],
@@ -141,32 +151,22 @@ export function generatePhase1(
   outPath: string;
   skillIdSet: Set<string>;
 } {
-  const agentNames = [...new Set(agentEntries.map((a) => a.id))].sort();
+  assertUnique(
+    skills.map((s) => s.slug),
+    "slugs",
+  );
+  assertUnique(
+    skills.map((s) => s.id),
+    "skill IDs",
+  );
 
-  // Build SKILL_MAP entries sorted by slug
   const sortedBySlug = [...skills].sort((a, b) => a.slug.localeCompare(b.slug));
-
-  // Validate uniqueness
-  const slugs = skills.map((s) => s.slug);
-  if (new Set(slugs).size !== slugs.length) {
-    const dupes = slugs.filter((s, i) => slugs.indexOf(s) !== i);
-    throw new Error(`Duplicate slugs: ${[...new Set(dupes)].join(", ")}`);
-  }
-
-  const ids = skills.map((s) => s.id);
-  const idSet = new Set(ids);
-  if (idSet.size !== ids.length) {
-    const dupes = ids.filter((s, i) => ids.indexOf(s) !== i);
-    throw new Error(`Duplicate skill IDs: ${[...new Set(dupes)].join(", ")}`);
-  }
-
-  // Collect unique sorted values
+  const agentNames = [...new Set(agentEntries.map((a) => a.id))].sort();
   const categories = [...new Set(skills.map((s) => s.category))].sort();
   const domains = [...new Set(skills.map((s) => s.domain))].sort();
   const skillIds = [...new Set(skills.map((s) => s.id))].sort();
 
-  mkdirSync(outDir, { recursive: true });
-
+  // The emitted file, top to bottom.
   const lines: string[] = [
     "// AUTO-GENERATED from skills source and agent metadata — do not edit manually",
     "// Run: bun run generate:types",
@@ -174,13 +174,7 @@ export function generatePhase1(
     "// ── Skill Map (slug → ID) ─────────────────────────────────────",
     "",
     "export const SKILL_MAP = {",
-  ];
-
-  for (const entry of sortedBySlug) {
-    lines.push(`"${entry.slug}": "${entry.id}",`);
-  }
-
-  lines.push(
+    ...sortedBySlug.map((entry) => `"${entry.slug}": "${entry.id}",`),
     "} as const;",
     "",
     "export type SkillSlug = keyof typeof SKILL_MAP;",
@@ -189,31 +183,17 @@ export function generatePhase1(
     "// Derived arrays for Zod enum compatibility",
     "// (z.enum() requires a readonly tuple, not Object.keys/values)",
     "export const SKILL_SLUGS = [",
-  );
-
-  for (const entry of sortedBySlug) {
-    lines.push(`"${entry.slug}",`);
-  }
-
-  lines.push("] as const satisfies readonly SkillSlug[];", "", "export const SKILL_IDS = [");
-
-  for (const id of skillIds) {
-    lines.push(`"${id}",`);
-  }
-
-  lines.push(
+    ...quotedLines(sortedBySlug.map((entry) => entry.slug)),
+    "] as const satisfies readonly SkillSlug[];",
+    "",
+    "export const SKILL_IDS = [",
+    ...quotedLines(skillIds),
     "] as const satisfies readonly SkillId[];",
     "",
     "// ── Categories ─────────────────────────────────────────────────",
     "",
     "export const CATEGORIES = [",
-  );
-
-  for (const cat of categories) {
-    lines.push(`"${cat}",`);
-  }
-
-  lines.push(
+    ...quotedLines(categories),
     "] as const;",
     "",
     "export type Category = (typeof CATEGORIES)[number];",
@@ -221,13 +201,7 @@ export function generatePhase1(
     "// ── Domains ────────────────────────────────────────────────────",
     "",
     "export const DOMAINS = [",
-  );
-
-  for (const d of domains) {
-    lines.push(`"${d}",`);
-  }
-
-  lines.push(
+    ...quotedLines(domains),
     "] as const;",
     "",
     "export type Domain = (typeof DOMAINS)[number];",
@@ -235,14 +209,14 @@ export function generatePhase1(
     "// ── Agent Names ────────────────────────────────────────────────",
     "",
     "export const AGENT_NAMES = [",
-  );
+    ...quotedLines(agentNames),
+    "] as const;",
+    "",
+    "export type AgentName = (typeof AGENT_NAMES)[number];",
+    "",
+  ];
 
-  for (const a of agentNames) {
-    lines.push(`"${a}",`);
-  }
-
-  lines.push("] as const;", "", "export type AgentName = (typeof AGENT_NAMES)[number];", "");
-
+  mkdirSync(outDir, { recursive: true });
   const outPath = path.join(outDir, "source-types.ts");
   writeFileSync(outPath, lines.join("\n"));
 
@@ -251,7 +225,7 @@ export function generatePhase1(
     `\n  Generated: ${skills.length} skills, ${categories.length} categories, ${domains.length} domains, ${agentNames.length} agents\n`,
   );
 
-  return { outPath, skillIdSet: idSet };
+  return { outPath, skillIdSet: new Set(skills.map((s) => s.id)) };
 }
 
 // -- Helpers ------------------------------------------------------------------

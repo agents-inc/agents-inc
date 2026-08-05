@@ -14,19 +14,17 @@ const CHANGELOG_URL = `${GITHUB_REPO_URL}/releases`
  * NO REACT INTEGRATION, DELIBERATELY. Please do not "fix" this by adding
  * `@astrojs/react`.
  *
- *   1. The only thing this site needs from the design system is its *tokens*,
- *      which are plain CSS custom properties in `@workspace/ui`'s globals.css.
- *      No React is required to consume them. The landing page is `.astro` plus
- *      Tailwind; the docs are Starlight's own components.
- *   2. This monorepo runs two React majors on purpose — packages/cli needs
- *      React 18 for Ink, apps/editor is on 19 — and React 18 won the hoisted
- *      root slot. That already forced `paths` workarounds in packages/ui and
- *      apps/editor to collapse the duplicate @types/react copies back to one.
- *      Depending on no React at all means this workspace inherits none of it.
+ * The only thing this site needs from the design system is its *tokens*,
+ * which are plain CSS custom properties in `@workspace/ui`'s globals.css.
+ * No React is required to consume them. The landing page is `.astro` plus
+ * Tailwind; the docs are Starlight's own components. (When this was written
+ * the repository also ran two React majors side by side, which made staying
+ * React-free a real escape from that split; the versions were unified on
+ * 2026-08-05, so what remains is the plain point that nothing here needs
+ * React.)
  *
  * If a genuinely interactive island is needed later, this is one integration
- * and one dependency away — and at that point the React-major question above
- * has to be answered for this workspace too.
+ * and one dependency away.
  */
 export default defineConfig({
   /**

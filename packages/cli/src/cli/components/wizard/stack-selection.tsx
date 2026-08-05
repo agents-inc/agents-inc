@@ -158,57 +158,72 @@ export const StackSelection: React.FC<StackSelectionProps> = ({ onCancel }) => {
     availableHeight: listHeight,
   });
 
+  // Restore global agent preselections (selectStack wipes selectedAgents/agentConfigs).
+  function restoreGlobalAgentPreselections(): void {
+    const globalAgentPre = useWizardStore.getState().globalAgentPreselections;
+    if (globalAgentPre) {
+      useWizardStore.setState({
+        selectedAgents: globalAgentPre.agents,
+        agentConfigs: globalAgentPre.configs,
+      });
+    }
+  }
+
+  // Pre-select global skills (sets selectedDomains to the global skills' domains).
+  function preselectGlobalSkills(): void {
+    const globalPreselections = useWizardStore.getState().globalPreselections;
+    if (globalPreselections?.length) {
+      populateFromSkillIds(
+        globalPreselections.map((s) => s.id),
+        globalPreselections,
+      );
+    }
+  }
+
+  // Additive — adds any scratch domain not already selected.
+  function addScratchDomains(): void {
+    for (const domain of DEFAULT_SCRATCH_DOMAINS) {
+      if (!useWizardStore.getState().selectedDomains.includes(domain)) {
+        toggleDomain(domain);
+      }
+    }
+  }
+
+  function startFromScratch(): void {
+    selectStack(null);
+    setApproach("scratch");
+    restoreGlobalAgentPreselections();
+    preselectGlobalSkills();
+    addScratchDomains();
+    setStep("domains");
+  }
+
+  // The stack's own skills merged with the global preselections, and its agent
+  // keys merged with the global agent preselections.
+  function applyStack(stack: ResolvedStack): void {
+    selectStack(stack.id);
+    setStackAction("customize");
+
+    const stackAgents = typedKeys<AgentName>(stack.skills);
+    preselectAgentsFromStack(stackAgents);
+
+    const globalPreselections = useWizardStore.getState().globalPreselections;
+    const globalIds = globalPreselections?.map((s) => s.id) ?? [];
+    const mergedIds = [...new Set([...stack.allSkillIds, ...globalIds])];
+    populateFromSkillIds(mergedIds, globalPreselections ?? undefined);
+
+    setApproach("stack");
+    setStep("domains");
+  }
+
   function handleSelect(selectedId: FocusId): void {
     if (selectedId === "scratch") {
-      selectStack(null);
-      setApproach("scratch");
-
-      // Restore global agent preselections (selectStack wipes selectedAgents/agentConfigs)
-      const globalAgentPre = useWizardStore.getState().globalAgentPreselections;
-      if (globalAgentPre) {
-        useWizardStore.setState({
-          selectedAgents: globalAgentPre.agents,
-          agentConfigs: globalAgentPre.configs,
-        });
-      }
-
-      // Pre-select global skills first (sets selectedDomains to global skill domains)
-      const globalPreselections = useWizardStore.getState().globalPreselections;
-      if (globalPreselections?.length) {
-        populateFromSkillIds(
-          globalPreselections.map((s) => s.id),
-          globalPreselections,
-        );
-      }
-
-      // Then toggle scratch domains (additive — adds any not already selected)
-      for (const domain of DEFAULT_SCRATCH_DOMAINS) {
-        if (!useWizardStore.getState().selectedDomains.includes(domain)) {
-          toggleDomain(domain);
-        }
-      }
-
-      setStep("domains");
+      startFromScratch();
       return;
     }
+
     const focusedStack = stacks.find((s) => s.id === selectedId);
-    if (focusedStack) {
-      selectStack(focusedStack.id);
-      setStackAction("customize");
-
-      // Derive agent preselection from stack agent keys, merged with global agent preselections
-      const stackAgents = typedKeys<AgentName>(focusedStack.skills);
-      preselectAgentsFromStack(stackAgents);
-
-      // Merge global preselections with stack skills
-      const globalPreselections = useWizardStore.getState().globalPreselections;
-      const globalIds = globalPreselections?.map((s) => s.id) ?? [];
-      const mergedIds = [...new Set([...focusedStack.allSkillIds, ...globalIds])];
-      populateFromSkillIds(mergedIds, globalPreselections ?? undefined);
-
-      setApproach("stack");
-      setStep("domains");
-    }
+    if (focusedStack) applyStack(focusedStack);
   }
 
   return (
