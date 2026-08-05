@@ -104,35 +104,36 @@ and three unreferenced `agent-findings`.
 
 ## Testing & E2E coverage
 
-| ID      | Task                                                                                                             | Status        | Type     | Complexity |
-| ------- | ---------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
-| D-235   | E2E gap: `buildProjectTypesExtras` new-domain/category path is uncovered.                                        | Ready for Dev | refactor | easy       |
-| D-234   | E2E config inspection via `loadProjectConfig` instead of regex-on-`config.ts`.                                   | Done          | refactor | complex    |
-| D-219   | E2E fixture-default ergonomics. [Plan](./plans/D-219-wizard-launcher-default-fixture.md)                         | Ready for Dev | refactor | complex    |
-| D-168   | Audit E2E tests — replace manual file construction with CLI commands.                                            | Ready for Dev | refactor | complex    |
-| D-111   | Replace E2E text anchors with stable test identifiers.                                                           | Investigate   | refactor | complex    |
-| D-64    | Create CLI E2E testing skill + update `cli-framework-oclif-ink`.                                                 | Ready for Dev | feature  | complex    |
-| CLI-321 | (was P4-18) Test multiple skill/agent creation — depends on CLI-320.                                             | Deferred      | refactor | complex    |
-| CLI-328 | (was expressive-ts decision 6) `e2e/pages/constants.ts` re-declares production constants inconsistently.         | Investigate   | refactor | easy       |
-| CLI-332 | `e2e/commands/new-skill.e2e.test.ts` — 14 tests skipped at file level. Blocked on D-212 or CLI-323.              | Ready for Dev | refactor | easy       |
-| CLI-333 | `e2e/commands/new-agent.e2e.test.ts` — 15 tests skipped at file level. Blocked on D-213 or CLI-323.              | Ready for Dev | refactor | easy       |
-| CLI-334 | `e2e/commands/new-marketplace.e2e.test.ts` — 14 tests skipped at file level. Blocked on D-214 or CLI-323.        | Ready for Dev | refactor | easy       |
-| CLI-335 | `e2e/interactive/init-wizard-filter-incompatible.e2e.test.ts` — 1 test, gated on `FILTER_INCOMPATIBLE`.          | Ready for Dev | refactor | easy       |
-| CLI-336 | `e2e/lifecycle/global-skill-filter-incompatible-guard.e2e.test.ts` — 1 test, same flag.                          | Ready for Dev | refactor | easy       |
-| CLI-337 | `e2e/interactive/init-wizard-sources-cancel-persists.e2e.test.ts` — 1 test, gated on the settings overlay.       | Ready for Dev | refactor | easy       |
-| CLI-338 | E2E: `build plugins` on the E2E source → initial compile produces `plugin.json` at version `1.0.0`.              | Ready for Dev | refactor | easy       |
-| CLI-339 | E2E: `build plugins` after editing a skill's SKILL.md → version bumps to `2.0.0` for that skill only.            | Ready for Dev | refactor | easy       |
-| CLI-340 | E2E: `build plugins` with no change → version stays at `2.0.0` (idempotent).                                     | Ready for Dev | refactor | easy       |
-| CLI-341 | E2E: `build plugins` with multiple skills → only the modified skill's version increments.                        | Ready for Dev | refactor | easy       |
-| CLI-342 | E2E: `build plugins` then `build marketplace` → `marketplace.json` lists all skills at correct versions.         | Ready for Dev | refactor | easy       |
-| CLI-343 | E2E: `build marketplace` after a bump → `marketplace.json` reflects the updated version.                         | Ready for Dev | refactor | easy       |
-| CLI-344 | E2E: `build marketplace` output structure — each entry has `name`, `version`, `source`, `category`.              | Ready for Dev | refactor | easy       |
-| CLI-345 | E2E: full build → install → modify → rebuild → detect → update chain. Stale — `outdated` no longer exists.       | Investigate   | refactor | complex    |
-| CLI-346 | E2E: `update` distinguishes globally-scoped skills from project-scoped ones — `globalResults` is never asserted. | Ready for Dev | refactor | complex    |
-| CLI-347 | Decide whether to delete `integration/init-end-to-end.integration.test.ts` — covered by init wizard E2E.         | Investigate   | refactor | easy       |
-| CLI-348 | Decide whether to delete `integration/init-flow.integration.test.ts` — covered by init wizard E2E.               | Investigate   | refactor | easy       |
-| CLI-349 | Decide whether to delete `user-journeys/compile-flow.test.ts` — covered by `compile.e2e.test.ts`.                | Investigate   | refactor | easy       |
-| CLI-350 | Decide whether to delete `user-journeys/user-journeys.integration.test.ts` — covered by init/edit E2E.           | Investigate   | refactor | easy       |
+| ID      | Task                                                                                                                                         | Status        | Type     | Complexity |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
+| D-235   | E2E gap: `buildProjectTypesExtras` new-domain/category path is uncovered.                                                                    | Ready for Dev | refactor | easy       |
+| D-234   | E2E config inspection via `loadProjectConfig` instead of regex-on-`config.ts`.                                                               | Done          | refactor | complex    |
+| D-219   | E2E fixture-default ergonomics. [Plan](./plans/D-219-wizard-launcher-default-fixture.md)                                                     | Ready for Dev | refactor | complex    |
+| D-168   | Audit E2E tests — replace manual file construction with CLI commands.                                                                        | Ready for Dev | refactor | complex    |
+| D-111   | Replace E2E text anchors with stable test identifiers.                                                                                       | Investigate   | refactor | complex    |
+| D-64    | Create CLI E2E testing skill + update `cli-framework-oclif-ink`.                                                                             | Ready for Dev | feature  | complex    |
+| CLI-321 | (was P4-18) Test multiple skill/agent creation — depends on CLI-320.                                                                         | Deferred      | refactor | complex    |
+| CLI-328 | (was expressive-ts decision 6) `e2e/pages/constants.ts` re-declares production constants inconsistently.                                     | Investigate   | refactor | easy       |
+| CLI-332 | `e2e/commands/new-skill.e2e.test.ts` — 14 tests skipped at file level. Blocked on D-212 or CLI-323.                                          | Ready for Dev | refactor | easy       |
+| CLI-333 | `e2e/commands/new-agent.e2e.test.ts` — 15 tests skipped at file level. Blocked on D-213 or CLI-323.                                          | Ready for Dev | refactor | easy       |
+| CLI-334 | `e2e/commands/new-marketplace.e2e.test.ts` — 14 tests skipped at file level. Blocked on D-214 or CLI-323.                                    | Ready for Dev | refactor | easy       |
+| CLI-335 | `e2e/interactive/init-wizard-filter-incompatible.e2e.test.ts` — 1 test, gated on `FILTER_INCOMPATIBLE`.                                      | Ready for Dev | refactor | easy       |
+| CLI-336 | `e2e/lifecycle/global-skill-filter-incompatible-guard.e2e.test.ts` — 1 test, same flag.                                                      | Ready for Dev | refactor | easy       |
+| CLI-337 | `e2e/interactive/init-wizard-sources-cancel-persists.e2e.test.ts` — 1 test, gated on the settings overlay.                                   | Ready for Dev | refactor | easy       |
+| CLI-338 | E2E: `build plugins` on the E2E source → initial compile produces `plugin.json` at version `1.0.0`.                                          | Done          | refactor | easy       |
+| CLI-339 | E2E: `build plugins` after editing a skill's SKILL.md → version bumps to `2.0.0` for that skill only.                                        | Done          | refactor | easy       |
+| CLI-340 | E2E: `build plugins` with no change → version stays at `2.0.0` (idempotent).                                                                 | Done          | refactor | easy       |
+| CLI-341 | E2E: `build plugins` with multiple skills → only the modified skill's version increments.                                                    | Done          | refactor | easy       |
+| CLI-342 | E2E: `build plugins` then `build marketplace` → `marketplace.json` lists all skills at correct versions.                                     | Done          | refactor | easy       |
+| CLI-343 | E2E: `build marketplace` after a bump → `marketplace.json` reflects the updated version.                                                     | Done          | refactor | easy       |
+| CLI-344 | E2E: `build marketplace` output structure — each entry has `name`, `version`, `source`, `category`.                                          | Done          | refactor | easy       |
+| CLI-345 | E2E: full build → install → modify → rebuild → detect → update chain. Stale — `outdated` no longer exists.                                   | Investigate   | refactor | complex    |
+| CLI-367 | `category` never reaches `marketplace.json` — every marketplace prints `uncategorized: <all>`. Found by CLI-344; an `it.fails` spec pins it. | Ready for Dev | bug      | easy       |
+| CLI-346 | E2E: `update` distinguishes globally-scoped skills from project-scoped ones — `globalResults` is never asserted.                             | Done          | refactor | complex    |
+| CLI-347 | Decide whether to delete `integration/init-end-to-end.integration.test.ts` — covered by init wizard E2E.                                     | Investigate   | refactor | easy       |
+| CLI-348 | Decide whether to delete `integration/init-flow.integration.test.ts` — covered by init wizard E2E.                                           | Investigate   | refactor | easy       |
+| CLI-349 | Decide whether to delete `user-journeys/compile-flow.test.ts` — covered by `compile.e2e.test.ts`.                                            | Investigate   | refactor | easy       |
+| CLI-350 | Decide whether to delete `user-journeys/user-journeys.integration.test.ts` — covered by init/edit E2E.                                       | Investigate   | refactor | easy       |
 
 ## Tooling, gates & code generation
 
@@ -180,7 +181,6 @@ and three unreferenced `agent-findings`.
 | CLI-351 | Unify the sub-agents across domains, with Meta as the exception — six to add, four to retire.             | Ready for Dev    | refactor | complex    |
 | CLI-360 | Document `lib/skills/source-switcher.ts` and `generators.ts` — the two undocumented `lib/skills` modules. | Ready for Dev    | refactor | easy       |
 | CLI-361 | `scripts/generate-json-schemas.ts` cannot be tested — `generate()` runs at module scope.                  | Ready for Dev    | refactor | easy       |
-| CLI-365 | Regenerate `findings-impact-report.md` — it declares 158 findings / 67 partial; disk holds 160 / 69.      | Ready for Dev    | refactor | easy       |
 | CLI-366 | Snapshot discipline — rule 6.17a's two required snapshots were regenerated to agree with a wrong change.  | Investigate      | refactor | easy       |
 
 ---
@@ -1603,18 +1603,6 @@ guard the module-scope invocation, or to parameterise the output directory.
 
 ---
 
-#### CLI-365: Regenerate `findings-impact-report.md`
-
-The report declares 158 findings with 67 partial. Disk holds **160** findings (162 `.md` files minus
-`README.md` and `TEMPLATE.md`) with **69** partial. Every rollup, table, count and percentage in the file
-is derived from the stale 158-file snapshot, so all of them are wrong by two.
-
-Per the count-ownership registry in `.ai-docs/standards/documentation-bible.md`, that file is the only
-place the findings count is written — `DOCUMENTATION_MAP.md` deliberately does not restate it. So this
-one regeneration fixes every consumer.
-
----
-
 #### CLI-366: Snapshot discipline — rule 6.17a is adopted but does not enforce
 
 Rule 6.17a (`.ai-docs/standards/clean-code-standards.md` § 6, from the adopted proposal
@@ -1632,3 +1620,15 @@ a review rule against bare `-u` runs, a CI check, or snapshot files that are har
 - Test target directory: `/home/vince/dev/cv-launch`
 - Source marketplace: `/home/vince/dev/skills`
 - CLI under test: `packages/cli`
+
+#### CLI-367: `category` is dropped on the way into `marketplace.json`
+
+Found while writing CLI-344's spec. The skill's own `metadata.yaml` carries a category, but
+`compileSkillPlugin` reads that file only for `author`, `PluginManifest` has no category field, and
+`convertManifestToMarketplacePlugin` (`src/cli/lib/marketplace-generator.ts`) never sets one. The
+command's own summary shows the consequence: `getMarketplaceStats` groups by `p.category ??
+"uncategorized"`, so every generated marketplace prints `Category breakdown: uncategorized: <all>`.
+An `it.fails` spec in `e2e/commands/plugin-build-versioning.e2e.test.ts` pins the gap and flips
+green the moment a category reaches the entry.
+
+---

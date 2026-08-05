@@ -25,7 +25,7 @@ blocks a commit. What blocks a _deploy_ is in [`repo.md`](./repo.md), not here.
 | -------------------------------- | ------------------------------------------------------------------------------------------ | ---------------- | -------- | ---------- |
 | WWW-01 (was editor-todo item 8)  | Docs site: 5 of 10 sidebar sections, reference is per-group, config fields undocumented    | Ready for Dev    | feature  | complex    |
 | WWW-02 (was editor-todo item 9)  | Landing page: 5 of 12 blocks, and the catalogue teaser centrepiece is not one of them      | Ready for Dev    | feature  | complex    |
-| WWW-03 (was editor-todo item 10) | Apex path split — vite `base`, router `basepath`, share-link prefix, fallback, dead routes | Ready for Dev    | feature  | complex    |
+| WWW-03 (was editor-todo item 10) | Apex path split — vite `base`, router `basepath`, SPA fallback, dead routes            | Ready for Dev    | feature  | complex    |
 | WWW-04 (was editor-todo item 12) | Three pages tell readers to run `new skill` / `new agent` / `new marketplace`, all off     | Ready for Dev    | bug      | easy       |
 | WWW-05 (was editor-todo item 12) | `reference/commands.md` is wrong twice — the wizard's steps, and `init --from` is missing  | Ready for Dev    | bug      | easy       |
 | WWW-06 (was editor-todo item 14) | Two video slots are empty and a third is missing; you supply the recordings                | Needs Assistance | feature  | easy       |
@@ -60,18 +60,15 @@ pages build, eighteen of them documentation. `prefetch: false` and `disable404Ro
   written for this site. The migrated guides read as lifted from an older README — title-case
   headings, imperative bullets, no links back into the narrative.
 
-**Four source-file cleanups that block nothing but are still wrong.** These are edits in `docs/cli/`
-and `packages/cli/README.md` rather than in `apps/www` — the site repeats none of them, because it
-uses counted numbers — but they are the material the site is drawn from, so they belong with it. See
-also [`repo.md`](./repo.md) REPO-14, which is about who owns `docs/cli/` at all.
-
-- `docs/cli/index.md` still documents a removed `build stack` command.
-- `docs/cli/skills-explorer-web-ui.md` still describes the old `--seed` flow.
-- `packages/cli/README.md` says "150+ skills across 8 domains" against a catalogue of 222 where the
-  generated source has 9 domains and its own table lists 7. The root `README.md` no longer carries
-  either number.
-- The CLI README's sub-agent table lists 18 of the 23 that exist, missing `ai-developer`,
-  `ai-reviewer`, `api-pm`, `api-tester` and `infra-reviewer`.
+**Ownership settled, duplicates gone (2026-08-06, repo.md REPO-14).** The site's copies are now the
+only copies: the ten originals under `docs/cli/` were deleted, `docs/cli/` keeps contributor
+material only, editor material lives in `docs/web/`, and cross-cutting documents get `docs/repo/`.
+The four source-file defects this section used to list died with that: the index documenting a
+removed command was rewritten, the skills-explorer plan moved to `docs/web/` under a historical
+header naming the drift, and the CLI README now says 222 skills across 9 domains and lists all 23
+sub-agents. The CLI README's doc links point at the site's source files on GitHub — **flip them to
+`agentsinc.sh/docs/...` when WWW-03 lands**, and note the links in the ALREADY-PUBLISHED 0.152.0 npm
+page broke when the originals were deleted; the next publish heals them.
 
 ### Constraints already settled — do not undo these
 
@@ -307,14 +304,13 @@ stylesheet, script and internal link resolves against `/` and 404s.
 - **The share-link prefix.** `apps/editor/src/features/configure/lib/use-share-link.ts:15-16` builds
   `` `${location.origin}/?fromId=…` `` — origin only, no path prefix — so left alone it keeps minting
   links that land on the landing page. The `/editor` prefix has to go in there.
-- **Forward the share links that are already out.** `agentsinc.sh/?fromId=…` links are in the wild,
-  and once the landing page owns `/` they arrive at the wrong page. A Route cannot fix this — route
-  patterns "may not contain any query parameters", so `agentsinc.sh/?fromId=*` is not a legal
-  pattern. That leaves a Cloudflare Single Redirect rule, which can match on the query string, or a
-  few lines in the landing page that check for `fromId` and forward to `/editor/?fromId=…`. **Take
-  the second:** it is the project's own code, deterministic, testable and version-controlled, rather
-  than a dashboard rule. The landing page deliberately does not do this today, because `/editor` does
-  not exist yet and a redirect written now would break the links that currently work.
+- ~~**Forward the share links that are already out.**~~ **Dropped — owner's call, 2026-08-06: the
+  share links already in the wild do not matter.** They are `agentsinc.sh/?fromId=…` and will land on
+  the landing page once it owns `/`. No redirect rule, no forwarding code in the landing page, and
+  the analysis that used to sit here (a Route cannot match a query string, so it would have taken a
+  Cloudflare Single Redirect or a few lines of landing-page JavaScript) is moot. **This removes the
+  one piece of the cutover that had to be got right in the same instant**, which is what made the
+  split feel like a coordinated migration rather than a config change.
 - **Delete the editor's own docs route.** Docs cannot live _inside_ `apps/editor`: `RootLayout` is a
   desktop-only grid with `min-w-[85.25rem]`, and docs must be readable on a phone. So
   `apps/editor/src/components/nav-rail.tsx`'s `/docs` link leaves the SPA, and `docsRoute` +

@@ -64,3 +64,50 @@ when it lands rather than ticking it off, so this file is the only record that i
   `retry` drops from 2 to 1 — kept at 1 only because runner contention cannot be measured locally,
   and a retry that fires is visible in vitest's flaky report. The worker cap formula stays, its
   comment now carrying the measured numbers on both environments.
+- **2026-08-06 — REPO-15** — decided, not changed: the repository keeps publishing `.ai-docs/` and
+  `todo/`. The owner's call; the row existed to force the question, and the answer is that openness
+  wins.
+- **2026-08-06 — REPO-14** — documentation ownership settled by the owner and executed: the site is
+  the single source for user docs (ten duplicated originals deleted from `docs/cli/`), `docs/cli/`
+  holds contributor material only, editor material moved to `docs/web/`, and `docs/repo/` is
+  chartered for cross-cutting documents. All four source-file defects WWW-01 tracked died in the
+  same pass — including the CLI README's stale counts and its five missing sub-agents.
+- **2026-08-06 — REPO-27** — the AI docs describe the state, not the journey: 64,000 words of pass
+  narration, validation history and dead task-ID citations removed (−21%), the map cut from 2,746
+  lines to 206, the findings-impact rollup deleted outright, and twelve invariants that existed only
+  inside history paragraphs restated as present-tense rules before their paragraphs died. The
+  conventions were rewritten first so passes cannot re-accrete: one governing test — does an agent
+  implementing a feature tomorrow need this to be correct? — and staleness reduced to one line of
+  frontmatter. The last accretion, a stale April coverage checklist whose three TODO rows were all
+  dead (two covered since, one describing a validation that never existed by design), was deleted
+  with it.
+- **2026-08-06 — CLI-365** — superseded by REPO-27: the findings-impact report it asked to
+  regenerate was process-history by the new convention and was deleted rather than refreshed. The
+  findings themselves remain the evidence, untouched.
+- **2026-08-06 — REPO-16** — decided, not changed: `/home/vince/dev/skills` stays written out in
+  full. The owner's call, and the reasoning is that an absolute path is simply clearer about which
+  repository is meant — these are agent instructions and contributor notes read on the machine that
+  has that checkout, not build inputs. Nothing resolves the path programmatically; the generator
+  already defaults to the sibling `../skills` independently of any of these documents.
+- **2026-08-06 — REPO-05** — all three external services settled. Cloudflare: the Worker was renamed
+  `agents-inc-web` → `agents-inc-editor` in the dashboard, which is an in-place rename (deployment
+  history and the apex custom domain travel with it, no second Worker), and `wrangler.jsonc` was
+  updated to agree immediately — necessary, because a deploy naming a Worker that no longer exists
+  would have created it fresh and left the live apex updating from nothing. Sentry: renamed to
+  `agents-inc-editor` in the dashboard first, then `SENTRY_PROJECT` in the workflow. PostHog: there
+  was never an old name — its display name was unset ("Default project") and is now
+  "Agents Inc Editor", prose rather than a slug because nothing parses it.
+  **Three naming leftovers were deliberately left, and are not defects:**
+  `apps/editor/src/features/configure/` keeps its name (it says `configure`, matching the `/editor`
+  route and the CLI's `edit` verb; renaming is a code refactor nobody has asked for);
+  `Configurator v5` survives in two stylesheets because it cites a design file that exists on disk
+  under that name; and two layout tables gloss `editor/` as "the editor", which is tautological but
+  a copy decision rather than a naming one.
+- **2026-08-06 — REPO-04** — `apps/www` can deploy: `wrangler.jsonc`, a `deploy` script and the
+  wrangler dependency, so `turbo deploy` now fans out to it and CI deploys the site on every push.
+  **It ships with no `routes` key on purpose** — `agentsinc.sh` is a Custom Domain on the editor's
+  Worker and a hostname binds to one Worker at a time, so claiming it here would have taken the live
+  site away the moment this first deployed. The site goes to its `workers.dev` subdomain, fully
+  browsable, with production untouched. Splitting the apex is WWW-03 and stays a deliberate cutover,
+  because the editor's `base`, its router `basepath` and the share-link prefix must all move in the
+  same step.
