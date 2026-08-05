@@ -7,6 +7,17 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.152.1] - 2026-08-06
+
+**The README's documentation links work again**
+
+- The user guides and command reference existed twice — in the repository and on the documentation site — with nothing keeping them in step. The site is now the single source, the duplicates are deleted, and the README's twelve links point at files that exist rather than 404ing
+- The README's counts were long stale: "150+ skills across 8 domains" against a real catalogue of 222 skills across 9 domains, and a sub-agent table listing 18 of the 23 that ship
+
+Nothing else about the CLI changes.
+
+See [changelogs/0.152.1.md](./changelogs/0.152.1.md) for full details.
+
 ## [0.152.0] - 2026-08-06
 
 **Feature flags obey the environment, and the package sheds its dead weight**
