@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.151.0] - 2026-08-05
+
+**The CLI now requires Node 22**
+
+- The wizard's renderer moved from Ink 5 to Ink 7 on React 19, and Ink 7 requires Node 22 — so the `engines` floor rises from `>=18` to `>=22`. Node 18 and 20 are both past end of life; on Node 22 or newer nothing changes, and the wizard looks and behaves exactly as before
+- Re-thrown errors now carry the original failure as their cause in eight places across the compiler, config loader, stacks loader and marketplace runner — messages unchanged, but a stack trace now reaches what actually went wrong
+- Internal: TypeScript 6 and ESLint 10 across the package, the built-in matrix regenerated after going stale, and the bundler now targets Node 22 (shipped output byte-identical)
+
+See [changelogs/0.151.0.md](./changelogs/0.151.0.md) for full details.
+
 ## [0.150.0] - 2026-08-04
 
 **The CLI is published as `agents-inc` — one package where there were two**
