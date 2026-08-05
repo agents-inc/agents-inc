@@ -9,13 +9,7 @@ related:
 last_validated: 2026-08-01
 ---
 
-<!-- VALIDATED 2026-08-01 · FULL (product 0.147.1) — every countable claim re-derived from
-     `src/cli/lib/schemas.ts` this session, not carried forward. -->
-
 # Zod Schema Reference
-
-**Last Updated:** 2026-08-01
-**Last Validated:** 2026-08-01 (full — all counts and pattern claims re-derived from source)
 
 > **Split from:** `reference/type-system.md`. See also: [core-types.md](./core-types.md), [operations-types.md](./operations-types.md).
 
@@ -72,24 +66,24 @@ The rationale is written inline in source at `skillFrontmatterLoaderSchema`:
 // Lenient: accepts any string for `name` since local/custom skills may not follow strict SkillId pattern
 ```
 
-**`SKILL_IDS` is not imported.** It was an unused import removed in 0.147.1's dead-code pass; its removal is a no-op for validation, not a loosening — nothing had ever enum-checked a skill ID. Do not "restore" it: adding `z.enum(SKILL_IDS)` to any of the four schemas above would reject every local and custom skill at its parse boundary.
+**`SKILL_IDS` is not imported.** It was an unused import removed's dead-code pass; its removal is a no-op for validation, not a loosening — nothing had ever enum-checked a skill ID. Do not "restore" it: adding `z.enum(SKILL_IDS)` to any of the four schemas above would reject every local and custom skill at its parse boundary.
 
 ### Loader Schemas (lenient, `.passthrough()`)
 
-| Schema                         | Validates                 | Pattern                                      |
-| ------------------------------ | ------------------------- | -------------------------------------------- |
-| `skillFrontmatterLoaderSchema` | SKILL.md frontmatter      | Lenient object (no `.passthrough()`)         |
-| `skillMetadataLoaderSchema`    | metadata.yaml             | `.passthrough()` + superRefine               |
-| `projectConfigLoaderSchema`    | .claude-src/config.ts     | `.passthrough()` (no `version` field; D-231) |
-| `projectSourceConfigSchema`    | Source config             | `.passthrough()`                             |
-| `localRawMetadataSchema`       | Local skill metadata.yaml | `.passthrough()` + superRefine               |
-| `localSkillMetadataSchema`     | Local skill forkedFrom    | `.passthrough()`                             |
-| `settingsFileSchema`           | settings.yaml             | `.passthrough()`                             |
-| `importedSkillMetadataSchema`  | Imported skill metadata   | `.passthrough()`                             |
+| Schema                         | Validates                 | Pattern                               |
+| ------------------------------ | ------------------------- | ------------------------------------- |
+| `skillFrontmatterLoaderSchema` | SKILL.md frontmatter      | Lenient object (no `.passthrough()`)  |
+| `skillMetadataLoaderSchema`    | metadata.yaml             | `.passthrough()` + superRefine        |
+| `projectConfigLoaderSchema`    | .claude-src/config.ts     | `.passthrough()` (no `version` field) |
+| `projectSourceConfigSchema`    | Source config             | `.passthrough()`                      |
+| `localRawMetadataSchema`       | Local skill metadata.yaml | `.passthrough()` + superRefine        |
+| `localSkillMetadataSchema`     | Local skill forkedFrom    | `.passthrough()`                      |
+| `settingsFileSchema`           | settings.yaml             | `.passthrough()`                      |
+| `importedSkillMetadataSchema`  | Imported skill metadata   | `.passthrough()`                      |
 
 The `superRefine` on `skillMetadataLoaderSchema` and `localRawMetadataSchema` is the module-internal `validateCategoryField`: it delegates to `categoryPathSchema` by default, and requires only kebab-case when the record carries `custom: true`. `matrixRawMetadataSchema` (Structural table) deliberately does **not** run it — see its doc comment in source.
 
-**`projectConfigLoaderSchema` failure is no longer silent (D-273).** `loadProjectConfigFromDir` in `src/cli/lib/configuration/project-config.ts` used to `verbose()`-log a `safeParse` failure and return `null`, which was indistinguishable from "no config file". A schema violation now throws `ConfigLoadError`. See [core-types.md](./core-types.md#configloaderror-srcclilibconfigurationproject-configts) for the three-way missing / content-less / unloadable distinction.
+**A `projectConfigLoaderSchema` failure is never silent.** `loadProjectConfigFromDir` in `src/cli/lib/configuration/project-config.ts` throws `ConfigLoadError` on a schema violation — it must not `verbose()`-log the `safeParse` failure and return `null`, which would be indistinguishable from "no config file". See [core-types.md](./core-types.md#configloaderror-srcclilibconfigurationproject-configts) for the three-way missing / content-less / unloadable distinction.
 
 ### Structural Schemas (data shapes)
 
@@ -175,7 +169,7 @@ All exported from `src/cli/lib/schemas.ts`.
 - `ImportedSkillMetadata` — parse-result shape of `importedSkillMetadataSchema` (`forkedFrom?` plus arbitrary passthrough keys).
 - `MetadataIssueSplit` — `{ errors: string[]; warnings: string[] }`, the return of `splitMetadataValidationIssues`.
 
-### `cliDescription` — Advisory Over-Length (0.145.0)
+### `cliDescription` — Advisory Over-Length
 
 `skillMetadataBaseSchema` declares `cliDescription: z.string().min(1).max(CLI_DESCRIPTION_MAX_LENGTH)` where the module-internal `CLI_DESCRIPTION_MAX_LENGTH = 60`. The `max` is the **declared contract**, but exceeding it is **not fatal**:
 
@@ -183,10 +177,3 @@ All exported from `src/cli/lib/schemas.ts`.
 - `min(1)` (empty or missing) and every other issue stay hard `errors`.
 
 Rationale: the runtime loader schemas accept any length and the value only feeds wizard description text, so a long description must not fail a healthy install. Consumers: `src/cli/commands/validate.ts` and `src/cli/lib/source-validator.ts` — both destructure `{ errors, warnings }` from it.
-
-### Recent changes
-
-- **2026-08-01 validation sweep (product v0.147.1)**: Exported-schema count **re-derived from source and unchanged at 35**; the module-internal inventory re-derived and unchanged at 22 (21 `const *Schema` declarations plus `skillRefInRules`, whose name does not end in `Schema`). Every `.strict()` / `.passthrough()` claim re-attributed to its owning schema: 6 exported schemas call `.strict()` (`pluginManifestValidationSchema`, `agentYamlGenerationSchema`, `agentFrontmatterValidationSchema`, `skillFrontmatterValidationSchema`, `metadataValidationSchema`, `stackConfigValidationSchema`), confirming the `customMetadataValidationSchema` callout below the strict table; the internal `stackSkillAssignmentSchema` also calls `.strict()`. 7 schema-level `.passthrough()` calls, matching the 8-row Loader table minus `skillFrontmatterLoaderSchema`. **Changed in source:** the unused `SKILL_IDS` import was removed from `schemas.ts` — see "Why slugs and categories are strict but skill IDs are not" above, which was added this pass because the doc stated the lenient _mechanism_ without stating that it is intentional.
-- **2026-07-30 validation sweep (product v0.146.0)**: Exported-schema count **re-counted from source and unchanged at 35** — `schemas.ts` grew ~63 lines in this window but added no schema. What it added: the `splitMetadataValidationIssues()` function, the `MetadataIssueSplit` type, and the module-internal `CLI_DESCRIPTION_MAX_LENGTH` / `isOverLengthCliDescription` / `readCliDescription` / `formatOverLengthWarning` helpers, all documented above. `cliDescription`'s `.max(60)` was reworded to "recommended" in source and its violation downgraded to a warning. Also newly recorded: the module-internal schema inventory, the per-table count breakdown, the Zod major version, and that a `projectConfigLoaderSchema` violation now throws `ConfigLoadError` (D-273) instead of returning `null`.
-- **2026-07-23 validation sweep**: Schema count corrected 39 → 35. The standalone union bridge schemas `skillIdSchema`, `domainSchema`, `categorySchema`, `agentNameSchema`, and `skillSourceTypeSchema` no longer exist in `schemas.ts` — those unions are now validated via inline `z.string() as z.ZodType<...>` casts in the consuming object schemas. New `matrixRawMetadataSchema` (raw metadata.yaml read by the matrix loader) was added to the Structural table.
-- **D-231** (2026-04-21): Removed `version: z.literal("1").optional()` from `projectConfigLoaderSchema`. `.claude-src/config.ts` is a TypeScript module (not a versioned schema), so the field was dead. See also `reference/types/core-types.md` (`ProjectConfig` — no `version` field).

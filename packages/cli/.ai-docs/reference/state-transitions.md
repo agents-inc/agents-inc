@@ -7,14 +7,9 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · POINTER (product v0.146.0) — target and inbound-link rationale re-checked; no content lives here. -->
-
 # State Transitions (Pointer)
 
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
-
-> This file was **moved** into the subdirectory during the Phase 3 dual-home cleanup. Canonical content now lives in [`reference/wizard/state-transitions.md`](./wizard/state-transitions.md). This pointer exists because inbound links (CLAUDE.md, agent findings, older `related:` frontmatter blocks) still reference `reference/state-transitions.md` -- do NOT delete without sweeping those references first.
+> **Pointer.** The content lives in [`reference/wizard/state-transitions.md`](./wizard/state-transitions.md). This path is kept because inbound links still use it — do not delete it without sweeping those references first.
 
 ## Where the content lives now
 

@@ -19,17 +19,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.146.1 + 0.147.0 + 0.147.1) — nothing changed
-     ✓ heading diff: every `export type` under src/cli/lib/operations/ globbed and matched against
-       the location table; ConfigWriteOptions/ConfigWriteResult re-read field-by-field; the
-       `installMode` absence claim re-confirmed
-     ✗ field-level shapes of the other 20 types — 2026-07-30 basis
--->
-
 # Operations Layer Types
-
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
 
 > **Split from:** `reference/type-system.md`. See also: [core-types.md](./core-types.md), [zod-schemas.md](./zod-schemas.md).
 
@@ -84,14 +74,12 @@ The operations layer defines focused option/result types per operation:
 | `CompileAgentsOptions`       | `operations/project/compile-agents.ts`            | Options for agent compilation                                    |
 | `CompilationResult`          | `operations/project/compile-agents.ts`            | Result of agent compilation                                      |
 | `CompileAllScopesOptions`    | `operations/project/compile-agents-all-scopes.ts` | Options for the home/project multi-pass driver (`index.js` only) |
-| `PropagatedRecompileSummary` | `operations/project/recompile-project-agents.ts`  | D-240 registered-project recompile summary (`index.js` only)     |
+| `PropagatedRecompileSummary` | `operations/project/recompile-project-agents.ts`  | Registered-project recompile summary (`index.js` only)           |
 | `AgentDefs`                  | `operations/project/load-agent-defs.ts`           | Loaded agent definitions with source paths                       |
 
 ## Key Type Shapes
 
-Shapes verified against source 2026-07-30. No line numbers (names only, per project convention).
-
-### `PluginInstallResult` (D-229 contract)
+### `PluginInstallResult` (contract)
 
 ```typescript
 type PluginInstallResult = {
@@ -100,7 +88,7 @@ type PluginInstallResult = {
 };
 ```
 
-`failed` entries MUST cause a hard-error before `writeConfigAndCompile` runs — persisting config for skills that `claude plugin install` rejected produces orphan entries. Enforced by `installPluginsStep` (init) and `applyPluginChanges` (edit). See `2026-04-20-d229-plugin-install-failure-orphan-config.md`.
+`failed` entries MUST cause a hard-error before `writeConfigAndCompile` runs — persisting config for skills that `claude plugin install` rejected produces orphan entries. Enforced by `installPluginsStep` (init) and `applyPluginChanges` (edit).
 
 ### `PluginUninstallResult`
 
@@ -136,7 +124,7 @@ type CompilationResult = {
 
 Thin re-shape of `recompileAgents()` result. No per-agent error strings on `failed` (just the name). `warnings` carries the human-readable failure text plus any `Agent "<name>" not found in source definitions` entries.
 
-`failed` names are still counted into the D-264 prune keep-set (`compiled ∪ failed`) — a render failure must not also delete the previously good `.md`.
+`failed` names are still counted into the prune keep-set (`compiled ∪ failed`) — a render failure must not also delete the previously good `.md`.
 
 ### `CompileAgentsOptions`
 
@@ -155,14 +143,14 @@ type CompileAgentsOptions = {
 
 Two behaviours are keyed off these fields rather than being separate flags:
 
-| Behaviour                                            | Trigger                                       |
-| ---------------------------------------------------- | --------------------------------------------- |
-| Auto-build `agentScopeMap` from the loaded config    | `scopeFilter` set AND `agentScopeMap` omitted |
-| Prune stale compiled agents from `outputDir` (D-264) | `outputDir` set AND `scopeFilter` ABSENT      |
+| Behaviour                                         | Trigger                                       |
+| ------------------------------------------------- | --------------------------------------------- |
+| Auto-build `agentScopeMap` from the loaded config | `scopeFilter` set AND `agentScopeMap` omitted |
+| Prune stale compiled agents from `outputDir`      | `outputDir` set AND `scopeFilter` ABSENT      |
 
 The prune trigger is the "authoritative pass" test: a scope-filtered pass only ever resolves one scope's roster, so its roster is not the complete set for the directory and deleting from it could remove another scope's files.
 
-There is no `installMode` field on `CompileAgentsOptions` (nor on `RecompileAgentsOptions` in `agent-recompiler.ts`) — the compile path no longer threads an install mode. The `InstallMode` type (`"eject" | "plugin" | "mixed"`) still exists in `matrix.ts` and is derived on demand via `deriveInstallMode(skills)` in `installation.ts`; D-217 made the plugin skill-reference _format_ per-skill source-based (`SkillReference.source`), which removed the need to pass a whole-project `installMode` into compilation.
+There is no `installMode` field on `CompileAgentsOptions` (nor on `RecompileAgentsOptions` in `agent-recompiler.ts`) — the compile path no longer threads an install mode. The `InstallMode` type (`"eject" | "plugin" | "mixed"`) still exists in `matrix.ts` and is derived on demand via `deriveInstallMode(skills)` in `installation.ts`. The plugin skill-reference _format_ is per-skill source-based (`SkillReference.source`), which is why no whole-project `installMode` is threaded into compilation.
 
 ### `CompileAllScopesOptions`
 
@@ -178,7 +166,7 @@ type CompileAllScopesOptions = {
 
 Unlike `CompileAgentsOptions`, `skills` and `agentScopeMap` are **required** — `compileAgentsAllScopes` is the `init`/`edit` driver and both callers already hold them. Exported from `operations/index.js` only, not from `operations/types.ts`.
 
-### `PropagatedRecompileSummary` (D-240 contract)
+### `PropagatedRecompileSummary` (contract)
 
 ```typescript
 type PropagatedRecompileSummary = {
@@ -201,7 +189,7 @@ Returned by `recompilePropagatedProjectAgents(projectDirs)`, which loops `recomp
 
 Nothing here throws or short-circuits: one project's unreadable config must not abort the loop or leave the remaining projects stale. Projects are processed **sequentially** so `warnings` keeps a deterministic per-project order. Both `init` and `edit` `warn()` every entry and then log the counts (`edit` colours the ` (N failed)` suffix with `CLI_COLORS.WARNING`).
 
-`recompileRegisteredProjectAgents(projectDir): Promise<CompilationResult>` always compiles with `scopeFilter: "project"` — so it never prunes (D-264) and writes no agent into `~/.claude/agents`, which the triggering operation's own global pass already rewrote. (`writeCompiledAgentsByScope` still `ensureDir`s the global agents directory unconditionally at entry; that is an idempotent `mkdir -p`, not a write.)
+`recompileRegisteredProjectAgents(projectDir): Promise<CompilationResult>` always compiles with `scopeFilter: "project"` — so it never prunes and writes no agent into `~/.claude/agents`, which the triggering operation's own global pass already rewrote. (`writeCompiledAgentsByScope` still `ensureDir`s the global agents directory unconditionally at entry; that is an idempotent `mkdir -p`, not a write.)
 
 ### `LoadedSource`
 
@@ -234,7 +222,7 @@ type ConfigWriteOptions = {
   projectDir: string;
   sourceFlag?: string;
   agents?: Record<AgentName, AgentDefinition>; // pre-loaded; loads from CLI + source when omitted
-  authoritativeScope?: AuthoritativeScope; // D-233 Scenario C
+  authoritativeScope?: AuthoritativeScope; // Scenario C
 };
 ```
 
@@ -258,7 +246,7 @@ type ConfigWriteResult = {
 };
 ```
 
-**`propagation: GateReport` (D-240)** originates in `writeScopedFromWizard` (`src/cli/lib/config-gate/index.ts`). Its `propagated.updated` carries `propagateGlobalChangesToProjects(...).updated` — projects that actually got rewritten; `propagated.skipped` carries the unreachable / failing ones, which the wizard commands do not render. Its `recompile` describes work the gate **already did**. `propagated.updated` is `[]` when:
+**`propagation: GateReport`** originates in `writeScopedFromWizard` (`src/cli/lib/config-gate/index.ts`). Its `propagated.updated` carries `propagateGlobalChangesToProjects(...).updated` — projects that actually got rewritten; `propagated.skipped` carries the unreachable / failing ones, which the wizard commands do not render. Its `recompile` describes work the gate **already did**. `propagated.updated` is `[]` when:
 
 - the home branch's config declares no `projects` (a home write is always a global write, so there is no change gate on that branch), or
 - the project branch's global data did not change (`globalDataChanged === false`), or the effective global config has no `projects`.
@@ -292,7 +280,7 @@ type DetectedProject = {
 };
 ```
 
-`detectProject` never throws: it returns `null` for **both** "no installation found" and "a config file exists but is corrupt". The second case comes from catching `ConfigLoadError` around `detectInstallation()` (D-273) — `doctor` and `edit` then report a config/installation problem. `compile` deliberately does not use this wrapper; it calls `detectBothInstallations` so the error surfaces and it can hard-error naming the file.
+`detectProject` never throws: it returns `null` for **both** "no installation found" and "a config file exists but is corrupt". The second case comes from catching `ConfigLoadError` around `detectInstallation()` — `doctor` and `edit` then report a config/installation problem. `compile` deliberately does not use this wrapper; it calls `detectBothInstallations` so the error surfaces and it can hard-error naming the file.
 
 A successfully-loaded config that declares neither skills nor agents also reads as **not installed** (`detectInstallationInDir` in `src/cli/lib/installation/installation.ts` returns `null`), so `init` routes to the setup wizard rather than the dashboard.
 
@@ -306,7 +294,7 @@ type BothInstallations = {
 };
 ```
 
-Skips project detection when `projectDir === os.homedir()` (avoids double-compile). `hasBoth` gates dual-scope compile passes — and, because a filtered pass never prunes, it also decides whether a `compile` run prunes stale compiled agents (D-264).
+Skips project detection when `projectDir === os.homedir()` (avoids double-compile). `hasBoth` gates dual-scope compile passes — and, because a filtered pass never prunes, it also decides whether a `compile` run prunes stale compiled agents.
 
 Unlike `detectProject`, this operation **lets `ConfigLoadError` propagate**. Its only caller wraps it in a try/catch and hard-errors with `EXIT_CODES.ERROR` before any compilation or write.
 

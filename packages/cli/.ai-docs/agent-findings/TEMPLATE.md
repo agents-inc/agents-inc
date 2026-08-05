@@ -43,7 +43,7 @@ described in `standards/documentation-bible.md` -> "Agent Findings Frontmatter")
    an inference rather than a count. As of the 2026-07-30 backfill, every finding on disk
    declares one; keep it that way (see "Known gap: status backfill — CLOSED" below).
    Do not quote a count here: the status distribution is owned by
-   `.ai-docs/reference/findings-impact-report.md`, per documentation-bible.md's
+   `.ai-docs/the tracker (todo/cli.md)`, per documentation-bible.md's
    "A Count Lives in Exactly One Document".
 
 2. `type:` and `root_cause:` are SEPARATE enums. They are not interchangeable.
@@ -120,7 +120,7 @@ KNOWN GAP: status backfill — CLOSED 2026-07-30
   widen the enum, or state here that `partial` covers both directions and the `partial_note:` MUST
   name which — otherwise the field is ambiguous at a glance in a third of the directory.
 
-  Counts are owned by `.ai-docs/reference/findings-impact-report.md`, which re-derives them from
+  Counts are owned by `.ai-docs/the tracker (todo/cli.md)`, which re-derives them from
   disk at each pass. Do not restate them here.
   Source: `2026-07-30-findings-rollup-has-no-snapshot-rule-and-schema-drifted.md`.
 -->

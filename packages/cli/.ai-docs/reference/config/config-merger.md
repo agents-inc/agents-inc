@@ -27,14 +27,9 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · SYNC to product 0.146.0 — merge algebra re-verified line-for-line against config-merger.ts and local-installer.ts. -->
-
 # Config Merger Contract
 
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
-
-> Merge semantics for `ProjectConfig` — the invariants that `writeScopedFromWizard`, `cc edit`, and cross-project propagation rely on. Two distinct merge functions live in two modules and obey two different policies. Mixing them up is the recurring source of data-loss bugs in the config pipeline (see D-220, D-221, D-222, and the agent findings under `.ai-docs/agent-findings/`).
+> Merge semantics for `ProjectConfig` — the invariants that `writeScopedFromWizard`, `cc edit`, and cross-project propagation rely on. Two distinct merge functions live in two modules and obey two different policies. Mixing them up is the recurring source of data-loss bugs in the config pipeline(see D-220, and the agent findings under `.ai-docs/agent-findings/`).
 
 ## The Two Merge Functions
 
@@ -49,7 +44,7 @@ There are only two actual merge functions in the config pipeline. `additiveMerge
 
 The policy mismatch is intentional: `mergeConfigs` reconciles the wizard's full output with whatever is on disk (tombstones, scope migrations, and dual-scope pairs are expressed via `newConfig` and must reach disk verbatim). `mergeGlobalConfigs` reconciles one project's global slice with the shared `~/.claude-src/config.ts` (other projects' global contributions must never be removed by a project-level write).
 
-### What neither merge function does: cross-scope reconciliation (D-279)
+### What neither merge function does: cross-scope reconciliation
 
 Neither function compares a project entry against a global entry. `mergeConfigs` sees one config's worth of rows keyed by compound key; `mergeGlobalConfigs` only ever appends. The rule that a project-owned skill and a colliding live global install cannot both be active is enforced **after** the split, by `reconcileProjectSplitAgainstGlobal` in `local-installer.ts`, immediately before each project-config write. Do not add a collision rule to either merge function — see [config-writer.md](./config-writer.md) → "Cross-Scope Reconciliation" for the shared helper and its two write sites.
 
@@ -71,15 +66,15 @@ For every existing entry, consult `newConfig` (`flatMap` over existing, then app
 
 1. **Exact compound-key match in new** → rewrite in place with the new entry.
 2. **Name/id is in new, but the exact compound key is NOT** → drop the existing entry. This is how scope migrations (P→G, G→P) remove stale rows and how P→G tombstone removal is honored.
-3. **Name/id absent from new, but the existing config carried a global tombstone for that name/id this session** (dual-scope) → drop the lingering active entry AND the stale tombstone together (D-233 Scenario B full-deselect).
+3. **Name/id absent from new, but the existing config carried a global tombstone for that name/id this session** (dual-scope) → drop the lingering active entry AND the stale tombstone together (Scenario B full-deselect).
 4. **Name/id absent from new, and within the current edit's authority** (see `authoritativeScope` below) → drop the existing entry (it was deselected). Skills in `unresolvableSkillIds` are exempt.
 5. **Name/id absent from new otherwise** → preserve the existing entry verbatim.
 
-> **What an "absent" global entry means since D-277.** Rules 3 and 4 read absence as deselection. A project-scope edit can no longer produce that absence for a globally-installed item: the wizard guards refuse the deselect, and `applySkillRemoval` leaves an inherited global-active entry byte-identical rather than dropping it or tombstoning it. So under `authoritativeScope: "owned"` a global entry absent from `newConfig` reflects a global-scope change or a legacy config, never a project-scope deselection. Tombstones in `newConfig` come from the `s` scope toggle or a system-derived conflict mask only. See [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md).
+> **What an "absent" global entry means.** Rules 3 and 4 read absence as deselection. A project-scope edit can no longer produce that absence for a globally-installed item: the wizard guards refuse the deselect, and `applySkillRemoval` leaves an inherited global-active entry byte-identical rather than dropping it or tombstoning it. So under `authoritativeScope: "owned"` a global entry absent from `newConfig` reflects a global-scope change or a legacy config, never a project-scope deselection. Tombstones in `newConfig` come from the `s` scope toggle or a system-derived conflict mask only. See [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md).
 
 After reconciliation, new entries whose compound key was absent from existing are appended, and a final `uniqueBy(list, compoundKey)` collapses any pre-existing on-disk duplicate corruption rather than carrying it forward.
 
-### `authoritativeScope` and `unresolvableSkillIds` (D-233 Scenario C)
+### `authoritativeScope` and `unresolvableSkillIds` (Scenario C)
 
 `options.authoritativeScope` decides whether an existing entry that is _absent_ from `newConfig` was deliberately deselected (drop) or merely untouched (preserve):
 
@@ -93,7 +88,7 @@ After reconciliation, new entries whose compound key was absent from existing ar
 
 ### Compound Identity Keys
 
-Compound keys are the reason dual-scope active/tombstone pairs can coexist and the reason D-221's multiplied-duplicate corruption is prevented.
+Compound keys are the reason dual-scope active/tombstone pairs can coexist, and the reason multiplied-duplicate corruption is prevented.
 
 | Entry | Compound key                                     | Examples                                                            |
 | ----- | ------------------------------------------------ | ------------------------------------------------------------------- |
@@ -104,7 +99,7 @@ Helpers: `agentKey(a)` and `skillKey(s)` in `config-merger.ts`.
 
 **`model` and `effort` are NOT part of the identity key.** A key match replaces the whole entry, so the merge is whole-entry, never field-level — see [features/model-and-effort.md](../features/model-and-effort.md).
 
-D-221 root cause: the prior name-only key collapsed distinct-scope entries onto one slot, and the positional `.map()` over existing rewrote every collision — multiplying duplicates and failing to drop stale rows on scope migration. Compound keys + replace-on-match fixed both.
+**Do not key on name alone.** A name-only key collapses distinct-scope entries onto one slot, and a positional `.map()` over existing entries then rewrites every collision — multiplying duplicates and failing to drop stale rows on scope migration. Compound keys plus replace-on-match are what prevent both.
 
 ### Tombstones Under Merge
 
@@ -116,7 +111,7 @@ Tombstones (`excluded: true`) live in the config as ordinary entries with a dist
 
 This is the load-bearing "merger is authoritative for names" invariant (April-2026 merger-authoritative-for-names finding; codified in CLAUDE.md Data Integrity).
 
-### `projects` Field Preservation (fixed — was the D-233 drop bug)
+### `projects` Field Preservation
 
 `mergeConfigs` **preserves** `existingConfig.projects`. The base `const merged = { ...newConfig }` only copies fields present on `newConfig`, and `newConfig.projects` is always `undefined` (the `projects` array is maintained exclusively by `registerProjectPath` / `deregisterProjectPath` in `local-installer.ts`), so a final guard copies it forward:
 
@@ -147,7 +142,7 @@ The `merged: false` path never calls `mergeConfigs` — there is nothing to reco
 
 **`loadProjectConfig`, not `loadProjectConfigFromDir`.** The load leg checks `context.projectDir` first and then falls back to `os.homedir()` when `projectDir` is not already home. A project with no `.claude-src/config.ts` of its own therefore merges against the GLOBAL config, not against nothing.
 
-**Third outcome since D-273: the load can THROW.** `loadProjectConfigFromDir` returns `null` only when the config file is MISSING; a file that exists but cannot be loaded (evaluation error, no object default export, loader-schema violation) raises `ConfigLoadError`. `mergeWithExistingConfig` does not catch it, so it propagates through `buildAndMergeConfig` → `writeProjectConfig` → the calling command. This is deliberate: a corrupt config previously read as `null` and dropped the wizard into the tier-2 stub path, where the entire on-disk roster was invisible and the next write silently replaced it. See [../features/configuration.md](../features/configuration.md) → "Config Load Outcomes".
+**Third outcome: the load can THROW.** `loadProjectConfigFromDir` returns `null` only when the config file is MISSING; a file that exists but cannot be loaded (evaluation error, no object default export, loader-schema violation) raises `ConfigLoadError`. `mergeWithExistingConfig` does not catch it, so it propagates through `buildAndMergeConfig` → `writeProjectConfig` → the calling command. This is deliberate: a corrupt config previously read as `null` and dropped the wizard into the tier-2 stub path, where the entire on-disk roster was invisible and the next write silently replaced it. See [../features/configuration.md](../features/configuration.md) → "Config Load Outcomes".
 
 ## `mergeGlobalConfigs` — Additive Semantics
 
@@ -221,23 +216,8 @@ The reverse (P→G) relies on `mergeConfigs` step 2 to drop the tombstone: `newC
 - `mergeConfigs`, `mergeWithExistingConfig`: `config-merger.ts`.
 - `mergeGlobalConfigs`, `additiveMergeStack`, `mergeAgentCategories`: `local-installer.ts`.
 - Call site threading `mergeGlobalConfigs` into writes: `writeScopedFromWizard`'s project branch, via `resolveEffectiveGlobalConfig` in `config-gate/propagate.ts`.
-- **Its `changed` flag no longer gates propagation.** Since the config-gate landed (2026-08-02) the fan-out is driven by `classifyGlobalChange`, which diffs the config on disk against the one being written; `mergeGlobalConfigs`' `changed` survives only as part of `effective.changed`, gating the write-skip. This closes the blind spot where a per-skill `source` change on an already-present entry set no merge flag and therefore propagated nothing.
+- **Its `changed` flag no longer gates propagation.** Since the config-gate landed the fan-out is driven by `classifyGlobalChange`, which diffs the config on disk against the one being written; `mergeGlobalConfigs`' `changed` survives only as part of `effective.changed`, gating the write-skip. This closes the blind spot where a per-skill `source` change on an already-present entry set no merge flag and therefore propagated nothing.
 - Call site threading `mergeConfigs` into writes: `buildAndMergeConfig` → `writeProjectConfig` operation.
 - `ConfigLoadError`, `loadProjectConfig`, `loadProjectConfigFromDir`: `src/cli/lib/configuration/project-config.ts`.
 - Post-split cross-scope reconciliation (NOT in either merger): `reconcileProjectSplitAgainstGlobal` in `local-installer.ts`.
 - Unit tests: `config-merger.test.ts` (`mergeConfigs`, `mergeWithExistingConfig`), `project-config.test.ts` (`ConfigLoadError` cases), `local-installer.test.ts` (`mergeGlobalConfigs` describe block).
-
-## Findings That Shaped This Doc
-
-Finding files with a live path below exist in `.ai-docs/agent-findings/`; April-2026 rows marked _(archived)_ were consolidated during a findings regeneration and survive here as provenance only.
-
-| Finding                                                                 | Contribution                                                                                            |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| agent-merge-key-mismatch-with-skills _(archived, 2026-04-06)_           | Compound keys for agents to match the existing skill pattern.                                           |
-| merger-authoritative-for-names-semantic _(archived, 2026-04-17)_        | Authoritative-for-names semantic; dual-scope invariant is load-bearing.                                 |
-| merge-global-configs-per-agent-update-loss _(archived, 2026-04-17)_     | Per-agent update loss bug in `mergeGlobalConfigs` stack policy.                                         |
-| `2026-04-18-mergeConfigs-drops-projects-field.md`                       | Original `projects` field drop report.                                                                  |
-| `2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`             | `projects` drop fixed in `mergeConfigs`; home-context propagation reachable.                            |
-| `2026-07-20-config-merge-functions-disagree-on-source-identity.md`      | `mergeGlobalConfigs` now carries `marketplace`/`source` fill-only; the source-identity precedence rule. |
-| `2026-07-29-project-config-written-by-two-paths-only-one-reconciled.md` | Cross-scope reconciliation is a property of the WRITE, not of either merge function.                    |
-| `2026-07-30-d277-global-immutability-collapses-tombstone-provenance.md` | Why "absent from `newConfig`" no longer means "deselected" for a global entry under `"owned"`.          |

@@ -2,13 +2,6 @@
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-02 · PARTIAL
-     ✓ 4.7, 5.7, 6.19, 15.8-15.10 — written against eslint.config.js, lib/config-gate/,
-       __tests__/config-gate-enforcement.test.ts, utils/fs.ts, lib/feature-flags.ts, consts.ts
-     ✓ 7.2 — all six example citations re-derived; every one had rotted
-     ✗ every other rule — still on the 2026-07-30 basis
--->
-
 # Clean Code Standards
 
 Enforceable rules from 70+ refactoring tasks across 9 iterations. Each rule is reviewer-checkable.
@@ -550,7 +543,7 @@ const skills = category.skills;
 
 **15.6 Return values must be consumed or removed.** A function returning a multi-field result (`{ updated, skipped }`, `{ config, changed, droppedStale }`) must have every field read by at least one production caller. An architecturally orphaned field is either dead code to delete from the return type OR a missing observability hook. Silent skips, silent sweeps, and silent drops are anti-patterns — surface the count with `warn()` at the caller, or delete the field from the return shape.
 
-**15.7 Hard-error before destructive writes when install intent cannot be honored.** Per-skill install failures (e.g., `installPluginSkills().failed.length > 0`) must `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs — otherwise the config persists entries claiming `source: "<marketplace>"` for skills that never installed, and no `cc` command can self-heal the orphan. Uninstall failures are diagnostic-only and may continue. See `2026-04-20-d229-plugin-install-failure-orphan-config.md`.
+**15.7 Hard-error before destructive writes when install intent cannot be honored.** Per-skill install failures (e.g., `installPluginSkills().failed.length > 0`) must `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs — otherwise the config persists entries claiming `source: "<marketplace>"` for skills that never installed, and no `cc` command can self-heal the orphan. Uninstall failures are diagnostic-only and may continue.
 
 **15.8 The global config pair is `config-gate/`'s exclusive privilege.** `~/.claude-src/config.ts` and its `config-types.ts` sibling may only be written through the public entries exported from `src/cli/lib/config-gate/index.ts`. Those entries are the only code that mints the write token, because the write owes consequences (propagate to registered projects, recompile their agents — 15.10) that no caller can be relied on to remember. Four layers hold it:
 

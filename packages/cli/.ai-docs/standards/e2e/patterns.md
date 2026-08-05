@@ -2,8 +2,6 @@
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · SYNC (product v0.146.0) — test-harness pass. -->
-
 # Patterns
 
 Reusable recipes for each test type. Each pattern shows a complete minimal example.
@@ -214,8 +212,8 @@ Key points:
 - `ProjectBuilder.dualScope()` for pre-built file structures
 - `dual-scope-helpers.ts` for state built through wizard interactions
 - Scope indicators in wizard output: `"G "` prefix for global skills, `"P "` for project skills. Agent scope badges: `"[G]"`, `"[P]"`. Read them with `build.getScopeBadgesForSkill(label)` / `agents.getScopeBadgesForAgent(label)` rather than scanning the frame.
-- **`s` is the sole dual-scope toggle** (D-260). It round-trips `[P][G]` to `[G]` and back on its own, for skills and agents alike; **spacebar is inert on any globally-backed row** and emits the global-locked toast instead. A spec that presses Space expecting a collapse tests nothing. Every `s`-collapse spec needs a proof-of-execution assertion on the badges (`["P"]` -> `["G"]`) so a refused press cannot masquerade as the rendering bug under test.
-- A globally installed skill or agent cannot be deselected from a project in ANY flow, including `init` (D-277). A spec that expects a project-scope deselect to remove a global entry is asserting removed behaviour.
+- **`s` is the sole dual-scope toggle**. It round-trips `[P][G]` to `[G]` and back on its own, for skills and agents alike; **spacebar is inert on any globally-backed row** and emits the global-locked toast instead. A spec that presses Space expecting a collapse tests nothing. Every `s`-collapse spec needs a proof-of-execution assertion on the badges (`["P"]` -> `["G"]`) so a refused press cannot masquerade as the rendering bug under test.
+- A globally installed skill or agent cannot be deselected from a project in ANY flow, including `init`. A spec that expects a project-scope deselect to remove a global entry is asserting removed behaviour.
 
 ---
 

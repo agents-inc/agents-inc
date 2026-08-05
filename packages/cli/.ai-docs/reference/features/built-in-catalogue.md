@@ -42,21 +42,7 @@ related:
 last_validated: 2026-08-02
 ---
 
-<!-- VALIDATED 2026-08-02 · FULL (product 0.147.1) — NEW FILE.
-     Every claim below was derived from source this session:
-     src/cli/lib/configuration/default-stacks.ts, default-rules.ts, config-exports.ts,
-     src/cli/types/{stacks,matrix,skills}.ts, src/cli/lib/stacks/stacks-loader.ts,
-     src/cli/lib/loading/source-loader.ts, src/cli/lib/matrix/{skill-resolution,
-     matrix-health-check,matrix-provider}.ts, src/cli/lib/installation/local-installer.ts,
-     src/cli/components/wizard/{wizard,stack-selection,step-agents}.tsx,
-     scripts/generate-source-types.ts, tsconfig.json, tsconfig.scripts.json, package.json,
-     and both pinning tests (run, 1892 specs passing).
-     Quantities were re-derived by evaluating the modules, not by counting source lines. -->
-
 # Built-in Catalogue — `defaultStacks` and `defaultRules`
-
-**Last Updated:** 2026-08-02
-**Last Validated:** 2026-08-02
 
 ## Scope — this is the CLI's BUILT-IN fallback data, not a source repo's config
 
@@ -388,8 +374,7 @@ two files. Both run in the unit suite, which the `pre-commit` hook executes.
 1. **Nothing cross-checks either file against the generated matrix.** `default-categories.test.ts`
    has exactly that assertion (`keys` vs `CATEGORIES`); its two siblings do not. No test asserts
    that every `defaultStacks` skill id exists in `BUILT_IN_MATRIX.skills`, or that every rule slug
-   resolves through `BUILT_IN_MATRIX.slugMap`. Both hold today — 53/53 ids and 129/129 slugs,
-   verified this session — so the assertions would pass on the day they are written.
+   resolves through `BUILT_IN_MATRIX.slugMap`. Both hold, so the assertions pass on the day they are written.
 2. **`compatibleWith` is the one relationship kind with no length assertion**, while the other five
    are pinned. Adding or dropping a compatibility group is currently silent.
 
@@ -412,11 +397,9 @@ The failure order is what makes this quiet:
 3. Only the _next_ `npm run typecheck` fails, on `default-stacks.ts`, because `"X"` is no longer a
    `SkillId`.
 
-The artefact is already wrong before the type error appears. Note also that `tsconfig.json`'s
-`include` is `["src/**/*"]`, so `scripts/**` is covered only by `typecheck:scripts`
-(`tsconfig.scripts.json`), which is **not** in `prepublishOnly` and not in the pre-commit hook.
-Recorded upstream as `as-any-on-valid-union-members-is-noise-that-hides-two-fabrications` in
-[findings-impact-report.md](../findings-impact-report.md) (Pattern R).
+The artefact is already wrong before the type error appears. `tsconfig.json`'s `include` is
+`["src/**/*"]`, so `scripts/**` is reached through `tsconfig.scripts.json` — which the `typecheck`
+script does run, as the second of its three tsc programs.
 
 ### Trap 2 — an edit here is invisible without regeneration
 
@@ -443,7 +426,7 @@ check runs.
 
 `preloaded: true` embeds a skill's content in the compiled agent prompt; `false` loads it via the
 Skill tool at runtime. That split, and the `pluginRef` form each takes, are owned by
-[compilation-pipeline.md](./compilation-pipeline.md) (D-217 per-skill `pluginRef`) and
+[compilation-pipeline.md](./compilation-pipeline.md) (per-skill `pluginRef`) and
 [agent-system.md](./agent-system.md) (`buildAgentTemplateContext`, `preloadedSkillIds`). This
 document records only the shape (`preloaded` is explicit on every built-in assignment) and the
 distribution (163 of 1997 true).

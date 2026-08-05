@@ -22,18 +22,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
-     ✓ the vitest.setup.ts CI/GITHUB_ACTIONS module-scope deletion and the Ink 7 unconditional
-       teardown-frame section, re-derived from vitest.setup.ts and summary-panel.test.tsx
-     ✗ everything else: the two ink-testing-library sections stand on 2026-08-05, "render()
-       returns before effects flush" and the snapshot rule on 2026-08-01, the config/directory/
-       constants tables and error handling on 2026-07-30
--->
-
 # Test Infrastructure
-
-**Last Updated:** 2026-08-06
-**Last Validated:** 2026-07-30 (PARTIAL passes since; see the annotation above)
 
 > **Split from:** `reference/test-infrastructure.md`. See also: [factories.md](./factories.md), [mock-data.md](./mock-data.md), [e2e-infrastructure.md](./e2e-infrastructure.md).
 
@@ -377,7 +366,7 @@ code calls. What it adds is a fake terminal to render into. Everything it hands 
 `unmount`, `cleanup`, and the `stdout` / `stderr` / `stdin` / `debug` / `exitOnCtrlC` /
 `patchConsole` options it passes) is public Ink surface.
 
-That is why the Ink 5 → 7 jump in 0.150.0 needed **no test rewrites at all** despite being a
+That is why the Ink 5 → 7 jump needed **no test rewrites at all** despite being a
 two-major move. Verify the same way before worrying about it again: read
 `node_modules/ink-testing-library/build/index.js` and check what it imports. A dependency's
 publication date says nothing about its exposure; its import list does.
@@ -435,7 +424,7 @@ The consequence for a test: `lastFrame()` after such an exit returns the blank t
 
 This is not theoretical. Both column-geometry snapshots in `src/cli/components/wizard/source-grid.test.tsx` were regenerated with `-u` when the Sources grid's scope gutter was removed, both came back green, and both encoded a layout the owner had not asked for. Nothing else caught it: `tsc`, ESLint, Prettier, 57 unit tests and every E2E spec touching the Sources grid were green against the wrong layout. **Geometry has no other gate.**
 
-**Before committing a regenerated column-geometry snapshot, derive the intended column starts from the component's own width constants and check them against the emitted frame by index.** For `source-grid.tsx` those are `SCOPE_COL_WIDTH` (11), `SKILL_NAME_WIDTH` (26, widened from 24 in 0.147.0 by exactly the two-column marker width), and `SOURCE_COL_WIDTH` (18), plus a 2-column chevron prefix:
+**Before committing a regenerated column-geometry snapshot, derive the intended column starts from the component's own width constants and check them against the emitted frame by index.** For `source-grid.tsx` those are `SCOPE_COL_WIDTH` (11), `SKILL_NAME_WIDTH` (26, widened from 24 by exactly the two-column marker width), and `SOURCE_COL_WIDTH` (18), plus a 2-column chevron prefix:
 
 | Column        | Expected start (grouped / flat) | Emitted           |
 | ------------- | ------------------------------- | ----------------- |
@@ -448,7 +437,7 @@ The flat branch must be the grouped one shifted left by exactly `SCOPE_COL_WIDTH
 
 > **Cross-ownership note.** The prescriptive form of this rule is **rule 6.17a in `.ai-docs/standards/clean-code-standards.md`**, which requires a whole-frame `toMatchInlineSnapshot()` per layout branch but stops short of requiring that a regenerated one be _read_. That file is owned by convention-keeper, not codex-keeper, so the extension is **proposed, not applied** — recorded here (in a codex-keeper file) so the gap is not lost. The suggestion that introduced 6.17a named this exact risk (_"a reviewer who rubber-stamps snapshot updates gets nothing"_) and shipped without an obligation closing it; the failure occurred one day later, on the very component the rule was written for. See `.ai-docs/agent-findings/2026-07-31-column-geometry-snapshots-regenerated-never-verified.md`.
 
-**E2E specs use no snapshots at all** (verified 2026-08-01: zero `toMatchSnapshot` / `toMatchInlineSnapshot` occurrences under `e2e/`), so this rule is component-test territory only.
+**E2E specs use no snapshots at all** (zero `toMatchSnapshot` / `toMatchInlineSnapshot` occurrences under `e2e/`), so this rule is component-test territory only.
 
 ## Test Constants (`src/cli/lib/__tests__/test-constants.ts`)
 

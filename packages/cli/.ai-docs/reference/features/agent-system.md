@@ -25,12 +25,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0 (second pass this date) — compile side reconciled. -->
-
 # Agent System
-
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
 
 ## Overview
 
@@ -310,7 +305,7 @@ The template assembles a compiled agent prompt in this order:
 
 **Two compilation entry points coexist, both in `src/cli/lib/compiler.ts`:**
 
-- `compileAgentForPlugin()` -- **the authoritative production path.** Attaches a per-skill `pluginRef` (D-217) via `buildAgentTemplateContext`'s `mapSkill` transform, then sanitizes and renders. Called by `writeCompiledAgentsByScope()` (in `src/cli/lib/agents/write-compiled-agents.ts`), which `recompileAgents` and the install path (`compileAndWriteAgents`) both drive. It is also called directly by the stack→plugin compiler `compileStackPlugin()` (in `src/cli/lib/stacks/stack-plugin-compiler.ts`, reached via `stack-installer.ts`) when materializing a stack into an installable plugin.
+- `compileAgentForPlugin()` -- **the authoritative production path.** Attaches a per-skill `pluginRef` via `buildAgentTemplateContext`'s `mapSkill` transform, then sanitizes and renders. Called by `writeCompiledAgentsByScope()` (in `src/cli/lib/agents/write-compiled-agents.ts`), which `recompileAgents` and the install path (`compileAndWriteAgents`) both drive. It is also called directly by the stack→plugin compiler `compileStackPlugin()` (in `src/cli/lib/stacks/stack-plugin-compiler.ts`, reached via `stack-installer.ts`) when materializing a stack into an installable plugin.
 - `compileAgent()` / `compileAllAgents()` -- legacy paths. They call `buildAgentTemplateContext` **without** the `mapSkill` transform, so skills always render as bare `id` (no `pluginRef`). `compileAllAgents` also runs `validateCompiledAgent()` on each output. Neither has a production caller: `compileAllAgents` is exported and driven only by `compiler.test.ts`, and `compileAgent` is **file-local** (not exported) and reached only from inside `compileAllAgents`.
 
 **Per-agent compilation (`compileAgentForPlugin`):**
@@ -321,7 +316,7 @@ The template assembles a compiled agent prompt in this order:
 2. Read identity.md, playbook.md (required), output.md, critical-requirements.md, critical-reminders.md
    - output.md falls back to parent category directory if missing from agent directory
 3. buildAgentTemplateContext(name, agent, files, mapSkill):
-   - mapSkill attaches pluginRef = derivePluginRef(skill) to each skill (D-217 -- see below)
+   - mapSkill attaches pluginRef = derivePluginRef(skill) to each skill (-- see below)
    - split skills into preloaded (s.preloaded) and dynamic
    - preloadedSkillIds = preloadedSkills.map(s => s.pluginRef ?? s.id)
 4. sanitizeCompiledAgentData(data) strips Liquid delimiters from all user-controlled fields
@@ -340,7 +335,7 @@ for each (name, agent) in resolvedAgents:
 
 Per-agent failures are collected as `AgentWriteOutcome[]`; callers own the policy (recompile reports and continues; the install path hard-errors). Structural validation (`validateCompiledAgent`) runs only on the legacy `compileAllAgents` path, **not** in `writeCompiledAgentsByScope`.
 
-### D-217: Per-Skill Plugin Reference Format
+### Per-Skill Plugin Reference Format
 
 **Function:** `derivePluginRef(skill)` -- file-local (not exported) in `src/cli/lib/compiler.ts`. Guards on `EJECT_SOURCE` (`"eject"`, from `consts.ts`).
 
@@ -510,16 +505,16 @@ These agents are not auto-preselected by `preselectAgentsFromDomains()`. Whether
 | `sanitizeCompiledAgentData()`        | `lib/compiler.ts`                                     | `(data: CompiledAgentData) => CompiledAgentData`                                                                                                                    |
 | `compileAgent()`                     | `lib/compiler.ts` (file-local)                        | `(name, agent, projectRoot, engine) => Promise<string>` (legacy; only caller is `compileAllAgents`)                                                                 |
 | `compileAllAgents()`                 | `lib/compiler.ts`                                     | `(resolvedAgents, ctx, engine) => Promise<void>` (legacy, test-only)                                                                                                |
-| `compileAgentForPlugin()`            | `lib/compiler.ts`                                     | `(name, agent, fallbackRoot, engine) => Promise<string>` (D-217)                                                                                                    |
-| `derivePluginRef()`                  | `lib/compiler.ts` (file-local)                        | `(skill: Skill) => PluginSkillRef \| undefined` (D-217)                                                                                                             |
+| `compileAgentForPlugin()`            | `lib/compiler.ts`                                     | `(name, agent, fallbackRoot, engine) => Promise<string>`                                                                                                            |
+| `derivePluginRef()`                  | `lib/compiler.ts` (file-local)                        | `(skill: Skill) => PluginSkillRef \| undefined`                                                                                                                     |
 | `writeCompiledAgentsByScope()`       | `lib/agents/write-compiled-agents.ts`                 | `(params) => Promise<AgentWriteOutcome[]>` (per-scope compile + write loop)                                                                                         |
 | `listCompiledAgentNames()`           | `lib/agents/list-compiled-agents.ts`                  | `(agentsDir: string) => Promise<AgentName[]>` (compiled `.md` filenames minus extension; backs `resolveAgentNames` priority 4)                                      |
 | `listAgentMdFiles()`                 | `lib/agents/list-compiled-agents.ts`                  | `(agentsDir: string) => Promise<string[]>` (`*.md` glob; also used by `doctor`, `validate`, `uninstall`, `agent-plugin-compiler`)                                   |
-| `pruneStaleCompiledAgents()`         | `lib/agents/list-compiled-agents.ts`                  | `(agentsDir: string, keep: ReadonlySet<AgentName>) => Promise<void>` (D-264 stale-agent prune)                                                                      |
+| `pruneStaleCompiledAgents()`         | `lib/agents/list-compiled-agents.ts`                  | `(agentsDir: string, keep: ReadonlySet<AgentName>) => Promise<void>` (stale-agent prune)                                                                            |
 | `compileAgents()`                    | `lib/operations/project/compile-agents.ts`            | `(options: CompileAgentsOptions) => Promise<CompilationResult>` (recompile wrapper + prune)                                                                         |
 | `compileAgentsAllScopes()`           | `lib/operations/project/compile-agents-all-scopes.ts` | `(options: CompileAllScopesOptions) => Promise<CompilationResult>` (multi-pass driver)                                                                              |
-| `recompileRegisteredProjectAgents()` | `lib/operations/project/recompile-project-agents.ts`  | `(projectDir: string) => Promise<CompilationResult>` (D-240, project scope only)                                                                                    |
-| `recompilePropagatedProjectAgents()` | `lib/operations/project/recompile-project-agents.ts`  | `(projectDirs: string[]) => Promise<PropagatedRecompileSummary>` (D-240, per-project failure isolation)                                                             |
+| `recompileRegisteredProjectAgents()` | `lib/operations/project/recompile-project-agents.ts`  | `(projectDir: string) => Promise<CompilationResult>`(project scope only)                                                                                            |
+| `recompilePropagatedProjectAgents()` | `lib/operations/project/recompile-project-agents.ts`  | `(projectDirs: string[]) => Promise<PropagatedRecompileSummary>`(per-project failure isolation)                                                                     |
 | `reconcileTypesFromDisk()`           | `lib/config-gate/index.ts`                            | `(projectDir, config, deps, opts?) => Promise<GateReport>` (scope-correct `config-types.ts` refresh; used by `compile`; fans out at `$HOME`)                        |
 | `recompileAgents()`                  | `lib/agents/agent-recompiler.ts`                      | `(options: RecompileAgentsOptions) => Promise<RecompileAgentsResult>`                                                                                               |
 | `buildAgentScopeMap()`               | `lib/installation/local-installer.ts`                 | `(config: ProjectConfig) => Map<AgentName, SkillScope>`                                                                                                             |
@@ -528,8 +523,8 @@ These agents are not auto-preselected by `preselectAgentsFromDomains()`. Whether
 | `buildAgentStack()`                  | `lib/configuration/config-generator.ts`               | `(agent, inputs) => StackAgentConfig \| undefined` (file-local)                                                                                                     |
 | `scopeEligibilityKey()`              | `lib/configuration/config-generator.ts`               | `(agent, skillId) => string` (D-220 key builder)                                                                                                                    |
 | `isScopeCompatible()`                | `lib/configuration/config-generator.ts`               | `(skillId, agent, skillScope, agentScope) => boolean` (file-local)                                                                                                  |
-| `propagateGlobalChangesToProjects()` | `lib/installation/local-installer.ts`                 | `(globalConfig, matrix, agents, currentProjectDir?) => Promise<{updated, skipped}>` (D-222)                                                                         |
-| `mergeGlobalConfigs()`               | `lib/installation/local-installer.ts`                 | `(existing, incoming) => {config, changed}` (D-222 dedup-merge)                                                                                                     |
+| `propagateGlobalChangesToProjects()` | `lib/installation/local-installer.ts`                 | `(globalConfig, matrix, agents, currentProjectDir?) => Promise<{updated, skipped}>`                                                                                 |
+| `mergeGlobalConfigs()`               | `lib/installation/local-installer.ts`                 | `(existing, incoming) => {config, changed}` (dedup-merge)                                                                                                           |
 | `createLiquidEngine()`               | `lib/compiler.ts`                                     | `(projectDir?) => Promise<Liquid>`                                                                                                                                  |
 | `sanitizeLiquidSyntax()`             | `lib/compiler.ts`                                     | `(value, fieldName) => sanitized string`                                                                                                                            |
 | `getAgentDefinitions()`              | `lib/agents/agent-fetcher.ts`                         | `(remoteSource?, options?) => Promise<AgentSourcePaths>` — options type, the remote branch and its production-unreachability: [leaf-exports.md](../leaf-exports.md) |
@@ -544,17 +539,17 @@ Recompile is the primary agent-refresh path invoked after any config mutation (`
 **Agent name resolution priority** (in `resolveAgentNames`):
 
 1. `options.agents` (explicit caller list)
-2. `projectConfig.agents` (from saved config, name-only) -- **the branch keys on config PRESENCE, not `agents.length`** (D-264). A present config is authoritative over its roster even when the roster is empty, so `agents: []` resolves to zero agents. Keying on `projectConfig?.agents?.length` was the bug: an empty list fell through to priority 3 and a global install compiled every built-in agent.
+2. `projectConfig.agents` (from saved config, name-only) -- **the branch keys on config PRESENCE, not `agents.length`**. A present config is authoritative over its roster even when the roster is empty, so `agents: []` resolves to zero agents. Keying on `projectConfig?.agents?.length` was the bug: an empty list fell through to priority 3 and a global install compiled every built-in agent.
 3. All available agents from source when `outputDir` is set -- reached only on a config-LESS load
 4. Directory scan of existing `{pluginDir}/agents/*.md` files -- `getExistingAgentNames()` calls `listCompiledAgentNames(getPluginAgentsDir(pluginDir))` (`src/cli/lib/agents/list-compiled-agents.ts`), which globs `*.md` via `listAgentMdFiles()` and strips the extension so each compiled filename becomes an `AgentName` (boundary cast -- custom marketplace agents may fall outside the union)
 
-**Corrupt-config behaviour (D-273):** `loadProjectConfig()` returns `null` only for a MISSING config. A config file that exists but cannot be evaluated, has no valid default export, or fails the loader schema throws `ConfigLoadError` (`src/cli/lib/configuration/project-config.ts`) carrying `configPath` and `reason`. That error propagates out of `recompileAgents` rather than degrading to the config-less priority-3 branch, which is what previously resurrected all 23 built-in agents.
+**Corrupt-config behaviour:** `loadProjectConfig()` returns `null` only for a MISSING config. A config file that exists but cannot be evaluated, has no valid default export, or fails the loader schema throws `ConfigLoadError` (`src/cli/lib/configuration/project-config.ts`) carrying `configPath` and `reason`. That error propagates out of `recompileAgents` rather than degrading to the config-less priority-3 branch, which is what previously resurrected all 23 built-in agents.
 
 **Agent-set merge:** `allAgents = { ...builtinAgents, ...projectAgents }` -- project agents (loaded from `.claude-src/agents/` via `loadProjectAgents`) override built-ins with the same ID.
 
 **Per-agent stack filter:** `buildCompileAgents(filteredConfig, allAgents)` returns entries for every agent in the config, but only the agents in the resolved `agentNames` set are compiled. Without this filter, a project pass would compile global agents without their stack (since the project config omits global agent stack entries) and overwrite correctly-compiled global agent files.
 
-### D-264: Stale-Agent Pruning
+### Stale-Agent Pruning
 
 **Functions:** `pruneStaleAgentsForPass()` (file-local in `src/cli/lib/operations/project/compile-agents.ts`) -> `pruneStaleCompiledAgents(agentsDir, keep)` (`src/cli/lib/agents/list-compiled-agents.ts`).
 
@@ -568,7 +563,7 @@ Compiled-agent writes are purely additive: `writeCompiledAgentsByScope` writes t
 | `compile` with `hasBoth` (two passes)                 | set         | global / project | no      |
 | `compileAgentsAllScopes` home branch                  | set         | none             | yes     |
 | `compileAgentsAllScopes` project branch (both passes) | set         | global / project | no      |
-| `recompileRegisteredProjectAgents` (D-240)            | set         | project          | no      |
+| `recompileRegisteredProjectAgents`                    | set         | project          | no      |
 | `update`                                              | **omitted** | none             | no      |
 
 A scope-FILTERED pass sees only one scope's roster, so deleting from its `outputDir` could remove another scope's files. `update` omits `outputDir` entirely, so `recompileAgents` falls back to `getPluginAgentsDir(pluginDir)` internally and `pruneStaleAgentsForPass` has no directory to claim authority over — it returns early.
@@ -591,9 +586,9 @@ A scope-FILTERED pass sees only one scope's roster, so deleting from its `output
 
 Each project-context pass is `scopeFilter`-restricted so the project pass cannot overwrite a global agent with a zero-skill version (the project config omits global agents' stacks -- see **Per-agent stack filter** above). Results merge in **pass order** (global first, project second) via the file-local `mergeCompilationResults()`, which concatenates the `compiled`, `failed`, and `warnings` arrays with `flatMap`. The per-pass `compileAgents()` wrapper (`src/cli/lib/operations/project/compile-agents.ts`) auto-builds `agentScopeMap` from the loaded config via `buildAgentScopeMap()` when `scopeFilter` is set and no map was supplied.
 
-### D-254: Configured-but-Missing Stack Skills
+### Configured-but-Missing Stack Skills
 
-Before each `compile` pass, `warnUnresolvedStackSkills()` in `src/cli/commands/compile.ts` loads the project config and computes `getStackSkillIds(config.stack)` (`src/cli/lib/stacks/stacks-loader.ts`) minus `effectivelyExcludedSkillIds(config.skills)`, then emits a visible `this.warn("Skill '<id>' is configured but was not found — agents will be compiled without it.")` for every stack skill absent from the discovered `SkillDefinitionMap`. The resolver drops such skills from every agent that references them; the drop was previously only a `verbose()` log, so the default output claimed a clean recompile of an agent that no longer matched `config.ts`. Shipped in 0.144.0. See [Compilation Pipeline](./compilation-pipeline.md) and [Commands](../commands/index.md) for the full flow.
+Before each `compile` pass, `warnUnresolvedStackSkills()` in `src/cli/commands/compile.ts` loads the project config and computes `getStackSkillIds(config.stack)` (`src/cli/lib/stacks/stacks-loader.ts`) minus `effectivelyExcludedSkillIds(config.skills)`, then emits a visible `this.warn("Skill '<id>' is configured but was not found — agents will be compiled without it.")` for every stack skill absent from the discovered `SkillDefinitionMap`. The resolver drops such skills from every agent that references them; the drop was previously only a `verbose()` log, so the default output claimed a clean recompile of an agent that no longer matched `config.ts`. Shipped. See [Compilation Pipeline](./compilation-pipeline.md) and [Commands](../commands/index.md) for the full flow.
 
 ## Agent Scope Routing
 
@@ -633,7 +628,7 @@ Otherwise the triple is **omitted**, respecting the user's prior per-agent curat
 
 **Related finding:** `agent-findings/2026-04-22-excluded-agent-tombstone-vs-selected-agents-mismatch.md` -- the `selectedAgents` vs `agentConfigs` invariant that `getScopeOrThrow` enforces.
 
-## D-222: selectedAgents Propagation
+## selectedAgents Propagation
 
 **Function:** `mergeGlobalConfigs(existing, incoming)` in `src/cli/lib/installation/local-installer.ts`
 
@@ -650,23 +645,23 @@ The `changed` flag flips when either merged list differs from the existing list 
 
 1. Loads `existingProject.config`.
 2. Reconciles the project's own entries against the now-current global data into a `projectSplit`:
-   - `retainProjectOwnedSkills` / `retainProjectOwnedAgents` keep project-scoped entries and keep a global tombstone (`scope === "global" && excluded`) only while the masked global entry is still active — stale tombstones for a since-removed global item are dropped (D-233 Scenario C).
+   - `retainProjectOwnedSkills` / `retainProjectOwnedAgents` keep project-scoped entries and keep a global tombstone (`scope === "global" && excluded`) only while the masked global entry is still active — stale tombstones for a since-removed global item are dropped (Scenario C).
    - `retainReconciledStack` prunes stack assignments that reference a global skill removed at global scope (ids from `computeRemovedGlobalSkillIds`).
    - `retainReconciledSelectedAgents` drops `selectedAgents[]` names no longer backed by an active project- or global-scoped agent.
-   - `reconcileProjectSplitAgainstGlobal` then self-heals and re-masks on BOTH axes. `dropOrphanedDerivedAgentMasks` (the D-277 agent mirror of `dropOrphanedDerivedMasks`) runs FIRST and drops a global agent tombstone that no longer has an active project-scoped agent of the same name to justify it, so the global agent becomes visible again instead of staying masked forever. `maskCollidingGlobalAgents` then re-derives a mask for every live global agent the project DOES own at project scope, producing the `[P][G]` pair. Self-heal before mask means a cleared collision is removed rather than immediately re-derived, and the producer's `alreadyTombstoned` guard only sees warranted tombstones. Agents have no categories, so identity is the only collision kind (skills additionally collide on exclusive categories).
-3. Rewrites BOTH halves of the project's pair in one call — `writeProjectConfigPair(projectPath, projectSplit, globalConfig, matrix, agents)` — which emits `config.ts` with re-inlined global data and then `config-types.ts` via `regenerateConfigTypes()` with `buildConfigTypesBackgroundData(matrix, agents)` and `buildProjectTypesExtras(inlinedProjectView(projectSplit, globalConfig), matrix)`, so the types name every literal the sibling config holds (D-282). The import-from-global form is emitted, not the standalone-inlined one.
+   - `reconcileProjectSplitAgainstGlobal` then self-heals and re-masks on BOTH axes. `dropOrphanedDerivedAgentMasks` (the agent mirror of `dropOrphanedDerivedMasks`) runs FIRST and drops a global agent tombstone that no longer has an active project-scoped agent of the same name to justify it, so the global agent becomes visible again instead of staying masked forever. `maskCollidingGlobalAgents` then re-derives a mask for every live global agent the project DOES own at project scope, producing the `[P][G]` pair. Self-heal before mask means a cleared collision is removed rather than immediately re-derived, and the producer's `alreadyTombstoned` guard only sees warranted tombstones. Agents have no categories, so identity is the only collision kind (skills additionally collide on exclusive categories).
+3. Rewrites BOTH halves of the project's pair in one call — `writeProjectConfigPair(projectPath, projectSplit, globalConfig, matrix, agents)` — which emits `config.ts` with re-inlined global data and then `config-types.ts` via `regenerateConfigTypes()` with `buildConfigTypesBackgroundData(matrix, agents)` and `buildProjectTypesExtras(inlinedProjectView(projectSplit, globalConfig), matrix)`, so the types name every literal the sibling config holds. The import-from-global form is emitted, not the standalone-inlined one.
 4. Records the path in `updated[]`; an unreachable or failing project goes to `skipped[]` and never aborts the loop.
-5. The gate then recompiles every path in `updated[]` itself, for a T1 change (D-240, below).
+5. The gate then recompiles every path in `updated[]` itself, for a T1 change(below).
 
-**Both project-config write sites share one reconciliation step (D-279) and one writer (D-282).** `reconcileProjectSplitAgainstGlobal` is called immediately before `writeProjectConfigPair` in this propagation path AND immediately before the same call in the project branch of `writeScopedFromWizard`. The second site previously handed `splitConfigByScope`'s raw output straight to the inlining writer with no reconciliation at all, so a project owning a skill at project scope while the same id was active globally ended up with two active entries. See `agent-findings/2026-07-29-project-config-written-by-two-paths-only-one-reconciled.md`.
+**Both project-config write sites share one reconciliation step and one writer.** `reconcileProjectSplitAgainstGlobal` is called immediately before `writeProjectConfigPair` in this propagation path AND immediately before the same call in the project branch of `writeScopedFromWizard`. The second site previously handed `splitConfigByScope`'s raw output straight to the inlining writer with no reconciliation at all, so a project owning a skill at project scope while the same id was active globally ended up with two active entries. See `agent-findings/2026-07-29-project-config-written-by-two-paths-only-one-reconciled.md`.
 
-**Why `regenerateConfigTypes` is necessary:** A global-scope install would otherwise overwrite each project's import-form types with the standalone form. See `agent-findings/2026-04-21-d228-e2e-vacuous-pass-via-home-edit.md` (D-228).
+**Why `regenerateConfigTypes` is necessary:** A global-scope install would otherwise overwrite each project's import-form types with the standalone form. See `agent-findings/2026-04-21-d228-e2e-vacuous-pass-via-home-edit.md`.
 
 **Resolved:** the earlier gap where `mergeConfigs` dropped the `projects` field on a HOME-context edit is fixed -- `mergeConfigs()` in `src/cli/lib/configuration/config-merger.ts` now preserves it (`if (existingConfig.projects && !newConfig.projects) merged.projects = existingConfig.projects`). See `agent-findings/2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`.
 
-## D-240: Propagated-Project Agent Recompile (shipped 0.145.0)
+## Propagated-Project Agent Recompile
 
-`propagateGlobalChangesToProjects` rewrites each registered project's `config.ts` and `config-types.ts` but still does not itself recompile that project's `.claude/agents/<name>.md`. **Its caller inside the gate does** — since 2026-08-02 that is no longer the command's job:
+`propagateGlobalChangesToProjects` rewrites each registered project's `config.ts` and `config-types.ts` but still does not itself recompile that project's `.claude/agents/<name>.md`. **Its caller inside the gate does** — that is no longer the command's job:
 
 1. `applyConsequences` (`config-gate/index.ts`) drives both steps for a T1 change: `propagateGlobalChangesToProjects(...)` then `recompilePropagated(propagated.updated)`. The **home** branch propagates whenever `finalConfig.projects` is non-empty (no change gate beyond the tier — a home write is always a global write); the **project** branch propagates when the classified change is T1 or T2 and `effectiveGlobalConfig.projects?.length`. `reconcileTypesFromDisk` at `$HOME` (the `compile` path) propagates unconditionally, since a hand-edited config offers nothing to classify against.
 2. `recompilePropagated` (`config-gate/recompile.ts`) lazily imports the operation below, because a static `lib → operations` import would form a load-time cycle.
@@ -680,9 +675,7 @@ Contract points:
 - **`skills` is passed explicitly.** Without it `recompileAgents` falls back to `discoverAllPluginSkills`, which sees plugin skills only and would silently strip every global-local and project-local skill from the compiled agents.
 - **Agent partials always come from the CLI** — `getLocalAgentDefinitions()` returns `sourcePath: PROJECT_ROOT`, so no per-project marketplace source resolution is needed.
 - **Failure isolation.** A thrown error becomes `failedCount++` plus a `Could not recompile agents in <dir>: <reason>` warning; a non-empty `result.failed` also counts as failed and forwards that result's warnings. Neither aborts the loop.
-- Because the pass is scope-filtered, it does **not** prune stale agents (see D-264 above).
-
-Closes `agent-findings/2026-07-18-propagation-skips-agent-recompile.md` and the D-256 stale `name:name` compiled reference after a global plugin→eject switch.
+- Because the pass is scope-filtered, it does **not** prune stale agents.
 
 ## Agent Loading Flow
 
@@ -711,18 +704,19 @@ Closes `agent-findings/2026-07-18-propagation-skips-agent-recompile.md` and the 
 - [Wizard Flow](./wizard-flow.md) -- How agents are selected in the wizard (DOMAIN_AGENTS, selection grid)
 - [Type System](../type-system.md) -- AgentName union type and generated types
 - [Store Map](../store-map.md) -- `toggleAgent` / `toggleAgentScope` actions, `agentConfigs` / `selectedAgents` / `installedAgentConfigs` state, agent scope predicates
-- [Guard Pattern](../concepts/guard-pattern.md) -- Global Agent Toggle Guard (`isActiveGlobal`) and the two dual-scope branches that run before it (D-233/D-260: SPACE is inert on a live `[P][G]`; `restoreDualScopeAgent` rebuilds the pair on re-select; `s`/`toggleAgentScope` is the sole collapse)
+- [Guard Pattern](../concepts/guard-pattern.md) -- Global Agent Toggle Guard (`isActiveGlobal`) and the two dual-scope branches that run before it (SPACE is inert on a live `[P][G]`; `restoreDualScopeAgent` rebuilds the pair on re-select; `s`/`toggleAgentScope` is the sole collapse)
 - [Tombstone Pattern](../concepts/tombstone-pattern.md) -- `applyAgentToggle`, `collectTombstones`, dual-scope `[P][G]` collapse/restore mechanics
 
-## Related Findings
+## Invariants Worth Restating
 
-- `agent-findings/2026-04-20-d217-installmode-plumbing-dead-in-wrappers.md` -- history of the now-removed `installMode` wrapper plumbing (`derivePluginRef` / `compileAgentForPlugin` since relocated to `compiler.ts`; the write loop extracted to `write-compiled-agents.ts` in 0.142.4).
-- `agent-findings/2026-04-20-newly-toggled-agent-defaults-global-breaks-project-scope-stack.md` -- D-220 Scenario C agent-scope default bug.
-- `agent-findings/2026-04-22-excluded-agent-tombstone-vs-selected-agents-mismatch.md` -- `selectedAgents` and `agentConfigs` may disagree (excluded tombstones); derive active agents from `agentConfigs.filter(a => !a.excluded)`.
-- `agent-findings/2026-04-18-mergeConfigs-drops-projects-field.md` -- D-222 HOME-edit `projects` drop gap (now resolved, see below).
-- `agent-findings/2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md` -- `mergeConfigs` now preserves the global `projects` field.
-- `agent-findings/2026-04-21-d228-e2e-vacuous-pass-via-home-edit.md` -- D-222/D-228 E2E routing discipline.
-- `agent-findings/2026-07-18-propagation-skips-agent-recompile.md` -- propagation is config-only; registered projects' compiled agents are not recompiled. **Closed by D-240 (0.145.0), contract rewritten 2026-08-02:** the config-gate recompiles the propagated projects inside the write and returns a `GateReport` for the caller to render. The original caller-owned contract was honoured by `init` and `edit` only, leaving `edit`'s source migration and the global `uninstall` behind.
-- `agent-findings/2026-07-29-project-config-written-by-two-paths-only-one-reconciled.md` -- both project-config write sites (`propagateGlobalChangesToProjects` and the project branch of `writeScopedFromWizard`) now call the shared `reconcileProjectSplitAgainstGlobal` immediately before the shared `writeProjectConfigPair` (D-279 / D-282).
-- `agent-findings/2026-07-29-derived-mask-and-user-tombstone-are-indistinguishable.md` -- since D-277 every bare `{ scope: "global", excluded: true }` entry is machine-derived, so `dropOrphanedDerivedMasks` / `dropOrphanedDerivedAgentMasks` retain a mask iff the collision that would re-derive it still exists.
-- `agent-findings/2026-07-18-d233-agent-collapse-fix-in-toggleagent-action-not-helper.md` -- (D-233) dual-scope agent collapse lived in the `toggleAgent` action, not the `applyAgentToggle` leaf helper. **Superseded by D-260:** SPACE on a live `[P][G]` agent is now inert, and the `[P][G] -> [G]` collapse is `toggleAgentScope`'s `s` toggle.
+- **`selectedAgents` and `agentConfigs` may disagree** (excluded tombstones). Derive the active
+  agent set from `agentConfigs.filter((a) => !a.excluded)`, never from `selectedAgents`.
+- **Every bare `{ scope: "global", excluded: true }` entry is machine-derived**, so
+  `dropOrphanedDerivedMasks` / `dropOrphanedDerivedAgentMasks` retain a mask if and only if the
+  collision that would re-derive it still exists.
+- **Both project-config write sites** (`propagateGlobalChangesToProjects` and the project branch of
+  `writeScopedFromWizard`) call the shared `reconcileProjectSplitAgainstGlobal` immediately before
+  the shared `writeProjectConfigPair`.
+- **SPACE on a live `[P][G]` agent is inert**; the `[P][G] -> [G]` collapse is `toggleAgentScope`'s
+  `s` toggle, and it lives in the `toggleAgent` action rather than the `applyAgentToggle` leaf
+  helper.

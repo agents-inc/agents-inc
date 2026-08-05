@@ -24,12 +24,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0. -->
-
 # Compilation Pipeline
-
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
 
 ## Overview
 
@@ -41,8 +36,8 @@ last_validated: 2026-07-30
 | ------------------------------------ | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `compileAgents()`                    | `src/cli/lib/operations/project/compile-agents.ts`            | Operations-layer wrapper (scope-filtering + delegation to `recompileAgents()`). Called directly by the `compile` and `update` commands; `init`/`edit` reach it via `compileAgentsAllScopes()` |
 | `compileAgentsAllScopes()`           | `src/cli/lib/operations/project/compile-agents-all-scopes.ts` | Runs a global pass + project pass (or a single home pass), merges results. Called by `init` and `edit`                                                                                        |
-| `recompilePropagatedProjectAgents()` | `src/cli/lib/operations/project/recompile-project-agents.ts`  | D-240: loops `recompileRegisteredProjectAgents()` over the project dirs propagation rewrote, isolating per-project failures. Called by `init` and `edit` after `writeProjectConfig()`         |
-| `recompileRegisteredProjectAgents()` | `src/cli/lib/operations/project/recompile-project-agents.ts`  | D-240: single registered project, `scopeFilter: "project"` only. Discovers that project's skills itself and loads agent partials from the CLI                                                 |
+| `recompilePropagatedProjectAgents()` | `src/cli/lib/operations/project/recompile-project-agents.ts`  | Loops `recompileRegisteredProjectAgents()` over the project dirs propagation rewrote, isolating per-project failures. Called by `init` and `edit` after `writeProjectConfig()`                |
+| `recompileRegisteredProjectAgents()` | `src/cli/lib/operations/project/recompile-project-agents.ts`  | Single registered project, `scopeFilter: "project"` only. Discovers that project's skills itself and loads agent partials from the CLI                                                        |
 | `recompileAgents()`                  | `src/cli/lib/agents/agent-recompiler.ts`                      | Core recompile: config load → resolve → per-agent render + scope-routed write. Called by `compileAgents()`                                                                                    |
 | `compileAllAgents()`                 | `src/cli/lib/compiler.ts`                                     | Exported compiler primitive — only unit tests call it; NOT wired into any command                                                                                                             |
 | `compileAllSkills()`                 | `src/cli/lib/compiler.ts`                                     | Exported compiler primitive — only unit tests call it; NOT wired into any command                                                                                                             |
@@ -80,11 +75,11 @@ and plugin-build flows, not here.
 
 4. Agent Resolution — recompileAgents() (agent-recompiler.ts)
    -> loadProjectConfig() reads project config (.claude-src/config.ts); a corrupt
-      config throws ConfigLoadError rather than reading as absent (D-273)
+      config throws ConfigLoadError rather than reading as absent
    -> filterExcludedEntries() drops excluded skills/agents and excluded stack refs
    -> loadAllAgents() (built-in) + loadProjectAgents() (project overrides) merged
    -> resolveAgentNames() determines which agents to compile — a PRESENT config is
-      authoritative over its roster even when empty (D-264: `agents: []` compiles
+      authoritative over its roster even when empty (`agents: []` compiles
       zero agents; only a config-LESS load falls through to the all-agents branch)
    -> buildCompileAgents() maps config entries into CompileAgentConfig per agent
       (attaches each skill's `source` via the id-keyed sourceById map)
@@ -115,7 +110,7 @@ and plugin-build flows, not here.
    -> Per-agent failures are collected as AgentWriteOutcome[] (recompile reports &
       continues; install hard-errors on the first failure)
 
-7. Stale-Agent Pruning (D-264) — pruneStaleAgentsForPass() in compile-agents.ts
+7. Stale-Agent Pruning — pruneStaleAgentsForPass() in compile-agents.ts
    -> Runs only on an AUTHORITATIVE pass: `outputDir` set AND no `scopeFilter`
    -> pruneStaleCompiledAgents(outputDir, keep) (src/cli/lib/agents/list-compiled-agents.ts)
       deletes every `*.md` whose basename `isAgentName()` and is NOT in
@@ -145,20 +140,20 @@ inside `compileAllAgents()`. The live recompile path does NOT validate compiled 
 
 ## Key Files
 
-| File                                                         | Purpose                                                                            |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `src/cli/lib/compiler.ts`                                    | Core compilation: Liquid engine, agent/skill compile                               |
-| `src/cli/lib/agents/agent-recompiler.ts`                     | Orchestrates recompilation flow                                                    |
-| `src/cli/lib/agents/write-compiled-agents.ts`                | Per-agent render + scope-routed write (live path)                                  |
-| `src/cli/lib/agents/list-compiled-agents.ts`                 | `listAgentMdFiles` / `listCompiledAgentNames` / `pruneStaleCompiledAgents` (D-264) |
-| `src/cli/lib/agents/agent-fetcher.ts`                        | Fetches agent definitions (local or remote)                                        |
-| `src/cli/lib/agents/agent-plugin-compiler.ts`                | Plugin-mode agent compilation (individual agent plugins)                           |
-| `src/cli/lib/resolver.ts`                                    | Resolves skill references, agent configs, CLAUDE.md path                           |
-| `src/cli/lib/output-validator.ts`                            | Validates compiled agent output                                                    |
-| `src/cli/lib/operations/project/compile-agents.ts`           | Operations layer wrapper for compilation + stale-agent prune                       |
-| `src/cli/lib/operations/project/recompile-project-agents.ts` | D-240 registered-project recompile + per-project failure isolation                 |
-| `src/cli/lib/operations/project/load-agent-defs.ts`          | Operations layer for agent definition loading                                      |
-| `src/cli/lib/operations/skills/discover-skills.ts`           | 4-way skill discovery and merge                                                    |
+| File                                                         | Purpose                                                                    |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `src/cli/lib/compiler.ts`                                    | Core compilation: Liquid engine, agent/skill compile                       |
+| `src/cli/lib/agents/agent-recompiler.ts`                     | Orchestrates recompilation flow                                            |
+| `src/cli/lib/agents/write-compiled-agents.ts`                | Per-agent render + scope-routed write (live path)                          |
+| `src/cli/lib/agents/list-compiled-agents.ts`                 | `listAgentMdFiles` / `listCompiledAgentNames` / `pruneStaleCompiledAgents` |
+| `src/cli/lib/agents/agent-fetcher.ts`                        | Fetches agent definitions (local or remote)                                |
+| `src/cli/lib/agents/agent-plugin-compiler.ts`                | Plugin-mode agent compilation (individual agent plugins)                   |
+| `src/cli/lib/resolver.ts`                                    | Resolves skill references, agent configs, CLAUDE.md path                   |
+| `src/cli/lib/output-validator.ts`                            | Validates compiled agent output                                            |
+| `src/cli/lib/operations/project/compile-agents.ts`           | Operations layer wrapper for compilation + stale-agent prune               |
+| `src/cli/lib/operations/project/recompile-project-agents.ts` | Registered-project recompile + per-project failure isolation               |
+| `src/cli/lib/operations/project/load-agent-defs.ts`          | Operations layer for agent definition loading                              |
+| `src/cli/lib/operations/skills/discover-skills.ts`           | 4-way skill discovery and merge                                            |
 
 ## Agent File Structure
 
@@ -323,23 +318,23 @@ For native Claude Code plugin distribution:
 
 ### Batch Skill-Plugin Compilation & Command Drivers
 
-`compileAllSkillPlugins(skillsDir, outputDir)` (`src/cli/lib/skills/skill-plugin-compiler.ts`, added 0.141.6) is the batch wrapper over the singular `compileSkillPlugin()`. It globs every `**/SKILL.md` under `skillsDir`, compiles each, and returns `SkillCompilationRun { compiled: CompiledSkillPlugin[]; failed: string[] }`. A per-skill try/catch collects failures (by directory basename) and emits a `warn()` instead of aborting the whole run — contrast the install path, which hard-errors on the first failure. `printCompilationSummary()` prints the compiled list. `compileAllAgentPlugins()` is the agent counterpart but returns a bare `CompiledAgentPlugin[]` (no `failed` list).
+`compileAllSkillPlugins(skillsDir, outputDir)` (`src/cli/lib/skills/skill-plugin-compiler.ts`) is the batch wrapper over the singular `compileSkillPlugin()`. It globs every `**/SKILL.md` under `skillsDir`, compiles each, and returns `SkillCompilationRun { compiled: CompiledSkillPlugin[]; failed: string[] }`. A per-skill try/catch collects failures (by directory basename) and emits a `warn()` instead of aborting the whole run — contrast the install path, which hard-errors on the first failure. `printCompilationSummary()` prints the compiled list. `compileAllAgentPlugins()` is the agent counterpart but returns a bare `CompiledAgentPlugin[]` (no `failed` list).
 
-| Command / caller                                            | File                                    | Drives                                                                                                                                                                                                                                     |
-| ----------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `build plugins`                                             | `src/cli/commands/build/plugins.ts`     | `compileSkillPlugin()` (with `--skill`) or `compileAllSkillPlugins()` (default), plus `compileAllAgentPlugins()` (with `--agents-dir`). Prunes stale skill-plugin dirs after a clean full run (D-238); skips pruning when any skill fails. |
-| `new marketplace`                                           | `src/cli/commands/new/marketplace.ts`   | `compileAllSkillPlugins()` to build the scaffolded marketplace's plugins, then `generateMarketplace()` + `writeMarketplace()`.                                                                                                             |
-| `installStackAsPlugin()` / `compileStackToTemp()` (library) | `src/cli/lib/stacks/stack-installer.ts` | `compileStackPlugin()`. Exported from `lib/stacks` but has no wired command caller.                                                                                                                                                        |
+| Command / caller                                            | File                                    | Drives                                                                                                                                                                                                                             |
+| ----------------------------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `build plugins`                                             | `src/cli/commands/build/plugins.ts`     | `compileSkillPlugin()` (with `--skill`) or `compileAllSkillPlugins()` (default), plus `compileAllAgentPlugins()` (with `--agents-dir`). Prunes stale skill-plugin dirs after a clean full run; skips pruning when any skill fails. |
+| `new marketplace`                                           | `src/cli/commands/new/marketplace.ts`   | `compileAllSkillPlugins()` to build the scaffolded marketplace's plugins, then `generateMarketplace()` + `writeMarketplace()`.                                                                                                     |
+| `installStackAsPlugin()` / `compileStackToTemp()` (library) | `src/cli/lib/stacks/stack-installer.ts` | `compileStackPlugin()`. Exported from `lib/stacks` but has no wired command caller.                                                                                                                                                |
 
 `build marketplace` (`src/cli/commands/build/marketplace.ts`) does NOT compile — it scans already-built plugin dirs and generates `marketplace.json` via `generateMarketplace()` (identity read from `package.json`).
 
 **`compileAgentForPlugin()` vs `compileAgent()` (both in `src/cli/lib/compiler.ts`):** the live recompile/plugin path uses `compileAgentForPlugin()`; the plain `compileAgent()` is reached only via the unused `compileAllAgents()` primitive. They differ by:
 
-- `compileAgentForPlugin()` decides `pluginRef` **per-skill** via `derivePluginRef(skill)` based on each skill's own `source` field (D-217). No agent-wide `installMode` parameter.
+- `compileAgentForPlugin()` decides `pluginRef` **per-skill** via `derivePluginRef(skill)` based on each skill's own `source` field. No agent-wide `installMode` parameter.
 - Preloaded skill IDs render with `pluginRef` when attached, otherwise bare skill IDs (`buildAgentTemplateContext()`: `preloadedSkillIds = preloadedSkills.map((s) => s.pluginRef ?? s.id)`).
 - Both read agent files via the shared `readAgentFiles()` helper.
 
-### D-217 Per-Skill `pluginRef` Format
+### Per-Skill `pluginRef` Format
 
 Helper: `derivePluginRef(skill: Skill): PluginSkillRef | undefined` in `src/cli/lib/compiler.ts`.
 Constant: `EJECT_SOURCE = "eject"` in `src/cli/consts.ts` (imported by `compiler.ts` and `stack-plugin-compiler.ts`).
@@ -390,8 +385,8 @@ The compilation pipeline is wrapped by the operations layer for use by commands:
 | ------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `compileAgents()`                    | `src/cli/lib/operations/project/compile-agents.ts`            | Scope-filtering orchestrator delegating to `recompileAgents()`, then pruning stale agents on an authoritative pass |
 | `compileAgentsAllScopes()`           | `src/cli/lib/operations/project/compile-agents-all-scopes.ts` | Home single-pass / project two-pass driver for `init` and `edit`                                                   |
-| `recompileRegisteredProjectAgents()` | `src/cli/lib/operations/project/recompile-project-agents.ts`  | D-240: recompile ONE registered project at project scope                                                           |
-| `recompilePropagatedProjectAgents()` | `src/cli/lib/operations/project/recompile-project-agents.ts`  | D-240: loop the above over `ConfigWriteResult.propagatedProjects`                                                  |
+| `recompileRegisteredProjectAgents()` | `src/cli/lib/operations/project/recompile-project-agents.ts`  | Recompile ONE registered project at project scope                                                                  |
+| `recompilePropagatedProjectAgents()` | `src/cli/lib/operations/project/recompile-project-agents.ts`  | Loop the above over `ConfigWriteResult.propagatedProjects`                                                         |
 | `loadAgentDefs()`                    | `src/cli/lib/operations/project/load-agent-defs.ts`           | Load + merge CLI/source agent definitions                                                                          |
 | `discoverInstalledSkills()`          | `src/cli/lib/operations/skills/discover-skills.ts`            | 4-way skill discovery and merge                                                                                    |
 | `detectBothInstallations()`          | `src/cli/lib/operations/project/detect-both-installations.ts` | Find global + project installations                                                                                |
@@ -400,23 +395,22 @@ The `compile` command (`src/cli/commands/compile.ts`) uses these operations to:
 
 1. `detectInstallations()` — `detectBothInstallations()` wrapped in a `ConfigLoadError`
    catch. A config file that exists but cannot be parsed hard-errors with
-   `EXIT_CODES.ERROR` naming the path, BEFORE any compilation or write (D-273).
+   `EXIT_CODES.ERROR` naming the path, BEFORE any compilation or write.
    Zero installations is also a hard error (`ERROR_MESSAGES.NO_INSTALLATION`).
 2. `resolveAndLogSource()` then `loadAgentDefsOrFail()`
 3. `buildCompilePasses()` — one pass per detected scope. `scopeFilter` is set only
    when `hasBoth`; a single-installation run is scope-UNfiltered and therefore
    authoritative over its `outputDir` (see the pruning stage above).
 4. For each pass (`runCompilePass`): discover skills -> warn about
-   configured-but-missing stack skills (`warnUnresolvedStackSkills()`, D-254) ->
+   configured-but-missing stack skills (`warnUnresolvedStackSkills()`) ->
    compile agents via `compileAgents()` -> `refreshConfigTypes()`
 5. Zero passes with skills is a hard error.
 
-A stack-referenced skill absent from disk is dropped from the recompiled agent. As of
-0.144.0 (D-254) `warnUnresolvedStackSkills()` surfaces each dropped skill as a `this.warn()`
-so the default output no longer reports a clean recompile of an agent that silently lost a
-skill (previously only a `--verbose` log recorded the drop).
+A stack-referenced skill absent from disk is dropped from the recompiled agent.
+`warnUnresolvedStackSkills()` surfaces each dropped skill as a `this.warn()`, so the default output
+cannot report a clean recompile of an agent that silently lost a skill.
 
-### `compile` Regenerates `config-types.ts` (0.145.0)
+### `compile` Regenerates `config-types.ts`
 
 **Function:** `refreshConfigTypes()` (private on the `Compile` command) ->
 `reconcileTypesFromDisk(projectDir, config, { matrix, agents }, { currentProjectDir: cwd })`
@@ -425,14 +419,14 @@ skill (previously only a `--verbose` log recorded the drop).
 The documented workflow is "hand-edit `config.ts`, then run `compile`", but the unions in
 `config-types.ts` are derived from `config.ts`, so a pass that left them untouched stranded
 stale unions. Every pass now regenerates them for the scope it compiled, matching the wizard
-write path exactly (D-228 writer selection):
+write path exactly (writer selection):
 
 | Scope                           | Writer selected by `reconcileTypesFromDisk`                                                                                          |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | global (`isHomeDirectory(dir)`) | `config-gate/pair-writer.ts::writeGlobalTypesHalf` — standalone unions narrowed to the config's entries                              |
 | project                         | `regenerateConfigTypes` — import-and-extend from the global types (falls back to standalone when no global `config-types.ts` exists) |
 
-**A global pass also propagates (new 2026-08-02).** `config.ts` on disk is the input and is never rewritten, so there is no prior state to diff and nothing to classify — the only safe assumption is that every registered project's inlined copy of the global config is stale. The home pass therefore fans the config out to every registered project unconditionally and recompiles their agents, printing `Recompiled agents in N registered projects`; skipped projects are warned via `registeredProjectUpdateSkipped`. `currentProjectDir: cwd` excludes the project whose own pass is about to compile it. That rendering (`reportPropagation`) sits deliberately outside the refresh's `catch`: an unreachable project must not be reported as a failure to refresh the unions, which did succeed.
+**A global pass also propagates.** `config.ts` on disk is the input and is never rewritten, so there is no prior state to diff and nothing to classify — the only safe assumption is that every registered project's inlined copy of the global config is stale. The home pass therefore fans the config out to every registered project unconditionally and recompiles their agents, printing `Recompiled agents in N registered projects`; skipped projects are warned via `registeredProjectUpdateSkipped`. `currentProjectDir: cwd` excludes the project whose own pass is about to compile it. That rendering (`reportPropagation`) sits deliberately outside the refresh's `catch`: an unreachable project must not be reported as a failure to refresh the unions, which did succeed.
 
 Contract details:
 
@@ -450,7 +444,7 @@ Contract details:
   `src/cli/lib/installation/local-installer.test.ts` pins the emitted types byte-identical to
   the wizard's fully tagged load.
 
-### D-275: Global-Scoped Agents Hint
+### Global-Scoped Agents Hint
 
 When the **Project** pass resolves zero agents, `hintGlobalScopedAgents()` reloads the project
 config, counts `agents.filter(a => !a.excluded && a.scope === "global")`, and — when non-zero —
@@ -468,7 +462,7 @@ which reads as a silent no-op after a global stack change.
 
 The two project-context passes are combined by the private `mergeCompilationResults(...results)` helper, which `flatMap`s `compiled`, `failed`, and `warnings` across results **in pass order** (global then project). The home branch returns its single `CompilationResult` directly.
 
-**Pruning consequence (D-264):** only the home branch is scope-UNfiltered, so only the home branch prunes stale compiled agents from its `outputDir`. Both project-context passes carry a `scopeFilter` and therefore skip pruning — see `pruneStaleAgentsForPass()` in `src/cli/lib/operations/project/compile-agents.ts`.
+**Pruning consequence:** only the home branch is scope-UNfiltered, so only the home branch prunes stale compiled agents from its `outputDir`. Both project-context passes carry a `scopeFilter` and therefore skip pruning — see `pruneStaleAgentsForPass()` in `src/cli/lib/operations/project/compile-agents.ts`.
 
 ## Recompilation Flow (agent-recompiler.ts)
 
@@ -477,7 +471,7 @@ The two project-context passes are combined by the private `mergeCompilationResu
 1. Load project config via `loadProjectConfig()` (from `.claude-src/config.ts`), then `filterExcludedEntries()` drops excluded skills/agents and excluded stack refs
 2. Load agent definitions: `loadAllAgents()` for built-in + `loadProjectAgents()` for project overrides
 3. Merge: project agents override built-in agents
-4. Resolve agent names via `resolveAgentNames()` — priority: explicit `options.agents` -> a PRESENT config's `agents[]` -> all source agents when `outputDir` is set -> existing compiled agents on disk. The config branch keys on **presence, not length** (D-264), so `agents: []` compiles zero agents instead of falling through to the all-agents branch
+4. Resolve agent names via `resolveAgentNames()` — priority: explicit `options.agents` -> a PRESENT config's `agents[]` -> all source agents when `outputDir` is set -> existing compiled agents on disk. The config branch keys on **presence, not length**, so `agents: []` compiles zero agents instead of falling through to the all-agents branch
 5. Discover skills if not provided: `discoverAllPluginSkills()`
 6. Build compile config: `buildCompileAgents()` maps config entries to `CompileAgentConfig` per agent (partitioning known vs missing agents), then `CompileConfig` is constructed inline
 7. Create Liquid engine: `createLiquidEngine()` with project template overrides
@@ -491,16 +485,16 @@ The two project-context passes are combined by the private `mergeCompilationResu
 1. `writeConfigAndCompileAgents(params)` (module-private) writes scoped configs via `config-gate::writeScopedFromWizard()`, builds a `CompileConfig` whose `agents` come from `buildCompileAgents(finalConfig, agents)`, then delegates to `compileAndWriteAgents()`.
 2. `compileAndWriteAgents(compileConfig, agents, localSkills, sourceResult, projectDir, agentsDir, agentScopeMap?)` (module-private) creates the Liquid engine (`createLiquidEngine()`), materializes skill references via `resolveAgents()`, and renders + scope-routes via `writeCompiledAgentsByScope()`.
 3. **Failure handling differs from the operations path:** the install tail treats the first `AgentWriteOutcome` with `ok: false` as fatal and throws it (`recompileAgents()` / `compileAgents()` instead report and continue). On success it returns the compiled `AgentName[]`.
-4. **It discards the `GateReport`**, so nothing renders the propagated-project recompile on this path — but the recompile itself now happens regardless, inside `writeScopedFromWizard` (D-240, contract rewritten 2026-08-02). What is lost is only the user-facing summary line. Immaterial today because this tail is unreachable, but it is the surface to wire if `installEject` / `installPluginConfig` ever regain a command caller.
+4. **It discards the `GateReport`**, so nothing renders the propagated-project recompile on this path — but the recompile itself now happens regardless, inside `writeScopedFromWizard`. What is lost is only the user-facing summary line. Immaterial today because this tail is unreachable, but it is the surface to wire if `installEject` / `installPluginConfig` ever regain a command caller.
 
 Both functions are module-private (not exported). Their only callers — `installEject()` and `installPluginConfig()` — currently have no production command caller (the same unwired callers noted under "Dual-Scope `sourceById` Collapse" above), so this tail is presently dead code, like the exported `compileAllAgents()` / `compileAllSkills()` primitives.
 
-## Propagated-Project Recompile (D-240, shipped 0.145.0)
+## Propagated-Project Recompile
 
 `propagateGlobalChangesToProjects()` (`src/cli/lib/config-gate/propagate.ts`) rewrites each
 registered project's `config.ts` / `config-types.ts` when a global-scope config change lands, but
 it does not itself re-render those projects' compiled `.claude/agents/<name>.md` files. **Its caller
-inside the gate does** — as of 2026-08-02 this is part of the write, not a stage the command drives:
+inside the gate does** — this is part of the write, not a stage the command drives:
 
 ```
 writeScopedFromWizard(...) | mutateGlobal(...) | reconcileTypesFromDisk(~) | propagateGlobalRemoval(...)
@@ -545,6 +539,6 @@ Contract points:
   `Recompiled agents in N registered projects` with a ` (M failed)` suffix when `failedCount > 0`.
 
 Closes the gap recorded in `agent-findings/2026-07-18-propagation-skips-agent-recompile.md` and the
-D-256 stale `name:name` plugin reference after a global plugin→eject switch. The same stage is
+a stale `name:name` plugin reference after a global plugin→eject switch. The same stage is
 documented from the config-write angle in `reference/config/config-writer.md` and the
 agent-recompile angle in `reference/features/agent-system.md`.

@@ -11,6 +11,4 @@ last_validated: 2026-07-23
 
 # Store / State Map
 
-> **Reorganized from:** `reference/store-map.md`. The original file is preserved during migration.
-
-**Full content: See `reference/store-map.md`** -- this file is the authoritative source until cleanup.
+> **Pointer.** The content lives in [`reference/store-map.md`](../store-map.md). This path is kept because inbound links still use it.

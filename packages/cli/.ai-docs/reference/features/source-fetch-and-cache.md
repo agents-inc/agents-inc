@@ -38,22 +38,7 @@ related:
 last_validated: 2026-08-02
 ---
 
-<!-- NEW 2026-08-02 · FULL for its own scope (product 0.147.1)
-     ✓ every claim derived this session from src/cli/lib/loading/source-fetcher.ts and
-       loader.ts read end to end, src/cli/consts.ts, src/cli/lib/configuration/config.ts,
-       every call site re-derived by grep over src/ + e2e/ + scripts/, and the giget
-       replication claims checked against the INSTALLED giget@1.2.5 in node_modules.
-       The four test files were RUN (89 tests pass), not counted by reading `it(`.
-     ✗ nothing deferred inside this doc's scope. Deliberately NOT covered here:
-       the marketplace.json validation chain (boundary-map.md owns it), CACHE_DIR's
-       value (utilities.md owns it), the SourceLoadOptions table (skills-and-matrix.md
-       owns it). See "Ownership boundary" below.
--->
-
 # Remote Source Fetch & Cache
-
-**Last Updated:** 2026-08-02
-**Last Validated:** 2026-08-02
 
 ## Overview
 
@@ -144,7 +129,7 @@ export type FetchResult = { path: string; fromCache: boolean; source: string };
 
 **The `source` field means different things on the two branches, and nothing reads it.** The local
 branch echoes the argument; the remote branch echoes the subdir-joined `fullSource` on both of its
-returns. Grep-verified 2026-08-02: every production call site reads `.path` and/or `.fromCache` —
+returns. Grep-verified: every production call site reads `.path` and/or `.fromCache` —
 `loadFromRemote` (`source-loader.ts`), `fetchSourceSkills` (`multi-source-loader.ts`),
 `fetchSkillSource` (`import/skill.ts`) — and none reads `.source`. Reconcile the two branches before
 you start.
@@ -289,7 +274,7 @@ this module's module-level regexes are **verbatim copies** of giget's:
 | `SOURCE_PROTO_RE` `/^([\w-.]+):/`                                               | `sourceProtoRe`, giget dist `:250` | identical |
 | `GIT_URI_RE` `/^(?<repo>[\w.-]+\/[\w.-]+)(?<subdir>[^#]+)?(?<ref>#[\w./@-]+)?/` | `inputRegex`, giget dist `:39`     | identical |
 
-**Verified against the installed `giget@1.2.5`** (2026-08-02). Line numbers below are in
+**Verified against the installed `giget@1.2.5`**. Line numbers below are in
 `node_modules/giget/dist/shared/giget.BgKdRmJH.mjs`; **the chunk filename is content-hashed and will
 change on any reinstall** — re-locate it by grepping for `cacheDirectory` under `node_modules/giget/dist/`.
 
@@ -476,7 +461,7 @@ accordingly — `discoverLocalProjectSkills` passes `true`
 `loadPluginSkills(pluginDir)` is a fixed-argument wrapper reading `<pluginDir>/skills`. Its role in
 plugin discovery is documented at `reference/features/plugin-system.md:131`.
 
-## Call sites (grep-verified over `src/`, `e2e/`, `scripts/` — 2026-08-02)
+## Call sites (grep-verified over `src/`, `e2e/`, `scripts/` —)
 
 ### `fetchFromSource`
 
@@ -576,7 +561,7 @@ the id list before it.
 
 ## Test surface
 
-All four files were **run** on 2026-08-02: 89 tests, all passing.
+All four files were **run**: 89 tests, all passing.
 
 | File                                                        | Tests | Covers (by describe block)                                                                                                                                                                                                                                                                                                                  |
 | ----------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

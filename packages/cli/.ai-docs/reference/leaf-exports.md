@@ -36,73 +36,44 @@ related:
 last_validated: 2026-08-02
 ---
 
-<!-- VALIDATED 2026-08-02 · FULL (new file, product 0.147.1)
-     Every export below read in source this session; every consumer/absence claim re-derived by
-     grep over src/, e2e/ and scripts/; every spec count obtained by RUNNING the file.
-     The incoming audit's census basis was STALE (41 files) and was re-run here against the 48
-     reference docs actually on disk. Five of its seventeen entries turned out to be covered
-     already; they are deferred, not re-documented. See "Census correction" below.
-     Written as a NEW file rather than folded into the owning docs because the writing pass was
-     forbidden from editing existing docs. This file has a defined end state — see "Disposition". -->
-
 # Leaf Exports
-
-**Last Updated:** 2026-08-02
-**Last Validated:** 2026-08-02
 
 ## What this file is
 
 **Fourteen named exports** across seven sections, each sitting inside an area whose doc is otherwise
-thorough. **Twelve have zero occurrences across the 48 markdown files under `.ai-docs/reference/`**;
-the remaining two (`fetchAgentDefinitionsFromRemote`, `PROJECT_CONFIG_TYPES_BEFORE`) are partially
-covered elsewhere and this file carries only the remainder, saying so in place. Individually none
-justifies a file. Collectively they are the residue of the export census, recorded so a later audit
-does not re-discover them as if they were new findings.
+thorough. Twelve appear nowhere else under `.ai-docs/reference/`; the remaining two
+(`fetchAgentDefinitionsFromRemote`, `PROJECT_CONFIG_TYPES_BEFORE`) are partially covered elsewhere
+and this file carries only the remainder, saying so in place. Individually none justifies a file.
 
 **Every one is small. Most are not boring.** Two validators whose `valid` flag is a constant; a
 constants module whose only consumer reads a raw string instead of the constant it exports; an
 options type silently dropped at the branch it names; a type declared twice under the same name.
 Those are the entries worth reading. The rest are shape tables.
 
-### Census correction — the audit's basis was stale
+### Already covered elsewhere — do not re-document here
 
-The census that produced this file's worklist ran over **41** reference docs. **There are 48.** The
-seven it never looked at are `build-and-packaging.md`, `features/built-in-catalogue.md`,
-`features/code-generation.md`, `features/model-and-effort.md`, `features/seed-contract.md`,
-`features/source-fetch-and-cache.md` and `skills/skill-primitives.md` — all recent, all thorough.
-Re-running the census against all 48 found **five of its seventeen entries already covered there**,
-in four cases better than this pass would have written them.
+| Export                                            | Covered at                                                                                                               | What that doc adds                                                                                                            |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `SkillAlternative`                                | [features/built-in-catalogue.md](./features/built-in-catalogue.md)                                                       | Why `AlternativeGroup` is the one kind that is not a `SkillGroupRule`                                                         |
+| `MarketplaceFetchResult`                          | [features/source-fetch-and-cache.md](./features/source-fetch-and-cache.md) § "`fetchMarketplace` — the fetch/cache half" | That the `?? false` is **dead** — `FetchResult.fromCache` is a required `boolean` — and the `.claude-plugin/` directory check |
+| `SkillPluginOptions`                              | [skills/skill-primitives.md](./skills/skill-primitives.md) § "`skill-plugin-compiler.ts`"                                | That `sanitizeSkillName` applies **only** when `skillName` is absent                                                          |
+| `PROJECT_CONFIG_TYPES_BEFORE` (model/effort only) | [features/model-and-effort.md](./features/model-and-effort.md)                                                           | The blast radius: a project's file rejects a new member until it regenerates                                                  |
+| `ProjectAgentName`                                | not an export at all — see §6                                                                                            | —                                                                                                                             |
 
-**Those five are deferred below, not re-documented.** One of them matters beyond bookkeeping: this
-pass independently wrote that `MarketplaceFetchResult.fromCache`'s `?? false` guards a possibly-absent
-flag. It does not — `FetchResult.fromCache` is a **required** `boolean`
-(`FetchResult` in `lib/loading/source-fetcher.ts`), the coalesce is dead code, and
-[features/source-fetch-and-cache.md](./features/source-fetch-and-cache.md) § "`fetchMarketplace` —
-the fetch/cache half" already says so in as many words. Writing over a doc the census could not see would have replaced a correct
-statement with a wrong one.
+`fetchAgentDefinitionsFromRemote` (§4) and `StackInstallOptions` / `StackInstallResult` (§5) are
+partially covered; this file carries only the remainder, and says so in place.
 
-| Census entry                                      | Already covered at                                                                                                       | What that doc has that this pass did not                                     |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| `SkillAlternative`                                | [features/built-in-catalogue.md](./features/built-in-catalogue.md) `:230-232`                                            | Why `AlternativeGroup` is the one kind that is not a `SkillGroupRule`        |
-| `MarketplaceFetchResult`                          | [features/source-fetch-and-cache.md](./features/source-fetch-and-cache.md) § "`fetchMarketplace` — the fetch/cache half" | That the `?? false` is **dead**, and the `.claude-plugin/` directory check   |
-| `SkillPluginOptions`                              | [skills/skill-primitives.md](./skills/skill-primitives.md) § "`skill-plugin-compiler.ts`"                                | That `sanitizeSkillName` applies **only** when `skillName` is absent         |
-| `PROJECT_CONFIG_TYPES_BEFORE` (model/effort only) | [features/model-and-effort.md](./features/model-and-effort.md) `:307-329`                                                | The blast radius: a project's file rejects a new member until it regenerates |
-| `ProjectAgentName`                                | not an export at all — see §6                                                                                            | —                                                                            |
-
-**Two more entries are partially covered and this file carries only the remainder**, saying so in
-place: `fetchAgentDefinitionsFromRemote` (§4) and `StackInstallOptions` / `StackInstallResult` (§5).
-
-**Method note for the next census: enumerate the file set with `find`, do not copy a total from
-`DOCUMENTATION_MAP.md`.** The map's "41 on disk" is itself stale by those same seven files, and an
-absence claim is only as good as the corpus it was run against.
+**Enumerate the corpus with `find` before claiming an export is undocumented anywhere.** An absence
+claim is only as good as the file set it was run against, and a total copied from
+`DOCUMENTATION_MAP.md` is not that set.
 
 ### Disposition — this file has an end state
 
 This is a **staging area**. Each entry names the doc that owns its area. When that doc next takes a
 FULL validation pass, its entry should move there and be **deleted** from here; when the last entry
 moves, this file is deleted rather than left as an empty shell. Do not add a new export here just
-because it is small — add it to its owning doc. The only reason an entry belongs here is that the
-owning doc was closed to the pass that discovered it.
+because it is small — add it to its owning doc. The only reason an entry belongs here is that
+its owning doc was out of scope for whoever found it.
 
 | §   | Export                                                                                       | Source                                     | Owning doc                                                                              |
 | --- | -------------------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------- |
@@ -422,10 +393,9 @@ PROJECT_CONFIG_INTERFACE_AFTER
 | `PROJECT_CONFIG_INTERFACE_AFTER` | the whole `ProjectConfig` interface                                    |
 
 **`PROJECT_CONFIG_TYPES_BEFORE`'s `model?` / `effort?` lines are documented elsewhere and must not
-be restated here.** [features/model-and-effort.md](./features/model-and-effort.md) `:307-329` owns
-the emission of `MODEL_NAMES` / `EFFORT_NAMES` into `AgentScopeConfig`, the `formatLiteralUnion`
-vs `formatUnion` rationale, and — the part this pass did not derive — the blast radius: the members
-are _emitted content_, so a project's generated file keeps rejecting a new member until something
+be restated here.** [features/model-and-effort.md](./features/model-and-effort.md) owns the emission
+of `MODEL_NAMES` / `EFFORT_NAMES` into `AgentScopeConfig`, the `formatLiteralUnion` vs `formatUnion`
+rationale, and the blast radius: the members are _emitted content_, so a project's generated file keeps rejecting a new member until something
 rewrites it, and the user sees a type error on a value the CLI already accepts at runtime. That doc
 also owns the `MODEL_NAMES` membership per the count-ownership rule.
 
@@ -435,7 +405,7 @@ emitted `SkillAssignment` is generic; the runtime type of the same name is not.
 
 ### `ProjectAgentName` is emitted, not exported
 
-**Correction to the census.** `ProjectAgentName` is _not_ a named export of
+`ProjectAgentName` is _not_ a named export of
 `config-types-writer.ts`. It exists only inside the template strings: declared by
 `assembleConfigTypesSource` (`export type ProjectAgentName = ${parts.projectAgentName};`) and
 consumed by `PROJECT_CONFIG_INTERFACE_AFTER`
@@ -443,7 +413,7 @@ consumed by `PROJECT_CONFIG_INTERFACE_AFTER`
 kind of thing — declared alongside it and consumed by that interface's
 `selectedAgents?: SelectedAgentName[]`. Neither can be imported from the module; both are only
 strings until a generated file is written. A grep for either name in `src/` finds the template, not a
-declaration — which is exactly how the census mistook it for an export.
+declaration — which is how each gets mistaken for an export.
 
 Their values come from the same two-step narrowing in both generators, and the fallback is a _type
 name_, not a literal union:
@@ -585,7 +555,7 @@ reached.
 
 Its file-mate `buildCategoriesForDomain` is by contrast heavily used and thoroughly
 documented — see [component-patterns.md](./component-patterns.md) `:266` and
-[features/wizard-flow.md](./features/wizard-flow.md) `:212` for the D-272 deterministic-ordering
+[features/wizard-flow.md](./features/wizard-flow.md) for the deterministic-ordering
 contract. Do not infer from `validateBuildStep`'s dormancy that the module is dead.
 
 ---
@@ -631,16 +601,13 @@ Those three are covered only transitively.
 
 ## Known limitations of this file
 
-- **A name-absence census is not a description-absence census.** The selection criterion was "this
-  identifier appears in no reference doc". An export named somewhere but never _described_ would not
-  be selected. That is a different sweep, and this file does not claim to have run it.
-- **No count here is owned by this file** except the five spec counts in the test-surface table,
-  produced by running those files this session. Every other figure (raw-literal hits, the
-  fourteen/twelve split, the 48-file corpus) is a re-derivable grep or `find` result stated inline
-  with its method. Nothing here belongs in the count-ownership registry.
+- **A name-absence census is not a description-absence census.** Entries here were selected by "this
+  identifier appears in no reference doc". An export named somewhere but never _described_ is not
+  selected — that is a different sweep, and this file does not stand in for it.
+- **No count here is owned by this file** except the five spec counts in the test-surface table.
+  Every other figure is a re-derivable grep or `find` result stated inline with its method. Nothing
+  here belongs in the count-ownership registry.
 - **`step-build.test.tsx`'s file total is deliberately absent.** Only its `validateBuildStep`
-  describe block is relevant here; a file total would imply a coverage claim this pass did not make.
-- **The deferrals in "Census correction" were verified by reading the target sections, not by
-  matching the identifier.** Each row names the lines that carry the coverage. If one of those docs
-  is later trimmed, the corresponding entry has to come back here — a deferral is a link, and links
-  break.
+  describe block is relevant here; a file total would imply a wider coverage claim.
+- **A deferral is a link, and links break.** If one of the docs named above is later trimmed, the
+  corresponding entry has to come back here.

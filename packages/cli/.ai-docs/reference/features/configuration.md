@@ -23,16 +23,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.146.1 + 0.147.0 + 0.147.1)
-     ✓ the ConfigLoadError "Who handles the throw" table and its exhaustiveness note only
-     ✗ Default Categories counts, resolution hierarchy, D-279 reconciliation summary,
-       barrel-export list — 2026-07-30 basis
--->
-
 # Configuration System
-
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
 
 ## Overview
 
@@ -61,7 +52,7 @@ last_validated: 2026-07-30
 
 **Barrel surface (`index.ts`)** — value exports only, grouped by module: `DEFAULT_SOURCE`, `SOURCE_ENV_VAR`, `getProjectConfigPath`, `loadProjectSourceConfig`, `loadGlobalSourceConfig`, `resolveSource`, `resolveAuthor`, `resolveBranding`, `resolveAllSources`, `isLocalSource`, `validateSourceFormat` (from `config.ts`); `generateProjectConfigFromSkills`, `buildStackProperty`; `mergeConfigs`, `mergeWithExistingConfig`; `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, `effectivelyExcludedSkillIds`; **`ConfigLoadError`**, `loadProjectConfig`, `loadProjectConfigFromDir`, `validateProjectConfig`; `addSource`, `removeSource`, `getSourceSummary`; `defineConfig`, `defaultCategories`, `defaultRules`, `defaultStacks`, `loadConfig`, `generateProjectConfigTypesSource`, `getGlobalConfigTypesPath`, `loadConfigTypesDataInBackground`.
 
-**Deliberately NOT on the barrel since 2026-08-02:** `generateConfigSource`, `generateConfigTypesSource` and `regenerateConfigTypes`. They render (or render-and-write) a config pair half, and a barrel re-export would hand every command a supported way around the config-gate. They stay importable from their own modules by `config-gate/**` and `configuration/**`, eslint-enforced.
+**Deliberately NOT on the barrel:** `generateConfigSource`, `generateConfigTypesSource` and `regenerateConfigTypes`. They render (or render-and-write) a config pair half, and a barrel re-export would hand every command a supported way around the config-gate. They stay importable from their own modules by `config-gate/**` and `configuration/**`, eslint-enforced.
 
 Type exports from the barrel: `BrandingConfig`, `SourceEntry`, `ResolvedConfig`, `ResolvedBranding`, `ProjectConfigOptions`, `MergeContext`, `MergeResult`, `AuthoritativeScope`, `LoadedProjectConfig`, `SourceSummary`, `ConfigTypesBackgroundData`.
 
@@ -80,11 +71,11 @@ Type exports from the barrel: `BrandingConfig`, `SourceEntry`, `ResolvedConfig`,
 
 Config uses a unified `ProjectConfig` type for both source-level settings (source, marketplace, branding) and installation settings (skills, agents, stack). Files are TypeScript (loaded via jiti), not YAML.
 
-## Config Load Outcomes — Three States, Not Two (D-273)
+## Config Load Outcomes — Three States, Not Two
 
 **File:** `src/cli/lib/configuration/project-config.ts`
 
-`loadProjectConfigFromDir(projectDir)` distinguishes THREE outcomes. Collapsing the last two into `null` is the D-273 bug: a corrupt `.claude-src/config.ts` read as "no config", so `compile` treated the project as config-less and rebuilt every built-in agent.
+`loadProjectConfigFromDir(projectDir)` distinguishes THREE outcomes. **Do not collapse the last two into `null`:** a corrupt `.claude-src/config.ts` then reads as "no config", `compile` treats the project as config-less, and every built-in agent is rebuilt.
 
 | On disk                                                           | Outcome                                          | Signal                                                |
 | ----------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------- |
@@ -109,7 +100,7 @@ Two lenient repairs happen only on the success path, both with a `warn()`: a mis
 | `uninstall` — PROJECT config (`loadUninstallConfig`, same file)        | Catches `ConfigLoadError` **only**, warns, returns `null`; the uninstall proceeds and exits 0      |
 | `mergeWithExistingConfig` (`config-merger.ts`)                         | Does NOT catch — `loadProjectConfig` throws straight through to the wizard save path               |
 
-The two `uninstall` rows are the same posture applied at both ends, and the second one is newer (0.146.1). `loadUninstallConfig` narrows before swallowing:
+The two `uninstall` rows are the same posture applied at both ends, and the second one is newer. `loadUninstallConfig` narrows before swallowing:
 
 ```ts
 if (!(error instanceof ConfigLoadError)) throw error;
@@ -196,7 +187,7 @@ type ResolvedConfig = {
 
 **Count: 89 definitions**, one per member of the generated `CATEGORIES` tuple in `src/cli/types/generated/source-types.ts` (`export type Category = (typeof CATEGORIES)[number]`). 27 are `exclusive: true`; 6 are `required: true`.
 
-Prior to 0.145.0 only 51 were defined. The `satisfies` assertion failed to type-check, and every undefined category was auto-synthesized at load time by `synthesizeCategory` in `src/cli/lib/matrix/skill-resolution.ts` — `displayName` from `toTitleCase(category)` ("Api Graphql"), `description` `"Auto-generated category for <id>"`, `exclusive: false`, `required: false`, `order: 999` (`AUTO_SYNTH_ORDER`). That placeholder shape is what the wizard actually rendered. The 38 added definitions are derived from the marketplace matrix; 11 of them are exclusive.
+**The file must stay exhaustive.** With members missing, the `satisfies` assertion fails to type-check and every undefined category is auto-synthesized at load time by `synthesizeCategory` in `src/cli/lib/matrix/skill-resolution.ts` — `displayName` from `toTitleCase(category)` ("Api Graphql"), `description` `"Auto-generated category for <id>"`, `exclusive: false`, `required: false`, `order: 999` (`AUTO_SYNTH_ORDER`). That placeholder shape is what the wizard actually rendered. The 38 added definitions are derived from the marketplace matrix; 11 of them are exclusive.
 
 ### Per-domain breakdown
 
@@ -307,9 +298,9 @@ When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` un
 **Function:** `splitConfigByScope()` in `src/cli/lib/configuration/config-generator.ts` - Splits a `ProjectConfig` into global and project partitions by skill/agent scope. Returns `SplitConfigResult` (`{ global: ProjectConfig; project: ProjectConfig }`). Partitions:
 
 - **skills** by `scope` + `excluded` (excluded globals route to project split as tombstones)
-- **agents** by `scope` + `excluded` (excluded globals route to project as overrides) — D-222
+- **agents** by `scope` + `excluded` (excluded globals route to project as overrides)
 - **stack** by agent partition first, then global agents' entries are further split per-skill so a global agent never carries project skill ids
-- **selectedAgents** by scope: names matching global agents go to the global config's `selectedAgents`; the rest to the project config's `selectedAgents` — D-222
+- **selectedAgents** by scope: names matching global agents go to the global config's `selectedAgents`; the rest to the project config's `selectedAgents`
 - **domains** copied to global only (project inherits at runtime)
 
 > **Full partition rules, delta pipeline, and decision tables:** see [../config/scope-split.md](../config/scope-split.md).
@@ -330,7 +321,7 @@ Falls back to `scope: saved?.scope ?? "global"` and `source: resolveEffectiveSou
 
 ## Config Merging
 
-> **Full merge contract, compound keys, D-233 authoritative-scope, and tombstone flow:** see [../config/config-merger.md](../config/config-merger.md).
+> **Full merge contract, compound keys, authoritative-scope, and tombstone flow:** see [../config/config-merger.md](../config/config-merger.md).
 
 **Function:** `mergeWithExistingConfig(newConfig, context: MergeContext)` in `src/cli/lib/configuration/config-merger.ts`
 
@@ -345,10 +336,10 @@ Falls back to `scope: saved?.scope ?? "global"` and `source: resolveEffectiveSou
 - **Replace-on-match**: `newConfig` is authoritative for every `name`/`id` it references; identity fields (name, description, author, marketplace, agentsSource) are carried from existing, and `source` is preserved only when `newConfig.source` is undefined
 - Agents and skills are keyed by a **compound key** (`id:scope[:excluded]`), so dual-scope active/tombstone pairs coexist and scope migrations drop stale rows
 - Stack: `newConfig.stack` wins whenever defined; existing stack is kept only when `newConfig.stack` is undefined
-- `authoritativeScope` (D-233 Scenario C): a full `cc edit` drops in-authority entries that are absent from `newConfig` (deselections); `unresolvableSkillIds` exempts skills the wizard could not resolve
+- `authoritativeScope` (Scenario C): a full `cc edit` drops in-authority entries that are absent from `newConfig` (deselections); `unresolvableSkillIds` exempts skills the wizard could not resolve
 - `existingConfig.projects` is preserved when `newConfig` carries none (the drop bug is fixed; see finding `2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`)
 
-**Since D-277, "absent from `newConfig`" no longer means "deselected" for a globally installed item under `authoritativeScope: "owned"`.** A project-scope edit cannot produce that absence: the wizard guards refuse the deselect and `applySkillRemoval` leaves an inherited global-active entry byte-identical. An absent global entry therefore reflects a global-scope change or a legacy config. Full contract: [../config/config-merger.md](../config/config-merger.md).
+**"Absent from `newConfig`" does not mean "deselected" for a globally installed item under `authoritativeScope: "owned"`.** A project-scope edit cannot produce that absence: the wizard guards refuse the deselect and `applySkillRemoval` leaves an inherited global-active entry byte-identical. An absent global entry therefore reflects a global-scope change or a legacy config. Full contract: [../config/config-merger.md](../config/config-merger.md).
 
 ## Config I/O
 
@@ -371,7 +362,7 @@ Falls back to `scope: saved?.scope ?? "global"` and `source: resolveEffectiveSou
 
 **File:** `src/cli/lib/configuration/config-writer.ts`
 
-Replaced the former `writeProjectSourceConfig()`. **Renders only — writes nothing** since the config-gate landed (2026-08-02).
+Replaced the former `writeProjectSourceConfig()`. **Renders only — writes nothing** since the config-gate landed.
 
 | Function                                 | Purpose                                       |
 | ---------------------------------------- | --------------------------------------------- |
@@ -403,7 +394,7 @@ When a global installation exists, project `config-types.ts` imports from global
 
 ### Writer selection rule
 
-When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts` where `projectDir` is not the global install root), the import-from-global writer `regenerateConfigTypes` applies. When writing the GLOBAL `config-types.ts` (`~/.claude-src/config-types.ts`), the standalone unions apply — emitted only by `config-gate/pair-writer.ts`. The rule is structural since 2026-08-02: `regenerateConfigTypes` throws `GlobalPairWriteViolation` at `$HOME`, and the standalone renderer is private to the gate (the former `writeStandaloneConfigTypes` export is gone).
+When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts` where `projectDir` is not the global install root), the import-from-global writer `regenerateConfigTypes` applies. When writing the GLOBAL `config-types.ts` (`~/.claude-src/config-types.ts`), the standalone unions apply — emitted only by `config-gate/pair-writer.ts`. The rule is structural: `regenerateConfigTypes` throws `GlobalPairWriteViolation` at `$HOME`, and the standalone renderer is private to the gate (the former `writeStandaloneConfigTypes` export is gone).
 
 In `config-gate/`:
 
@@ -412,7 +403,7 @@ In `config-gate/`:
 - `propagateGlobalChangesToProjects` per-project loop → the SAME `writeProjectConfigPair`.
 - `reconcileTypesFromDisk(projectDir, config, deps, opts?)` — the scope-dispatching entry: `isHomeDirectory(projectDir)` → standalone half, otherwise `regenerateConfigTypes`. The single entry point for callers holding a persisted config and only its scope. `writeScaffoldedEntityTypes` is the same dispatch for `new skill` / `new agent` / `new marketplace`.
 
-Helpers `buildConfigTypesBackgroundData(matrix, agents)` and `buildProjectTypesExtras(config, matrix)` (both in `config-gate/propagate.ts`) feed already-loaded matrix/agent data into `regenerateConfigTypes` without re-loading. This rule was hardened under D-228 and D-282; the detailed call-site table and rationale live in [../config/config-writer.md](../config/config-writer.md).
+Helpers `buildConfigTypesBackgroundData(matrix, agents)` and `buildProjectTypesExtras(config, matrix)` (both in `config-gate/propagate.ts`) feed already-loaded matrix/agent data into `regenerateConfigTypes` without re-loading. The detailed call-site table and rationale live in [../config/config-writer.md](../config/config-writer.md).
 
 ### `compile` regenerates `config-types.ts`
 
@@ -450,11 +441,11 @@ Config supports `"project"` and `"global"` scopes on both skills and agents. Dur
 
 When installing from the home directory (not a project), a single standalone config is written.
 
-## Cross-Scope Reconciliation Before Every Project Write (D-279)
+## Cross-Scope Reconciliation Before Every Project Write
 
 **Function:** `reconcileProjectSplitAgainstGlobal(projectSplit, globalConfig, matrix)` in `src/cli/lib/installation/local-installer.ts`
 
-Two production paths write a project `config.ts` with the global config inlined. Before D-279 only one of them reconciled; the other handed the raw `splitConfigByScope` output straight to the writer, so a project owning a skill at project scope while the same id (or a different skill in the same exclusive category) was active globally ended up with **two active entries** in its own config. `doctor` and `validate` both passed on that state — neither checks config semantics.
+Two production paths write a project `config.ts` with the global config inlined. Both must reconcile: handing the raw `splitConfigByScope` output straight to the writer means a project owning a skill at project scope while the same id (or a different skill in the same exclusive category) is active globally ended up with **two active entries** in its own config. `doctor` and `validate` both passed on that state — neither checks config semantics.
 
 One shared step now runs immediately before BOTH writes:
 
@@ -475,11 +466,11 @@ One shared step now runs immediately before BOTH writes:
 
 **The project's own skill wins locally.** This is deliberately asymmetric with `toggleTechnology`'s exclusive-swap guard, which refuses a user-initiated swap over a globally-locked skill: there the user is displacing a shared install, whereas here a global install landed on top of pre-existing project state and letting it win would silently uninstall the user's own skill. Lifting that guard is tracked as D-276 in `todo/cli.md`.
 
-**Mask lifetime.** Since D-277 no store path can mint a BARE global tombstone — a project-scope deselect of a globally installed item is refused, and a domain deselect only drops what the project owns. The single remaining user route (`s`, G→P) always pairs the tombstone with an active project entry, i.e. an identity collision. Every bare mask is therefore system-derived by construction, and the retention test is one rule: **keep a mask only while the collision that would re-derive it still holds**, in `required` and optional categories alike. This replaced the earlier `exclusive && required` narrowing, which existed only because a derived mask and a deliberate exclusion were indistinguishable on disk.
+**Mask lifetime.** No store path can mint a BARE global tombstone — a project-scope deselect of a globally installed item is refused, and a domain deselect only drops what the project owns. The single remaining user route (`s`, G→P) always pairs the tombstone with an active project entry, i.e. an identity collision. Every bare mask is therefore system-derived by construction, and the retention test is one rule: **keep a mask only while the collision that would re-derive it still holds**, in `required` and optional categories alike. This replaced the earlier `exclusive && required` narrowing, which existed only because a derived mask and a deliberate exclusion were indistinguishable on disk.
 
-## Propagated-Project Recompilation (D-240)
+## Propagated-Project Recompilation
 
-Propagation itself rewrites a registered project's `config.ts` / `config-types.ts` but never its compiled `.claude/agents/*.md`. **The gate does that step, not the caller** (contract rewritten 2026-08-02): `config-gate/recompile.ts` runs `recompilePropagatedProjectAgents(projectDirs)` (`src/cli/lib/operations/project/recompile-project-agents.ts`, imported lazily to avoid the lib → operations cycle) over `propagated.updated`, and the result lands on `GateReport.recompile` for the command to render. The earlier contract returned the directories for the caller to recompile — which only `init` and `edit`'s wizard tail ever did, leaving `edit`'s source migration and the global `uninstall` behind.
+Propagation itself rewrites a registered project's `config.ts` / `config-types.ts` but never its compiled `.claude/agents/*.md`. **The gate does that step, not the caller**: `config-gate/recompile.ts` runs `recompilePropagatedProjectAgents(projectDirs)` (`src/cli/lib/operations/project/recompile-project-agents.ts`, imported lazily to avoid the lib → operations cycle) over `propagated.updated`, and the result lands on `GateReport.recompile` for the command to render. The earlier contract returned the directories for the caller to recompile — which only `init` and `edit`'s wizard tail ever did, leaving `edit`'s source migration and the global `uninstall` behind.
 
 `recompileRegisteredProjectAgents(projectDir)` recompiles **project scope only** (`scopeFilter: "project"`) — the global agents were already recompiled by the triggering operation's own pass. It passes `discoverInstalledSkills(projectDir).allSkills` explicitly so global-local and project-local skills are not stripped. `recompilePropagatedProjectAgents` loops sequentially with per-project failure isolation, returning `{ recompiledCount, failedCount, warnings }`.
 
@@ -544,16 +535,16 @@ The operations layer provides `writeProjectConfig()` as a high-level orchestrato
 | `ConfigWriteResult`    | Return type           | config, configPath, wasMerged, existingConfigPath, filesWritten, **propagation: GateReport**               |
 | `writeProjectConfig()` | Orchestrator function | Builds, merges, and writes project config (init/edit); `filesWritten` is 4 in a project context, 2 at home |
 
-`propagation` is the `GateReport` returned verbatim by `writeScopedFromWizard`; `init.tsx` and `edit.tsx` **render** it (D-240) — the recompile it describes already ran inside the write. The result carries no `globalConfigPath` — the field was declared, never populated and never read, and has been deleted.
+`propagation` is the `GateReport` returned verbatim by `writeScopedFromWizard`; `init.tsx` and `edit.tsx` **render** it — the recompile it describes already ran inside the write. The result carries no `globalConfigPath` — the field was declared, never populated and never read, and has been deleted.
 
 Used by `init.tsx` and `edit.tsx` commands. Replaces inlined config writing logic with a single operation call.
 
-**Corrupt-config propagation:** step 1 reaches `mergeWithExistingConfig` → `loadProjectConfig`, which since D-273 throws `ConfigLoadError` on an unparseable config rather than returning `null`. Neither `mergeWithExistingConfig` nor `writeProjectConfig` catches it, so a wizard save against a corrupt on-disk config fails loudly instead of silently treating the config as absent and rewriting it from scratch.
+**Corrupt-config propagation:** step 1 reaches `mergeWithExistingConfig` → `loadProjectConfig`, which throws `ConfigLoadError` on an unparseable config rather than returning `null`. Neither `mergeWithExistingConfig` nor `writeProjectConfig` catches it, so a wizard save against a corrupt on-disk config fails loudly instead of silently treating the config as absent and rewriting it from scratch.
 
 ## Plugin Install Failure Semantics
 
 Plugin install intent is inviolable: when `installPluginSkills` returns a non-empty `failed` array, both `init.tsx::installPluginsStep` and `edit.tsx::applyPluginChanges` emit per-skill warnings and then hard-error via `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. This prevents `config.ts` from being written with orphan entries that claim skills are installed when `claude plugin install` rejected them.
 
-The same guard covers the eject→plugin scope-migration path (D-252): `edit.tsx::applyScopeChanges` runs `executeMigration()` (`mode-migrator.ts`), which returns `failedPluginInstalls` for any skill whose plugin install failed mid-migration; when that array is non-empty, `edit.tsx` hard-errors via `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` before `writeConfigAndCompile`, matching the added-skill path.
+The same guard covers the eject→plugin scope-migration path: `edit.tsx::applyScopeChanges` runs `executeMigration()` (`mode-migrator.ts`), which returns `failedPluginInstalls` for any skill whose plugin install failed mid-migration; when that array is non-empty, `edit.tsx` hard-errors via `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` before `writeConfigAndCompile`, matching the added-skill path.
 
-Uninstall failures are diagnostic-only — they do not produce orphan state and do not trigger a hard-error. This is the "No Plugin-to-Eject Fallback" / orphan-config invariant codified in CLAUDE.md (Data Integrity) and tasks D-229 / D-252.
+Uninstall failures are diagnostic-only — they do not produce orphan state and do not trigger a hard-error. This is the "No Plugin-to-Eject Fallback" / orphan-config invariant codified in CLAUDE.md (Data Integrity).

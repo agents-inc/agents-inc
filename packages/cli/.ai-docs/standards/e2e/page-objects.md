@@ -2,13 +2,6 @@
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
-     ✓ ConfirmStep.scrollSummaryToBottom, BaseStep.resizeBelowMinimum / resizeAboveMinimum, and
-       the public getScreen() row (corrected)
-     ✗ every other method row in every wizard, step, TerminalScreen, WizardResult, DashboardSession
-       and InteractivePrompt table, and the How-to-Extend section — 2026-07-30 basis
--->
-
 # Page Objects
 
 The Page Object Model (POM) framework -- how it works, how to use it, and how to extend it.
@@ -278,7 +271,7 @@ An overlay opened from `BuildStep`. Known to be buggy -- tests for search should
 
 All step classes extend `BaseStep`. Its methods are `protected` -- tests cannot call them. This enforces the layer boundary.
 
-`BaseStep.defaultTimeout` is `TIMEOUTS.WIZARD_LOAD` (45s since 0.145.0), used by every wait below that takes an optional timeout.
+`BaseStep.defaultTimeout` is `TIMEOUTS.WIZARD_LOAD` (45s), used by every wait below that takes an optional timeout.
 
 | Protected Method                              | Purpose                                                                                                                                                                                                                                                                                                                                                                 |
 | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -306,8 +299,8 @@ All step classes extend `BaseStep`. Its methods are `protected` -- tests cannot 
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `getOutput()`                        | xterm's PROCESSED buffer — current screen plus genuine scrollback. **Not a frame log** (Ink repaints overwrite in place).                                                                                                                                                                                                                                                                                                                   |
 | `getScreen()`                        | **Scrollback + viewport — NOT viewport-only**, despite the name and the doc comment on `TerminalSession.getScreen()`. It reads absolute buffer lines `0 .. viewportY + rows`. Safe for POSITIVE assertions about current content; never use it for `not.toContain` on text the session once legitimately drew. See [assertions.md § Negative Assertions](./assertions.md).                                                                  |
-| `resizeBelowMinimum(cols, rows)`     | **Added 0.147.0.** Snapshot raw cursor → resize PTY **and** xterm → `waitForTextAfter(STEP_TEXT.RESIZE_PROMPT, cursor)`. Drives the `WizardLayout` mid-session size guard. Use `TERMINAL_SIZE.BELOW_MINIMUM`; never LAUNCH a session at that geometry (the pre-Ink startup gate blocks and the session hangs to timeout).                                                                                                                   |
-| `resizeAboveMinimum(cols, rows)`     | **Added 0.147.0.** Snapshot raw cursor → resize PTY **and** xterm → `waitForWizardFooterAfter(cursor)`. Anchored on the footer emitted AFTER the resize, not the copy already in scrollback from before the shrink. Selections survive the round trip.                                                                                                                                                                                      |
+| `resizeBelowMinimum(cols, rows)`     | Snapshot raw cursor → resize PTY **and** xterm → `waitForTextAfter(STEP_TEXT.RESIZE_PROMPT, cursor)`. Drives the `WizardLayout` mid-session size guard. Use `TERMINAL_SIZE.BELOW_MINIMUM`; never LAUNCH a session at that geometry (the pre-Ink startup gate blocks and the session hangs to timeout).                                                                                                                                      |
+| `resizeAboveMinimum(cols, rows)`     | Snapshot raw cursor → resize PTY **and** xterm → `waitForWizardFooterAfter(cursor)`. Anchored on the footer emitted AFTER the resize, not the copy already in scrollback from before the shrink. Selections survive the round trip.                                                                                                                                                                                                         |
 | `getSummaryDiffEntries(displayName)` | Parses the rendered `SkillAgentSummary` panel (confirm step or build-step info overlay — same component) into `{ prefix, scope }[]`, where prefix is `+` new / `-` removed / `~` source-changed / `•` unchanged and scope is `Project` or `Global`. Splits on the `│` column divider and tracks scope PER COLUMN, because Skills and Agents transition to Global at different vertical positions. Pass a display name unique to one column. |
 | `abort()`                            | Footer wait, then Ctrl+C                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `navigateDown()`                     | Footer wait, then arrow down                                                                                                                                                                                                                                                                                                                                                                                                                |

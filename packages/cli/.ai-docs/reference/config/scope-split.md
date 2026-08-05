@@ -14,9 +14,6 @@ keywords:
     per-agent-curation,
     D-220,
     D-223,
-    D-224,
-    D-277,
-    D-279,
     reconcileProjectSplitAgainstGlobal,
     splitAgentStack,
   ]
@@ -29,12 +26,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · SYNC to product 0.146.0 — partition rules re-verified against config-generator.ts. -->
-
 # Config Scope Split Contract
-
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
 
 > How a merged `ProjectConfig` is partitioned into global and project halves for writing, and the delta sets the stack builder consumes for per-agent curation preservation. Feeds `mergeGlobalConfigs` and the project config writer (see [config-writer.md](./config-writer.md), [config-merger.md](./config-merger.md)).
 
@@ -99,11 +91,11 @@ The `...config` spread copies every remaining scalar/array to BOTH splits — in
 Excluded global entries (both skills and agents) route to the **project** split, not the global split. This is intentional and load-bearing:
 
 - A tombstone (`scope: "global", excluded: true`) is a **project-level directive to suppress a shared global install for this project**. It is project-local state — other projects must not see it.
-- **Provenance (D-277):** only two things create one. The `s` scope toggle (G→P), which pairs it with an active project entry (`[P][G]`); and a system-derived conflict mask synthesized at write time by `maskCollidingGlobalSkills` / `maskCollidingGlobalAgents`. Deselection is NOT a source — a project-scope deselect of a globally-installed item is refused by the wizard guards, so no route mints a tombstone by removal. See [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md).
+- **Provenance:** only two things create one. The `s` scope toggle (G→P), which pairs it with an active project entry (`[P][G]`); and a system-derived conflict mask synthesized at write time by `maskCollidingGlobalSkills` / `maskCollidingGlobalAgents`. Deselection is NOT a source — a project-scope deselect of a globally-installed item is refused by the wizard guards, so no route mints a tombstone by removal. See [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md).
 - If tombstones routed to the global split, `mergeGlobalConfigs` would either ignore them (its `!excluded` guard — see [config-merger.md](./config-merger.md) `mergeGlobalConfigs` row) or worse, propagate a suppression that only this project intended.
 - Routing them to the project split means the tombstone is inlined into `<projectDir>/.claude-src/config.ts` via `generateProjectConfigWithInlinedGlobal`, where it participates in the suppression rule documented in [config-writer.md](./config-writer.md) ("Excluded global entries replace their active global counterparts in the global section while the active project entry appears separately in the project section").
 
-The tombstone routing is also what makes the D-224 failure mode tractable: the symptom ("only the tombstone survives the write pipeline") is now isolated to either the merger (drops the active) or the generator (never emits the active), because the split itself routes tombstones cleanly (task D-224 P→G tombstone-not-cleared).
+The tombstone routing is also what keeps one failure mode tractable: the symptom "only the tombstone survives the write pipeline" is isolated to either the merger (drops the active) or the generator (never emits the active), because the split itself routes tombstones cleanly (P→G tombstone-not-cleared).
 
 ## Interaction with `mergeConfigs` and `mergeGlobalConfigs`
 
@@ -114,7 +106,7 @@ Order in the `cc edit` project-context pipeline:
 3. `splitConfigByScope(finalConfig)` → `{ globalSplit, projectSplit }`. Active globals and active global agents to `globalSplit`; everything else (project, tombstones) to `projectSplit`.
 4. `mergeGlobalConfigs(existingGlobalConfig, globalSplit)` is **additive** — existing wins, incoming only appends. `globalSplit` carries only actives, so no tombstones reach this call (which is why `mergeGlobalConfigs` does not need tombstone-handling logic).
 5. The merger's output `effectiveGlobalConfig` is written to `~/.claude-src/config.ts`.
-6. **`reconcileProjectSplitAgainstGlobal(projectSplit, effectiveGlobalConfig, matrix)` (D-279).** The project split is reconciled against the global config it is about to be inlined with: masks whose collision has cleared are dropped, and live global entries the project still collides with (same id at project scope, or a different project-owned skill in the same exclusive category) gain a fresh mask row. See [config-writer.md](./config-writer.md) → "Cross-Scope Reconciliation".
+6. **`reconcileProjectSplitAgainstGlobal(projectSplit, effectiveGlobalConfig, matrix)`.** The project split is reconciled against the global config it is about to be inlined with: masks whose collision has cleared are dropped, and live global entries the project still collides with (same id at project scope, or a different project-owned skill in the same exclusive category) gain a fresh mask row. See [config-writer.md](./config-writer.md) → "Cross-Scope Reconciliation".
 7. The **reconciled** project config is written to `<projectDir>/.claude-src/config.ts` with `globalConfig: effectiveGlobalConfig` passed to the writer so the inlined-global preamble reflects the merged global state.
 
 **The split output is not what reaches the writer.** Step 6 sits between them and may ADD `{ scope: "global", excluded: true }` rows the split never produced. When reading an emitted project config, a global tombstone therefore has two possible provenances — the `s` scope toggle (which routes through steps 1–3 as a genuine split row) or the reconciliation step. Both look identical on disk; see the mask-lifetime rule in [config-writer.md](./config-writer.md).
@@ -172,13 +164,3 @@ The OMIT branch is the load-bearing D-220 semantic: a user who previously remove
 - Call site threading split into writes: `writeScopedFromWizard`'s project branch in `config-gate/index.ts`. Note `splitConfigByScope` is NOT called by `propagateGlobalChangesToProjects` — that path derives its project half from the loaded on-disk config via `retainProjectOwnedSkills` / `retainProjectOwnedAgents` instead.
 - `splitConfigByScope` is not re-exported by `src/cli/lib/configuration/index.ts`; import it from `./config-generator`.
 - Unit tests: `config-generator.test.ts` (generator + split), `local-installer.test.ts` (delta helpers + scope-split behaviour, driven through the gate).
-
-## Findings That Shaped This Doc
-
-| Finding                                                                 | Contribution                                                                                                 |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Task D-224 (P→G tombstone-not-cleared)                                  | Tombstone-routing-to-project is correct; active-entry drop is upstream (merger/generator), not in the split. |
-| merge-global-configs-per-agent-update-loss _(archived, 2026-04-17)_     | Per-agent update loss that motivated the delta-set opt-in model.                                             |
-| Changelog `0.137.0.md` D-220 entry                                      | Source of the `newlyAddedSkillIds` + `scopeEligibilityGained` design.                                        |
-| `2026-07-29-project-config-written-by-two-paths-only-one-reconciled.md` | The split output is not the written config — a reconciliation step sits between them, at BOTH write sites.   |
-| `2026-07-30-d277-global-immutability-collapses-tombstone-provenance.md` | Deselection is no longer a tombstone source, so a bare mask in a split is machine-derived.                   |

@@ -24,12 +24,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0. -->
-
 # Skills & Matrix System
-
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
 
 ## Overview
 
@@ -47,7 +42,7 @@ last_validated: 2026-07-30
 | Slug Map           | Bidirectional `SkillSlug <-> SkillId` mapping built during merge                                                                                                                                          |
 | Source             | Where skills come from (public marketplace, private, local)                                                                                                                                               |
 
-## Current Counts (2026-07-30)
+## Current Counts
 
 | Type                | Count | Source File                                       |
 | ------------------- | ----- | ------------------------------------------------- |
@@ -503,7 +498,7 @@ is still a hard error. No impact on the official marketplace, which ships no `sr
 
 `checkSkillDirName()` reads the skill's `SKILL.md`, calls `parseFrontmatter()`
 (`src/cli/lib/loading/loader.ts`), and compares `frontmatter.name` — the id the loader registers the
-skill under — against `path.basename(skillDir)`. It replaced the pre-0.145 `checkDisplayNameMatches`,
+skill under — against `path.basename(skillDir)`. It supersedes `checkDisplayNameMatches`,
 which compared `displayName` and could never pass on the marketplace convention of human display
 names inside `<domain>-<category>-<slug>` directories.
 
@@ -611,7 +606,7 @@ D-214 item 8 ("scope category auto-synthesis to `custom: true` only") is still *
 marketplace drift is masked") no longer describes today's behavior:
 
 - `src/cli/lib/configuration/default-categories.ts` now defines **all 89** members of the generated
-  `Category` union (38 were added in 0.145.0), pinned key-for-key by
+  `Category` union (38 were added), pinned key-for-key by
   `src/cli/lib/configuration/__tests__/default-categories.test.ts`.
 - `BUILT_IN_MATRIX` (`src/cli/types/generated/matrix.ts`) is produced by
   `scripts/generate-source-types.ts` calling

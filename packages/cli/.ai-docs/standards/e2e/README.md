@@ -2,13 +2,6 @@
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
-     ✓ STEP_TEXT re-counted from e2e/pages/constants.ts; §Critical Rules (four added); the
-       TERMINAL_SIZE and "Resizing mid-session" paragraphs re-read against source
-     ✗ TIMEOUTS, EXIT_CODES, SOURCE_PATHS, DIRS, FILES, INTERNAL_DELAYS, INTERNAL_RETRIES, the
-       directory tree, the Vitest config table, the test-category table — 2026-07-30 basis
--->
-
 # E2E Testing Standards
 
 Standards and conventions for the E2E test suite. These docs govern how tests are written, structured, and maintained. For API details, read the source files directly.
@@ -166,9 +159,9 @@ All constants live in `e2e/pages/constants.ts`. Tests import from here, never fr
 
 **Directories (`DIRS`):** `CLAUDE`, `CLAUDE_SRC`, `SKILLS`, `AGENTS`, `PLUGINS`, `PLUGIN_MANIFEST`
 
-**Files (`FILES`):** `CONFIG_TS`, `CONFIG_TYPES_TS`, `SKILL_MD`, `METADATA_YAML`, `SETTINGS_JSON`, `INSTALLED_PLUGINS_JSON`, `IDENTITY_MD`, `PLAYBOOK_MD`, `PLUGIN_JSON`
+**Files (`FILES`):** `CONFIG_TS`, `CONFIG_TYPES_TS`, `SKILL_MD`, `METADATA_YAML`, `SETTINGS_JSON`, `INSTALLED_PLUGINS_JSON`, `IDENTITY_MD`, `PLAYBOOK_MD`, `PLUGIN_JSON`, `MARKETPLACE_JSON`
 
-**Step text (`STEP_TEXT`)** — all 77 members (re-derived from `e2e/pages/constants.ts` on 2026-08-02, after the config-gate work added `PROPAGATED_RECOMPILE` and `SOURCE_ADDED`; the "75" recorded earlier the same day counted the tree before those two landed, and the "72" recorded on 2026-07-31 was itself short by `FOOTER_HOTKEY_ROW` and `LOGO_BANNER`, which no doc had ever listed). An exhaustive list that is short is worse than a glob, because it reads as authoritative — re-derive this count from `e2e/pages/constants.ts` rather than carrying it forward, and grep [reference/testing/e2e-infrastructure.md](../../reference/testing/e2e-infrastructure.md) for the old value in the same session, since it is the only other place the number is written:
+**Step text (`STEP_TEXT`)** — all 77 members (re-derived from `e2e/pages/constants.ts`, after the config-gate work added `PROPAGATED_RECOMPILE` and `SOURCE_ADDED`; the "75" recorded earlier the same day counted the tree before those two landed, and the "72" recorded was itself short by `FOOTER_HOTKEY_ROW` and `LOGO_BANNER`, which no doc had ever listed). An exhaustive list that is short is worse than a glob, because it reads as authoritative — re-derive this count from `e2e/pages/constants.ts` rather than carrying it forward, and grep [reference/testing/e2e-infrastructure.md](../../reference/testing/e2e-infrastructure.md) for the old value in the same session, since it is the only other place the number is written:
 
 | Group                 | Members                                                                                                                                                                                                                                                                                                         |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -191,7 +184,7 @@ All constants live in `e2e/pages/constants.ts`. Tests import from here, never fr
 
 **Timeouts (`TIMEOUTS`):** `WIZARD_LOAD` (45s), `WIZARD_TRANSITION` (45s), `INSTALL` (30s), `PLUGIN_INSTALL` (60s), `PLUGIN_TEST` (90s = PLUGIN_INSTALL + EXIT_WAIT), `EXIT` (10s), `SESSION_DEFAULT` (10s), `SESSION_DEFAULT_CI` (20s), `EXIT_WAIT` (30s), `SETUP` (60s), `SETUP_DUAL` (120s = SETUP × 2, for `beforeAll` hooks that build two sources), `LIFECYCLE` (180s), `EXTENDED_LIFECYCLE` (300s), `INTERACTIVE` (120s)
 
-`WIZARD_LOAD` was raised 15s → 45s in 0.145.0: `init` against the real marketplace under full-suite parallelism can sit at "Loading skills..." well past 15s. `BaseStep.defaultTimeout` derives from it, so every unqualified step wait is now a 45s upper bound — including the one that burns when `waitForWizardFooter` is used on a footer-less screen.
+`WIZARD_LOAD` was raised 15s → 45s: `init` against the real marketplace under full-suite parallelism can sit at "Loading skills..." well past 15s. `BaseStep.defaultTimeout` derives from it, so every unqualified step wait is now a 45s upper bound — including the one that burns when `waitForWizardFooter` is used on a footer-less screen.
 
 **Exit codes (`EXIT_CODES`):** `SUCCESS` (0), `ERROR` (1), `INVALID_ARGS` (2), `NETWORK_ERROR` (3), `CANCELLED` (4), `UNKNOWN_COMMAND` (127)
 

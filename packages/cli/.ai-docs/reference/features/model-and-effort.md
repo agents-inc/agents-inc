@@ -43,20 +43,7 @@ related:
 last_validated: 2026-08-02
 ---
 
-<!-- VALIDATED 2026-08-02 · FULL (product 0.147.1) — new file. Every claim below was derived
-     this session from src/cli/types/matrix.ts, types/agents.ts, types/config.ts, types/index.ts,
-     lib/schemas.ts, lib/resolver.ts, lib/compiler.ts, lib/configuration/config-types-writer.ts,
-     lib/configuration/config-writer.ts, lib/configuration/config-merger.ts,
-     lib/installation/local-installer.ts, lib/agents/agent-recompiler.ts, lib/seed/seed-schema.ts,
-     commands/new/agent.tsx, src/agents/_templates/agent.liquid, scripts/generate-json-schemas.ts,
-     and the four unit spec files named under "Test surface" (all 135 run green this session).
-     The Liquid truthiness and property-lookup rows were verified by RENDERING the template
-     fragment against liquidjs, not by reading the engine's docs. -->
-
 # Model & Effort — the agent-tuning axis
-
-**Last Updated:** 2026-08-02
-**Last Validated:** 2026-08-02
 
 `model` and `effort` are the two per-agent tuning settings. They are declared together, validated
 together, resolved together and written together through ten modules, from an agent's
@@ -107,7 +94,7 @@ top-level `agents` map beside `skills` rather than widening the assignment recor
 
 ### How Claude Code itself resolves a sub-agent's model
 
-**Provenance: read from Claude Code's own documentation on 2026-08-01. It is not verifiable from
+**Provenance: read from Claude Code's own documentation. It is not verifiable from
 this repository and no test here pins it.** It is recorded because it is the reason `"inherit"` is a
 meaningful union member rather than a synonym for a default.
 
@@ -127,7 +114,7 @@ Checked against Claude Code's documentation: the levels are exactly `low` `mediu
 `max`, which is `EFFORT_NAMES`. `ultra` is not one of them. "ultracode" exists but is a Claude Code
 **session** setting that sends `xhigh` and additionally orchestrates dynamic workflows — it is not a
 model effort level and no config can name it. It was briefly carried in the wire contract and
-removed on 2026-08-01 under a version bump on both sides. Do not re-add it.
+removed under a version bump on both sides. Do not re-add it.
 
 ## The two unions
 

@@ -1919,13 +1919,3 @@ This structure represents the convergence of:
 - All use these patterns
 
 **Deploy with confidence.**
-
----
-
-**Version History:**
-
-- v2.1 (April 2026): Added Section 8 (Multi-Agent Delegation) covering project-specific agent selection (`cli-developer`, `cli-tester`, `codex-keeper`, `general-purpose`), required boilerplate (CLAUDE.md read, no git commands, scope fence, findings instruction, self-review, report format), Ralph-loop patterns, and observed anti-patterns (terse prompts, vague scope, standards delegated to `general-purpose`).
-- v2.0 (November 2025): Made document portable and universal. Updated emphatic repetition to use `<critical_requirements>` and `<critical_reminders>` pattern. Added dual final reminder (principles + write verification).
-- v1.2 (November 2025): Added Technique #13 (Write Verification Protocol), updated to 13 essential techniques
-- v1.1 (November 2025): Added 6 new techniques (self-correction triggers, post-action reflection, progress tracking, positive framing, "think" alternatives, just-in-time loading), Opus 4.5-specific guidance, updated to 12 essential techniques
-- v1.0 (November 2025): Initial comprehensive guide for Sonnet 4.5

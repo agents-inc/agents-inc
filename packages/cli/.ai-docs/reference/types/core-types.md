@@ -38,12 +38,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0 — generated unions re-counted against src/cli/types/generated/source-types.ts. -->
-
 # Core Types
-
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
 
 > **Split from:** `reference/type-system.md`. See also: [operations-types.md](./operations-types.md), [zod-schemas.md](./zod-schemas.md).
 
@@ -164,7 +159,7 @@ export type Domain = (typeof DOMAINS)[number];
 
 Re-exported from `src/cli/types/matrix.ts`.
 
-**`defaultCategories` now defines all 89 (0.145.0).** `defaultCategories` in `src/cli/lib/configuration/default-categories.ts` previously defined 51 of the 89 union members, so `tsc --noEmit` failed with TS1360 and each of the 38 undefined categories was auto-synthesized at load time with a humanized display name ("Api Graphql"), `order: 999` and `exclusive: false` — which is what the wizard rendered. All 89 are now declared, of which **27 carry `exclusive: true`** and **6 carry `required: true`**. `src/cli/lib/configuration/__tests__/default-categories.test.ts` pins the key set against the generated `CATEGORIES` array so the two cannot drift again.
+**`defaultCategories` now defines all 89.** `defaultCategories` in `src/cli/lib/configuration/default-categories.ts` previously defined 51 of the 89 union members, so `tsc --noEmit` failed with TS1360 and each of the 38 undefined categories was auto-synthesized at load time with a humanized display name ("Api Graphql"), `order: 999` and `exclusive: false` — which is what the wizard rendered. All 89 are now declared, of which **27 carry `exclusive: true`** and **6 carry `required: true`**. `src/cli/lib/configuration/__tests__/default-categories.test.ts` pins the key set against the generated `CATEGORIES` array so the two cannot drift again.
 
 The `exclusive` flag is load-bearing beyond the wizard grid: cross-scope conflict masking reads it from the **merged matrix** (not from `defaultCategories`, so a source repo's overrides win) to decide whether a globally installed skill collides with a project-owned one. See [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md).
 
@@ -290,7 +285,7 @@ The primary read model for the wizard and CLI commands:
 
 ### ProjectConfig (`src/cli/types/config.ts`)
 
-Unified project configuration stored at `.claude-src/config.ts`. No `version` field (removed under D-231; `config.ts` is a TypeScript module, not a versioned schema).
+Unified project configuration stored at `.claude-src/config.ts`. No `version` field (removed; `config.ts` is a TypeScript module, not a versioned schema).
 
 - `name`, `description?`, `author?`
 - `agents: AgentScopeConfig[]` - Per-agent scope config (`{ name, scope, model?, effort?, excluded? }`)
@@ -364,7 +359,7 @@ Skill reference used in agent config (stack → agent → skills mapping):
 - `id: SkillId`
 - `usage: string` — context-specific description of when to use this skill (required)
 - `preloaded?: boolean`
-- `source?: string` — install source propagated from `SkillConfig.source` (D-217). Absent when no `SkillConfig` entry exists (e.g., user-authored local skills). `"eject"` means ejected to `.claude/skills/`; any other value (e.g., marketplace name) means plugin-installed.
+- `source?: string` — install source propagated from `SkillConfig.source`. Absent when no `SkillConfig` entry exists (e.g., user-authored local skills). `"eject"` means ejected to `.claude/skills/`; any other value (e.g., marketplace name) means plugin-installed.
 
 ### Skill (`src/cli/types/skills.ts`)
 
@@ -374,7 +369,7 @@ Fully resolved skill consumed by the compiler (merged from `SkillDefinition` + `
 - `usage: string` — context-specific guidance for this agent
 - `preloaded: boolean` — whether in frontmatter (auto-loaded) vs. dynamic
 - `pluginRef?: PluginSkillRef` — fully-qualified plugin reference (`${id}:${id}`) for plugin mode
-- `source?: string` — propagated from `SkillReference.source` (D-217). `source !== "eject"` → renders as `${id}:${id}`; otherwise bare id.
+- `source?: string` — propagated from `SkillReference.source`. `source !== "eject"` → renders as `${id}:${id}`; otherwise bare id.
 
 ### SkillDefinition (`src/cli/types/skills.ts`)
 
@@ -464,7 +459,7 @@ Result of `detectInstallation` / `detectProjectInstallation` / `detectGlobalInst
 
 - `mode: InstallMode`, `configPath: string`, `agentsDir: string`, `skillsDir: string`, `projectDir: string`
 
-Distinct from `InstallationInfo` (`src/cli/lib/plugins/plugin-info.ts`), which is the display-oriented shape carrying counts — documented in [features/plugin-system.md](../features/plugin-system.md). `InstallationInfo` has **no `version` field**; it was removed in 0.145.0 because it only ever held the install mode.
+Distinct from `InstallationInfo` (`src/cli/lib/plugins/plugin-info.ts`), which is the display-oriented shape carrying counts — documented in [features/plugin-system.md](../features/plugin-system.md). `InstallationInfo` has **no `version` field**; it was removed because it only ever held the install mode.
 
 ### LoadedProjectConfig (`src/cli/lib/configuration/project-config.ts`)
 
@@ -477,7 +472,7 @@ export type LoadedProjectConfig = {
 
 ### ConfigLoadError (`src/cli/lib/configuration/project-config.ts`)
 
-A named `Error` subclass — the only such class in the config layer — introduced by D-273.
+A named `Error` subclass — the only such class in the config layer — introduced.
 
 ```typescript
 export class ConfigLoadError extends Error {
@@ -491,7 +486,7 @@ export class ConfigLoadError extends Error {
 }
 ```
 
-**Three-way outcome of `loadProjectConfigFromDir(projectDir)`.** Before D-273 the first two collapsed into a single `null`, so a corrupt `.claude-src/config.ts` was detected as a phantom eject installation and `compile` rebuilt all 23 built-in agents:
+**Three-way outcome of `loadProjectConfigFromDir(projectDir)`.** **Do not collapse the first two into a single `null`:** a corrupt `.claude-src/config.ts` is then detected as a phantom eject installation and `compile` rebuilds all 23 built-in agents:
 
 | On disk                                                                                     | Result                        | Meaning                                            |
 | ------------------------------------------------------------------------------------------- | ----------------------------- | -------------------------------------------------- |
@@ -531,30 +526,30 @@ Exported from `src/cli/lib/configuration/index.ts`.
 
 ### SourceRowContext (`src/cli/stores/wizard-store.ts`)
 
-Module-internal helper type (not exported) passed to `classifySkillSourceRows()` when the store builds the source-grid rows for one skill. **Four fields** — it gained `installedSkillSlots` under D-258:
+Module-internal helper type (not exported) passed to `classifySkillSourceRows()` when the store builds the source-grid rows for one skill. **Four fields** — it gained `installedSkillSlots`:
 
 ```typescript
 type SourceRowContext = {
   configEntry: SkillConfig | undefined; // saved config entry (scope/source/excluded probe)
   installedSkillConfigs: SkillConfig[] | null; // on-disk installed configs, used to detect a locked global row
   isEditingFromGlobalScope: boolean; // true when the edit session targets the global roster
-  installedSkillSlots: ReadonlySet<string> | null; // D-258: `(id, scope)` slots the snapshot occupies — the baseline each row's `+` derives from
+  installedSkillSlots: ReadonlySet<string> | null; // `(id, scope)` slots the snapshot occupies — the baseline each row's `+` derives from
 };
 ```
 
 Steers whether a skill renders as a single editable `SourceRow`, a locked global row (`readOnly: true`) for excluded-global entries, or a locked-global + editable-project pair when a skill was re-scoped global→project this session. `SourceRow` / `SourceOption` are exported from `src/cli/components/wizard/source-grid.tsx`.
 
-**Slot keys are shared with the confirm step.** `installedSkillSlots` holds `skillSlotKey(id, scope)` strings built by `skillSlotKey` in `src/cli/lib/wizard/scope-diff.ts` — the same function `computeScopeDiff` uses for its baseline. Keying both surfaces on `(id, scope)` rather than on the id alone is what stops the Sources tab and the confirm step from disagreeing about what changed this session (D-278). Two related module-internal row helpers sit alongside it in `wizard-store.ts`: `toPendingRemovalRow` (the inert red row for a snapshot slot this session emptied, D-257) and `isSlotAlreadyRendered` (suppresses a removal row for a slot an emitted row already covers, so an inherited global install does not read as both locked and removed).
+**Slot keys are shared with the confirm step.** `installedSkillSlots` holds `skillSlotKey(id, scope)` strings built by `skillSlotKey` in `src/cli/lib/wizard/scope-diff.ts` — the same function `computeScopeDiff` uses for its baseline. Keying both surfaces on `(id, scope)` rather than on the id alone is what stops the Sources tab and the confirm step from disagreeing about what changed this session (D-278). Two related module-internal row helpers sit alongside it in `wizard-store.ts`: `toPendingRemovalRow`(the inert red row for a snapshot slot this session emptied) and `isSlotAlreadyRendered` (suppresses a removal row for a slot an emitted row already covers, so an inherited global install does not read as both locked and removed).
 
 ## Types Documented Elsewhere (cross-references, not duplicated here)
 
-| Type / area                                                         | Lives in                                                         | Documented in                                             |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------- |
-| `CompilationResult`, `PropagatedRecompileSummary` (D-240 recompile) | `src/cli/lib/operations/project/recompile-project-agents.ts`     | [operations-types.md](./operations-types.md)              |
-| `LoadedSource`, `PluginInstallResult`, `ConfigChanges`              | `src/cli/lib/operations/**`                                      | [operations-types.md](./operations-types.md)              |
-| `WizardState` and every store action signature                      | `src/cli/stores/wizard-store.ts`                                 | [store-map.md](../store-map.md)                           |
-| `InstallationInfo`, `PluginInfo`, `Marketplace*`                    | `src/cli/lib/plugins/plugin-info.ts`, `src/cli/types/plugins.ts` | [features/plugin-system.md](../features/plugin-system.md) |
-| `ScopedEntry` and the scope predicates                              | `src/cli/lib/configuration/scope-predicates.ts`                  | [concepts/scope-system.md](../concepts/scope-system.md)   |
+| Type / area                                                   | Lives in                                                         | Documented in                                             |
+| ------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------- |
+| `CompilationResult`, `PropagatedRecompileSummary` (recompile) | `src/cli/lib/operations/project/recompile-project-agents.ts`     | [operations-types.md](./operations-types.md)              |
+| `LoadedSource`, `PluginInstallResult`, `ConfigChanges`        | `src/cli/lib/operations/**`                                      | [operations-types.md](./operations-types.md)              |
+| `WizardState` and every store action signature                | `src/cli/stores/wizard-store.ts`                                 | [store-map.md](../store-map.md)                           |
+| `InstallationInfo`, `PluginInfo`, `Marketplace*`              | `src/cli/lib/plugins/plugin-info.ts`, `src/cli/types/plugins.ts` | [features/plugin-system.md](../features/plugin-system.md) |
+| `ScopedEntry` and the scope predicates                        | `src/cli/lib/configuration/scope-predicates.ts`                  | [concepts/scope-system.md](../concepts/scope-system.md)   |
 
 ## Type Narrowing Rules
 

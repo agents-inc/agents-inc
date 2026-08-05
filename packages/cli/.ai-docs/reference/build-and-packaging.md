@@ -41,18 +41,7 @@ related:
 last_validated: 2026-08-02
 ---
 
-<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
-     ✓ §1 scripts (package.json), §2 entry contract + the turbo inputs subsection (tsup.config.ts,
-       packages/cli/turbo.json), §6 figures (re-run npm pack --dry-run --ignore-scripts --json at
-       0.151.0), §9 (packaging.test.ts), traps 5
-     ✗ §3-5, §7, §8, §10 traps 1-4/6-10 — §3's floor stands on 2026-08-05, the rest on the
-       2026-08-02 FULL basis
--->
-
 # Build, Packaging and Distribution
-
-**Last Updated:** 2026-08-06
-**Last Validated:** 2026-08-02 (PARTIAL passes since; see the annotation above)
 
 ## Overview
 
@@ -111,7 +100,7 @@ catalog is stale), and `deploy` ships the web app to Cloudflare. Publication is 
 `npm publish`, and `prepublishOnly` is the only gate between the working tree and the registry.
 
 > **`prepublishOnly`'s first step passes.** `prettier --check .` exits `0` over the whole package,
-> verified 2026-08-03 by running `bun run format:check` ("All matched files use Prettier code
+> verified by running `bun run format:check` ("All matched files use Prettier code
 > style!"). The single offender this document once recorded, `src/cli/lib/seed/fetch-seed.ts`, was
 > reformatted during the monorepo move; `.ai-docs/**/*.md` is clean as well. `DOCUMENTATION_MAP.md`'s
 > "Known Tooling Gaps" agrees — its prettier entry was corrected on the same day and is kept there as
@@ -157,8 +146,8 @@ match, and the negations do not, becomes its own output file under `dist/`, mirr
 4. **Co-located test files are excluded, and a test now pins that.** The three negations are the
    whole of the mechanism — the positive globs read whole directories and this repository keeps its
    tests beside the code they cover, so without them every spec under `components/` and `stores/` is
-   compiled into `dist/` and published. Sixteen compiled test files shipped in 0.150.0 and in every
-   release before it. `src/cli/lib/__tests__/packaging.test.ts` asserts that `dist/` holds no
+   compiled into `dist/` and published — sixteen of them, in every release before the negations
+   landed. `src/cli/lib/__tests__/packaging.test.ts` asserts that `dist/` holds no
    `*.test.js`, `*.test.js.map` or `*.test.d.ts`, and that every `files` entry in `package.json`
    exists on disk (§6, §9). **Deleting a negation is not a build change; it is a publish change.**
 5. **`.gitkeep` is not matched** — `src/cli/commands/.gitkeep`, `src/cli/stores/.gitkeep`,
@@ -199,16 +188,14 @@ allows: that ships syntax a runtime someone was told they could install cannot p
 direction — `target` below `engines` — costs nothing but is still wrong, because the file then says
 something untrue about what the package supports.
 
-This drifted once, on 2026-08-05. Ink 7 raised the floor to Node 22, both `engines` fields were
-raised, and `target` was left at `node18`. Nothing caught it; it was found by reading the file.
-`tsup.config.ts` now carries a comment naming `engines.node` as the thing it must stay in step with.
+**Nothing catches a `target`/`engines` mismatch.** Both `engines` fields have been raised while
+`target` was left behind, and it was found by reading the file rather than by any check.
+`tsup.config.ts` carries a comment naming `engines.node` as the thing it must stay in step with.
 
-> **Correcting `target` changed the built output by zero bytes**, and that was measured rather than
-> assumed: 407 files, identical sizes, no hash mismatch across the 262 compared, and even the
-> content-hashed chunk filenames unchanged. The setting was separately proved to be doing real work
-> — at `node18` the bundler strips an import attribute that at `node22` it keeps — so identical
-> output means the source simply contains no syntax in the band between the two. **The value of that
-> change was making the third declaration truthful, not changing the artefact.** Do not read the
+> **Correcting `target` alone need not change a single byte of built output.** The setting does real
+> work — at `node18` the bundler strips an import attribute that at `node22` it keeps — so identical
+> output only means the source contains no syntax in the band between the two. **The value of the
+> change is making the third declaration truthful, not changing the artefact.** Do not read the
 > null result as evidence that `target` does not matter.
 
 **`tsconfig.json`'s `target: "ES2022"` is a different question and is deliberately not in the table
@@ -341,7 +328,7 @@ agent that goes looking for `config/stacks.ts` in this repo will not find it and
 
 ### `files`
 
-Verified with `npm pack --dry-run --ignore-scripts --json`, re-derived 2026-08-06 at 0.151.0.
+Verified with `npm pack --dry-run --ignore-scripts --json`.
 **This doc owns these figures**, and they move with the working tree — re-run the command rather than
 quoting them. The `--ignore-scripts` is load-bearing: `prepare` runs husky, which sets
 `core.hooksPath`.
@@ -361,9 +348,8 @@ Two things the tarball carries that nobody chose deliberately, and one that was 
 - **Sourcemaps are the single largest code group** — 104 files, 2.52 MB unpacked, roughly twice the
   1.28 MB of code they map. `sourcemap: true` is a debugging convenience with a publication cost.
 - **`src/agents/` is published twice** — once directly, once inside `dist/src/agents/` (§5).
-- **No compiled test file ships any more.** Sixteen did in 0.150.0 and in every release before it.
-  The entry negations in §2 removed them and `packaging.test.ts` pins their absence; the 569 -> 517
-  entry drop is mostly this plus the chunk splits the specs were pulling in.
+- **No compiled test file ships.** The entry negations in §2 keep sixteen of them out and
+  `packaging.test.ts` pins their absence.
 
 `bin/run.js` and `bin/dev.js` are **not published** — `bin/` is absent from `files`. They are
 development entry points only (`@oclif/core`'s `execute({ dir: import.meta.url })`, the second with
@@ -580,7 +566,7 @@ patterns are rooted at `src/**` and `scripts/**`, and since the §2 negations `d
    is the whole trap (§2 rule 3).
 5. **Co-located tests are kept out of `dist/` by three entry negations and nothing else.** They are
    not excluded by the positive globs, by `files`, or by any tsup default — remove a negation and
-   compiled specs ship again, exactly as they did up to 0.150.0. `packaging.test.ts` is the alarm
+   compiled specs ship again. `packaging.test.ts` is the alarm
    (§2 rule 4, §6, §9).
 6. **Source-relative path arithmetic breaks after bundling unless it is build-aware.** `consts.ts`
    compensates with its `isInDist` branch; `config-loader.ts` does not, and its jiti alias resolves

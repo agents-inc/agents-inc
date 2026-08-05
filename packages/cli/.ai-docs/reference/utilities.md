@@ -23,21 +23,7 @@ related:
 last_validated: 2026-08-01
 ---
 
-<!-- PARTIAL 2026-08-02 · CLI_INVOKE_COMMAND only (`last_validated` deliberately NOT moved from 2026-08-01)
-     ✓ the CLI_INVOKE_COMMAND row. Its parenthetical said the registered global bin name "is
-       still `agents-inc`", which is now only half the truth: package.json `bin` maps BOTH
-       `agents-inc` and `agentsinc` to dist/index.js (package.json lines 15-18), while
-       `oclif.bin` stays the single name. The `npx agents-inc <cmd>` phrasing convention
-       recorded beside the constant in consts.ts was also not carried here at all.
-     ✗ nothing else re-checked; the file stands on its 2026-08-01 FULL basis below
--->
-<!-- VALIDATED 2026-08-01 · FULL (product 0.147.1) — every exhaustive list re-derived from source
-     this session, including a diff of consts.ts's export list against this doc's headings. -->
-
 # Utilities Reference
-
-**Last Updated:** 2026-08-01
-**Last Validated:** 2026-08-01 (full — every exhaustive list re-derived from source)
 
 ## Utility Files
 
@@ -473,7 +459,7 @@ Helper: `marketplaceManifestPath(dir: string): string` joins `dir` + `PLUGIN_MAN
 | every `source` is `EJECT_SOURCE` | `ALL_SKILLS_EJECTED_LABEL`                            |
 | any marketplace-sourced skill    | its marketplace name(s), sorted, joined with `" · "`  |
 
-The label derives from `SkillConfig.source`, not from a store field — the pre-0.147.0 `Marketplace` row read a store field no code ever wrote, so it always printed the hardcoded public default. Tombstoned (`excluded`) entries count toward the marketplace names, because one still records a real global install.
+The label derives from `SkillConfig.source`, not from a store field. A `Marketplace` row reading a store field no code ever writes prints the hardcoded public default instead — do not reintroduce one. Tombstoned (`excluded`) entries count toward the marketplace names, because one still records a real global install.
 
 Helper: `formatSourceDisplayName(source: string): string` resolves a source name to its `SOURCE_DISPLAY_NAMES` label, falling back to the raw name.
 
@@ -525,7 +511,7 @@ literal in `skill-agent-summary.tsx`'s `DIFF_PREFIX` — it is _not_ a `UI_SYMBO
 
 `CLI_COLORS` has exactly 16 keys (exhaustive, in source order): `PRIMARY`, `SUCCESS`, `ERROR`, `WARNING`, `INFO`, `NEUTRAL`, `FOCUS`, `UNFOCUSED`, `WHITE`, `BLACK`, `DIM`, `GRAY_1`, `LABEL_BG`, `TOAST_BG`, `TOAST_FG`, `HOVER_BG`.
 
-`SCROLL_VIEWPORT` keys (exhaustive, re-derived from source 2026-08-01 — **4** keys): `SCROLL_INDICATOR_HEIGHT` (1), `CATEGORY_NAME_LINES` (2), `CATEGORY_MARGIN_LINES` (1), `MIN_VIEWPORT_ROWS` (5).
+`SCROLL_VIEWPORT` keys (exhaustive — **4** keys): `SCROLL_INDICATOR_HEIGHT` (1), `CATEGORY_NAME_LINES` (2), `CATEGORY_MARGIN_LINES` (1), `MIN_VIEWPORT_ROWS` (5).
 
 #### Terminal-height constants (both siblings of `SCROLL_VIEWPORT`, neither a key of it)
 
@@ -551,7 +537,7 @@ gate to 26 would refuse to run in a 24-row terminal, and lowering the logo thres
 back the stack-step bleed. Consumer: `terminalHasRoomForLogo` in
 `src/cli/components/wizard/wizard-layout.tsx`.
 
-> **`SCROLL_VIEWPORT.MIN_TERMINAL_HEIGHT` was DELETED (0.147.0).** It had **zero importers in all of
+> **`SCROLL_VIEWPORT.MIN_TERMINAL_HEIGHT` was DELETED.** It had **zero importers in all of
 > `src/`** while the live gate hardcoded its own copy — so changing the documented constant did
 > nothing. It is named here only so the name is not copied back out of an older doc into code; it
 > does not exist. Use `MIN_TERMINAL_SIZE.ROWS`.
@@ -599,7 +585,7 @@ Helper: `yamlSchemaComment(schemaPath: string): string` generates a `# yaml-lang
 
 ## Remeda Utilities (External)
 
-Imported by 30 files under `src/cli/` (re-counted 2026-08-01): 28 production modules, one test-data
+Imported by 30 files under `src/cli/` : 28 production modules, one test-data
 module (`lib/__tests__/mock-data/mock-matrices.ts`) and one spec (`components/wizard/step-build.test.tsx`).
 Always `import { ... } from "remeda"`; there are zero namespace `* as R` imports. The named imports
 actually in use across `src/cli/`:

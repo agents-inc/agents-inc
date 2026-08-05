@@ -48,18 +48,7 @@ related:
 last_validated: 2026-08-04
 ---
 
-<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
-     ✓ the CI section (re-derived from .github/workflows/ci.yml: three jobs, NODE_VERSION pin,
-       timeout-minutes, the two-part vendored-catalog check) and the syncpack paragraph
-       (.syncpackrc.cjs is now module.exports = {}; deps:fix is `syncpack fix`)
-     ✗ everything else — the version table and node_modules mechanics stand on 2026-08-05, the
-       workspaces / hooks / gitignore / two-roots sections on the 2026-08-04 FULL basis
--->
-
 # Monorepo Layout
-
-**Last Updated:** 2026-08-06
-**Last Validated:** 2026-08-04 (PARTIAL passes since; see the annotation above)
 
 > **Path convention — this document only.** Every path here is relative to the **repository root**,
 > not to `packages/cli`. Elsewhere in `reference/` a bare `src/cli/…` means
@@ -68,9 +57,8 @@ last_validated: 2026-08-04
 
 ## Why this doc exists
 
-`packages/cli` was the whole repository until 2026-08-03, when a separate web monorepo was merged
-into it and the CLI became one workspace inside. Every other doc in `reference/` describes code
-inside `packages/cli`. This one describes the surrounding repository, and only the parts of it that
+`packages/cli` is one workspace inside a repository that also holds a web half. Every other doc in
+`reference/` describes code inside `packages/cli`. This one describes the surrounding repository, and only the parts of it that
 a change inside `packages/cli` can break or be broken by.
 
 ## Workspaces
@@ -135,8 +123,8 @@ comment.
 ### `packages/cli/.prettierignore` restates three rules that also live in `.gitignore`
 
 Same mechanism, opposite direction. Prettier reads a `.gitignore` only from its working directory.
-`packages/cli`'s own `format` / `format:check` run from inside the package, which no longer holds a
-`.gitignore`, so `CLAUDE.md`, `V2.md` and `todo/*` stopped counting as ignored there — and
+`packages/cli`'s own `format` / `format:check` run from inside the package, which holds no
+`.gitignore`, so `CLAUDE.md`, `V2.md` and `todo/*` do not count as ignored there — and
 `format:check` is the first step of `prepublishOnly`. The three rules are restated locally so
 `prettier --check .` agrees with git from either directory. The file carries the reason inline.
 
@@ -223,19 +211,19 @@ the generator ever starts emitting a new file the diff stays empty while the com
 incomplete. Removing the untracked-file check restores that blind spot.
 
 **Node is pinned, not inherited.** `env.NODE_VERSION: 22` and an `actions/setup-node` step in all
-three jobs. Every job used to install bun and nothing else, leaving each run on whatever Node
-`ubuntu-latest` shipped that week — and that Node is not incidental: the CLI's E2E harness launches
+three jobs. Installing bun and nothing else leaves a run on whatever Node `ubuntu-latest` ships that
+week, and that Node is not incidental: the CLI's E2E harness launches
 the CLI with `pty.spawn("node", …)`, so the runner's Node is the runtime that executes the thing
 under test. Pinning it means CI tests the floor `packages/cli/package.json` declares.
 
 **Every job carries `timeout-minutes`**, because GitHub's default is six hours and this repository
 has already burned seventy minutes of runner time on one hang.
 
-| Job         | Timeout | Measured (three green runs, 2026-08-04) |
-| ----------- | ------- | --------------------------------------- |
-| `check-web` | 15      | 4–5 minutes                             |
-| `check-cli` | 40      | 25–26 minutes                           |
-| `deploy`    | 10      | ~30 seconds                             |
+| Job         | Timeout | Measured (three green runs,) |
+| ----------- | ------- | ---------------------------- |
+| `check-web` | 15      | 4–5 minutes                  |
+| `check-cli` | 40      | 25–26 minutes                |
+| `deploy`    | 10      | ~30 seconds                  |
 
 The numbers are measured and then given headroom. **The point is to bound a hang, not to police
 duration** — do not tighten one because a run came in fast.
@@ -244,10 +232,10 @@ duration** — do not tighten one because a run came in fast.
 
 `.syncpackrc.cjs` keeps shared dependency versions in step across workspaces.
 
-### One answer per tool, since 2026-08-05
+### One answer per tool
 
-For two days after the merge the repository ran two majors of four tools — the CLI on one, the web
-half on the other. They agree now:
+Every workspace must land on the same major of a shared tool. Running two majors of one tool across
+the two halves has bitten twice, and neither failure named anything to do with versions:
 
 | Tool                     | Version | Who moved                            |
 | ------------------------ | ------- | ------------------------------------ |
@@ -273,8 +261,8 @@ The file says so in its own comment, and it also explains why `source` is delibe
 syncpack then falls back to the `workspaces` globs in the root `package.json`, so there is one
 statement of which directories are workspaces rather than two free to drift.
 
-The fix script is `deps:fix` -> **`syncpack fix`**. The `fix-mismatches` subcommand that older
-instructions name no longer exists in syncpack 15.
+The fix script is `deps:fix` -> **`syncpack fix`**. There is no `fix-mismatches` subcommand in syncpack 15,
+whatever older instructions say.
 
 ### Whatever sits at the root of `node_modules` serves the whole repository
 
@@ -289,20 +277,17 @@ then decided **for** you rather than by you:
 - **A tool that loads its own internal pieces from the repository root** gets the root's copy no
   matter which workspace asked for it. Vitest does this.
 
-Both bit on the way to unification, and both failures named nothing to do with versions:
-
-- **React.** On 2026-08-04 the CLI's package was renamed from `@agents-inc/cli` to `agents-inc`.
-  That changed which workspace bun resolved first, and the root React went from 18 to 19. Ink took
-  the new root copy; the CLI's own files kept resolving the nested 18. Two React instances rendering
-  one tree, and **353 unit tests died on an error about React children.**
+- **React.** Renaming the CLI's package changed which workspace bun resolved first and moved the
+  root React from 18 to 19. Ink took the new root copy while the CLI's own files kept resolving the
+  nested 18 — two React instances rendering one tree, and **353 unit tests died on an error about
+  React children.**
 - **Vitest.** `apps/server` pinned Vitest 3 while the CLI pinned 4 and won the root slot, so the
   worker's Vitest 3 was handed Vitest 4's internals and died on startup — **zero tests ran, and no
   failure was reported.**
 
 ### Two copies of React in the tree is not a bug; two copies rendering the same tree is
 
-Anyone opening `node_modules` today finds React twice and reasonably assumes the 2026-08-04 failure
-is back. It is not.
+Opening `node_modules` shows React twice, which reads as the failure above being back. It is not.
 
 | Copy                                           | Version | Why it is there                                                                                                                              |
 | ---------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -313,17 +298,16 @@ The second copy is safe because `@oclif/table` calls its own `render()` inside `
 React draws into a tree of its own and never shares one with the wizard's. The `search` and `update`
 commands are what use it; their unit tests and their E2E specs pass against this arrangement.
 
-**Count trees, not copies.** While the root held React 18, `@oclif/table` quietly borrowed the
-shared copy; now that the root is 19 it must nest its own, which is why this looks new.
+**Count trees, not copies.** With the root at React 19, `@oclif/table` must nest its own 18 rather
+than borrow the shared copy — that nesting is expected, not drift.
 
 ### After changing a dependency, ask the binary its version — do not trust the manifest
 
 `bun install` rewrites `bun.lock` correctly but leaves the already-unpacked old package directories
-sitting on disk, along with the `.bin` symlinks pointing at them. This happened twice on 2026-08-05
-alone: the manifests said ESLint 10 and TypeScript 6 while the binaries that actually ran were
-ESLint 9 and TypeScript 5.9; and `apps/editor/node_modules/react` and `packages/ui/node_modules/react`
-were still on disk after the React 19 install, left over from when the root held 18. Deleting the
-stale directories and reinstalling was the fix in both cases.
+sitting on disk, along with the `.bin` symlinks pointing at them. It has bitten twice in one day:
+manifests reading ESLint 10 and TypeScript 6 while the binaries that ran were ESLint 9 and
+TypeScript 5.9, and `apps/editor/node_modules/react` / `packages/ui/node_modules/react` still on
+disk after a React 19 install. Delete the stale directories and reinstall.
 
 **Run the tool and read the version it prints.** A bump that silently did nothing looks identical to
 one that worked, right up until something behaves like the old version.

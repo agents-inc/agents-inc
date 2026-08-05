@@ -2,13 +2,6 @@
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1) — one claim corrected, rules added
-     ✓ the getScreen() row under "Assert the Surface That Retains the Value";
-       §Negative Assertions +3 sub-rules
-     ✗ every matcher and assertion-utility signature, the expected-value constants, the exit-code
-       and object-equality sections, §When to Add a New Matcher — 2026-07-30 basis
--->
-
 # Assertions
 
 How to verify outcomes after a test runs.
@@ -327,7 +320,7 @@ When adding `toStrictEqual` assertions for config objects, verify these common p
 
 ## Diff-Shape Assertions
 
-For assertions over diff-shape collections (info-panel rows, config section diffs, scope-per-skill prefix maps), use `toStrictEqual` on a scope-anchored slice of the output — NEVER `expect.arrayContaining([<expected>])`. `arrayContaining` passes as long as the expected entries exist, so it silently tolerates extra wrong entries (e.g. a spurious `- React` row alongside the expected `• React` that a D-230-class bug produces).
+For assertions over diff-shape collections (info-panel rows, config section diffs, scope-per-skill prefix maps), use `toStrictEqual` on a scope-anchored slice of the output — NEVER `expect.arrayContaining([<expected>])`. `arrayContaining` passes as long as the expected entries exist, so it silently tolerates extra wrong entries (e.g. a spurious `- React` row alongside the expected `• React`).
 
 ```typescript
 // Bad -- passes even if a bogus "- React" row is also rendered

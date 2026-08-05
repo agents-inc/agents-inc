@@ -24,12 +24,10 @@ last_validated: 2026-07-23
 
 # Wizard Flow
 
-> **Reorganized from:** `reference/features/wizard-flow.md`. The original file is preserved during migration. Hotkey-action mappings are also documented in [state-transitions.md](./state-transitions.md).
+> **Pointer.** The content lives in [`reference/features/wizard-flow.md`](../features/wizard-flow.md). Hotkey-action mappings are also in [state-transitions.md](./state-transitions.md). This path is kept because inbound links still use it.
 
 > **Detailed documentation on cross-cutting concerns:**
 >
 > - Scope guards: See [concepts/scope-system.md](../concepts/scope-system.md)
 > - Guard pattern: See [concepts/guard-pattern.md](../concepts/guard-pattern.md)
 > - Tombstone pattern: See [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md)
-
-**Full content: See `reference/features/wizard-flow.md`** -- this file is the authoritative source until cleanup.

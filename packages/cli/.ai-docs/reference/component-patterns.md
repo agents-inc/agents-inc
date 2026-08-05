@@ -24,24 +24,11 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
-     ✓ the Rendering Library block (Ink 7.1.1 / React 19.2.8, read from node_modules) and the new
-       "Hooks are linted" subsection — derived from eslint.config.js and the five hook files it
-       names (use-category-grid-input, use-focused-list-item, domain-selection, use-panel-scroll,
-       use-section-scroll)
-     ✗ everything else: StepAgents badges / SourceGrid states / hotkey registry stand on
-       2026-08-01; tree + counts, CLI_COLORS, SelectList, grid types, SummaryPanel, hook table,
-       Scrolling on 2026-07-31 / 07-30
--->
-
 # Component Patterns
-
-**Last Updated:** 2026-08-06
-**Last Validated:** 2026-07-30 (PARTIAL passes since; see the annotation above)
 
 ## Rendering Library
 
-**Library:** Ink 7.1.1 on React 19.2.8 (terminal rendering). Raised from Ink 5 / React 18 on 2026-08-05 — see [`monorepo-layout.md`](./monorepo-layout.md) for the version table and the two-copies-of-React rule.
+**Library:** Ink 7.1.1 on React 19.2.8 (terminal rendering). Raised from Ink 5 / React 18 — see [`monorepo-layout.md`](./monorepo-layout.md) for the version table and the two-copies-of-React rule.
 **Entry point:** every render goes through `src/cli/components/render.ts`, never `ink`'s own `render` — see [`commands/index.md`](./commands/index.md).
 **Theme:** `@inkjs/ui` ThemeProvider with custom theme
 **Styling:** Inline Ink props (`color`, `bold`, `dimColor`) + `CLI_COLORS` constants
@@ -95,7 +82,7 @@ src/cli/components/
     search-modal.tsx         # Bound skill search modal (rendered by SourceGrid)
     stack-selection.tsx      # Grouped stack list component
     summary-panel.tsx        # Marketplace/stack header + scrollable SkillAgentSummary (the ONE panel; rendered by both the I overlay and StepConfirm)
-    scroll-affordance.tsx    # Shared "N more above / N more below" overflow hint (D-263)
+    scroll-affordance.tsx    # Shared "N more above / N more below" overflow hint
     toast.tsx                # Toast notification component (styled text block)
     hotkeys.ts               # Centralized hotkey registry
     utils.ts                 # Wizard utility functions
@@ -269,12 +256,12 @@ Internal component within `category-grid.tsx` that renders a single skill option
 
 > The sibling export in that module, `validateBuildStep()`, returns `valid: true` on both branches and has **no production caller** — see [leaf-exports.md](./leaf-exports.md) § `BuildStepValidation`.
 
-**Cell ordering (D-272):** the options in each `CategoryRow` are sorted by `displayName`, lowercased, using remeda's `sortBy` in `buildCategoriesForDomain()` (`src/cli/lib/wizard/build-step-logic.ts`). Before this the order followed matrix and `readdir` insertion order, so the grid reshuffled between runs and between source types. The lowercased ordinal comparison is deliberately locale-independent, so the order is identical on every machine — which is what makes a positional E2E walk over the grid meaningful. Category ROWS are ordered separately, by `cat.order ?? 0`.
+**Cell ordering:** the options in each `CategoryRow` are sorted by `displayName`, lowercased, using remeda's `sortBy` in `buildCategoriesForDomain()` (`src/cli/lib/wizard/build-step-logic.ts`). Before this the order followed matrix and `readdir` insertion order, so the grid reshuffled between runs and between source types. The lowercased ordinal comparison is deliberately locale-independent, so the order is identical on every machine — which is what makes a positional E2E walk over the grid meaningful. Category ROWS are ordered separately, by `cat.order ?? 0`.
 
 **Focus dispatch (two writers, by design).** `focusedSkillId` is written from both the store and the grid, and the pair is what keeps store state equal to what is drawn:
 
-1. **Store, synchronous (D-233 "Fix A").** `seedFocusedSkillForActiveDomain()` seeds `focusedSkillId` before the frame — called by `setStep("build")`, `nextDomain`, `prevDomain`, `setCurrentDomainIndex`, and both hydration paths. It resolves the domain via `getCurrentDomain() ?? FALLBACK_DOMAIN`, mirroring the build-step renderer's own fallback, so the seed can never be `null` while a cell is visibly focused.
-2. **`CategoryGrid`, mount effect (D-272).** A `useEffect` keyed on the resolved focused cell (`categories[focusedRow]?.options[focusedCol]?.id ?? null`) calls `onFocusedSkillChange`. It fires **on mount** as well as on change, which is the point: `useFocusedListItem` only fires `onChange` during navigation, so the initially highlighted cell — and any cell shifted by a category reshape rather than by a keypress — would otherwise never reach the store, leaving `s` a no-op until the first arrow key. The dispatch was deliberately moved OUT of `handleFocusChange` (which now only handles label toggling and `onFocusChange`) so it is no longer navigation-gated.
+1. **Store, synchronous ("Fix A").** `seedFocusedSkillForActiveDomain()` seeds `focusedSkillId` before the frame — called by `setStep("build")`, `nextDomain`, `prevDomain`, `setCurrentDomainIndex`, and both hydration paths. It resolves the domain via `getCurrentDomain() ?? FALLBACK_DOMAIN`, mirroring the build-step renderer's own fallback, so the seed can never be `null` while a cell is visibly focused.
+2. **`CategoryGrid`, mount effect.** A `useEffect` keyed on the resolved focused cell (`categories[focusedRow]?.options[focusedCol]?.id ?? null`) calls `onFocusedSkillChange`. It fires **on mount** as well as on change, which is the point: `useFocusedListItem` only fires `onChange` during navigation, so the initially highlighted cell — and any cell shifted by a category reshape rather than by a keypress — would otherwise never reach the store, leaving `s` a no-op until the first arrow key. The dispatch was deliberately moved OUT of `handleFocusChange` (which now only handles label toggling and `onFocusChange`) so it is no longer navigation-gated.
 
 Consequence: the older "Scenario B `focusedSkillId` race" narrative no longer describes the skill path. The agent path still has it — `focusedAgentId` is seeded by a post-mount `useEffect` in `step-agents.tsx` with no synchronous store counterpart.
 
@@ -289,7 +276,7 @@ A `SourceRow` renders in one of four states, driven by its optional flags. The m
 | Pending removal | `disabled` | `UI_SYMBOLS.REMOVED` + space (`- `) | `CLI_COLORS.ERROR`    | No (inert)                           |
 | Added           | `added`    | `UI_SYMBOLS.ADDED` + space (`+ `)   | `CLI_COLORS.SUCCESS`  | Yes — added rows stay fully editable |
 
-**The marker cell is fixed-width and lives inside the focus highlight.** Every row spends exactly two columns on it — glyph plus one separating space, or `ROW_MARKER_BLANK` when the row has no status — so an unmarked name starts in the same column as a marked one. Same contract as `DIFF_PREFIX`, which gives even `unchanged` a two-character prefix. On a focused row the marker is rendered inside the `LABEL_BG` band and supplies the only space before the name, so the band width does not change and the name does not shift a column when focus arrives. Both properties were defects before 0.147.0: the marker carried its own trailing space and the focused branch added another, so one row rendered `+  Name` focused against `+ Name` unfocused. `SKILL_NAME_WIDTH` is **26** — 24 for the name plus exactly the marker's 2 — so every name that fitted before the marker was reserved still fits. Known and accepted: `UI_SYMBOLS.LOCK` is double-width, so a locked row still renders one column wider.
+**The marker cell is fixed-width and lives inside the focus highlight.** Every row spends exactly two columns on it — glyph plus one separating space, or `ROW_MARKER_BLANK` when the row has no status — so an unmarked name starts in the same column as a marked one. Same contract as `DIFF_PREFIX`, which gives even `unchanged` a two-character prefix. On a focused row the marker is rendered inside the `LABEL_BG` band and supplies the only space before the name, so the band width does not change and the name does not shift a column when focus arrives. Both are easy to break: if the marker carries its own trailing space and the focused branch adds another, one row renders `+  Name` focused against `+ Name` unfocused. `SKILL_NAME_WIDTH` is **26** — 24 for the name plus exactly the marker's 2 — so every name that fitted before the marker was reserved still fits. Known and accepted: `UI_SYMBOLS.LOCK` is double-width, so a locked row still renders one column wider.
 
 **No `✓` anywhere in the grid.** Inert rows (`readOnly` / `disabled`) express which source is selected the same way editable rows do — weight, plus brightness on the otherwise-dimmed locked row — and reserve `UI_SYMBOLS.CHEVRON_SPACER` where an editable row draws its focus chevron, so the source labels stay aligned. Editable rows never drew a checkmark, so one on an inert row would be the only instance of the glyph in the grid; on a pending-removal row it would tick the source the row is about to lose.
 
@@ -299,17 +286,17 @@ A `SourceRow` renders in one of four states, driven by its optional flags. The m
 
 **Session-diff flags come from the store, not the component.** `buildSourceRows` (see `store-map.md`, "Sources-tab session diff") decides `disabled`/`added` against the hydration snapshot per `(id, scope)` slot, using the same `skillSlotKey` as the confirm step's `computeScopeDiff`. Because removal is per slot, one skill can occupy two rows: a collapsed dual-scope `[P][G]` pair renders a surviving global row plus a Project pending-removal row, both inert (keyed `${skillId}-${scope}`, so the two rows never collide).
 
-**Inert rows are reachable by SCROLLING, not by focus (D-271).** Because focus skips inert rows, a trailing locked or pending-removal row used to be clipped with no way to reach it — exactly the row that mattered most. `SourceGrid`'s `useInput` therefore splits vertical keys two ways, using `lastFocusableRowIndex(rows)`: when nothing is focusable at all (`lastFocusableRow === -1`) or focus already sits on the last focusable row, `↓` calls `scrollBy(1)` on `useSectionScroll` to travel the viewport past focus instead of wrapping; `↑` does the same via `scrollBy(-1)` in the no-focusable-row case. Otherwise the keys move focus normally. Both are additionally gated on `scrollEnabled` and a non-zero `hiddenBelow`/`hiddenAbove`.
+**Inert rows are reachable by SCROLLING, not by focus.** Because focus skips inert rows, a trailing locked or pending-removal row used to be clipped with no way to reach it — exactly the row that mattered most. `SourceGrid`'s `useInput` therefore splits vertical keys two ways, using `lastFocusableRowIndex(rows)`: when nothing is focusable at all (`lastFocusableRow === -1`) or focus already sits on the last focusable row, `↓` calls `scrollBy(1)` on `useSectionScroll` to travel the viewport past focus instead of wrapping; `↑` does the same via `scrollBy(-1)` in the no-focusable-row case. Otherwise the keys move focus normally. Both are additionally gated on `scrollEnabled` and a non-zero `hiddenBelow`/`hiddenAbove`.
 
 **Row grouping.** `groupRowsByScope(rows)` returns `Global` / `Project` sections only when BOTH exist; when every row shares a scope it returns `[]` and the grid renders flat with no gutter at all. Split is `scope === "global"` vs everything else, so a row with no scope groups under `Project`. Each group's first row carries its label (`SCOPE_ROW_HEADERS`) in a `SCOPE_COL_WIDTH = 11` gutter; every other row reserves the same width empty, which is what indents the block under its header. Grouping is presentation only — navigation indices stay in the store's sort order, which `sourceRowSortTier` aligns with the render order.
 
-**The gutter has no column caption.** The pinned header row reserves the gutter's width and the skill-name column's width and prints nothing in either — `{scopeGroups.length > 0 && <Box width={SCOPE_COL_WIDTH} />}` then `<Box width={SKILL_NAME_WIDTH} />` — so the source captions stay above the source cells. The `Scope` caption that used to sit there was removed in 0.147.0: the `Global` / `Project` row headers directly below already name the column, and the spacer is what keeps `Local` / `Plugin` over their own cells.
+**The gutter has no column caption.** The pinned header row reserves the gutter's width and the skill-name column's width and prints nothing in either — `{scopeGroups.length > 0 && <Box width={SCOPE_COL_WIDTH} />}` then `<Box width={SKILL_NAME_WIDTH} />` — so the source captions stay above the source cells. The `Scope` caption that used to sit there was removed: the `Global` / `Project` row headers directly below already name the column, and the spacer is what keeps `Local` / `Plugin` over their own cells.
 
 ### StepAgents Dual Scope Badges (in `src/cli/components/wizard/step-agents.tsx`)
 
 **Store access:** subscribes to `selectedAgents` and `agentConfigs` **only**, plus imperative `useWizardStore.getState()` calls in its `useInput` handler (`goBack`, `setStep`, `toggleAgent`) and its focus effect (`setFocusedAgentId`).
 
-> **It does NOT read `installedAgentConfigs`.** A subscription to that field sat here unused and was deleted in 0.147.1. The dual-scope badges derive entirely from the LIVE `agentConfigs` pair — an active entry plus a tombstone at the other scope — never from the hydration snapshot. Anything claiming otherwise is stale; the snapshot's only outside-store reader is `skill-agent-summary.tsx`.
+> **It does NOT read `installedAgentConfigs`.** A subscription to that field sat here unused and was deleted. The dual-scope badges derive entirely from the LIVE `agentConfigs` pair — an active entry plus a tombstone at the other scope — never from the hydration snapshot. Anything claiming otherwise is stale; the snapshot's only outside-store reader is `skill-agent-summary.tsx`.
 
 **Secondary scope computation:** For each agent row, finds the active config (`!excluded`) and the excluded config, then calls `deriveScopeBadges(activeConfig, excludedConfig)` (from `src/cli/lib/wizard/scope-diff.ts`). A `secondaryScope` badge is emitted only when the excluded tombstone has a different scope than the active entry.
 
@@ -345,7 +332,7 @@ Centralized hotkey definitions. Each hotkey has a `key` (for matching) and `labe
 
 **Structural key labels** (display-only, for footer hints): `KEY_LABEL_ENTER`, `KEY_LABEL_ESC`, `KEY_LABEL_SPACE`, `KEY_LABEL_DEL`, `KEY_LABEL_ARROWS_VERT` (`↑/↓`). Also exported: `KEY_SPACE` (the literal `" "` input character used for space-key matching, not a display label).
 
-**No other `KEY_LABEL_*` constants exist**, and **no other `HOTKEY_*` constants exist** (both re-read off `hotkeys.ts` in full, 2026-08-01 — the module holds nothing beyond what the tables above and below enumerate). Previously-documented `KEY_LABEL_TAB`, `KEY_LABEL_ARROWS`, `KEY_LABEL_VIM`, and `KEY_LABEL_VIM_VERT` have been removed.
+**No other `KEY_LABEL_*` constants exist**, and **no other `HOTKEY_*` constants exist** (both re-read off `hotkeys.ts` in full — the module holds nothing beyond what the tables above and below enumerate). Previously-documented `KEY_LABEL_TAB`, `KEY_LABEL_ARROWS`, `KEY_LABEL_VIM`, and `KEY_LABEL_VIM_VERT` have been removed.
 
 **Helpers — the module exports exactly two:**
 
@@ -356,7 +343,7 @@ Centralized hotkey definitions. Each hotkey has a `key` (for matching) and `labe
 
 **Why `isInfoPanelAvailable` excludes the confirm step.** The `I` overlay REPLACES `children` in `WizardLayout` rather than sitting over them, and the confirm step already renders the very panel the overlay would show. Opening it there unmounted `StepConfirm` along with the only `Enter` handler, so `Enter` produced a byte-identical frame and nothing could complete the wizard. Note the **close** path in `wizard.tsx` is deliberately NOT gated — the `store.showInfo` branch runs before the availability check — because gating it would strand an overlay opened on a step that later became disallowed.
 
-**`HOTKEY_FILTER_INCOMPATIBLE` is dormant (D-269).** It is gated behind `FEATURE_FLAGS.FILTER_INCOMPATIBLE` (default `false`) in **two** places, which must stay in step: the keypress arm in `use-category-grid-input.ts` (`FEATURE_FLAGS.FILTER_INCOMPATIBLE && isHotkey(input, HOTKEY_FILTER_INCOMPATIBLE) && onToggleFilterIncompatible`) and the footer hint's `isVisible` in `wizard-layout.tsx`. Pressing `F` is a no-op today; the constant and the store action stay intact for a one-flag re-enable.
+**`HOTKEY_FILTER_INCOMPATIBLE` is dormant.** It is gated behind `FEATURE_FLAGS.FILTER_INCOMPATIBLE` (default `false`) in **two** places, which must stay in step: the keypress arm in `use-category-grid-input.ts` (`FEATURE_FLAGS.FILTER_INCOMPATIBLE && isHotkey(input, HOTKEY_FILTER_INCOMPATIBLE) && onToggleFilterIncompatible`) and the footer hint's `isVisible` in `wizard-layout.tsx`. Pressing `F` is a no-op today; the constant and the store action stay intact for a one-flag re-enable.
 
 **`HOTKEY_SCOPE` and `HOTKEY_SETTINGS` share the `s` key** and are context-gated in `wizard.tsx` — scope on `build`/`agents`, settings on `sources` — so both are never active at once.
 
@@ -390,7 +377,7 @@ Scrollable panel showing a marketplace/stack header above a skill/agent summary.
 
 Two-column (skills | agents) summary component with scope labels (Project/Global), eject icons for local skills, diff markers (+/- for added/removed items in edit mode), and source change markers (~). The component is a thin renderer: it reads baseline state from the store, delegates all diff computation to `computeScopeDiff()` in `src/cli/lib/wizard/scope-diff.ts`, and renders the returned row buckets. Uses `UI_SYMBOLS.BULLET` for unchanged items.
 
-**A row is marker + display name, nothing else (D-261).** `SkillRow` renders `DIFF_PREFIX[status]` + `getSkillDisplayName(row.id)`, plus an `EjectIcon` when `row.source === EJECT_SOURCE`. The verbose `(agents-inc → eject)` source-transition label is **gone** — it wrapped out of its row — and the compact `~` marker the row already carried is now the whole signal. `skill-agent-summary.tsx` consequently no longer imports `formatSourceDisplayName`; `summary-panel.tsx` still does, for its marketplace header.
+**A row is marker + display name, nothing else.** `SkillRow` renders `DIFF_PREFIX[status]` + `getSkillDisplayName(row.id)`, plus an `EjectIcon` when `row.source === EJECT_SOURCE`. The verbose `(agents-inc → eject)` source-transition label is **gone** — it wrapped out of its row — and the compact `~` marker the row already carried is now the whole signal. `skill-agent-summary.tsx` consequently no longer imports `formatSourceDisplayName`; `summary-panel.tsx` still does, for its marketplace header.
 
 **Exports:** only `SkillAgentSummaryProps` (`{ skillConfigs: SkillConfig[]; agentConfigs: AgentScopeConfig[] }` — both required) and `SkillAgentSummary` (React.FC). `TableHeader`, `ScopeLabel`, `EjectIcon`, `SkillRow`, and `AgentRow` are module-internal (not exported).
 
@@ -398,12 +385,12 @@ Two-column (skills | agents) summary component with scope labels (Project/Global
 
 **Diff computation (`computeScopeDiff` in `scope-diff.ts`):** returns `projectSkillRows`, `globalSkillRows`, `projectAgentRows`, `globalAgentRows`, `hasContent`. Each row carries a `DiffRowStatus` = `"added" | "source-changed" | "removed" | "unchanged"`. The following invariants live in `computeScopeDiff`, not the component:
 
-- **Diff baseline (D-230 / D-232):** Baseline is NOT pre-filtered. Tombstones remain first-class entries in `prevSkillKeySet` and the `removedSkills` match; a tombstone occupies the `(id, scope)` slot ("global install silenced at project scope", D-223). Only `prevSourceMap` filters to active (`!excluded`) baseline entries — tombstones don't represent a live install source.
-- **Slot-occupancy removal match:** A baseline entry is removed ONLY if nothing (active OR tombstone) occupies that slot in current state — prevents a spurious `-` at Global on G→P toggle (D-230) and a spurious `+` at Global on re-edit of the stored tombstone (D-232).
+- **Diff baseline:** Baseline is NOT pre-filtered. Tombstones remain first-class entries in `prevSkillKeySet` and the `removedSkills` match; a tombstone occupies the `(id, scope)` slot ("global install silenced at project scope"). Only `prevSourceMap` filters to active (`!excluded`) baseline entries — tombstones don't represent a live install source.
+- **Slot-occupancy removal match:** A baseline entry is removed ONLY if nothing (active OR tombstone) occupies that slot in current state — prevents a spurious `-` at Global on G→P toggle and a spurious `+` at Global on re-edit of the stored tombstone.
 - **Tombstone dedup (`uniqueExcludedGlobalSkills`):** Dedups current tombstone rows against inherited-global entries by `id` only — the Global section never shows two rows for the same skill.
-- **Source change detection:** `computeScopeDiff()` builds `prevSourceMap` from active (non-excluded) baseline entries keyed via `skillSlotKey(id, scope)` and passes it to `classifyDiffRow()` (a module-internal helper), which emits `"source-changed"` when `!isNew && prevSource != null && prevSource !== skill.source`. The previous source is used only to make that comparison and is **not** carried on the row — `SkillDiffRow` has no `prevSource` field since D-261.
+- **Source change detection:** `computeScopeDiff()` builds `prevSourceMap` from active (non-excluded) baseline entries keyed via `skillSlotKey(id, scope)` and passes it to `classifyDiffRow()` (a module-internal helper), which emits `"source-changed"` when `!isNew && prevSource != null && prevSource !== skill.source`. The previous source is used only to make that comparison and is **not** carried on the row — `SkillDiffRow` has no `prevSource` field.
 - **One key, both surfaces (D-278):** `skillSlotKey(id, scope)` is exported from `scope-diff.ts` (and re-exported from `src/cli/lib/wizard/index.ts`) precisely so the Sources tab's own session diff keys on the same `(id, scope)` slot. Both surfaces previously derived their own key — the confirm step per slot, the Sources tab per id — and disagreed. Never re-derive the key inline.
-- **Init mode gating:** When `isInitMode` is true, `removedGlobalSkills` / `removedGlobalAgents` are suppressed (empty arrays). Since D-277 this suppression is **vestigial in practice**: a project-scope deselect of a globally-installed item is refused by the store guards (init included), and a real `cc init` can never carry a global baseline anyway (`Init.run` routes to the dashboard → `edit` when one is found). It is kept as a cheap invariant so an init-mode diff can never render a removed-global row. `computeScopeDiff` is now the only remaining consumer of `isInitMode` besides this component.
+- **Init mode gating:** When `isInitMode` is true, `removedGlobalSkills` / `removedGlobalAgents` are suppressed (empty arrays). This suppression is **vestigial in practice**: a project-scope deselect of a globally-installed item is refused by the store guards (init included), and a real `cc init` can never carry a global baseline anyway (`Init.run` routes to the dashboard → `edit` when one is found). It is kept as a cheap invariant so an init-mode diff can never render a removed-global row. `computeScopeDiff` is now the only remaining consumer of `isInitMode` besides this component.
 
 **Scope-badge helpers (also in `scope-diff.ts`):** `formatScopeTag(scope)` returns `[G]`/`[P]`; `deriveScopeBadges(active, excluded)` derives the primary + secondary badges from an active entry and its tombstone (used by `StepAgents`).
 
@@ -411,23 +398,23 @@ Two-column (skills | agents) summary component with scope labels (Project/Global
 
 - `+ ` (green, `SUCCESS`) -- newly added skill/agent
 - `- ` (red, `ERROR`) -- removed skill/agent
-- `~ ` (yellow, `WARNING`) -- source changed (marker only; no transition label since D-261)
+- `~ ` (yellow, `WARNING`) -- source changed (marker only; no transition label)
 - `BULLET` (neutral) -- unchanged item
 
 **Known limitations (`computeScopeDiff`, both OPEN).** Two display quirks live in the confirm-step diff and are deliberately NOT mirrored by the Sources tab, which is the authoritative surface for both shapes:
 
 | Shape                                                                          | `computeScopeDiff` renders                                                              | Why it is wrong                                                                                                                   | Reachability                                                                                              |
 | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Snapshot `[G active]` + live `[P active]`, **no** tombstone (inherited global) | Two Global rows for one skill: `unchanged` (from `inheritedGlobalSkills`) AND `removed` | `inheritedGlobalSkills` re-surfaces the entry while the slot-occupancy `removedSkills` filter independently classifies it as gone | Much less reachable since D-279 masks such configs at write time                                          |
+| Snapshot `[G active]` + live `[P active]`, **no** tombstone (inherited global) | Two Global rows for one skill: `unchanged` (from `inheritedGlobalSkills`) AND `removed` | `inheritedGlobalSkills` re-surfaces the entry while the slot-occupancy `removedSkills` filter independently classifies it as gone | Much less reachable masks such configs at write time                                                      |
 | Snapshot `[G tombstone]` + live `[]`                                           | A Global `removed` row                                                                  | A tombstone is a MASK over a global install, not an install — dropping it deletes nothing                                         | Cannot occur within a session: every path that drops a tombstone fills the same slot with an active entry |
 
-The Sources-tab equivalents avoid both: `isSlotAlreadyRendered` suppresses the duplicate, and snapshot tombstones are excluded as removal candidates. Source: `.ai-docs/agent-findings/2026-07-29-per-slot-removal-exposes-fixture-name-mismatch-and-confirm-double-row.md`; see also the 0.146.0 changelog backlog.
+The Sources-tab equivalents avoid both: `isSlotAlreadyRendered` suppresses the duplicate, and snapshot tombstones are excluded as removal candidates. Source: `.ai-docs/agent-findings/2026-07-29-per-slot-removal-exposes-fixture-name-mismatch-and-confirm-double-row.md`.
 
 **Consumers:** `summary-panel.tsx` (and therefore both surfaces that render it), plus the dashboard `commands/list.tsx`
 
 ## ScrollAffordance (`src/cli/components/wizard/scroll-affordance.tsx`)
 
-The shared overflow hint introduced by D-263: one pinned, text-only line reading `N more above` / `N more below` (joined by three spaces when both apply). There is no glyph and no scrollbar — the counts are the whole affordance, which keeps it legible under `NO_COLOR` and in non-TTY captures.
+The shared overflow hint introduced: one pinned, text-only line reading `N more above` / `N more below` (joined by three spaces when both apply). There is no glyph and no scrollbar — the counts are the whole affordance, which keeps it legible under `NO_COLOR` and in non-TTY captures.
 
 ```typescript
 export type ScrollAffordanceProps = {
@@ -613,13 +600,13 @@ type UseSectionScrollResult = {
 };
 ```
 
-**Three refs, three jobs (D-271).** `setSectionRef` measures each section (drives focus-following). `setViewportRef` goes on the clipping box, so overflow counts exclude header and affordance chrome — both siblings of it — rather than assuming the viewport equals `availableHeight`. `setContentRef` goes on the scrolled content box, so overflow measures the WHOLE rendered subtree, section-group margins and labels included, not just the sum of per-section heights. A consumer that attaches no content ref (`category-grid.tsx`) falls back to that per-section sum; a consumer that attaches no viewport ref falls back to `availableHeight`.
+**Three refs, three jobs.** `setSectionRef` measures each section (drives focus-following). `setViewportRef` goes on the clipping box, so overflow counts exclude header and affordance chrome — both siblings of it — rather than assuming the viewport equals `availableHeight`. `setContentRef` goes on the scrolled content box, so overflow measures the WHOLE rendered subtree, section-group margins and labels included, not just the sum of per-section heights. A consumer that attaches no content ref (`category-grid.tsx`) falls back to that per-section sum; a consumer that attaches no viewport ref falls back to `availableHeight`.
 
 **Focus scroll and overscroll are separate offsets.** `focusScrollPx` follows the focused section; `overscrollPx` is user travel BEYOND it, added by `scrollBy` and clamped to `maxScroll - focusScroll`. Overscroll resets to `0` on any `focusedIndex` change, so the viewport snaps back to following focus. This split is what makes a trailing row that can never take focus reachable — see "Inert rows are reachable by SCROLLING" under SourceGrid Row States.
 
 `contentBoxHeight` is kept monotonic (tallest reading wins) for the Yoga reason described under SummaryPanel, and is reset to `0` whenever `sectionCount` changes, since a new row set invalidates the reading.
 
-**Clipping is unconditional; the size gate applies only to the affordance (D-263).** `scrollEnabled` is `availableHeight > 0 && availableHeight >= minViewportRows`. `source-grid.tsx` passes `SOURCE_GRID_MIN_VIEWPORT_ROWS = 1` so the Sources step clips-and-signals rather than bleeding even at the very short viewports it renders at (it is squeezed by the tab bar, dropdown card and footer) — a single clipped row plus the affordance beats a bled grid. Views that fall back to a flex layout keep the default `MIN_VIEWPORT_ROWS = 5`.
+**Clipping is unconditional; the size gate applies only to the affordance.** `scrollEnabled` is `availableHeight > 0 && availableHeight >= minViewportRows`. `source-grid.tsx` passes `SOURCE_GRID_MIN_VIEWPORT_ROWS = 1` so the Sources step clips-and-signals rather than bleeding even at the very short viewports it renders at (it is squeezed by the tab bar, dropdown card and footer) — a single clipped row plus the affordance beats a bled grid. Views that fall back to a flex layout keep the default `MIN_VIEWPORT_ROWS = 5`.
 
 **The Sources column header is pinned OUTSIDE the clipping viewport**, so it never scrolls away — but it costs a row, as the affordance does. Below `SOURCE_GRID_HEADER_MIN_HEIGHT = 4` (`showPinnedHeader = !scrollEnabled || availableHeight >= 4`) there is no room for the header AND a readable pair of content rows, so the column labels yield to content; every row still shows its own source cells.
 

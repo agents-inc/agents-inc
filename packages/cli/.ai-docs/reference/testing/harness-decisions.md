@@ -35,16 +35,7 @@ related:
 last_validated: 2026-08-04
 ---
 
-<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
-     ✓ § 1.9 only — new. Derived from e2e/helpers/terminal-session.ts (CI/GITHUB_ACTIONS pass
-       through untouched), src/cli/components/render.ts, vitest.setup.ts, e2e/vitest.config.ts
-     ✗ §§ 1.1-1.8, 2, 3, 4 — still on the 2026-08-04 FULL basis
--->
-
 # E2E Harness — Settled Decisions and CLI Behaviour
-
-**Last Updated:** 2026-08-06
-**Last Validated:** 2026-08-04 (PARTIAL pass since; see the annotation above)
 
 > **Provenance.** This file absorbs what survived `e2e/FINDINGS.md`, which is retired. FINDINGS held
 > three kinds of entry: conventions (which had already moved into `standards/e2e/` and

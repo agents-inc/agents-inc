@@ -22,17 +22,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
-     ✓ the Feature Flags section only — all five wizard rows and their defaults re-derived from
-       src/cli/lib/feature-flags.ts, plus the envFlag override semantics
-     ✗ everything else: `I`-gate, hotkey helpers, hooks table, component tree, WizardProps and the
-       scope-diff tables stand on 2026-08-01; step progression, guards, store actions on 07-31/07-30
--->
-
 # Wizard Flow
-
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
 
 ## Overview
 
@@ -115,7 +105,7 @@ Feature flags live in `FEATURE_FLAGS` (`src/cli/lib/feature-flags.ts`). The wiza
 | `WIZARD_SETTINGS_OVERLAY` | `false` | `S` opens the marketplace-sources overlay on the sources step (D-307). Gates BOTH sites in `wizard.tsx`: the hotkey on the sources step and the `store.showSettings` early-return in the root input handler. `StepSettings` and `toggleSettings` stay intact for a one-flag re-enable — but the input capture must be fixed first (see the flag's comment) |
 | `SOURCE_CHOICE`           | `false` | Intermediate "recommended vs customize" screen in sources step                                                                                                                                                                                                                                                                                             |
 | `INFO_PANEL`              | `true`  | `I` opens the `SummaryPanel` overlay in `wizard-layout.tsx`, and guards the overlay's own render branch there. Necessary but not sufficient for the key: the step gate lives with it inside `isInfoPanelAvailable(step)`, which also excludes `confirm`                                                                                                    |
-| `FILTER_INCOMPATIBLE`     | `false` | `F` key filters incompatible skills in the build step (D-269). Gates BOTH the keypress in `use-category-grid-input.ts` and the footer hint in `wizard-layout.tsx`; `toggleFilterIncompatible` stays intact and dormant for a one-flag re-enable.                                                                                                           |
+| `FILTER_INCOMPATIBLE`     | `false` | `F` key filters incompatible skills in the build step. Gates BOTH the keypress in `use-category-grid-input.ts` and the footer hint in `wizard-layout.tsx`; `toggleFilterIncompatible` stays intact and dormant for a one-flag re-enable.                                                                                                                   |
 
 The same object also holds three command-gating flags outside the wizard: `NEW_SKILL_COMMAND`, `NEW_AGENT_COMMAND`, `NEW_MARKETPLACE_COMMAND` (all `false`) — see `commands.md`.
 
@@ -141,7 +131,7 @@ export type WizardProps = {
 
 **Why:** rendering the wizard first and then pushing state via props caused a one-frame flash of the default "stack" step before the jump to `initialStep` committed. Hydrating synchronously before render ensures React captures the correct initial snapshot.
 
-**Removed in 0.122.0:** `lockedSkillIds` and `lockedAgentNames` props are gone. Global-item locking is now handled inside the store via `isActiveGlobal` guards on `toggleAgent`/`toggleTechnology` (checks `installedSkillConfigs`/`installedAgentConfigs`, gated on `!isEditingFromGlobalScope` alone since D-277).
+**Removed:** `lockedSkillIds` and `lockedAgentNames` props are gone. Global-item locking is now handled inside the store via `isActiveGlobal` guards on `toggleAgent`/`toggleTechnology` (checks `installedSkillConfigs`/`installedAgentConfigs`, gated on `!isEditingFromGlobalScope` alone).
 
 **Note:** The wizard does NOT receive a `matrix` prop. It accesses the matrix singleton via `matrix-provider.ts` imports.
 
@@ -175,7 +165,7 @@ export type WizardResultV2 = {
   selectedStackId: string | null;
   domainSelections: DomainSelections;
   selectedDomains: Domain[];
-  unresolvableSkillIds: SkillId[]; // Saved skill ids the loaded matrix could not resolve (D-233 Scenario C data-loss guard)
+  unresolvableSkillIds: SkillId[]; // Saved skill ids the loaded matrix could not resolve (Scenario C data-loss guard)
   cancelled: boolean;
   validation: SelectionValidation; // { valid; errors: ValidationError[]; warnings: ValidationWarning[] } from types/matrix.ts
 };
@@ -213,7 +203,7 @@ Contains non-UI logic extracted from the build step for testability:
 - `buildCategoriesForDomain()` - Build category row data for a domain
 - `FRAMEWORK_CATEGORY_ID` - the `"web-framework"` category id the framework-first filter pivots on
 
-**Grid order is deterministic (D-272).** `buildCategoriesForDomain()` orders the two axes independently: category ROWS by `cat.order ?? 0`, and each row's OPTIONS by `displayName` lowercased, both with remeda's `sortBy`. The option sort is the D-272 fix — order previously followed matrix and `readdir` insertion order, so the grid reshuffled between runs and between source types, and a positional walk over it meant nothing. Lowercasing keeps the comparison locale-independent. Rows whose options list is empty are dropped from the result.
+**Grid order is deterministic.** `buildCategoriesForDomain()` orders the two axes independently: category ROWS by `cat.order ?? 0`, and each row's OPTIONS by `displayName` lowercased, both with remeda's `sortBy`. **Both sorts are load-bearing.** Without the option sort, order follows matrix and `readdir` insertion order, so the grid reshuffles between runs and between source types, and a positional walk over it meant nothing. Lowercasing keeps the comparison locale-independent. Rows whose options list is empty are dropped from the result.
 
 Each option also carries its scope badges: the active and excluded `skillConfigs` entries for the skill are looked up and passed to `deriveScopeBadges()`, which yields the `secondaryScope` that renders the `[P][G]` pair.
 
@@ -221,7 +211,7 @@ Each option also carries its scope badges: the active and excluded `skillConfigs
 
 **Pure functions:** `src/cli/lib/wizard/scope-diff.ts` (functions re-exported from the `src/cli/lib/wizard/index.ts` barrel; consumers import from `../../lib/wizard/index.js`)
 
-Computes the per-scope diff rows and scope badges that the confirm-step summary and the agent step render. Tombstones are first-class baseline entries: a tombstone occupies its `(id, scope)` slot so a dual-scope `G→P` toggle does not render a spurious `-` at Global (D-230) or a spurious `+` on the next edit when the stored tombstone is re-read (D-232). Source-change (`~`) tracking filters to active baseline entries because tombstones do not represent a live install source.
+Computes the per-scope diff rows and scope badges that the confirm-step summary and the agent step render. Tombstones are first-class baseline entries: a tombstone occupies its `(id, scope)` slot so a dual-scope `G→P` toggle does not render a spurious `-` at Global or a spurious `+` on the next edit when the stored tombstone is re-read. Source-change (`~`) tracking filters to active baseline entries because tombstones do not represent a live install source.
 
 **Exported functions:**
 
@@ -239,7 +229,7 @@ Computes the per-scope diff rows and scope badges that the confirm-step summary 
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ScopeDiffInput` | `{ currentSkills: SkillConfig[]; currentAgents: AgentScopeConfig[]; installedSkillConfigs: SkillConfig[] \| null; installedAgentConfigs: AgentScopeConfig[] \| null; isInitMode: boolean }` |
 | `DiffRowStatus`  | `"added" \| "source-changed" \| "removed" \| "unchanged"`                                                                                                                                   |
-| `SkillDiffRow`   | `{ id: SkillId; source: string; status: DiffRowStatus }` — **no `prevSource`**: D-261 removed it when the verbose transition label was replaced by the compact `~` marker                   |
+| `SkillDiffRow`   | `{ id: SkillId; source: string; status: DiffRowStatus }` — **no `prevSource`**: the compact `~` marker replaces the verbose transition label                                                |
 | `AgentDiffRow`   | `{ name: AgentName; status: Exclude<DiffRowStatus, "source-changed"> }`                                                                                                                     |
 | `ScopeDiff`      | `{ projectSkillRows: SkillDiffRow[]; globalSkillRows: SkillDiffRow[]; projectAgentRows: AgentDiffRow[]; globalAgentRows: AgentDiffRow[]; hasContent: boolean }`                             |
 | `ScopeBadges`    | `{ scope: SkillScope \| undefined; secondaryScope: SkillScope \| undefined }`                                                                                                               |
@@ -248,14 +238,14 @@ Computes the per-scope diff rows and scope badges that the confirm-step summary 
 
 ### Known Limitations (`computeScopeDiff`, both OPEN)
 
-Two shapes render incorrectly on the confirm step. Neither is mirrored by the Sources tab, which is the authoritative surface for both. Full derivation in `.ai-docs/agent-findings/2026-07-29-per-slot-removal-exposes-fixture-name-mismatch-and-confirm-double-row.md`; also listed in the 0.146.0 changelog backlog.
+Two shapes render incorrectly on the confirm step. Neither is mirrored by the Sources tab, which is the authoritative surface for both. Full derivation in `.ai-docs/agent-findings/2026-07-29-per-slot-removal-exposes-fixture-name-mismatch-and-confirm-double-row.md`.
 
 | Shape                                                                      | Rendered                                                      | Should be                  | Cause                                                                                                                             |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Snapshot `[G active]` + live `[P active]`, no tombstone (inherited global) | Two Global rows for one skill — `unchanged` **and** `removed` | One `unchanged` Global row | `inheritedGlobalSkills` re-surfaces the entry while the slot-occupancy `removedSkills` filter independently classifies it as gone |
 | Snapshot `[G tombstone]` + live `[]`                                       | A Global `removed` row                                        | Nothing                    | A tombstone is a mask over a global install, not an install; dropping it deletes nothing                                          |
 
-Reachability: the first is far less reachable since D-279 masks such configs at write time; the second cannot occur within a session, because every store path that drops a tombstone fills the same slot with an active entry. The Sources-tab equivalents avoid both via `isSlotAlreadyRendered` and by excluding snapshot tombstones as removal candidates.
+Reachability: the first is far less reachable masks such configs at write time; the second cannot occur within a session, because every store path that drops a tombstone fills the same slot with an active entry. The Sources-tab equivalents avoid both via `isSlotAlreadyRendered` and by excluding snapshot tombstones as removal candidates.
 
 **Consumers:**
 
@@ -275,7 +265,7 @@ When `edit` command enters the wizard (see `runEditWizard` in `edit.tsx`):
 2. `installedSkillIds` and `installedSkillConfigs` are passed to `populateFromSkillIds(skillIds, savedConfigs)` inside hydrate to hydrate skill selections.
 3. `initialDomains` and `initialAgents` (from saved config) override defaults.
 4. `installedAgentConfigs` becomes `agentConfigs` (scope preserved) and is snapshotted into `installedAgentConfigs` for diff rendering.
-5. Global-item locking handled inside store: `toggleAgent`/`toggleTechnology` check `installedSkillConfigs`/`installedAgentConfigs` and show toast if blocked — in every flow, init included (D-277).
+5. Global-item locking handled inside store: `toggleAgent`/`toggleTechnology` check `installedSkillConfigs`/`installedAgentConfigs` and show toast if blocked — in every flow, init included.
 6. `isEditingFromGlobalScope` disables scope toggle (S key) when editing from the global install root.
 7. User modifies selections; `goBack` navigates through `history` (empty at start in edit mode, so ESC on build exits via `onCancel`).
 8. On confirm: `detectConfigChanges()` in `edit.tsx` produces `ConfigChanges` (`addedSkills`/`removedSkills`, `addedAgents`/`removedAgents`, `sourceChanges`, `scopeChanges`, `agentScopeChanges`, plus `dualScopeSkillTransitions`/`dualScopeAgentTransitions` sets that steer only the completion summary) and applies migrations, plugin install/uninstall, local-skill copy, config write, and agent recompile in order.
@@ -307,7 +297,7 @@ Hotkeys are centralized in `src/cli/components/wizard/hotkeys.ts`.
 Build step (in `hotkeys.ts`):
 
 - `D`: Toggle labels display (`HOTKEY_TOGGLE_LABELS`)
-- `F`: Toggle incompatible skill filtering (`HOTKEY_FILTER_INCOMPATIBLE`). **Currently a no-op** — gated behind `FEATURE_FLAGS.FILTER_INCOMPATIBLE` (default `false`, D-269) in both `use-category-grid-input.ts` (the keypress) and `wizard-layout.tsx` (the footer hint), because of a dual-scope collapse bug. When re-enabled: turning the filter on removes incompatible web skills; if any of those removals would uninstall a globally-installed skill during a project-scope edit, `toggleFilterIncompatible` in `wizard-store.ts` refuses the entire toggle (filter included) with the `GLOBAL_SKILLS_LOCKED` toast — the same lock `toggleTechnology` applies to spacebar (D-242, added 0.143.0; bypassed only when `isEditingFromGlobalScope` is true — D-277 removed the init-mode bypass).
+- `F`: Toggle incompatible skill filtering (`HOTKEY_FILTER_INCOMPATIBLE`). **Currently a no-op** — gated behind `FEATURE_FLAGS.FILTER_INCOMPATIBLE`(default `false`) in both `use-category-grid-input.ts` (the keypress) and `wizard-layout.tsx` (the footer hint), because of a dual-scope collapse bug. When re-enabled: turning the filter on removes incompatible web skills; if any of those removals would uninstall a globally-installed skill during a project-scope edit, `toggleFilterIncompatible` in `wizard-store.ts` refuses the entire toggle (filter included) with the `GLOBAL_SKILLS_LOCKED` toast — the same lock `toggleTechnology` applies to spacebar (bypassed only when `isEditingFromGlobalScope` is true; there is no init-mode bypass).
 - Arrow keys **and vim keys** (`h`/`j`/`k`/`l`) move focus; `Tab` jumps to the next category section (wrapping) and `Shift+Tab` toggles labels. All registered through one stable `useInput` handler held in a ref, so a domain remount cannot drop the first keypress into a stale closure.
 
 Sources step (customize view, handled in `step-sources.tsx`):
@@ -322,7 +312,7 @@ Sources step (source-grid in `source-grid.tsx`):
 
 - Arrow keys only — **no vim keys here** (unlike the build step). `←`/`→` move between source option columns, `↑`/`↓` between skill rows, with wrapping.
 - `SPACE`: select the focused source for the focused skill, OR trigger the search modal when focused on the search pill. It returns immediately on an inert row (`isRowInert` = `readOnly || disabled`), so a locked or pending-removal row can never be acted on.
-- **Overscroll to reach trailing inert rows (D-271).** Focus skips inert rows, so a trailing locked or pending-removal row is unreachable by focus alone. When focus already sits on the last focusable row (`lastFocusableRowIndex`) — or when no row is focusable at all — `↓` calls `useSectionScroll`'s `scrollBy(1)` to travel the viewport past focus instead of wrapping; `↑` does the same with `scrollBy(-1)` in the no-focusable-row case. Both are gated on `scrollEnabled` and a non-zero `hiddenBelow`/`hiddenAbove`.
+- **Overscroll to reach trailing inert rows.** Focus skips inert rows, so a trailing locked or pending-removal row is unreachable by focus alone. When focus already sits on the last focusable row (`lastFocusableRowIndex`) — or when no row is focusable at all — `↓` calls `useSectionScroll`'s `scrollBy(1)` to travel the viewport past focus instead of wrapping; `↑` does the same with `scrollBy(-1)` in the no-focusable-row case. Both are gated on `scrollEnabled` and a non-zero `hiddenBelow`/`hiddenAbove`.
 - Search pill only rendered when `FEATURE_FLAGS.SOURCE_SEARCH` is on (onSearch prop is provided). While the search modal is open the grid's `useInput` is deactivated entirely (`isActive: !searchModal.isOpen`).
 - Rows are grouped into `Global` / `Project` sections only when both scopes are present (`groupRowsByScope`); otherwise the grid renders flat with no scope column.
 
@@ -428,44 +418,44 @@ export type StepSettingsProps = {
 - The default public source (`PUBLIC_SOURCE_NAME`) cannot be removed — DEL/Backspace on it is a no-op.
 - Hotkeys (`A` add, `DEL`/`Backspace` remove, `ESC`/`S` close): see the Settings step subsection under Keyboard Navigation.
 
-## Global-Item Guards (D-196)
+## Global-Item Guards
 
 > **Detailed documentation:** See [concepts/guard-pattern.md](../concepts/guard-pattern.md) for the unified guard reference, [concepts/scope-system.md](../concepts/scope-system.md) for scope system, and [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md) for tombstone lifecycle.
 
-Toggling a globally-installed agent from project scope is blocked in the `toggleAgent` store action in `wizard-store.ts` by an `isActiveGlobal` check — true when `installedAgentConfigs` holds an active global entry for the agent, or holds a global tombstone paired with a live active global entry in `agentConfigs` (the stale state a persisted `[P][G]` reaches after an in-session collapse). When triggered, the toast `TOAST_MESSAGES.GLOBAL_AGENTS_LOCKED` ("Global agents cannot be changed from project scope") is shown. The guard is bypassed only when `isEditingFromGlobalScope` is true — D-277 removed the init-mode bypass, so a globally-installed agent is immutable from project scope in every flow.
+Toggling a globally-installed agent from project scope is blocked in the `toggleAgent` store action in `wizard-store.ts` by an `isActiveGlobal` check — true when `installedAgentConfigs` holds an active global entry for the agent, or holds a global tombstone paired with a live active global entry in `agentConfigs` (the stale state a persisted `[P][G]` reaches after an in-session collapse). When triggered, the toast `TOAST_MESSAGES.GLOBAL_AGENTS_LOCKED` ("Global agents cannot be changed from project scope") is shown. The guard is bypassed only when `isEditingFromGlobalScope` is true; there is no init-mode bypass, so a globally-installed agent is immutable from project scope in every flow.
 
 The same `isActiveGlobal` pattern guards `toggleTechnology` in `wizard-store.ts` (toast `GLOBAL_SKILLS_LOCKED`): globally-installed skills cannot be toggled from project scope. In exclusive (radio) categories, it also blocks selecting a new skill when the current selection is globally installed.
 
-**Key state field:** `isInitMode` (boolean, default `false`) distinguishes init wizard from edit wizard. Since D-277 it gates **no** scope guard — global items are locked in both flows; its remaining readers are `computeScopeDiff` (suppresses removed-global diff rows) and `SkillAgentSummary`.
+**Key state field:** `isInitMode` (boolean, default `false`) distinguishes init wizard from edit wizard. It gates **no** scope guard — global items are locked in both flows; its remaining readers are `computeScopeDiff` (suppresses removed-global diff rows) and `SkillAgentSummary`.
 
-## Scope Toggle Eject Guard (D-199)
+## Scope Toggle Eject Guard
 
 `toggleSkillScope` in `wizard-store.ts` blocks project-eject to global-eject promotion when a non-excluded global eject entry already exists in `installedSkillConfigs`. However, if the current `skillConfigs` already contains an excluded tombstone for that skill ID, the guard allows the toggle (undo path). This prevents accidental overwrites while allowing users to reverse a previous scope change.
 
-## Dual-Scope Badges (D-183)
+## Dual-Scope Badges
 
 Both the build step (CategoryGrid) and agent step (StepAgents) now show dual-scope badges when a scope toggle creates a tombstone:
 
 - **SkillTag** (internal to `category-grid.tsx`): when `CategoryOption.secondaryScope` is set, renders a second background badge (`G`/`P`, warning color on `LABEL_BG`) immediately after the primary scope badge.
 - **StepAgents** in `step-agents.tsx`: derives the primary + secondary scope from the active and excluded `agentConfigs` entries via `deriveScopeBadges()`, then renders `[G]`/`[P]` bracket labels via `formatScopeTag()` (both from `src/cli/lib/wizard/scope-diff.ts`). The secondary badge only shows when the excluded tombstone has a different scope than the active entry.
 
-## Lock Icon for Globally Installed Skills (D-189)
+## Lock Icon for Globally Installed Skills
 
 `UI_SYMBOLS.LOCK` is rendered by `SourceGrid` in `source-grid.tsx` on read-only rows (`row.readOnly`) — the sources step surfaces globally-installed skills as locked global rows. The build-step `SkillTag` (in `category-grid.tsx`) no longer renders a lock icon; in the build step, globally-installed skills are signalled by the scope badge plus the toggle guard toast ("Global skills cannot be changed from project scope"). See `classifySkillSourceRows()` and `toLockedGlobalRow()` in `wizard-store.ts` for how read-only rows are produced.
 
-## Sources Tab Session Diff (D-257 / D-258 / D-278)
+## Sources Tab Session Diff (/ D-278)
 
 The sources step is not only a source picker — it is a second view of "what this session changes", and it must agree with the confirm step. Three behaviours make that up:
 
-- **A deselected saved skill stays visible as an inert removal row (D-257).** `collectRemovedInstalledEntries` finds every ACTIVE hydration-snapshot slot no live `skillConfigs` entry occupies; each becomes a `disabled` row via `toPendingRemovalRow`, pinned to its PERSISTED scope and source and carrying the red `-` marker. Without it the row would simply vanish and the user would lose sight of what saving removes — the case that matters most. The row is deliberately not `readOnly`, because a lock reads as "installed globally", not "about to be removed".
-- **A skill added this session carries a green `+` (D-258).** `collectInstalledSkillSlots` + `addedSlotFlag` decide the flag per `(id, scope)` slot, and every row shape in `classifySkillSourceRows` is fed it. An added row stays fully selectable and editable — unlike `disabled`/`readOnly`, `added` is not an inertness flag.
+- **A deselected saved skill stays visible as an inert removal row.** `collectRemovedInstalledEntries` finds every ACTIVE hydration-snapshot slot no live `skillConfigs` entry occupies; each becomes a `disabled` row via `toPendingRemovalRow`, pinned to its PERSISTED scope and source and carrying the red `-` marker. Without it the row would simply vanish and the user would lose sight of what saving removes — the case that matters most. The row is deliberately not `readOnly`, because a lock reads as "installed globally", not "about to be removed".
+- **A skill added this session carries a green `+`.** `collectInstalledSkillSlots` + `addedSlotFlag` decide the flag per `(id, scope)` slot, and every row shape in `classifySkillSourceRows` is fed it. An added row stays fully selectable and editable — unlike `disabled`/`readOnly`, `added` is not an inertness flag.
 - **Both are keyed on the slot, exactly as the confirm step is (D-278).** Both surfaces call `skillSlotKey` from `scope-diff.ts`. The consequences: a removal shows at global scope too (the old `isEditingFromGlobalScope` gate on the removal collector is gone; the confirm step never had one); adopting a globally-installed skill at project scope shows `+` on the new project row while the global row stays a plain lock; and a collapsed dual-scope pair renders **two** rows — the surviving locked global row plus a red inert pending-removal row for the emptied project slot — which is exactly what the confirm step already reported (`-` at Project, `•` at Global). `isSlotAlreadyRendered` prevents a removal row being stacked on a slot an emitted row already renders, so an inherited global install never reads as both locked and removed.
 
-**Source selection is scope-threaded (D-262).** `handleGridSelect` in `step-sources.tsx` looks up the skill's single non-inert row and passes its `scope` to `store.setSourceSelection(skillId, sourceId, scope)`, which rewrites only the active entry at that slot. A dual-scope skill renders only its project row as editable, so the masked global tombstone keeps its own source.
+**Source selection is scope-threaded.** `handleGridSelect` in `step-sources.tsx` looks up the skill's single non-inert row and passes its `scope` to `store.setSourceSelection(skillId, sourceId, scope)`, which rewrites only the active entry at that slot. A dual-scope skill renders only its project row as editable, so the masked global tombstone keeps its own source.
 
 Full mechanics: `store-map.md`, "Sources-tab session diff" and "Source-row builders". Rendering contract: `component-patterns.md`, "SourceGrid Row States".
 
-## Viewport Clipping and Overflow Affordance (D-263 / D-271)
+## Viewport Clipping and Overflow Affordance
 
 Long content used to bleed outside its border at short terminal heights. Two rules now hold across the wizard:
 
@@ -479,13 +469,13 @@ Long content used to bleed outside its border at short terminal heights. Two rul
 
 The Sources column header is pinned OUTSIDE the clipping viewport so it cannot scroll away, but it costs a row just as the affordance does; below `SOURCE_GRID_HEADER_MIN_HEIGHT = 4` the column labels yield to content (`showPinnedHeader`). See `component-patterns.md`, "Scrolling", for the measurement and overscroll model.
 
-## Source Change Marker (D-200, compacted by D-261)
+## Source Change Marker(compacted)
 
 `SkillAgentSummary` in `skill-agent-summary.tsx` shows a `~` prefix (instead of `+` or bullet) when a skill's source has changed from the installed version. The `"source-changed"` status is computed by `computeScopeDiff()`/`classifyDiffRow()` in `src/cli/lib/wizard/scope-diff.ts` (condition: `!isNew && prevSource != null && prevSource !== skill.source`, where `prevSource` comes from the active-baseline `prevSourceMap`).
 
-**The transition label is gone (D-261).** `SkillRow` used to append a dim `(OldSource → NewSource)` — e.g. `agents-inc → eject` — which wrapped out of its row at realistic widths. It now renders only `DIFF_PREFIX[status]` + `getSkillDisplayName(row.id)`, plus an `EjectIcon` when `row.source === EJECT_SOURCE`. The compact `~` marker the row already carried is the whole signal, and `SkillDiffRow` no longer carries a `prevSource` field. Consequently `skill-agent-summary.tsx` no longer imports `formatSourceDisplayName`; `summary-panel.tsx` still does, for its marketplace header.
+**The transition label is gone.** `SkillRow` used to append a dim `(OldSource → NewSource)` — e.g. `agents-inc → eject` — which wrapped out of its row at realistic widths. It now renders only `DIFF_PREFIX[status]` + `getSkillDisplayName(row.id)`, plus an `EjectIcon` when `row.source === EJECT_SOURCE`. The compact `~` marker the row already carried is the whole signal, and `SkillDiffRow` no longer carries a `prevSource` field. Consequently `skill-agent-summary.tsx` no longer imports `formatSourceDisplayName`; `summary-panel.tsx` still does, for its marketplace header.
 
-## Stack Selection Grouping (D-194)
+## Stack Selection Grouping
 
 `StackSelection` in `stack-selection.tsx` now groups stacks by the `group` property on each resolved stack (`ResolvedStack.group?: string` in `types/matrix.ts`; the base `Stack` type has no `group` field).
 
@@ -494,7 +484,7 @@ The Sources column header is pinned OUTSIDE the clipping viewport so it cannot s
 - Ungrouped stacks appear under "Other Frameworks" label
 - When no stacks have `group`, falls back to flat list with no headers
 
-## Stack Agent Preselection (D-195)
+## Stack Agent Preselection
 
 Stack selection now preselects agents from the stack's agent keys, merged with global agent preselections.
 

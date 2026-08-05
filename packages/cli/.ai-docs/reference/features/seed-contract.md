@@ -36,7 +36,6 @@ keywords:
     vendored-schema,
     discard-dont-migrate,
     D-239,
-    D-305,
   ]
 related:
   - reference/commands/index.md
@@ -51,18 +50,7 @@ related:
 last_validated: 2026-08-02
 ---
 
-<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
-     ✓ The Vendoring Rule and the unit-test table — seed-schema-drift.test.ts read in full and the
-       counts re-derived by RUNNING `vitest run src/cli/lib/seed/
-       src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts` -> 20 passed, 4 files
-     ✗ everything else — payload shape, version policy, seed -> WizardResultV2 mapping, the E2E
-       family and its per-file counts: still on the 2026-08-02 FULL basis
--->
-
 # Seed Contract (`init --from`)
-
-**Last Updated:** 2026-08-06
-**Last Validated:** 2026-08-02 (PARTIAL pass since; see the annotation above)
 
 > **What this document owns.** The wire contract for configurations shared from agentsinc.sh, its
 > version policy, the payload -> `WizardResultV2` mapping, and the `init --from <id>` consumer path.
@@ -108,7 +96,7 @@ graph TD
 
 **`seed-schema.ts` is a hand-maintained copy. The original lives in the web monorepo at
 `packages/matrix/src/seed.ts` and is the source of truth** — that file says so outright, and the CLI
-copy's header names it. Both were read this session and agree field for field, enum member for enum
+copy's header names it. The two agree field for field, enum member for enum
 member, on `SEED_VERSION = 3`.
 
 **Why copied rather than depended on:** a published package spanning two repos means versioning and a
@@ -134,7 +122,7 @@ shared package once the contract stops moving (**D-239**, `todo/D-239-web-ui-sha
 
 ### `seed-schema-drift.test.ts` compares the two copies by JSON-Schema projection
 
-`src/cli/lib/seed/seed-schema-drift.test.ts` (new 2026-08-05) loads the canonical
+`src/cli/lib/seed/seed-schema-drift.test.ts` loads the canonical
 `packages/matrix/src/seed.ts` alongside the vendored `seed-schema.ts` and asserts:
 
 - `SEED_VERSION` is identical, and
@@ -311,19 +299,19 @@ second install path that can drift.
 
 ### Payload field -> `WizardResultV2` field
 
-| `WizardResultV2` field | Derived from                                                                   | Rule                                                                                                                                                                                                                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skills`               | `payload.skills` (surviving entries)                                           | `{ id, scope: entry.scope, source }`. `source` = `"eject"` when `install === "eject"`, else the skill's **primary** `availableSources` entry, else `DEFAULT_PUBLIC_SOURCE_NAME` (`sourceForSkill`, mirroring the wizard's own resolution)                                                 |
-| `selectedAgents`       | assignment names on surviving skills **∪** map entries with `on === true`      | De-duplicated via a `Set`; order is insertion order (assignment order first, then bare agents). **Order is not part of the contract** — the specs that care sort                                                                                                                          |
-| `agentConfigs`         | `selectedAgents.map(name => agentScopeConfig(name, agentMap.known.get(name)))` | One row per selected agent. `scope` defaults to `"project"`; `model` / `effort` are spread in **only when defined**, so an absent key never becomes an explicit `undefined`                                                                                                               |
-| `assignedStack`        | `entry.assignments` per surviving skill                                        | `Partial<Record<AgentName, StackAgentConfig>>`, category-keyed, appended in payload order. `"preloaded"` -> `{ preloaded: true }`. See [assignedStack](#why-assignedstack-exists)                                                                                                         |
-| `selectedStackId`      | `payload.stackId`                                                              | Passed through verbatim, including `null`                                                                                                                                                                                                                                                 |
-| `domainSelections`     | surviving skills, grouped `domain -> category -> SkillId[]`                    | Domain resolved by `getCategoryDomain(skill.category)`; duplicates suppressed by an `includes` check                                                                                                                                                                                      |
-| `selectedDomains`      | `orderDomains(Object.keys(domainSelections))`                                  | Canonical display order (custom domains alphabetically, then `BUILT_IN_DOMAIN_ORDER`) — the same helper the wizard uses                                                                                                                                                                   |
-| `unresolvableSkillIds` | — always `[]`                                                                  | **Deliberate.** That field is the D-233 Scenario C guard protecting entries in a _saved config_ the wizard could not represent. Nothing here came from a saved config; the skipped ids came off the wire and are reported to the user directly, so there is no existing entry to preserve |
-| `cancelled`            | — always `false`                                                               | There is no interactive step to cancel                                                                                                                                                                                                                                                    |
-| `validation`           | — always `{ valid: true, errors: [], warnings: [] }`                           | **Deliberate.** The sharing app already validated the selection, and this path has no interactive step in which a warning could be acted on                                                                                                                                               |
-| `matrixVersion`        | — **not mapped**                                                               | Decoded and discarded. No reader anywhere in `src/`                                                                                                                                                                                                                                       |
+| `WizardResultV2` field | Derived from                                                                   | Rule                                                                                                                                                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills`               | `payload.skills` (surviving entries)                                           | `{ id, scope: entry.scope, source }`. `source` = `"eject"` when `install === "eject"`, else the skill's **primary** `availableSources` entry, else `DEFAULT_PUBLIC_SOURCE_NAME` (`sourceForSkill`, mirroring the wizard's own resolution)                                           |
+| `selectedAgents`       | assignment names on surviving skills **∪** map entries with `on === true`      | De-duplicated via a `Set`; order is insertion order (assignment order first, then bare agents). **Order is not part of the contract** — the specs that care sort                                                                                                                    |
+| `agentConfigs`         | `selectedAgents.map(name => agentScopeConfig(name, agentMap.known.get(name)))` | One row per selected agent. `scope` defaults to `"project"`; `model` / `effort` are spread in **only when defined**, so an absent key never becomes an explicit `undefined`                                                                                                         |
+| `assignedStack`        | `entry.assignments` per surviving skill                                        | `Partial<Record<AgentName, StackAgentConfig>>`, category-keyed, appended in payload order. `"preloaded"` -> `{ preloaded: true }`. See [assignedStack](#why-assignedstack-exists)                                                                                                   |
+| `selectedStackId`      | `payload.stackId`                                                              | Passed through verbatim, including `null`                                                                                                                                                                                                                                           |
+| `domainSelections`     | surviving skills, grouped `domain -> category -> SkillId[]`                    | Domain resolved by `getCategoryDomain(skill.category)`; duplicates suppressed by an `includes` check                                                                                                                                                                                |
+| `selectedDomains`      | `orderDomains(Object.keys(domainSelections))`                                  | Canonical display order (custom domains alphabetically, then `BUILT_IN_DOMAIN_ORDER`) — the same helper the wizard uses                                                                                                                                                             |
+| `unresolvableSkillIds` | — always `[]`                                                                  | **Deliberate.** That field is the Scenario C guard protecting entries in a _saved config_ the wizard could not represent. Nothing here came from a saved config; the skipped ids came off the wire and are reported to the user directly, so there is no existing entry to preserve |
+| `cancelled`            | — always `false`                                                               | There is no interactive step to cancel                                                                                                                                                                                                                                              |
+| `validation`           | — always `{ valid: true, errors: [], warnings: [] }`                           | **Deliberate.** The sharing app already validated the selection, and this path has no interactive step in which a warning could be acted on                                                                                                                                         |
+| `matrixVersion`        | — **not mapped**                                                               | Decoded and discarded. No reader anywhere in `src/`                                                                                                                                                                                                                                 |
 
 ### Skip, do not fail
 
@@ -482,9 +470,9 @@ documents the older skills-only guard; see [Cross-Surface Defects](#cross-surfac
 
 ### Unit / command tests
 
-Verified by running them 2026-08-06: `vitest run src/cli/lib/seed/ src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts`
+Verified by running them: `vitest run src/cli/lib/seed/ src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts`
 -> **20 passed**, 4 files. **This document owns these numbers.** (Was 13 across 3 files before
-`seed-schema-drift.test.ts` landed on 2026-08-05.)
+`seed-schema-drift.test.ts` is included.)
 
 | Spec file                                                         | Specs | Covers                                                                                                                                 |
 | ----------------------------------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -543,19 +531,15 @@ header:** wire contract and command plumbing live in `init-from-shared-config`; 
 payload turns into on disk lives in the `init-from-scenarios-*` specs. A new contract-level assertion
 belongs in the former.
 
-## D-305 — the plugin-install scare
+## Plugin install under `init --from`
 
-**"`init --from` never installs plugins" was investigated and closed with no product change: it was
-not reproducible on current source, and the reported run turned out to be a pre-refactor local build
-whose `--from` producer skipped the plugin leg entirely (the published CLI had no `--from` at all).**
-`changelogs/0.148.0.md` § D-305 carries the released half. Hardening landed anyway, so the green cannot lie
-again: `toHavePluginInRegistry` now requires the install path to exist and hold
-`skills/<id>/SKILL.md`; the scenario E2Es gained content, `enabledPlugins` and output assertions plus
-a home-scope variant; and `init-from-plugin-install.test.ts` drift-locks that every plugin skill
+`toHavePluginInRegistry` requires the install path to exist and hold `skills/<id>/SKILL.md`; the
+scenario E2Es assert content, `enabledPlugins` and output; and
+`src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts` drift-locks that every plugin skill
 reaches `claudePluginInstall` at its mapped scope and that the config write never precedes a
 successful install.
 
-The two invariants that test now pins are worth stating on their own, because neither is observable
+The two invariants that test pins are worth stating on their own, because neither is observable
 from outside:
 
 - **Scope mapping.** A payload `scope: "global"` reaches the Claude CLI as `"user"`; `"project"`

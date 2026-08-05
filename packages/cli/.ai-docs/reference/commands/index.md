@@ -26,17 +26,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
-     ✓ the render-wrapper rule (src/cli/components/render.ts + its five importers) and the whole
-       FEATURE_FLAGS inventory, re-derived from src/cli/lib/feature-flags.ts — 8 flags, envFlag()
-     ✗ everything else: the command-file inventory and flag/arg/alias tables stand on 2026-08-01,
-       the per-command prose on 2026-07-30
--->
-
 # Commands Reference
-
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
 
 ## Command Architecture
 
@@ -122,9 +112,9 @@ The single oclif lifecycle hook, registered in `package.json` under `oclif.hooks
 7. If eject/mixed: `copyEjectSkillsStep()` -- **Operation: `copyLocalSkills()`** copies eject-source skills split by scope.
 8. If plugin/mixed: `installPluginsStep()` -- **Operation: `installPluginSkills()`**; hard-errors (`pluginInstallFailureError`) on any per-skill failure before config is written.
 9. `writeConfigAndCompile()`: **Operation: `writeProjectConfig()`** (writes `.claude-src/config.ts` through the config-gate; `ensureBlankPair()` runs inside this operation, not in the command), **Operation: `loadAgentDefs()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`** (compiles agents across scopes; single home-root pass or split global+project passes), then `reportPropagatedRecompile(configResult.propagation)`.
-10. `checkPermissions()` -- render permission warning (Ink) if needed, awaiting `waitUntilExit()`. Reading a settings file takes its `permissions` block and warns about nothing else in it (D-304): `settings.json` belongs to Claude Code, so `readSettingsPermissions` (`src/cli/lib/permission-checker.tsx`) judges no field of it. A malformed file still warns and is skipped.
+10. `checkPermissions()` -- render permission warning (Ink) if needed, awaiting `waitUntilExit()`. Reading a settings file takes its `permissions` block and warns about nothing else in it: `settings.json` belongs to Claude Code, so `readSettingsPermissions` (`src/cli/lib/permission-checker.tsx`) judges no field of it. A malformed file still warns and is skipped.
 
-**Propagated-project recompile (D-240, contract rewritten 2026-08-02).** `writeProjectConfig` returns `ConfigWriteResult.propagation`, a `GateReport`. The registered projects whose `config.ts` this run's global change fanned into have **already been recompiled by the config-gate**, at project scope with per-project failure isolation; the command only renders. `reportPropagatedRecompile()` early-returns on an empty `propagated.updated` (nothing logged), re-emits `recompile.warnings` via `this.warn()`, and prints `Recompiled agents in N registered projects` with a ` (N failed)` suffix when any failed. `init` and `compile` use that exact wording; `edit` prints `registered project(s)`. Both forms are asserted by `e2e/pages/constants.ts`, so do not unify them.
+**Propagated-project recompile.** `writeProjectConfig` returns `ConfigWriteResult.propagation`, a `GateReport`. The registered projects whose `config.ts` this run's global change fanned into have **already been recompiled by the config-gate**, at project scope with per-project failure isolation; the command only renders. `reportPropagatedRecompile()` early-returns on an empty `propagated.updated` (nothing logged), re-emits `recompile.warnings` via `this.warn()`, and prints `Recompiled agents in N registered projects` with a ` (N failed)` suffix when any failed. `init` and `compile` use that exact wording; `edit` prints `registered project(s)`. Both forms are asserted by `e2e/pages/constants.ts`, so do not unify them.
 
 **Not-installed detection.** `detectInstallationInDir` (`src/cli/lib/installation/installation.ts`) returns `null` for a config that declares neither skills nor agents, so a content-less config reads as NOT installed and `init` routes to the setup wizard instead of the dashboard. It also returns `null` when the config file vanished between the `fileExists` probe and the load. A **corrupt** config is different: `loadProjectConfigFromDir` throws `ConfigLoadError`, which propagates to the caller rather than becoming a phantom eject installation.
 
@@ -171,16 +161,16 @@ Plus a hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`
 6. **No-change branch** (`!hasAnyChanges(changes)`): logs `"No changes made."` and returns -- UNLESS `isProjectSetup` (`flags[EDIT_PROJECT_SETUP_FLAG] && !isHomeDirectory(cwd)`), in which case it still runs `writeConfigAndCompile()` to materialise the project (init dashboard flow)
 7. `logChangeSummary()` -- styled diff using display names from matrix, scope labels `[G]`/`[P]`, green `+` for G-to-P scope migrations, dual-scope `[P]` add/remove lines
 8. `applyMigrations()` -- `detectMigrations()` + `executeMigration()` for eject-to-plugin and plugin-to-eject mode switches; returns migrated `Set<SkillId>`
-9. `recordGlobalSourceMigrations()` -- rewrites `source` on active-global entries this run migrated, in the global config (project-context runs only), via `config-gate::mutateGlobal({ kind: "migrate-skill-sources" })`. Since the per-skill `source` decides the reference form a compiled agent emits (D-217), this classifies T1: the gate fans the change out to every OTHER registered project and recompiles their agents, and `reportPropagatedRecompile` renders the result. Runs BEFORE step 15, whose own write then classifies as a byte-identical no-op, so nothing fans out twice.
+9. `recordGlobalSourceMigrations()` -- rewrites `source` on active-global entries this run migrated, in the global config (project-context runs only), via `config-gate::mutateGlobal({ kind: "migrate-skill-sources" })`. Since the per-skill `source` decides the reference form a compiled agent emits, this classifies T1: the gate fans the change out to every OTHER registered project and recompiles their agents, and `reportPropagatedRecompile` renders the result. Runs BEFORE step 15, whose own write then classifies as a byte-identical no-op, so nothing fans out twice.
 10. `applyScopeChanges()` -- `migrateLocalSkillScope()` for eject skills, `migratePluginSkillScopes()` for plugin skills (marketplace required)
 11. `applySourceChanges()` -- `deleteLocalSkill()` on the old scope dir for non-migration eject-source changes
 12. `applyPluginChanges()` -- **Operation: `installPluginSkills()`** for added plugins (hard-errors on failure), **Operation: `uninstallPluginSkills()`** for removed; marketplace via `requireMarketplaceOrExit()`
 13. `copyNewLocalSkills()` -- **Operation: `copyLocalSkills()`** for newly added eject-source skills
-14. `removeDeletedLocalSkills()` -- `deleteLocalSkill()` for fully-deselected eject skills (D-233)
-15. `writeConfigAndCompile()` -- **Operation: `loadAgentDefs()`**, **Operation: `writeProjectConfig()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`**, then `reportPropagatedRecompile(configResult.propagation)` (D-240; same contract as `init`, but the summary line reads `registered project(s)`)
+14. `removeDeletedLocalSkills()` -- `deleteLocalSkill()` for fully-deselected eject skills
+15. `writeConfigAndCompile()` -- **Operation: `loadAgentDefs()`**, **Operation: `writeProjectConfig()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`**, then `reportPropagatedRecompile(configResult.propagation)` (same contract as `init`, but the summary line reads `registered project(s)`)
 16. `cleanupStaleAgentFiles()` -- remove old agent .md files after scope changes / deselection
 
-**Global immutability (D-277).** A globally installed skill or agent cannot be deselected from a project in any flow, `init` included, so `removedSkills` / `removedAgents` never contain an active global entry when the edit runs at project scope. Domain deselection is a view filter that drops only project-owned skills. The rule is enforced in the wizard store, not in this command -- see `reference/concepts/scope-system.md`.
+**Global immutability.** A globally installed skill or agent cannot be deselected from a project in any flow, `init` included, so `removedSkills` / `removedAgents` never contain an active global entry when the edit runs at project scope. Domain deselection is a view filter that drops only project-owned skills. The rule is enforced in the wizard store, not in this command -- see `reference/concepts/scope-system.md`.
 
 **Exported utilities (`@internal`, for testing):**
 
@@ -211,7 +201,7 @@ Plus a hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`
 
 **Flow:**
 
-1. `detectInstallations(cwd)` -- **Operation: `detectBothInstallations(cwd)`**, returning `{ global, project, hasBoth }`. A `ConfigLoadError` (config file present but unparseable) is caught and re-raised via `this.error(..., { exit: EXIT_CODES.ERROR })` naming the offending file, **before any write** -- a corrupt config must never let compile run config-less and resurrect every built-in agent (D-273).
+1. `detectInstallations(cwd)` -- **Operation: `detectBothInstallations(cwd)`**, returning `{ global, project, hasBoth }`. A `ConfigLoadError` (config file present but unparseable) is caught and re-raised via `this.error(..., { exit: EXIT_CODES.ERROR })` naming the offending file, **before any write** -- a corrupt config must never let compile run config-less and resurrect every built-in agent.
 2. Error `ERROR_MESSAGES.NO_INSTALLATION` if neither installation found
 3. `resolveAndLogSource()` -- `resolveSource()` from configuration, logs `Source: <sourceOrigin>`
 4. `loadAgentDefsOrFail()` -- **Operation: `loadAgentDefs({ projectDir })`**
@@ -219,19 +209,19 @@ Plus a hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`
 6. For each pass (`runCompilePass`):
    a. `discoverAllSkills()` -- **Operation: `discoverInstalledSkills(projectDir)`**
    b. If `totalSkillCount === 0`: log `No skills found for <label> pass, skipping`, still run `refreshConfigTypes()`, and return `false`. The config loads independently of discovered skills, so a hand-edited `config.ts` listing skills with nothing installed for that scope must still get fresh unions.
-   c. `warnUnresolvedStackSkills()` -- emits `this.warn()` for each configured stack skill absent from disk (excluded ids filtered via `effectivelyExcludedSkillIds`); such skills are dropped from the recompiled agents rather than silently omitted (D-254)
+   c. `warnUnresolvedStackSkills()` -- emits `this.warn()` for each configured stack skill absent from disk (excluded ids filtered via `effectivelyExcludedSkillIds`); such skills are dropped from the recompiled agents rather than silently omitted
    d. **Operation: `compileAgents({ projectDir, sourcePath, skills, pluginDir, outputDir, scopeFilter })`**
-   e. When the pass compiled zero agents and `label === "Project"`, `hintGlobalScopedAgents()` counts the config's active `scope === "global"` agents and, if non-zero, prints `globalScopedAgentsHint(count)` after `INFO_MESSAGES.NO_AGENTS_TO_RECOMPILE` (D-275)
+   e. When the pass compiled zero agents and `label === "Project"`, `hintGlobalScopedAgents()` counts the config's active `scope === "global"` agents and, if non-zero, prints `globalScopedAgentsHint(count)` after `INFO_MESSAGES.NO_AGENTS_TO_RECOMPILE`
    f. `refreshConfigTypes()`
 7. After all passes, if no pass had skills, hard-error `No skills found. Add skills with '<bin> add <skill>' ...` (`EXIT_CODES.ERROR`).
 
 **`config-types.ts` regeneration.** The documented workflow is to hand-edit `config.ts` then run `compile`, so every pass regenerates the type unions for the scope it compiled via `reconcileTypesFromDisk(projectDir, config, { matrix, agents }, { currentProjectDir: cwd })` (`src/cli/lib/config-gate/index.ts`), matching the wizard write path exactly: standalone narrowed unions at global scope, import-and-extend at project scope (`regenerateConfigTypes`). The hand-edited `config.ts` is an input and is never rewritten. Success logs `INFO_MESSAGES.CONFIG_TYPES_REFRESHED`. When `loadProjectConfigFromDir` finds no config the refresh is skipped at verbose level. **Any failure downgrades to a warning** (`configTypesRefreshFailed(reason)`) -- the compiled agents are already written and remain valid; only the unions may be stale.
 
-**A home pass also propagates (new 2026-08-02).** `compile` at `$HOME` fans the hand-edited global config out to every registered project and recompiles their agents, printing `Recompiled agents in N registered projects`; unreachable projects are warned via `registeredProjectUpdateSkipped(path)`. The fan-out is unconditional because a hand edit leaves no prior state to classify against, so every registered project's inlined copy must be assumed stale. `currentProjectDir: cwd` excludes the project whose own pass will compile it, so a `compile` inside a registered project does not compile it twice. `reportPropagation()` runs OUTSIDE the refresh's `catch`, so an unreachable project is reported as that and not as a failed refresh.
+**A home pass also propagates.** `compile` at `$HOME` fans the hand-edited global config out to every registered project and recompiles their agents, printing `Recompiled agents in N registered projects`; unreachable projects are warned via `registeredProjectUpdateSkipped(path)`. The fan-out is unconditional because a hand edit leaves no prior state to classify against, so every registered project's inlined copy must be assumed stale. `currentProjectDir: cwd` excludes the project whose own pass will compile it, so a `compile` inside a registered project does not compile it twice. `reportPropagation()` runs OUTSIDE the refresh's `catch`, so an unreachable project is reported as that and not as a failed refresh.
 
 The matrix for that refresh is loaded with `loadSkillsMatrixFromSource({ sourceFlag, projectDir, skipExtraSources: true, matrixOnly: true })`. `matrixOnly` skips the `fetchFromSource` clone for the default source (the matrix is the pre-computed `BUILT_IN_MATRIX` anyway) so `compile` stays offline on a cold cache; `sourcePath` comes back empty. `skipExtraSources` is not a divergence from the wizard's fully tagged load -- extra sources only annotate `availableSources`/`activeSource` for wizard UI tagging and the config-types writer never reads them, so the emitted types are byte-identical (pinned by the `skipExtraSources` parity test in `local-installer.test.ts`).
 
-**Stale built-in agent pruning (D-264).** `compileAgents` calls `pruneStaleAgentsForPass` (`src/cli/lib/operations/project/compile-agents.ts`), which removes built-in agent `.md` files no longer compiled into `outputDir`. It runs **only on a scope-UNfiltered pass with an `outputDir`** -- an unfiltered pass owns its entire output directory. A scope-filtered pass (the `hasBoth` two-pass compile, or the D-240 registered-project recompile) sees one scope's roster and must never delete another scope's files, so it skips pruning. Hand-authored agents are preserved by the prune predicate (`pruneStaleCompiledAgents` in `src/cli/lib/agents/list-compiled-agents.ts`).
+**Stale built-in agent pruning.** `compileAgents` calls `pruneStaleAgentsForPass` (`src/cli/lib/operations/project/compile-agents.ts`), which removes built-in agent `.md` files no longer compiled into `outputDir`. It runs **only on a scope-UNfiltered pass with an `outputDir`** -- an unfiltered pass owns its entire output directory. A scope-filtered pass (the `hasBoth` two-pass compile, or the registered-project recompile) sees one scope's roster and must never delete another scope's files, so it skips pruning. Hand-authored agents are preserved by the prune predicate (`pruneStaleCompiledAgents` in `src/cli/lib/agents/list-compiled-agents.ts`).
 
 **Key dependencies:**
 
@@ -262,24 +252,20 @@ The matrix for that refresh is loaded with `loadSkillsMatrixFromSource({ sourceF
 | Present with records        | Each recorded `installPath` validated; a path that no longer exists is an **invalid plugin**           |
 | Unreadable / schema-invalid | `listRegisteredPluginInstalls` throws; counted as **1 error** (`failed: <reason>`), not scanned around |
 
-Before this pass existed, the direct-children-only scan made the v2 cache layout invisible and installed plugins were never validated.
-
 **Skill metadata -- advisory over-length `cliDescription`.** `validateInstalledSkillMetadata` parses `metadata.yaml` with `parseYaml`, runs `validateSkillMetadata()`, and on failure splits the issues with `splitMetadataValidationIssues(result.error, rawMetadata)` from `src/cli/lib/schemas.ts`. An over-length `cliDescription` (> `CLI_DESCRIPTION_MAX_LENGTH`) is downgraded to a **warning carrying the actual length** -- the runtime schemas accept any length and the value only feeds wizard description text, while the strict schema keeps `max(60)` as the declared contract. An empty or missing `cliDescription`, and every other issue, stays an **error**. `valid` is `errors.length === 0`, so an advisory warning alone no longer fails the run. `validateSource()` applies the same split for source-repo skills.
 
 **Directory-name rule.** Enforced during source validation by `checkSkillDirName` (`src/cli/lib/source-validator.ts`), which compares the directory name against the skill's **machine id read from `SKILL.md` frontmatter** (`parseFrontmatter(...).name`), not `displayName`. It runs independently of whether the metadata validated. Missing/invalid frontmatter, or an unreadable `SKILL.md`, produces a warning (`Cannot verify directory name '<dir>': ...`) rather than an error. Comparing `displayName` was unsatisfiable under the marketplace convention -- human display names living in `<domain>-<category>-<slug>` directories.
 
-**Parse-failure causes -- reported in one phase, not the other (0.147.1).** Two `catch` blocks in `src/cli/lib/source-validator.ts` bound the error and discarded it, in the command whose entire purpose is telling you what is wrong with your source repo. Both now interpolate `getErrorMessage(error)`:
+**Parse-failure causes -- reported in one phase, not the other.** Two `catch` blocks in `src/cli/lib/source-validator.ts` bound the error and discarded it, in the command whose entire purpose is telling you what is wrong with your source repo. Both now interpolate `getErrorMessage(error)`:
 
 | Site                                                      | Message emitted                                                                                     |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `validateSource` -- skill `metadata.yaml` parse           | `Failed to parse YAML: <cause>` (severity `error`) -- was losing a `YAMLParseError`'s line/column   |
 | `validateSource` -- categories/rules cross-reference load | `Cross-reference validation skipped: failed to load categories/rules: <cause>` (severity `warning`) |
 
-The second was self-evidencing before the fix: a template literal with no interpolation, the residue of a deleted `${getErrorMessage(error)}`.
-
 > **Known inconsistency -- the same sentence carries a cause from one phase and not the other.** `validateYamlFiles` (`src/cli/lib/source-validator.ts`) still emits a bare `Failed to parse YAML` with **no cause**, from a bare `catch {`. It has exactly three call sites, all in the optional source-repo phases: `validateStacks` (stack skill `metadata.yaml`, and `*/config.yaml`) and `validateAgents` (agent `metadata.yaml`). `validateConfigFiles` does **not** route through it -- it runtime-loads `.ts` config files via `validateTsConfig`, whose own `catch` already reports through `formatLoadError`.
 >
-> Deliberately out of scope for the 0.147.1 pass: with no binding there is no lint signal, so it was invisible to the sweep that found the other two. It is also the more general problem -- a linter can only ever see the bound-and-discarded variant. Do not read the presence of a cause on a `Failed to parse YAML` line as diagnostic of which file failed; it is diagnostic of which _phase_ produced it.
+> No linter can see this one: with no bound variable there is no unused-binding signal, and a linter can only ever catch the bound-and-discarded variant. Do not read the presence of a cause on a `Failed to parse YAML` line as diagnostic of which file failed; it is diagnostic of which _phase_ produced it.
 
 **Key dependencies:** `resolveAllSources()`, `isLocalSource()`, `SourceEntry` from configuration. `validateSource()` from source-validator. `validateAllPlugins()`, `validatePlugin()`, `printPluginValidationResult()`, `validateSkillFrontmatter()`, `validateAgentFrontmatter()`, `getUserPluginsDir()`, `getProjectPluginsDir()`, `getInstalledPluginsRegistryPath()`, `listRegisteredPluginInstalls()`, `ResolvedPlugin` from plugins. `resolveInstallPaths()`, `isHomeDirectory()` from installation. `validateSkillMetadata()`, `splitMetadataValidationIssues()` from schemas. `listAgentMdFiles()` from agents.
 
@@ -325,7 +311,7 @@ Installation: <name>
 
 **Behavior:** Calls `setVerbose(true)` unconditionally, so output is always verbose.
 
-**Checks run** (display order): Config Valid, Skills Resolved, Agents Compiled, No Orphans, Skills Installed, Plugins Installed, Source Reachable. `Skills Installed` is the eject-mode on-disk check (`checkSkillsInstalled`); `Plugins Installed` (`checkPluginSkillsInstalled`) verifies the plugin registry grouped by each skill's own scope (added D-253). `doctor` exits `EXIT_CODES.ERROR` if any check fails.
+**Checks run** (display order): Config Valid, Skills Resolved, Agents Compiled, No Orphans, Skills Installed, Plugins Installed, Source Reachable. `Skills Installed` is the eject-mode on-disk check (`checkSkillsInstalled`); `Plugins Installed` (`checkPluginSkillsInstalled`) verifies the plugin registry grouped by each skill's own scope. `doctor` exits `EXIT_CODES.ERROR` if any check fails.
 
 **Key dependencies:** **Operation: `detectProject()`**, **Operation: `loadSource()`**. Uses `validateProjectConfig()` from configuration, `discoverLocalSkills()` from skills, `getStackSkillIds()` from stacks.
 
@@ -350,7 +336,7 @@ Installation: <name>
 
 **Key dependencies:** **Operation: `loadSource()`**. Uses `resolveSource()`, `loadProjectSourceConfig()` from configuration; `ensureBlankPair()`, `mutateGlobal()`, `writeProjectPartial()`, `lazyGateDeps()` from the config-gate; `copySkillsToLocalFlattened()` from skills.
 
-**Config writes are scope-branched through the config-gate (2026-08-02).** `recordSource()` and `ensureMinimalConfig()` each branch on `isHomeDirectory(projectDir)`:
+**Config writes are scope-branched through the config-gate.** `recordSource()` and `ensureMinimalConfig()` each branch on `isHomeDirectory(projectDir)`:
 
 | Scope       | `recordSource`                                                                                                                    | `ensureMinimalConfig` (create-only-if-absent)                          |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -384,7 +370,7 @@ Installation: <name>
 | --yes    | -y    | boolean | Skip confirmation prompt  |
 | --source | -s    | string  | Skills source path or URL |
 
-> **`--all` removed (D-274, breaking).** Manifest removal is now unconditional -- plain `uninstall` does what `--all` used to do. `static flags` is `{ ...BaseCommand.baseFlags, yes }`; there is no `all` key. The old default left `config.ts` + `config-types.ts` behind, so a "successful" uninstall still left the project looking installed.
+> **`--all` was removed (breaking).** `static flags` is `{ ...BaseCommand.baseFlags, yes }` — there is no `all` key, and oclif rejects the flag. Manifest removal is unconditional: plain `uninstall` does what `--all` did. Leaving `config.ts` + `config-types.ts` behind made a "successful" uninstall leave the project looking installed.
 
 **Flow (`run`):**
 
@@ -414,9 +400,9 @@ Installation: <name>
 
 **Project uninstall -- deregistration.** Always calls `config-gate::mutateGlobal({ kind: "deregister-project", projectDir })` so future global edits stop propagating back into a removed project. Failure is **warned, not swallowed**: `Could not update the global project registry: <reason>`. A missing, project-less, or corrupt (`ConfigLoadError`) global config must never fail the uninstall. **The uninstall stays offline:** a `projects[]`-only change is classified as having no consequences, so the lazy matrix/agent loaders handed to the gate are never called, and the types half is not rewritten (nothing derives a union from the registration list).
 
-**Global uninstall -- prune AND recompile (2026-08-02).** `updateRegisteredProjects` calls `config-gate::propagateGlobalRemoval(propagation.globalConfig, { matrix, agents })`, which prunes the CLI-inlined global rows from every registered project and **recompiles those projects' agents** — they were compiled against the rows this uninstall just removed. It writes no pair (the pair it would derive from has just been deleted, which is why it is a dedicated entry point rather than a flag on a writing one). Rendering order: one `registeredProjectUpdateSkipped(path)` warn per skipped project, then `registeredProjectsUpdated(n)`, then each recompile warning, then `Recompiled agents in N registered projects` with a ` (N failed)` suffix. Any throw becomes `registeredProjectsUpdateFailed(reason)` — a failure here must never abort the uninstall.
+**Global uninstall -- prune AND recompile.** `updateRegisteredProjects` calls `config-gate::propagateGlobalRemoval(propagation.globalConfig, { matrix, agents })`, which prunes the CLI-inlined global rows from every registered project and **recompiles those projects' agents** — they were compiled against the rows this uninstall just removed. It writes no pair (the pair it would derive from has just been deleted, which is why it is a dedicated entry point rather than a flag on a writing one). Rendering order: one `registeredProjectUpdateSkipped(path)` warn per skipped project, then `registeredProjectsUpdated(n)`, then each recompile warning, then `Recompiled agents in N registered projects` with a ` (N failed)` suffix. Any throw becomes `registeredProjectsUpdateFailed(reason)` — a failure here must never abort the uninstall.
 
-**Corrupt PROJECT config -- uninstall proceeds (0.146.1).** `loadUninstallConfig(projectDir, onLoadFailed)` wraps the `loadProjectConfigFromDir` call in `detectUninstallTarget`:
+**Corrupt PROJECT config -- uninstall proceeds.** `loadUninstallConfig(projectDir, onLoadFailed)` wraps the `loadProjectConfigFromDir` call in `detectUninstallTarget`:
 
 ```ts
 catch (error) {
@@ -466,7 +452,7 @@ Previously a `ConfigLoadError` escaped `run()` and killed the command precisely 
 
 Agents are always recompiled after a successful update (`recompileAfterUpdate()`); there is no flag to skip recompilation.
 
-**Registered-project refresh (2026-08-02).** `refreshRegisteredProjects()` runs after `recompileAfterUpdate()` and before the completion summary, and only when at least one skill was updated. It reads `projects[]` off the global config (`loadProjectConfigFromDir(homeDir)`), drops the cwd — compared through `config-gate::normalizeProjectPath`, the same rule the registrations were stored under, so a symlinked cwd still matches — and hands the rest to `recompilePropagatedProjectAgents()`, the same helper the gate's fan-out uses. It re-emits that summary's warnings via `this.warn()` and prints `Recompiled agents in N registered projects` with a ` (N failed)` suffix, matching `init`'s wording exactly.
+**Registered-project refresh.** `refreshRegisteredProjects()` runs after `recompileAfterUpdate()` and before the completion summary, and only when at least one skill was updated. It reads `projects[]` off the global config (`loadProjectConfigFromDir(homeDir)`), drops the cwd — compared through `config-gate::normalizeProjectPath`, the same rule the registrations were stored under, so a symlinked cwd still matches — and hands the rest to `recompilePropagatedProjectAgents()`, the same helper the gate's fan-out uses. It re-emits that summary's warnings via `this.warn()` and prints `Recompiled agents in N registered projects` with a ` (N failed)` suffix, matching `init`'s wording exactly.
 
 This is a CONTENT fan-out, not a config one: `update` rewrites `~/.claude/skills/<dir>/` in place, which every registered project's compiled agents were built from, while changing nothing any `config.ts` declares. So it **writes no config pair and deliberately does not go through config-gate** — there is no global change to classify and nothing to propagate. The whole block is wrapped in a warn-and-continue: the skills were updated either way.
 
@@ -593,7 +579,7 @@ This is a CONTENT fan-out, not a config one: `update` rewrites `~/.claude/skills
 
 **Key dependencies:** `compileAllSkillPlugins()`, `compileSkillPlugin()`, `printCompilationSummary()` from skills. `compileAllAgentPlugins()`, `printAgentCompilationSummary()` from agents. `readPluginManifest()` from plugins. `listDirectories()`, `remove()` from `utils/fs`.
 
-> **`build stack` removed:** This command no longer exists. Only `build marketplace` and `build plugins` are in `src/cli/commands/build/`. Stack-to-plugin compilation now goes through the marketplace/plugins build pipeline.
+> **`build stack` was removed.** Only `build marketplace` and `build plugins` exist under `src/cli/commands/build/`; stack-to-plugin compilation goes through the marketplace/plugins build pipeline.
 
 ## Feature-Gated Commands
 
@@ -613,7 +599,7 @@ The following commands are gated behind `FEATURE_FLAGS` in `src/cli/lib/feature-
 | `SOURCE_CHOICE`           | `false` | Intermediate source choice screen (recommended vs customize) |
 | `WIZARD_SETTINGS_OVERLAY` | `false` | `S` opens the marketplace-sources overlay (D-307)            |
 | `INFO_PANEL`              | `true`  | `I` opens the info panel overlay                             |
-| `FILTER_INCOMPATIBLE`     | `false` | `F` filters incompatible skills in the build step (D-269)    |
+| `FILTER_INCOMPATIBLE`     | `false` | `F` filters incompatible skills in the build step            |
 | `NEW_SKILL_COMMAND`       | `false` | `new skill`                                                  |
 | `NEW_AGENT_COMMAND`       | `false` | `new agent`                                                  |
 | `NEW_MARKETPLACE_COMMAND` | `false` | `new marketplace`                                            |

@@ -2,12 +2,6 @@
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
-     ✓ the `maxWorkers` claim under the timeout contract ONLY — re-derived from
-       e2e/vitest.config.ts (now min(16, cores))
-     ✗ everything else — still on the 2026-07-30 SYNC basis (product v0.146.0)
--->
-
 # Test Structure
 
 How E2E tests are organized within a file.
@@ -163,7 +157,7 @@ it("full lifecycle", { timeout: TIMEOUTS.LIFECYCLE }, async () => {
 });
 ```
 
-**Timeout contract:** `TerminalScreen.waitForText()` uses whatever `timeoutMs` is passed -- there is no built-in default or CI multiplier at that layer. `BaseStep`'s waits DO have a default: `BaseStep.defaultTimeout` is `TIMEOUTS.WIZARD_LOAD`, raised from 15s to **45s** in 0.145.0, so every unqualified step wait is now a 45s upper bound. That also raises the cost of misapplying `waitForWizardFooter` to a footer-less screen: the call burns 45s before giving up, rather than 15s.
+**Timeout contract:** `TerminalScreen.waitForText()` uses whatever `timeoutMs` is passed -- there is no built-in default or CI multiplier at that layer. `BaseStep`'s waits DO have a default: `BaseStep.defaultTimeout` is `TIMEOUTS.WIZARD_LOAD`, raised from 15s to **45s**, so every unqualified step wait is now a 45s upper bound. That also raises the cost of misapplying `waitForWizardFooter` to a footer-less screen: the call burns 45s before giving up, rather than 15s.
 
 **Parallelism is capped at `maxWorkers: Math.min(16, os.availableParallelism())`.** PTY-driven wizard tests are load-sensitive — at one worker per core (21+ on dev machines) keystrokes get dropped and installs slow enough to produce failures that never reproduce solo. Taking the **lower** of the two bounds both ends: a 4-core CI runner gets 4, where a flat 16 would put four PTY workers on every core. The cap is also the reason the page-object keypress rule exists at all: the PTY-write-vs-React-commit race is invisible in isolation and only surfaces under contention.
 

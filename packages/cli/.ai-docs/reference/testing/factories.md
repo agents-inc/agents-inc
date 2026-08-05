@@ -18,12 +18,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0 — the factory-export and assertion-helper inventories re-verified against source. -->
-
 # Test Factories & Helpers
-
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
 
 > **Split from:** `reference/test-infrastructure.md`. See also: [infrastructure.md](./infrastructure.md), [mock-data.md](./mock-data.md), [e2e-infrastructure.md](./e2e-infrastructure.md).
 

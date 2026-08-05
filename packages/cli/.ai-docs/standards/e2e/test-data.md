@@ -2,13 +2,6 @@
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
-     ✓ createE2ESource cardinality re-verified against e2e/helpers/create-e2e-source.ts and
-       e2e/fixtures/expected-values.ts
-     ✗ the ProjectBuilder method table, dual-scope setup, the permissions-file section, the
-       test-utils export table, CLI.run() vs runCLI() — 2026-07-30 basis
--->
-
 # Test Data
 
 How to set up the world before a test runs.
@@ -106,8 +99,6 @@ Before adding a new skill, agent, stack, or mapping to `createE2ESource` / `crea
 - Grep/read the fixture first. If the entity (skill ID, agent name, skill-to-agent mapping) is already present, skip the extension and note it in the report.
 - Only extend when genuinely absent. Redundant fixture data obscures the fixture's actual contract and confuses later readers.
 - Prefer reusing existing entries (e.g. `web-state-zustand` on `web-developer`) over adding a parallel one.
-
-See finding `2026-04-20-d217-test-prereq-already-satisfied.md` for the incident that motivated this rule.
 
 ### Source Sharing Convention
 
@@ -219,7 +210,7 @@ Key differences:
 | Location                | `e2e/fixtures/cli.ts` | `e2e/helpers/test-utils.ts` |
 | Preferred for new tests | Yes                   | Legacy                      |
 
-**HOME resolution.** `CLI.run()`'s precedence is `options.env.HOME` > `project.globalHome` > `project.dir` — so a handle produced by `launchInProject` / `launchInGlobal` routes the follow-up command to the same global root the wizard wrote, and a plain-`launch()` handle falls back to `project.dir`. `runCLI()` defaults HOME to a freshly-created **sibling** temp dir (prefix `ai-e2e-home-`), distinct from `cwd`, removed in a `finally`; an explicit `options.env.HOME` wins and is never auto-removed. Neither sets `HOME=cwd` — that collapse was removed in D-226, because `os.homedir() === cwd` silently forces a project command into global scope.
+**HOME resolution.** `CLI.run()`'s precedence is `options.env.HOME` > `project.globalHome` > `project.dir` — so a handle produced by `launchInProject` / `launchInGlobal` routes the follow-up command to the same global root the wizard wrote, and a plain-`launch()` handle falls back to `project.dir`. `runCLI()` defaults HOME to a freshly-created **sibling** temp dir (prefix `ai-e2e-home-`), distinct from `cwd`, removed in a `finally`; an explicit `options.env.HOME` wins and is never auto-removed. Neither sets `HOME=cwd` — that collapse was removed, because `os.homedir() === cwd` silently forces a project command into global scope.
 
 `CLI.run()` sets `AGENTSINC_SOURCE=undefined` by default; `runCLI()` does NOT -- callers must pass it via `options.env` if needed. Both strip ANSI from all output.
 

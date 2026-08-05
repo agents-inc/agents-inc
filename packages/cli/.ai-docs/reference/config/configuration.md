@@ -22,26 +22,18 @@ related:
 last_validated: 2026-08-01
 ---
 
-<!-- VALIDATED 2026-08-01 · POINTER (product 0.147.1) — all nine redirect targets confirmed to
-     resolve. Per the Pointer Freshness Rule this date records link integrity, not source validation. -->
-
 # Configuration System
 
-**Last Updated:** 2026-08-01
-**Last Validated:** 2026-08-01 (pointer — redirect targets confirmed to resolve)
-
-> **Reorganized from:** `reference/features/configuration.md`. The original file is preserved during migration.
-
-**Full content: See `reference/features/configuration.md`** -- this file is the authoritative source until cleanup.
+> **Pointer.** The content lives in [`reference/features/configuration.md`](../features/configuration.md). This path is kept because inbound links still use it.
 
 ## Where Content Lives
 
 | Topic                                                                                                   | Destination                                                                                          |
 | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Config file locations, `ProjectConfig` / `SkillConfig` / `AgentScopeConfig` shapes, source resolution   | [../features/configuration.md](../features/configuration.md)                                         |
-| `ConfigLoadError` — missing vs blank vs unloadable config (D-273)                                       | [../features/configuration.md](../features/configuration.md)                                         |
+| `ConfigLoadError` — missing vs blank vs unloadable config                                               | [../features/configuration.md](../features/configuration.md)                                         |
 | `defaultCategories` definitions, exclusive/required counts, ordering rule                               | [../features/configuration.md](../features/configuration.md)                                         |
-| D-279 cross-scope reconciliation (masking, self-heal, mask lifetime)                                    | [../features/configuration.md](../features/configuration.md), [config-writer.md](./config-writer.md) |
+| Cross-scope reconciliation (masking, self-heal, mask lifetime)                                          | [../features/configuration.md](../features/configuration.md), [config-writer.md](./config-writer.md) |
 | Config writer internals, `generateProjectConfigWithInlinedGlobal`, union emission                       | [config-writer.md](./config-writer.md)                                                               |
 | `writeScopedFromWizard` branches, `propagateGlobalChangesToProjects`, the `projects` registry lifecycle | [config-writer.md](./config-writer.md)                                                               |
 | `config-types.ts` writer selection, `reconcileTypesFromDisk`, the config-gate and its enforcement       | [config-writer.md](./config-writer.md)                                                               |

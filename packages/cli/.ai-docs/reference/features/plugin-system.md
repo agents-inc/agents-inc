@@ -16,13 +16,6 @@ keywords:
     masking,
     derived-mask,
     settings.json,
-    D-256,
-    D-259,
-    D-262,
-    D-268,
-    D-277,
-    D-279,
-    D-304,
   ]
 related:
   - reference/features/compilation-pipeline.md
@@ -34,12 +27,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · SYNC to product v0.146.0. -->
-
 # Plugin System
-
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
 
 ## Overview
 
@@ -171,7 +159,7 @@ type InstallationInfo = {
 };
 ```
 
-**`InstallationInfo.version` was REMOVED** (0.145.0). It only ever held the install mode, and `formatInstallationDisplay` prefixed it with `v`, so `list` printed `Installation: agents-inc vplugin`. The mode is now rendered once from `INSTALL_MODE_LABELS[info.mode]`.
+**`InstallationInfo.version` was REMOVED**. It only ever held the install mode, and `formatInstallationDisplay` prefixed it with `v`, so `list` printed `Installation: agents-inc vplugin`. The mode is now rendered once from `INSTALL_MODE_LABELS[info.mode]`.
 
 **Counting rules in `getInstallationInfo()`:**
 
@@ -186,9 +174,9 @@ type InstallationInfo = {
 
 **File:** `src/cli/lib/permission-checker.tsx`
 
-`readSettingsPermissions()` reads `permissions` out of every `settings.json` / `settings.local.json` and says nothing about any other field (D-304). The file belongs to Claude Code, which adds keys on its own release schedule, so no expected-key list for it can be kept complete — the CLI consumes one key and owns none. `settingsFileSchema` models only `permissions` and passes the rest through untouched. Unknown-field warnings remain for files this CLI does own (`marketplace.json`, via `source-fetcher.ts`).
+`readSettingsPermissions()` reads `permissions` out of every `settings.json` / `settings.local.json` and says nothing about any other field. The file belongs to Claude Code, which adds keys on its own release schedule, so no expected-key list for it can be kept complete — the CLI consumes one key and owns none. `settingsFileSchema` models only `permissions` and passes the rest through untouched. Unknown-field warnings remain for files this CLI does own (`marketplace.json`, via `source-fetcher.ts`).
 
-Until 0.147.x this path ran `warnUnknownFields(raw, EXPECTED_SETTINGS_KEYS, ...)`, and the list needed a new entry every time Claude Code (or this CLI's own plugin-install path, which writes `enabledPlugins` and `extraKnownMarketplaces`) grew one — a race the list could not win.
+**Do not reintroduce an expected-keys allowlist here.** `warnUnknownFields(raw, EXPECTED_SETTINGS_KEYS, ...)` needs a new entry every time Claude Code — or this CLI's own plugin-install path, which writes `enabledPlugins` and `extraKnownMarketplaces` — grows one, a race the list cannot win.
 
 `settings.local.json` wins over `settings.json` for the `permissions` block; a malformed file warns and is skipped rather than throwing.
 
@@ -328,17 +316,17 @@ Generates `marketplace.json` from a source directory containing skills. Exports:
 
 Executed through `src/cli/utils/exec.ts`:
 
-| Function                            | Shell Command                                                                                                                                                                                                                                                       |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `claudePluginInstall()`             | `claude plugin install {path} --scope {scope}`                                                                                                                                                                                                                      |
-| `claudePluginUninstall()`           | `claude plugin uninstall {name} --scope {scope}` (swallows "not installed"/"not found")                                                                                                                                                                             |
-| `claudePluginUninstallBestEffort()` | Calls `claudePluginUninstall({ref})` on the primary scope then the fallback scope, swallowing errors on each. **Sole production caller: `uninstallPlugins()` in `src/cli/commands/uninstall.tsx`** — `mode-migrator.ts` moved to a scope-precise uninstall in D-262 |
-| `claudePluginMarketplaceList()`     | `claude plugin marketplace list --json`                                                                                                                                                                                                                             |
-| `claudePluginMarketplaceExists()`   | Checks if marketplace is registered (calls List)                                                                                                                                                                                                                    |
-| `claudePluginMarketplaceAdd()`      | `claude plugin marketplace add {source}`                                                                                                                                                                                                                            |
-| `claudePluginMarketplaceRemove()`   | `claude plugin marketplace remove {name}`                                                                                                                                                                                                                           |
-| `claudePluginMarketplaceUpdate()`   | `claude plugin marketplace update {name}`                                                                                                                                                                                                                           |
-| `isClaudeCLIAvailable()`            | `claude --version` (returns boolean)                                                                                                                                                                                                                                |
+| Function                            | Shell Command                                                                                                                                                                                                                                              |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claudePluginInstall()`             | `claude plugin install {path} --scope {scope}`                                                                                                                                                                                                             |
+| `claudePluginUninstall()`           | `claude plugin uninstall {name} --scope {scope}` (swallows "not installed"/"not found")                                                                                                                                                                    |
+| `claudePluginUninstallBestEffort()` | Calls `claudePluginUninstall({ref})` on the primary scope then the fallback scope, swallowing errors on each. **Sole production caller: `uninstallPlugins()` in `src/cli/commands/uninstall.tsx`** — `mode-migrator.ts` moved to a scope-precise uninstall |
+| `claudePluginMarketplaceList()`     | `claude plugin marketplace list --json`                                                                                                                                                                                                                    |
+| `claudePluginMarketplaceExists()`   | Checks if marketplace is registered (calls List)                                                                                                                                                                                                           |
+| `claudePluginMarketplaceAdd()`      | `claude plugin marketplace add {source}`                                                                                                                                                                                                                   |
+| `claudePluginMarketplaceRemove()`   | `claude plugin marketplace remove {name}`                                                                                                                                                                                                                  |
+| `claudePluginMarketplaceUpdate()`   | `claude plugin marketplace update {name}`                                                                                                                                                                                                                  |
+| `isClaudeCLIAvailable()`            | `claude --version` (returns boolean)                                                                                                                                                                                                                       |
 
 `claudePluginInstall()` and `claudePluginUninstall()` accept a `scope: ClaudePluginScope` (`"project" | "user"`, defined in `src/cli/types/config.ts`) and a `projectDir` parameter. User-scoped operations run from `os.homedir()` via `resolvePluginCwd()` (scope `"user"` -> `os.homedir()`, else `projectDir`) so Claude CLI writes to `~/.claude/settings.json`. All inputs validated for injection prevention (`validatePluginPath()` / `validatePluginName()`) before execution.
 
@@ -437,35 +425,35 @@ Both pass `!isHomeDirectory(projectDir)` as `projectInstallationExists`. In the 
 
 Key config-write functions, now in `src/cli/lib/config-gate/` (`index.ts` is the module's only public surface; nothing below is re-exported by `installation/index.ts`):
 
-| Function                                                                   | Exported | Purpose                                                                                            |
-| -------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| `setConfigMetadata()` (`local-installer.ts`)                               | yes      | Set source/marketplace/domains on config                                                           |
-| `buildAndMergeConfig()` (`local-installer.ts`)                             | yes      | Build config from wizard and merge with existing                                                   |
-| `buildCompileAgents()` (`local-installer.ts`)                              | yes      | Build agent compile config from `ProjectConfig`                                                    |
-| `buildAgentScopeMap()` (`local-installer.ts`)                              | yes      | Map agent names to their scope (`activeAgentScopeMap`)                                             |
-| `writeScopedFromWizard()`                                                  | gate     | Split and write configs by scope; propagates, recompiles, returns `GateReport`                     |
-| `reconcileTypesFromDisk()`                                                 | gate     | Regenerate one scope's `config-types.ts` from its persisted config (used by `compile`)             |
-| `mutateGlobal()` / `propagateGlobalRemoval()` / `ensureBlankPair()`        | gate     | Typed global mutation; global-uninstall prune + recompile; blank-pair creation                     |
-| `writeProjectPartial()` / `writeMarketplaceScaffoldConfig()`               | gate     | Project-only config writes; both throw `GlobalPairWriteViolation` at `$HOME`                       |
-| `mergeGlobalConfigs()`                                                     | gate     | Additive merge of new global items into the existing global config (never removes)                 |
-| `writeConfigFile()`                                                        | private  | Write config.ts using `generateConfigSource()`                                                     |
-| `writeProjectConfigPair()`                                                 | private  | The ONE writer of a project's `config.ts` + `config-types.ts`, used by both emitting sites (D-282) |
-| `propagateGlobalChangesToProjects()`                                       | private  | Rewrite every registered project's `config.ts` + `config-types.ts` against fresh global data       |
-| `pruneGlobalEntriesFromRegisteredProjects()`                               | private  | Global-uninstall variant: propagates an EMPTIED global config so all global rows/tombstones drop   |
-| `registerProjectPath()` / `deregisterProjectPath()`                        | private  | Maintain the global `projects[]` registry (deregistration is reached via `mutateGlobal`)           |
-| `resolveEffectiveGlobalConfig()`                                           | private  | Merge + register; returns `{ config, globalDataChanged, changed }`                                 |
-| `reconcileProjectSplitAgainstGlobal()`                                     | private  | Cross-scope masking + self-heal — see Cross-Scope Reconciliation below                             |
-| `classifyGlobalChange()` / `consequenceTier()`                             | private  | Decide what a write owes: T1 propagate+recompile, T2 config-half fan-out, T3 nothing, T4 no write  |
-| `writeGlobalPair()` / `writeGlobalConfigHalf()` / `writeGlobalTypesHalf()` | private  | The only writers of `~/.claude-src/config.ts` and `config-types.ts`; token-held, write-if-changed  |
-| `buildProjectTypesExtras()` / `buildConfigTypesBackgroundData()`           | private  | Inputs for `regenerateConfigTypes` (project extends global unions)                                 |
+| Function                                                                   | Exported | Purpose                                                                                           |
+| -------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------- |
+| `setConfigMetadata()` (`local-installer.ts`)                               | yes      | Set source/marketplace/domains on config                                                          |
+| `buildAndMergeConfig()` (`local-installer.ts`)                             | yes      | Build config from wizard and merge with existing                                                  |
+| `buildCompileAgents()` (`local-installer.ts`)                              | yes      | Build agent compile config from `ProjectConfig`                                                   |
+| `buildAgentScopeMap()` (`local-installer.ts`)                              | yes      | Map agent names to their scope (`activeAgentScopeMap`)                                            |
+| `writeScopedFromWizard()`                                                  | gate     | Split and write configs by scope; propagates, recompiles, returns `GateReport`                    |
+| `reconcileTypesFromDisk()`                                                 | gate     | Regenerate one scope's `config-types.ts` from its persisted config (used by `compile`)            |
+| `mutateGlobal()` / `propagateGlobalRemoval()` / `ensureBlankPair()`        | gate     | Typed global mutation; global-uninstall prune + recompile; blank-pair creation                    |
+| `writeProjectPartial()` / `writeMarketplaceScaffoldConfig()`               | gate     | Project-only config writes; both throw `GlobalPairWriteViolation` at `$HOME`                      |
+| `mergeGlobalConfigs()`                                                     | gate     | Additive merge of new global items into the existing global config (never removes)                |
+| `writeConfigFile()`                                                        | private  | Write config.ts using `generateConfigSource()`                                                    |
+| `writeProjectConfigPair()`                                                 | private  | The ONE writer of a project's `config.ts` + `config-types.ts`, used by both emitting sites        |
+| `propagateGlobalChangesToProjects()`                                       | private  | Rewrite every registered project's `config.ts` + `config-types.ts` against fresh global data      |
+| `pruneGlobalEntriesFromRegisteredProjects()`                               | private  | Global-uninstall variant: propagates an EMPTIED global config so all global rows/tombstones drop  |
+| `registerProjectPath()` / `deregisterProjectPath()`                        | private  | Maintain the global `projects[]` registry (deregistration is reached via `mutateGlobal`)          |
+| `resolveEffectiveGlobalConfig()`                                           | private  | Merge + register; returns `{ config, globalDataChanged, changed }`                                |
+| `reconcileProjectSplitAgainstGlobal()`                                     | private  | Cross-scope masking + self-heal — see Cross-Scope Reconciliation below                            |
+| `classifyGlobalChange()` / `consequenceTier()`                             | private  | Decide what a write owes: T1 propagate+recompile, T2 config-half fan-out, T3 nothing, T4 no write |
+| `writeGlobalPair()` / `writeGlobalConfigHalf()` / `writeGlobalTypesHalf()` | private  | The only writers of `~/.claude-src/config.ts` and `config-types.ts`; token-held, write-if-changed |
+| `buildProjectTypesExtras()` / `buildConfigTypesBackgroundData()`           | private  | Inputs for `regenerateConfigTypes` (project extends global unions)                                |
 
 Path resolution lives outside both modules: `resolveInstallPaths(projectDir, scope)` (returns `InstallPaths`), `installBaseDir()`, `getProjectConfigPath()` in `src/cli/lib/installation/install-base-dir.ts`, and `isHomeDirectory()` in `src/cli/lib/installation/is-home-directory.ts`.
 
-### Propagation Then Recompile (D-240 / D-256)
+### Propagation Then Recompile
 
-`propagateGlobalChangesToProjects()` rewrites a registered project's `config.ts` and `config-types.ts` but **never touches its compiled `.claude/agents/*.md`**. Before D-240 that left the compiled agents emitting whatever skill-reference form the OLD global data dictated — so a global plugin-to-eject switch left stale `name:name` plugin references in every registered project (D-256).
+`propagateGlobalChangesToProjects()` rewrites a registered project's `config.ts` and `config-types.ts` but **never touches its compiled `.claude/agents/*.md`**. On its own that leaves the compiled agents emitting whatever skill-reference form the OLD global data dictated — so a global plugin-to-eject switch left stale `name:name` plugin references in every registered project.
 
-The fix was caller-side until 2026-08-02 and is now **inside the write**: a caller that must remember to recompile is a caller that can forget, and two of them did (`edit`'s project-context source migration, the global `uninstall`).
+The recompile is **inside the write**, not caller-side: a caller that must remember to recompile is a caller that can forget, and two did (`edit`'s project-context source migration, the global `uninstall`).
 
 | Step | Symbol                                   | File                                                         | Role                                                                                                                                                                             |
 | ---- | ---------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -491,7 +479,7 @@ Detection logic:
 2. If not found, fall back to global installation via `detectGlobalInstallation()`
 3. Both delegate to the private `detectInstallationInDir(dir)`
 
-`detectInstallationInDir` returns `null` in exactly three cases, and **throws in a fourth** (D-273):
+`detectInstallationInDir` returns `null` in exactly three cases, and **throws in a fourth**:
 
 | Case                                              | Result                                                                              |
 | ------------------------------------------------- | ----------------------------------------------------------------------------------- |
@@ -500,7 +488,7 @@ Detection logic:
 | Config declares neither skills nor agents         | `null` — content-less configs are not installations, so `init` routes to the wizard |
 | Config present but unparseable / schema-violating | `ConfigLoadError` propagates out of `loadProjectConfigFromDir`                      |
 
-The last row is the D-273 fix: a corrupt config used to be indistinguishable from "no config", so it was detected as a phantom eject installation and `compile` rebuilt every built-in agent. `compile` now hard-errors before any write, `detectProject` converts the error to `null` so `doctor` and `edit` report a config problem, and detection no longer fabricates an installation.
+The last row keeps a corrupt config distinguishable from "no config" — collapsing the two detects a phantom eject installation and makes `compile` rebuild every built-in agent. `compile` hard-errors before any write, `detectProject` converts the error to `null` so `doctor` and `edit` report a config problem, and detection no longer fabricates an installation.
 
 `skillsDir` is `.claude/plugins` in `"plugin"` mode and `.claude/skills` otherwise (mixed mode has local skills on disk, so it uses the eject-mode directory).
 
@@ -511,9 +499,9 @@ Install mode is derived at runtime from the skills array via `deriveInstallMode(
 - All non-eject sources = `"plugin"` mode
 - Mixed = `"mixed"` mode
 
-**D-217 -- per-skill `source` is authoritative for compilation:** Aggregate `installMode` is a UI/logging convenience, NOT the input that drives agent compilation. `compileAgentForPlugin` (`src/cli/lib/compiler.ts`) calls `derivePluginRef(skill)` for each `SkillReference` and attaches `pluginRef` only when `skill.source` is a non-eject, non-undefined marketplace name. Mixed-mode agents (plugin and eject skills under the same agent) and dual-scope skills (same id, different scope, different sources) each render correctly from per-skill `source`.
+**per-skill `source` is authoritative for compilation:** Aggregate `installMode` is a UI/logging convenience, NOT the input that drives agent compilation. `compileAgentForPlugin` (`src/cli/lib/compiler.ts`) calls `derivePluginRef(skill)` for each `SkillReference` and attaches `pluginRef` only when `skill.source` is a non-eject, non-undefined marketplace name. Mixed-mode agents (plugin and eject skills under the same agent) and dual-scope skills (same id, different scope, different sources) each render correctly from per-skill `source`.
 
-**D-217 -- plumbing consolidated:** The vestigial `installMode?: InstallMode` parameter documented in finding `2026-04-20-d217-installmode-plumbing-dead-in-wrappers.md` has since been removed. `compileAndWriteAgents` (now private in `local-installer.ts`) and `RecompileAgentsOptions` (`agent-recompiler.ts`) no longer carry it; the `CompileAndWriteParams` type no longer exists; and `installEject` / `installPluginConfig` no longer pass `deriveInstallMode(...)`. Aggregate `installMode` now survives only in genuine consumers: `init.tsx` computes `deriveInstallMode(activeSkills)` to drive the install plan/logging (`logInstallPlan`, choosing `copyEjectSkillsStep` vs `installPluginsStep`), and `SkillSource.installMode?` (`src/cli/types/matrix.ts`) is a per-source UI descriptor.
+**`installMode` plumbing consolidated:** The vestigial `installMode?: InstallMode` parameter documented in finding `2026-04-20-d217-installmode-plumbing-dead-in-wrappers.md` has since been removed. `compileAndWriteAgents` (now private in `local-installer.ts`) and `RecompileAgentsOptions` (`agent-recompiler.ts`) no longer carry it; the `CompileAndWriteParams` type no longer exists; and `installEject` / `installPluginConfig` no longer pass `deriveInstallMode(...)`. Aggregate `installMode` now survives only in genuine consumers: `init.tsx` computes `deriveInstallMode(activeSkills)` to drive the install plan/logging (`logInstallPlan`, choosing `copyEjectSkillsStep` vs `installPluginsStep`), and `SkillSource.installMode?` (`src/cli/types/matrix.ts`) is a per-source UI descriptor.
 
 **Function:** `getInstallationOrThrow()` in `src/cli/lib/installation/installation.ts` - Same as `detectInstallation()` but throws if no installation found.
 
@@ -525,10 +513,10 @@ Install mode is derived at runtime from the skills array via `deriveInstallMode(
 
 Two production call sites write a project `config.ts` with the global config inlined (`writeConfigFile(..., { isProjectConfig: true, globalConfig })`). Both must reconcile the project's own entries against the live global config first, or the project ends up with **one id active at both scopes** — and, when category exclusivity is involved, two live skills in a category that permits one. Symptoms observed against the built CLI: the wizard showed both selected, the next save seeded both into a fresh agent stack, and the compiled agent was instructed to load two frameworks — while `doctor` reported the install clean and `validate` exited 0, because neither checks config semantics.
 
-| Write site                                                      | Reconciled                                                            |
-| --------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `propagateGlobalChangesToProjects()` (a global change fans out) | yes — via `reconcileProjectSplitAgainstGlobal`                        |
-| project branch of `writeScopedFromWizard()`                     | yes — via the SAME helper, added in 0.146.0 (previously: none at all) |
+| Write site                                                      | Reconciled                                          |
+| --------------------------------------------------------------- | --------------------------------------------------- |
+| `propagateGlobalChangesToProjects()` (a global change fans out) | yes — via `reconcileProjectSplitAgainstGlobal`      |
+| project branch of `writeScopedFromWizard()`                     | yes — via the SAME helper (previously: none at all) |
 
 Findings: `2026-07-29-project-config-written-by-two-paths-only-one-reconciled.md` (the asymmetry), `2026-07-29-category-exclusivity-enforced-only-in-a-keypress-handler.md` (exclusivity was enforced only in `toggleTechnology`, a keypress handler).
 
@@ -555,10 +543,10 @@ Order is fixed and load-bearing — **self-heal runs BEFORE masking on both axes
 
 `buildProjectCollisionTest(projectOwnedSkills, matrix)` returns the single `(id) => boolean` predicate shared by the mask producer AND the self-heal, so the two can never disagree about what a mask means.
 
-| Kind         | Condition                                                                                                        | Applies to                              | Task          |
-| ------------ | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------- | ------------- |
-| **IDENTITY** | The project owns the same id/name at project scope (`isActiveAt(entry, "project")`)                              | skills AND agents                       | D-268 / D-259 |
-| **CATEGORY** | The project owns a DIFFERENT active skill in the same category and the matrix declares that category `exclusive` | skills only — agents have no categories | D-279         |
+| Kind         | Condition                                                                                                        | Applies to                              | Task |
+| ------------ | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------- | ---- |
+| **IDENTITY** | The project owns the same id/name at project scope (`isActiveAt(entry, "project")`)                              | skills AND agents                       |
+| **CATEGORY** | The project owns a DIFFERENT active skill in the same category and the matrix declares that category `exclusive` | skills only — agents have no categories |
 
 Supporting helpers:
 
@@ -579,7 +567,7 @@ Supporting helpers:
 
 Tombstones are **spread from the global entry**, so they carry the global install's `source`. A skill the project merely inherits (no active project-scope entry, no exclusive-category collision) is skipped — it stays a single active global entry. An id the project already tombstones is skipped, which is what makes re-running idempotent.
 
-**Push-side symmetry (D-259 / D-268):** because the tombstone is synthesized on the write/push side rather than at deselect time, a project that owned a skill or agent at project scope now gets its global tombstone when the same id **later** becomes active globally. Global-first and project-first installs therefore agree, and both render `[P][G]`.
+**Push-side symmetry:** because the tombstone is synthesized on the write/push side rather than at deselect time, a project that owned a skill or agent at project scope now gets its global tombstone when the same id **later** becomes active globally. Global-first and project-first installs therefore agree, and both render `[P][G]`.
 
 ### Self-heal (mask lifetime)
 
@@ -588,7 +576,7 @@ Tombstones are **spread from the global entry**, so they carry the global instal
 | `dropOrphanedDerivedMasks(projectOwnedSkills, matrix)` | Keep a global tombstone iff `buildProjectCollisionTest` still returns true for its id |
 | `dropOrphanedDerivedAgentMasks(projectOwnedAgents)`    | Keep iff an active project-scoped agent of the same name still exists                 |
 
-A derived mask and a user-authored tombstone are byte-identical on disk (`{ id, scope: "global", excluded: true }`). Since **D-277** the wizard can no longer mint the second kind: a project-scope deselect of a globally-installed item is refused, and a domain deselect only drops what the project owns. The one remaining user route to a global tombstone is the `s` scope toggle (G->P), which always pairs it with an active project entry for the same id — an IDENTITY collision. Every **bare** mask is therefore machine-derived by construction, which is what lets the retention rule collapse to a single test.
+A derived mask and a user-authored tombstone are byte-identical on disk (`{ id, scope: "global", excluded: true }`). The wizard cannot mint the second kind: a project-scope deselect of a globally-installed item is refused, and a domain deselect only drops what the project owns. The one remaining user route to a global tombstone is the `s` scope toggle (G->P), which always pairs it with an active project entry for the same id — an IDENTITY collision. Every **bare** mask is therefore machine-derived by construction, which is what lets the retention rule collapse to a single test.
 
 This generalised the earlier rule, which was narrowed to categories declared BOTH `exclusive` AND `required` precisely because provenance was ambiguous; that narrowing and its documented trade-off are gone. See findings `2026-07-29-derived-mask-and-user-tombstone-are-indistinguishable.md` (superseded) and `2026-07-30-d277-global-immutability-collapses-tombstone-provenance.md`.
 
@@ -601,7 +589,7 @@ The project's own skill **wins locally**. This is intentionally the opposite of 
 | User actively swaps to a different skill in an exclusive category (wizard)   | global (refused) | The user is displacing a shared install every project sees       |
 | A global install lands on top of pre-existing project state (reconciliation) | project (masked) | Letting global win would silently uninstall the user's own skill |
 
-Both are consistent with the D-277 rule that a globally installed item is immutable from project scope: reconciliation **masks** the global entry in the project's config, it never removes it from the global config.
+Both are consistent with the rule that a globally installed item is immutable from project scope: reconciliation **masks** the global entry in the project's config, it never removes it from the global config.
 
 ### Companion retain/prune helpers (propagation path only)
 
@@ -640,7 +628,7 @@ Types:
 
 Migration splits skills by scope before copying (project skills to `{projectDir}/.claude/skills/`, global to `~/.claude/skills/`). Plugin refs are qualified via `buildMarketplacePluginRef(migration.id, sourceResult.marketplace)`. The toPlugin branch installs each plugin BEFORE deleting its ejected working copy (`deleteEjectedWorkingCopy()`), so a failed install destroys nothing -- per-skill failures accumulate in `MigrationResult.failedPluginInstalls` for the caller to hard-error on.
 
-**D-262 -- the toEject uninstall is SCOPE-PRECISE.** It calls `claudePluginUninstall(pluginRef, toClaudePluginScope(migration.oldScope), projectDir)`, targeting the migration's own registered scope, and NOT `claudePluginUninstallBestEffort()`. A both-scopes sweep would also drop a same-id plugin registered at the OTHER Claude scope — e.g. switching a project to eject would uninstall the still-registered global/user-scope plugin that other projects depend on. The registered scope is unambiguous here, so it is targeted exactly; `claudePluginUninstall` still swallows "not installed" / "not found".
+**the toEject uninstall is SCOPE-PRECISE.** It calls `claudePluginUninstall(pluginRef, toClaudePluginScope(migration.oldScope), projectDir)`, targeting the migration's own registered scope, and NOT `claudePluginUninstallBestEffort()`. A both-scopes sweep would also drop a same-id plugin registered at the OTHER Claude scope — e.g. switching a project to eject would uninstall the still-registered global/user-scope plugin that other projects depend on. The registered scope is unambiguous here, so it is targeted exactly; `claudePluginUninstall` still swallows "not installed" / "not found".
 
 Two scope-keyed skips guard the global registration in both directions:
 
@@ -674,7 +662,7 @@ Plugin-related operations extracted to `src/cli/lib/operations/`:
 
 **Helper:** `pluginInstallFailureError(failedCount)` (exported from the same file) returns the canonical hard-error message callers pass to `this.error()`: _"Failed to install N plugin skill(s). Plugin install intent could not be honored. Verify the skill id matches the marketplace, re-run with --refresh to update the marketplace, or switch affected skills to eject mode."_
 
-**D-229 -- hard-error contract (callers):** When `PluginInstallResult.failed` is non-empty, callers MUST `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. Otherwise `config.ts` claims plugin installation for skills that `claude plugin install` rejected, producing orphan entries that no `cc` command can self-heal (`detectInstallation` trusts `config.ts`). Enforced at every per-skill install site: `installPluginsStep` (`init.tsx`), `applyPluginChanges` (newly-added skills, `edit.tsx`), and `applyMigrations` (eject->plugin migrations, `edit.tsx` -- D-252 extends the same guard to the migration path via `MigrationResult.failedPluginInstalls`). Uninstall failures are diagnostic-only (no orphan state). See the CLAUDE.md rule ("NEVER let plugin install per-skill failures silently produce orphan config entries") and finding `2026-07-20-migration-path-missing-marketplace-precondition.md`.
+**Hard-error contract (callers):** When `PluginInstallResult.failed` is non-empty, callers MUST `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. Otherwise `config.ts` claims plugin installation for skills that `claude plugin install` rejected, producing orphan entries that no `cc` command can self-heal (`detectInstallation` trusts `config.ts`). Enforced at every per-skill install site: `installPluginsStep` (`init.tsx`), `applyPluginChanges` (newly-added skills, `edit.tsx`), and `applyMigrations` (eject->plugin migrations, `edit.tsx` — the same guard covers the migration path via `MigrationResult.failedPluginInstalls`). Uninstall failures are diagnostic-only (no orphan state). See the CLAUDE.md rule ("NEVER let plugin install per-skill failures silently produce orphan config entries") and finding `2026-07-20-migration-path-missing-marketplace-precondition.md`.
 
 ### Uninstall Plugin Skills
 
@@ -688,10 +676,10 @@ Plugin-related operations extracted to `src/cli/lib/operations/`:
 
 **Which uninstall helper to use:**
 
-| Situation                                                                           | Helper                                   | Why                                                                                            |
-| ----------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Registered scope is KNOWN (old config entry, migration plan)                        | `claudePluginUninstall(ref, scope, dir)` | Scope-precise. A both-scopes sweep would also drop a same-id plugin at the other scope (D-262) |
-| Registered scope is genuinely AMBIGUOUS (`uninstall` cleaning up re-scoped plugins) | `claudePluginUninstallBestEffort()`      | Tries primary then fallback, swallowing both — one caller only                                 |
+| Situation                                                                           | Helper                                   | Why                                                                                    |
+| ----------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------- |
+| Registered scope is KNOWN (old config entry, migration plan)                        | `claudePluginUninstall(ref, scope, dir)` | Scope-precise. A both-scopes sweep would also drop a same-id plugin at the other scope |
+| Registered scope is genuinely AMBIGUOUS (`uninstall` cleaning up re-scoped plugins) | `claudePluginUninstallBestEffort()`      | Tries primary then fallback, swallowing both — one caller only                         |
 
 ### Ensure Marketplace
 
@@ -721,7 +709,7 @@ Resolution order per plugins directory:
 | 4    | Registry unreadable / schema-invalid (`listRegisteredPluginInstalls` throws) | Print `failed: <reason>` and count **1 error** — do NOT scan around it      |
 | 5    | No registry                                                                  | `findPluginDirectories()` + `validateAllPlugins()` (older / manual layouts) |
 
-Before 0.145.0 the pass only inspected direct children of the plugins directory, so the claude CLI >= 2.1.220 cache layout was invisible and installed plugins were never validated at all. A recorded `installPath` that no longer exists now surfaces as an invalid plugin through `validatePlugin`'s structure check.
+**The pass must not inspect only direct children of the plugins directory** — that makes the claude CLI >= 2.1.220 cache layout invisible and leaves installed plugins unvalidated. A recorded `installPath` that no longer exists surfaces as an invalid plugin through `validatePlugin`'s structure check.
 
 `validate` has `static baseFlags = {}` and `static flags = {}` — it is a zero-flag command.
 
@@ -735,7 +723,7 @@ Filters `config.skills` to `source !== EJECT_SOURCE`, groups them by `installBas
 
 **Function:** `getCliInstalledPluginKeys(config)` in `src/cli/commands/uninstall.tsx` (exported `@internal` for testing). Returns the `Set<string>` of registry keys this CLI installed, used by `detectUninstallTarget()` to narrow `listPluginNames()` to CLI-owned plugins (`cliPluginNames`) so uninstall never removes plugins the user installed by hand.
 
-For each `config.skills` entry it emits the primary key `buildMarketplacePluginRef(skill.id, skill.source)`, plus a marketplace variant `buildMarketplacePluginRef(skill.id, config.marketplace)` when `config.marketplace` is set and differs from both `skill.source` and `EJECT_SOURCE` (covers plugins registered under the marketplace name while config recorded a differing `source`). This derivation depends on `config.marketplace` being present: **D-246** (shipped 0.143.0) fixed `mergeGlobalConfigs` dropping `marketplace`/`source` from the global config written during a project-scope init — previously `uninstall --yes --all` at the home root found no CLI-owned plugins, left every plugin registered, then deleted the config that recorded them.
+For each `config.skills` entry it emits the primary key `buildMarketplacePluginRef(skill.id, skill.source)`, plus a marketplace variant `buildMarketplacePluginRef(skill.id, config.marketplace)` when `config.marketplace` is set and differs from both `skill.source` and `EJECT_SOURCE` (covers plugins registered under the marketplace name while config recorded a differing `source`). This derivation depends on `config.marketplace` being present: `mergeGlobalConfigs` must not drop `marketplace`/`source` from the global config written during a project-scope init, or `uninstall --yes --all` at the home root found no CLI-owned plugins, left every plugin registered, then deleted the config that recorded them.
 
 ## Barrel Exports
 
@@ -772,8 +760,8 @@ For each `config.skills` entry it emits the primary key `buildMarketplacePluginR
 
 ## Known Limitations
 
-| Task      | Status        | Anchor                                                                                                                                             | Limitation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| --------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D-276** | Ready for Dev | `maskCollidingGlobalSkills` / `reconcileProjectSplitAgainstGlobal` (`local-installer.ts`) vs `toggleTechnology` (`src/cli/stores/wizard-store.ts`) | The masking machinery is only reachable from ONE ordering — the project already owned the conflicting skill and a global install landed on top. The wizard cannot express the opposite intent: the exclusive-swap guard computes `wouldDropLockedSkill` from `isGloballyLockedSkill` and returns `TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED`, so a project with a global React cannot choose Angular at all. D-276 will allow the swap, default the new skill to project scope, and let the existing mask fire. It is explicitly NOT an exception to D-277 — the global entry is masked, never removed. |
+| Task                      | Status        | Anchor                                                                                                                                             | Limitation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D-276** (`todo/cli.md`) | Ready for Dev | `maskCollidingGlobalSkills` / `reconcileProjectSplitAgainstGlobal` (`local-installer.ts`) vs `toggleTechnology` (`src/cli/stores/wizard-store.ts`) | The masking machinery is only reachable from ONE ordering — the project already owned the conflicting skill and a global install landed on top. The wizard cannot express the opposite intent: the exclusive-swap guard computes `wouldDropLockedSkill` from `isGloballyLockedSkill` and returns `TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED`, so a project with a global React cannot choose Angular at all. D-276 will allow the swap, default the new skill to project scope, and let the existing mask fire. It is explicitly NOT an exception to global immutability — the global entry is masked, never removed. |
 
 Two confirm-step display quirks are recorded as open in `2026-07-29-per-slot-removal-exposes-fixture-name-mismatch-and-confirm-double-row.md`: an UNRECONCILED both-scopes config can list a skill as both unchanged and removed under Global, and a dropped mask is reported as a removal. The first is far less reachable now that such configs are masked at write time; the second cannot occur within a session.

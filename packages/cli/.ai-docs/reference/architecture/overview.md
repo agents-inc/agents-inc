@@ -14,16 +14,9 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · POINTER (product 0.146.0) — redirect to the root-level original confirmed to resolve. -->
-
 # Architecture Overview
 
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
-
-> **Reorganized from:** `reference/architecture-overview.md`. The original file is preserved during migration. Cross-cutting concepts (Scope System and Tombstone Pattern) now have dedicated docs at [concepts/scope-system.md](../concepts/scope-system.md) and [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md).
-
-**Full content: See `reference/architecture-overview.md`** -- this file is the authoritative source until cleanup. The new directory structure places it here for discoverability alongside `dependency-graph.md` and `boundary-map.md`.
+> **Pointer.** The content lives in [`reference/architecture-overview.md`](../architecture-overview.md). This path is kept because inbound links still use it, and because it sits alongside `dependency-graph.md` and `boundary-map.md` here.
 
 **Cross-references for sections 11-12:**
 

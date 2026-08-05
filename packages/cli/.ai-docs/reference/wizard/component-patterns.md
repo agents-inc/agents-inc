@@ -24,10 +24,8 @@ last_validated: 2026-07-23
 
 # Component Patterns
 
-> **Reorganized from:** `reference/component-patterns.md`. The original file is preserved during migration.
+> **Pointer.** The content lives in [`reference/component-patterns.md`](../component-patterns.md). This path is kept because inbound links still use it.
 
 > **Detailed documentation on cross-cutting concerns:**
 >
 > - Scope badges, lock icons: See [concepts/scope-system.md](../concepts/scope-system.md)
-
-**Full content: See `reference/component-patterns.md`** -- this file is the authoritative source until cleanup.

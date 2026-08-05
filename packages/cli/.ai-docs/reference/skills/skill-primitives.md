@@ -41,18 +41,7 @@ related:
 last_validated: 2026-08-02
 ---
 
-<!-- VALIDATED 2026-08-02 · FULL (new file, product 0.147.1)
-     Every function, type, caller and reachability claim below was derived this session by
-     reading all five source files end to end and grepping the whole of src/, e2e/ and
-     scripts/ for each exported symbol. No claim is carried over from another doc.
-     Two claims elsewhere were found WRONG while writing and are corrected here with the
-     evidence attached: skills-and-matrix.md:540 (see "The two hashers") and the JSDoc on
-     readLocalSkillMetadata in skill-metadata.ts (see Traps #4). Neither was edited by this pass. -->
-
 # Skill Primitives (`src/cli/lib/skills/`)
-
-**Last Updated:** 2026-08-02
-**Last Validated:** 2026-08-02
 
 > **Extracted from:** `reference/features/skills-and-matrix.md`, which gives `src/cli/lib/skills/`
 > an eight-row file table at lines 82–95 and prose for only `source-switcher.ts`, `generators.ts`
@@ -547,7 +536,7 @@ would pull the copier and the plugin compiler into `schemas.ts`'s import graph.
 
 ## Test surface
 
-`npx vitest run src/cli/lib/skills/` — **6 files, 118 tests, all passing** (run 2026-08-02).
+`npx vitest run src/cli/lib/skills/` — **6 files, 118 tests, all passing**.
 
 | File                            | Tests | Top-level describes                                                                                                                                               |
 | ------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |

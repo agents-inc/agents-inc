@@ -2,13 +2,6 @@
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1) — rules added, doc not re-verified
-     ✓ the focus-padding worked example (replaced; it described a defect fixed in 0.147.0),
-       §Reading Rendered Output +2 rules, §Weak Assertions +6 rules
-     ✗ every other rule group (leakage, timing, filesystem, production imports, index navigation,
-       strings, inline data, fixtures, harness invariants, helpers, casts, launchers) — 2026-07-30
--->
-
 # Anti-Patterns
 
 Every "never do this" rule with rationale. Organized by category.
@@ -396,8 +389,6 @@ See `.ai-docs/agent-findings/2026-07-24-d226-phase1-launcher-sugar-and-multiphas
 
 If a helper is genuinely reusable across 2+ test files, move it to `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own unit tests — never inline and untested.
 
-See `.ai-docs/agent-findings/2026-04-21-complex-helpers-in-component-tests-anti-pattern.md` and `.ai-docs/agent-findings/2026-04-21-d230-d232-diff-baseline-pre-filter-drift.md`.
-
 ---
 
 ## Weak Assertions
@@ -586,7 +577,7 @@ See `.ai-docs/agent-findings/2026-08-01-e2e-specs-captured-exit-codes-and-config
 
 **What:** `expect(rows).toEqual(expect.arrayContaining([{ prefix: "•", name: "React" }]))` for info-panel rows, config section diffs, or scope-per-skill prefix maps.
 
-**Why:** `arrayContaining` passes as long as the expected entries exist — it silently tolerates extra wrong entries. A spurious `- React` row alongside the expected `• React` (the D-230-class "bug shape") ships undetected.
+**Why:** `arrayContaining` passes as long as the expected entries exist — it silently tolerates extra wrong entries. A spurious `- React` row alongside the expected `• React` ships undetected.
 
 **Instead:** `toStrictEqual` on a scope-anchored slice so the entire rendered shape is pinned. If a positive-only match is unavoidable, pair it with an explicit `.not.toEqual(expect.arrayContaining([<bug-shape>]))`. See [assertions.md § Diff-Shape Assertions](./assertions.md).
 

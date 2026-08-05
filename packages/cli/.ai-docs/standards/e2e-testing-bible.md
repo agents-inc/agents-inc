@@ -2,17 +2,9 @@
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
-     ✓ §1.4's Vitest config values ONLY — re-derived from e2e/vitest.config.ts
-       (maxWorkers is now min(16, cores); retry 2 -> 1)
-     ✗ everything else: the suite-size figure, §3.5 and §10.18-10.22 stand on 2026-08-01;
-       §§1 (rest), 2, 4-9, 11, 12 — incl. the 7.1 timeout table, the directory tree and the
-       test-utils export list — on 2026-07-30
--->
-
 # E2E Testing Standards
 
-Consolidated from 11 audit/strategy docs and the E2E suite (164 `*.e2e.test.ts` files as of v0.147.1, re-counted on disk 2026-08-01). Every rule is enforceable and grounded in actual codebase patterns.
+Grounded in the E2E suite under `packages/cli/e2e/`. Every rule is enforceable and grounded in actual codebase patterns.
 
 ---
 
@@ -69,7 +61,7 @@ e2e/
 
 The worker cap is deliberate: PTY-driven wizard tests are load-sensitive, and at one worker per core (21+ on dev machines) dropped keystrokes and slow installs produce failures that never reproduce solo. It takes the **lower** of 16 and the machine's core count, so a 4-core CI runner gets 4 -- a flat 16 there would put four PTY workers on every core, which is the same contention inverted.
 
-`retry` dropped from 2 to 1 on 2026-08-05, after the flake it was tuned against turned out to be Ink's CI detection buffering every frame: the full suite then measured green at retry 0. One retry remains only for runner contention, which a local run cannot measure, and a retry that fires shows up in vitest's flaky report rather than passing silently. **Do not raise it to hide a failure.**
+`retry` dropped from 2 to 1, after the flake it was tuned against turned out to be Ink's CI detection buffering every frame: the full suite then measured green at retry 0. One retry remains only for runner contention, which a local run cannot measure, and a retry that fires shows up in vitest's flaky report rather than passing silently. **Do not raise it to hide a failure.**
 
 ---
 
@@ -107,7 +99,7 @@ expect(combined).toContain("Discovered 1 local skills");
 
 **3.2 All three harness spawners resolve HOME the same way, and none of them collapse it onto `cwd`.** `runCLI` and `TerminalSession` default HOME to a freshly-created **sibling** temp dir (prefix `ai-e2e-home-`), distinct from `cwd`/`projectDir`, removed on teardown; `CLI.run`'s precedence is `options.env.HOME` > `project.globalHome` > `project.dir`. An explicit `env.HOME` always wins and is never auto-removed.
 
-The old `HOME=cwd` default was removed in D-226: with `os.homedir() === cwd`, every project-versus-global distinction disappeared, a project `init`/`edit` silently ran as a global edit, and the scope hotkey vanished from the footer. It also made ~43 tests pass by accident, asserting global-scoped content against `projectDir`. Any new spawner must adopt the same precedence.
+The old `HOME=cwd` default was removed: with `os.homedir() === cwd`, every project-versus-global distinction disappeared, a project `init`/`edit` silently ran as a global edit, and the scope hotkey vanished from the footer. It also made ~43 tests pass by accident, asserting global-scoped content against `projectDir`. Any new spawner must adopt the same precedence.
 
 **3.3 All output is pre-stripped of ANSI.** `runCLI` calls `stripVTControlCharacters` on stdout, stderr, and combined. No manual stripping needed.
 
@@ -133,11 +125,11 @@ const result = await wizard.completeWithDefaults();
 
 `EditWizard` adds `launchInProjectShort`, a `launchInProject` variant for `TERMINAL_SIZE.SHORT` that skips the build-category settle wait — valid only for callers that step through the build step blind, never for callers that locate a skill by name.
 
-**Terminal geometry (`TERMINAL_SIZE`).** `TALL` = `{ rows: 60, cols: 120 }`; `SHORT` = `{ rows: 20, cols: 100 }` (**raised from 16 in 0.147.0**); `BELOW_MINIMUM` = `{ rows: 16, cols: 100 }` (added 0.147.0).
+**Terminal geometry (`TERMINAL_SIZE`).** `TALL` = `{ rows: 60, cols: 120 }`; `SHORT` = `{ rows: 20, cols: 100 }` (**raised from 16**); `BELOW_MINIMUM` = `{ rows: 16, cols: 100 }`.
 
 `SHORT.rows` must equal `MIN_TERMINAL_SIZE.ROWS` in `src/cli/consts.ts` (`{ COLS: 80, ROWS: 20 }`) — the single live size gate, enforced by `isTerminalLargeEnough` in `src/cli/utils/terminal.ts` from both the pre-Ink `BaseCommand` gate and the `WizardLayout` guard. The value is duplicated rather than imported because `e2e/pages/constants.ts` is deliberately free of `src/cli/` imports. **Set it below the gate and specs HANG rather than fail** — the startup gate blocks before Ink mounts and every spec using `SHORT` sits on `Terminal too short (need 20). Please resize.` until its 45s `WIZARD_LOAD` timeout, which presents as flake rather than as miscalibration. Set it higher and those specs stop exercising the tightest supported geometry. `20` is measured: on the build step 16 and 17 render corrupt, 18 is the first clean frame. `LOGO_MIN_TERMINAL_ROWS` (26) is a **separate, non-gating** threshold governing only the stack step's ASCII banner — do not conflate them.
 
-**`BELOW_MINIMUM` must never LAUNCH a session** — same hang. Reach it only via `BaseStep.resizeBelowMinimum()` on a session that started larger. `resizeBelowMinimum(cols, rows)` / `resizeAboveMinimum(cols, rows)` (added 0.147.0) snapshot a raw cursor, call `TerminalSession.resize()`, and closed-loop on a cursor-anchored raw wait — the resize prompt one way, the wizard footer the other. `resize()` resizes the PTY **and** the xterm instance: PTY-only leaves the emulator laying new output out at the old geometry, emulator-only never reaches the process. Both helpers are `WizardLayout`-only. See 10.18 for why the obvious "the wizard is gone" assertion is unsound.
+**`BELOW_MINIMUM` must never LAUNCH a session** — same hang. Reach it only via `BaseStep.resizeBelowMinimum()` on a session that started larger. `resizeBelowMinimum(cols, rows)` / `resizeAboveMinimum(cols, rows)` snapshot a raw cursor, call `TerminalSession.resize()`, and closed-loop on a cursor-anchored raw wait — the resize prompt one way, the wizard footer the other. `resize()` resizes the PTY **and** the xterm instance: PTY-only leaves the emulator laying new output out at the old geometry, emulator-only never reaches the process. Both helpers are `WizardLayout`-only. See 10.18 for why the obvious "the wizard is gone" assertion is unsound.
 
 Skills and agents default to GLOBAL scope, so a project install's `.claude/` content lands under the global HOME, not `projectDir`. `config.ts` is project-side; installed content is scope-side. Full decision rules: `.ai-docs/standards/e2e/anti-patterns.md` § "Choosing the Wizard Launcher by Scope".
 
@@ -216,7 +208,7 @@ await screen.waitForWizardFooter(TIMEOUTS.WIZARD_LOAD);
 expect(screen.getFullOutput()).toContain("web-framework-react");
 ```
 
-**Precondition — `WizardLayout` screens only.** This is a one-string sentinel match on the footer text `"select"`, which only `WizardLayout` paints. It is not a generic "the UI has settled" primitive: on a footer-less screen (the dashboard, a plain `SelectList` menu, the post-install result screen) the sentinel never appears and the call burns the full `TIMEOUTS.WIZARD_LOAD` — **45s since 0.145.0**, not the 15s it used to cost — instead of settling. On those screens, wait on text that screen actually renders.
+**Precondition — `WizardLayout` screens only.** This is a one-string sentinel match on the footer text `"select"`, which only `WizardLayout` paints. It is not a generic "the UI has settled" primitive: on a footer-less screen (the dashboard, a plain `SelectList` menu, the post-install result screen) the sentinel never appears and the call burns the full `TIMEOUTS.WIZARD_LOAD` — **45s**, not the 15s it used to cost — instead of settling. On those screens, wait on text that screen actually renders.
 
 **4.4 For text that Ink overwrites (installation progress), use `getRawOutput()`.** The xterm buffer has limited scrollback (1000 lines). Installation warnings may exceed this. `getRawOutput()` captures everything:
 
@@ -362,7 +354,7 @@ expect(content).toContain("web-framework-react"); // Expected skill reference
 
 **6.7 Diff-shape assertions.** For assertions over diff-shape collections (info-panel rows, config section diffs, scope-per-skill prefix maps), use `toStrictEqual([<exact>])` on a scope-anchored slice of the output, NOT `expect.arrayContaining([<expected>])`. `arrayContaining` passes as long as the expected entries exist; it silently tolerates extra wrong entries (e.g. a spurious `- React` row alongside the expected `• React`).
 
-If `arrayContaining` is genuinely needed (the slice isn't scope-anchorable), it MUST be paired with a matching `.not.toEqual(expect.arrayContaining([<bug-prefix>]))` negative check that pins the concrete bug shape. Same rule for `toContain`: pair every positive `toContain("+ React")` with explicit `not.toContain("- React")` / `not.toContain("~ React")` for each diff prefix that must NOT appear. When two rows render the same prefix, prove it by exhaustively negating all other prefixes rather than extracting to a parsed struct — `toContain("• React") + not.toContain("+ React") + not.toContain("- React") + not.toContain("~ React")` is strictly stronger than a parsed `{ project: "•", global: "•" }` assertion because it pins both the positive AND negative shape of the entire rendered frame. See `.ai-docs/agent-findings/2026-04-21-d230-d232-diff-baseline-pre-filter-drift.md`.
+If `arrayContaining` is genuinely needed (the slice isn't scope-anchorable), it MUST be paired with a matching `.not.toEqual(expect.arrayContaining([<bug-prefix>]))` negative check that pins the concrete bug shape. Same rule for `toContain`: pair every positive `toContain("+ React")` with explicit `not.toContain("- React")` / `not.toContain("~ React")` for each diff prefix that must NOT appear. When two rows render the same prefix, prove it by exhaustively negating all other prefixes rather than extracting to a parsed struct — `toContain("• React") + not.toContain("+ React") + not.toContain("- React") + not.toContain("~ React")` is strictly stronger than a parsed `{ project: "•", global: "•" }` assertion because it pins both the positive AND negative shape of the entire rendered frame.
 
 ---
 
@@ -386,7 +378,7 @@ If `arrayContaining` is genuinely needed (the slice isn't scope-anchorable), it 
 | `TIMEOUTS.EXTENDED_LIFECYCLE` | 300,000 | Long lifecycle tests                                        |
 | `TIMEOUTS.INTERACTIVE`        | 120,000 | Interactive wizard tests                                    |
 
-`WIZARD_LOAD` was raised from 15,000 to 45,000 in 0.145.0, for the same reason as `WIZARD_TRANSITION`: solo runs land in ~1–2s, but `init` against the real marketplace under full-suite parallelism can sit at "Loading skills..." well past 15s. `BaseStep.defaultTimeout` derives from it, so every unqualified step wait is now a 45s upper bound.
+`WIZARD_LOAD` was raised from 15,000 to 45,000, for the same reason as `WIZARD_TRANSITION`: solo runs land in ~1–2s, but `init` against the real marketplace under full-suite parallelism can sit at "Loading skills..." well past 15s. `BaseStep.defaultTimeout` derives from it, so every unqualified step wait is now a 45s upper bound.
 
 **Framework-internal delays** (`INTERNAL_DELAYS.STEP_TRANSITION = 500`, `INTERNAL_DELAYS.KEYSTROKE = 150`) and the closed-loop Enter retry budget (`INTERNAL_RETRIES.MAX_ATTEMPTS = 5`, `INTERNAL_RETRIES.INTERVAL_MS = 3_000`) are encapsulated in `BaseStep` / `retry-enter.ts`. Tests must never import or reference either.
 
@@ -466,9 +458,9 @@ await verifyConfig(projectDir, { skillIds: ["api-framework-hono"] });
 
 **9.4 Scope indicators in wizard output:** `"G "` prefix for global skills, `"P "` prefix for project skills. Agent scope badges: `"[G]"`, `"[P]"`. Read them via `BuildStep.getScopeBadgesForSkill(label)` / `AgentsStep.getScopeBadgesForAgent(label)` rather than scanning the frame.
 
-**9.5 `s` is the sole dual-scope toggle (D-260).** It round-trips `[P][G]` to `[G]` and back on its own, for skills and agents alike. **Spacebar is inert on any globally-backed row** and emits the global-locked toast instead. A spec that presses Space expecting a collapse exercises nothing. Every `s`-collapse spec needs a proof-of-execution assertion on the badges (`["P"]` -> `["G"]`) so a refused press cannot masquerade as the bug under test.
+**9.5 `s` is the sole dual-scope toggle.** It round-trips `[P][G]` to `[G]` and back on its own, for skills and agents alike. **Spacebar is inert on any globally-backed row** and emits the global-locked toast instead. A spec that presses Space expecting a collapse exercises nothing. Every `s`-collapse spec needs a proof-of-execution assertion on the badges (`["P"]` -> `["G"]`) so a refused press cannot masquerade as the bug under test.
 
-**9.6 A globally installed skill or agent cannot be deselected from a project (D-277)** — in any flow, including `init`. Deselecting a domain is a view filter: it hides that domain's skills and drops only what the project owns, leaving global entries neither dropped nor masked. A spec expecting a project-scope deselect to remove a global entry is asserting removed behaviour.
+**9.6 A globally installed skill or agent cannot be deselected from a project** — in any flow, including `init`. Deselecting a domain is a view filter: it hides that domain's skills and drops only what the project owns, leaving global entries neither dropped nor masked. A spec expecting a project-scope deselect to remove a global entry is asserting removed behaviour.
 
 ---
 
@@ -482,7 +474,9 @@ await verifyConfig(projectDir, { skillIds: ["api-framework-hono"] });
 
 **10.4 Never use `readFile` from `fs/promises` directly.** Use `readTestFile()` from `test-utils.ts`.
 
-**10.5 Never hardcode path segments.** Use constants from `e2e/pages/constants.ts`: `DIRS.CLAUDE` (not `".claude"`), `DIRS.CLAUDE_SRC` (not `".claude-src"`), `FILES.CONFIG_TS`, `FILES.SKILL_MD`, `FILES.METADATA_YAML`, `DIRS.SKILLS`.
+**10.5 Never hardcode path segments.** Use constants from `e2e/pages/constants.ts`: `DIRS.CLAUDE` (not `".claude"`), `DIRS.CLAUDE_SRC` (not `".claude-src"`), `FILES.CONFIG_TS`, `FILES.SKILL_MD`, `FILES.METADATA_YAML`, `FILES.MARKETPLACE_JSON`, `DIRS.SKILLS`.
+
+> **A constant existing does not mean every spec uses it.** `FILES.MARKETPLACE_JSON` is the live case: specs written before it still hold the `"marketplace.json"` literal. Grep the literal before adding another one, and convert the file you are already editing — a straggler is not licence to write a new one.
 
 **10.6 Never inline timeout numbers.** Use the named constants from Section 7.1.
 
@@ -511,7 +505,7 @@ When the bug is fixed, removing `it.fails()` makes the test start passing -- no 
 
 **10.13 Never define parser/extractor helpers with non-trivial logic inside a test file.** Loops, regex scans, and state machines that pick data out of rendered output (`lastFrame()`, `getFullOutput()`) or config text belong nowhere near a test file. If a helper has non-trivial logic it would need its OWN tests to be trusted — an uninstrumented parser in a test file silently produces wrong answers when the layout changes, and it obscures the contract (the rendered substring IS the contract).
 
-Instead: assert directly on raw output with `toContain("+ React")`, `toMatchInlineSnapshot`, or a structural load (e.g. `loadProjectConfig` for `config.ts`). If the helper is genuinely reusable across multiple test files, move it to `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested. See `.ai-docs/agent-findings/2026-04-21-complex-helpers-in-component-tests-anti-pattern.md`.
+Instead: assert directly on raw output with `toContain("+ React")`, `toMatchInlineSnapshot`, or a structural load (e.g. `loadProjectConfig` for `config.ts`). If the helper is genuinely reusable across multiple test files, move it to `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested.
 
 **10.14 Never dead-reckon grid navigation.** A navigator that counts keystrokes to a row and column, and carries that model across calls, is wrong about this grid: arrow-DOWN PRESERVES and clamps the column (`useFocusedListItem`: `finalCol = min(currentCol, newColCount - 1)`), it does not reset it. A second `focusSkill` in the same domain therefore started its RIGHT presses from a wrong column and, with cyclic wrap, toggled the WRONG skill — while the suite stayed green, because the wrong skill toggled just as successfully as the right one.
 

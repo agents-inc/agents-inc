@@ -9,37 +9,7 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- PARTIAL 2026-08-05 · ESLint 10 upgrade absorption (`last_validated` deliberately NOT moved)
-     ✓ one paragraph added to §3.4a — that enforcement layer (2) is the only layer with no test
-       behind it, and how it was proven still firing across the ESLint 9 → 10 move. The six
-       guards and the unicode-escape selector were confirmed present in eslint.config.js this
-       session; the lint run itself is not re-performed here.
-     ✗ nothing else re-checked beyond the bases below
--->
-<!-- PARTIAL 2026-08-02 (b) · post-landing reconciliation (`last_validated` deliberately NOT moved)
-     ✓ §3.4a enforcement layer (4) only. It restated the guard-test spec count as `17`; the
-       true figure is 23 (verified by running the file). The QUANTITY was REMOVED rather than
-       corrected — config/config-writer.md owns it — so this surface can no longer rot.
-     ✗ nothing else re-checked beyond the 2026-08-02 (a) basis below
--->
-<!-- PARTIAL 2026-08-02 · config-gate landing (`last_validated` deliberately NOT moved)
-     ✓ §3.1, §3.2, §3.4, the new §3.4a privileged-zone table, the D-279 boundary row and
-       the Data OUT generation chain — re-derived from src/cli/lib/config-gate/,
-       eslint.config.js and src/cli/utils/fs.ts
-     ✗ §1, §2, §4-8 — untouched by this pass; still on the 2026-08-01 / 2026-07-30 basis
--->
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
-     ✓ Key Files table, §1 CLI input boundaries (incl. new 1.4), §7 helper-function table and
-       the source-validator.ts parse-cause claims
-     ✗ §2-6, §8 — no schema, write-path or shell-boundary diff touched them; 2026-07-30 basis
--->
-
 # Boundary Map
-
-**Last Updated:** 2026-08-01
-**Last Validated:** 2026-08-01 — **PARTIAL.** Key Files, section 1 (incl. new 1.4) and the section 7 helper table re-verified against source at 0.147.1. Sections 2-6 and 8 were not re-checked this pass and still carry their 2026-07-30 validation.
-
-> **Do not "fix" the frontmatter `last_validated` to match the line above.** It is deliberately held at **2026-07-30** because a partial pass must not advance it. The staleness dashboard reads frontmatter, not this header, so stamping the file current would report sections 2-6 and 8 as freshly checked when nothing verified them.
 
 ## Overview
 
@@ -58,13 +28,13 @@ last_validated: 2026-07-30
 | `src/cli/lib/schemas.ts`                           | All Zod schemas for parse boundaries + metadata issue splitting (schema count lives in `reference/types/zod-schemas.md`, which owns it) |
 | `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`)                                                                                              |
 | `src/cli/lib/configuration/config-loader.ts`       | jiti TypeScript config loading                                                                                                          |
-| `src/cli/lib/configuration/project-config.ts`      | `.claude-src/config.ts` load boundary; `ConfigLoadError` for corrupt-but-present configs (D-273)                                        |
+| `src/cli/lib/configuration/project-config.ts`      | `.claude-src/config.ts` load boundary; `ConfigLoadError` for corrupt-but-present configs                                                |
 | `src/cli/lib/configuration/config-writer.ts`       | Config file generation                                                                                                                  |
-| `src/cli/lib/configuration/config-types-writer.ts` | Writer selection (project=import-from-global, global=standalone, D-228)                                                                 |
-| `src/cli/lib/installation/local-installer.ts`      | Config build/merge + agent compilation; writes no config file since 2026-08-02                                                          |
+| `src/cli/lib/configuration/config-types-writer.ts` | Writer selection(project=import-from-global, global=standalone)                                                                         |
+| `src/cli/lib/installation/local-installer.ts`      | Config build/merge + agent compilation; writes no config file                                                                           |
 | `src/cli/lib/loading/source-loader.ts`             | Source fetch/network boundary; `matrixOnly` + `skipExtraSources` opt-outs                                                               |
 | `src/cli/lib/stacks/stack-plugin-compiler.ts`      | Stack plugin compilation (`compileStackPlugin`)                                                                                         |
-| `src/cli/lib/compiler.ts`                          | Liquid template sanitization, agent output, per-skill pluginRef derivation (`derivePluginRef`, D-217)                                   |
+| `src/cli/lib/compiler.ts`                          | Liquid template sanitization, agent output, per-skill pluginRef derivation(`derivePluginRef`)                                           |
 | `src/cli/lib/skills/skill-copier.ts`               | Path traversal prevention                                                                                                               |
 | `src/cli/lib/plugins/plugin-settings.ts`           | Claude settings/registry JSON parsing (`installed_plugins.json` v2 registry)                                                            |
 | `src/cli/lib/plugins/plugin-finder.ts`             | Plugin manifest JSON parsing                                                                                                            |
@@ -118,7 +88,7 @@ Every command extends `BaseCommand` and defines `static flags`. oclif handles ty
 | `eject`             | `commands/eject.ts`             | `type` (**positional, optional**, enum: `agent-partials` \| `templates` \| `skills` \| `all`); `--force` (boolean), `--output` (string), `--refresh` (boolean) |
 | `search`            | `commands/search.ts`            | `query` (positional, required); `baseFlags = {}` (inherits none)                                                                                               |
 | `update`            | `commands/update.tsx`           | `skill` (positional, optional); `--yes` (boolean)                                                                                                              |
-| `uninstall`         | `commands/uninstall.tsx`        | `--yes` / `-y` (boolean). **`--all` was removed (D-274)** — manifest removal is now unconditional.                                                             |
+| `uninstall`         | `commands/uninstall.tsx`        | `--yes` / `-y` (boolean). **`--all` was removed** — manifest removal is now unconditional.                                                                     |
 | `validate`          | `commands/validate.ts`          | (none); `baseFlags = {}` (zero-flag command)                                                                                                                   |
 | `doctor`            | `commands/doctor.ts`            | (none); `baseFlags = {}` (drops `--source`)                                                                                                                    |
 | `import skill`      | `commands/import/skill.ts`      | `source` (positional, required); `--skill` (string), `--all` (boolean), `--list` (boolean), `--force` (boolean); **`baseFlags = {}`**                          |
@@ -132,7 +102,7 @@ Every command extends `BaseCommand` and defines `static flags`. oclif handles ty
 
 **Validation pattern:** oclif validates flag types, required status, and enum `options` at parse time. String flags pass through without content validation -- downstream code validates semantics (e.g., `validateSourceFormat` for source strings).
 
-> **This table exists to place oclif parsing on the boundary map, not to be the flag reference.** [`commands/index.md`](./commands/index.md) is canonical for signatures. If the two disagree, `commands/index.md` wins — that is what happened on 2026-08-01, when this table understated the `baseFlags = {}` overrides and omitted `eject`'s positional arg while `commands/index.md` had both right.
+> **This table exists to place oclif parsing on the boundary map, not to be the flag reference.** [`commands/index.md`](./commands/index.md) is canonical for signatures. If the two disagree, `commands/index.md` wins — that is what happened, when this table understated the `baseFlags = {}` overrides and omitted `eject`'s positional arg while `commands/index.md` had both right.
 
 ### 1.4 Terminal Geometry (Environment Input, Blocking)
 
@@ -190,7 +160,7 @@ Callers:
 | `loadSkillRules()`           | `matrix/matrix-loader.ts`         | `skillRulesFileSchema`                                 |
 | `loadStacks()`               | `stacks/stacks-loader.ts`         | `stacksConfigSchema`                                   |
 
-**Missing vs corrupt (D-273):** `loadProjectConfigFromDir()` returns `null` **only** when the config file does not exist. Once the file exists, three failure modes throw `ConfigLoadError(configPath, reason)` instead of degrading to `null`:
+**Missing vs corrupt:** `loadProjectConfigFromDir()` returns `null` **only** when the config file does not exist. Once the file exists, three failure modes throw `ConfigLoadError(configPath, reason)` instead of degrading to `null`:
 
 | Failure                                     | Reason string source                       |
 | ------------------------------------------- | ------------------------------------------ |
@@ -283,7 +253,7 @@ Both combinations are byte-identical to the wizard's fully-tagged load for confi
 
 ### 3.1 Config Writer
 
-`configuration/config-writer.ts` **writes nothing** — every export returns a string. Since 2026-08-02 the only code that puts either half of the global config pair on disk is `src/cli/lib/config-gate/` (see 3.4a).
+`configuration/config-writer.ts` **writes nothing** — every export returns a string. The only code that puts either half of the global config pair on disk is `src/cli/lib/config-gate/` (see 3.4a).
 
 | Function                                 | File                             | What It Writes           | Where                        |
 | ---------------------------------------- | -------------------------------- | ------------------------ | ---------------------------- |
@@ -295,19 +265,19 @@ Config writer uses `JSON.parse(JSON.stringify(x))` to strip undefined values bef
 
 ### 3.2 Config Types Writer
 
-| Function                             | File                                   | What It Writes                                                       | Where                                   |
-| ------------------------------------ | -------------------------------------- | -------------------------------------------------------------------- | --------------------------------------- |
-| `writeGlobalTypesHalf()`             | `config-gate/pair-writer.ts`           | Standalone union types narrowed to the config (global path only)     | `~/.claude-src/config-types.ts`         |
-| `writeGlobalTypesHalfFromData()`     | `config-gate/pair-writer.ts`           | Same, from background-loaded union inputs (scaffolded entities)      | `~/.claude-src/config-types.ts`         |
-| `regenerateConfigTypes()`            | `configuration/config-types-writer.ts` | Project config-types.ts; emits import-from-global when global exists | `<project>/.claude-src/config-types.ts` |
-| `generateConfigTypesSource()`        | `configuration/config-types-writer.ts` | Standalone union source string                                       | Returns string                          |
-| `generateProjectConfigTypesSource()` | `configuration/config-types-writer.ts` | Project source extending global types via `import type`              | Returns string                          |
-| `loadConfigTypesDataInBackground()`  | `configuration/config-types-writer.ts` | (reads matrix+agents for regen)                                      | Loads in background                     |
-| `getGlobalConfigTypesPath()`         | `configuration/config-types-writer.ts` | (reads, not writes)                                                  | `~/.claude-src/config-types.ts`         |
-| `reconcileTypesFromDisk()`           | `config-gate/index.ts`                 | Scope-dispatching entry — applies the D-228 rule from one place      | Whichever scope's `config-types.ts`     |
-| `writeScaffoldedEntityTypes()`       | `config-gate/index.ts`                 | Same dispatch for `new skill` / `new agent` / `new marketplace`      | Whichever scope's `config-types.ts`     |
+| Function                             | File                                   | What It Writes                                                             | Where                                   |
+| ------------------------------------ | -------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------- |
+| `writeGlobalTypesHalf()`             | `config-gate/pair-writer.ts`           | Standalone union types narrowed to the config (global path only)           | `~/.claude-src/config-types.ts`         |
+| `writeGlobalTypesHalfFromData()`     | `config-gate/pair-writer.ts`           | Same, from background-loaded union inputs (scaffolded entities)            | `~/.claude-src/config-types.ts`         |
+| `regenerateConfigTypes()`            | `configuration/config-types-writer.ts` | Project config-types.ts; emits import-from-global when global exists       | `<project>/.claude-src/config-types.ts` |
+| `generateConfigTypesSource()`        | `configuration/config-types-writer.ts` | Standalone union source string                                             | Returns string                          |
+| `generateProjectConfigTypesSource()` | `configuration/config-types-writer.ts` | Project source extending global types via `import type`                    | Returns string                          |
+| `loadConfigTypesDataInBackground()`  | `configuration/config-types-writer.ts` | (reads matrix+agents for regen)                                            | Loads in background                     |
+| `getGlobalConfigTypesPath()`         | `configuration/config-types-writer.ts` | (reads, not writes)                                                        | `~/.claude-src/config-types.ts`         |
+| `reconcileTypesFromDisk()`           | `config-gate/index.ts`                 | Scope-dispatching entry — applies the writer-selection rule from one place | Whichever scope's `config-types.ts`     |
+| `writeScaffoldedEntityTypes()`       | `config-gate/index.ts`                 | Same dispatch for `new skill` / `new agent` / `new marketplace`            | Whichever scope's `config-types.ts`     |
 
-**Writer Selection Rule (D-228):** Project path writes go through `regenerateConfigTypes()` — it detects an existing global install and emits `import type { SkillId as GlobalSkillId, ... } from "<relpath>/config-types"` instead of duplicating global unions. Global path writes go through `config-gate/pair-writer.ts`. The rule is enforced, not advised: `regenerateConfigTypes()` throws `GlobalPairWriteViolation` when handed the home directory, and the standalone renderer is private to `pair-writer.ts` (the former `writeStandaloneConfigTypes()` export is gone).
+**Writer Selection Rule:** Project path writes go through `regenerateConfigTypes()` — it detects an existing global install and emits `import type { SkillId as GlobalSkillId, ... } from "<relpath>/config-types"` instead of duplicating global unions. Global path writes go through `config-gate/pair-writer.ts`. The rule is enforced, not advised: `regenerateConfigTypes()` throws `GlobalPairWriteViolation` when handed the home directory, and the standalone renderer is private to `pair-writer.ts` (the former `writeStandaloneConfigTypes()` export is gone).
 
 `reconcileTypesFromDisk(projectDir, config, deps, opts?)` holds the dispatch: `isHomeDirectory(projectDir)` -> standalone half, otherwise import-and-extend. `commands/compile.ts` calls it once per compile pass, including the pass that found no installed skills — the persisted config, not the discovered skills, drives the unions. At `$HOME` it also fans the config out to every registered project and recompiles their agents, unconditionally: a hand-edited `config.ts` leaves no prior state to classify against.
 
@@ -327,7 +297,7 @@ Function-level inventory and the copy layering (`copySkillTo`, `copySkill`, `cop
 | ------------------------- | --------------------------------- | ----------------------------- | -------------------------------------------- |
 | `compileAndWriteAgents()` | `installation/local-installer.ts` | Compiled agent markdown files | `.claude/agents/<name>.md` (project or `~/`) |
 
-`local-installer.ts` no longer writes any config file. Every scoped-config writer it used to own moved into `config-gate/` on 2026-08-02; the module now builds and merges configs (`buildAndMergeConfig`, `buildCompileAgents`, `buildAgentScopeMap`) and hands them to the gate.
+`local-installer.ts` writes no config file. Every scoped-config writer lives in `config-gate/`; this module builds and merges configs (`buildAndMergeConfig`, `buildCompileAgents`, `buildAgentScopeMap`) and hands them to the gate.
 
 ### 3.4a The config-gate — the only writer of the global pair
 
@@ -339,17 +309,17 @@ Function-level inventory and the copy layering (`copySkillTo`, `copySkill`, `cop
 | `writeGlobalConfigHalf()`                    | `config-gate/pair-writer.ts` | The config half alone (scalar / registration mutations)                                                                    | `~/.claude-src/config.ts`             |
 | `ensureBlankPair()`                          | `config-gate/pair-writer.ts` | Blank `config.ts` + `config-types.ts` when none exists                                                                     | `~/.claude-src/`                      |
 | `writeScopedFromWizard()`                    | `config-gate/index.ts`       | Scoped config pairs (global + project), then propagates and recompiles                                                     | `.claude-src/` per scope              |
-| `writeProjectConfigPair()`                   | `config-gate/propagate.ts`   | ONE project's `config.ts` + `config-types.ts` from the same effective config (D-282)                                       | `<project>/.claude-src/`              |
+| `writeProjectConfigPair()`                   | `config-gate/propagate.ts`   | ONE project's `config.ts` + `config-types.ts` from the same effective config                                               | `<project>/.claude-src/`              |
 | `propagateGlobalChangesToProjects()`         | `config-gate/propagate.ts`   | Re-writes the pair for every registered project                                                                            | each tracked project's `.claude-src/` |
 | `pruneGlobalEntriesFromRegisteredProjects()` | `config-gate/propagate.ts`   | Same, with an EMPTIED global config so every inlined global row, tombstone, `selectedAgents` name and stack ref is dropped | each tracked project's `.claude-src/` |
 | `writeProjectPartial()`                      | `config-gate/index.ts`       | A PROJECT `config.ts` from a `Partial<ProjectConfig>`; throws at `$HOME`                                                   | `<project>/.claude-src/config.ts`     |
 | `writeMarketplaceScaffoldConfig()`           | `config-gate/index.ts`       | A scaffolded marketplace `config.ts`; throws at `$HOME`                                                                    | `<marketplace>/.claude-src/config.ts` |
 
-**Enforcement (four layers):** (1) neither `installation/index.ts` nor `configuration/index.ts` re-exports a pair writer, and `configuration/config-saver.ts` is deleted; (2) eslint bans importing `config-gate/*` other than `index*` (statically and via `ImportExpression`), bans importing any `writeFile`-family symbol from `fs`/`node:fs`/`fs/promises`/`node:fs/promises`/`fs-extra` outside `utils/fs.ts`, and restricts the pair renderers to `config-gate/**` + `configuration/**`; (3) `utils/fs.ts::writeFile` resolves its target and calls `assertGateToken` when it is either pair path, throwing `GlobalPairWriteViolation`; (4) `src/cli/lib/__tests__/config-gate-enforcement.test.ts` pins the barrel deletions by name, exercises the real `writeFile` inside and outside `withGateToken`, asserts the three `$HOME` refusals, proves the private `pair-writer` refuses a caller that reached it by dynamic import, and source-scans `src/**` for any file holding both a write primitive and a pair reference. **Its spec count is owned by [config/config-writer.md](config/config-writer.md#enforcement--four-layers) and deliberately not restated here** — this row carried a stale `17` through the D-309 landing, which is exactly the drift the count-ownership rule exists to stop.
+**Enforcement (four layers):** (1) neither `installation/index.ts` nor `configuration/index.ts` re-exports a pair writer, and `configuration/config-saver.ts` is deleted; (2) eslint bans importing `config-gate/*` other than `index*` (statically and via `ImportExpression`), bans importing any `writeFile`-family symbol from `fs`/`node:fs`/`fs/promises`/`node:fs/promises`/`fs-extra` outside `utils/fs.ts`, and restricts the pair renderers to `config-gate/**` + `configuration/**`; (3) `utils/fs.ts::writeFile` resolves its target and calls `assertGateToken` when it is either pair path, throwing `GlobalPairWriteViolation`; (4) `src/cli/lib/__tests__/config-gate-enforcement.test.ts` pins the barrel deletions by name, exercises the real `writeFile` inside and outside `withGateToken`, asserts the three `$HOME` refusals, proves the private `pair-writer` refuses a caller that reached it by dynamic import, and source-scans `src/**` for any file holding both a write primitive and a pair reference. **Its spec count is owned by [config/config-writer.md](config/config-writer.md#enforcement--four-layers) and deliberately not restated here.**
 
-**A clean lint run does not prove layer (2) still works.** A guard ESLint has quietly stopped understanding reports nothing, which looks exactly like a guard with nothing to report — and layer (2) is the only one of the four with no test behind it, since layers (1), (3) and (4) are all exercised by `config-gate-enforcement.test.ts`. The check is to write a throwaway file that violates every guard at once, lint it, confirm each one fires, and delete the file. This was done on the ESLint 9 → 10 upgrade (2026-08-05) and all six guards in `eslint.config.js` still fired — including the one most exposed to a parser change, the `no-restricted-syntax` selector that catches dynamic imports of `config-gate/*` through a regex containing a unicode escape (`/`). **Repeat this on any ESLint major upgrade**; the guards enforce real invariants and their silence is not evidence.
+**A clean lint run does not prove layer (2) still works.** A guard ESLint has quietly stopped understanding reports nothing, which looks exactly like a guard with nothing to report — and layer (2) is the only one of the four with no test behind it, since layers (1), (3) and (4) are all exercised by `config-gate-enforcement.test.ts`. The check is to write a throwaway file that violates every guard at once, lint it, confirm each one fires, and delete the file. The guard most exposed to a parser change is the `no-restricted-syntax` selector catching dynamic imports of `config-gate/*`, whose regex contains a unicode escape. **Run this check on any ESLint major upgrade**; the guards enforce real invariants and their silence is not evidence.
 
-**Return-channel contract:** every gate entry returns a `GateReport { globalWritten, changes, propagated: { updated, skipped }, recompile }`. It is a **record of completed work**, not a to-do list: a write that propagates has already recompiled the propagated projects' agents (D-240, contract rewritten 2026-08-02). `skipped` is surfaced to the user by `commands/uninstall.tsx` and `commands/compile.ts` via `registeredProjectUpdateSkipped()`; `init.tsx` and `edit.tsx` render only the recompile summary.
+**Return-channel contract:** every gate entry returns a `GateReport { globalWritten, changes, propagated: { updated, skipped }, recompile }`. It is a **record of completed work**, not a to-do list: a write that propagates has already recompiled the propagated projects' agents. `skipped` is surfaced to the user by `commands/uninstall.tsx` and `commands/compile.ts` via `registeredProjectUpdateSkipped()`; `init.tsx` and `edit.tsx` render only the recompile summary.
 
 **Ordering constraint:** `pruneGlobalEntriesFromRegisteredProjects()` must run **after** the global `.claude-src` manifest is deleted, so each project's regenerated `config-types.ts` falls back to the standalone form instead of importing from a now-missing global `config-types.ts`.
 
@@ -362,14 +332,14 @@ Function-level inventory and the copy layering (`copySkillTo`, `copySkill`, `cop
 
 Template root resolution in `createLiquidEngine()` in `compiler.ts`: checks local `.claude-src/agents/_templates/`, legacy `.claude/templates/`, then CLI built-in `DIRS.templates`.
 
-### 3.6 Per-Skill Source Propagation (D-217)
+### 3.6 Per-Skill Source Propagation
 
 | Function                     | File                                   | Input                            | Output                                     |
 | ---------------------------- | -------------------------------------- | -------------------------------- | ------------------------------------------ |
 | `derivePluginRef()`          | `compiler.ts` (internal, non-exported) | `Skill.source` (per-skill field) | `${id}:${id}` when non-eject/non-undefined |
 | `buildSkillRefsFromConfig()` | `resolver.ts`                          | `SkillConfig.source` per entry   | `SkillReference` with `source` propagated  |
 
-**Contract (D-217):** `SkillConfig.source` on each skill config entry is authoritative for that skill's install mode. A skill renders a plugin reference (`${id}:${id}`) only when `skill.source` is defined and not `"eject"`. `undefined` source (user-authored local skills) and `"eject"` both fall through to bare id. There is no agent-level `installMode` override -- removing that dead plumbing from wrappers is covered in the D-217 finding.
+**Contract:** `SkillConfig.source` on each skill config entry is authoritative for that skill's install mode. A skill renders a plugin reference (`${id}:${id}`) only when `skill.source` is defined and not `"eject"`. `undefined` source (user-authored local skills) and `"eject"` both fall through to bare id. There is no agent-level `installMode` override.
 
 ### 3.7 Skill Metadata Injection
 
@@ -377,9 +347,9 @@ Template root resolution in `createLiquidEngine()` in `compiler.ts`: checks loca
 | ---------------------------- | -------------------------- | ------------------------------------- | ----------------------- |
 | `injectForkedFromMetadata()` | `skills/skill-metadata.ts` | Updated metadata.yaml with forkedFrom | Skill's `metadata.yaml` |
 
-### 3.8 Config-Semantics Boundary: Cross-Scope Reconciliation (D-279)
+### 3.8 Config-Semantics Boundary: Cross-Scope Reconciliation
 
-A **write-time invariant boundary**, distinct from the schema boundaries above: it does not validate incoming bytes, it enforces that the config the CLI is about to emit is semantically coherent across scopes. Before D-279 only one of the two project-config write paths reconciled at all, so `doctor` reported clean and `validate` exited 0 on a config carrying two live skills in an exclusive category.
+A **write-time invariant boundary**, distinct from the schema boundaries above: it does not validate incoming bytes, it enforces that the config the CLI is about to emit is semantically coherent across scopes. Both project-config write paths must reconcile; with only one doing so, `doctor` reported clean and `validate` exited 0 on a config carrying two live skills in an exclusive category.
 
 | Property       | Value                                                                                                                                                                          |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -412,7 +382,7 @@ A **write-time invariant boundary**, distinct from the schema boundaries above: 
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `Plugins:`           | `<pluginsDir>/<pluginName>` + `claude plugin uninstall`                                                                          | `getCliInstalledPluginKeys(config)` — `id@source` and the `id@marketplace` variant |
 | `CLI-managed files:` | `<skillsDir>/<dir>` where `metadata.yaml` carries `forkedFrom`; `<agentsDir>/<name>.md` where the basename is in `config.agents` | `readForkedFromMetadata()`; `listAgentMdFiles()`                                   |
-| `Config:`            | `.claude-src/config.ts`, `.claude-src/config-types.ts`                                                                           | **Unconditional** (D-274) — no flag gates it                                       |
+| `Config:`            | `.claude-src/config.ts`, `.claude-src/config-types.ts`                                                                           | **Unconditional** — no flag gates it                                               |
 
 **Deletion contracts:**
 
@@ -669,7 +639,7 @@ Used for validation commands and build-time checks. Reject unknown fields via `.
 
 **Skill-directory-name rule:** `checkDirNameMatchesSkillId()` in `source-validator.ts` compares the directory name against the skill's **machine id from `SKILL.md` frontmatter**, not against `displayName`. It runs independently of whether `metadata.yaml` validated, and an unreadable/invalid `SKILL.md` frontmatter yields a "Cannot verify directory name" issue rather than a false mismatch.
 
-**Parse-failure causes are reported inconsistently across `source-validator.ts` phases (0.147.1).** Two of its `catch` blocks bound the error and discarded it; both now interpolate `getErrorMessage(error)`:
+**Parse-failure causes are reported inconsistently across `source-validator.ts` phases.** Two of its `catch` blocks bound the error and discarded it; both now interpolate `getErrorMessage(error)`:
 
 | Phase                                       | Message                                                           | Carries cause? |
 | ------------------------------------------- | ----------------------------------------------------------------- | -------------- |
@@ -677,7 +647,7 @@ Used for validation commands and build-time checks. Reject unknown fields via `.
 | Cross-reference load (categories/rules)     | `Cross-reference validation skipped: failed to load ...: <cause>` | Yes            |
 | `validateYamlFiles()` (config/stacks files) | `Failed to parse YAML`                                            | **No**         |
 
-`validateYamlFiles` uses a bare `catch {`, so it binds nothing and a linter cannot see it — the reason it fell outside the pass that fixed the other two. **Known gap, recorded not fixed.** The consequence at this boundary: an invalid `config/stacks.ts` or `config/skill-categories.ts` reports only the failure category, while an invalid `metadata.yaml` reports the YAML parser's line and column. Do not read "Failed to parse YAML" as a uniform contract.
+`validateYamlFiles` uses a bare `catch {`, so it binds nothing and a linter cannot see it — which is why it falls outside the pass that fixed the other two. **Known gap, recorded not fixed.** The consequence at this boundary: an invalid `config/stacks.ts` or `config/skill-categories.ts` reports only the failure category, while an invalid `metadata.yaml` reports the YAML parser's line and column. Do not read "Failed to parse YAML" as a uniform contract.
 
 ---
 

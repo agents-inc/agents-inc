@@ -9,12 +9,6 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-07-30 · POINTER (product 0.146.0) — redirect to the root-level original confirmed to resolve. -->
-
 # Dependency Graph
 
-**Last Validated:** 2026-07-30
-
-> **Reorganized from:** `reference/dependency-graph.md`. The original file is preserved during migration.
-
-**Full content: See `reference/dependency-graph.md`** -- this file is the authoritative source until cleanup.
+> **Pointer.** The content lives in [`reference/dependency-graph.md`](../dependency-graph.md). This path is kept because inbound links still use it.
