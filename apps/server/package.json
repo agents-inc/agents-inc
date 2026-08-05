@@ -19,13 +19,13 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.9",
+    "@cloudflare/vitest-pool-workers": "^0.20",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "eslint": "^10",
     "typescript": "~6",
-    "vitest": "^3",
+    "vitest": "^4",
     "wrangler": "^4"
   }
 }

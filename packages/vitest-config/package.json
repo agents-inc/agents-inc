@@ -7,6 +7,6 @@
     "./node": "./node.js"
   },
   "dependencies": {
-    "vitest": "^3"
+    "vitest": "^4"
   }
 }

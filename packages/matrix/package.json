@@ -22,7 +22,7 @@
     "eslint": "^10",
     "globals": "^17",
     "typescript": "~6",
-    "vitest": "^3",
+    "vitest": "^4",
     "yaml": "^2.9.0"
   },
   "exports": {
