@@ -20,6 +20,7 @@ export const FILES = {
   IDENTITY_MD: "identity.md",
   PLAYBOOK_MD: "playbook.md",
   PLUGIN_JSON: "plugin.json",
+  MARKETPLACE_JSON: "marketplace.json",
 } as const;
 
 /** Text that identifies each wizard step. Centralized so UI changes update one place. */

@@ -8,6 +8,7 @@ import {
   CACHE_DIR,
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
+  PLUGIN_MANIFEST_DIR,
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../../src/cli/consts.js";
@@ -33,6 +34,7 @@ import type {
   AgentName,
   AgentScopeConfig,
   Marketplace,
+  PluginManifest,
   ProjectConfig,
   SkillId,
 } from "../../src/cli/types/index.js";
@@ -260,6 +262,46 @@ export async function readMarketplaceJson(outputPath: string): Promise<Marketpla
   const content = await readFile(outputPath, "utf-8");
   // Boundary cast: JSON.parse returns `unknown`, caller consumes as Marketplace
   return JSON.parse(content) as Marketplace;
+}
+
+/**
+ * Reads a compiled plugin's manifest from
+ * `<pluginsDir>/<pluginName>/.claude-plugin/plugin.json`.
+ */
+async function readPluginManifestJson(
+  pluginsDir: string,
+  pluginName: string,
+): Promise<PluginManifest> {
+  const manifestPath = path.join(
+    pluginsDir,
+    pluginName,
+    PLUGIN_MANIFEST_DIR,
+    STANDARD_FILES.PLUGIN_JSON,
+  );
+  const content = await readFile(manifestPath, "utf-8");
+  // Boundary cast: JSON.parse returns `unknown`, caller consumes as PluginManifest
+  return JSON.parse(content) as PluginManifest;
+}
+
+/**
+ * Maps each named plugin to the `version` its `.claude-plugin/plugin.json` declares,
+ * so a spec can compare every compiled plugin's version in one `toStrictEqual`
+ * instead of asserting the bumped skill and trusting the rest.
+ *
+ * `build plugins` bumps a plugin's major version whenever its skill's content hash
+ * changes, so the whole map is the contract — a version that moved when it should
+ * not have is as much a failure as one that did not move when it should have.
+ */
+export async function readPluginVersions(
+  pluginsDir: string,
+  pluginNames: readonly string[],
+): Promise<Record<string, string | undefined>> {
+  const entries = await Promise.all(
+    pluginNames.map(
+      async (name) => [name, (await readPluginManifestJson(pluginsDir, name)).version] as const,
+    ),
+  );
+  return Object.fromEntries(entries);
 }
 
 /**
