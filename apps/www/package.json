@@ -7,6 +7,7 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
+    "deploy": "wrangler deploy",
     "lint": "eslint",
     "typecheck": "astro check"
   },
@@ -23,6 +24,7 @@
     "@workspace/typescript-config": "workspace:*",
     "eslint": "^10",
     "tailwindcss": "^4",
-    "typescript": "~6"
+    "typescript": "~6",
+    "wrangler": "^4"
   }
 }

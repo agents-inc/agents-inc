@@ -1,0 +1,31 @@
+// The documentation site: the landing page at `/` and Starlight at `/docs`.
+// Like the editor's Worker there is deliberately no `main` — a Worker serving
+// only static assets needs no script, and asset requests are then unmetered.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "agents-inc-www",
+  "compatibility_date": "2025-10-01",
+  "assets": {
+    "directory": "./dist",
+    // Astro emits a real file per route plus `404.html`, so an unmatched
+    // request is a genuine miss rather than a client-side route — the opposite
+    // of the editor, which is a single-page app and rewrites everything to
+    // `index.html`.
+    "not_found_handling": "404-page",
+  },
+
+  // NO `routes` KEY, AND THAT IS THE POINT OF THIS FIRST DEPLOY.
+  //
+  // `agentsinc.sh` is a Custom Domain on the editor's Worker, and a hostname
+  // can only be bound to one Worker at a time: claiming it here would take the
+  // live site away from the editor the moment this deployed. So this Worker
+  // ships to its `workers.dev` subdomain instead, where the built site is
+  // fully browsable and nothing in production moves.
+  //
+  // Splitting the apex — this build at `agentsinc.sh/` and the editor at a
+  // Route on `agentsinc.sh/editor*` — is WWW-03 in todo/www.md, and it is a
+  // deliberate cutover rather than a config edit: the editor's `base`, its
+  // router `basepath` and the share-link prefix all have to move in the same
+  // step, because `location.origin` is baked into every share link. Add the
+  // route here as part of that, not before it.
+}

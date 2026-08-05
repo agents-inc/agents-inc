@@ -85,11 +85,12 @@
         "eslint": "^10",
         "tailwindcss": "^4",
         "typescript": "~6",
+        "wrangler": "^4",
       },
     },
     "packages/cli": {
       "name": "agents-inc",
-      "version": "0.151.0",
+      "version": "0.152.0",
       "bin": {
         "agents-inc": "dist/index.js",
         "agentsinc": "dist/index.js",
