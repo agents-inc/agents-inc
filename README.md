@@ -74,7 +74,7 @@ Two of those do not fan out, on purpose, and the reasons are written down where 
 - **`format`** runs once from the root because Prettier reads `.prettierignore` only from its working directory. See the `//format` note in `package.json`.
 - **Formatting inside `packages/cli`** is still the CLI's own — 100 columns, semicolons, double quotes. Prettier picks the nearest config walking up from each file, so `packages/cli/prettier.config.mjs` wins there and the root config never touches it.
 
-`bun run deps:check` will not complain that the CLI and the web app disagree on React, Vitest, TypeScript and ESLint. That split is deliberate for now and is excluded in `.syncpackrc.cjs`; unifying the versions is REPO-06 in [todo/repo.md](./todo/repo.md).
+`bun run deps:check` used to stay quiet about the CLI and the web app disagreeing on React, Vitest, TypeScript and ESLint. **They agree as of 2026-08-05** — one React, one Vitest, one TypeScript, one ESLint. `.syncpackrc.cjs` still carries the two groups that hid that disagreement, so they now hide nothing; removing them is REPO-26 in [todo/repo.md](./todo/repo.md), and it will surface a handful of smaller versions that drifted while nobody was comparing.
 
 ## Where to read next
 

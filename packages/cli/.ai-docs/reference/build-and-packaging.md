@@ -41,6 +41,21 @@ related:
 last_validated: 2026-08-02
 ---
 
+<!-- PARTIAL 2026-08-05 (b) · floor re-derived after tsup.config.ts was corrected
+     Supersedes (a) below, which described a drift that has since been fixed.
+     ✓ §3's `target` row, the "runtime floor is declared in three places" subsection and trap 9.
+       Re-derived from tsup.config.ts (now target: "node22", with a comment naming engines.node),
+       packages/cli/package.json (engines.node ">=22"), the ROOT package.json (engines.node
+       ">=22") and .github/workflows/ci.yml (NODE_VERSION: 22). packages/cli/tsconfig.json is
+       still target "ES2022" — deliberately NOT part of the runtime floor, left undecided.
+       The zero-byte-diff measurement is reported as given, not re-run here.
+     ✗ every other section — still on the 2026-08-02 FULL basis below
+-->
+<!-- PARTIAL 2026-08-05 (a) · Node-floor absorption — SUPERSEDED by (b) above the same day.
+     Recorded that `engines.node` was ">=22" while tsup `target` was still "node18", and that
+     the doc's prior ">=18.0.0" claim was false. The first half was fixed in code hours later;
+     the second half stands. Kept as the record of why (b) exists.
+-->
 <!-- VALIDATED 2026-08-02 · FULL — new doc. Every claim derived this session from
      tsup.config.ts, package.json, src/cli/index.ts, src/cli/config-exports.ts,
      src/cli/consts.ts, src/cli/lib/configuration/config-loader.ts, the built dist/
@@ -151,17 +166,63 @@ catalog is stale), and `deploy` ships the web app to Cloudflare. Publication is 
 
 ## 3. Build options
 
-| Option      | Value                 | What it buys                                                                                                                                                                          |
-| ----------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `format`    | `["esm"]`             | Single format. Matches `"type": "module"`; there is no CJS build and no dual-package hazard                                                                                           |
-| `platform`  | `node`                | Node built-ins stay external; `fs`, `path`, `os` are not polyfilled                                                                                                                   |
-| `target`    | `node18`              | Downlevels syntax newer than Node 18. Must move together with `engines.node` (`>=18.0.0`) and `tsconfig.json`'s `target: "ES2022"` — three independent declarations of the same floor |
-| `clean`     | `true`                | `dist/` is wiped before every build, so a deleted command's artefact disappears on the next build rather than lingering and staying discoverable                                      |
-| `sourcemap` | `true`                | One `.js.map` per emitted `.js`. These are published (§6) and are the single largest group in the tarball                                                                             |
-| `shims`     | `true`                | Injects tsup's `esm_shims` module so bundled code may reference the CJS globals `__dirname` / `__filename`. Inert in the current build — see below                                    |
-| `dts`       | `false`               | **No `.d.ts` is emitted anywhere.** See §7 for why that is tolerable and where it is not                                                                                              |
-| `outDir`    | `dist`                | Hard-coded; `onSuccess` also hard-codes the literal string `"dist"`, so overriding `--out-dir` on the CLI would split the two halves apart                                            |
-| `banner.js` | `#!/usr/bin/env node` | See below                                                                                                                                                                             |
+| Option      | Value                 | What it buys                                                                                                                                       |
+| ----------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `format`    | `["esm"]`             | Single format. Matches `"type": "module"`; there is no CJS build and no dual-package hazard                                                        |
+| `platform`  | `node`                | Node built-ins stay external; `fs`, `path`, `os` are not polyfilled                                                                                |
+| `target`    | `node22`              | Downlevels syntax newer than Node 22. One of **three separate declarations of the runtime floor**, which agree today — see below                   |
+| `clean`     | `true`                | `dist/` is wiped before every build, so a deleted command's artefact disappears on the next build rather than lingering and staying discoverable   |
+| `sourcemap` | `true`                | One `.js.map` per emitted `.js`. These are published (§6) and are the single largest group in the tarball                                          |
+| `shims`     | `true`                | Injects tsup's `esm_shims` module so bundled code may reference the CJS globals `__dirname` / `__filename`. Inert in the current build — see below |
+| `dts`       | `false`               | **No `.d.ts` is emitted anywhere.** See §7 for why that is tolerable and where it is not                                                           |
+| `outDir`    | `dist`                | Hard-coded; `onSuccess` also hard-codes the literal string `"dist"`, so overriding `--out-dir` on the CLI would split the two halves apart         |
+| `banner.js` | `#!/usr/bin/env node` | See below                                                                                                                                          |
+
+### The runtime floor is declared in three places, and they must be changed together
+
+Node 22 is the floor. It is stated three times, in three files, and **nothing checks that the three
+agree** — no test, no lint rule, no script. They agree today because someone lined them up by hand.
+
+| Declaration                                | Says     | What it does if it disagrees with the others                |
+| ------------------------------------------ | -------- | ----------------------------------------------------------- |
+| `packages/cli/package.json` `engines.node` | `>=22`   | Decides which Node an install is allowed on                 |
+| root `package.json` `engines.node`         | `>=22`   | Same, for anyone working in the repository                  |
+| `tsup.config.ts` `target`                  | `node22` | Decides how new the syntax in the emitted JavaScript may be |
+
+**Change all three, or none.** The dangerous direction is raising `target` above what `engines`
+allows: that ships syntax a runtime someone was told they could install cannot parse. The safe
+direction — `target` below `engines` — costs nothing but is still wrong, because the file then says
+something untrue about what the package supports.
+
+This drifted once, on 2026-08-05. Ink 7 raised the floor to Node 22, both `engines` fields were
+raised, and `target` was left at `node18`. Nothing caught it; it was found by reading the file.
+`tsup.config.ts` now carries a comment naming `engines.node` as the thing it must stay in step with.
+
+> **Correcting `target` changed the built output by zero bytes**, and that was measured rather than
+> assumed: 407 files, identical sizes, no hash mismatch across the 262 compared, and even the
+> content-hashed chunk filenames unchanged. The setting was separately proved to be doing real work
+> — at `node18` the bundler strips an import attribute that at `node22` it keeps — so identical
+> output means the source simply contains no syntax in the band between the two. **The value of that
+> change was making the third declaration truthful, not changing the artefact.** Do not read the
+> null result as evidence that `target` does not matter.
+
+**`tsconfig.json`'s `target: "ES2022"` is a different question and is deliberately not in the table
+above.** It sets which JavaScript language features the type-checker assumes, not which Node the
+package runs on. It was left alone on purpose and the owner has not decided on it; do not "align" it
+with the floor.
+
+A fourth place carries the same number without being a declaration of the floor: CI pins
+`NODE_VERSION: 22` in `.github/workflows/ci.yml` across all three jobs. That pin is not cosmetic —
+the E2E harness launches the CLI as a real child process with `pty.spawn("node", …)`, so **the
+runner's Node is the runtime executing the thing under test.** Before the pin, every job ran on
+whatever Node the runner image happened to ship that week, which is to say the floor was declared
+and never exercised.
+
+> `actions/setup-node@v4` is used rather than the current v7 **on purpose.** Versions 5 and 6 added
+> automatic dependency caching keyed off a lockfile, and this repository has `bun.lock` rather than
+> `package-lock.json` — the exact shape where that step fails looking for a file that is not there.
+> v4 predates the behaviour and does only one thing. If this is ever moved forward, `v7` needs
+> `package-manager-cache: false` alongside it.
 
 ### `shims: true` is currently insurance, not load-bearing
 
@@ -502,9 +563,14 @@ and `scripts/**`, so the 16 compiled `.test.js` files in `dist/` are never colle
    surface (§7 Gap 1).
 8. **Overriding `--out-dir` splits the build in half.** `onSuccess` hard-codes the literal `"dist"`
    while the bundle honours the flag (§3).
-9. **`prepublishOnly` stops at its first failing step, and `format:check` is that first step.** A
-   formatting regression alone blocks lint, typecheck, build and test from ever running, so it hides
-   every other failure behind it. The gate is clean today — `prettier --check .` exits `0` (§1).
+9. **The runtime floor is declared three times — `tsup` `target` and two `engines.node` fields — and
+   nothing checks that they agree.** They agree today, by hand, and drifted once already. Change all
+   three together. `tsconfig`'s `target` is a different question and stays out of it; CI's
+   `NODE_VERSION` is a fourth place the same number lives (§3).
+10. **`prepublishOnly` stops at its first failing step, and `format:check` is that first step.** A
+    formatting regression alone blocks lint, typecheck, build and test from ever running, so it
+    hides every other failure behind it. The gate is clean today — `prettier --check .` exits `0`
+    (§1).
 
 ---
 

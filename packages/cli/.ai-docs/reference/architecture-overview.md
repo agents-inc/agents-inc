@@ -67,14 +67,14 @@ last_validated: 2026-07-30
 | Entry Point | `src/cli/index.ts` (runs oclif with `run()`)                                                                                                                                                                                                                                                                                                                             |
 | Build       | tsup -> `dist/` — entry contract, publish surface and the `oclif` block: [build-and-packaging.md](./build-and-packaging.md)                                                                                                                                                                                                                                              |
 | Test Runner | Vitest (`vitest.config.ts`) with 3 projects: unit, integration, commands                                                                                                                                                                                                                                                                                                 |
-| Runtime     | Node.js (also Bun-compatible based on test helpers)                                                                                                                                                                                                                                                                                                                      |
+| Runtime     | Node.js, floor `>=22` in `engines` (raised from `>=18` on 2026-08-05 because Ink 7 requires it — CI pins Node 22 in all three jobs, and the E2E harness spawns the CLI with the runner's Node). Also Bun-compatible based on test helpers                                                                                                                                |
 
 ## Technology Stack
 
 | Layer             | Library              | Version     | Purpose                                      |
 | ----------------- | -------------------- | ----------- | -------------------------------------------- |
 | CLI Framework     | oclif                | @oclif/core | Command parsing, flags, plugins, hooks       |
-| Terminal UI       | Ink + React          | ink v5      | Interactive wizard, prompts, terminal render |
+| Terminal UI       | Ink + React          | ink v7      | Interactive wizard, prompts, terminal render |
 | State Management  | Zustand              | v5          | Wizard state store                           |
 | Schema Validation | Zod                  | v4.3.6      | YAML/JSON parse boundaries                   |
 | Template Engine   | LiquidJS             | -           | Agent prompt compilation                     |

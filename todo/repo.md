@@ -13,19 +13,21 @@ There is no done column and nothing is struck through. Landed items get one line
 carries the identifier the item had before this folder existed.
 
 **Roughly ordered by what to do first.** CI has been green on all three jobs since 2026-08-04, so
-nothing here is on fire. REPO-21 is the largest piece of work and the one everything else waits
-behind. REPO-04 and REPO-05 are a pair — the site can deploy, and the Worker rename rides along
+nothing here is on fire. **The largest item here — unifying the tool versions — landed on
+2026-08-05**, so the repository now has one answer per tool instead of two and all four workarounds
+holding the split together are deleted. REPO-26 is its short tail and REPO-25 is the opportunity it
+opened up. REPO-04 and REPO-05 are a pair — the site can deploy, and the Worker rename rides along
 with that deploy. Nothing after REPO-05 depends on order.
 
 | ID                                                                   | Task                                                                                      | Status           | Type     | Complexity |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
-| REPO-21 (was the rename plan, 2026-08-04)                            | Collapse the two npm packages into one — `agents-inc` becomes the real CLI                | Ready for Dev    | refactor | easy       |
 | REPO-22 (new, 2026-08-04)                                            | CI has no job timeout — a hung suite runs for six hours before GitHub stops it            | Ready for Dev    | bug      | easy       |
 | REPO-23 (new, 2026-08-04)                                            | Revisit `retry: 2` and the e2e worker cap now that the CI hang is fixed                   | Investigate      | refactor | easy       |
 | REPO-24 (new, 2026-08-04)                                            | Drop the `@agents-inc/cli/config` jiti alias once nobody is on the old package            | Investigate      | refactor | easy       |
+| REPO-25 (new, 2026-08-05)                                            | Ink 7 can be told it is in a real terminal — that deletes two CI workarounds              | Ready for Dev    | refactor | easy       |
+| REPO-26 (new, 2026-08-05)                                            | Delete both syncpack version groups and settle the versions they were hiding              | Ready for Dev    | refactor | easy       |
 | REPO-04 (was editor-todo item 13)                                    | Nothing is configured to deploy `apps/www` — no wrangler, route, deploy script or task    | Ready for Dev    | feature  | complex    |
 | REPO-05 (was editor-todo item 18)                                    | Cloudflare, Sentry and PostHog are still registered as `agents-inc-web`                   | Ready for Dev    | refactor | complex    |
-| REPO-06 (was monorepo-merge "Unify the tool versions")               | ESLint 10, TypeScript 6, React 19, Vitest 4 — and delete three split-only workarounds     | Ready for Dev    | refactor | complex    |
 | REPO-07 (was monorepo-merge "Delete ~/dev/agents-inc-web-monorepo")  | Delete the old web monorepo once this repository is trusted                               | Needs Assistance | refactor | easy       |
 | REPO-09 (was monorepo-merge "Decide what a local `.env` should say") | A local `.env` can ship a live site whose every request goes to your own machine          | Needs Assistance | bug      | easy       |
 | REPO-10 (was monorepo-merge "Three gaps in the safety nets")         | Catalog check blind to new files, build scripts never typechecked, 1,179 md files rebuild | Ready for Dev    | bug      | complex    |
@@ -113,66 +115,6 @@ nothing here. Do it whenever, or leave it.
 - **Two layout tables now read `editor/` → "the editor"** — the root `README.md` and the merge notes.
   Accurate but tautological: that column exists to say what the directory is, and "the configurator"
   was doing that job. Whether it wants a better gloss is a copy decision rather than a naming one.
-
----
-
-#### REPO-06: Unify the tool versions
-
-Get everything onto **ESLint 10, TypeScript 6, React 19 and Vitest 4.** Today the CLI sits on the
-older half of each pair (React 18, Vitest 4, TypeScript 5.7, ESLint 9) and the web code on the newer
-(React 19, Vitest 3 in the worker, TypeScript 6, ESLint 10). Unifying them was deliberately kept out
-of the merge so that if the CLI broke afterwards, the move was the only thing that could have caused
-it.
-
-**The hard part is React.** The CLI draws its wizard with Ink 5, which requires React 18. React 19
-means Ink 6, and Ink 6 changed enough that **rewriting the wizard's tests is the real cost of the
-whole exercise.** ESLint, TypeScript and Vitest are close to mechanical by comparison.
-
-Leaving it costs nothing today, but every future dependency decision has to be made twice.
-
-### The four workarounds that must be deleted with it
-
-**This row is the only place these are recorded.** They exist solely to hold the version split
-together, they are deliberately not documented as architecture anywhere, and leaving any of them in
-place after the versions match would silently let the split come back.
-
-1. **`packages/ui/tsconfig.json` — the `paths` entry.** After the merge, the root slot for React's
-   type definitions went to React 18, because the CLI needs it for Ink. Every React 19 consumer then
-   got a private copy. TypeScript treats two copies of the same version as two unrelated things, so
-   passing a value from a Base UI component into a design-system component stopped compiling. The
-   obvious fix — telling bun "React 19 for the browser half only" — is not possible: bun supports
-   neither nested overrides nor scoped resolutions, and a blanket rule would force React 19 onto the
-   CLI, which is the change the merge deliberately avoided. So this `paths` entry points at a single
-   copy, with a fallback for the day React 19 does win the root slot.
-2. **`apps/editor/tsconfig.app.json` — the same `paths` entry**, for the same reason. Without it the
-   web app's build died before it started bundling. Nothing was ever wrong at runtime.
-3. **`apps/server/vitest.config.ts` — the Vitest redirect.** `apps/server` pins Vitest 3 and runs it
-   inside a simulated Cloudflare runtime; the CLI pins Vitest 4 and won the root slot. Vitest
-   deliberately looks up its own internal pieces from the repository root rather than from whoever
-   asked for them, so the worker's Vitest 3 was handed Vitest 4's internals and died on startup —
-   **zero tests ran, not even a failure.** The config now redirects those internal lookups to the
-   Vitest sitting next to it.
-4. **The root `package.json` — `react` and `@types/react` at 18, imported by nothing.** Added
-   2026-08-04 with REPO-21. Items 1 and 2 above say "the root slot for React's type definitions went
-   to React 18, because the CLI needs it for Ink" — that was true, but it was never decided. It fell
-   out of the workspace being named `@agents-inc/cli`, which bun resolved ahead of `editor` and
-   `@workspace/ui`. Renaming the package to `agents-inc` moved it behind them and handed the slot to
-   React 19. Ink declares React as a **peer** dependency, so it never gets a nested copy and always
-   takes the hoisted one; the CLI's own files kept resolving their nested React 18. Two React
-   instances in one tree, and **353 unit tests died on an error about React children that names
-   nothing to do with any of this.** Declaring the pair at the root wins the slot deterministically,
-   because the root workspace's own dependencies always sit at the root of `node_modules`. Nothing at
-   the root imports React and nothing should.
-
-All four carry their full explanation in a comment at the site. Items 1-3 were verified still
-present on 2026-08-04.
-
-**A fifth thing goes with them.** `.syncpackrc.cjs` carries two version groups: one suppresses
-CLI-versus-web disagreements so `bun run deps:check` stays quiet, the other stops the root React pin
-in item 4 being reported as drift. Both comments say to delete the group once the versions are
-unified — leaving either in place afterwards would silently let the CLI drift again. **Those comments
-name this row by ID**, and so do the syncpack labels beside them, so renaming or retiring REPO-06
-means editing `.syncpackrc.cjs` with it.
 
 ---
 
@@ -360,47 +302,6 @@ bug, not blocking, and not an agent's call.
 
 ---
 
-#### REPO-21: Collapse the two npm packages into one
-
-**This replaces the rename plan, which is dead.** `agentsinc` on GitHub is an organisation called
-AGENTS.inc, created 2013-08-13, ten followers, no public repos — dormant but twelve years old and not
-a squatter by GitHub's definition, so a dispute would fail. Without the org the rename produces
-_three_ names instead of today's two: npm and the marketplace saying `agentsinc`, GitHub saying
-`agents-inc`. Worse than doing nothing.
-
-And nothing is actually inconsistent today. The GitHub org, the npm scope, the unscoped package and
-the marketplace id all say `agents-inc`. Only the domain differs, because `agents-inc.sh` reads
-badly — a constraint of the domain, not a naming decision.
-
-**What survives is the part that was never about the name.** Two packages are published where one
-would do: `@agents-inc/cli` is the CLI, and `agents-inc` is a three-line shim that imports it so
-`npx agents-inc init` works without the scope.
-
-The shim is not free. Its own README explains why it must be republished at the same version on
-every release: `npx` caches by package spec, so an unbumped `agents-inc` keeps serving whatever it
-resolved to first. It is step 8 of the release checklist, and forgetting it hands users a stale CLI
-with no error — a silent failure guarded by a manual step.
-
-**Make the unscoped package the real one.** `agents-inc@0.150.0` ships the CLI instead of the shim;
-`@agents-inc/cli` is deprecated pointing at it.
-
-**Nothing breaks.** `npx agents-inc init` behaves exactly as now, minus a hop. `DEFAULT_PLUGIN_NAME`
-does not move, so no existing install's `<skill>@agents-inc` refs are touched. The schema addresses
-do not move. The GitHub org and repo do not move. Generated configs import from `./config-types`, a
-relative path — verified — so no config file on disk references the package name at all.
-
-**The work:** `packages/cli/package.json` name → `agents-inc` · delete `packages/cli/alias/` · delete
-the lockstep rule from the release checklist in `.ai-docs/standards/commit-protocol.md` · the
-`./config` subpath becomes `agents-inc/config`, so keep `config-loader.ts`'s jiti alias accepting
-both spellings for anything hand-authored against the old one · `bin` already registers both
-`agents-inc` and `agentsinc` and needs no change.
-
-**Publish order:** `agents-inc@0.150.0` first, then `npm deprecate @agents-inc/cli` pointing at it.
-Minor rather than patch — packaging changes, behaviour does not.
-
-**Check after:** `npx agents-inc init` from a cleared `npx` cache · `@agents-inc/cli` still installs,
-since deprecating does not remove · a config importing `@agents-inc/cli/config` still loads.
-
 #### REPO-22: CI has no job timeout
 
 Nothing stopped the run that hung for 49 minutes, and nothing would have stopped it at six hours —
@@ -435,8 +336,8 @@ Neither is urgent. Both want one green baseline first, and then a measurement ra
 
 #### REPO-24: Drop the old config import alias
 
-`config-loader.ts` tells jiti how to resolve imports **inside a user's config file**. After REPO-21 it
-carries two spellings: `agents-inc/config`, which is current, and `@agents-inc/cli/config`, which is
+`config-loader.ts` tells jiti how to resolve imports **inside a user's config file**. It carries two
+spellings: `agents-inc/config`, which is current, and `@agents-inc/cli/config`, which is
 compatibility.
 
 **Why the old one has to exist at all.** Anyone who hand-wrote a config following the documentation
@@ -456,3 +357,61 @@ audience is a few dozen real users, that should be a short wait rather than a lo
 is deleting one key from a map; the risk is only that someone still on an old hand-written config
 finds it stops loading, with an error naming the import, which is a recoverable failure rather than a
 silent one.
+
+---
+
+#### REPO-25: Ink 7 can be told it is in a real terminal
+
+Ink guesses whether it is running in a real terminal or in CI, and **it has guessed wrong twice in
+this repository**, each time costing a day:
+
+- `packages/cli/src/cli/components/wizard/summary-panel.test.tsx` reads all the joined-up frames
+  rather than just the last one, because under CI Ink writes nothing as it goes and then dumps the
+  final screen with a newline stuck on the end at teardown. The first diagnosis of this was wrong —
+  a timing delay was committed, and it did not help, because it was never a timing problem.
+- `packages/cli/e2e/helpers/terminal-session.ts` has to blank out `CI` and `GITHUB_ACTIONS` in the
+  environment it hands the child process. The harness gives that child a genuine pseudo-terminal, so
+  telling it that it is in CI was simply a lie. That lie is what made the suite hang for 49 minutes.
+
+**Ink 7 adds a way to just say so.** Its `render()` takes an `interactive` option that overrides the
+guess outright. Setting it removes the reason both workarounds exist. Ink 7 also adds
+`waitUntilRenderFlush()`, which returns once a frame has actually reached the output — a real answer
+to the frame-timing guesswork these tests do by hand today.
+
+**Deliberately not done during the upgrade.** Changing the way tests read the screen in the same
+change that replaces the renderer underneath them would have made any failure unattributable. The
+upgrade is landed and green first; this is the follow-up.
+
+One catch to check: `ink-testing-library` builds the `render()` call itself and does not pass
+`interactive` through, so the unit-test half may need the option threaded in another way, or that
+library replaced with a few lines of local helper. Replacing it is less alarming than it sounds — it
+is about thirty lines and uses nothing private, just Ink's ordinary `render()` pointed at a fake
+terminal. That is written up in
+[`packages/cli/.ai-docs/reference/testing/infrastructure.md`](../packages/cli/.ai-docs/reference/testing/infrastructure.md).
+
+---
+
+#### REPO-26: Delete both syncpack version groups
+
+`.syncpackrc.cjs` carries two groups that both exist to hide the CLI-versus-web version split.
+**That split is gone as of 2026-08-05**, so both groups now hide nothing and should go.
+
+- The first exempts `agents-inc` from being compared against anything, so its dependencies are only
+  ever checked against themselves.
+- The second stops the root React pin being reported as drift. **The pin it protects is already
+  deleted**, so this group is pure dead weight.
+
+**Why this is its own row rather than part of the version unification.** The first group silences
+_every_ disagreement between the two halves, not just the four tools that work was about. Removing
+it also exposes whatever else drifted apart while nobody was comparing: as of 2026-08-05 that is at
+least `@types/node` (the CLI asks for 22, the web for 24), `zod`, `zustand` and `prettier`. Each
+needs a decision, none is dangerous, and none of it belongs in the same commit as a framework
+upgrade.
+
+The owner's standing rule for these: **take the newer version wherever the two sides disagree.**
+
+**Both group comments, and the syncpack labels beside them, name REPO-06 — a row that no longer
+exists**, because it landed and was archived on 2026-08-05. Those are now the only dangling
+references to it in the repository, and deleting the groups is what removes them. The reasoning
+behind the split they describe is preserved in
+[`packages/cli/.ai-docs/reference/monorepo-layout.md`](../packages/cli/.ai-docs/reference/monorepo-layout.md).

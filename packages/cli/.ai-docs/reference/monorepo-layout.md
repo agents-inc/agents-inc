@@ -29,6 +29,16 @@ keywords:
     ci.yml,
     check-cli,
     check-web,
+    react,
+    ink,
+    peer-dependency,
+    node_modules-root,
+    hoisting,
+    two-react-copies,
+    oclif-table,
+    node-floor,
+    bun-install,
+    version-unification,
   ]
 related:
   - reference/architecture-overview.md
@@ -38,6 +48,16 @@ related:
 last_validated: 2026-08-04
 ---
 
+<!-- PARTIAL 2026-08-05 · tool-version unification (`last_validated` deliberately NOT moved)
+     ✓ the "Dependency versions" section only — rewritten from placeholder to content.
+       Every version, peer/hard dependency shape and node_modules layout claim in it was
+       re-derived this session by reading the installed package.json of react, ink,
+       ink-testing-library and @oclif/table under node_modules/, the root and
+       packages/cli package.json, packages/ui/tsconfig.json,
+       apps/editor/tsconfig.app.json, apps/server/vitest.config.ts, .syncpackrc.cjs and
+       .github/workflows/ci.yml.
+     ✗ every other section — still on the 2026-08-04 FULL basis below
+-->
 <!-- VALIDATED 2026-08-04 · FULL — new file. Every claim derived this session from the
      repository root's package.json, turbo.json, .gitignore, .syncpackrc.cjs,
      .husky/pre-commit, .github/workflows/ci.yml, apps/www/astro.config.ts,
@@ -206,14 +226,96 @@ vendored catalog and fails if it drifted: a check, not a cross-repo pull request
 
 ## Dependency versions
 
-`.syncpackrc.cjs` keeps shared dependency versions in step across workspaces, with one declared
-exception for `agents-inc`.
+`.syncpackrc.cjs` keeps shared dependency versions in step across workspaces.
 
-> **The repository deliberately runs two majors of several tools, and three workarounds exist only
-> to hold that split together. This is scaffolding with a scheduled end, not architecture — it is
-> tracked as an outstanding task and is deliberately not explained here.** Do not treat any of the
-> three as a design decision, and do not build on them. `.syncpackrc.cjs` carries the exception's
-> own label.
+### One answer per tool, since 2026-08-05
+
+For two days after the merge the repository ran two majors of four tools — the CLI on one, the web
+half on the other. They agree now:
+
+| Tool                     | Version | Who moved                            |
+| ------------------------ | ------- | ------------------------------------ |
+| React (+ `@types/react`) | 19.2.8  | the CLI, up from 18                  |
+| Ink                      | 7.1.1   | the CLI, up from 5                   |
+| TypeScript               | 6       | the CLI, up from 5.7                 |
+| ESLint                   | 10      | the CLI, up from 9                   |
+| Vitest                   | 4       | the web half, up from 3              |
+| Node floor (`engines`)   | `>=22`  | both — raised because Ink 7 needs it |
+
+Unifying them was **deliberately held back** until the merge had settled, so that if the CLI broke
+afterwards the move into the monorepo would be the only thing that could have caused it. Four
+workarounds existed solely to hold the split apart and were all deleted on the same day: two
+TypeScript `paths` entries that collapsed duplicate copies of React's type definitions, a Vitest
+redirect in `apps/server/vitest.config.ts`, and a React pin in the root `package.json` that nothing
+imported. Do not reintroduce any of them. The two mechanisms that made them necessary are written
+out below, and knowing the mechanism is what stops you needing the workaround.
+
+`.syncpackrc.cjs` still carries two version groups written for the split era. Removing them is its
+own outstanding task, because the first group also silences disagreements that have nothing to do
+with these four tools.
+
+### Whatever sits at the root of `node_modules` serves the whole repository
+
+Bun installs one shared copy of each package at the repository root, and gives a workspace its own
+nested copy only when it needs a version the shared one cannot satisfy. Two kinds of package are
+then decided **for** you rather than by you:
+
+- **A package declared as a peer dependency never gets a nested copy.** A peer dependency is one the
+  package refuses to bring its own copy of — it uses whichever copy its host already has. Ink
+  declares React that way, so Ink always renders with the React at the root, whatever the CLI's own
+  files resolve to.
+- **A tool that loads its own internal pieces from the repository root** gets the root's copy no
+  matter which workspace asked for it. Vitest does this.
+
+Both bit on the way to unification, and both failures named nothing to do with versions:
+
+- **React.** On 2026-08-04 the CLI's package was renamed from `@agents-inc/cli` to `agents-inc`.
+  That changed which workspace bun resolved first, and the root React went from 18 to 19. Ink took
+  the new root copy; the CLI's own files kept resolving the nested 18. Two React instances rendering
+  one tree, and **353 unit tests died on an error about React children.**
+- **Vitest.** `apps/server` pinned Vitest 3 while the CLI pinned 4 and won the root slot, so the
+  worker's Vitest 3 was handed Vitest 4's internals and died on startup — **zero tests ran, and no
+  failure was reported.**
+
+### Two copies of React in the tree is not a bug; two copies rendering the same tree is
+
+Anyone opening `node_modules` today finds React twice and reasonably assumes the 2026-08-04 failure
+is back. It is not.
+
+| Copy                                           | Version | Why it is there                                                                                                                              |
+| ---------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node_modules/react`                           | 19.2.8  | The shared copy. Ink 7 and everything the wizard draws use this one                                                                          |
+| `node_modules/@oclif/table/node_modules/react` | 18.3.1  | `@oclif/table` declares `react: ^18.3.1` and `ink: 5.0.1` as **hard** dependencies rather than peers, so it always gets its own private pair |
+
+The second copy is safe because `@oclif/table` calls its own `render()` inside `printTable`, so its
+React draws into a tree of its own and never shares one with the wizard's. The `search` and `update`
+commands are what use it; their unit tests and their E2E specs pass against this arrangement.
+
+**Count trees, not copies.** While the root held React 18, `@oclif/table` quietly borrowed the
+shared copy; now that the root is 19 it must nest its own, which is why this looks new.
+
+### After changing a dependency, ask the binary its version — do not trust the manifest
+
+`bun install` rewrites `bun.lock` correctly but leaves the already-unpacked old package directories
+sitting on disk, along with the `.bin` symlinks pointing at them. This happened twice on 2026-08-05
+alone: the manifests said ESLint 10 and TypeScript 6 while the binaries that actually ran were
+ESLint 9 and TypeScript 5.9; and `apps/editor/node_modules/react` and `packages/ui/node_modules/react`
+were still on disk after the React 19 install, left over from when the root held 18. Deleting the
+stale directories and reinstalling was the fix in both cases.
+
+**Run the tool and read the version it prints.** A bump that silently did nothing looks identical to
+one that worked, right up until something behaves like the old version.
+
+### When a tool's failure mode is "nothing ran", compare counts rather than pass or fail
+
+The Vitest problem above produced a green-looking result with zero tests executed. So moving
+`apps/server` off its workaround was verified by counting rather than by reading the outcome:
+**12 tests before, 12 after.** A suite reporting no failures because it collected no tests is
+indistinguishable from a suite that passed.
+
+The same shape has caught this repository elsewhere — see [Two roots, and why E2E needs
+both](#two-roots-and-why-e2e-needs-both), where ten E2E tests skipped themselves and the run still
+reported green.
 
 ## The schema base URL moved with the package
 

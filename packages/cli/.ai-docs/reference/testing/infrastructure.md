@@ -2,7 +2,19 @@
 scope: reference
 area: testing
 keywords:
-  [vitest, test-projects, unit, integration, commands, directory-structure, config, error-handling]
+  [
+    vitest,
+    test-projects,
+    unit,
+    integration,
+    commands,
+    directory-structure,
+    config,
+    error-handling,
+    ink-testing-library,
+    ink-upgrade,
+    keypress-behaviour,
+  ]
 related:
   - reference/testing/factories.md
   - reference/testing/mock-data.md
@@ -10,6 +22,12 @@ related:
 last_validated: 2026-07-30
 ---
 
+<!-- PARTIAL 2026-08-05 · Ink 7 upgrade absorption (`last_validated` deliberately NOT moved)
+     ✓ only the two added sections — "ink-testing-library looks abandoned and is not" (derived by
+       reading node_modules/ink-testing-library/package.json and build/index.js: v4.0.0, 95 lines,
+       imports node:events + ink only) and "Do not reason about a key from release notes"
+     ✗ everything else — still on the bases below
+-->
 <!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
      ✓ only the two added sections — "render() returns before effects flush" and "A regenerated
        snapshot is a proposal, not a result" (its rule-6.17a extension is PROPOSED, not applied)
@@ -350,6 +368,42 @@ The enabling pattern (see `src/cli/components/wizard/source-grid.test.tsx`, whic
 - Assert both shapes: the positive (label carries the expected colour) AND the negative (label does not fall back to `CLI_COLORS.WHITE`), so a fix that drops the focus background instead of fixing the colour cannot pass.
 
 **Colour is testable only at this layer.** The E2E harness runs with `NO_COLOR`, so every E2E spec asserts the marker, not the colour. Any contract phrased as "these two surfaces render the same colour" (e.g. `rowLabelColor` in `source-grid.tsx` vs `DIFF_COLOR` in `skill-agent-summary.tsx`) needs a component test — an E2E marker assertion does not cover it. See `.ai-docs/agent-findings/2026-07-29-ink-component-colour-assertions-need-forced-chalk-level.md`.
+
+### `ink-testing-library` looks abandoned and is not — it is 95 lines over Ink's public API
+
+Roughly 20 component test files read their screens back through `ink-testing-library`. It was last
+published in 2024, at version 4.0.0, against Ink 5 — which looks alarming for something that much of
+the suite depends on, and periodically prompts someone to propose replacing it.
+
+It touches **no Ink internals at all.** Its whole build is 95 lines and imports exactly two things:
+`EventEmitter` from `node:events`, and `render` from `ink` — the same public entry point production
+code calls. What it adds is a fake terminal to render into. Everything it hands back (`rerender`,
+`unmount`, `cleanup`, and the `stdout` / `stderr` / `stdin` / `debug` / `exitOnCtrlC` /
+`patchConsole` options it passes) is public Ink surface.
+
+That is why the Ink 5 → 7 jump in 0.150.0 needed **no test rewrites at all** despite being a
+two-major move. Verify the same way before worrying about it again: read
+`node_modules/ink-testing-library/build/index.js` and check what it imports. A dependency's
+publication date says nothing about its exposure; its import list does.
+
+### Do not reason about a key from release notes — write the key and print what arrives
+
+Ink 7 changed two things about keyboard input, and both were checked by experiment rather than by
+reading. The experiment is the cheap one: render the component through `ink-testing-library`, write
+the raw escape sequence to its `stdin` stub, and print the `input` string and `key` object the
+handler actually received.
+
+Both changes turned out to need no code fix, and in both cases the release note alone would have
+suggested otherwise:
+
+| Change                                                    | What the note implies                                                                                                   | What arrived                                                                                                                                                                               |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Escape no longer reports itself as a meta keypress        | `use-text-input.ts` decides a keypress is a real character partly from the meta flag, so a text field might type Escape | Escape arrives with an **empty** `input` string, so the field's emptiness guard rejects it before the meta flag is consulted. A field holding `ab` still held `ab`, then took `z` normally |
+| Backspace now reports as `backspace` rather than `delete` | Handlers reading `key.delete` for backspace break                                                                       | Harmless — both places that read it already accept either                                                                                                                                  |
+
+**A behaviour claim about a keypress is testable in about ten lines, and a wrong guess about one
+costs a debugging session.** `src/cli/lib/__tests__/test-constants.ts` already holds the escape
+sequences (`ESCAPE`, `BACKSPACE`, `ARROW_*`) to write with.
 
 ### `render()` returns before effects flush
 

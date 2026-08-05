@@ -9,6 +9,13 @@ related:
 last_validated: 2026-07-30
 ---
 
+<!-- PARTIAL 2026-08-05 · ESLint 10 upgrade absorption (`last_validated` deliberately NOT moved)
+     ✓ one paragraph added to §3.4a — that enforcement layer (2) is the only layer with no test
+       behind it, and how it was proven still firing across the ESLint 9 → 10 move. The six
+       guards and the unicode-escape selector were confirmed present in eslint.config.js this
+       session; the lint run itself is not re-performed here.
+     ✗ nothing else re-checked beyond the bases below
+-->
 <!-- PARTIAL 2026-08-02 (b) · post-landing reconciliation (`last_validated` deliberately NOT moved)
      ✓ §3.4a enforcement layer (4) only. It restated the guard-test spec count as `17`; the
        true figure is 23 (verified by running the file). The QUANTITY was REMOVED rather than
@@ -339,6 +346,8 @@ Function-level inventory and the copy layering (`copySkillTo`, `copySkill`, `cop
 | `writeMarketplaceScaffoldConfig()`           | `config-gate/index.ts`       | A scaffolded marketplace `config.ts`; throws at `$HOME`                                                                    | `<marketplace>/.claude-src/config.ts` |
 
 **Enforcement (four layers):** (1) neither `installation/index.ts` nor `configuration/index.ts` re-exports a pair writer, and `configuration/config-saver.ts` is deleted; (2) eslint bans importing `config-gate/*` other than `index*` (statically and via `ImportExpression`), bans importing any `writeFile`-family symbol from `fs`/`node:fs`/`fs/promises`/`node:fs/promises`/`fs-extra` outside `utils/fs.ts`, and restricts the pair renderers to `config-gate/**` + `configuration/**`; (3) `utils/fs.ts::writeFile` resolves its target and calls `assertGateToken` when it is either pair path, throwing `GlobalPairWriteViolation`; (4) `src/cli/lib/__tests__/config-gate-enforcement.test.ts` pins the barrel deletions by name, exercises the real `writeFile` inside and outside `withGateToken`, asserts the three `$HOME` refusals, proves the private `pair-writer` refuses a caller that reached it by dynamic import, and source-scans `src/**` for any file holding both a write primitive and a pair reference. **Its spec count is owned by [config/config-writer.md](config/config-writer.md#enforcement--four-layers) and deliberately not restated here** — this row carried a stale `17` through the D-309 landing, which is exactly the drift the count-ownership rule exists to stop.
+
+**A clean lint run does not prove layer (2) still works.** A guard ESLint has quietly stopped understanding reports nothing, which looks exactly like a guard with nothing to report — and layer (2) is the only one of the four with no test behind it, since layers (1), (3) and (4) are all exercised by `config-gate-enforcement.test.ts`. The check is to write a throwaway file that violates every guard at once, lint it, confirm each one fires, and delete the file. This was done on the ESLint 9 → 10 upgrade (2026-08-05) and all six guards in `eslint.config.js` still fired — including the one most exposed to a parser change, the `no-restricted-syntax` selector that catches dynamic imports of `config-gate/*` through a regex containing a unicode escape (`/`). **Repeat this on any ESLint major upgrade**; the guards enforce real invariants and their silence is not evidence.
 
 **Return-channel contract:** every gate entry returns a `GateReport { globalWritten, changes, propagated: { updated, skipped }, recompile }`. It is a **record of completed work**, not a to-do list: a write that propagates has already recompiled the propagated projects' agents (D-240, contract rewritten 2026-08-02). `skipped` is surfaced to the user by `commands/uninstall.tsx` and `commands/compile.ts` via `registeredProjectUpdateSkipped()`; `init.tsx` and `edit.tsx` render only the recompile summary.
 

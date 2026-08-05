@@ -97,10 +97,13 @@ should have, and each is easy to reverse by accident.
   stayed invisible.
 - **No React.** `@astrojs/react` is not installed. What this site needs from the design system is its
   colour tokens, which are plain CSS, and a React component with no hydration directive would ship
-  zero JavaScript anyway. Against that, adding React here means a third React consumer in a
-  repository that deliberately runs two majors side by side and already carries two `paths`
-  workarounds to hold them apart ([`repo.md`](./repo.md) REPO-06). If a page ever needs a genuinely
-  live component, this is the decision to revisit — and it is one of the two triggers that make
+  zero JavaScript anyway. Against that, adding React here means another React consumer for no gain.
+  **This argument used to be stronger than it is now**: when it was written the repository ran two
+  React majors side by side and carried two `paths` workarounds to hold them apart, so a third
+  consumer meant picking a side. That split was unified on 2026-08-05 and both workarounds are gone.
+  What is left is the plain point that this site has no use for React. If a page ever needs a genuinely
+  live component, this is the decision to revisit — the repository now runs a single React, so the
+  cost of adding one is lower than it was. It is also one of the two triggers that make
   Fumadocs win instead, below.
 - **Radius is killed with one unlayered rule.** Every Starlight rule sits inside a `starlight.*`
   cascade layer, so a single `*, *::before, *::after { border-radius: 0 }` written outside all layers

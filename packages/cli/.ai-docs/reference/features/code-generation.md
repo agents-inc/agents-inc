@@ -34,6 +34,15 @@ related:
 last_validated: 2026-08-02
 ---
 
+<!-- PARTIAL 2026-08-05 · one-value correction (`last_validated` deliberately NOT moved)
+     ✓ ONE VALUE in the "Both runtimes are undeclared" paragraph. It said `engines` names
+       "node >=18"; packages/cli/package.json says ">=22". Re-read from the manifest this session.
+       The claim was TRUE when written on 2026-08-02 and went stale when Ink 7 raised the floor
+       on 2026-08-05; nothing swept the docs for the old number at the time. The rest of the
+       paragraph (bun and tsx both undeclared, tsx absent from node_modules/.bin) was NOT
+       re-checked and stays on the basis below.
+     ✗ every other claim — still on the 2026-08-02 FULL basis below
+-->
 <!-- VALIDATED 2026-08-02 · FULL (new document, product 0.147.1)
      ✓ every claim in this file derived this session from: scripts/generate-json-schemas.ts,
        scripts/generate-source-types.ts, scripts/generate-source-types.test.ts, package.json,
@@ -74,7 +83,7 @@ named here, never quantified.
 | `scripts/generate-json-schemas.ts` | `generate:schemas` -> `npx tsx scripts/generate-json-schemas.ts` | `tsx`   | `src/schemas/`             | Ten named exports from `src/cli/lib/schemas.ts`, plus `CATEGORIES` from `src/cli/types/generated/source-types.ts`                                                                                                                                    |
 
 **Both runtimes are undeclared.** `bun` is not in `dependencies`, `devDependencies` or `engines`
-(which names only `node >=18`), and `tsx` is in neither dependency list and is absent from
+(which names only `node >=22`), and `tsx` is in neither dependency list and is absent from
 `node_modules/.bin` — `npx tsx` resolves it from the registry on demand. `prettier` and `tsc`, by
 contrast, are local binaries. An agent that assumes `npm ci && npm run generate:schemas` works
 offline is wrong.

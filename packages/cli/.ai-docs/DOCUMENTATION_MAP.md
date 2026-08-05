@@ -563,6 +563,68 @@ Routing one through the other silently changes merge behaviour around tombstones
 
 > **Read every entry below as a point-in-time record, not a current claim.** Counts, line numbers and version strings inside a dated entry were true on that entry's date and have NOT been re-verified since. **Never quote a number out of the Validation History.** Current verified counts live only in their owning documents — see the count-ownership registry in `standards/documentation-bible.md`. Entries predating 2026-07-30 also contain source line numbers, which project convention now bans in documentation; they are left in place as historical record and must not be copied forward.
 
+### 2026-08-05 -- tool-version unification absorption (ADDITIVE, no dates advanced)
+
+Absorption pass, not a validation pass. The repository unified four tool versions on 2026-08-05
+(React 18 → 19.2.8, Ink 5 → 7.1.1, TypeScript 5.7 → 6, ESLint 9 → 10, Vitest 3 → 4, Node floor
+`>=20`/`>=18` → `>=22`). The reasoning lived in `todo/repo.md` under REPO-06, which that tracker
+deletes on landing by its own rule, so the durable parts were moved into `reference/` before it goes.
+
+**Scope: six reference docs across two passes, (a) and (b). No `src/`, `e2e/`, `todo/`,
+`standards/` or package file touched, no dependency or config changed, and no git command of any
+kind run.** Nothing here re-derived a whole file, so **no `last_validated` was advanced**; five of
+the six carry a dated `PARTIAL 2026-08-05` annotation naming exactly what was checked.
+`build-and-packaging.md` carries two, (a) and (b), with (a) marked superseded and kept as the
+record of why (b) exists.
+
+| Doc                         | Change                                                                                                                                                                                                                                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `monorepo-layout.md`        | "Dependency versions" rewritten from a placeholder that said the split was deliberate and refused to explain it. Now carries the version table, why unification was held back from the merge, the `node_modules`-root mechanism, the two-React-copies rule, and two verification rules |
+| `testing/infrastructure.md` | Two sections added — why `ink-testing-library` is safe despite looking abandoned, and the write-the-key-and-print-what-arrives technique                                                                                                                                               |
+| `boundary-map.md`           | One paragraph in §3.4a — enforcement layer (2) is the only config-gate layer with no test behind it, and how to prove it still fires across an ESLint major                                                                                                                            |
+| `build-and-packaging.md`    | §3 corrected: it asserted `engines.node` was `>=18.0.0`, which is false. New subsection on the three separate declarations of the runtime floor and the CI Node pin; new trap 9. **Revised later the same day — see the (b) pass below**                                               |
+| `architecture-overview.md`  | Two cells corrected: tech stack said `ink v5`; Project Identity's Runtime row now carries the `>=22` floor                                                                                                                                                                             |
+
+**Two stale claims were found and corrected rather than absorbed**, both created by the landing
+itself: `build-and-packaging.md`'s `engines.node (>=18.0.0)` and `architecture-overview.md`'s
+`ink v5`. Neither would have been caught by a link check or a count audit — they are version strings
+inside prose, and the only thing that finds them is reading the manifest.
+
+#### 2026-08-05 (b) -- the floor drift this pass documented was fixed hours later
+
+The (a) pass recorded that the runtime floor was declared three ways that disagreed: both
+`engines.node` fields at `>=22` while `tsup.config.ts` still said `target: "node18"`. **Flagging it
+is what got it fixed** — `tsup.config.ts` now says `node22`, with a comment naming `engines.node` as
+the thing it must stay in step with. So `build-and-packaging.md` was describing a state that no
+longer existed, roughly a day after being written.
+
+Revised, not deleted. The subsection's premise was false but its substance was not: the floor
+genuinely is stated in three files, nothing checks that they agree, and they genuinely did drift
+once. It is now titled **"The runtime floor is declared in three places, and they must be changed
+together"** and says they agree today, lists all three, and names the drift as the precedent. Two
+things were added: that correcting `target` changed the built output by **zero bytes** (measured —
+407 files, no hash mismatch across 262 compared, chunk names unchanged — while the setting was
+separately proved live, so the null result means the source contains no syntax in that band, not
+that the setting is inert), and that `tsconfig.json`'s `target: "ES2022"` is the **language** target,
+a separate undecided question, explicitly kept out of the floor table so nobody "aligns" it.
+
+Also corrected in this pass, and unrelated to any of today's work:
+`features/code-generation.md` said `engines` "names only `node >=18`". It says `>=22`. That claim
+was true when written on 2026-08-02 and was not updated when the floor moved.
+
+**The lesson worth keeping is about sequencing, not about the fact.** A documentation pass that
+reports drift can cause the drift to be fixed, which makes the report wrong. Neither writing it nor
+fixing it was a mistake. What matters is that the doc was revised around what survived rather than
+reverted — the mechanism (three declarations, nothing enforcing agreement) outlives whether they
+happen to agree on any given day.
+
+**Judged situational and deliberately NOT preserved:** the four split-only workarounds as a
+four-item list (all deleted; the two mechanisms behind them are kept, the enumeration is not), the
+eight `preserve-caught-error` fixes ESLint 10 surfaced, the two React type-signature changes in
+`use-panel-scroll.ts` and `edit.test.ts`, the `@inkjs/ui` / `react-devtools-core` compatibility
+notes, and the Ink 7 `interactive` / `waitUntilRenderFlush()` opportunity — that last one is
+outstanding work with its own tracker row, not reference material.
+
 ### 2026-08-02 (e) -- cite-by-symbol enforcement: the three docs that shipped with line numbers
 
 Citation-form pass over `reference/` only. Scope: **`reference/features/source-fetch-and-cache.md`,
