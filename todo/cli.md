@@ -91,23 +91,23 @@ and three unreferenced `agent-findings`.
 | D-08    | User-defined stacks in consumer projects. [Plan](./plans/D-08-user-defined-stacks.md)             | Deferred                | feature  | complex    |
 | CLI-318 | (was #5) Agents command for skill assignment, with per-skill preload control.                     | Needs Assistance        | feature  | complex    |
 | CLI-320 | (was P4-17) `agents-inc new` supports multiple items. [Plan](./plans/P4-17-new-multiple-items.md) | Refined                 | feature  | complex    |
-| CLI-323 | (was R-01) `FEATURE_FLAGS` readable from env, so flag-gated commands can be tested.               | Ready for Dev           | refactor | easy       |
+| CLI-323 | (was R-01) `FEATURE_FLAGS` readable from env, so flag-gated commands can be tested.               | Done                    | refactor | easy       |
 
 ## Web ↔ CLI integration
 
-| ID      | Task                                                                                                                         | Status        | Type     | Complexity |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
-| D-239   | Publish the matrix as data — `export:matrix` plus `AGENT_DEFINITIONS`. [Plan](./plans/D-239-web-ui-shared-matrix-package.md) | Investigate   | feature  | complex    |
-| CLI-352 | Drift guard on the vendored seed contract — nothing checks the CLI copy still matches `packages/matrix`.                     | Ready for Dev | refactor | easy       |
-| CLI-353 | Decide what `init --from <id>` means when it overrides an existing install.                                                  | Investigate   | feature  | complex    |
-| CLI-354 | `agents-inc share` — map an installed `ProjectConfig` to a `SeedPayload` and POST it.                                        | Investigate   | feature  | complex    |
+| ID      | Task                                                                                                                         | Status      | Type     | Complexity |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------- | -------- | ---------- |
+| D-239   | Publish the matrix as data — `export:matrix` plus `AGENT_DEFINITIONS`. [Plan](./plans/D-239-web-ui-shared-matrix-package.md) | Investigate | feature  | complex    |
+| CLI-352 | Drift guard on the vendored seed contract — nothing checks the CLI copy still matches `packages/matrix`.                     | Done        | refactor | easy       |
+| CLI-353 | Decide what `init --from <id>` means when it overrides an existing install.                                                  | Investigate | feature  | complex    |
+| CLI-354 | `agents-inc share` — map an installed `ProjectConfig` to a `SeedPayload` and POST it.                                        | Investigate | feature  | complex    |
 
 ## Testing & E2E coverage
 
 | ID      | Task                                                                                                             | Status        | Type     | Complexity |
 | ------- | ---------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
 | D-235   | E2E gap: `buildProjectTypesExtras` new-domain/category path is uncovered.                                        | Ready for Dev | refactor | easy       |
-| D-234   | E2E config inspection via `loadProjectConfig` instead of regex-on-`config.ts`.                                   | Ready for Dev | refactor | complex    |
+| D-234   | E2E config inspection via `loadProjectConfig` instead of regex-on-`config.ts`.                                   | Done          | refactor | complex    |
 | D-219   | E2E fixture-default ergonomics. [Plan](./plans/D-219-wizard-launcher-default-fixture.md)                         | Ready for Dev | refactor | complex    |
 | D-168   | Audit E2E tests — replace manual file construction with CLI commands.                                            | Ready for Dev | refactor | complex    |
 | D-111   | Replace E2E text anchors with stable test identifiers.                                                           | Investigate   | refactor | complex    |
@@ -138,10 +138,10 @@ and three unreferenced `agent-findings`.
 
 | ID      | Task                                                                                          | Status           | Type     | Complexity |
 | ------- | --------------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
-| CLI-355 | Enable ESLint `reportUnusedDisableDirectives` — unblocked now the baseline is zero.           | Ready for Dev    | refactor | easy       |
-| CLI-356 | Adopt `eslint-plugin-react-hooks` for the CLI — an Ink codebase with no hooks linting at all. | Ready for Dev    | refactor | easy       |
-| CLI-357 | Add a lint guard against task IDs in test names.                                              | Ready for Dev    | refactor | easy       |
-| CLI-358 | Neither code generator runs in any gate, and `typecheck:scripts` is in no composite gate.     | Ready for Dev    | refactor | complex    |
+| CLI-355 | Enable ESLint `reportUnusedDisableDirectives` — unblocked now the baseline is zero.           | Done             | refactor | easy       |
+| CLI-356 | Adopt `eslint-plugin-react-hooks` for the CLI — an Ink codebase with no hooks linting at all. | Done             | refactor | easy       |
+| CLI-357 | Add a lint guard against task IDs in test names.                                              | Done             | refactor | easy       |
+| CLI-358 | Neither code generator runs in any gate, and `typecheck:scripts` is in no composite gate.     | Done             | refactor | complex    |
 | D-11    | Development hooks for type checking.                                                          | Needs Assistance | feature  | complex    |
 
 ## Types & code quality

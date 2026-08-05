@@ -34,3 +34,33 @@ when it lands rather than ticking it off, so this file is the only record that i
   because of the split, and `bun install` twice left old versions on disk while the manifest claimed
   new ones. The durable reasoning is in `packages/cli/.ai-docs/reference/monorepo-layout.md`; the
   leftovers are REPO-25 and REPO-26.
+- **2026-08-05 — REPO-22** — every CI job now has a timeout, sized from three measured green runs
+  (check-web 15, check-cli 40, deploy 10 minutes). A hang now dies in minutes, not six hours.
+- **2026-08-05 — REPO-13** — the `files` entry naming a folder that never existed is gone, and the
+  CI comment carries no test count any more, so it cannot go stale the same way twice.
+- **2026-08-05 — REPO-12** — schema generation runs entirely under bun; both generators were run
+  before and after and produce identical output. Found along the way: `deps:fix` called a syncpack
+  command that no longer exists, and is now `syncpack fix`.
+- **2026-08-05 — REPO-11** — the published package ships no compiled tests: the tsup entry globs
+  now exclude test files, and a packaging test pins it — red on the old build, green on the new,
+  `npm pack --dry-run` showing 515 files and zero `.test.js`. The same test asserts every `files`
+  entry exists, which is the class of rot REPO-13 fixed.
+- **2026-08-05 — REPO-10** — the catalog check now fails on generator output that is untracked, not
+  just changed; the CLI's `typecheck` also compiles `scripts/` and `e2e/` (proven by planting an
+  error and watching it caught); and the build's input hash excludes prose, changelogs, e2e and
+  tests — editing one line of documentation no longer rebuilds dist, verified miss-then-hit.
+- **2026-08-05 — REPO-26** — both syncpack version groups are deleted and the eight dependency
+  drifts they were hiding are aligned; `deps:check` runs clean with no exemptions. The stale-install
+  trap fired a third time on the way: the manifest said `@types/node` 24 while a nested 22 still
+  won resolution until removed by hand.
+- **2026-08-05 — REPO-25** — every Ink render now goes through one wrapper that trusts a real
+  terminal over the CI guess, and the e2e harness stops stripping `CI` from the child environment —
+  the spec that hung seven minutes under `CI=true` passes in 23 seconds, and every CI run now
+  proves it. The unit-test half turned out not to be a CI workaround at all under Ink 7: the
+  teardown frame is unconditional now, so the frames-join read stays, with its comment corrected
+  and the CI variables deleted in vitest setup so unit runs cannot depend on them again.
+- **2026-08-05 — REPO-23** — settled with measurements rather than guesses: the full e2e suite
+  passes at retry 0 (647 tests, zero retries used) now the Ink CI-detection flake is fixed, so
+  `retry` drops from 2 to 1 — kept at 1 only because runner contention cannot be measured locally,
+  and a retry that fires is visible in vitest's flaky report. The worker cap formula stays, its
+  comment now carrying the measured numbers on both environments.

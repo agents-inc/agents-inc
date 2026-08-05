@@ -13,30 +13,22 @@ There is no done column and nothing is struck through. Landed items get one line
 carries the identifier the item had before this folder existed.
 
 **Roughly ordered by what to do first.** CI has been green on all three jobs since 2026-08-04, so
-nothing here is on fire. **The largest item here — unifying the tool versions — landed on
-2026-08-05**, so the repository now has one answer per tool instead of two and all four workarounds
-holding the split together are deleted. REPO-26 is its short tail and REPO-25 is the opportunity it
-opened up. REPO-04 and REPO-05 are a pair — the site can deploy, and the Worker rename rides along
-with that deploy. Nothing after REPO-05 depends on order.
+nothing here is on fire. The version unification and its whole tail — the syncpack groups, the CI
+workarounds Ink used to force, the safety-net gaps, the shipped test files and the stray npm calls —
+all landed 2026-08-05; see `archive.md`. What remains is REPO-04 and REPO-05 as a pair — the site
+can deploy, and the Worker rename rides along with that deploy — the items that need a decision. Nothing after REPO-05 depends on order.
 
-| ID                                                                   | Task                                                                                      | Status           | Type     | Complexity |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
-| REPO-22 (new, 2026-08-04)                                            | CI has no job timeout — a hung suite runs for six hours before GitHub stops it            | Ready for Dev    | bug      | easy       |
-| REPO-23 (new, 2026-08-04)                                            | Revisit `retry: 2` and the e2e worker cap now that the CI hang is fixed                   | Investigate      | refactor | easy       |
-| REPO-24 (new, 2026-08-04)                                            | Drop the `@agents-inc/cli/config` jiti alias once nobody is on the old package            | Investigate      | refactor | easy       |
-| REPO-25 (new, 2026-08-05)                                            | Ink 7 can be told it is in a real terminal — that deletes two CI workarounds              | Ready for Dev    | refactor | easy       |
-| REPO-26 (new, 2026-08-05)                                            | Delete both syncpack version groups and settle the versions they were hiding              | Ready for Dev    | refactor | easy       |
-| REPO-04 (was editor-todo item 13)                                    | Nothing is configured to deploy `apps/www` — no wrangler, route, deploy script or task    | Ready for Dev    | feature  | complex    |
-| REPO-05 (was editor-todo item 18)                                    | Cloudflare, Sentry and PostHog are still registered as `agents-inc-web`                   | Ready for Dev    | refactor | complex    |
-| REPO-07 (was monorepo-merge "Delete ~/dev/agents-inc-web-monorepo")  | Delete the old web monorepo once this repository is trusted                               | Needs Assistance | refactor | easy       |
-| REPO-09 (was monorepo-merge "Decide what a local `.env` should say") | A local `.env` can ship a live site whose every request goes to your own machine          | Needs Assistance | bug      | easy       |
-| REPO-10 (was monorepo-merge "Three gaps in the safety nets")         | Catalog check blind to new files, build scripts never typechecked, 1,179 md files rebuild | Ready for Dev    | bug      | complex    |
-| REPO-11 (was monorepo-merge "16 compiled test files")                | The published package ships 16 compiled test files, 32 with their source maps             | Ready for Dev    | bug      | easy       |
-| REPO-12 (was monorepo-merge "Two npm calls")                         | `generate:schemas` still runs `npx tsx` and `npm run` in a bun-only repo                  | Ready for Dev    | refactor | easy       |
-| REPO-13 (was monorepo-merge "Small leftovers")                       | `files` names a `config/` folder that does not exist; a CI comment says 88 E2E specs      | Ready for Dev    | bug      | easy       |
-| REPO-14 (was editor-todo item 15)                                    | `docs/cli/` and the site hold the same ten documents and nobody owns the source           | Needs Assistance | refactor | complex    |
-| REPO-15 (was editor-todo item 16)                                    | The repository publishes `.ai-docs/` and `todo/` — leave them, or stop shipping them      | Needs Assistance | refactor | complex    |
-| REPO-16 (was editor-todo item 17)                                    | `/home/vince/dev/skills` is in eight tracked files at `HEAD`                              | Needs Assistance | bug      | easy       |
+| ID                                                                   | Task                                                                                   | Status           | Type     | Complexity |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
+| REPO-24 (new, 2026-08-04)                                            | Drop the `@agents-inc/cli/config` jiti alias once nobody is on the old package         | Investigate      | refactor | easy       |
+| REPO-27 (new, 2026-08-06)                                            | The AI docs accrete history — they must describe the current state, not the journey    | Ready for Dev    | refactor | complex    |
+| REPO-04 (was editor-todo item 13)                                    | Nothing is configured to deploy `apps/www` — no wrangler, route, deploy script or task | Ready for Dev    | feature  | complex    |
+| REPO-05 (was editor-todo item 18)                                    | Cloudflare, Sentry and PostHog are still registered as `agents-inc-web`                | Ready for Dev    | refactor | complex    |
+| REPO-07 (was monorepo-merge "Delete ~/dev/agents-inc-web-monorepo")  | Delete the old web monorepo once this repository is trusted                            | Needs Assistance | refactor | easy       |
+| REPO-09 (was monorepo-merge "Decide what a local `.env` should say") | A local `.env` can ship a live site whose every request goes to your own machine       | Needs Assistance | bug      | easy       |
+| REPO-14 (was editor-todo item 15)                                    | `docs/cli/` and the site hold the same ten documents and nobody owns the source        | Needs Assistance | refactor | complex    |
+| REPO-15 (was editor-todo item 16)                                    | The repository publishes `.ai-docs/` and `todo/` — leave them, or stop shipping them   | Needs Assistance | refactor | complex    |
+| REPO-16 (was editor-todo item 17)                                    | `/home/vince/dev/skills` is in eight tracked files at `HEAD`                           | Needs Assistance | bug      | easy       |
 
 ---
 
@@ -154,57 +146,6 @@ CI is safe: it sets the real address explicitly.
 
 ---
 
-#### REPO-10: Three gaps in the safety nets
-
-None of them is new, and none of them is caused by the merge.
-
-1. **The catalog check cannot see a new file.** CI checks the vendored catalog by regenerating it and
-   looking for changes, using a comparison that cannot see files that did not exist before — so if
-   the generator ever starts emitting a new file, CI would pass while the catalog was incomplete.
-2. **The build scripts are never typechecked in CI.** `packages/cli` has a command for typechecking
-   them, but nothing in the task graph calls it.
-3. **Editing one line of prose forces a full rebuild.** The CLI's build is treated as out of date
-   whenever any file in the package changes, and the package contains 1,179 markdown files.
-
----
-
-#### REPO-11: The published package ships 16 compiled test files
-
-Sixteen compiled test files, 32 with their source maps.
-
-**This predates the merge:** the build's file pattern picks up tests sitting next to the components
-they test. Users download them and never run them.
-
-**Recounted on 2026-08-04 from the published package rather than from the working tree.**
-`npm pack @agents-inc/cli@0.149.1` in an empty directory gives 16 `dist/**/*.test.js` files and their
-16 `.map` siblings. **The two figures above are right as they stand.**
-
-**A recount can easily come out at 50, and 50 would be wrong.** Searching the tarball's `dist/` paths
-for the letters "test" also matches 18 files under `dist/src/agents/tester/` — the tester agents'
-own prompt material, which the package is supposed to ship. Match on the `.test.js` suffix, not on
-the word.
-
----
-
-#### REPO-12: Two npm calls left in a bun-only repo
-
-In `packages/cli/package.json`, `generate:schemas` runs `npx tsx …` (line 86) and
-`generate:schemas:check` runs `npm run …` (line 87). Both verified still present 2026-08-04.
-
-Both still work and neither runs in CI. **Swapping `npx tsx` for bun would change how that script
-executes TypeScript, so it wants a moment's thought rather than a blind replacement.**
-
----
-
-#### REPO-13: Small leftovers
-
-- **The CLI's `files` list still names a `config/` folder that does not exist** (line 22 of
-  `packages/cli/package.json`). Harmless, and it never existed, so this is not merge damage.
-- **A comment in the CI workflow says the web end-to-end suite has 88 specs** (`.github/workflows/ci.yml:55`).
-  It has 177 tests across 17 files.
-
----
-
 #### REPO-14: Two copies of the same ten documents, and nobody owns the source
 
 Ten documents exist twice: the originals under `docs/cli/guides/` and `docs/cli/reference/`, and the
@@ -302,38 +243,6 @@ bug, not blocking, and not an agent's call.
 
 ---
 
-#### REPO-22: CI has no job timeout
-
-Nothing stopped the run that hung for 49 minutes, and nothing would have stopped it at six hours —
-that is GitHub's default and the only limit in play. Two runs burned roughly seventy minutes of
-runner time producing no signal at all.
-
-`timeout-minutes` on each job in `.github/workflows/ci.yml`. The end-to-end suite is the one that
-needs a real number rather than a guess: it has never completed on a runner, so set it once a green
-run gives an honest baseline, and until then set it generously — the point is to bound a hang, not
-to police duration.
-
----
-
-#### REPO-23: Revisit `retry: 2` and the worker cap
-
-Both settings in `packages/cli/e2e/vitest.config.ts` were tuned against symptoms that are now partly
-explained.
-
-**`retry: 2`** exists to absorb pseudo-terminal flakiness. Some of that flakiness was very likely the
-CI-detection bug fixed in `bd22dcac` — on any machine where `CI` happened to be set, Ink wrote no
-frames and every wait timed out. Worth finding out how much of it survives the fix, because retries
-currently triple the cost of a genuine failure and hide how long a failing run really takes.
-
-**`maxWorkers`** was changed to `Math.min(16, availableParallelism())` in `f572b0eb` on a wrong
-diagnosis of the hang. It stands on its own terms — 16 PTY-driven workers on a 4-core runner is
-genuinely wrong — but it was never the cause, and the right value has still never been measured
-against a working run.
-
-Neither is urgent. Both want one green baseline first, and then a measurement rather than a guess.
-
----
-
 #### REPO-24: Drop the old config import alias
 
 `config-loader.ts` tells jiti how to resolve imports **inside a user's config file**. It carries two
@@ -360,58 +269,32 @@ silent one.
 
 ---
 
-#### REPO-25: Ink 7 can be told it is in a real terminal
+#### REPO-27: The AI docs accrete history instead of describing the state
 
-Ink guesses whether it is running in a real terminal or in CI, and **it has guessed wrong twice in
-this repository**, each time costing a day:
+`packages/cli/.ai-docs/` exists for one purpose: an efficient source for an AI to retrieve the
+**actual current state** of the app — its architecture, its invariants, where things live and what
+rules they obey. That is not what the documentation passes have been producing. Each pass is
+additive: it records what was done, which tasks closed, what a previous pass got wrong, when each
+claim was last checked. `DOCUMENTATION_MAP.md` is the clearest case — large chunks of it are
+validation history and done-work narration, which an agent looking for how the app works today has
+to read past.
 
-- `packages/cli/src/cli/components/wizard/summary-panel.test.tsx` reads all the joined-up frames
-  rather than just the last one, because under CI Ink writes nothing as it goes and then dumps the
-  final screen with a newline stuck on the end at teardown. The first diagnosis of this was wrong —
-  a timing delay was committed, and it did not help, because it was never a timing problem.
-- `packages/cli/e2e/helpers/terminal-session.ts` has to blank out `CI` and `GITHUB_ACTIONS` in the
-  environment it hands the child process. The harness gives that child a genuine pseudo-terminal, so
-  telling it that it is in CI was simply a lie. That lie is what made the suite hang for 49 minutes.
+**The distinction to enforce.** An invariant of the system is state and belongs: "every Ink render
+goes through `components/render.ts`" is architecture. The chronology of how it got that way — which
+date it landed, which pass documented it, which task ID drove it — is history and does not. The test
+for any paragraph: does an agent implementing a feature tomorrow need this to be correct, or is it a
+record of somebody having been correct in the past?
 
-**Ink 7 adds a way to just say so.** Its `render()` takes an `interactive` option that overrides the
-guess outright. Setting it removes the reason both workarounds exist. Ink 7 also adds
-`waitUntilRenderFlush()`, which returns once a frame has actually reached the output — a real answer
-to the frame-timing guesswork these tests do by hand today.
+**Decisions may deserve a home, but probably already have one.** If decision records turn out to be
+worth keeping, they can get their own dedicated place — but the git history is likely the better
+provider: this repository's commit messages already carry the why at the moment it was decided, and
+they never go stale because they are frozen to their commit. Do not create a decision log just to
+have somewhere to move the clutter; cut it, and let `git log` be the archive.
 
-**Deliberately not done during the upgrade.** Changing the way tests read the screen in the same
-change that replaces the renderer underneath them would have made any failure unattributable. The
-upgrade is landed and green first; this is the follow-up.
-
-One catch to check: `ink-testing-library` builds the `render()` call itself and does not pass
-`interactive` through, so the unit-test half may need the option threaded in another way, or that
-library replaced with a few lines of local helper. Replacing it is less alarming than it sounds — it
-is about thirty lines and uses nothing private, just Ink's ordinary `render()` pointed at a fake
-terminal. That is written up in
-[`packages/cli/.ai-docs/reference/testing/infrastructure.md`](../packages/cli/.ai-docs/reference/testing/infrastructure.md).
+**The fix is the convention, not just the content.** Pruning the accreted history out of the
+existing documents is half the work. The other half is changing what governs the passes —
+`.ai-docs/standards/documentation-bible.md` and the validation-annotation conventions — so the next
+pass does not re-accrete. Otherwise this is mowing, not weeding. The dated `agent-findings/` records
+are a deliberate exception: they are point-in-time evidence by design and say so.
 
 ---
-
-#### REPO-26: Delete both syncpack version groups
-
-`.syncpackrc.cjs` carries two groups that both exist to hide the CLI-versus-web version split.
-**That split is gone as of 2026-08-05**, so both groups now hide nothing and should go.
-
-- The first exempts `agents-inc` from being compared against anything, so its dependencies are only
-  ever checked against themselves.
-- The second stops the root React pin being reported as drift. **The pin it protects is already
-  deleted**, so this group is pure dead weight.
-
-**Why this is its own row rather than part of the version unification.** The first group silences
-_every_ disagreement between the two halves, not just the four tools that work was about. Removing
-it also exposes whatever else drifted apart while nobody was comparing: as of 2026-08-05 that is at
-least `@types/node` (the CLI asks for 22, the web for 24), `zod`, `zustand` and `prettier`. Each
-needs a decision, none is dangerous, and none of it belongs in the same commit as a framework
-upgrade.
-
-The owner's standing rule for these: **take the newer version wherever the two sides disagree.**
-
-**Both group comments, and the syncpack labels beside them, name REPO-06 — a row that no longer
-exists**, because it landed and was archived on 2026-08-05. Those are now the only dangling
-references to it in the repository, and deleting the groups is what removes them. The reasoning
-behind the split they describe is preserved in
-[`packages/cli/.ai-docs/reference/monorepo-layout.md`](../packages/cli/.ai-docs/reference/monorepo-layout.md).
