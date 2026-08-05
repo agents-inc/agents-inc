@@ -115,28 +115,28 @@
     "liquidjs": "^10.24.0",
     "react": "^19.2.6",
     "remeda": "^2.33.6",
-    "yaml": "^2.8.2",
-    "zod": "^4.3.6",
-    "zustand": "^5.0.0"
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@eslint/js": "^10",
     "@lydell/node-pty": "^1.2.0-beta.3",
     "@oclif/test": "^4.0.0",
     "@types/fs-extra": "^11.0.0",
-    "@types/node": "^22.0.0",
+    "@types/node": "^24",
     "@types/react": "^19",
     "@vitest/coverage-v8": "^4.0.18",
     "@xterm/headless": "^6.0.0",
     "eslint": "^10",
-    "eslint-config-prettier": "^10.1.8",
+    "eslint-config-prettier": "^10",
     "ink-testing-library": "^4.0.0",
-    "prettier": "^3.2.0",
+    "prettier": "^3.8.3",
     "tree-kill": "^1.2.2",
     "tsup": "^8.0.0",
     "typescript": "~6",
-    "typescript-eslint": "^8.65.0",
-    "vitest": "^4.0.18"
+    "typescript-eslint": "^8",
+    "vitest": "^4"
   },
   "engines": {
     "node": ">=22"

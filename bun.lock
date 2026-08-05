@@ -89,7 +89,7 @@
     },
     "packages/cli": {
       "name": "agents-inc",
-      "version": "0.150.0",
+      "version": "0.151.0",
       "bin": {
         "agents-inc": "dist/index.js",
         "agentsinc": "dist/index.js",
@@ -112,28 +112,29 @@
         "liquidjs": "^10.24.0",
         "react": "^19.2.6",
         "remeda": "^2.33.6",
-        "yaml": "^2.8.2",
-        "zod": "^4.3.6",
-        "zustand": "^5.0.0",
+        "yaml": "^2.9.0",
+        "zod": "^4.4.3",
+        "zustand": "^5.0.14",
       },
       "devDependencies": {
         "@eslint/js": "^10",
         "@lydell/node-pty": "^1.2.0-beta.3",
         "@oclif/test": "^4.0.0",
         "@types/fs-extra": "^11.0.0",
-        "@types/node": "^22.0.0",
+        "@types/node": "^24",
         "@types/react": "^19",
         "@vitest/coverage-v8": "^4.0.18",
         "@xterm/headless": "^6.0.0",
         "eslint": "^10",
-        "eslint-config-prettier": "^10.1.8",
+        "eslint-config-prettier": "^10",
+        "eslint-plugin-react-hooks": "^7.1.1",
         "ink-testing-library": "^4.0.0",
-        "prettier": "^3.2.0",
+        "prettier": "^3.8.3",
         "tree-kill": "^1.2.2",
         "tsup": "^8.0.0",
         "typescript": "~6",
-        "typescript-eslint": "^8.65.0",
-        "vitest": "^4.0.18",
+        "typescript-eslint": "^8",
+        "vitest": "^4",
       },
     },
     "packages/eslint-config": {
@@ -2606,8 +2607,6 @@
 
     "@vscode/emmet-helper/jsonc-parser": ["jsonc-parser@2.3.1", "", {}, "sha512-H8jvkz1O50L3dMZCsLqiuB2tA7muqbSg1AtGEkN0leAqGjsUzDJir3Zwr02BhqdcITPg3ei3mZ+HjMocAknhhg=="],
 
-    "agents-inc/@types/node": ["@types/node@22.20.1", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q=="],
-
     "ajv-formats/ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 
     "ajv-i18n/ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
@@ -2871,8 +2870,6 @@
     "@tailwindcss/node/lightningcss/lightningcss-win32-arm64-msvc": ["lightningcss-win32-arm64-msvc@1.32.0", "", { "os": "win32", "cpu": "arm64" }, "sha512-8SbC8BR40pS6baCM8sbtYDSwEVQd4JlFTOlaD3gWGHfThTcABnNDBda6eTZeqbofalIJhFx0qKzgHJmcPTnGdw=="],
 
     "@tailwindcss/node/lightningcss/lightningcss-win32-x64-msvc": ["lightningcss-win32-x64-msvc@1.32.0", "", { "os": "win32", "cpu": "x64" }, "sha512-Amq9B/SoZYdDi1kFrojnoqPLxYhQ4Wo5XiL8EVJrVsB8ARoC1PWW6VGtT0WKCemjy8aC+louJnjS7U18x3b06Q=="],
-
-    "agents-inc/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
     "ajv-formats/ajv/json-schema-traverse": ["json-schema-traverse@1.0.0", "", {}, "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug=="],
 
