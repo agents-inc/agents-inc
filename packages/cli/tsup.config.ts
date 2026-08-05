@@ -13,7 +13,9 @@ export default defineConfig({
   ],
   format: ["esm"],
   platform: "node",
-  target: "node18",
+  // Ink 7 raised the runtime floor to Node 22. Must stay in step with `engines.node` in
+  // package.json — this drifted once already, when `engines` was raised and this was not.
+  target: "node22",
   clean: true,
   sourcemap: true,
   shims: true,
