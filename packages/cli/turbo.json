@@ -2,6 +2,26 @@
   "$schema": "https://turbo.build/schema.json",
   "extends": ["//"],
   "tasks": {
+    // The default input set is every file in the package, and this package is
+    // mostly files the build never reads: reference docs, changelogs, the e2e
+    // suite, and the tests that sit beside the code they cover. Editing one
+    // line of prose was rebuilding dist. The negations keep the hash to what
+    // tsup actually consumes — src/agents/ stays IN because onSuccess copies
+    // it into dist verbatim, so its markdown genuinely is build input.
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*",
+        "!.ai-docs/**",
+        "!changelogs/**",
+        "!e2e/**",
+        "!**/*.test.ts",
+        "!**/*.test.tsx",
+        "!**/__tests__/**",
+        "!**/__mocks__/**",
+        "!*.md"
+      ]
+    },
     // Deliberately `build`, NOT `^build` — do not "fix" the missing caret.
     // The root declares test:e2e as `^build`, meaning "build my dependencies",
     // which is right for the editor: its Playwright config boots a dev server
