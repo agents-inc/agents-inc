@@ -27,26 +27,11 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- PARTIAL 2026-08-02 (b) · post-landing reconciliation (`last_validated` deliberately NOT moved)
-     ✓ the config-gate tree entries (index.ts's seven token-minting entries vs the two that
-       refuse $HOME; pair-writer REQUIRES the token and mints none, D-309 — verified against
-       the seven withGateToken call sites in index.ts and the assertGateToken in
-       pair-writer.ts's writeIfChanged) and the wizard data-flow block's settings-overlay
-       line, which described the overlay as reachable while both of its call sites in
-       wizard.tsx are gated on FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY (false, D-307)
-     ✗ everything else — still on the 2026-08-02 (a) / 2026-08-01 / 2026-07-30 bases below
--->
-<!-- PARTIAL 2026-08-02 · config-gate landing (`last_validated` deliberately NOT moved)
-     ✓ the lib/ directory tree's config-gate + installation entries, the Installation
-       data-flow block, §4 config splitting, §10 writer selection, §11 scope config
-       splitting, §12 projects registry + D-240, §16 reconciliation write sites — all
-       re-derived from src/cli/lib/config-gate/ and the migrated call sites
-     ✗ everything else — still on the 2026-08-01 / 2026-07-30 basis below
--->
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
-     ✓ Project Identity, Directory Structure tree, §1 BaseCommand, §18 terminal-size gate,
-       lib/wizard + operations/skills export inventories
-     ✗ §4-17 — no 0.146.1/0.147.x diff touched them; still on 2026-07-30 basis
+<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
+     ✓ the components/ tree's new render.ts entry, re-derived from
+       src/cli/components/render.ts and its five importers
+     ✗ everything else — Project Identity / §1 / §18 stand on 2026-08-01, the config-gate
+       tree + §4 / §10-12 / §16 on 2026-08-02, §4-17 otherwise on 2026-07-30
 -->
 
 # Architecture Overview
@@ -107,6 +92,14 @@ src/cli/
     update.tsx              # Update skills
     validate.ts             # Validate installation
   components/               # Ink React components
+    render.ts               # THE ONLY caller of ink's render(). Every Ink render in the CLI goes
+                            #   through it — never `import { render } from "ink"` in a command or a
+                            #   component. When the destination stream is a TTY it passes
+                            #   `interactive: true`, so a real terminal beats Ink's CI guess; off-TTY
+                            #   it passes nothing and Ink's own detection stands. An explicit
+                            #   `interactive` from the caller always wins (spread order).
+                            #   Five call sites: commands/{init,edit,list}, common/prompt-confirm.tsx,
+                            #   wizard/run-wizard-session.tsx
     common/                 # Shared UI: confirm, prompt-confirm, select-list, spinner
     hooks/                  # React hooks for wizard behavior (hook table: reference/component-patterns.md)
     themes/                 # Ink theme (CLI_COLORS -> theme)

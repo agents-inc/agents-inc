@@ -35,20 +35,16 @@ related:
 last_validated: 2026-08-04
 ---
 
-<!-- VALIDATED 2026-08-04 · FULL — new file, absorbed from the retired e2e/FINDINGS.md.
-     Every claim below was re-derived this session from source; three claims that FINDINGS
-     carried were found FALSE against current code and are recorded here as corrections
-     rather than carried forward. Sources read: src/cli/lib/permission-checker.tsx,
-     src/cli/commands/init.tsx, src/cli/commands/search.ts,
-     src/cli/components/wizard/step-build.tsx, src/cli/components/hooks/use-build-step-props.ts,
-     src/cli/lib/wizard/build-step-logic.ts, src/cli/lib/loading/source-loader.ts,
-     src/cli/consts.ts, e2e/helpers/terminal-session.ts, e2e/helpers/test-utils.ts,
-     e2e/helpers/create-e2e-source.ts, e2e/vitest.config.ts, vitest.config.ts. -->
+<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
+     ✓ § 1.9 only — new. Derived from e2e/helpers/terminal-session.ts (CI/GITHUB_ACTIONS pass
+       through untouched), src/cli/components/render.ts, vitest.setup.ts, e2e/vitest.config.ts
+     ✗ §§ 1.1-1.8, 2, 3, 4 — still on the 2026-08-04 FULL basis
+-->
 
 # E2E Harness — Settled Decisions and CLI Behaviour
 
-**Last Updated:** 2026-08-04
-**Last Validated:** 2026-08-04
+**Last Updated:** 2026-08-06
+**Last Validated:** 2026-08-04 (PARTIAL pass since; see the annotation above)
 
 > **Provenance.** This file absorbs what survived `e2e/FINDINGS.md`, which is retired. FINDINGS held
 > three kinds of entry: conventions (which had already moved into `standards/e2e/` and
@@ -161,6 +157,30 @@ described is what the code does with the flag on. Flag names and current values:
 process dies with a non-zero code. Nothing special is needed. Because `init` and `edit` write
 files only after the wizard completes, a cancelled run leaves the filesystem untouched — which makes
 "abort, then assert nothing changed" a sound pair rather than a race.
+
+### 1.9 The harness passes `CI` and `GITHUB_ACTIONS` through, on purpose
+
+`terminal-session.ts` builds the child's environment as `{ ...process.env, ...options.env, … }` and
+does **not** strip either variable. That is the reverse of what it used to do, and reversing it back
+would look like a cleanup.
+
+Ink decides whether it is interactive by consulting those variables (through `is-in-ci`) **before**
+it looks at the stream it was handed, and under CI it buffers every frame and writes only at exit. A
+screen awaiting input is then never painted. That is what ran one CI suite for **49 minutes** — the
+harness hands the child a genuine pseudo-terminal while the runner's environment says `CI`.
+
+The fix lives in the CLI, not in the harness: `src/cli/components/render.ts` passes
+`interactive: true` whenever the destination stream is a TTY, so a real terminal beats the guess. The
+harness therefore keeps the variables **so that every CI run exercises that wrapper**. Strip them and
+the suite stops testing the one condition the bug needs.
+
+The unit side is the deliberate opposite — `vitest.setup.ts` deletes both at module scope, because a
+component test rendering against fake streams must not have "in CI" as a concept at all. Two
+environments, two opposite policies, one reason. See
+[`infrastructure.md`](./infrastructure.md) and [`commands/index.md`](../commands/index.md).
+
+Downstream: `e2e/vitest.config.ts`'s `retry` came down from `2` to `1` after this landed, measured
+green at `0`. [`e2e-infrastructure.md`](./e2e-infrastructure.md) owns that value.
 
 ## 2. Corrections — three FINDINGS claims that are now false
 

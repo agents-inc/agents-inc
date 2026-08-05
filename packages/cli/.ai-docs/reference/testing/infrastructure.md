@@ -22,23 +22,18 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- PARTIAL 2026-08-05 · Ink 7 upgrade absorption (`last_validated` deliberately NOT moved)
-     ✓ only the two added sections — "ink-testing-library looks abandoned and is not" (derived by
-       reading node_modules/ink-testing-library/package.json and build/index.js: v4.0.0, 95 lines,
-       imports node:events + ink only) and "Do not reason about a key from release notes"
-     ✗ everything else — still on the bases below
--->
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
-     ✓ only the two added sections — "render() returns before effects flush" and "A regenerated
-       snapshot is a proposal, not a result" (its rule-6.17a extension is PROPOSED, not applied)
-     ✗ test-project/config tables, directory structure, other code patterns, test-constants
-       tables, error handling — 2026-07-30 basis
+<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
+     ✓ the vitest.setup.ts CI/GITHUB_ACTIONS module-scope deletion and the Ink 7 unconditional
+       teardown-frame section, re-derived from vitest.setup.ts and summary-panel.test.tsx
+     ✗ everything else: the two ink-testing-library sections stand on 2026-08-05, "render()
+       returns before effects flush" and the snapshot rule on 2026-08-01, the config/directory/
+       constants tables and error handling on 2026-07-30
 -->
 
 # Test Infrastructure
 
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
+**Last Updated:** 2026-08-06
+**Last Validated:** 2026-07-30 (PARTIAL passes since; see the annotation above)
 
 > **Split from:** `reference/test-infrastructure.md`. See also: [factories.md](./factories.md), [mock-data.md](./mock-data.md), [e2e-infrastructure.md](./e2e-infrastructure.md).
 
@@ -82,6 +77,7 @@ Vitest is configured with 3 test projects:
 
 Runs for every test across all projects:
 
+- **Module scope, before any hook:** `delete process.env.CI` and `delete process.env.GITHUB_ACTIONS`. **Unit-test rendering is CI-independent by construction, and this is what makes it so.** Ink consults those variables (through `is-in-ci`) to decide when frames are written and what unmount appends, so the same component test read differently locally and on a runner and grew per-test workarounds. The deletion is at module scope rather than in a hook because `is-in-ci` reads the environment **once, at import** — a `beforeEach` would run too late. Nothing under `src/` reads either variable itself. The E2E harness is the deliberate opposite: it passes both through, so every CI run proves the CLI trusts a real terminal over the CI guess (see [`harness-decisions.md`](./harness-decisions.md) and [`commands/index.md`](../commands/index.md)).
 - **`beforeAll`:** Mocks `os.homedir()` to a per-run temp dir (`vitest-home-*`). This prevents `loadProjectConfig()`'s global fallback from hitting the developer's real `~/.claude-src/config.yaml`. Tests that explicitly override `process.env.HOME` (via `setupIsolatedHome()`) keep their override.
 - **`beforeEach`:** Calls `initializeMatrix(BUILT_IN_MATRIX)` and resets the Zustand wizard store (`useWizardStore.getState().reset()`). Guarantees matrix + store isolation between tests.
 - **`afterAll`:** Restores all mocks and removes the temp home dir.
@@ -426,6 +422,12 @@ const mountLayout = async (logo?: string) => {
 ```
 
 `RENDER_DELAY_MS` and `delay` come from `src/cli/lib/__tests__/test-constants.ts`. **A frame that never changes after an interaction is this bug before it is a product bug.** See `.ai-docs/agent-findings/2026-07-31-getscreen-is-not-viewport-only-so-absence-assertions-are-unsound.md` § 3.
+
+### Under Ink 7 the teardown frame is unconditional — read `frames`, not `lastFrame()`
+
+When an error boundary exits, Ink 7 appends a `"\n"` frame on teardown **every time**. Ink 5 did this only when `CI` was set, which is exactly why the same assertion read differently on a runner. With the setup file now deleting `CI` (above), the variable can no longer paper over it either way.
+
+The consequence for a test: `lastFrame()` after such an exit returns the blank teardown frame, not the painted one. **Assert against `frames.join("\n")`.** `src/cli/components/wizard/summary-panel.test.tsx` is the worked example and carries the reason inline — the assertion lands on the painted frames, not on a rejected `render()`, and joining reads the painted frame wherever in the sequence it lands.
 
 ### A regenerated snapshot is a proposal, not a result
 

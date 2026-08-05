@@ -22,11 +22,11 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
-     ✓ `I`-gate + INFO_PANEL row, hotkey helpers, hooks table, component tree; re-verified
-       unchanged: WizardProps/WizardResultV2/HydrateOptions, scope-diff tables, Viewport Clipping
-     ✗ step progression, guards, scope toggles, store actions, edit mode, settings overlay, domain
-       order, framework filtering, stack grouping — prior 2026-07-31 / 07-30 bases
+<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
+     ✓ the Feature Flags section only — all five wizard rows and their defaults re-derived from
+       src/cli/lib/feature-flags.ts, plus the envFlag override semantics
+     ✗ everything else: `I`-gate, hotkey helpers, hooks table, component tree, WizardProps and the
+       scope-diff tables stand on 2026-08-01; step progression, guards, store actions on 07-31/07-30
 -->
 
 # Wizard Flow
@@ -118,6 +118,8 @@ Feature flags live in `FEATURE_FLAGS` (`src/cli/lib/feature-flags.ts`). The wiza
 | `FILTER_INCOMPATIBLE`     | `false` | `F` key filters incompatible skills in the build step (D-269). Gates BOTH the keypress in `use-category-grid-input.ts` and the footer hint in `wizard-layout.tsx`; `toggleFilterIncompatible` stays intact and dormant for a one-flag re-enable.                                                                                                           |
 
 The same object also holds three command-gating flags outside the wizard: `NEW_SKILL_COMMAND`, `NEW_AGENT_COMMAND`, `NEW_MARKETPLACE_COMMAND` (all `false`) — see `commands.md`.
+
+**Every default above is overridable at runtime.** Each entry is `envFlag(name, default)`: `AGENTSINC_FLAG_<NAME>` set to `1` / `true` forces the flag on, `0` / `false` forces it off, anything else (including unset) falls back to the default. So a dormant wizard surface — the `S` settings overlay, the `F` incompatible filter, the search pill — can be reached without a rebuild, and a test can drive it. The read happens at module load, deliberately: `tsup` inlines a plain boolean literal into the compiled bundle, so gated code was unreachable from a compiled command until the flags became `process.env` lookups. Semantics are pinned by `feature-flags.test.ts`.
 
 ## Wizard Props (from commands)
 

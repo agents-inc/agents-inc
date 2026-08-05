@@ -51,20 +51,18 @@ related:
 last_validated: 2026-08-02
 ---
 
-<!-- VALIDATED 2026-08-02 · FULL (product 0.147.1) — new document, no prior basis.
-     Every file under src/cli/lib/seed/ read end to end, plus commands/init.tsx's
-     `--from` producer and the shared spine, lib/installation/local-installer.ts's
-     `resolveStackProperty`, the five e2e/commands/init-from-*.e2e.test.ts specs,
-     e2e/fixtures/seed-config-store.ts, and BOTH copies of the vendored schema
-     (the CLI's src/cli/lib/seed/seed-schema.ts and the web monorepo's
-     packages/matrix/src/seed.ts, which is the source of truth).
-     Unit surface verified by RUNNING it: `vitest run src/cli/lib/seed/
-     src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts` -> 13 passed. -->
+<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
+     ✓ The Vendoring Rule and the unit-test table — seed-schema-drift.test.ts read in full and the
+       counts re-derived by RUNNING `vitest run src/cli/lib/seed/
+       src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts` -> 20 passed, 4 files
+     ✗ everything else — payload shape, version policy, seed -> WizardResultV2 mapping, the E2E
+       family and its per-file counts: still on the 2026-08-02 FULL basis
+-->
 
 # Seed Contract (`init --from`)
 
-**Last Updated:** 2026-08-02
-**Last Validated:** 2026-08-02
+**Last Updated:** 2026-08-06
+**Last Validated:** 2026-08-02 (PARTIAL pass since; see the annotation above)
 
 > **What this document owns.** The wire contract for configurations shared from agentsinc.sh, its
 > version policy, the payload -> `WizardResultV2` mapping, and the `init --from <id>` consumer path.
@@ -132,9 +130,41 @@ shared package once the contract stops moving (**D-239**, `todo/D-239-web-ui-sha
 > would not normally need a version, but the version is what tells a sharing app the field survives
 > the trip.
 >
-> **Nothing enforces this automatically.** Grep of the CLI's `package.json` and `scripts/` finds no
-> seed-sync check, and there is no shared test. The lockstep is a convention held by these two files'
-> header comments and by this document. Treat a change to either copy as a change to both.
+> **A test now enforces the shape, though not the version bump.** See below.
+
+### `seed-schema-drift.test.ts` compares the two copies by JSON-Schema projection
+
+`src/cli/lib/seed/seed-schema-drift.test.ts` (new 2026-08-05) loads the canonical
+`packages/matrix/src/seed.ts` alongside the vendored `seed-schema.ts` and asserts:
+
+- `SEED_VERSION` is identical, and
+- `z.toJSONSchema()` of each copy is `toStrictEqual` for all six schemas — `seedModelSchema`,
+  `seedEffortSchema`, `seedLoadStateSchema`, `seedSkillSchema`, `seedAgentSchema`,
+  `seedPayloadSchema`.
+
+**Comparing projections, not text, is the point.** The two files are allowed to differ as text —
+comments, formatting, import order. What must be identical is the wire contract, and a JSON Schema
+projection is exactly that and nothing else. Before this test, drift surfaced at decode time on a
+user's machine, as a shared config that would not load. The test was proven able to fail by planting
+drift.
+
+**The canonical file is loaded through a computed dynamic import**, and that is not stylistic:
+
+```ts
+const CANONICAL_SEED = pathToFileURL(
+  path.resolve(import.meta.dirname, "../../../../../matrix/src/seed.ts"),
+).href;
+const canonical = (await import(CANONICAL_SEED)) as typeof vendored;
+```
+
+A static relative import would drag the sibling package into `tsc`'s program, where it fails the
+`rootDir` check; and this package must not depend on the private `@workspace/matrix`, because it
+ships to npm. A computed specifier is invisible to `tsc` and resolved by vitest. **The path IS the
+statement of which file `seed-schema.ts` is a copy of** — do not "tidy" it into a package import.
+
+**What is still unenforced:** the `SEED_VERSION` **bump**. The test asserts the two copies agree on
+the version, not that a shape change came with a new one. Two copies changed together and both left
+at `v3` pass. The lockstep rule above remains a convention for that half.
 
 `seed-schema.ts` imports only `zod` — no CLI type, constant or util. Keep it that way: it is a
 transcription of a foreign file, and every import added to it is one more thing to reconcile by hand.
@@ -452,14 +482,16 @@ documents the older skills-only guard; see [Cross-Surface Defects](#cross-surfac
 
 ### Unit / command tests
 
-Verified by running them: `vitest run src/cli/lib/seed/ src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts`
--> **13 passed**, 3 files. **This document owns these three numbers.**
+Verified by running them 2026-08-06: `vitest run src/cli/lib/seed/ src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts`
+-> **20 passed**, 4 files. **This document owns these numbers.** (Was 13 across 3 files before
+`seed-schema-drift.test.ts` landed on 2026-08-05.)
 
-| Spec file                                                         | Specs | Covers                                                                                                                               |
-| ----------------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/cli/lib/seed/seed-schema.test.ts`                            | 4     | The wire contract, pinned against **literals** rather than the factories                                                             |
-| `src/cli/lib/seed/seed-to-wizard.test.ts`                         | 6     | The four ways an agent reaches (or fails to reach) the result: named by the map, named only by an assignment, switched off, not real |
-| `src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts` | 3     | The shared install spine: ref + scope per plugin skill, and install-before-config-write ordering                                     |
+| Spec file                                                         | Specs | Covers                                                                                                                                 |
+| ----------------------------------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/cli/lib/seed/seed-schema.test.ts`                            | 4     | The wire contract, pinned against **literals** rather than the factories                                                               |
+| `src/cli/lib/seed/seed-to-wizard.test.ts`                         | 6     | The four ways an agent reaches (or fails to reach) the result: named by the map, named only by an assignment, switched off, not real   |
+| `src/cli/lib/seed/seed-schema-drift.test.ts`                      | 7     | The vendored copy against `packages/matrix/src/seed.ts`: `SEED_VERSION` plus six `it.each` schema projections (see The Vendoring Rule) |
+| `src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts` | 3     | The shared install spine: ref + scope per plugin skill, and install-before-config-write ordering                                       |
 
 > **`seed-schema.test.ts` pins literals on purpose.** A version test that builds its payload from
 > `SEED_VERSION` follows the constant wherever it goes and **can never fail** — the canonical shape of

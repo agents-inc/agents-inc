@@ -2,10 +2,12 @@
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
-     ✓ suite-size figure re-counted on disk; §3.5 terminal-geometry block; §10.18-10.22
-     ✗ §§1, 2, 4-9, 11, 12 — incl. the 7.1 timeout table, the directory tree, the test-utils
-       export list and 10.1-10.17 — 2026-07-30 basis
+<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
+     ✓ §1.4's Vitest config values ONLY — re-derived from e2e/vitest.config.ts
+       (maxWorkers is now min(16, cores); retry 2 -> 1)
+     ✗ everything else: the suite-size figure, §3.5 and §10.18-10.22 stand on 2026-08-01;
+       §§1 (rest), 2, 4-9, 11, 12 — incl. the 7.1 timeout table, the directory tree and the
+       test-utils export list — on 2026-07-30
 -->
 
 # E2E Testing Standards
@@ -63,9 +65,11 @@ e2e/
 
 **1.3 No task IDs in test names, assertion messages, or inline comments.** Never include `D-NNN` / `P-BUILD-1` / `Bug A` in `describe()` names, `it()` names, assertion messages (2nd arg to `expect`), or inline test-body comments. The only permitted location is file-level JSDoc at the top of the file, for scenario context. Test names describe BEHAVIOR ("version field is not emitted on init"), not tickets. Assertion messages describe the INVARIANT ("config.ts must not contain version field"), not the ticket that added it. Names rot — ticket IDs look authoritative but become meaningless once the task is closed. See `.ai-docs/agent-findings/2026-04-21-task-ids-in-test-names-sweep-needed.md`.
 
-**1.4 Vitest config:** `e2e/vitest.config.ts` uses `pool: "forks"`, `maxWorkers: 16`, `testTimeout: 30_000`, `hookTimeout: 60_000`, `retry: 2`, `globalSetup: ["./e2e/global-setup.ts"]`. The include pattern is `e2e/**/*.e2e.test.ts` -- smoke tests (`*.smoke.test.ts`) are excluded and must be run explicitly. Long tests override per-test with `{ timeout: TIMEOUTS.LIFECYCLE }`.
+**1.4 Vitest config:** `e2e/vitest.config.ts` uses `pool: "forks"`, `maxWorkers: Math.min(16, os.availableParallelism())`, `testTimeout: 30_000`, `hookTimeout: 60_000`, `retry: 1`, `globalSetup: ["./e2e/global-setup.ts"]`. The include pattern is `e2e/**/*.e2e.test.ts` -- smoke tests (`*.smoke.test.ts`) are excluded and must be run explicitly. Long tests override per-test with `{ timeout: TIMEOUTS.LIFECYCLE }`.
 
-The worker cap is deliberate: PTY-driven wizard tests are load-sensitive, and at one worker per core (21+ on dev machines) dropped keystrokes and slow installs produce failures that never reproduce solo.
+The worker cap is deliberate: PTY-driven wizard tests are load-sensitive, and at one worker per core (21+ on dev machines) dropped keystrokes and slow installs produce failures that never reproduce solo. It takes the **lower** of 16 and the machine's core count, so a 4-core CI runner gets 4 -- a flat 16 there would put four PTY workers on every core, which is the same contention inverted.
+
+`retry` dropped from 2 to 1 on 2026-08-05, after the flake it was tuned against turned out to be Ink's CI detection buffering every frame: the full suite then measured green at retry 0. One retry remains only for runner contention, which a local run cannot measure, and a retry that fires shows up in vitest's flaky report rather than passing silently. **Do not raise it to hide a failure.**
 
 ---
 

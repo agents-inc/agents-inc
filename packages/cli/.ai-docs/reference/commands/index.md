@@ -26,11 +26,11 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.146.1 + 0.147.0 + 0.147.1)
-     ✓ command-file inventory (source set == index-table set) and a full flag/arg/alias diff over
-       every documented table; the `uninstall` and `validate` sections re-verified against source
-     ✗ prose for init, edit, compile, list, doctor, eject, search, update, import/new/build — 2026-07-30
-     ! GAP: prepublishOnly now runs lint before typecheck; this doc has no npm-scripts section to hold it
+<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
+     ✓ the render-wrapper rule (src/cli/components/render.ts + its five importers) and the whole
+       FEATURE_FLAGS inventory, re-derived from src/cli/lib/feature-flags.ts — 8 flags, envFlag()
+     ✗ everything else: the command-file inventory and flag/arg/alias tables stand on 2026-08-01,
+       the per-command prose on 2026-07-30
 -->
 
 # Commands Reference
@@ -49,6 +49,14 @@ All commands extend `BaseCommand` (`src/cli/base-command.ts`).
 | --source | -s    | string | Skills source path or URL |
 
 **Operations layer:** Commands use composable operations from `src/cli/lib/operations/index.ts` as the primary interface to lower-level lib functions. Commands should not bypass operations for functionality that an operation covers. See `reference/features/operations-layer.md` for full operations documentation.
+
+### Every Ink render goes through `src/cli/components/render.ts`
+
+A command that draws an Ink tree imports `render` from `../components/render.js`, **never `from "ink"`**. `render.ts` is the only file in `src/` that imports Ink's own `render`, and the wrapper exists for one rule: when the destination stream is a TTY it passes `interactive: true`, so a genuine terminal beats Ink's CI-environment guess; when it is not (piped output, redirected logs, CI without a terminal) it passes nothing and Ink's own detection stands. An explicit `interactive` from the caller wins — the spread order guarantees it.
+
+The failure the rule prevents is not cosmetic: under its CI guess Ink buffers every frame and writes only at exit, so a screen awaiting input is never painted. That hung one CI run for 49 minutes, because the E2E harness hands the child a real pseudo-terminal while the runner's environment says `CI`. The harness deliberately passes `CI` / `GITHUB_ACTIONS` through for that reason — see [`testing/harness-decisions.md`](../testing/harness-decisions.md).
+
+The five call sites are `commands/init.tsx`, `commands/edit.tsx`, `commands/list.tsx`, `components/common/prompt-confirm.tsx` and `components/wizard/run-wizard-session.tsx`. `render.ts` is a `.ts` file under `components/`, so it is not a tsup entry (the components glob is `*.tsx`) — it is bundled transitively into each command's chunk. See [`build-and-packaging.md`](../build-and-packaging.md) §2.
 
 ## Init Hook (src/cli/hooks/init.ts)
 
@@ -589,25 +597,30 @@ This is a CONTENT fan-out, not a config one: `update` rewrites `~/.claude/skills
 
 ## Feature-Gated Commands
 
-The following commands are gated behind `FEATURE_FLAGS` in `src/cli/lib/feature-flags.ts`. All three are currently disabled (flag `false`). The command prints `featureDisabledError(commandName)` and exits if invoked.
+The following commands are gated behind `FEATURE_FLAGS` in `src/cli/lib/feature-flags.ts`. All three are **disabled by default** and each can be forced on for one invocation with its env override (see below). The command prints `featureDisabledError(commandName)` and exits if invoked while disabled.
 
-| Command           | Flag                      | Current Value |
-| ----------------- | ------------------------- | ------------- |
-| `new skill`       | `NEW_SKILL_COMMAND`       | `false`       |
-| `new agent`       | `NEW_AGENT_COMMAND`       | `false`       |
-| `new marketplace` | `NEW_MARKETPLACE_COMMAND` | `false`       |
+| Command           | Flag                      | Default | Env override                             |
+| ----------------- | ------------------------- | ------- | ---------------------------------------- |
+| `new skill`       | `NEW_SKILL_COMMAND`       | `false` | `AGENTSINC_FLAG_NEW_SKILL_COMMAND`       |
+| `new agent`       | `NEW_AGENT_COMMAND`       | `false` | `AGENTSINC_FLAG_NEW_AGENT_COMMAND`       |
+| `new marketplace` | `NEW_MARKETPLACE_COMMAND` | `false` | `AGENTSINC_FLAG_NEW_MARKETPLACE_COMMAND` |
 
-**Full `FEATURE_FLAGS` inventory** (`src/cli/lib/feature-flags.ts`). The remaining four gate wizard UI, not commands; no other flags exist:
+**Full `FEATURE_FLAGS` inventory** (`src/cli/lib/feature-flags.ts`) — **eight** flags. The five that are not command gates gate wizard UI:
 
-| Flag                      | Current Value | Gates                                                        |
-| ------------------------- | ------------- | ------------------------------------------------------------ |
-| `SOURCE_SEARCH`           | `false`       | Search pill in the source grid (step-sources)                |
-| `SOURCE_CHOICE`           | `false`       | Intermediate source choice screen (recommended vs customize) |
-| `INFO_PANEL`              | `true`        | `I` opens the info panel overlay                             |
-| `FILTER_INCOMPATIBLE`     | `false`       | `F` filters incompatible skills in the build step (D-269)    |
-| `NEW_SKILL_COMMAND`       | `false`       | `new skill`                                                  |
-| `NEW_AGENT_COMMAND`       | `false`       | `new agent`                                                  |
-| `NEW_MARKETPLACE_COMMAND` | `false`       | `new marketplace`                                            |
+| Flag                      | Default | Gates                                                        |
+| ------------------------- | ------- | ------------------------------------------------------------ |
+| `SOURCE_SEARCH`           | `false` | Search pill in the source grid (step-sources)                |
+| `SOURCE_CHOICE`           | `false` | Intermediate source choice screen (recommended vs customize) |
+| `WIZARD_SETTINGS_OVERLAY` | `false` | `S` opens the marketplace-sources overlay (D-307)            |
+| `INFO_PANEL`              | `true`  | `I` opens the info panel overlay                             |
+| `FILTER_INCOMPATIBLE`     | `false` | `F` filters incompatible skills in the build step (D-269)    |
+| `NEW_SKILL_COMMAND`       | `false` | `new skill`                                                  |
+| `NEW_AGENT_COMMAND`       | `false` | `new agent`                                                  |
+| `NEW_MARKETPLACE_COMMAND` | `false` | `new marketplace`                                            |
+
+> **The column is `Default`, not `Current Value`.** Every entry is `envFlag(name, default)`: the environment variable `AGENTSINC_FLAG_<NAME>` set to `1` / `true` forces the flag on and `0` / `false` forces it off, in either direction; unset or any other value falls back to the default above. So `AGENTSINC_FLAG_NEW_SKILL_COMMAND=1 agents-inc new skill` runs the gated command, and `AGENTSINC_FLAG_INFO_PANEL=0` withdraws the `I` overlay.
+>
+> The read happens **at module load**, which is the point of it. `tsup` inlines a plain `false` literal into the compiled command, so a gated command was untestable while the flags were literals; a `process.env` lookup survives bundling. E2E specs set the variable on the child they spawn; unit specs set it before the module is first imported. `feature-flags.test.ts` covers the semantics.
 
 `FILTER_INCOMPATIBLE` gates both the `F` keypress and its footer hint; the store action stays present but dormant for a one-flag re-enable (it was disabled over a dual-scope collapse bug).
 

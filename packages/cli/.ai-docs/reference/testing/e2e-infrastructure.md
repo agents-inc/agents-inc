@@ -22,24 +22,19 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- PARTIAL 2026-08-02 (b) · one matcher only (`last_validated` deliberately NOT moved)
-     ✓ toHavePluginInRegistry — re-read from e2e/matchers/project-matchers.ts. It now asserts
-       CONTENT on disk per installation (describeMissingContent), not just a registry key; the
-       one-line entry here described only the key lookup. This narrows, but does NOT clear, the
-       standing NEEDS-VALIDATION on the matcher section — the other matchers were not re-read.
-     ✗ everything else, including the rest of the matcher list — bases below unchanged
--->
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
-     ✓ spec-file counts + lists, STEP_TEXT, TERMINAL_SIZE, MIN_TERMINAL_SIZE + importers, the
-       TerminalSession/BaseStep resize + screen methods, scrollSummaryToBottom, writeCorruptConfig
-     ✗ NEEDS-VALIDATION — all POM method inventories, every other constant table, matchers, fixtures,
-       factories, type-check probe, Scope & HOME, keypress audit (iter 35), test-utils — 2026-07-30
+<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
+     ✓ the E2E Tests header block only — `retry`, `maxWorkers` and the directory-tree line for
+       vitest.config.ts, re-derived from e2e/vitest.config.ts
+     ✗ NEEDS-VALIDATION stands: all POM method inventories, every TIMEOUTS/INTERNAL_DELAYS/
+       INTERNAL_RETRIES/EXIT_CODES/SOURCE_PATHS/DIRS/FILES value, matchers, fixtures, Scope & HOME.
+       Spec counts + STEP_TEXT + TERMINAL_SIZE stand on 2026-08-01, toHavePluginInRegistry on
+       2026-08-02, the rest on 2026-07-30
 -->
 
 # E2E Test Infrastructure
 
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
+**Last Updated:** 2026-08-06
+**Last Validated:** 2026-07-30 (PARTIAL passes since; see the annotation above)
 
 > **Split from:** `reference/test-infrastructure.md`. See also: [infrastructure.md](./infrastructure.md), [factories.md](./factories.md), [mock-data.md](./mock-data.md).
 
@@ -48,8 +43,8 @@ last_validated: 2026-07-30
 **Config:** `e2e/vitest.config.ts` (separate Vitest config, no `setupFiles` — matchers imported per-test)
 **Pattern:** `e2e/**/*.e2e.test.ts` (include)
 **Timeout:** `testTimeout: 30_000`, `hookTimeout: 60_000`
-**Pool:** `forks` (process isolation) with `maxWorkers: 16` — worker count capped because PTY-driven wizard tests drop keystrokes and flake under full parallelism (21+ workers on dev machines)
-**Retry:** `retry: 2` (automatic retry on failure)
+**Pool:** `forks` (process isolation) with `maxWorkers: Math.min(16, os.availableParallelism())` — PTY-driven wizard tests are load-sensitive, so the count is capped at **both** ends. The flat `16` guarded only the top: a four-core CI runner then put four PTY workers on every core, which is the exact contention the cap exists to prevent, inverted. Measured 2026-08-05 — 16 workers run the suite in ~6m20s locally; 4 workers finish in ~19 minutes of `check-cli`'s 25-minute job, inside its 40-minute bound
+**Retry:** `retry: 1` (was `2`). The flake it was tuned against turned out to be Ink's CI detection buffering every frame, fixed 2026-08-05 by the render wrapper (see [`harness-decisions.md`](./harness-decisions.md) § 1.9). Measured after the fix: the full suite passes at retry `0` — 647 tests, zero retries used. One retry stays because runner contention is the one variable a local run cannot measure; it bounds a genuine failure's cost at 2x rather than 3x, and a retry that fires shows up in vitest's flaky report instead of passing silently. **Do not raise it back to hide a failure**
 **Global Setup:** `e2e/global-setup.ts` (teardown function only — lists marketplaces via `claudePluginMarketplaceList` and removes names starting with `e2e-test-` via `claudePluginMarketplaceRemove`; best-effort, swallows list errors)
 
 Note: Smoke tests use `*.smoke.test.ts` pattern and are NOT matched by the E2E vitest config include pattern. They must be run separately. One `pom-framework.e2e.test.ts` file inside `e2e/smoke/` IS matched by the include pattern (test framework self-tests).
@@ -58,7 +53,7 @@ Note: Smoke tests use `*.smoke.test.ts` pattern and are NOT matched by the E2E v
 
 ```
 e2e/
-  vitest.config.ts                   # E2E-only Vitest config (forks pool, retry 2)
+  vitest.config.ts                   # E2E-only Vitest config (forks pool, retry 1, worker cap min(16, cores))
   global-setup.ts                    # Teardown: removes stale e2e-test-* marketplaces
   tsconfig.json                      # E2E-only tsconfig
   helpers/

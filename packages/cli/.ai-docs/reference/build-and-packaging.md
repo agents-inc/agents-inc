@@ -41,31 +41,18 @@ related:
 last_validated: 2026-08-02
 ---
 
-<!-- PARTIAL 2026-08-05 (b) · floor re-derived after tsup.config.ts was corrected
-     Supersedes (a) below, which described a drift that has since been fixed.
-     ✓ §3's `target` row, the "runtime floor is declared in three places" subsection and trap 9.
-       Re-derived from tsup.config.ts (now target: "node22", with a comment naming engines.node),
-       packages/cli/package.json (engines.node ">=22"), the ROOT package.json (engines.node
-       ">=22") and .github/workflows/ci.yml (NODE_VERSION: 22). packages/cli/tsconfig.json is
-       still target "ES2022" — deliberately NOT part of the runtime floor, left undecided.
-       The zero-byte-diff measurement is reported as given, not re-run here.
-     ✗ every other section — still on the 2026-08-02 FULL basis below
+<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
+     ✓ §1 scripts (package.json), §2 entry contract + the turbo inputs subsection (tsup.config.ts,
+       packages/cli/turbo.json), §6 figures (re-run npm pack --dry-run --ignore-scripts --json at
+       0.151.0), §9 (packaging.test.ts), traps 5
+     ✗ §3-5, §7, §8, §10 traps 1-4/6-10 — §3's floor stands on 2026-08-05, the rest on the
+       2026-08-02 FULL basis
 -->
-<!-- PARTIAL 2026-08-05 (a) · Node-floor absorption — SUPERSEDED by (b) above the same day.
-     Recorded that `engines.node` was ">=22" while tsup `target` was still "node18", and that
-     the doc's prior ">=18.0.0" claim was false. The first half was fixed in code hours later;
-     the second half stands. Kept as the record of why (b) exists.
--->
-<!-- VALIDATED 2026-08-02 · FULL — new doc. Every claim derived this session from
-     tsup.config.ts, package.json, src/cli/index.ts, src/cli/config-exports.ts,
-     src/cli/consts.ts, src/cli/lib/configuration/config-loader.ts, the built dist/
-     tree, an @oclif/core Config.load probe, a jiti alias probe, and
-     `npm pack --dry-run --ignore-scripts --json` against the working tree at 0.147.1. -->
 
 # Build, Packaging and Distribution
 
-**Last Updated:** 2026-08-02
-**Last Validated:** 2026-08-02
+**Last Updated:** 2026-08-06
+**Last Validated:** 2026-08-02 (PARTIAL passes since; see the annotation above)
 
 ## Overview
 
@@ -90,15 +77,32 @@ built `config-loader` cannot resolve the very import path `exports./config` adve
 
 ## 1. Scripts
 
-| Script           | Command                                              | Notes                                                                                     |
-| ---------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `build`          | `tsup`                                               | The only writer of `dist/`                                                                |
-| `dev`            | `tsup --watch`                                       | Same entry contract, incremental                                                          |
-| `agentsinc`      | `node dist/index.js`                                 | Runs the built CLI                                                                        |
-| `agentsinc:dev`  | `bun src/cli/index.ts`                               | Runs from source. Commands still resolve through `dist/` — see §8                         |
-| `typecheck`      | `tsc --noEmit`                                       | `tsconfig.json` declares `outDir: "dist"`, but nothing ever runs `tsc` without `--noEmit` |
-| `pretest:e2e`    | `npm run build`                                      | npm lifecycle hook — `npm run test:e2e` always rebuilds first                             |
-| `prepublishOnly` | `format:check && lint && typecheck && build && test` | The whole publish gate. Runs in that order and stops at the first failure                 |
+| Script              | Command                                                                                                | Notes                                                                                                                                                                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `build`             | `tsup`                                                                                                 | The only writer of `dist/`                                                                                                                                                                                                                              |
+| `dev`               | `tsup --watch`                                                                                         | Same entry contract, incremental                                                                                                                                                                                                                        |
+| `agentsinc`         | `node dist/index.js`                                                                                   | Runs the built CLI                                                                                                                                                                                                                                      |
+| `agentsinc:dev`     | `bun src/cli/index.ts`                                                                                 | Runs from source. Commands still resolve through `dist/` — see §8                                                                                                                                                                                       |
+| `typecheck`         | `tsc --noEmit && tsc -p tsconfig.scripts.json --noEmit && tsc -p e2e/tsconfig.json --noEmit`           | **Three** tsc programs, not one — `src/`, `scripts/` and `e2e/`. The first takes `--noEmit` on the command line (`tsconfig.json` declares `outDir: "dist"` and no `noEmit`); the other two declare `noEmit` themselves. Nothing ever runs `tsc` to emit |
+| `typecheck:scripts` | `tsc -p tsconfig.scripts.json --noEmit`                                                                | Still exists as a standalone entry; `typecheck` now runs the same program, so it is no longer the only way to reach it                                                                                                                                  |
+| `pretest:e2e`       | `bun run build`                                                                                        | npm lifecycle hook — `test:e2e` always rebuilds first                                                                                                                                                                                                   |
+| `prepublishOnly`    | `format:check && lint && typecheck && generate:schemas:check && generate:types:check && build && test` | The whole publish gate. Runs in that order and stops at the first failure                                                                                                                                                                               |
+
+**`typecheck` covering three programs is recent and load-bearing.** `scripts/` and `e2e/` used to sit outside every composite gate — which is how `scripts/` stayed untype-checked long enough to hide a phantom field and two fabricated `SkillId`s. Both are now checked on every pre-commit, every CI run and every publish. See [`features/code-generation.md`](./features/code-generation.md).
+
+### What turbo hashes as build input
+
+`packages/cli/turbo.json` (which `extends: ["//"]`) narrows the `build` task's `inputs` from turbo's
+default — every file in the package — to what tsup actually consumes. The negations are `.ai-docs/**`,
+`changelogs/**`, `e2e/**`, `**/*.test.ts(x)`, `**/__tests__/**`, `**/__mocks__/**` and `*.md` at the
+package root. Before them, editing one line of reference prose invalidated the cache and rebuilt
+`dist/`.
+
+**`src/agents/`'s markdown stays IN, and that is not an oversight.** `onSuccess` copies that
+directory into `dist/` verbatim (§5), so its `.md` files genuinely are build input. The `*.md`
+negation is anchored at the package root precisely so it cannot reach them. The same file also
+declares `test` and `test:e2e` as `dependsOn: ["build"]` — deliberately without the caret, because
+both suites resolve oclif commands out of this package's own `dist/` (§8, §9).
 
 There is **no CI publish workflow.** `.github/workflows/` holds exactly one file, `ci.yml`, and none
 of its three jobs touches npm: `check-cli` runs this package's typecheck, lint, unit and E2E suites,
@@ -106,24 +110,20 @@ of its three jobs touches npm: `check-cli` runs this package's typecheck, lint, 
 catalog is stale), and `deploy` ships the web app to Cloudflare. Publication is a manual
 `npm publish`, and `prepublishOnly` is the only gate between the working tree and the registry.
 
-> **`prepublishOnly`'s first step now passes.** `prettier --check .` exits `0` over the whole
-> package, verified 2026-08-03 by running `bun run format:check` ("All matched files use Prettier
-> code style!"). The single offender this document previously recorded,
-> `src/cli/lib/seed/fetch-seed.ts`, was reformatted by a `bun run format` pass over the package
-> during the monorepo move; `.ai-docs/**/*.md` is clean as well. **The "Known Tooling Gaps" section
-> of `DOCUMENTATION_MAP.md` is now stale in the opposite direction.** Its prettier entry was already
-> corrected in place on 2026-08-02 to stop naming `.ai-docs/**/*.md` as the blocker — so the "prettier
-> fails on pre-existing `.ai-docs` markdown" note this blockquote used to retire is gone — but the
-> replacement text still asserts that `prettier --check .` fails and still names `fetch-seed.ts` as
-> the sole remaining offender. Both halves of that assertion are now false, and correcting them
-> belongs to that file, not this one.
+> **`prepublishOnly`'s first step passes.** `prettier --check .` exits `0` over the whole package,
+> verified 2026-08-03 by running `bun run format:check` ("All matched files use Prettier code
+> style!"). The single offender this document once recorded, `src/cli/lib/seed/fetch-seed.ts`, was
+> reformatted during the monorepo move; `.ai-docs/**/*.md` is clean as well. `DOCUMENTATION_MAP.md`'s
+> "Known Tooling Gaps" agrees — its prettier entry was corrected on the same day and is kept there as
+> lineage only.
 
 ---
 
 ## 2. The entry contract
 
-`tsup.config.ts` -> `entry` is **six globs**. Every file they match becomes its own output file under
-`dist/`, mirroring its path below `src/cli/`.
+`tsup.config.ts` -> `entry` is **six positive globs and three negations**. Every file the positives
+match, and the negations do not, becomes its own output file under `dist/`, mirroring its path below
+`src/cli/`.
 
 | Glob                             | Matches                                     | Output                   |
 | -------------------------------- | ------------------------------------------- | ------------------------ |
@@ -133,6 +133,9 @@ catalog is stale), and `deploy` ships the web app to Cloudflare. Publication is 
 | `src/cli/hooks/**/*.ts`          | Every oclif lifecycle hook                  | `dist/hooks/**`          |
 | `src/cli/components/**/*.tsx`    | Ink components **only** — `.tsx`, not `.ts` | `dist/components/**`     |
 | `src/cli/stores/**/*.ts`         | Zustand stores                              | `dist/stores/**`         |
+| `!src/cli/**/*.test.{ts,tsx}`    | Excludes every co-located spec              | —                        |
+| `!src/cli/**/__tests__/**`       | Excludes test support directories           | —                        |
+| `!src/cli/**/__mocks__/**`       | Excludes mock directories                   | —                        |
 
 ### Consequences, stated as rules
 
@@ -151,11 +154,13 @@ catalog is stale), and `deploy` ships the web app to Cloudflare. Publication is 
    (`*.tsx`) does not match, so none of them is an entry. Neither is
    `src/cli/components/themes/default.ts`, `src/cli/components/wizard/hotkeys.ts`, or
    `src/cli/components/wizard/utils.ts`.
-4. **Co-located test files are matched and shipped.** Nothing in the entry contract excludes
-   `*.test.ts` / `*.test.tsx`, so every co-located test under `components/` and `stores/` is compiled
-   into `dist/` and published. `commands/` and `hooks/` are unaffected only because their tests live
-   elsewhere (`src/cli/lib/__tests__/commands/`), not because the glob excludes them. See §6 for what
-   this costs in the tarball.
+4. **Co-located test files are excluded, and a test now pins that.** The three negations are the
+   whole of the mechanism — the positive globs read whole directories and this repository keeps its
+   tests beside the code they cover, so without them every spec under `components/` and `stores/` is
+   compiled into `dist/` and published. Sixteen compiled test files shipped in 0.150.0 and in every
+   release before it. `src/cli/lib/__tests__/packaging.test.ts` asserts that `dist/` holds no
+   `*.test.js`, `*.test.js.map` or `*.test.d.ts`, and that every `files` entry in `package.json`
+   exists on disk (§6, §9). **Deleting a negation is not a build change; it is a publish change.**
 5. **`.gitkeep` is not matched** — `src/cli/commands/.gitkeep`, `src/cli/stores/.gitkeep`,
    `src/cli/components/common/.gitkeep` and `src/cli/components/wizard/.gitkeep` produce nothing.
 6. **Non-code assets are never carried by the entry contract.** A Liquid template, a JSON schema or a
@@ -336,25 +341,29 @@ agent that goes looking for `config/stacks.ts` in this repo will not find it and
 
 ### `files`
 
-Verified with `npm pack --dry-run --ignore-scripts --json`. **This doc owns these figures.**
+Verified with `npm pack --dry-run --ignore-scripts --json`, re-derived 2026-08-06 at 0.151.0.
+**This doc owns these figures**, and they move with the working tree — re-run the command rather than
+quoting them. The `--ignore-scripts` is load-bearing: `prepare` runs husky, which sets
+`core.hooksPath`.
 
-| Entry          | Files | Unpacked                                                           | Contents                                                                            |
-| -------------- | ----- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| `dist/`        | 405   | 7.35 MB                                                            | 130 code files, 130 sourcemaps, plus the 145-file `dist/src/agents/` copy           |
-| `assets/`      | 3     | 2.37 MB                                                            | `demo.gif` (2.32 MB), `demo.tape`, `logo.svg`                                       |
-| `config/`      | **0** | —                                                                  | Directory absent (§5)                                                               |
-| `src/agents/`  | 145   | 0.66 MB                                                            | Agent partials and `_templates/` Liquid sources                                     |
-| `src/schemas/` | 12    | 0.04 MB                                                            | Generated JSON Schemas                                                              |
-| root files     | 4     | 0.10 MB                                                            | `LICENSE`, `README.md`, `CHANGELOG.md`, and `package.json` (npm always includes it) |
-| **Total**      | 569   | 11,013,954 B (10.5 MB) unpacked / 4,110,296 B (3.92 MB) compressed |                                                                                     |
+| Entry          | Files | Unpacked                                                          | Contents                                                                            |
+| -------------- | ----- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `dist/`        | 353   | 4.46 MB                                                           | 104 code files, 104 sourcemaps, plus the 145-file `dist/src/agents/` copy           |
+| `assets/`      | 3     | 2.37 MB                                                           | `demo.gif`, `demo.tape`, `logo.svg`                                                 |
+| `config/`      | **0** | —                                                                 | Directory absent (§5)                                                               |
+| `src/agents/`  | 145   | 0.66 MB                                                           | Agent partials and `_templates/` Liquid sources                                     |
+| `src/schemas/` | 12    | 0.04 MB                                                           | Generated JSON Schemas                                                              |
+| root files     | 4     | 0.11 MB                                                           | `LICENSE`, `README.md`, `CHANGELOG.md`, and `package.json` (npm always includes it) |
+| **Total**      | 517   | 8,000,236 B (7.63 MB) unpacked / 3,560,823 B (3.40 MB) compressed |                                                                                     |
 
-Three things the tarball carries that nobody chose deliberately:
+Two things the tarball carries that nobody chose deliberately, and one that was fixed:
 
-- **Sourcemaps are the single largest group** — 130 files, 4.44 MB unpacked, more than the code they
-  map. `sourcemap: true` is a debugging convenience with a publication cost.
-- **16 compiled test files ship** (`components/**/*.test.js`, `stores/**/*.test.js`), 0.94 MB with
-  their maps. This is entry-contract rule 4 in §2, realised.
+- **Sourcemaps are the single largest code group** — 104 files, 2.52 MB unpacked, roughly twice the
+  1.28 MB of code they map. `sourcemap: true` is a debugging convenience with a publication cost.
 - **`src/agents/` is published twice** — once directly, once inside `dist/src/agents/` (§5).
+- **No compiled test file ships any more.** Sixteen did in 0.150.0 and in every release before it.
+  The entry negations in §2 removed them and `packaging.test.ts` pins their absence; the 569 -> 517
+  entry drop is mostly this plus the chunk splits the specs were pulling in.
 
 `bin/run.js` and `bin/dev.js` are **not published** — `bin/` is absent from `files`. They are
 development entry points only (`@oclif/core`'s `execute({ dir: import.meta.url })`, the second with
@@ -519,20 +528,34 @@ in `agent-findings/2026-07-30-no-default-exports-rule-collides-with-oclif.md`. D
 
 ## 9. Test surface
 
-**There is no test that asserts anything about the build or the package.** No spec reads
-`tsup.config.ts`, checks `files`, verifies an entry exists in `dist/`, or packs the tarball. Every
-claim in this document was derived by running the tools, and re-validating it means running them
-again — the commands are named inline in each section.
+**One spec asserts on the package: `src/cli/lib/__tests__/packaging.test.ts`.** It pins two things
+and no more:
 
-What does exist is _coupling_ to the build, in two places:
+| Assertion                                                      | Guards                                                                       |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `dist/` holds no `*.test.js`, `*.test.js.map` or `*.test.d.ts` | The three entry negations in §2 — deleting one ships compiled specs again    |
+| Every string in `package.json` -> `files` exists on disk       | A `files` entry renamed or removed in source and left behind in the manifest |
 
-| Layer                     | Coupling                                                                                                                             |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Unit (`commands` project) | `cli-runner.ts` -> `run(args, { root: CLI_ROOT })` resolves commands from `dist/commands` (§8). No `pretest` hook builds first       |
-| E2E                       | `pretest:e2e` runs `npm run build`; specs spawn `node <repo>/bin/run.js`, whose `execute({ dir })` resolves the same `dist/commands` |
+It is wrapped in `describe.skipIf(!existsSync(DIST_DIR))`, which is deliberate rather than lax:
+`packages/cli/turbo.json` declares `test` -> `dependsOn: ["build"]`, so in any turbo-driven run
+`dist/` exists and the specs execute. A bare `vitest run` on a never-built tree is the only path to
+the skip, and failing there would report a missing build as a packaging defect.
 
-`dist/` is not a test-discovery hazard: the `unit` project's include patterns are rooted at `src/**`
-and `scripts/**`, so the 16 compiled `.test.js` files in `dist/` are never collected.
+**Nothing else about the build is tested.** No spec reads `tsup.config.ts`, verifies a specific entry
+landed in `dist/`, or packs the tarball. Every other claim in this document was derived by running
+the tools, and re-validating it means running them again — the commands are named inline in each
+section.
+
+What also exists is _coupling_ to the build, in two places:
+
+| Layer                     | Coupling                                                                                                                                                                                                                                                                                                  |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit (`commands` project) | `cli-runner.ts` -> `run(args, { root: CLI_ROOT })` resolves commands from `dist/commands` (§8). No `pretest` hook builds first — `packages/cli/turbo.json`'s `test` -> `dependsOn: ["build"]` is what supplies `dist/`, and on a clean checkout without it 205 tests across 17 files failed with exit 127 |
+| E2E                       | `pretest:e2e` runs `bun run build`; specs spawn `node <repo>/bin/run.js`, whose `execute({ dir })` resolves the same `dist/commands`                                                                                                                                                                      |
+
+`dist/` is not a test-discovery hazard, for two independent reasons: the `unit` project's include
+patterns are rooted at `src/**` and `scripts/**`, and since the §2 negations `dist/` contains no
+`.test.js` file to collect in the first place.
 
 > **`ensureBinaryExists()` in `e2e/helpers/test-utils.ts` cannot fail.** It checks that `BIN_RUN`
 > (`<repo>/bin/run.js`) exists and, if not, raises `"Run 'npm run build' before running E2E tests."`
@@ -555,7 +578,10 @@ and `scripts/**`, so the 16 compiled `.test.js` files in `dist/` are never colle
    entry, and neither is derived from the other (§2 rule 6, §5, §6).
 4. **`src/cli/hooks/` is an entry directory; `src/cli/components/hooks/` is not.** The similar name
    is the whole trap (§2 rule 3).
-5. **Co-located tests under `components/` and `stores/` are compiled and published** (§2 rule 4, §6).
+5. **Co-located tests are kept out of `dist/` by three entry negations and nothing else.** They are
+   not excluded by the positive globs, by `files`, or by any tsup default — remove a negation and
+   compiled specs ship again, exactly as they did up to 0.150.0. `packaging.test.ts` is the alarm
+   (§2 rule 4, §6, §9).
 6. **Source-relative path arithmetic breaks after bundling unless it is build-aware.** `consts.ts`
    compensates with its `isInDist` branch; `config-loader.ts` does not, and its jiti alias resolves
    outside the installed package (§7 Gap 2).

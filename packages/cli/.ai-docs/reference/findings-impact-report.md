@@ -14,8 +14,12 @@ related:
 last_validated: 2026-08-01
 ---
 
-<!-- VALIDATED 2026-08-01 · FULL — every primary table regenerated over all 158 findings; the
-     135-file basis is retired, so there is one basis and nothing is carried forward. -->
+<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
+     ✓ recommendation 22 ONLY — its three ESLint items all landed 2026-08-05; re-derived from
+       eslint.config.js and by running `npx eslint .` (exit 0)
+     ✗ every primary table — still on the 2026-08-01 FULL basis (all 158 findings, one basis,
+       nothing carried forward)
+-->
 
 # Agent Findings Impact Report
 
@@ -857,7 +861,7 @@ Both are pipeline-integrity items rather than product work, which is why they si
 
 21. **Adopt the nine unwritten Proposed Standards** — **HIGHEST LEVERAGE ITEM IN THIS REPORT.** Listed in the 0.147.0 and 0.147.1 changelogs and reproduced across Patterns Q, R, S, T and V: a negative rendering assertion needs a positive subject guard; never assert a rendering invariant at a geometry where the subject does not render; a JSDoc explaining a workaround is a defect report unless some spec pins the un-worked-around form; a regenerated geometry snapshot must be read, not accepted; widen CLAUDE.md's cast rule to name `as any` explicitly; a `catch` that discards its cause in a user-facing path is a bug, not a lint nuisance to be renamed `_error`; an unused binding in a test file is triaged as a missing assertion before deletion; a bar for `eslint-disable` (cite the compiler error or the mechanism, prefer a scoped config override); fixture cardinality must exceed the viewport a spec tests. **These nine are the code-shipped-standard-unwritten half of a large share of the 67 `partial` findings.** Standards: `CLAUDE.md`, `standards/clean-code-standards.md`, `standards/e2e/anti-patterns.md`, `standards/e2e/assertions.md`, `standards/e2e/test-data.md` (all convention-keeper's domain).
 
-22. **Finish the ESLint rule set now that the baseline is zero** — MED. Three items were deliberately deferred to keep the initial config stock, and all three are now actionable for the first time: (a) `reportUnusedDisableDirectives`, which was blocked on a clean baseline and would have caught both of this window's dead-directive defects; (b) a `no-restricted-syntax` rule for task-IDs in test names, which `d167-task-id-recurrence-no-lint-guard` has needed since 2026-07-17 and which Pattern M has listed as un-actionable for two regenerations; (c) **`eslint-plugin-react-hooks` is not installed at all**, so this Ink/React codebase has no hooks linting — two effects in `use-measured-height.ts` would be flagged if it were, and the correct response there is `useCallback` on `measure`, not widening dependency arrays.
+22. ~~**Finish the ESLint rule set now that the baseline is zero**~~ — **LANDED 2026-08-05, all three parts** (verified 2026-08-06 by running `npx eslint .`: no output, exit `0` with every new rule active). Kept struck rather than deleted so the lineage survives: (a) `reportUnusedDisableDirectives` is `"error"` repo-wide; (b) a `no-restricted-syntax` rule bans task IDs in `describe`/`it`/`test` names and `expect` messages across test files and fixtures, closing `d167-task-id-recurrence-no-lint-guard` — three specs lost their IDs when it landed; (c) `eslint-plugin-react-hooks` is wired over components and stores with `rules-of-hooks` and `exhaustive-deps`, **and only those two** — the v7 recommended set's React-Compiler rules outlaw reading a ref during render, which is Ink's own measurement idiom. Five hook files changed to satisfy it; the two measure-every-render effects carry justified disables, which (a) now keeps honest. Details: `reference/component-patterns.md`, and `DOCUMENTATION_MAP.md` -> Known Tooling Gaps.
 
 23. **Re-validate `concepts/tombstone-pattern.md` and `component-patterns.md`** — HIGH, and the only two reference docs the 2026-08-01 sweep left materially exposed. `tombstone-pattern.md` is the most-referenced reference doc in the corpus (11 findings), maps to the corpus's most-cited source file, and **the sweep did not touch it at all**. `component-patterns.md` took the largest single-window jump in this report's history (2 → 10), owns all four `source-grid.tsx` findings and the whole Ink-layout cluster, and after two PARTIAL passes is still not re-stamped.
 

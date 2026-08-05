@@ -48,26 +48,18 @@ related:
 last_validated: 2026-08-04
 ---
 
-<!-- PARTIAL 2026-08-05 · tool-version unification (`last_validated` deliberately NOT moved)
-     ✓ the "Dependency versions" section only — rewritten from placeholder to content.
-       Every version, peer/hard dependency shape and node_modules layout claim in it was
-       re-derived this session by reading the installed package.json of react, ink,
-       ink-testing-library and @oclif/table under node_modules/, the root and
-       packages/cli package.json, packages/ui/tsconfig.json,
-       apps/editor/tsconfig.app.json, apps/server/vitest.config.ts, .syncpackrc.cjs and
-       .github/workflows/ci.yml.
-     ✗ every other section — still on the 2026-08-04 FULL basis below
+<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
+     ✓ the CI section (re-derived from .github/workflows/ci.yml: three jobs, NODE_VERSION pin,
+       timeout-minutes, the two-part vendored-catalog check) and the syncpack paragraph
+       (.syncpackrc.cjs is now module.exports = {}; deps:fix is `syncpack fix`)
+     ✗ everything else — the version table and node_modules mechanics stand on 2026-08-05, the
+       workspaces / hooks / gitignore / two-roots sections on the 2026-08-04 FULL basis
 -->
-<!-- VALIDATED 2026-08-04 · FULL — new file. Every claim derived this session from the
-     repository root's package.json, turbo.json, .gitignore, .syncpackrc.cjs,
-     .husky/pre-commit, .github/workflows/ci.yml, apps/www/astro.config.ts,
-     packages/cli/.prettierignore, packages/cli/prettier.config.mjs,
-     packages/cli/src/cli/consts.ts and packages/cli/e2e/helpers/test-utils.ts. -->
 
 # Monorepo Layout
 
-**Last Updated:** 2026-08-04
-**Last Validated:** 2026-08-04
+**Last Updated:** 2026-08-06
+**Last Validated:** 2026-08-04 (PARTIAL passes since; see the annotation above)
 
 > **Path convention — this document only.** Every path here is relative to the **repository root**,
 > not to `packages/cli`. Elsewhere in `reference/` a bare `src/cli/…` means
@@ -224,6 +216,30 @@ whose only job was to tell the other repository that the catalog had changed. Th
 repository now, so the mechanism has nothing left to do. In their place `check-web` regenerates the
 vendored catalog and fails if it drifted: a check, not a cross-repo pull request.
 
+**The catalog check is two checks, and the second one is the interesting one.** After
+`bun run generate`, the job runs `git ls-files --others --exclude-standard packages/matrix` **before**
+`git diff --exit-code -- packages/matrix`. A diff cannot see a file that did not exist before, so if
+the generator ever starts emitting a new file the diff stays empty while the committed catalog is
+incomplete. Removing the untracked-file check restores that blind spot.
+
+**Node is pinned, not inherited.** `env.NODE_VERSION: 22` and an `actions/setup-node` step in all
+three jobs. Every job used to install bun and nothing else, leaving each run on whatever Node
+`ubuntu-latest` shipped that week — and that Node is not incidental: the CLI's E2E harness launches
+the CLI with `pty.spawn("node", …)`, so the runner's Node is the runtime that executes the thing
+under test. Pinning it means CI tests the floor `packages/cli/package.json` declares.
+
+**Every job carries `timeout-minutes`**, because GitHub's default is six hours and this repository
+has already burned seventy minutes of runner time on one hang.
+
+| Job         | Timeout | Measured (three green runs, 2026-08-04) |
+| ----------- | ------- | --------------------------------------- |
+| `check-web` | 15      | 4–5 minutes                             |
+| `check-cli` | 40      | 25–26 minutes                           |
+| `deploy`    | 10      | ~30 seconds                             |
+
+The numbers are measured and then given headroom. **The point is to bound a hang, not to police
+duration** — do not tighten one because a run came in fast.
+
 ## Dependency versions
 
 `.syncpackrc.cjs` keeps shared dependency versions in step across workspaces.
@@ -250,9 +266,15 @@ redirect in `apps/server/vitest.config.ts`, and a React pin in the root `package
 imported. Do not reintroduce any of them. The two mechanisms that made them necessary are written
 out below, and knowing the mechanism is what stops you needing the workaround.
 
-`.syncpackrc.cjs` still carries two version groups written for the split era. Removing them is its
-own outstanding task, because the first group also silences disagreements that have nothing to do
-with these four tools.
+**`.syncpackrc.cjs` now has zero version groups** — it is `module.exports = {}`, and the two groups
+written for the split era went with the split. Every disagreement between any two workspaces is
+reported again. **Do not add a group to silence a report; align the versions, taking the newer one.**
+The file says so in its own comment, and it also explains why `source` is deliberately omitted:
+syncpack then falls back to the `workspaces` globs in the root `package.json`, so there is one
+statement of which directories are workspaces rather than two free to drift.
+
+The fix script is `deps:fix` -> **`syncpack fix`**. The `fix-mismatches` subcommand that older
+instructions name no longer exists in syncpack 15.
 
 ### Whatever sits at the root of `node_modules` serves the whole repository
 

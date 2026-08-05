@@ -24,21 +24,25 @@ related:
 last_validated: 2026-07-30
 ---
 
-<!-- VALIDATED 2026-08-01 · PARTIAL (product 0.147.1)
-     ✓ StepAgents dual-scope badges, SourceGrid row states, hotkey registry
-     ✗ everything else — directory tree + counts, CLI_COLORS/UI_SYMBOLS, SelectList, prompt helpers,
-       grid types, SkillTag, StackSelection, SummaryPanel, SkillAgentSummary diff invariants,
-       ScrollAffordance, hook table, theme, testing pattern, Scrolling — 2026-07-31 / 07-30 bases
+<!-- VALIDATED 2026-08-06 · PARTIAL (`last_validated` deliberately NOT moved)
+     ✓ the Rendering Library block (Ink 7.1.1 / React 19.2.8, read from node_modules) and the new
+       "Hooks are linted" subsection — derived from eslint.config.js and the five hook files it
+       names (use-category-grid-input, use-focused-list-item, domain-selection, use-panel-scroll,
+       use-section-scroll)
+     ✗ everything else: StepAgents badges / SourceGrid states / hotkey registry stand on
+       2026-08-01; tree + counts, CLI_COLORS, SelectList, grid types, SummaryPanel, hook table,
+       Scrolling on 2026-07-31 / 07-30
 -->
 
 # Component Patterns
 
-**Last Updated:** 2026-07-30
-**Last Validated:** 2026-07-30
+**Last Updated:** 2026-08-06
+**Last Validated:** 2026-07-30 (PARTIAL passes since; see the annotation above)
 
 ## Rendering Library
 
-**Library:** Ink v5 (React-based terminal rendering)
+**Library:** Ink 7.1.1 on React 19.2.8 (terminal rendering). Raised from Ink 5 / React 18 on 2026-08-05 — see [`monorepo-layout.md`](./monorepo-layout.md) for the version table and the two-copies-of-React rule.
+**Entry point:** every render goes through `src/cli/components/render.ts`, never `ink`'s own `render` — see [`commands/index.md`](./commands/index.md).
 **Theme:** `@inkjs/ui` ThemeProvider with custom theme
 **Styling:** Inline Ink props (`color`, `bold`, `dimColor`) + `CLI_COLORS` constants
 
@@ -462,6 +466,24 @@ All 14 hooks (2 co-located `*.test.ts` files excluded). Detailed sections for th
 | `use-source-operations.ts`        | Add/remove source operations (`addSource` / `removeSource` from `source-manager.ts`) with success/error `statusMessage` state for the settings step.                                                                                                                                                                     |
 | `use-terminal-dimensions.ts`      | Reactive terminal `columns` / `rows` with an 80x24 non-TTY fallback; re-renders on resize. `WizardLayout` reads it for the mid-session size guard — see "Terminal-size gates" under Scrolling.                                                                                                                           |
 | `use-text-input.ts`               | Text input state with backspace/delete handling and printable-ASCII (char codes 32-126) filtering.                                                                                                                                                                                                                       |
+
+### Hooks are linted, with exactly two rules
+
+`eslint.config.js` wires `eslint-plugin-react-hooks` over `src/cli/**/*.tsx`, `src/cli/components/**/*.ts` and `src/cli/stores/**/*.ts` — where React actually runs — with `rules-of-hooks` and `exhaustive-deps`, both `error`. An Ink codebase is a React codebase: a conditional hook crashes a wizard render exactly as it crashes a browser one, and a wrong dependency array is a stale screen.
+
+**Only those two, deliberately.** The plugin's v7 recommended set adds React-Compiler rules that outlaw reading a ref during render — which is precisely how an Ink app measures its own layout (`measureElement` on a Box ref, re-measured every render, converging through a conditional `setState`). Adopting them means rewriting the measurement hooks to satisfy a compiler this code will never run under. The config carries that argument inline; do not "upgrade to recommended".
+
+What the rules changed when they landed:
+
+| Hook                         | Change                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------ |
+| `use-category-grid-input.ts` | `currentOptions` is now `useMemo(() => currentRow?.options ?? [], [currentRow])`     |
+| `use-focused-list-item.ts`   | Dropped one transitively-covered dependency                                          |
+| `domain-selection.tsx`       | Stopped listing the module-level `matrix` as a dependency — it is not reactive state |
+| `use-panel-scroll.ts`        | Carries a justified `eslint-disable-next-line react-hooks/exhaustive-deps`           |
+| `use-section-scroll.ts`      | Same — both are the measure-every-render effects the carve-out above exists for      |
+
+Those two disables are load-bearing and cannot rot unnoticed: `linterOptions.reportUnusedDisableDirectives` is `"error"` repo-wide, so a directive whose rule stops firing fails the lint run rather than sitting unread.
 
 ### Store Access
 
