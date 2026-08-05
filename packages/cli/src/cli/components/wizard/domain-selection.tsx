@@ -25,7 +25,10 @@ export const DomainSelection: React.FC = () => {
       label: getDomainDisplayName(domain),
       description: BUILT_IN_DOMAIN_DESCRIPTIONS[domain],
     }));
-  }, [matrix]);
+    // `matrix` is a module-level value, not reactive state — mutating it never
+    // re-renders anything, so listing it promised a recomputation that cannot
+    // happen. It is initialised once before the wizard mounts.
+  }, []);
 
   const handleBack = () => {
     setApproach(null);

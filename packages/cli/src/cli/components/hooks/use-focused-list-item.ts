@@ -125,7 +125,9 @@ export function useFocusedListItem(
         applyFocus(newRow, finalCol);
       }
     },
-    [getColCount, wrap, findValidCol, adjustCol, findNextRow, applyFocus, skipRow],
+    // skipRow is reached only through findNextRow, whose identity already
+    // tracks it — naming it again here just churned this callback's identity.
+    [getColCount, wrap, findValidCol, adjustCol, findNextRow, applyFocus],
   );
 
   return { focusedRow, focusedCol, setFocused, moveFocus };

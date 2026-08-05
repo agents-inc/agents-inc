@@ -1,6 +1,7 @@
 import js from "@eslint/js";
 import { defineConfig, globalIgnores } from "eslint/config";
 import eslintConfigPrettier from "eslint-config-prettier";
+import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 const TYPESCRIPT_SOURCES = ["src/**/*.ts", "src/**/*.tsx", "e2e/**/*.ts", "scripts/**/*.ts"];
@@ -101,6 +102,11 @@ export default defineConfig(
     "src/cli/types/generated/**",
   ]),
 
+  // A disable comment whose rule no longer fires is a claim about the code
+  // that has stopped being true. Two of those went stale on 2026-07-30 and sat
+  // unread; this would have caught both by itself (CLI-355).
+  { linterOptions: { reportUnusedDisableDirectives: "error" } },
+
   {
     files: TYPESCRIPT_SOURCES,
     extends: [js.configs.recommended, tseslint.configs.recommended],
@@ -119,6 +125,59 @@ export default defineConfig(
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
+    },
+  },
+
+  {
+    // An Ink codebase is a React codebase, so the two hooks rules apply in
+    // full: conditional hooks crash a wizard render exactly as they crash a
+    // browser one, and a wrong dependency array is a stale screen. Scoped to
+    // where React actually runs — components (including their hooks directory)
+    // and the commands/stores that render or drive them (CLI-356).
+    //
+    // Deliberately these two rules and not the plugin's full v7 recommended
+    // set: the additions beyond them exist for the React Compiler, and they
+    // outlaw reading a ref during render — which is precisely how an Ink app
+    // measures its own layout (measureElement on a Box ref, re-measured every
+    // render, converging through a conditional setState). Adopting them would
+    // mean rewriting the measurement hooks to satisfy a compiler this code
+    // will never run under.
+    files: ["src/cli/**/*.tsx", "src/cli/components/**/*.ts", "src/cli/stores/**/*.ts"],
+    plugins: { "react-hooks": reactHooks },
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "error",
+    },
+  },
+
+  {
+    // Task IDs rot: a name like "D-167 keeps X" reads as authoritative long
+    // after D-167 is closed and its tracker row deleted. Names describe
+    // behaviour; assertion messages state the invariant. File-level JSDoc is
+    // the one sanctioned home for an ID, and comments are out of a linter's
+    // reach — this guards the two surfaces it can see (CLI-357).
+    files: TEST_FILES,
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.name=/^(describe|it|test)$/] > Literal[value=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
+          message:
+            "Task IDs do not belong in test names — describe the behaviour instead. IDs go in file-level JSDoc only.",
+        },
+        {
+          selector:
+            "CallExpression[callee.name=/^(describe|it|test)$/] > TemplateLiteral TemplateElement[value.raw=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
+          message:
+            "Task IDs do not belong in test names — describe the behaviour instead. IDs go in file-level JSDoc only.",
+        },
+        {
+          selector:
+            "CallExpression[callee.name='expect'] > Literal[value=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
+          message: "Task IDs do not belong in assertion messages — state the invariant instead.",
+        },
       ],
     },
   },

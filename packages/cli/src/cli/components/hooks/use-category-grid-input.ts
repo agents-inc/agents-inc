@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useInput, type Key } from "ink";
 
 import type { Category, SkillId } from "../../types/index.js";
@@ -41,7 +41,10 @@ export function useCategoryGridInput({
   onToggleFilterIncompatible,
 }: UseCategoryGridInputOptions): void {
   const currentRow = categories[focusedRow];
-  const currentOptions = currentRow?.options || [];
+  // Memoised so the effect below keys on the row actually changing — the `[]`
+  // fallback used to be a fresh array every render, re-running the effect for
+  // nothing whenever no row was focused.
+  const currentOptions = useMemo(() => currentRow?.options ?? [], [currentRow]);
 
   // Adjust column when current row's options change externally (e.g. option becomes disabled)
   useEffect(() => {

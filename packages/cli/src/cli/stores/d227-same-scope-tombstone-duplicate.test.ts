@@ -33,7 +33,7 @@ const LONE_GLOBAL_TOMBSTONE: AgentScopeConfig[] = buildAgentConfigs([AGENT], {
 });
 const SINGLE_ACTIVE_GLOBAL: AgentScopeConfig[] = buildAgentConfigs([AGENT], { scope: "global" });
 
-describe("D-227 same-scope tombstone duplicate", () => {
+describe("same-scope tombstone duplicate", () => {
   beforeEach(() => {
     initializeMatrix(ALL_SKILLS_TEST_CATEGORIES_MATRIX);
     useWizardStore.getState().reset();

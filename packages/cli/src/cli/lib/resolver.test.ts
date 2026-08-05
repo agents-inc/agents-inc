@@ -256,7 +256,7 @@ describe("resolveSkillReference", () => {
     expect(result).toBeNull();
   });
 
-  it("should preserve `source` from the SkillReference onto the resolved Skill (D-217)", () => {
+  it("should preserve `source` from the SkillReference onto the resolved Skill", () => {
     const ref: SkillReference = {
       id: "web-framework-react",
       usage: "when building React components",

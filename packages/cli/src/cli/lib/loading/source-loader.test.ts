@@ -399,7 +399,7 @@ describe("source-loader local skills integration", () => {
     );
   });
 
-  it("P1-19: local skill takes precedence over plugin skill with same ID", async () => {
+  it("local skill takes precedence over plugin skill with same ID", async () => {
     // Create a source directory with a marketplace skill
     const sourceDir = path.join(tempDir, "precedence-source");
     const skillDir = path.join(

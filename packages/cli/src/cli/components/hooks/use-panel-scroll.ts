@@ -35,6 +35,12 @@ export function usePanelScroll(): UsePanelScrollResult {
   const [contentHeight, setContentHeight] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
 
+  // Ink's measurement idiom: re-measure on every render, no dependency array
+  // on purpose. The setState inside is guarded to fire only when the measured
+  // height actually changed, so the chain converges instead of looping — a
+  // dependency array here would skip re-measures after layout changes React
+  // cannot see.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!contentRef.current) return;
     const { height } = measureElement(contentRef.current);

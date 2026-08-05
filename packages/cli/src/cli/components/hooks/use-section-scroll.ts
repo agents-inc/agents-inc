@@ -86,6 +86,12 @@ export function useSectionScroll({
   }, [sectionCount]);
 
   // Measure section, viewport and content heights on every render
+  // Ink's measurement idiom: re-measure on every render, no dependency array
+  // on purpose. The setState inside is guarded to fire only when the measured
+  // height actually changed, so the chain converges instead of looping — a
+  // dependency array here would skip re-measures after layout changes React
+  // cannot see.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const heights = sectionRefs.current.map((el) => {
       if (el) {

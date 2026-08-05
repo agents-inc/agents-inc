@@ -83,8 +83,8 @@
     "generate:types": "bun scripts/generate-source-types.ts",
     "generate:schemas": "bun scripts/generate-json-schemas.ts",
     "generate:schemas:check": "bun run generate:schemas && git diff --exit-code src/schemas/",
-    "generate:types:check": "bun run generate:types && git diff --exit-code src/cli/types/generated/",
-    "prepublishOnly": "bun run format:check && bun run lint && bun run typecheck && bun run generate:schemas:check && bun run generate:types:check && bun run build && bun run test"
+    "prepublishOnly": "bun run format:check && bun run lint && bun run typecheck && bun run generate:schemas:check && bun run generate:types:check && bun run build && bun run test",
+    "generate:types:check": "bun run generate:types && git diff --exit-code src/cli/types/generated/"
   },
   "repository": {
     "type": "git",
@@ -130,6 +130,7 @@
     "@xterm/headless": "^6.0.0",
     "eslint": "^10",
     "eslint-config-prettier": "^10",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "ink-testing-library": "^4.0.0",
     "prettier": "^3.8.3",
     "tree-kill": "^1.2.2",
