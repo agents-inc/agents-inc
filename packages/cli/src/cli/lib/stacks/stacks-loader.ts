@@ -86,7 +86,9 @@ export async function loadStacks(configDir: string, stacksFile?: string): Promis
     return stacks;
   } catch (error) {
     const errorMessage = getErrorMessage(error);
-    throw new Error(`Failed to load stacks from '${stacksPath}': ${errorMessage}`);
+    throw new Error(`Failed to load stacks from '${stacksPath}': ${errorMessage}`, {
+      cause: error,
+    });
   }
 }
 

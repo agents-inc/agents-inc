@@ -45,7 +45,9 @@ export async function loadConfig<T>(configPath: string, schema?: z.ZodType<T>): 
 
     raw = await jiti.import(configPath, { default: true });
   } catch (error) {
-    throw new Error(`Failed to load config from '${configPath}': ${getErrorMessage(error)}`);
+    throw new Error(`Failed to load config from '${configPath}': ${getErrorMessage(error)}`, {
+      cause: error,
+    });
   }
 
   // Empty or whitespace-only files produce an empty module object with no default export.

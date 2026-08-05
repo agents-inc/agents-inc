@@ -253,6 +253,7 @@ export async function compileAllAgents(
       warn(`Failed to compile '${name}': ${errorMessage}`);
       throw new Error(
         `Failed to compile agent '${name}': ${errorMessage}. Check that all required files exist in src/agents/${agent.path || name}/`,
+        { cause: error },
       );
     }
   }
@@ -329,6 +330,7 @@ export async function compileAllSkills(
       warn(`Failed to compile skill '${id}': ${errorMessage}`);
       throw new Error(
         `Failed to compile skill '${skill.id}': ${errorMessage}. Expected skill at: ${sourcePath}`,
+        { cause: error },
       );
     }
   }
@@ -389,6 +391,7 @@ export async function compileAllCommands(ctx: CompileContext): Promise<void> {
       warn(`Failed to compile command '${file}': ${errorMessage}`);
       throw new Error(
         `Failed to compile command '${file}': ${errorMessage}. Expected at: ${path.join(commandsDir, file)}`,
+        { cause: error },
       );
     }
   }

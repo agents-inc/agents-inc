@@ -1,8 +1,8 @@
 import { execa } from "execa";
 import { rm, writeFile } from "fs/promises";
 import path from "path";
+import { createRequire } from "node:module";
 import { stripVTControlCharacters } from "node:util";
-import { CLI_ROOT } from "./test-utils.js";
 
 /**
  * Type-narrowing probe for generated `config-types.ts` files.
@@ -32,16 +32,28 @@ export const TS_NOT_ASSIGNABLE = "TS2322";
 /** TypeScript's "object literal may only specify known properties" diagnostic. */
 export const TS_UNKNOWN_PROPERTY = "TS2353";
 
-/** Repo-local compiler — `npx tsc` from a temp dir resolves to the wrong package. */
-const TSC_BIN = path.join(CLI_ROOT, "node_modules", "typescript", "bin", "tsc");
+/**
+ * Repo-local compiler — `npx tsc` from a temp dir resolves to the wrong package.
+ *
+ * Resolved through Node's own module lookup rather than a hand-built path, so it
+ * finds whichever copy this package itself would import no matter where the
+ * installer put it. That location is not stable: bun nested a copy under
+ * `packages/cli` while this package pinned its own TypeScript version, and hoists
+ * a single copy to the monorepo root now that every workspace agrees on one.
+ */
+const TSC_BIN = createRequire(import.meta.url).resolve("typescript/bin/tsc");
 
 /**
  * Mirrors the compiler options in the repo's tsconfig.json so the probe
  * type-checks a generated config under the same settings a real consumer would.
- * Passing files positionally makes tsc ignore any surrounding tsconfig.json, so
- * the probe's verdict cannot be perturbed by the temp directory's location.
+ *
+ * `--ignoreConfig` is what makes tsc ignore any surrounding tsconfig.json, so the
+ * probe's verdict cannot be perturbed by the temp directory's location. Passing
+ * the files positionally used to imply that on its own; TypeScript 6 refuses the
+ * combination with TS5112 instead, and requires the intent to be stated outright.
  */
 const TSC_FLAGS = [
+  "--ignoreConfig",
   "--noEmit",
   "--strict",
   "--target",

@@ -219,7 +219,7 @@ export async function claudePluginMarketplaceAdd(source: string): Promise<void> 
   try {
     result = await execCommand("claude", args, {});
   } catch (err) {
-    throw new Error(`Failed to add marketplace: ${getErrorMessage(err)}`);
+    throw new Error(`Failed to add marketplace: ${getErrorMessage(err)}`, { cause: err });
   }
 
   if (result.exitCode !== 0) {
@@ -239,7 +239,7 @@ export async function claudePluginMarketplaceRemove(name: string): Promise<void>
   try {
     result = await execCommand("claude", args, {});
   } catch (err) {
-    throw new Error(`Failed to remove marketplace: ${getErrorMessage(err)}`);
+    throw new Error(`Failed to remove marketplace: ${getErrorMessage(err)}`, { cause: err });
   }
 
   if (result.exitCode !== 0) {
@@ -259,7 +259,7 @@ export async function claudePluginMarketplaceUpdate(name: string): Promise<void>
   try {
     result = await execCommand("claude", args, {});
   } catch (err) {
-    throw new Error(`Failed to update marketplace: ${getErrorMessage(err)}`);
+    throw new Error(`Failed to update marketplace: ${getErrorMessage(err)}`, { cause: err });
   }
 
   if (result.exitCode !== 0) {

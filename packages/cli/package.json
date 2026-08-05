@@ -120,7 +120,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
+    "@eslint/js": "^10",
     "@lydell/node-pty": "^1.2.0-beta.3",
     "@oclif/test": "^4.0.0",
     "@types/fs-extra": "^11.0.0",
@@ -128,13 +128,13 @@
     "@types/react": "^18.2.0",
     "@vitest/coverage-v8": "^4.0.18",
     "@xterm/headless": "^6.0.0",
-    "eslint": "^9.39.5",
+    "eslint": "^10",
     "eslint-config-prettier": "^10.1.8",
     "ink-testing-library": "^4.0.0",
     "prettier": "^3.2.0",
     "tree-kill": "^1.2.2",
     "tsup": "^8.0.0",
-    "typescript": "^5.7.0",
+    "typescript": "~6",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.0.18"
   },
