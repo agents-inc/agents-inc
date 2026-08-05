@@ -1,74 +1,29 @@
-# Agents Inc. CLI Documentation
+# CLI — contributor documentation
 
-> **AI Documentation:** For AI-consumed reference and standards docs, see [`.ai-docs/DOCUMENTATION_MAP.md`](../../packages/cli/.ai-docs/DOCUMENTATION_MAP.md).
+This folder holds material for people working **on** the CLI. Documentation for people **using** it
+lives on the documentation site — source of truth at
+[`apps/www/src/content/docs/docs/`](../../apps/www/src/content/docs/docs/), published at
+`agentsinc.sh/docs` once the site deploys (repo tracker REPO-04). The user guides and command
+reference that used to be duplicated here were retired on 2026-08-06; the site's copies are the only
+copies.
 
-## Documentation Index
+> **AI documentation** — reference and standards written for AI agents — is separate again:
+> [`packages/cli/.ai-docs/DOCUMENTATION_MAP.md`](../../packages/cli/.ai-docs/DOCUMENTATION_MAP.md).
+> Cross-cutting documents that span the CLI and the web apps live in [`docs/repo/`](../repo/).
 
-### Reference
+## What is here
 
-System documentation for understanding the codebase.
+| Document                                                                   | Content                                                                         |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [guides/agent-reminders.md](./guides/agent-reminders.md)                   | Contributor material on agent reminder blocks — deliberately not on the site    |
+| [excluded-skills-design.md](./excluded-skills-design.md)                   | Historical design note, superseded — kept as design history, its header says so |
+| [excluded-skills-edge-cases.md](./excluded-skills-edge-cases.md)           | Historical companion to the above                                               |
+| [research/auto-version-check.md](./research/auto-version-check.md)         | Research: version-freshness features                                            |
+| [research/user-defined-stacks.md](./research/user-defined-stacks.md)       | Research: user-defined stacks in consumer projects                              |
+| [features/proposed/skill-consume.md](./features/proposed/skill-consume.md) | Proposed: AI-assisted skill merging (`agents-inc consume`) design               |
 
-| Document                                       | Content                                              |
-| ---------------------------------------------- | ---------------------------------------------------- |
-| [architecture.md](./reference/architecture.md) | System architecture, data flow, module relationships |
-| [commands.md](./reference/commands.md)         | CLI command reference with options and examples      |
+## Task tracking
 
-### Guides
-
-How-to documentation for common tasks.
-
-| Document                                                        | Content                                   |
-| --------------------------------------------------------------- | ----------------------------------------- |
-| [creating-a-marketplace.md](./guides/creating-a-marketplace.md) | Manual and automated marketplace creation |
-
-### Features
-
-Feature development documentation organized by lifecycle stage.
-
-#### Proposed (Research Only)
-
-| Document                                                 | Content                                                 |
-| -------------------------------------------------------- | ------------------------------------------------------- |
-| [skill-consume.md](./features/proposed/skill-consume.md) | AI-assisted skill merging (`agents-inc consume`) design |
-
-## Task Tracking
-
-Tracking moved to the repository-root `todo/` folder on 2026-08-04. Active, deferred and refactoring
-work now share one file per workspace, and an item is deleted when it lands rather than ticked off.
-
-| Document                            | Content                                               |
-| ----------------------------------- | ----------------------------------------------------- |
-| [cli.md](../../todo/cli.md)         | Everything outstanding in `packages/cli`              |
-| [repo.md](../../todo/repo.md)       | The repository itself — deploying, naming, publishing |
-| [archive.md](../../todo/archive.md) | One line per item that has landed                     |
-| [plans/](../../todo/plans/)         | The per-item plan files the trackers link to          |
-
-## Quick Reference
-
-### Installation Modes
-
-1. **Plugin Mode** - Native Claude plugins via `claude plugin install`
-2. **Eject Mode** - Copies to `.claude/skills/` and `.claude/agents/` for full customization
-
-### Key Commands
-
-```bash
-# Initialize in a project
-npx agents-inc init --source /path/to/marketplace
-
-# Build stack for distribution
-npx agents-inc build stack --stack nextjs-fullstack
-
-# Generate marketplace.json
-npx agents-inc build marketplace --plugins-dir dist/stacks
-
-# Install via Claude CLI
-claude plugin marketplace add /path/to/dist
-claude plugin install stackname --scope project
-```
-
-### Three Main Use Cases
-
-1. **End User** - Install pre-built stacks via plugin mode
-2. **Team/Enterprise** - Create private marketplace, install via plugin or eject mode
-3. **Contributor** - Eject templates, create custom skills/agents/stacks
+Tracking lives in the repository-root [`todo/`](../../todo/) folder — one file per workspace, and an
+item is deleted when it lands rather than ticked off. The CLI's file is
+[`todo/cli.md`](../../todo/cli.md).

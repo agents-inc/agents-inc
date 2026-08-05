@@ -1,3 +1,10 @@
+> **HISTORICAL DESIGN NOTE** — This was the pre-implementation plan for what shipped as
+> `apps/editor`. It moved here from `docs/cli/` on 2026-08-06 because it is editor material.
+> The flow it describes has drifted from what was built: `cc init --seed <id>` shipped as
+> `agents-inc init --from <id>`, selections persist through the config store rather than raw
+> localStorage, and sharing goes through the config-store worker (`apps/server`). Read it as
+> design history, not as behaviour.
+
 # Skills Explorer — Web UI Implementation Plan
 
 ## Overview

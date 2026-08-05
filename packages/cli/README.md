@@ -11,9 +11,9 @@ An agent composition framework for [Claude Code](https://docs.anthropic.com/en/d
 
 1. Select a pre-built stack to customise or start from scratch
 2. Select your skills from an interactive grid, organized by domain with compatibility filtering and global/local customising
-3. Choose to eject these skills or install them as plugins ([install modes guide](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/install-modes.md))
+3. Choose to eject these skills or install them as plugins ([install modes guide](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/concepts/install-modes.md))
 4. Select your subagents to compile with these skills
-5. Further customise skills and subagents in the generated `config.ts` ([editing config guide](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/editing-config.md))
+5. Further customise skills and subagents in the generated `config.ts` ([editing config guide](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/editing-config.md))
 6. Compile subagents with `npx agents-inc compile` after changes
 
 See the [Guides](#guides) section below for more.
@@ -54,20 +54,20 @@ npx agents-inc init
 
 ## Guides
 
-| Guide                                                                                                                              | Description                                                          |
-| ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [Global-first setup](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/global-first-setup.md)                     | Why global scope is the right default and when to use project scope  |
-| [Install modes](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/install-modes.md)                               | Plugin vs local install, global vs project scope                     |
-| [Editing your config](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/editing-config.md)                        | Skill mappings, preloaded vs dynamic loading, and config structure   |
-| [Customizing subagents](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/customizing-subagents.md)               | Eject and modify partials, templates, and skills                     |
-| [Writing custom skills and subagents](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/writing-custom-skills.md) | Author skills and subagents from scratch or iterate on existing ones |
-| [Importing third-party skills](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/importing-skills.md)             | Install skills from external repositories                            |
-| [Creating a marketplace](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/creating-a-marketplace.md)             | Build a personal or org-level marketplace with curated skills        |
-| [Using the codex-keeper subagent](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/guides/using-codex-keeper.md)        | Generate and maintain AI-focused reference documentation             |
+| Guide                                                                                                                                                    | Description                                                          |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [Global-first setup](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/global-first-setup.md)                     | Why global scope is the right default and when to use project scope  |
+| [Install modes](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/concepts/install-modes.md)                             | Plugin vs local install, global vs project scope                     |
+| [Editing your config](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/editing-config.md)                        | Skill mappings, preloaded vs dynamic loading, and config structure   |
+| [Customizing subagents](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/customizing-subagents.md)               | Eject and modify partials, templates, and skills                     |
+| [Writing custom skills and subagents](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/writing-custom-skills.md) | Author skills and subagents from scratch or iterate on existing ones |
+| [Importing third-party skills](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/importing-skills.md)             | Install skills from external repositories                            |
+| [Creating a marketplace](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/creating-a-marketplace.md)             | Build a personal or org-level marketplace with curated skills        |
+| [Using the codex-keeper subagent](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/using-codex-keeper.md)        | Generate and maintain AI-focused reference documentation             |
 
 ## Skills
 
-150+ skills across 8 domains:
+222 skills across 9 domains:
 
 | Domain | Skills                                                                                                                                                                     |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -83,16 +83,16 @@ Browse the full catalog on the [Plugin Marketplace](https://github.com/agents-in
 
 ## Subagents
 
-| Category         | Subagents                                                          |
-| ---------------- | ------------------------------------------------------------------ |
-| Developers       | `web-developer` `api-developer` `cli-developer` `web-architecture` |
-| Reviewers        | `web-reviewer` `api-reviewer` `cli-reviewer`                       |
-| Testers          | `web-tester` `cli-tester`                                          |
-| Researchers      | `web-researcher` `api-researcher`                                  |
-| Planning         | `web-pm`                                                           |
-| Pattern Analysis | `pattern-scout` `web-pattern-critique`                             |
-| Documentation    | `codex-keeper`                                                     |
-| Meta             | `skill-summoner` `agent-summoner` `convention-keeper`              |
+| Category         | Subagents                                                                         |
+| ---------------- | --------------------------------------------------------------------------------- |
+| Developers       | `web-developer` `api-developer` `cli-developer` `ai-developer` `web-architecture` |
+| Reviewers        | `web-reviewer` `api-reviewer` `cli-reviewer` `ai-reviewer` `infra-reviewer`       |
+| Testers          | `web-tester` `cli-tester` `api-tester`                                            |
+| Researchers      | `web-researcher` `api-researcher`                                                 |
+| Planning         | `web-pm` `api-pm`                                                                 |
+| Pattern Analysis | `pattern-scout` `web-pattern-critique`                                            |
+| Documentation    | `codex-keeper`                                                                    |
+| Meta             | `skill-summoner` `agent-summoner` `convention-keeper`                             |
 
 Each subagent is composed from modular partials (role, workflow, output format) plus its assigned skills. Everything is ejectable.
 
@@ -134,12 +134,12 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 | `validate`  | Validate config and skill structure |
 | `uninstall` | Remove Agents Inc from your project |
 
-Run `agents-inc --help` for full usage, or see the [full commands reference](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/reference/commands.md).
+Run `agents-inc --help` for full usage, or see the [full commands reference](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/reference/commands.md).
 
 ## Links
 
 - [Plugin Marketplace](https://github.com/agents-inc/skills): browse and discover skills
-- [Architecture Reference](https://github.com/agents-inc/agents-inc/blob/main/docs/cli/reference/architecture.md): full system documentation
+- [Architecture Reference](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/reference/architecture.md): full system documentation
 
 ## License
 
