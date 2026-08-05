@@ -7,6 +7,17 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.152.0] - 2026-08-06
+
+**Feature flags obey the environment, and the package sheds its dead weight**
+
+- Every feature flag reads `AGENTSINC_FLAG_<NAME>` (`1`/`true` on, `0`/`false` off) before its built-in default — gated commands and screens can be tried without editing source, and gated code paths are finally testable
+- The package no longer ships sixteen compiled test files and their source maps; a packaging test pins it
+- The wizard paints correctly in any real terminal even when `CI` is set in the environment — Ink used to buffer every frame until exit, which for a screen awaiting input meant a hang
+- Internal: generators run under bun inside CI and publish gates, hooks linting is on for the terminal UI, a drift guard covers the vendored config-sharing contract, and eight dependency specs aligned
+
+See [changelogs/0.152.0.md](./changelogs/0.152.0.md) for full details.
+
 ## [0.151.0] - 2026-08-05
 
 **The CLI now requires Node 22**
