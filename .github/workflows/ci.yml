@@ -172,12 +172,11 @@ jobs:
           # is one place to look. All four are safe to leave unset: an absent
           # DSN disables reporting, an absent token skips source maps.
           SENTRY_ORG: vince-inc
-          # KEEPS THE OLD NAME ON PURPOSE. This is a project slug in an
-          # external Sentry account, not a path, and it did not follow the
-          # apps/web → apps/editor rename. Pointing it at a slug that does not
-          # exist in Sentry makes every source-map upload fail. It can only be
-          # changed after the project is renamed in Sentry itself.
-          SENTRY_PROJECT: agents-inc-web
+          # A project slug in an external Sentry account. Renamed there FIRST
+          # (2026-08-06), then here — in that order nothing ever points at a
+          # slug Sentry does not know, which would fail every source-map
+          # upload on a line that reads like a typo.
+          SENTRY_PROJECT: agents-inc-editor
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           # Absent means PostHog is never downloaded at all — the SDK is a

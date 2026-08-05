@@ -3,26 +3,29 @@
 // nothing against the request budget, only the API does.
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  // KEEPS THE OLD NAME ON PURPOSE. This is not a path and it is not the
-  // workspace name — it is the deployed Cloudflare Worker's service name, and
-  // it did not follow the apps/web → apps/editor rename. Editing it does not
-  // rename anything: the next `wrangler deploy` would create a *second*
-  // Worker under the new name and leave `agents-inc-web` running, still
-  // holding the Custom Domain on the apex below. That is a production
-  // migration — rename in the Cloudflare dashboard, move the Custom Domain,
-  // delete the old Worker — not part of a directory rename.
-  "name": "agents-inc-web",
+  // The deployed Cloudflare Worker's service name — not a path, not the
+  // workspace name. It must match a Worker that already exists, because a
+  // deploy naming a Worker that does not exist CREATES one: the site would
+  // then be published to a new Worker while the custom domain below stayed
+  // with the old one, and the live apex would silently stop updating.
+  //
+  // Renamed in the Cloudflare dashboard on 2026-08-06, `agents-inc-web` →
+  // `agents-inc-editor`, which is an in-place rename — the deployment history
+  // and the custom domain travel with the Worker, and no second Worker is
+  // created. This line was updated to agree immediately afterwards, which is
+  // the required order: the dashboard first, then here.
+  "name": "agents-inc-editor",
   "compatibility_date": "2025-10-01",
   "assets": {
     "directory": "./dist",
     // TanStack Router owns every path below the root, so an unmatched request
     // is a client-side route rather than a 404 — without this, a hard refresh
     // on anything but `/` fails.
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
   },
   // Apex only. `location.origin` is baked into every share link
   // (`use-share-link.ts`), so a second live hostname would mint links under
   // whichever one the author happened to be on; www is a redirect rule in the
   // dashboard instead, which resolves before the Worker is reached.
-  "routes": [{ "pattern": "agentsinc.sh", "custom_domain": true }]
+  "routes": [{ "pattern": "agentsinc.sh", "custom_domain": true }],
 }
