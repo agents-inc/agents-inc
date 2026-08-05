@@ -28,8 +28,15 @@ env:
   NODE_VERSION: 22
 
 jobs:
+  # Every job carries a timeout because GitHub's default is six hours, and this
+  # repository has already burned seventy minutes of runner time on one hang.
+  # The numbers are measured, not guessed — three green runs on 2026-08-04 put
+  # check-web at 4-5 minutes, check-cli at 25-26 and deploy at 30 seconds —
+  # then given headroom, because the point is to bound a hang, not to police
+  # duration.
   check-web:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -59,6 +66,15 @@ jobs:
 
       - name: The vendored catalog must match what is committed
         run: |
+          # Two checks, because `git diff` alone cannot see a file that did not
+          # exist before: if the generator ever starts emitting a new file, the
+          # diff stays empty while the committed catalog is incomplete.
+          untracked=$(git ls-files --others --exclude-standard packages/matrix)
+          if [ -n "$untracked" ]; then
+            printf 'The generator produced files that are not committed:\n%s\n' "$untracked"
+            echo "::error::The vendored catalog is missing new files. Run 'bun run generate' in packages/matrix and commit everything it writes."
+            exit 1
+          fi
           if ! git diff --exit-code -- packages/matrix; then
             echo "::error::The vendored catalog is out of date. Run 'bun run generate' in packages/matrix and commit the result."
             exit 1
@@ -70,9 +86,10 @@ jobs:
       - run: bun run lint --filter='!agents-inc'
       - run: bun run test --filter='!agents-inc'
 
-      # The 88 E2E specs are the suite that actually covers wiring, so they
-      # gate the deploy rather than running after it. Only chromium is
-      # configured, so only chromium is installed.
+      # The Playwright suite is the one that actually covers wiring, so it
+      # gates the deploy rather than running after it. (No count here on
+      # purpose — the last one this comment carried went stale.) Only chromium
+      # is configured, so only chromium is installed.
       - run: bunx playwright install --with-deps chromium
         working-directory: apps/editor
       - run: bun run test:e2e --filter='!agents-inc'
@@ -91,6 +108,7 @@ jobs:
   # deploy below deliberately does not wait for it.
   check-cli:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
 
@@ -127,6 +145,7 @@ jobs:
     needs: check-web
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: production
     steps:
       - uses: actions/checkout@v5
