@@ -149,7 +149,7 @@ function buildEjectInstallation(projectDir: string) {
  * given wizard result (generalizes the removal-wizard mock).
  */
 function mockWizardCompletion(wizardResult: unknown): void {
-  mockRender.mockImplementation((element: ReactElement) => {
+  mockRender.mockImplementation((element: ReactElement<Record<string, unknown>>) => {
     const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
     if (onComplete) {
       onComplete(wizardResult);
@@ -1676,7 +1676,7 @@ describe("edit change summary display", () => {
       }),
     );
 
-    mockRender.mockImplementation((element: ReactElement) => {
+    mockRender.mockImplementation((element: ReactElement<Record<string, unknown>>) => {
       const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
       if (onComplete) {
         // Dual-scope shape: active project entry + excluded global tombstone.
@@ -1745,7 +1745,7 @@ describe("edit change summary display", () => {
       }),
     );
 
-    mockRender.mockImplementation((element: ReactElement) => {
+    mockRender.mockImplementation((element: ReactElement<Record<string, unknown>>) => {
       const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
       if (onComplete) {
         // Remove all skills — wizard result has no skills

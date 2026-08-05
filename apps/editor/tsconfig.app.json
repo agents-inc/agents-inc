@@ -3,20 +3,6 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "paths": {
-      // React's types are pinned to one physical copy on purpose. The repository root now holds
-      // @types/react 18, because the CLI depends on ink and won the hoist slot; every React 19
-      // consumer therefore gets its own nested copy — apps/editor, packages/ui, and one more buried
-      // inside @types/react-dom. tsc treats two copies of the same version as two unrelated sets
-      // of types ("Two different types with this name exist"), so a ref crossing from a
-      // @base-ui/react component into a ui component stopped type-checking even though the app
-      // runs fine. Mapping the module name collapses them back to a single copy. Vite is
-      // unaffected: it resolves runtime imports through resolve.alias, not through this file.
-      // The root entry is a fallback for the day @types/react 19 does become the hoisted one.
-      "react": ["./node_modules/@types/react", "../../node_modules/@types/react"],
-      "react/*": [
-        "./node_modules/@types/react/*",
-        "../../node_modules/@types/react/*"
-      ],
       "@/*": ["./src/*"],
       "@workspace/ui/*": ["../../packages/ui/src/*"],
       "@workspace/matrix": ["../../packages/matrix/src/index.ts"],

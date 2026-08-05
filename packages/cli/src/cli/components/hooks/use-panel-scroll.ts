@@ -7,7 +7,7 @@ export type UsePanelScrollResult = {
   /** Attach to the clipping box — the one with `overflow="hidden"`. */
   viewportRef: Ref<DOMElement>;
   /** Attach to the scrolled content box inside the viewport. */
-  contentRef: RefObject<DOMElement>;
+  contentRef: RefObject<DOMElement | null>;
   /** Apply as the content box's `marginTop`; negative by the number of lines scrolled off the top. */
   contentMarginTop: number;
   /** Content lines scrolled off the top of the viewport. */
