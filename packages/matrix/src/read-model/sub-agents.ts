@@ -5,6 +5,7 @@ import {
   type Domain,
 } from "../vendor/generated/source-types"
 import { AgentDefinitionsSchema, type ParsedAgentDefinition } from "../schema"
+import { groupBy, indexById } from "./collections"
 import { DOMAIN_LABELS, compareDomains } from "./domains"
 
 export type SubAgent = {
@@ -69,32 +70,27 @@ const toSubAgent = (definition: ParsedAgentDefinition): SubAgent => {
   }
 }
 
+const toSubAgentGroup = (
+  domainId: Domain,
+  agents: SubAgent[]
+): SubAgentGroup => ({
+  domainId,
+  label: DOMAIN_LABELS[domainId],
+  agents: agents.sort((a, b) => a.label.localeCompare(b.label)),
+})
+
 const buildSubAgentGroups = (): SubAgentGroup[] => {
   const agents = Object.values(
     AgentDefinitionsSchema.parse(AGENT_DEFINITIONS)
   ).map(toSubAgent)
 
-  const byDomain = new Map<Domain, SubAgent[]>()
-  for (const agent of agents) {
-    const bucket = byDomain.get(agent.domainId)
-    if (bucket) bucket.push(agent)
-    else byDomain.set(agent.domainId, [agent])
-  }
-
-  return [...byDomain.entries()]
+  return [...groupBy(agents, (agent) => agent.domainId)]
     .sort(([a], [b]) => compareDomains(a, b))
-    .map(([domainId, domainAgents]) => ({
-      domainId,
-      label: DOMAIN_LABELS[domainId],
-      agents: domainAgents.sort((a, b) => a.label.localeCompare(b.label)),
-    }))
+    .map(([domainId, domainAgents]) => toSubAgentGroup(domainId, domainAgents))
 }
 
 export const SUB_AGENT_GROUPS = buildSubAgentGroups()
 
-export const SUB_AGENTS_BY_ID: Record<string, SubAgent> = Object.fromEntries(
-  SUB_AGENT_GROUPS.flatMap((group) => group.agents).map((agent) => [
-    agent.id,
-    agent,
-  ])
+export const SUB_AGENTS_BY_ID: Record<string, SubAgent> = indexById(
+  SUB_AGENT_GROUPS.flatMap((group) => group.agents)
 )

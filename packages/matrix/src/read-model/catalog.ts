@@ -4,6 +4,7 @@ import type {
   Category,
 } from "../vendor/generated/source-types"
 import type { ParsedCategory, ParsedSkill } from "../schema"
+import { groupBy, indexById } from "./collections"
 import { MATRIX } from "./source"
 import { DOMAIN_DESCRIPTIONS, DOMAIN_LABELS, compareDomains } from "./domains"
 
@@ -95,58 +96,63 @@ const placeableCategories = (categories: Record<string, ParsedCategory>) =>
       category.domain !== undefined
   )
 
+// Domain order first, then the category order authored upstream.
+const byDomainThenAuthoredOrder = (
+  a: ParsedCategory & { domain: Domain },
+  b: ParsedCategory & { domain: Domain }
+) => compareDomains(a.domain, b.domain) || a.order - b.order
+
+const toCatalogCategory = (
+  category: ParsedCategory & { domain: Domain },
+  skills: ParsedSkill[]
+): CatalogCategory => ({
+  id: category.id as Category,
+  displayName: category.displayName,
+  description: category.description,
+  domainId: category.domain,
+  exclusive: category.exclusive,
+  required: category.required,
+  skills: skills
+    .map((skill) => toCatalogSkill(skill, category.domain))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+})
+
+const toCatalogDomain = (
+  id: Domain,
+  categories: CatalogCategory[]
+): CatalogDomain => ({
+  id,
+  label: DOMAIN_LABELS[id],
+  description: DOMAIN_DESCRIPTIONS[id],
+  categories,
+  skillCount: categories.reduce(
+    (total, category) => total + category.skills.length,
+    0
+  ),
+})
+
 const buildCatalog = (): Catalog => {
-  const skillsByCategory = new Map<string, ParsedSkill[]>()
-  for (const skill of Object.values(MATRIX.skills)) {
-    const bucket = skillsByCategory.get(skill.category)
-    if (bucket) bucket.push(skill)
-    else skillsByCategory.set(skill.category, [skill])
-  }
+  const skillsByCategory = groupBy(
+    Object.values(MATRIX.skills),
+    (skill) => skill.category
+  )
 
   const categories = placeableCategories(MATRIX.categories)
-    .sort((a, b) => compareDomains(a.domain, b.domain) || a.order - b.order)
-    .map((category): CatalogCategory => ({
-      id: category.id as Category,
-      displayName: category.displayName,
-      description: category.description,
-      domainId: category.domain,
-      exclusive: category.exclusive,
-      required: category.required,
-      skills: (skillsByCategory.get(category.id) ?? [])
-        .map((skill) => toCatalogSkill(skill, category.domain))
-        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
-    }))
+    .sort(byDomainThenAuthoredOrder)
+    .map((category) =>
+      toCatalogCategory(category, skillsByCategory.get(category.id) ?? [])
+    )
 
-  const byDomain = new Map<Domain, CatalogCategory[]>()
-  for (const category of categories) {
-    const bucket = byDomain.get(category.domainId)
-    if (bucket) bucket.push(category)
-    else byDomain.set(category.domainId, [category])
-  }
-
-  const domains = [...byDomain.entries()]
+  const domains = [...groupBy(categories, (category) => category.domainId)]
     .sort(([a], [b]) => compareDomains(a, b))
-    .map(([id, domainCategories]): CatalogDomain => {
-      return {
-        id,
-        label: DOMAIN_LABELS[id],
-        description: DOMAIN_DESCRIPTIONS[id],
-        categories: domainCategories,
-        skillCount: domainCategories.reduce(
-          (total, c) => total + c.skills.length,
-          0
-        ),
-      }
-    })
+    .map(([id, domainCategories]) => toCatalogDomain(id, domainCategories))
 
   const allSkills = categories.flatMap((category) => category.skills)
 
   return {
     domains,
-    skillsById: Object.fromEntries(allSkills.map((skill) => [skill.id, skill])),
-    categoriesById: Object.fromEntries(
-      categories.map((category) => [category.id, category])
-    ),
+    skillsById: indexById(allSkills),
+    categoriesById: indexById(categories),
     skillCount: allSkills.length,
   }
 }
