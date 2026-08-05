@@ -10,6 +10,12 @@ export default defineConfig({
     "src/cli/hooks/**/*.ts", // oclif hooks
     "src/cli/components/**/*.tsx", // Ink components
     "src/cli/stores/**/*.ts", // Zustand stores
+    // Tests live beside the code they cover, so the directory globs above
+    // sweep them up — and dist/ publishes wholesale. Sixteen compiled test
+    // files shipped with every release until packaging.test.ts pinned this.
+    "!src/cli/**/*.test.{ts,tsx}",
+    "!src/cli/**/__tests__/**",
+    "!src/cli/**/__mocks__/**",
   ],
   format: ["esm"],
   platform: "node",
