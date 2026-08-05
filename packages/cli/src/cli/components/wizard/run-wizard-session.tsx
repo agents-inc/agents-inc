@@ -1,5 +1,5 @@
 import React from "react";
-import { render } from "ink";
+import { render } from "../render.js";
 import { Wizard, type WizardProps, type WizardResultV2 } from "./wizard.js";
 import { hydrateWizardStore, type HydrateOptions } from "../../stores/wizard-store.js";
 

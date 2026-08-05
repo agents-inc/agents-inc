@@ -5,6 +5,18 @@ import { beforeAll, beforeEach, afterAll, vi } from "vitest";
 import { initializeMatrix } from "./src/cli/lib/matrix/matrix-provider";
 import { BUILT_IN_MATRIX } from "./src/cli/types/generated/matrix";
 
+// Unit tests render Ink components against fake streams, where being "in CI"
+// must not exist as a concept — yet Ink consults these variables (`is-in-ci`)
+// and changes when frames are written and what unmount appends. That made the
+// same test read different output locally and on a runner, and grew per-test
+// workarounds. Deleted at module scope, before any test file imports ink,
+// because is-in-ci reads the environment once at import. Nothing under src/
+// reads either variable itself (checked 2026-08-05). The e2e suite is the
+// opposite case — its harness passes CI through on purpose, to prove the CLI
+// trusts a real terminal over the CI guess.
+delete process.env.CI;
+delete process.env.GITHUB_ACTIONS;
+
 // Prevent tests from finding the real ~/.claude-src/config.yaml via global fallback.
 // loadProjectConfig() falls back to os.homedir() when no project-level config exists,
 // which pollutes test results when a real global install is present.

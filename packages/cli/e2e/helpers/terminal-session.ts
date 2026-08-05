@@ -95,17 +95,12 @@ export class TerminalSession {
       HOME: home,
       NO_COLOR: "1",
       FORCE_COLOR: "0",
-      // The child must not think it is in CI, even when it is. Ink reads
-      // `is-in-ci`, and `onRender` under CI stores the frame and writes nothing
-      // to stdout (ink/build/ink.js:111) — the terminal is only painted once, by
-      // `unmount`. Every `waitForText` here then waits for output that cannot
-      // arrive until the process it is driving has already exited, so the whole
-      // suite sits on its 30s timeout, retries twice, and never finishes.
-      //
-      // Stripping it is honest rather than a workaround: this harness gives the
-      // child a real pseudo-terminal, so a terminal is exactly what it has.
-      CI: undefined,
-      GITHUB_ACTIONS: undefined,
+      // CI and GITHUB_ACTIONS pass through untouched, and that is load-bearing:
+      // the CLI's own render wrapper (src/cli/components/render.ts) must trust
+      // the real pseudo-terminal this harness provides over the CI variables.
+      // This harness used to strip both so Ink's CI guess could not buffer
+      // every frame until exit; leaving them in is what proves the wrapper
+      // does its job on every CI run.
     };
     const cleanEnv = Object.fromEntries(Object.entries(rawEnv).filter(isDefinedEntry));
 

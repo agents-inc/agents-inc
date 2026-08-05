@@ -2,7 +2,8 @@ import os from "os";
 import React from "react";
 
 import { Flags, type Interfaces } from "@oclif/core";
-import { render, Box, Text, useApp } from "ink";
+import { Box, Text, useApp } from "ink";
+import { render } from "../components/render.js";
 
 import { BaseCommand, type SourceRefreshFlags } from "../base-command.js";
 import { type WizardResultV2 } from "../components/wizard/wizard.js";

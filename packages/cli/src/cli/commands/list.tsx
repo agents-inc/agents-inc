@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 
-import { render, Box, Text, useApp } from "ink";
+import { Box, Text, useApp } from "ink";
+import { render } from "../components/render.js";
 
 import { BaseCommand } from "../base-command.js";
 import { CLI_INVOKE_COMMAND, CLI_COLORS, DEFAULT_BRANDING } from "../consts.js";

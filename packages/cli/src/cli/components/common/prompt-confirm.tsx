@@ -1,5 +1,5 @@
 import React from "react";
-import { render } from "ink";
+import { render } from "../render.js";
 
 export type ConfirmHandlers = {
   onConfirm: () => void;

@@ -2,7 +2,7 @@ import path from "path";
 
 import chalk from "chalk";
 import { Flags } from "@oclif/core";
-import { render } from "ink";
+import { render } from "../components/render.js";
 
 import { difference, indexBy } from "remeda";
 

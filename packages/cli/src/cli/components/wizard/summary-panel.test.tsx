@@ -213,13 +213,13 @@ describe("SummaryPanel component", () => {
 
         // Ink's error boundary catches the throw and paints the message, so the
         // frames — not a rejected render() — are where the assertion lands.
-        // Every frame, though, and never `lastFrame()`: catching the throw also
-        // exits the app, and Ink's exit path appends a bare "\n" of its own
-        // whenever `CI` is set in the environment (`unmount` in ink.js guards
-        // that write with `is-in-ci`). It is the last frame written without
-        // being one the panel painted, so `lastFrame()` reads Ink's teardown
-        // under CI and the painted error everywhere else. Nothing here is
-        // timing-dependent — both writes land synchronously inside `render`.
+        // Every frame, and never `lastFrame()`: catching the throw also exits
+        // the app, and Ink 7's exit path writes a bare "\n" as its own final
+        // frame, unconditionally. (Ink 5 only did this when CI was set, which
+        // made this test read differently on a runner; the CI variables are
+        // deleted in vitest.setup.ts now, and the check below was verified to
+        // behave identically with and without them.) The painted error is the
+        // frame before teardown, so the join reads it wherever it lands.
         const { frames, unmount } = render(<SummaryPanel />);
         cleanup = unmount;
 
