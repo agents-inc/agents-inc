@@ -39,6 +39,15 @@ concurrency:
   group: regenerate-catalog
 
 env:
+  # `bun install` runs this repository's `prepare` script, which installs the
+  # husky hooks — so the `git commit` create-pull-request makes further down
+  # fired .husky/pre-commit INSIDE this job: lint-staged plus a turbo run, in a
+  # working tree that also holds the skills checkout, under an environment none
+  # of it was written for. Both attempts of the first live run failed exactly
+  # there. Husky reads this variable and installs nothing, runs nothing. The
+  # regeneration pull request is not ungated by this: ci.yml runs on the PR
+  # itself, which is the gate that was always meant to judge it.
+  HUSKY: 0
   # Kept in step with ci.yml by hand. Actions has no way to share a value across
   # workflow files, so these two drift silently if that one is bumped alone.
   BUN_VERSION: 1.2.6
