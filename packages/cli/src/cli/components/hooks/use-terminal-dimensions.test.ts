@@ -62,7 +62,9 @@ describe("useTerminalDimensions contract", () => {
     const DEFAULT_ROWS = 24;
 
     // Verify the fallback logic the hook uses
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- @types/node declares this as `number`; it is undefined whenever stdout is not a TTY
     const columns = mockStdout.columns || DEFAULT_COLUMNS;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- @types/node declares this as `number`; it is undefined whenever stdout is not a TTY
     const rows = mockStdout.rows || DEFAULT_ROWS;
 
     expect(columns).toBe(DEFAULT_COLUMNS);

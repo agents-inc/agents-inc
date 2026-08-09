@@ -23,6 +23,7 @@ import {
 import type { AgentScopeConfig, ProjectConfig, SkillConfig, SkillId } from "../../../types";
 import { getCliInstalledPluginKeys } from "../../../commands/uninstall";
 import { writeTestTsConfig } from "../helpers/config-io.js";
+import { firstElement } from "../helpers/element-at.js";
 
 vi.mock("../../../utils/exec.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../utils/exec.js")>()),
@@ -543,9 +544,9 @@ describe("uninstall command", () => {
       const config: Partial<ProjectConfig> = {
         marketplace: "agents-inc",
         skills: [
-          buildSkillConfigs(["web-framework-react"], { source: "custom-source" })[0],
-          buildSkillConfigs(["web-state-zustand"], { scope: "global" })[0],
-          buildSkillConfigs(["api-framework-hono"], { source: "agents-inc" })[0],
+          firstElement(buildSkillConfigs(["web-framework-react"], { source: "custom-source" })),
+          firstElement(buildSkillConfigs(["web-state-zustand"], { scope: "global" })),
+          firstElement(buildSkillConfigs(["api-framework-hono"], { source: "agents-inc" })),
         ],
       };
 
@@ -804,8 +805,8 @@ describe("uninstall command", () => {
     it("should remove project-scoped skills without touching global-scoped skills", async () => {
       await createProjectConfig(projectDir, {
         skills: [
-          buildSkillConfigs(["web-framework-react"])[0],
-          buildSkillConfigs(["web-state-zustand"], { scope: "global" })[0],
+          firstElement(buildSkillConfigs(["web-framework-react"])),
+          firstElement(buildSkillConfigs(["web-state-zustand"], { scope: "global" })),
         ],
       });
 

@@ -16,7 +16,7 @@ import { isHomeDirectory } from "../installation/is-home-directory";
 // it): this is one of the two enforcement guards, and `gate-token.ts` is a
 // dependency-free leaf, so the import cannot cycle back through the gate.
 import { GlobalPairWriteViolation } from "../config-gate/gate-token.js";
-import { activeProjectAgentNames } from "./scope-predicates";
+import { activeAgentNames, activeProjectAgentNames } from "./scope-predicates";
 import {
   CLAUDE_SRC_DIR,
   CLI_INVOKE_COMMAND,
@@ -149,10 +149,7 @@ export const PROJECT_CONFIG_INTERFACE_AFTER = `export interface ProjectConfig {
   agentsSource?: string;
 
   /** Selected domains from the wizard */
-  domains?: Domain[];
-
-  /** Selected agents from the wizard */
-  selectedAgents?: SelectedAgentName[];
+  selectedDomains?: Domain[];
 
   /** Tracked project installation paths (global config only) */
   projects?: string[];
@@ -328,7 +325,7 @@ export function loadConfigTypesDataInBackground(
     const { loadMergedAgents } = await import("../loading/loader");
 
     const sourceResult = await loadSkillsMatrixFromSource({
-      sourceFlag,
+      ...(sourceFlag !== undefined && { sourceFlag }),
       projectDir,
       skipExtraSources: true,
     });
@@ -381,8 +378,8 @@ export async function regenerateConfigTypes(
 
   let source: string;
   if (globalConfigTypes) {
-    const selectedAgentNames = loadedConfig?.config?.selectedAgents;
-    const agents = loadedConfig?.config?.agents;
+    const agents = loadedConfig?.config.agents;
+    const selectedAgentNames = agents ? activeAgentNames(agents) : undefined;
     const projectScopedAgentNames = agents ? activeProjectAgentNames(agents) : undefined;
     source = generateProjectConfigTypesSource({
       globalTypesImportPath: computeGlobalTypesImportPath(projectDir),
@@ -455,9 +452,13 @@ export function generateConfigTypesSource(
     categories = unique([...configCategories, ...extraCategoriesArr]).sort();
 
     // Derive domains from included categories via matrix lookup
-    // Also include config.domains (user-selected domains) that may not have skills in this scope
+    // Also include config.selectedDomains (user-selected) that may not have skills in this scope
     const configDomains = deriveDomains(categories, matrix);
-    domains = unique([...configDomains, ...(config.domains ?? []), ...extraDomainsArr]).sort();
+    domains = unique([
+      ...configDomains,
+      ...(config.selectedDomains ?? []),
+      ...extraDomainsArr,
+    ]).sort();
   } else {
     // Fall back to full matrix (e.g., blank global config)
     skillIds = unique([...typedKeys(matrix.skills), ...extraSkillIds]).sort();
@@ -492,9 +493,9 @@ export function generateConfigTypesSource(
   const domainLine = formatMaybeSectionedUnion(domains, (d) => customDomainSet.has(d));
   const categoryLine = formatMaybeSectionedUnion(categories, (s) => customCategorySet.has(s));
 
-  const selectedAgentNameLine = config?.selectedAgents?.length
-    ? formatUnion(config.selectedAgents)
-    : "AgentName";
+  const selectedAgents = config?.agents ? activeAgentNames(config.agents) : [];
+  const selectedAgentNameLine =
+    selectedAgents.length > 0 ? formatUnion(selectedAgents) : "AgentName";
 
   const projectScopedAgents = config?.agents ? activeProjectAgentNames(config.agents) : [];
   const projectAgentNameLine =

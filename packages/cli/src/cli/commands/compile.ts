@@ -19,7 +19,7 @@ import {
   resolveSource,
 } from "../lib/configuration";
 import { getStackSkillIds } from "../lib/stacks";
-import { loadSkillsMatrixFromSource } from "../lib/loading";
+import { loadSkillsMatrixFromSource, type UnusableSkillMetadata } from "../lib/loading";
 import { CLI_INVOKE_COMMAND, STANDARD_FILES } from "../consts";
 import { EXIT_CODES } from "../lib/exit-codes";
 import { getErrorMessage } from "../utils/errors";
@@ -29,7 +29,10 @@ import {
   INFO_MESSAGES,
   configTypesRefreshFailed,
   globalScopedAgentsHint,
+  recompileSummary,
   registeredProjectUpdateSkipped,
+  skillMetadataUnusableDetail,
+  skillMetadataUnusableError,
 } from "../utils/messages";
 import { reconcileTypesFromDisk, type GateReport } from "../lib/config-gate/index.js";
 import type { Installation } from "../lib/installation";
@@ -48,7 +51,6 @@ export default class Compile extends BaseCommand {
   ];
 
   static flags = {
-    ...BaseCommand.baseFlags,
     verbose: Flags.boolean({
       char: "v",
       description: "Enable verbose logging",
@@ -62,9 +64,9 @@ export default class Compile extends BaseCommand {
     const cwd = process.cwd();
 
     const installations = await this.detectInstallations(cwd);
-    await this.resolveAndLogSource(flags.source);
+    await this.resolveAndLogSource(cwd);
     const agentDefs = await this.loadAgentDefsOrFail(cwd);
-    await this.compileAllScopes(installations, agentDefs, cwd, flags.source);
+    await this.runCompilePasses(installations, agentDefs, cwd);
   }
 
   private async detectInstallations(cwd: string): Promise<BothInstallations> {
@@ -90,10 +92,16 @@ export default class Compile extends BaseCommand {
     return installations;
   }
 
-  private async resolveAndLogSource(sourceFlag?: string): Promise<void> {
+  /**
+   * Names where the source came from — the project's own config first, then the global
+   * one, then the default. `compile` takes no `--source`: it recompiles an installation
+   * that already recorded which marketplace its skill references answer to, and reading
+   * a different one would write agents against a catalogue config.ts does not name.
+   */
+  private async resolveAndLogSource(projectDir: string): Promise<void> {
     this.log(STATUS_MESSAGES.RESOLVING_SOURCE);
     try {
-      const sourceConfig = await resolveSource(sourceFlag);
+      const sourceConfig = await resolveSource({ caller: "stored", projectDir });
       this.log(`Source: ${sourceConfig.sourceOrigin}`);
     } catch (error) {
       this.log(ERROR_MESSAGES.FAILED_RESOLVE_SOURCE);
@@ -115,20 +123,16 @@ export default class Compile extends BaseCommand {
     }
   }
 
-  private async compileAllScopes(
+  private async runCompilePasses(
     installations: BothInstallations,
     agentDefs: AgentDefs,
     cwd: string,
-    sourceFlag?: string,
   ): Promise<void> {
-    // When both installations exist, filter each pass to its own scope to prevent
-    // the project pass from overwriting global agents with zero-skill versions
-    // (the project config's stack only has project agent entries).
     const passes = buildCompilePasses(installations, cwd, agentDefs);
 
     let totalPassesWithSkills = 0;
     for (const pass of passes) {
-      const hadSkills = await this.runCompilePass(pass, cwd, sourceFlag);
+      const hadSkills = await this.runCompilePass(pass, cwd);
       if (hadSkills) totalPassesWithSkills++;
     }
 
@@ -140,12 +144,34 @@ export default class Compile extends BaseCommand {
     }
   }
 
+  /**
+   * Discovers what this pass compiles from, and refuses the run when any installed
+   * skill's metadata.yaml exists but describes no skill — before a count is printed,
+   * an agent is written or the type unions are regenerated. Skipping such a skill is
+   * what the config-types pass already does; loading it anyway is what this pass
+   * used to do, so a single run both loaded and skipped the same file.
+   */
   private async discoverAllSkills(projectDir: string): Promise<DiscoveredSkills> {
     this.log(STATUS_MESSAGES.DISCOVERING_SKILLS);
     const result = await discoverInstalledSkills(projectDir);
+    if (result.unusableMetadata.length > 0) {
+      this.refuseUnusableSkillMetadata(result.unusableMetadata);
+    }
     if (result.totalSkillCount === 0) return result;
     this.log(formatDiscoveryMessage(result));
     return result;
+  }
+
+  /**
+   * Names each offending file and its reason, then exits. The detail is LOGGED and
+   * only the refusal is raised: oclif hard-wraps error text at the terminal width,
+   * and a path broken across two lines is one nobody can copy.
+   */
+  private refuseUnusableSkillMetadata(entries: UnusableSkillMetadata[]): never {
+    for (const entry of entries) {
+      this.log(skillMetadataUnusableDetail(entry));
+    }
+    this.error(skillMetadataUnusableError(entries), { exit: EXIT_CODES.ERROR });
   }
 
   /**
@@ -210,11 +236,7 @@ export default class Compile extends BaseCommand {
    * Skipping avoids fetching every registered extra source (network on a cold
    * cache, plus unreachable-remote warnings) on this offline compile path.
    */
-  private async refreshConfigTypes(
-    pass: CompilePass,
-    cwd: string,
-    sourceFlag?: string,
-  ): Promise<void> {
+  private async refreshConfigTypes(pass: CompilePass, cwd: string): Promise<void> {
     let report: GateReport;
     try {
       const loaded = await loadProjectConfigFromDir(pass.projectDir);
@@ -226,14 +248,13 @@ export default class Compile extends BaseCommand {
       }
 
       const { matrix } = await loadSkillsMatrixFromSource({
-        sourceFlag,
         projectDir: pass.projectDir,
         skipExtraSources: true,
         matrixOnly: true,
       });
-      // `cwd` is excluded from the fan-out: when compile runs inside a registered
-      // project, the project pass compiles that project's agents itself, so
-      // letting the home pass reach it would compile them twice.
+      // `cwd` is excluded from the fan-out, which only a global pass can perform:
+      // whatever this invocation was run from is this command's own subject, so a
+      // fan-out must never reach back into it.
       report = await reconcileTypesFromDisk(
         pass.projectDir,
         loaded.config,
@@ -258,21 +279,10 @@ export default class Compile extends BaseCommand {
     for (const skippedPath of report.propagated.skipped) {
       this.warn(registeredProjectUpdateSkipped(skippedPath));
     }
-    for (const warning of report.recompile.warnings) {
-      this.warn(warning);
-    }
-    if (report.propagated.updated.length === 0) return;
-
-    const { recompiledCount, failedCount } = report.recompile;
-    const failureSuffix = failedCount > 0 ? ` (${failedCount} failed)` : "";
-    this.log(`Recompiled agents in ${recompiledCount} registered projects${failureSuffix}`);
+    this.reportPropagatedRecompile(report);
   }
 
-  private async runCompilePass(
-    params: CompilePass,
-    cwd: string,
-    sourceFlag?: string,
-  ): Promise<boolean> {
+  private async runCompilePass(params: CompilePass, cwd: string): Promise<boolean> {
     const { label, projectDir, installation, sourcePath, scopeFilter } = params;
 
     this.log("");
@@ -289,7 +299,7 @@ export default class Compile extends BaseCommand {
       // The config loads independently of discovered skills: a hand-edited
       // config.ts can list skills while nothing is installed for this scope,
       // and its type unions must follow the config rather than stay stale.
-      await this.refreshConfigTypes(params, cwd, sourceFlag);
+      await this.refreshConfigTypes(params, cwd);
       return false;
     }
 
@@ -303,18 +313,23 @@ export default class Compile extends BaseCommand {
         skills: allSkills,
         pluginDir: projectDir,
         outputDir: installation.agentsDir,
-        scopeFilter,
+        ...(scopeFilter !== undefined && { scopeFilter }),
       });
 
-      if (recompileResult.failed.length > 0) {
-        this.log(
-          `Recompiled ${recompileResult.compiled.length} ${label.toLowerCase()} agents (${recompileResult.failed.length} failed)`,
-        );
-        for (const warning of recompileResult.warnings) {
+      const { compiled, rewritten, failed, warnings } = recompileResult;
+      const summary = recompileSummary(
+        rewritten.length,
+        compiled.length - rewritten.length,
+        `${label.toLowerCase()} agents`,
+      );
+
+      if (failed.length > 0) {
+        this.log(`${summary} (${failed.length} failed)`);
+        for (const warning of warnings) {
           this.warn(warning);
         }
-      } else if (recompileResult.compiled.length > 0) {
-        this.log(`Recompiled ${recompileResult.compiled.length} ${label.toLowerCase()} agents`);
+      } else if (compiled.length > 0) {
+        this.log(summary);
       } else {
         this.log(INFO_MESSAGES.NO_AGENTS_TO_RECOMPILE);
         if (label === "Project") {
@@ -322,15 +337,15 @@ export default class Compile extends BaseCommand {
         }
       }
 
-      if (recompileResult.compiled.length > 0) {
-        verbose(`  Compiled: ${recompileResult.compiled.join(", ")}`);
+      if (compiled.length > 0) {
+        verbose(`  Compiled: ${compiled.join(", ")}`);
       }
     } catch (error) {
       this.log(ERROR_MESSAGES.FAILED_COMPILE_AGENTS);
       this.handleError(error);
     }
 
-    await this.refreshConfigTypes(params, cwd, sourceFlag);
+    await this.refreshConfigTypes(params, cwd);
 
     this.log("");
     this.logSuccess(`${label} compile complete!`);
@@ -345,41 +360,62 @@ type CompilePass = {
   projectDir: string;
   installation: Installation;
   sourcePath: string;
-  agents: Record<AgentName, AgentDefinition>;
+  agents: Partial<Record<AgentName, AgentDefinition>>;
   scopeFilter?: SkillScope;
 };
 
+/**
+ * The single pass this invocation owns.
+ *
+ * A compile run inside a project is a PROJECT-scope operation and writes nothing
+ * outside that project: it compiles the project's own agents and refreshes the
+ * project's own type unions, and never the global install's or another
+ * registered project's. Propagation is a global operation's consequence — the
+ * global config is what every project's config inlines — and a project compile
+ * is not one.
+ *
+ * The global pass is therefore reached only where no project installation is in
+ * play: at the home directory (where `detectBothInstallations` returns no
+ * project by construction), or in a directory that has no config of its own, so
+ * the global install is the only thing there is to compile.
+ *
+ * `scopeFilter` still narrows the project pass whenever both installations
+ * exist: the project's config inlines the global entries, so an unfiltered pass
+ * would compile global-scoped agents into the project's own agents directory.
+ */
 function buildCompilePasses(
   installations: BothInstallations,
   cwd: string,
   agentDefs: AgentDefs,
 ): CompilePass[] {
   const { sourcePath, agents } = agentDefs;
-  const passes: CompilePass[] = [];
-
-  if (installations.global) {
-    passes.push({
-      label: "Global",
-      projectDir: os.homedir(),
-      installation: installations.global,
-      sourcePath,
-      agents,
-      scopeFilter: installations.hasBoth ? "global" : undefined,
-    });
-  }
 
   if (installations.project) {
-    passes.push({
-      label: "Project",
-      projectDir: cwd,
-      installation: installations.project,
-      sourcePath,
-      agents,
-      scopeFilter: installations.hasBoth ? "project" : undefined,
-    });
+    return [
+      {
+        label: "Project",
+        projectDir: cwd,
+        installation: installations.project,
+        sourcePath,
+        agents,
+        ...(installations.hasBoth && { scopeFilter: "project" as const }),
+      },
+    ];
   }
 
-  return passes;
+  if (installations.global) {
+    return [
+      {
+        label: "Global",
+        projectDir: os.homedir(),
+        installation: installations.global,
+        sourcePath,
+        agents,
+      },
+    ];
+  }
+
+  return [];
 }
 
 function formatDiscoveryMessage(result: DiscoveredSkills): string {

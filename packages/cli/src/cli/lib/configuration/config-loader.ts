@@ -52,7 +52,7 @@ export async function loadConfig<T>(configPath: string, schema?: z.ZodType<T>): 
 
   // Empty or whitespace-only files produce an empty module object with no default export.
   // Treat this the same as a missing file rather than returning a confusing empty object.
-  if (raw == null || (typeof raw === "object" && Object.keys(raw as object).length === 0)) {
+  if (raw == null || (typeof raw === "object" && Object.keys(raw).length === 0)) {
     verbose(`Config at ${configPath} has no default export`);
     return null;
   }

@@ -9,8 +9,9 @@ export function checkXmlTagBalance(content: string): string[] {
   const tagCounts = new Map<string, number>();
 
   for (const match of content.matchAll(tagRegex)) {
-    const fullTag = match[0];
-    const tagName = match[1].toLowerCase();
+    const [fullTag, capturedName] = match;
+    if (capturedName === undefined) continue;
+    const tagName = capturedName.toLowerCase();
 
     const before = content.slice(Math.max(0, match.index - 10), match.index);
     const after = content.slice(match.index + fullTag.length, match.index + fullTag.length + 10);

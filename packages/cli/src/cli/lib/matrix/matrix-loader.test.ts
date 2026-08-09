@@ -32,6 +32,7 @@ vi.mock("../configuration/config-loader", async (importOriginal) => ({
 
 import { loadSkillCategories, loadSkillRules, extractAllSkills } from "./matrix-loader";
 import { warn } from "../../utils/logger";
+import { firstElement } from "../__tests__/helpers/element-at.js";
 
 describe("matrix-loader", () => {
   describe("loadSkillCategories", () => {
@@ -134,7 +135,6 @@ describe("matrix-loader", () => {
               reason: "Test discourage rule",
             },
           ],
-          recommends: [{ skill: "zustand", reason: "Best React state management" }],
           requires: [
             {
               skill: "zustand",
@@ -167,7 +167,6 @@ describe("matrix-loader", () => {
             reason: "Test discourage rule",
           },
         ],
-        recommends: [{ skill: "zustand", reason: "Best React state management" }],
         requires: [
           {
             skill: "zustand",
@@ -203,8 +202,7 @@ describe("matrix-loader", () => {
         version: "1.0.0",
         relationships: {
           conflicts: [],
-          discourages: [],
-          recommends: [{ skill: "react", reason: "Recommended framework" }],
+          discourages: [{ skills: ["react", "vue"], reason: "Pick one rendering model" }],
           requires: [],
           alternatives: [],
         },
@@ -212,8 +210,8 @@ describe("matrix-loader", () => {
 
       const result = await loadSkillRules("/project/skill-rules.ts");
 
-      expect(result.relationships.recommends).toHaveLength(1);
-      expect(result.relationships.recommends[0].skill).toBe("react");
+      expect(result.relationships.discourages).toHaveLength(1);
+      expect(firstElement(result.relationships.discourages).skills).toStrictEqual(["react", "vue"]);
     });
 
     it("returns default empty arrays when relationships are missing", async () => {
@@ -225,7 +223,6 @@ describe("matrix-loader", () => {
 
       expect(result.relationships.conflicts).toStrictEqual([]);
       expect(result.relationships.discourages).toStrictEqual([]);
-      expect(result.relationships.recommends).toStrictEqual([]);
       expect(result.relationships.requires).toStrictEqual([]);
       expect(result.relationships.alternatives).toStrictEqual([]);
     });
@@ -266,9 +263,9 @@ cliDescription: React framework
       const skills = await extractAllSkills("/project/src/skills");
 
       expect(skills).toHaveLength(1);
-      expect(skills[0].id).toBe("web-framework-react");
-      expect(skills[0].category).toBe("web-framework");
-      expect(skills[0].author).toBe("@vince");
+      expect(firstElement(skills).id).toBe("web-framework-react");
+      expect(firstElement(skills).category).toBe("web-framework");
+      expect(firstElement(skills).author).toBe("@vince");
     });
 
     it("skips skills without SKILL.md", async () => {
@@ -418,7 +415,7 @@ displayName: wrong
 
       // Only the valid skill should be extracted
       expect(skills).toHaveLength(1);
-      expect(skills[0].id).toBe("skill-valid");
+      expect(firstElement(skills).id).toBe("skill-valid");
     });
   });
 });

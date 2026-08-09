@@ -25,44 +25,12 @@ export const defaultRules: SkillRulesConfig = {
         reason: "Both solve server state caching",
       },
       {
-        skills: ["graphql-apollo", "graphql-urql"],
-        reason: "Both are GraphQL clients",
-      },
-      {
-        skills: ["playwright-e2e", "cypress-e2e"],
-        reason: "Both are E2E frameworks",
-      },
-      {
         skills: ["hono", "express", "fastify", "elysia", "nestjs"],
         reason: "API frameworks are mutually exclusive within a single service",
       },
       {
-        skills: ["drizzle", "prisma", "sequelize", "typeorm", "knex"],
-        reason: "SQL ORMs and query builders are mutually exclusive",
-      },
-      {
         skills: ["cli-commander", "oclif-ink"],
         reason: "CLI frameworks are mutually exclusive",
-      },
-      {
-        skills: ["mongodb", "mongoose"],
-        reason: "Raw MongoDB driver and Mongoose ODM are alternative approaches",
-      },
-      {
-        skills: ["pinecone", "qdrant", "chroma", "weaviate"],
-        reason: "Vector databases are mutually exclusive",
-      },
-      {
-        skills: ["elasticsearch", "meilisearch"],
-        reason: "Search engines are mutually exclusive",
-      },
-      {
-        skills: ["payload", "sanity", "strapi"],
-        reason: "CMS platforms are mutually exclusive",
-      },
-      {
-        skills: ["shadcn-ui", "mui", "chakra-ui", "mantine", "ant-design"],
-        reason: "React UI component libraries define competing design systems",
       },
       {
         skills: ["turborepo", "nx"],
@@ -77,277 +45,19 @@ export const defaultRules: SkillRulesConfig = {
         reason: "React client-side routers are mutually exclusive",
       },
       {
-        skills: ["docusaurus", "vitepress"],
-        reason: "Documentation frameworks are mutually exclusive",
-      },
-      {
         skills: ["electron", "tauri"],
         reason: "Desktop frameworks are mutually exclusive",
-      },
-      {
-        skills: ["react-hook-form", "tanstack-form"],
-        reason: "React form libraries are mutually exclusive",
-      },
-      {
-        skills: ["supabase", "firebase", "appwrite"],
-        reason: "Backend-as-a-Service platforms are mutually exclusive",
       },
       {
         skills: ["better-auth-drizzle-hono", "nextauth", "clerk"],
         reason: "Authentication solutions are mutually exclusive",
       },
       {
-        skills: ["redis", "upstash", "vercel-kv"],
-        reason: "Cache and KV store providers are mutually exclusive",
-      },
-      {
-        skills: ["vee-validate", "tanstack-form"],
-        reason: "Vue form libraries are mutually exclusive",
-      },
-      {
-        skills: ["postgresql", "mysql"],
-        reason: "SQL database engines are mutually exclusive",
-      },
-      {
-        skills: ["neon", "vercel-postgres", "cockroachdb"],
-        reason: "Managed PostgreSQL-compatible providers are mutually exclusive",
-      },
-      {
         skills: ["react-intl", "next-intl"],
         reason: "React internationalization libraries are mutually exclusive",
       },
-      {
-        skills: ["websockets", "socket-io"],
-        reason: "Socket.IO replaces raw WebSocket usage with its own protocol",
-      },
     ],
     discourages: [],
-    compatibleWith: [
-      // React ecosystem (includes Next.js, Remix as meta-frameworks)
-      {
-        skills: ["framer-motion", "react", "nextjs", "remix"],
-        reason: "Motion (Framer Motion) is a React animation library",
-      },
-      {
-        skills: ["error-boundaries", "react", "nextjs", "remix"],
-        reason: "Error boundaries are a React concept",
-      },
-      {
-        skills: ["file-upload-patterns", "react", "nextjs", "remix"],
-        reason: "Skill teaches React-based file upload patterns",
-      },
-      {
-        skills: ["image-handling", "react", "nextjs", "remix"],
-        reason: "Skill teaches React-based image handling hooks",
-      },
-      {
-        skills: ["react-hook-form", "react", "nextjs", "remix", "react-native"],
-        reason: "React Hook Form is React only",
-      },
-      {
-        skills: ["react-intl", "react", "nextjs", "remix"],
-        reason: "React Intl (FormatJS) is React only",
-      },
-      {
-        skills: ["react-query", "react", "nextjs", "remix", "react-native"],
-        reason: "TanStack Query React adapter",
-      },
-      {
-        skills: ["swr", "react", "nextjs", "remix", "react-native"],
-        reason: "SWR is a React Hooks library",
-      },
-      {
-        skills: ["trpc", "react", "nextjs", "remix"],
-        reason: "tRPC skill teaches React Query integration",
-      },
-      {
-        skills: ["jotai", "react", "nextjs", "remix", "react-native"],
-        reason: "Jotai is a React atomic state library",
-      },
-      {
-        skills: ["mobx", "react", "nextjs", "remix", "react-native"],
-        reason: "Skill teaches MobX with mobx-react-lite",
-      },
-      {
-        skills: ["redux-toolkit", "react", "nextjs", "remix", "react-native"],
-        reason: "Redux Toolkit skill teaches React Redux patterns",
-      },
-      {
-        skills: ["zustand", "react", "nextjs", "remix", "react-native"],
-        reason: "Zustand skill teaches React patterns",
-      },
-      {
-        skills: ["react-testing-library", "react", "nextjs", "remix"],
-        reason: "React Testing Library is React only",
-      },
-      {
-        skills: ["radix-ui", "react", "nextjs", "remix"],
-        reason: "Radix UI primitives are React-specific",
-      },
-      {
-        skills: ["shadcn-ui", "react", "nextjs", "remix"],
-        reason: "shadcn/ui is built on React + Radix UI",
-      },
-      {
-        skills: ["tanstack-table", "react", "nextjs", "remix"],
-        reason: "Skill teaches @tanstack/react-table patterns only",
-      },
-      {
-        skills: ["tanstack-router", "react"],
-        reason: "TanStack Router is a React routing library",
-      },
-      {
-        skills: ["graphql-apollo", "react", "nextjs", "remix"],
-        reason: "Skill teaches React Apollo Client patterns",
-      },
-      // Next.js specific
-      {
-        skills: ["next-intl", "nextjs"],
-        reason: "next-intl is Next.js only",
-      },
-      {
-        skills: ["clerk", "nextjs"],
-        reason: "Skill teaches @clerk/nextjs patterns",
-      },
-      // Vue ecosystem (includes Nuxt as meta-framework)
-      {
-        skills: ["vee-validate", "vue-composition-api", "nuxt"],
-        reason: "VeeValidate is Vue only",
-      },
-      {
-        skills: ["vue-i18n", "vue-composition-api", "nuxt"],
-        reason: "vue-i18n is Vue 3 only",
-      },
-      {
-        skills: ["pinia", "vue-composition-api", "nuxt"],
-        reason: "Pinia is Vue only",
-      },
-      {
-        skills: ["vue-test-utils", "vue-composition-api", "nuxt"],
-        reason: "Vue Test Utils is Vue only",
-      },
-      // Angular ecosystem
-      {
-        skills: ["ngrx-signalstore", "angular-standalone"],
-        reason: "NgRx SignalStore is Angular only",
-      },
-      // Multi-framework
-      {
-        skills: [
-          "graphql-urql",
-          "react",
-          "vue-composition-api",
-          "solidjs",
-          "svelte",
-          "nextjs",
-          "remix",
-          "nuxt",
-          "sveltekit",
-        ],
-        reason: "URQL has bindings for React, Vue, Solid, and Svelte",
-      },
-      // React Router
-      {
-        skills: ["react-router", "react", "remix"],
-        reason: "React Router is a React routing library",
-      },
-      // React UI component libraries
-      {
-        skills: ["chakra-ui", "react", "nextjs", "remix"],
-        reason: "Chakra UI is a React component library",
-      },
-      {
-        skills: ["mantine", "react", "nextjs", "remix"],
-        reason: "Mantine is a React component library",
-      },
-      {
-        skills: ["mui", "react", "nextjs", "remix"],
-        reason: "MUI is a React component library",
-      },
-      {
-        skills: ["ant-design", "react", "nextjs", "remix"],
-        reason: "Ant Design is a React component library",
-      },
-      {
-        skills: ["headless-ui", "react", "nextjs", "remix"],
-        reason: "Headless UI v2 is React only",
-      },
-      // Vue ecosystem
-      {
-        skills: ["vueuse", "vue-composition-api", "nuxt"],
-        reason: "VueUse composables require Vue 3",
-      },
-      // Mobile
-      {
-        skills: ["expo", "react-native"],
-        reason: "Expo is a React Native framework",
-      },
-      // Cross-framework tools
-      {
-        skills: [
-          "storybook",
-          "react",
-          "vue-composition-api",
-          "angular-standalone",
-          "solidjs",
-          "svelte",
-          "nextjs",
-          "remix",
-          "nuxt",
-          "sveltekit",
-        ],
-        reason: "Storybook supports all major frameworks",
-      },
-      {
-        skills: [
-          "tanstack-form",
-          "react",
-          "vue-composition-api",
-          "angular-standalone",
-          "solidjs",
-          "nextjs",
-          "remix",
-          "nuxt",
-        ],
-        reason: "TanStack Form supports React, Vue, Angular, and Solid",
-      },
-      {
-        skills: ["vuetify", "vue-composition-api", "nuxt"],
-        reason: "Vuetify is Vue only",
-      },
-      {
-        skills: ["resend-react-email", "react", "nextjs", "remix"],
-        reason: "React Email uses React for email templates",
-      },
-    ],
-    recommends: [
-      { skill: "zustand", reason: "Best-in-class React state management" },
-      { skill: "react-query", reason: "Modern server state caching for React" },
-      { skill: "vitest", reason: "Fast, modern test runner for all frameworks" },
-      { skill: "react-hook-form", reason: "Best React form library" },
-      { skill: "react-testing-library", reason: "Standard React component testing" },
-      { skill: "shadcn-ui", reason: "Best-in-class React + Tailwind component library" },
-      { skill: "zod-validation", reason: "Type-safe validation for forms and APIs" },
-      { skill: "pinia", reason: "Vue community standard state management" },
-      { skill: "vee-validate", reason: "Vue community standard form validation" },
-      { skill: "vue-test-utils", reason: "Vue component testing library" },
-      { skill: "ngrx-signalstore", reason: "Angular Signals-based state management" },
-      { skill: "tailwind", reason: "Utility-first CSS framework" },
-      { skill: "drizzle", reason: "Modern TypeScript-first ORM" },
-      { skill: "better-auth-drizzle-hono", reason: "Full-featured auth solution" },
-      { skill: "radix-ui", reason: "Accessible unstyled component primitives" },
-      { skill: "cva", reason: "Type-safe variant management for Tailwind" },
-      { skill: "msw", reason: "Network-level API mocking for tests" },
-      { skill: "playwright-e2e", reason: "Cross-browser E2E testing" },
-      { skill: "posthog-analytics", reason: "Product analytics and feature flags" },
-      { skill: "prisma", reason: "Mature database ORM with great DX" },
-      { skill: "vercel-ai-sdk", reason: "Provider-agnostic AI integration with streaming" },
-      { skill: "anthropic-sdk", reason: "Direct Claude API access with tool use and vision" },
-      { skill: "hono", reason: "Fast, lightweight API framework with edge support" },
-      { skill: "pinecone", reason: "Managed vector database for AI applications" },
-      { skill: "stripe", reason: "Industry-standard payment processing" },
-      { skill: "expo", reason: "Best-in-class React Native development experience" },
-    ],
     requires: [
       {
         skill: "tanstack-router",
@@ -441,8 +151,9 @@ export const defaultRules: SkillRulesConfig = {
       },
       {
         skill: "better-auth-drizzle-hono",
-        needs: ["drizzle"],
-        reason: "Skill teaches Better Auth with the Drizzle adapter",
+        needs: ["drizzle", "hono"],
+        reason:
+          "Skill teaches Better Auth with the Drizzle adapter, mounted via Hono routes and typed Hono middleware",
       },
       {
         skill: "shadcn-ui",
@@ -478,9 +189,9 @@ export const defaultRules: SkillRulesConfig = {
       },
       {
         skill: "react-router",
-        needs: ["react", "remix"],
-        needsAny: true,
-        reason: "React Router is a React routing library",
+        needs: ["react"],
+        reason:
+          "React Router v7 Data Mode SPA skill — createBrowserRouter/RouterProvider are framework-owned (wrong) inside a Remix framework-mode app",
       },
       {
         skill: "chakra-ui",
@@ -541,7 +252,8 @@ export const defaultRules: SkillRulesConfig = {
       {
         skill: "next-intl",
         needs: ["nextjs"],
-        reason: "next-intl is built specifically for Next.js",
+        reason:
+          "Skill teaches next-intl's Next.js App Router surface — middleware, routing.ts, setRequestLocale, NextIntlClientProvider",
       },
       {
         skill: "clerk",
@@ -616,6 +328,7 @@ export const defaultRules: SkillRulesConfig = {
           "angular-standalone",
           "solidjs",
           "svelte",
+          "qwik",
           "nextjs",
           "remix",
           "nuxt",
@@ -623,16 +336,6 @@ export const defaultRules: SkillRulesConfig = {
         ],
         needsAny: true,
         reason: "Storybook requires a UI framework",
-      },
-      {
-        skill: "docusaurus",
-        needs: ["react"],
-        reason: "Docusaurus is built on React",
-      },
-      {
-        skill: "vitepress",
-        needs: ["vue-composition-api"],
-        reason: "VitePress is built on Vue",
       },
       {
         skill: "vuetify",
@@ -659,6 +362,294 @@ export const defaultRules: SkillRulesConfig = {
         needs: ["react", "nextjs", "remix"],
         needsAny: true,
         reason: "React Email uses React for email templates",
+      },
+      {
+        skill: "react-navigation",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "React Navigation targets React Native apps, bare or Expo",
+      },
+      {
+        skill: "expo-router",
+        needs: ["expo"],
+        reason: "Expo Router is built on the Expo SDK",
+      },
+      {
+        skill: "nativewind",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "NativeWind compiles Tailwind classes for React Native components",
+      },
+      {
+        skill: "unistyles",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "Unistyles styles React Native via Nitro Modules",
+      },
+      {
+        skill: "detox",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "Detox is gray-box E2E testing for React Native",
+      },
+      {
+        skill: "maestro",
+        needs: ["react-native", "expo", "tauri-mobile"],
+        needsAny: true,
+        reason: "Maestro drives a mobile app; these are the catalog's mobile-app producers",
+      },
+      {
+        skill: "tamagui",
+        needs: ["react-native", "expo", "react"],
+        needsAny: true,
+        reason: "Tamagui is universal React: native via RN or Expo, web via React alone",
+      },
+      {
+        skill: "react-native-paper",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "React Native Paper is Material Design 3 for React Native",
+      },
+      {
+        skill: "reanimated",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "Reanimated animates React Native via worklets",
+      },
+      {
+        skill: "gesture-handler",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "Gesture Handler replaces React Native's gesture system",
+      },
+      {
+        skill: "skia",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "@shopify/react-native-skia is a React Native renderer",
+      },
+      {
+        skill: "mmkv",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "react-native-mmkv is a React Native storage package",
+      },
+      {
+        skill: "sqlite-powersync",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "The skill teaches PowerSync's React Native SDK",
+      },
+      {
+        skill: "watermelondb",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "WatermelonDB as taught targets offline-first React Native apps",
+      },
+      {
+        skill: "eas",
+        needs: ["expo"],
+        reason: "EAS Build/Update workflows assume the Expo SDK",
+      },
+      {
+        skill: "vision-camera",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "react-native-vision-camera depends on React Native's JSI",
+      },
+      {
+        skill: "ble-nfc",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "Both taught libraries are React Native packages",
+      },
+      {
+        skill: "push",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "Dual-path: expo-notifications or React Native Firebase messaging",
+      },
+      {
+        skill: "tasks",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "Dual-path: Expo background tasks or react-native-background-fetch",
+      },
+      {
+        skill: "app-links",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "Deep linking via expo-linking or React Navigation linking config",
+      },
+      {
+        skill: "react-native-performance",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "React Native performance patterns: Hermes, threads, FlashList",
+      },
+      {
+        skill: "react-native-security",
+        needs: ["react-native", "expo"],
+        needsAny: true,
+        reason: "Dual-path secure storage: expo-secure-store or react-native-keychain",
+      },
+      {
+        skill: "electron-ipc",
+        needs: ["electron"],
+        reason: "contextBridge/ipcMain are Electron core APIs",
+      },
+      {
+        skill: "electron-storage",
+        needs: ["electron"],
+        reason: "electron-store and safeStorage are Electron-scoped",
+      },
+      {
+        skill: "electron-ui",
+        needs: ["electron"],
+        reason: "Tray, Menu, and frameless windows are Electron core APIs",
+      },
+      {
+        skill: "electron-testing",
+        needs: ["electron"],
+        reason: "Playwright's _electron driver automates Electron apps",
+      },
+      {
+        skill: "electron-updater",
+        needs: ["electron"],
+        reason: "electron-updater updates packaged Electron apps",
+      },
+      {
+        skill: "electron-multiwindow",
+        needs: ["electron"],
+        reason: "BaseWindow and WebContentsView are Electron core APIs",
+      },
+      {
+        skill: "electron-security",
+        needs: ["electron"],
+        reason: "Fuses, ASAR integrity, and sandbox are Electron mechanisms",
+      },
+      {
+        skill: "electron-forge",
+        needs: ["electron"],
+        reason: "Electron Forge packages Electron apps",
+      },
+      {
+        skill: "tauri-backend",
+        needs: ["tauri"],
+        reason: "tauri::command and State are the tauri crate",
+      },
+      {
+        skill: "tauri-bundling",
+        needs: ["tauri"],
+        reason: "Tauri bundler, signer, and updater configuration",
+      },
+      {
+        skill: "tauri-plugins",
+        needs: ["tauri"],
+        reason: "tauri-plugin-* crates and the Tauri 2 ACL model",
+      },
+      {
+        skill: "tauri-multiwindow",
+        needs: ["tauri"],
+        reason: "Tauri 2 event system and WebviewWindow APIs",
+      },
+      {
+        skill: "tauri-security",
+        needs: ["tauri"],
+        reason: "Capabilities and permissions are the Tauri 2 security model",
+      },
+      {
+        skill: "tauri-mobile",
+        needs: ["tauri"],
+        reason: "Tauri mobile targets are the same Tauri project",
+      },
+      {
+        skill: "mercurius",
+        needs: ["fastify"],
+        reason: "Mercurius is a Fastify plugin — registered via app.register on a Fastify instance",
+      },
+      {
+        skill: "nextauth",
+        needs: ["nextjs"],
+        reason:
+          "Skill teaches the next-auth (Next.js) package — auth.ts, handlers, middleware, Server Components",
+      },
+      {
+        skill: "bullmq",
+        needs: ["redis", "upstash"],
+        needsAny: true,
+        reason:
+          "BullMQ drives a Redis-compatible server over ioredis/TCP (blocking commands, Lua scripts, streams); Upstash documents BullMQ over its TCP endpoint — its REST client cannot drive BullMQ, and the skill carries its own ioredis connection factory",
+      },
+      {
+        skill: "composable-components",
+        needs: ["react"],
+        reason:
+          "Composition patterns are React surface — base-ui useRender/mergeProps, forwardRef, JSX parts",
+      },
+      {
+        skill: "web-reviewing",
+        needs: ["react"],
+        reason:
+          "Checklist self-scopes to React diffs — rules of hooks, dependency arrays, React.memo",
+      },
+      {
+        skill: "base-ui",
+        needs: ["react", "nextjs", "remix"],
+        needsAny: true,
+        reason: "Base UI primitives are React-only (@base-ui/react)",
+      },
+      {
+        skill: "react-three-fiber",
+        needs: ["react", "nextjs", "remix"],
+        needsAny: true,
+        reason: "React Three Fiber is a React renderer for Three.js",
+      },
+      {
+        skill: "dnd-kit",
+        needs: ["react", "nextjs", "remix"],
+        needsAny: true,
+        reason:
+          "The skill teaches DndContext/useDraggable/useDroppable/useSortable — @dnd-kit React packages throughout",
+      },
+      {
+        skill: "lexical",
+        needs: ["react", "nextjs", "remix"],
+        needsAny: true,
+        reason:
+          "The skill's only editor setup and plugin registration path is @lexical/react — LexicalComposer plus useEffect registration",
+      },
+      {
+        skill: "recharts",
+        needs: ["react", "nextjs", "remix"],
+        needsAny: true,
+        reason: "Recharts wraps D3 in composable React components",
+      },
+      {
+        skill: "component-library",
+        needs: ["react", "nextjs", "remix"],
+        needsAny: true,
+        reason:
+          "Packaging React components — react/react-dom peerDependencies and 'use client' preservation are the skill's critical requirements",
+      },
+      {
+        skill: "setup-resend",
+        needs: ["react", "nextjs", "remix"],
+        needsAny: true,
+        reason:
+          "Resend Email & React Email Setup — .tsx templates and the react: send prop are React Email surface",
+      },
+      {
+        skill: "setup-axiom-pino-sentry",
+        needs: ["nextjs"],
+        reason:
+          "Every pattern is the Next.js wiring — next-axiom, @sentry/nextjs, next.config.ts wrapping, instrumentation.ts; strip the Next slice and nothing followable remains",
+      },
+      {
+        skill: "turborepo-ci",
+        needs: ["turborepo"],
+        reason:
+          "Turborepo CI patterns configure turbo.json and the turbo CLI — requires the Turborepo task runner (shared-task-runner)",
       },
     ],
     alternatives: [

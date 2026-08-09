@@ -51,6 +51,7 @@ export function allSkills(): ResolvedSkill[] {
 export function getCustomSkillIds(): Set<SkillId> {
   return new Set(
     typedEntries(matrix.skills)
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
       .filter(([_, skill]) => skill?.custom)
       .map(([id]) => id),
   );

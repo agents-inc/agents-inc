@@ -132,6 +132,28 @@ describe("config round-trip", () => {
     });
   });
 
+  it("round-trips a stack whose assignments carry no flags", async () => {
+    const config = buildProjectConfig({
+      name: "flagless-assignment-project",
+      agents: buildAgentConfigs(["web-developer"]),
+      skills: buildSkillConfigs(["web-framework-react"]),
+      stack: {
+        "web-developer": {
+          "web-framework": [{ id: "web-framework-react" }],
+        },
+      },
+    });
+
+    // The file on disk carries the bare form...
+    expect(generateConfigSource(config)).toMatch(/"web-framework":\s*"web-framework-react"/);
+
+    // ...and the loader hands every consumer back a normalized SkillAssignment[].
+    const loaded = await writeAndLoadProjectConfig(config);
+    expect(loaded.stack?.["web-developer"]).toStrictEqual({
+      "web-framework": [{ id: "web-framework-react", preloaded: false }],
+    });
+  });
+
   it("round-trips a config with preloaded stack skills", async () => {
     const config = buildProjectConfig({
       name: "preloaded-project",
@@ -157,8 +179,7 @@ describe("config round-trip", () => {
       agents: buildAgentConfigs(["web-developer", "api-developer"]),
       skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_AND_API]),
       author: "@vince",
-      domains: ["web", "api"],
-      selectedAgents: ["web-developer", "api-developer"],
+      selectedDomains: ["web", "api"],
       source: TEST_SOURCE_URL,
       marketplace: "agents-inc",
     });
@@ -195,9 +216,6 @@ describe("config round-trip", () => {
       name: "sparse-project",
       agents: [],
       skills: [],
-      description: undefined,
-      author: undefined,
-      stack: undefined,
     });
 
     const loaded = (await writeAndLoad(config)) as Record<string, unknown>;

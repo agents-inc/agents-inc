@@ -17,7 +17,7 @@ import type {
 import { buildCompileAgents } from "../installation/local-installer";
 import { ensureDir } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
-import { typedEntries, typedKeys } from "../../utils/typed-object";
+import { typedEntries, typedFromEntries, typedKeys } from "../../utils/typed-object";
 import { createLiquidEngine } from "../compiler";
 import { loadProjectConfig, effectivelyExcludedSkillIds } from "../configuration";
 import { loadAllAgents, loadProjectAgents } from "../loading";
@@ -38,6 +38,13 @@ export type RecompileAgentsOptions = {
 
 export type RecompileAgentsResult = {
   compiled: AgentName[];
+  /**
+   * The subset of `compiled` whose file this pass actually wrote. `compiled` is
+   * every agent that came through the pass with a correct file at the end of it;
+   * `rewritten` is the ones whose content moved, so `compiled minus rewritten` is
+   * the count a summary reports as unchanged.
+   */
+  rewritten: AgentName[];
   failed: AgentName[];
   warnings: string[];
 };
@@ -49,7 +56,7 @@ async function getExistingAgentNames(pluginDir: string): Promise<AgentName[]> {
 type ResolveAgentNamesParams = {
   specifiedAgents?: AgentName[];
   projectConfig: ProjectConfig | null;
-  allAgents: Record<AgentName, AgentDefinition>;
+  allAgents: Partial<Record<AgentName, AgentDefinition>>;
   outputDir?: string;
   pluginDir: string;
 };
@@ -89,10 +96,13 @@ function buildRecompileResult(
     (outcome): outcome is Extract<AgentWriteOutcome, { ok: true }> => outcome.ok,
   );
   succeeded.forEach((outcome) =>
-    verbose(`  Recompiled: ${outcome.name} (${outcome.scope} -> ${outcome.targetDir})`),
+    verbose(
+      `  ${outcome.rewritten ? "Rewrote" : "Unchanged"}: ${outcome.name} (${outcome.scope} -> ${outcome.targetDir})`,
+    ),
   );
   return {
     compiled: succeeded.map((outcome) => outcome.name),
+    rewritten: succeeded.filter((outcome) => outcome.rewritten).map((outcome) => outcome.name),
     failed: failedOutcomes.map((outcome) => outcome.name),
     warnings: [
       ...priorWarnings,
@@ -108,22 +118,26 @@ export function filterExcludedEntries(config: ProjectConfig): ProjectConfig {
   const activeSkills = config.skills.filter((s) => !s.excluded);
   const activeAgents = config.agents.filter((a) => !a.excluded);
 
-  // Also remove excluded skill refs from stack assignments
-  const filteredStack = config.stack
-    ? Object.fromEntries(
-        typedEntries(config.stack).map(([agentName, agentStack]) => [
-          agentName,
-          Object.fromEntries(
-            typedEntries(agentStack).map(([category, assignments]) => [
-              category,
-              assignments.filter((a) => !excludedIds.has(a.id)),
+  // Also remove excluded skill refs from stack assignments. A config with no stack keeps
+  // none — the key stays absent rather than becoming an explicit `undefined`.
+  const filteredStack =
+    config.stack === undefined
+      ? {}
+      : {
+          stack: Object.fromEntries(
+            typedEntries(config.stack).map(([agentName, agentStack]) => [
+              agentName,
+              Object.fromEntries(
+                typedEntries(agentStack).map(([category, assignments]) => [
+                  category,
+                  assignments.filter((a) => !excludedIds.has(a.id)),
+                ]),
+              ),
             ]),
           ),
-        ]),
-      )
-    : undefined;
+        };
 
-  return { ...config, skills: activeSkills, agents: activeAgents, stack: filteredStack };
+  return { ...config, skills: activeSkills, agents: activeAgents, ...filteredStack };
 }
 
 export async function recompileAgents(
@@ -142,21 +156,21 @@ export async function recompileAgents(
   const projectAgents = projectDir ? await loadProjectAgents(projectDir) : {};
 
   // Priority: project agents > built-in agents
-  const allAgents: Record<AgentName, AgentDefinition> = {
+  const allAgents: Partial<Record<AgentName, AgentDefinition>> = {
     ...builtinAgents,
     ...projectAgents,
   };
 
   const agentNames = await resolveAgentNames({
-    specifiedAgents: options.agents,
+    ...(options.agents !== undefined && { specifiedAgents: options.agents }),
     projectConfig: filteredConfig,
     allAgents,
-    outputDir,
+    ...(outputDir !== undefined && { outputDir }),
     pluginDir,
   });
 
   if (agentNames.length === 0) {
-    return { compiled: [], failed: [], warnings: ["No agents found to recompile"] };
+    return { compiled: [], rewritten: [], failed: [], warnings: ["No agents found to recompile"] };
   }
 
   verbose(`Recompiling ${agentNames.length} agents in ${outputDir ?? pluginDir}`);
@@ -179,7 +193,7 @@ export async function recompileAgents(
   const missingWarnings = missingAgents.map(
     (name) => `Agent "${name}" not found in source definitions`,
   );
-  const configAgents: Record<string, CompileAgentConfig> = Object.fromEntries(
+  const configAgents = typedFromEntries<AgentName, CompileAgentConfig>(
     knownAgents.map((name) => [name, allConfigAgents[name] ?? {}]),
   );
 
@@ -200,7 +214,7 @@ export async function recompileAgents(
     sourcePath,
     engine,
     projectAgentsDir: agentsDir,
-    agentScopeMap: options.agentScopeMap,
+    ...(options.agentScopeMap !== undefined && { agentScopeMap: options.agentScopeMap }),
   });
   return buildRecompileResult(outcomes, missingWarnings);
 }

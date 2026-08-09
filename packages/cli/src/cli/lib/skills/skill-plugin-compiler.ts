@@ -59,7 +59,7 @@ async function readSkillMetadata(skillPath: string): Promise<SkillMetadata | nul
     }
     return result.data;
   } catch (error) {
-    warn(`Failed to read metadata.yaml at '${skillPath}': ${error}`);
+    warn(`Failed to read metadata.yaml at '${skillPath}': ${getErrorMessage(error)}`);
     return null;
   }
 }
@@ -136,7 +136,7 @@ export async function compileSkillPlugin(
   const manifest = generateSkillPluginManifest({
     skillName,
     description: frontmatter.description,
-    author: metadata?.author,
+    ...(metadata?.author !== undefined && { author: metadata.author }),
     version,
   });
 

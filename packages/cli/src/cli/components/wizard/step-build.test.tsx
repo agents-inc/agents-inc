@@ -59,13 +59,10 @@ const defaultMatrix = buildTestMatrix(
 const defaultProps: StepBuildProps = {
   domain: "web",
   selectedDomains: ["web"],
-  selections: {},
   allSelections: [],
   showLabels: false,
-  filterIncompatible: false,
   onToggle: vi.fn(),
   onToggleLabels: vi.fn(),
-  onToggleFilterIncompatible: vi.fn(),
   onContinue: vi.fn(),
   onBack: vi.fn(),
 };
@@ -88,15 +85,11 @@ describe("StepBuild component", () => {
 
   describe("rendering", () => {
     it("should render CategoryGrid with correct categories for domain", () => {
-      // For web domain with framework-first flow, initially only shows Framework
-      // To see other categories, need a framework selection
-      const { lastFrame, unmount } = renderStepBuild({
-        selections: { "web-framework": ["web-framework-react"] }, // Framework selected to show other categories
-      });
+      const { lastFrame, unmount } = renderStepBuild();
       cleanup = unmount;
 
       const output = lastFrame();
-      // Web domain should show Framework, Styling, Client State (when framework selected)
+      // Web domain should show Framework, Styling, Client State
       expect(output).toContain("Framework");
       expect(output).toContain("Styling");
       expect(output).toContain("Client State");
@@ -121,17 +114,14 @@ describe("StepBuild component", () => {
     });
 
     it("should render skills as options", () => {
-      // Need framework selected to see other categories in web domain
-      const { lastFrame, unmount } = renderStepBuild({
-        selections: { "web-framework": ["web-framework-react"] },
-      });
+      const { lastFrame, unmount } = renderStepBuild();
       cleanup = unmount;
 
       const output = lastFrame();
       // Framework skills
       expect(output).toContain("React");
       expect(output).toContain("Vue");
-      // Styling skills (visible after framework selected)
+      // Styling skills
       expect(output).toContain("Tailwind");
       expect(output).toContain("Scss Modules");
     });
@@ -146,9 +136,7 @@ describe("StepBuild component", () => {
     });
 
     it("should render categories for the domain", () => {
-      const { lastFrame, unmount } = renderStepBuild({
-        selections: { "web-framework": ["web-framework-react"] },
-      });
+      const { lastFrame, unmount } = renderStepBuild();
       cleanup = unmount;
 
       const output = lastFrame();
@@ -229,22 +217,19 @@ describe("StepBuild component", () => {
 
   describe("category filtering", () => {
     it("should filter categories correctly by domain", () => {
-      // Web domain with framework selected (to bypass framework-first filter)
       const { lastFrame: webFrame, unmount: webUnmount } = renderStepBuild({
         domain: "web",
-        selections: { "web-framework": ["web-framework-react"] },
       });
       const webOutput = webFrame();
       webUnmount();
 
-      // API domain (no framework-first filter for API)
       const { lastFrame: apiFrame, unmount: apiUnmount } = renderStepBuild({
         domain: "api",
       });
       cleanup = apiUnmount;
       const apiOutput = apiFrame();
 
-      // Web should have Framework, Styling, Client State (with framework selected)
+      // Web should have Framework, Styling, Client State
       expect(webOutput).toContain("Framework");
       expect(webOutput).toContain("Styling");
       expect(webOutput).toContain("Client State");
@@ -257,10 +242,7 @@ describe("StepBuild component", () => {
     });
 
     it("should sort categories by order", () => {
-      // Need framework selected to see all categories
-      const { lastFrame, unmount } = renderStepBuild({
-        selections: { "web-framework": ["web-framework-react"] },
-      });
+      const { lastFrame, unmount } = renderStepBuild();
       cleanup = unmount;
 
       const output = lastFrame();
@@ -279,7 +261,6 @@ describe("StepBuild component", () => {
     it("should show selected options correctly", () => {
       const { lastFrame, unmount } = renderStepBuild({
         allSelections: ["web-framework-react"],
-        selections: { "web-framework": ["web-framework-react"] },
       });
       cleanup = unmount;
 
@@ -308,10 +289,6 @@ describe("StepBuild component", () => {
       // Provide selections for required categories to pass validation
       const { stdin, unmount } = renderStepBuild({
         onContinue,
-        selections: {
-          "web-framework": ["web-framework-react"],
-          "web-styling": ["web-styling-tailwind"],
-        },
       });
       cleanup = unmount;
 
@@ -363,17 +340,18 @@ describe("StepBuild component", () => {
       expect(onToggleLabels).toHaveBeenCalled();
     });
 
-    it("should not call onToggleFilterIncompatible when F is pressed while the feature flag is off", async () => {
-      // FEATURE_FLAGS.FILTER_INCOMPATIBLE defaults off, so the F hotkey is a no-op.
-      const onToggleFilterIncompatible = vi.fn();
-      const { stdin, unmount } = renderStepBuild({ onToggleFilterIncompatible });
+    it("should leave the grid untouched when F is pressed", async () => {
+      const { stdin, lastFrame, unmount } = renderStepBuild();
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
+      const before = lastFrame();
       stdin.write("f");
       await delay(INPUT_DELAY_MS);
 
-      expect(onToggleFilterIncompatible).not.toHaveBeenCalled();
+      expect(lastFrame(), "incompatible-skill filtering is gone, so F binds to nothing").toBe(
+        before,
+      );
     });
   });
 
@@ -414,7 +392,6 @@ describe("StepBuild component", () => {
       const { lastFrame, unmount } = renderStepBuild({
         domain: "web",
         allSelections: ["api-framework-hono", "api-database-drizzle"], // API skills in test matrix
-        selections: { "web-framework": ["web-framework-react"] }, // Need framework to see other categories
       });
       cleanup = unmount;
 
@@ -611,7 +588,6 @@ describe("StepBuild component", () => {
       const onContinue = vi.fn();
       const { stdin, unmount } = renderStepBuild({
         onContinue,
-        selections: {},
       });
       cleanup = unmount;
 
@@ -629,10 +605,6 @@ describe("StepBuild component", () => {
       const onContinue = vi.fn();
       const { stdin, unmount } = renderStepBuild({
         onContinue,
-        selections: {
-          "web-framework": ["web-framework-react"],
-          "web-styling": ["web-styling-tailwind"],
-        },
       });
       cleanup = unmount;
 

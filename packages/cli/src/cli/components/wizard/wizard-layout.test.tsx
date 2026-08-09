@@ -4,8 +4,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WizardLayout } from "./wizard-layout";
 import { LOGO_MIN_TERMINAL_ROWS, MIN_TERMINAL_SIZE } from "../../consts";
 import { useWizardStore } from "../../stores/wizard-store";
+import type { StartupMessage } from "../../utils/logger";
+import { sourceUnreachableUsingCache } from "../../utils/messages";
 import { formatTerminalTooSmallMessage } from "../../utils/terminal";
 import { RENDER_DELAY_MS, delay } from "../../lib/__tests__/test-constants";
+import { initializeMatrix } from "../../lib/matrix/matrix-provider";
+import { REACT_HONO_FRAMEWORK_API_MATRIX } from "../../lib/__tests__/mock-data/mock-matrices";
+import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 
 /** Text only the wizard's own children paint, so its absence proves they were replaced. */
 const CHILD_MARKER = "STEP BODY";
@@ -50,6 +55,17 @@ function resizeTo(stdout: TestStdout, { columns, rows }: { columns: number; rows
 const mountLayout = async (logo?: string) => {
   const instance = render(
     <WizardLayout version={VERSION} logo={logo}>
+      <Text>{CHILD_MARKER}</Text>
+    </WizardLayout>,
+  );
+  await delay(RENDER_DELAY_MS);
+  return instance;
+};
+
+/** Same mount, carrying what the load buffered before the wizard took the terminal. */
+const mountLayoutWithMessages = async (startupMessages: StartupMessage[]) => {
+  const instance = render(
+    <WizardLayout version={VERSION} startupMessages={startupMessages}>
       <Text>{CHILD_MARKER}</Text>
     </WizardLayout>,
   );
@@ -142,6 +158,169 @@ describe("WizardLayout terminal-size guard", () => {
     expect(output).toContain(TAB_LABEL);
     expect(output).toContain(FOOTER_LABEL);
     expect(output).not.toContain("Please resize");
+  });
+});
+
+/** The tabs a flow with no stack step still paints, spelled as the bar prints them. */
+const TABS_WITHOUT_STACK = ["Domains", "Skills", "Sources", "Agents", "Confirm"] as const;
+
+describe("WizardLayout tab bar", () => {
+  let cleanup: (() => void) | undefined;
+
+  afterEach(() => {
+    cleanup?.();
+    cleanup = undefined;
+    // The matrix is a module singleton and the tab bar is drawn from it, so the
+    // stackless one below would otherwise decide every later render.
+    initializeMatrix(BUILT_IN_MATRIX);
+  });
+
+  it("paints a Stack tab when the source ships stacks", async () => {
+    const { stdout, lastFrame, unmount } = await mountLayout();
+    cleanup = unmount;
+
+    resizeTo(stdout, ROOMY);
+    await delay(RENDER_DELAY_MS);
+
+    const output = lastFrame();
+    expect(output).toContain(TAB_LABEL);
+    for (const label of TABS_WITHOUT_STACK) {
+      expect(output).toContain(label);
+    }
+  });
+
+  it("paints no Stack tab when the source ships no stacks", async () => {
+    initializeMatrix(REACT_HONO_FRAMEWORK_API_MATRIX);
+    // Where such a source opens the wizard — there is no stack step to be on.
+    useWizardStore.setState({ step: "domains" });
+
+    const { stdout, lastFrame, unmount } = await mountLayout();
+    cleanup = unmount;
+
+    resizeTo(stdout, ROOMY);
+    await delay(RENDER_DELAY_MS);
+
+    const output = lastFrame();
+    // The five remaining tabs prove the bar painted, so the sixth's absence is
+    // a dropped step rather than a missing frame.
+    for (const label of TABS_WITHOUT_STACK) {
+      expect(output).toContain(label);
+    }
+    expect(output).not.toContain(TAB_LABEL);
+  });
+});
+
+/**
+ * A source short enough that the warning it produces fits one line at every
+ * geometry these tests mount at — the assertion is about the message reaching
+ * the frame, not about how a terminal too narrow for it would break it up.
+ */
+const UNREACHABLE_SOURCE = "org/repo";
+const CACHED_COPY_WARNING = sourceUnreachableUsingCache(UNREACHABLE_SOURCE);
+
+/** One of each level, since the load buffers all three and drops none. */
+const EVERY_LEVEL = [
+  { level: "info", text: "Loaded 9 skills (marketplace)" },
+  { level: "warn", text: CACHED_COPY_WARNING },
+  { level: "error", text: "Could not read one skill's metadata" },
+] as const satisfies readonly StartupMessage[];
+
+/** More warnings than the band paints, so the rest can only be reported as a count. */
+const PAINTED_WARNINGS = [
+  { level: "warn", text: "Skipping 'alpha': missing SKILL.md" },
+  { level: "warn", text: "Skipping 'bravo': missing SKILL.md" },
+  { level: "warn", text: "Skipping 'charlie': missing SKILL.md" },
+] as const satisfies readonly StartupMessage[];
+const COUNTED_WARNINGS = [
+  { level: "warn", text: "Skipping 'delta': missing SKILL.md" },
+  { level: "warn", text: "Skipping 'echo': missing SKILL.md" },
+] as const satisfies readonly StartupMessage[];
+
+describe("WizardLayout startup messages", () => {
+  let cleanup: (() => void) | undefined;
+
+  afterEach(() => {
+    cleanup?.();
+    cleanup = undefined;
+  });
+
+  it("paints a warning buffered before the wizard mounted, alongside the step", async () => {
+    const { stdout, lastFrame, unmount } = await mountLayoutWithMessages([
+      { level: "warn", text: CACHED_COPY_WARNING },
+    ]);
+    cleanup = unmount;
+
+    resizeTo(stdout, ROOMY);
+    await delay(RENDER_DELAY_MS);
+
+    const output = lastFrame();
+    expect(output).toContain(CACHED_COPY_WARNING);
+    // The step and the footer prove the band did not replace the wizard.
+    expect(output).toContain(CHILD_MARKER);
+    expect(output).toContain(FOOTER_LABEL);
+  });
+
+  it("paints every buffered level", async () => {
+    const { stdout, lastFrame, unmount } = await mountLayoutWithMessages([...EVERY_LEVEL]);
+    cleanup = unmount;
+
+    resizeTo(stdout, ROOMY);
+    await delay(RENDER_DELAY_MS);
+
+    const output = lastFrame();
+    for (const message of EVERY_LEVEL) {
+      expect(output).toContain(message.text);
+    }
+  });
+
+  it("bounds the band and counts the messages it did not paint", async () => {
+    const { stdout, lastFrame, unmount } = await mountLayoutWithMessages([
+      ...PAINTED_WARNINGS,
+      ...COUNTED_WARNINGS,
+    ]);
+    cleanup = unmount;
+
+    resizeTo(stdout, ROOMY);
+    await delay(RENDER_DELAY_MS);
+
+    const output = lastFrame();
+    for (const message of PAINTED_WARNINGS) {
+      expect(output).toContain(message.text);
+    }
+    for (const message of COUNTED_WARNINGS) {
+      expect(output).not.toContain(message.text);
+    }
+    expect(output).toContain(`and ${COUNTED_WARNINGS.length} more`);
+  });
+
+  it("paints one message and counts the rest where the step has no rows to spare", async () => {
+    const [first, ...rest] = PAINTED_WARNINGS;
+    const { stdout, lastFrame, unmount } = await mountLayoutWithMessages([...PAINTED_WARNINGS]);
+    cleanup = unmount;
+
+    resizeTo(stdout, AT_MINIMUM);
+    await delay(RENDER_DELAY_MS);
+
+    const output = lastFrame();
+    expect(output).toContain(first.text);
+    for (const message of rest) {
+      expect(output).not.toContain(message.text);
+    }
+    expect(output).toContain(`and ${rest.length} more`);
+    // The footer proves the step still has its chrome under the shortened band.
+    expect(output).toContain(FOOTER_LABEL);
+  });
+
+  it("paints no band when the load buffered nothing", async () => {
+    const { stdout, lastFrame, unmount } = await mountLayoutWithMessages([]);
+    cleanup = unmount;
+
+    resizeTo(stdout, ROOMY);
+    await delay(RENDER_DELAY_MS);
+
+    const output = lastFrame();
+    expect(output).toContain(CHILD_MARKER);
+    expect(output).not.toContain("more");
   });
 });
 

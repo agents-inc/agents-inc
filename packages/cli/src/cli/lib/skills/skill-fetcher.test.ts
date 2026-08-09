@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import path from "path";
-import type { MarketplacePlugin, SkillId } from "../../types";
+import type { SkillId } from "../../types";
 import {
   createMockMarketplace,
   createMockMarketplacePlugin,
@@ -12,6 +12,7 @@ vi.mock("../../utils/logger");
 
 import { fetchSkills } from "./skill-fetcher";
 import { copy, ensureDir, directoryExists, glob } from "../../utils/fs";
+import { elementAt, firstElement } from "../__tests__/helpers/element-at.js";
 
 const mockDirectoryExists = vi.mocked(directoryExists);
 const mockGlob = vi.mocked(glob);
@@ -71,8 +72,8 @@ describe("skill-fetcher", () => {
 
       // Should have copied the skill
       expect(mockCopy).toHaveBeenCalledTimes(1);
-      const copyCallSrc = mockCopy.mock.calls[0][0];
-      const copyCallDest = mockCopy.mock.calls[0][1];
+      const copyCallSrc = firstElement(firstElement(mockCopy.mock.calls));
+      const copyCallDest = elementAt(firstElement(mockCopy.mock.calls), 1);
       expect(copyCallSrc).toBe(path.join(skillSourceDir, "web/framework/web-framework-react"));
       expect(copyCallDest).toBe(path.join(SKILLS_OUTPUT_DIR, "web/framework/web-framework-react"));
     });
@@ -219,10 +220,13 @@ describe("skill-fetcher", () => {
 
     it("should throw when marketplace plugin source has neither url nor repo", async () => {
       const marketplace = createMockMarketplace([
+        // The assertion is the fixture: this object is *meant* not to be a valid
+        // plugin source — no url and no repo — because the assertion below is that
+        // fetchSkills rejects exactly that. `satisfies` would refuse to express it.
+
         createMockMarketplacePlugin(REACT_SKILL_ID, {
           source: "github",
-          // No url and no repo - malformed marketplace data
-        } as MarketplacePlugin["source"]),
+        }),
       ]);
       const skillId = REACT_SKILL_ID;
 

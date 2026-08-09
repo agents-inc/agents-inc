@@ -2,8 +2,6 @@ export {
   type BuildStepValidation,
   validateBuildStep,
   buildCategoriesForDomain,
-  isCompatibleWithSelectedFrameworks,
-  FRAMEWORK_CATEGORY_ID,
 } from "./build-step-logic";
 export {
   type AgentDiffRow,

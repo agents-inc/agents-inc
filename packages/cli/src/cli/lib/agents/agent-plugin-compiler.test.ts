@@ -9,6 +9,7 @@ import {
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { renderAgentMd } from "../__tests__/content-generators";
+import { firstElement } from "../__tests__/helpers/element-at.js";
 
 describe("agent-plugin-compiler", () => {
   let tempDir: string;
@@ -203,7 +204,7 @@ describe("agent-plugin-compiler", () => {
       const results = await compileAllAgentPlugins(agentsDir, outputDir);
 
       expect(results).toHaveLength(1);
-      expect(results[0].agentName).toBe("good-agent");
+      expect(firstElement(results).agentName).toBe("good-agent");
 
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Warning:"));
 

@@ -412,7 +412,11 @@ describe("config", () => {
     it("should return flag value with highest priority", async () => {
       process.env[SOURCE_ENV_VAR] = "github:env/repo";
 
-      const result = await resolveSource("github:flag/repo", tempDir);
+      const result = await resolveSource({
+        caller: "init",
+        flag: "github:flag/repo",
+        projectDir: tempDir,
+      });
 
       expect(result.source).toBe("github:flag/repo");
       expect(result.sourceOrigin).toBe("flag");
@@ -421,7 +425,7 @@ describe("config", () => {
     it("should return env value when no flag is provided", async () => {
       process.env[SOURCE_ENV_VAR] = "github:env/repo";
 
-      const result = await resolveSource(undefined, tempDir);
+      const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
       expect(result.source).toBe("github:env/repo");
       expect(result.sourceOrigin).toBe("env");
@@ -430,21 +434,21 @@ describe("config", () => {
     it("should return project config when no flag or env", async () => {
       await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:project/repo" }));
 
-      const result = await resolveSource(undefined, tempDir);
+      const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
       expect(result.source).toBe("github:project/repo");
       expect(result.sourceOrigin).toBe("project");
     });
 
     it("should return default when no config is set", async () => {
-      const result = await resolveSource(undefined, tempDir);
+      const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
       expect(result.sourceOrigin).toBe("default");
       expect(result.source).toBe(DEFAULT_SOURCE);
     });
 
     it("when projectDir is undefined and no flag provided, should fall back to default source", async () => {
-      const result = await resolveSource(undefined, undefined);
+      const result = await resolveSource({ caller: "stored" });
 
       expect(result.sourceOrigin).toBe("default");
       expect(result.source).toBe(DEFAULT_SOURCE);
@@ -454,7 +458,11 @@ describe("config", () => {
       process.env[SOURCE_ENV_VAR] = "github:env/repo";
       await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:project/repo" }));
 
-      const result = await resolveSource("github:flag/repo", tempDir);
+      const result = await resolveSource({
+        caller: "init",
+        flag: "github:flag/repo",
+        projectDir: tempDir,
+      });
 
       expect(result.source).toBe("github:flag/repo");
       expect(result.sourceOrigin).toBe("flag");
@@ -464,32 +472,65 @@ describe("config", () => {
       process.env[SOURCE_ENV_VAR] = "github:env/repo";
       await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:project/repo" }));
 
-      const result = await resolveSource(undefined, tempDir);
+      const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
       expect(result.source).toBe("github:env/repo");
       expect(result.sourceOrigin).toBe("env");
     });
 
     it("should throw error for empty source flag", async () => {
-      await expect(resolveSource("", tempDir)).rejects.toThrow(/--source flag cannot be empty/);
+      await expect(
+        resolveSource({ caller: "init", flag: "", projectDir: tempDir }),
+      ).rejects.toThrow(/--source flag cannot be empty/);
     });
 
     it("should throw error for whitespace-only source flag", async () => {
-      await expect(resolveSource("   ", tempDir)).rejects.toThrow(/--source flag cannot be empty/);
+      await expect(
+        resolveSource({ caller: "init", flag: "   ", projectDir: tempDir }),
+      ).rejects.toThrow(/--source flag cannot be empty/);
     });
 
     it("should throw error for incomplete github: URL in flag", async () => {
-      await expect(resolveSource("github:", tempDir)).rejects.toThrow(/incomplete URL/);
+      await expect(
+        resolveSource({ caller: "init", flag: "github:", projectDir: tempDir }),
+      ).rejects.toThrow(/incomplete URL/);
     });
 
     it("should throw error for github: without owner/repo in flag", async () => {
-      await expect(resolveSource("github:just-a-name", tempDir)).rejects.toThrow(
-        /owner\/repo format/,
-      );
+      await expect(
+        resolveSource({ caller: "init", flag: "github:just-a-name", projectDir: tempDir }),
+      ).rejects.toThrow(/owner\/repo format/);
     });
 
     it("should throw error for invalid https:// URL in flag", async () => {
-      await expect(resolveSource("https://", tempDir)).rejects.toThrow(/incomplete URL/);
+      await expect(
+        resolveSource({ caller: "init", flag: "https://", projectDir: tempDir }),
+      ).rejects.toThrow(/incomplete URL/);
+    });
+
+    describe("the env var is the init caller's rung alone", () => {
+      it("should ignore the env var for a stored caller and read the project config", async () => {
+        process.env[SOURCE_ENV_VAR] = "github:env/repo";
+        await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:project/repo" }));
+
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
+
+        expect(result.source, "a stored caller reads what the install recorded").toBe(
+          "github:project/repo",
+        );
+        expect(result.sourceOrigin).toBe("project");
+      });
+
+      it("should ignore the env var for a stored caller with nothing stored", async () => {
+        process.env[SOURCE_ENV_VAR] = "github:env/repo";
+
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
+
+        expect(result.source, "an ambient env var must not stand in for a stored source").toBe(
+          DEFAULT_SOURCE,
+        );
+        expect(result.sourceOrigin).toBe("default");
+      });
     });
 
     describe("env var validation", () => {
@@ -506,7 +547,7 @@ describe("config", () => {
       it("should accept valid env var source", async () => {
         process.env[SOURCE_ENV_VAR] = "github:org/repo";
 
-        const result = await resolveSource(undefined, tempDir);
+        const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
         expect(result.source).toBe("github:org/repo");
         expect(result.sourceOrigin).toBe("env");
@@ -515,7 +556,7 @@ describe("config", () => {
       it("should warn and fall back to default for invalid env var (incomplete URL)", async () => {
         process.env[SOURCE_ENV_VAR] = "github:";
 
-        const result = await resolveSource(undefined, tempDir);
+        const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
         expect(result.sourceOrigin).toBe("default");
         expect(result.source).toBe(DEFAULT_SOURCE);
@@ -527,7 +568,7 @@ describe("config", () => {
 
         await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:project/repo" }));
 
-        const result = await resolveSource(undefined, tempDir);
+        const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
         expect(result.sourceOrigin).toBe("project");
         expect(result.source).toBe("github:project/repo");
@@ -537,7 +578,7 @@ describe("config", () => {
       it("should warn and fall back for whitespace-only env var", async () => {
         process.env[SOURCE_ENV_VAR] = "   ";
 
-        const result = await resolveSource(undefined, tempDir);
+        const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
         expect(result.sourceOrigin).toBe("default");
         expect(result.source).toBe(DEFAULT_SOURCE);
@@ -547,7 +588,7 @@ describe("config", () => {
       it("should warn and fall back for malformed URL in env var", async () => {
         process.env[SOURCE_ENV_VAR] = "https://";
 
-        const result = await resolveSource(undefined, tempDir);
+        const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
         expect(result.sourceOrigin).toBe("default");
         expect(result.source).toBe(DEFAULT_SOURCE);
@@ -557,7 +598,7 @@ describe("config", () => {
       it("should warn and fall back for UNC path in env var", async () => {
         process.env[SOURCE_ENV_VAR] = "//attacker.com/payload";
 
-        const result = await resolveSource(undefined, tempDir);
+        const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
         expect(result.sourceOrigin).toBe("default");
         expect(result.source).toBe(DEFAULT_SOURCE);
@@ -567,7 +608,7 @@ describe("config", () => {
       it("should trim valid env var values", async () => {
         process.env[SOURCE_ENV_VAR] = "  github:org/repo  ";
 
-        const result = await resolveSource(undefined, tempDir);
+        const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
         expect(result.source).toBe("github:org/repo");
         expect(result.sourceOrigin).toBe("env");
@@ -581,7 +622,7 @@ describe("config", () => {
           buildSourceConfig({ marketplace: "https://my-company.com/plugins" }),
         );
 
-        const result = await resolveSource(undefined, tempDir);
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
         expect(result.marketplace).toBe("https://my-company.com/plugins");
       });
@@ -595,7 +636,7 @@ describe("config", () => {
           }),
         );
 
-        const result = await resolveSource(undefined, tempDir);
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
         expect(result.source).toBe("github:mycompany/skills");
         expect(result.sourceOrigin).toBe("project");
@@ -603,7 +644,7 @@ describe("config", () => {
       });
 
       it("should return undefined marketplace when not configured", async () => {
-        const result = await resolveSource(undefined, tempDir);
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
         expect(result.marketplace).toBeUndefined();
       });

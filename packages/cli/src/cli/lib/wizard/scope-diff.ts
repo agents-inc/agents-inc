@@ -9,7 +9,7 @@ export type ScopeDiffInput = {
   isInitMode: boolean;
 };
 
-export type DiffRowStatus = "added" | "source-changed" | "removed" | "unchanged";
+export type DiffRowStatus = "added" | "mode-changed" | "removed" | "unchanged";
 
 export type SkillDiffRow = {
   id: SkillId;
@@ -19,7 +19,7 @@ export type SkillDiffRow = {
 
 export type AgentDiffRow = {
   name: AgentName;
-  status: Exclude<DiffRowStatus, "source-changed">;
+  status: Exclude<DiffRowStatus, "mode-changed">;
 };
 
 export type ScopeDiff = {
@@ -40,8 +40,8 @@ export type ScopeDiff = {
  * (slot-occupancy match) — prevents a dual-scope G→P toggle from rendering a
  * spurious `-` at Global (D-230) or a spurious `+` at Global on the next edit
  * when the stored tombstone is re-read (D-232). See D-225 investigation 09 for
- * the full derivation; source-change (`~`) tracking filters to active baseline
- * entries because tombstones don't represent a live install source.
+ * the full derivation; mode-change (`~`) tracking filters to active baseline
+ * entries because tombstones don't represent a live install.
  */
 export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
   const { currentSkills, currentAgents, installedSkillConfigs, installedAgentConfigs, isInitMode } =
@@ -208,7 +208,14 @@ export function deriveScopeBadges(
   return { scope: activeConfig?.scope, secondaryScope };
 }
 
-/** Classifies an active skill entry against the baseline: added, source-changed, or unchanged. */
+/**
+ * Classifies an active skill entry against the baseline: added, mode-changed, or unchanged.
+ *
+ * The comparison is still on `source`, because that field IS where a skill's install mode is
+ * recorded: `eject` means the project's own copy and anything else names the marketplace the
+ * plugin comes from. With no second marketplace to move between, a `source` that changed is a
+ * mode that changed, which is what the `~` marker has always meant to a reader.
+ */
 function classifyDiffRow(
   skill: SkillConfig,
   prevKeySet: Set<string> | null,
@@ -217,9 +224,9 @@ function classifyDiffRow(
   const key = skillSlotKey(skill.id, skill.scope);
   const isNew = prevKeySet === null || !prevKeySet.has(key);
   const prevSource = prevSourceMap?.get(key);
-  const sourceChanged = !isNew && prevSource != null && prevSource !== skill.source;
-  if (sourceChanged) {
-    return { id: skill.id, source: skill.source, status: "source-changed" };
+  const modeChanged = !isNew && prevSource != null && prevSource !== skill.source;
+  if (modeChanged) {
+    return { id: skill.id, source: skill.source, status: "mode-changed" };
   }
   return { id: skill.id, source: skill.source, status: isNew ? "added" : "unchanged" };
 }

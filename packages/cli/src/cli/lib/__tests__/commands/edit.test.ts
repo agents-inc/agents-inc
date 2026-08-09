@@ -6,6 +6,8 @@ import { mkdir } from "fs/promises";
 import type { Errors } from "@oclif/core";
 import { runCliCommand, CLI_ROOT } from "../helpers/cli-runner.js";
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
+import { useFakeHome } from "../helpers/isolated-home.js";
+import { writeCorruptTestConfig } from "../helpers/config-io.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { createMockSkill } from "../factories/skill-factories.js";
 import { createMockMatrix } from "../factories/matrix-factories.js";
@@ -19,11 +21,14 @@ import { SKILLS, TEST_CATEGORIES } from "../test-fixtures";
 import { FULLSTACK_PAIR_MATRIX } from "../mock-data/mock-matrices";
 import { EXPECTED_SKILLS } from "../expected-values";
 import { EXIT_CODES } from "../../exit-codes";
+import { EDITOR_URL, EJECT_SOURCE } from "../../../consts";
+import { ERROR_MESSAGES } from "../../../utils/messages";
 import * as wizardStore from "../../../stores/wizard-store";
 import { useWizardStore } from "../../../stores/wizard-store";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import * as execModule from "../../../utils/exec.js";
 import type { CategoryPath, SkillConfig, SkillId, SkillScope } from "../../../types";
+import { firstElement } from "../helpers/element-at.js";
 import Edit, {
   applyMigratedGlobalSources,
   migratePluginSkillScopes,
@@ -158,6 +163,15 @@ function mockWizardCompletion(wizardResult: unknown): void {
   });
 }
 
+/** A genuine TypeScript syntax error — the config loader throws while evaluating the file. */
+const CORRUPT_CONFIG_SOURCE = "export default {{{ not valid typescript";
+
+/** The phrase `ConfigLoadError` builds its message around. */
+const CONFIG_LOAD_FAILED_PHRASE = "could not be loaded";
+
+/** The instruction that separates an unreadable config from a missing one. */
+const RECREATE_PHRASE = "recreate the configuration";
+
 describe("edit command", () => {
   let tempDir: string;
   let projectDir: string;
@@ -195,38 +209,72 @@ describe("edit command", () => {
     });
   });
 
-  describe("flag validation", () => {
-    it("should accept --refresh flag", async () => {
-      const { error } = await runCliCommand(["edit", "--refresh"]);
+  /**
+   * A config file that exists but cannot be loaded is not a missing one: `edit` refuses it
+   * up front, before the wizard, and says the way out is to recreate the configuration.
+   * These load the real file from disk — the guard reads it directly, so the mocked
+   * `loadProjectConfig` above is not in play.
+   */
+  describe("unreadable config", () => {
+    const fakeHome = useFakeHome(() => tempDir);
 
-      // Should not error on flag parsing (will error on no installation, which is expected)
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+    it("refuses, naming the config it could not read", async () => {
+      const configPath = await writeCorruptTestConfig(projectDir, CORRUPT_CONFIG_SOURCE);
+
+      const { error } = await runCliCommand(["edit"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(error?.message).toContain(configPath);
+      expect(error?.message).toContain(CONFIG_LOAD_FAILED_PHRASE);
+      expect(error?.message).not.toContain(ERROR_MESSAGES.NO_INSTALLATION);
     });
 
-    it("should accept --source flag with path", async () => {
-      const { error } = await runCliCommand(["edit", "--source", "/some/path"]);
+    it("says to recreate the configuration and where to build a new one", async () => {
+      await writeCorruptTestConfig(projectDir, CORRUPT_CONFIG_SOURCE);
 
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      const { error } = await runCliCommand(["edit"]);
+
+      expect(error?.message).toContain(RECREATE_PHRASE);
+      expect(error?.message).toContain(EDITOR_URL);
     });
 
-    it("should accept -s shorthand for source", async () => {
-      const { error } = await runCliCommand(["edit", "-s", "/some/path"]);
+    it("refuses when the unreadable config is the global one and the project has none", async () => {
+      const globalConfigPath = await writeCorruptTestConfig(fakeHome.dir, CORRUPT_CONFIG_SOURCE);
 
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      const { error } = await runCliCommand(["edit"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(error?.message).toContain(globalConfigPath);
+      expect(error?.message).toContain(RECREATE_PHRASE);
+    });
+
+    it("keeps the no-installation message when no config file exists at all", async () => {
+      const { error } = await runCliCommand(["edit"]);
+
+      expect(error?.message).toContain(ERROR_MESSAGES.NO_INSTALLATION);
+      expect(error?.message).not.toContain(RECREATE_PHRASE);
     });
   });
 
-  describe("combined flags", () => {
-    it("when mixing -s shorthand and --refresh long flag, should accept both", async () => {
-      const { error } = await runCliCommand(["edit", "--refresh", "-s", "/custom/source"]);
+  describe("flag validation", () => {
+    it("rejects --refresh — every load revalidates, so there is nothing to force", async () => {
+      const { error } = await runCliCommand(["edit", "--refresh"]);
 
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(error?.message).toContain("Nonexistent flag: --refresh");
+    });
+
+    it("rejects --source — the wizard opens on the catalogue config.ts names", async () => {
+      const { error } = await runCliCommand(["edit", "--source", "/some/path"]);
+
+      expect(error?.message).toContain("Nonexistent flag: --source");
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
+    });
+
+    it("rejects the -s shorthand for the same reason", async () => {
+      const { error } = await runCliCommand(["edit", "-s", "/some/path"]);
+
+      expect(error?.message).toContain("Nonexistent flag: -s");
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
   });
 });
@@ -993,11 +1041,15 @@ describe("edit command mode migration with a failing plugin install", () => {
     process.chdir(projectDir);
 
     stderrChunks = [];
+    // Saved to be assigned straight back onto the same object in afterEach, so
+    // it is called with the receiver it came from. Binding would restore a
+    // wrapper rather than the original method.
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- restored, not called
     origStderrWrite = process.stderr.write;
     process.stderr.write = function (str: unknown): boolean {
       stderrChunks.push(String(str));
       return true;
-    } as typeof process.stderr.write;
+    };
 
     mockRender.mockClear();
     mockDeleteLocalSkill.mockClear();
@@ -1180,7 +1232,7 @@ describe("migratePluginSkillScopes", () => {
     // Should report failure
     expect(result.migrated).toHaveLength(0);
     expect(result.failed).toHaveLength(1);
-    expect(result.failed[0].id).toBe("web-framework-react");
+    expect(firstElement(result.failed).id).toBe("web-framework-react");
   });
 
   it("should not install at global scope when project uninstall fails", async () => {
@@ -1244,7 +1296,7 @@ describe("migratePluginSkillScopes", () => {
     // First skill failed, second succeeded
     expect(result.migrated).toStrictEqual(["web-state-zustand"]);
     expect(result.failed).toHaveLength(1);
-    expect(result.failed[0].id).toBe("web-framework-react");
+    expect(firstElement(result.failed).id).toBe("web-framework-react");
   });
 });
 
@@ -1578,11 +1630,15 @@ describe("edit change summary display", () => {
     process.chdir(projectDir);
 
     stdoutChunks = [];
+    // Saved to be assigned straight back onto the same object in afterEach, so
+    // it is called with the receiver it came from. Binding would restore a
+    // wrapper rather than the original method.
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- restored, not called
     origWrite = process.stdout.write;
     process.stdout.write = function (str: unknown): boolean {
       stdoutChunks.push(String(str));
       return true;
-    } as typeof process.stdout.write;
+    };
 
     mockRender.mockClear();
     mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
@@ -1794,5 +1850,33 @@ describe("edit change summary display", () => {
     // Should show formatted source labels (Eject → Agents Inc)
     expect(output).toContain("Eject");
     expect(output).toContain("Agents Inc");
+  });
+
+  it("should show one ~ line for an install-mode switch, not a remove/add pair", async () => {
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react"], { source: EJECT_SOURCE }),
+        agents: buildAgentConfigs(["web-developer"]),
+      }),
+    );
+
+    mockWizardCompletion(
+      buildWizardResult(buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }), {
+        agentConfigs: buildAgentConfigs(["web-developer"]),
+      }),
+    );
+
+    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+
+    const output = stdoutChunks.join("");
+
+    // A mode switch keeps the same skill installed — it moves between eject and
+    // plugin. One amber line says so; a `- React` / `+ React` pair would read as an
+    // uninstall followed by an install of something else. `-`/`+` stay correct for
+    // the scope moves the sibling specs above cover.
+    expect(output).toContain("~ React");
+    expect(output).not.toContain("- React");
+    expect(output).not.toContain("+ React");
   });
 });

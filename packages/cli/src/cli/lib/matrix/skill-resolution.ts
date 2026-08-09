@@ -138,7 +138,6 @@ export function mergeMatrixWithSkills(
 type ResolvedRelationships = {
   conflictsWith: SkillRelation[];
   discourages: SkillRelation[];
-  compatibleWith: SkillId[];
   requires: SkillRequirement[];
   alternatives: SkillAlternative[];
 };
@@ -185,18 +184,11 @@ function resolveRelationships(
   ).map(({ memberId, rule }) => ({ skillId: memberId, reason: rule.reason }));
 
   const discourages: SkillRelation[] = collectSymmetricGroupMembers(
-    relationships.discourages ?? [],
+    relationships.discourages,
     skillId,
     resolve,
     "discourages",
   ).map(({ memberId, rule }) => ({ skillId: memberId, reason: rule.reason }));
-
-  const compatibleWith: SkillId[] = collectSymmetricGroupMembers(
-    relationships.compatibleWith ?? [],
-    skillId,
-    resolve,
-    "compatibleWith",
-  ).map(({ memberId }) => memberId);
 
   const alternatives: SkillAlternative[] = collectSymmetricGroupMembers(
     relationships.alternatives,
@@ -222,7 +214,6 @@ function resolveRelationships(
   return {
     conflictsWith,
     discourages,
-    compatibleWith,
     requires,
     alternatives,
   };
@@ -239,9 +230,6 @@ function buildResolvedSkill(
 
   const slug = skill.slug;
 
-  // Look up isRecommended/recommendedReason from flat recommends list (now slug-based)
-  const recommendation = relationships.recommends.find((r) => r.skill === skill.slug);
-
   const resolved = resolveRelationships(skill.id, relationships, resolve);
 
   return {
@@ -249,12 +237,10 @@ function buildResolvedSkill(
     slug,
     displayName: skill.displayName,
     description: skill.description,
-    usageGuidance: skill.usageGuidance,
+    ...(skill.usageGuidance !== undefined && { usageGuidance: skill.usageGuidance }),
     category: skill.category,
     author: skill.author,
     ...resolved,
-    isRecommended: recommendation != null,
-    recommendedReason: recommendation?.reason,
     path: skill.path,
     ...(skill.custom === true ? { custom: true } : {}),
   };

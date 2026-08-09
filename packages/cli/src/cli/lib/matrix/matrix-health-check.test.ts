@@ -11,18 +11,25 @@ import {
   HEALTH_MULTIPLE_MISSING_DOMAINS_MATRIX,
   HEALTH_UNKNOWN_CATEGORY_MATRIX,
   HEALTH_ORPHAN_SKILL_WITH_MISSING_DOMAIN_MATRIX,
-  HEALTH_UNRESOLVED_COMPATIBLE_WITH_MATRIX,
   HEALTH_UNRESOLVED_CONFLICTS_WITH_MATRIX,
   HEALTH_UNRESOLVED_REQUIRES_MATRIX,
   HEALTH_MULTIPLE_UNRESOLVED_REFS_MATRIX,
   HEALTH_ALL_REFS_RESOLVED_MATRIX,
   HEALTH_PARTIAL_UNRESOLVED_REQUIRES_MATRIX,
+  HEALTH_AUDIT_UNIVERSAL_IN_EXCLUSIVE_MATRIX,
+  HEALTH_AUDIT_UNIVERSAL_IN_OPEN_MATRIX,
+  HEALTH_AUDIT_UNIVERSAL_WITH_REQUIRES_MATRIX,
+  HEALTH_AUDIT_CONSTRAINED_IN_EXCLUSIVE_MATRIX,
+  HEALTH_AUDIT_APPLIED_DISPOSITION_MATRIX,
+  CUSTOM_SKILL_MATRIX,
+  LOCAL_SKILL_MATRIX,
 } from "../__tests__/mock-data/mock-matrices";
 import type { Category, SkillId } from "../../types";
 
 vi.mock("../../utils/logger");
 
 import { warn } from "../../utils/logger";
+import { firstElement } from "../__tests__/helpers/element-at.js";
 
 describe("matrix-health-check", () => {
   describe("healthy matrix", () => {
@@ -45,9 +52,9 @@ describe("matrix-health-check", () => {
 
       const domainIssues = issues.filter((i) => i.finding === "category-missing-domain");
       expect(domainIssues).toHaveLength(1);
-      expect(domainIssues[0].severity).toBe("warning");
-      expect(domainIssues[0].details).toContain("framework");
-      expect(domainIssues[0].details).toContain("no domain");
+      expect(firstElement(domainIssues).severity).toBe("warning");
+      expect(firstElement(domainIssues).details).toContain("framework");
+      expect(firstElement(domainIssues).details).toContain("no domain");
     });
 
     it("does not flag categories with valid domain", () => {
@@ -71,9 +78,9 @@ describe("matrix-health-check", () => {
       const categoryIssues = issues.filter((i) => i.finding === "skill-unknown-category");
 
       expect(categoryIssues).toHaveLength(1);
-      expect(categoryIssues[0].severity).toBe("warning");
-      expect(categoryIssues[0].details).toContain("web-framework-react");
-      expect(categoryIssues[0].details).toContain("nonexistent-category");
+      expect(firstElement(categoryIssues).severity).toBe("warning");
+      expect(firstElement(categoryIssues).details).toContain("web-framework-react");
+      expect(firstElement(categoryIssues).details).toContain("nonexistent-category");
     });
 
     it("does not flag skill with valid category", () => {
@@ -85,7 +92,7 @@ describe("matrix-health-check", () => {
 
     it("does not produce warning for auto-synthesized categories", () => {
       // Boundary cast: custom category not in built-in Category union
-      const autoSynthesizedCategory = createMockCategory("web-custom" as Category, "Web Custom", {
+      const autoSynthesizedCategory = createMockCategory("web-custom", "Web Custom", {
         order: 999,
       });
       // Boundary cast: fictional skill ID for testing auto-synthesized categories
@@ -96,7 +103,7 @@ describe("matrix-health-check", () => {
         categories: {
           // Boundary cast: custom category key
           ["web-custom" as Category]: autoSynthesizedCategory,
-        } as Record<Category, import("../../types").CategoryDefinition>,
+        } satisfies Partial<Record<Category, import("../../types").CategoryDefinition>>,
       });
 
       const issues = checkMatrixHealth(matrixWithSynthesized);
@@ -119,25 +126,15 @@ describe("matrix-health-check", () => {
   });
 
   describe("skill relation refs", () => {
-    it("detects unresolved compatibleWith reference", () => {
-      const issues = checkMatrixHealth(HEALTH_UNRESOLVED_COMPATIBLE_WITH_MATRIX);
-      const refIssues = issues.filter((i) => i.finding === "skill-unresolved-relation-ref");
-
-      expect(refIssues).toHaveLength(1);
-      expect(refIssues[0].severity).toBe("warning");
-      expect(refIssues[0].details).toContain("web-state-zustand");
-      expect(refIssues[0].details).toContain("web-framework-nonexistent");
-      expect(refIssues[0].details).toContain("compatibleWith");
-    });
-
     it("detects unresolved conflictsWith reference", () => {
       const issues = checkMatrixHealth(HEALTH_UNRESOLVED_CONFLICTS_WITH_MATRIX);
       const refIssues = issues.filter((i) => i.finding === "skill-unresolved-relation-ref");
 
       expect(refIssues).toHaveLength(1);
-      expect(refIssues[0].details).toContain("web-framework-react");
-      expect(refIssues[0].details).toContain("web-framework-ghost");
-      expect(refIssues[0].details).toContain("conflictsWith");
+      expect(firstElement(refIssues).severity).toBe("warning");
+      expect(firstElement(refIssues).details).toContain("web-framework-react");
+      expect(firstElement(refIssues).details).toContain("web-framework-ghost");
+      expect(firstElement(refIssues).details).toContain("conflictsWith");
     });
 
     it("detects unresolved requires reference", () => {
@@ -145,9 +142,9 @@ describe("matrix-health-check", () => {
       const refIssues = issues.filter((i) => i.finding === "skill-unresolved-relation-ref");
 
       expect(refIssues).toHaveLength(1);
-      expect(refIssues[0].details).toContain("web-testing-cypress-e2e");
-      expect(refIssues[0].details).toContain("web-framework-missing");
-      expect(refIssues[0].details).toContain("requires");
+      expect(firstElement(refIssues).details).toContain("web-testing-cypress-e2e");
+      expect(firstElement(refIssues).details).toContain("web-framework-missing");
+      expect(firstElement(refIssues).details).toContain("requires");
     });
 
     it("detects multiple unresolved references across fields", () => {
@@ -176,8 +173,76 @@ describe("matrix-health-check", () => {
       const refIssues = issues.filter((i) => i.finding === "skill-unresolved-relation-ref");
 
       expect(refIssues).toHaveLength(1);
-      expect(refIssues[0].details).toContain("web-framework-missing");
-      expect(refIssues[0].details).not.toContain("web-framework-react");
+      expect(firstElement(refIssues).details).toContain("web-framework-missing");
+      expect(firstElement(refIssues).details).not.toContain("web-framework-react");
+    });
+  });
+
+  describe("audit verdict contradictions", () => {
+    it("errors when a universal verdict sits in an exclusive category", () => {
+      const issues = checkMatrixHealth(HEALTH_AUDIT_UNIVERSAL_IN_EXCLUSIVE_MATRIX);
+      const auditIssues = issues.filter((i) => i.finding === "audit-verdict-contradiction");
+
+      expect(auditIssues).toHaveLength(1);
+      expect(firstElement(auditIssues).severity).toBe("error");
+      expect(firstElement(auditIssues).details).toContain("web-styling-tailwind");
+      expect(firstElement(auditIssues).details).toContain("web-styling");
+    });
+
+    it("errors when a universal verdict carries a requires rule", () => {
+      const issues = checkMatrixHealth(HEALTH_AUDIT_UNIVERSAL_WITH_REQUIRES_MATRIX);
+      const auditIssues = issues.filter((i) => i.finding === "audit-verdict-contradiction");
+
+      expect(auditIssues).toHaveLength(1);
+      expect(firstElement(auditIssues).severity).toBe("error");
+      expect(firstElement(auditIssues).details).toContain("web-styling-tailwind");
+      expect(firstElement(auditIssues).details).toContain("requires");
+    });
+
+    it("does not flag a universal verdict in an open category with no requires", () => {
+      const issues = checkMatrixHealth(HEALTH_AUDIT_UNIVERSAL_IN_OPEN_MATRIX);
+      const auditIssues = issues.filter((i) => i.finding === "audit-verdict-contradiction");
+
+      expect(auditIssues).toStrictEqual([]);
+    });
+
+    it("does not flag a constrained verdict in an exclusive category", () => {
+      const issues = checkMatrixHealth(HEALTH_AUDIT_CONSTRAINED_IN_EXCLUSIVE_MATRIX);
+      const auditIssues = issues.filter((i) => i.finding === "audit-verdict-contradiction");
+
+      expect(auditIssues).toStrictEqual([]);
+    });
+
+    it("does not flag a row whose backing disposition has since landed", () => {
+      const issues = checkMatrixHealth(HEALTH_AUDIT_APPLIED_DISPOSITION_MATRIX);
+      const auditIssues = issues.filter((i) => i.finding === "audit-verdict-contradiction");
+
+      expect(auditIssues).toStrictEqual([]);
+    });
+  });
+
+  describe("unaudited skills", () => {
+    it("flags a source-provided skill with no audit manifest entry", () => {
+      const issues = checkMatrixHealth(CUSTOM_SKILL_MATRIX);
+      const unauditedIssues = issues.filter((i) => i.finding === "skill-unaudited");
+
+      expect(unauditedIssues).toHaveLength(1);
+      expect(firstElement(unauditedIssues).severity).toBe("warning");
+      expect(firstElement(unauditedIssues).details).toContain("web-framework-arbitrary");
+    });
+
+    it("does not flag built-in skills, which the manifest covers exhaustively", () => {
+      const issues = checkMatrixHealth(HEALTH_HEALTHY_MATRIX);
+      const unauditedIssues = issues.filter((i) => i.finding === "skill-unaudited");
+
+      expect(unauditedIssues).toStrictEqual([]);
+    });
+
+    it("does not flag local skills, which are user-authored rather than source-provided", () => {
+      const issues = checkMatrixHealth(LOCAL_SKILL_MATRIX);
+      const unauditedIssues = issues.filter((i) => i.finding === "skill-unaudited");
+
+      expect(unauditedIssues).toStrictEqual([]);
     });
   });
 

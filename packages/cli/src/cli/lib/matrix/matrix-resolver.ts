@@ -1,17 +1,23 @@
+import {
+  createSelectionSemantics,
+  type IncompatibilityCause,
+  type SelectionCatalogFacts,
+  type SelectionJudgement,
+  type SelectionSemantics,
+} from "@workspace/matrix";
 import { groupBy } from "remeda";
 import { LOCAL_PSEUDO_CATEGORY } from "../../consts";
 import type {
   CategoryPath,
+  MergedSkillsMatrix,
   OptionState,
   ResolvedSkill,
   SelectionValidation,
   SkillId,
   SkillOption,
   ValidationError,
-  ValidationWarning,
 } from "../../types";
-import { typedEntries } from "../../utils/typed-object";
-import { mergeValidationResults } from "../validation-result";
+import { typedEntries, typedValues } from "../../utils/typed-object";
 import { matrix, getSkillById, allSkills } from "./matrix-provider";
 
 function getLabel(skill: Pick<ResolvedSkill, "displayName">): string {
@@ -33,6 +39,71 @@ function initializeSelectionContext(currentSelections: SkillId[]): SelectionCont
   const resolvedSelections = currentSelections.map((s) => getSkillById(s).id);
   const selectedSet = new Set<SkillId>(resolvedSelections);
   return { resolvedSelections, selectedSet };
+}
+
+/**
+ * The relationship facts the shared selection semantics judge — id, category,
+ * conflicts, discourages and requires. Exclusivity defaults to true for a
+ * category that does not say, matching the wizard grid's own reading; the
+ * `local` pseudo-category is never listed, so it stays non-exclusive here as it
+ * does in `validateExclusivity`.
+ */
+function toSelectionFacts(source: MergedSkillsMatrix): SelectionCatalogFacts {
+  return {
+    skills: typedValues(source.skills).map((skill) => ({
+      id: skill.id,
+      categoryId: skill.category,
+      conflictsWith: skill.conflictsWith.map((relation) => relation.skillId),
+      discourages: skill.discourages.map((relation) => ({
+        skillId: relation.skillId,
+        reason: relation.reason,
+      })),
+      requires: skill.requires.map((requirement) => ({
+        skillIds: requirement.skillIds,
+        needsAny: requirement.needsAny,
+      })),
+    })),
+    exclusiveCategoryIds: new Set(
+      typedValues(source.categories)
+        .filter((category) => category.exclusive !== false)
+        .map((category) => category.id),
+    ),
+  };
+}
+
+// Rebound whenever `initializeMatrix` swaps the matrix, so the semantics
+// always judge the catalogue currently loaded — merged local skills included.
+let boundSemantics: SelectionSemantics | undefined;
+let boundTo: MergedSkillsMatrix | undefined;
+
+function judgeSelections(resolvedSelections: SkillId[]): SelectionJudgement {
+  if (!boundSemantics || boundTo !== matrix) {
+    boundSemantics = createSelectionSemantics(toSelectionFacts(matrix));
+    boundTo = matrix;
+  }
+  return boundSemantics(resolvedSelections);
+}
+
+// The judgement speaks in ids; this surface answers in the wizard's words.
+function renderIncompatibility(cause: IncompatibilityCause): string {
+  switch (cause.kind) {
+    case "conflict":
+      return `conflicts with ${labelOf(cause.skillId)}`;
+    case "unreachableRequirement": {
+      if (cause.requirement.needsAny) {
+        const labels = cause.requirement.skillIds.map(labelOf);
+        return `requires ${joinWithConjunction(labels, "or")} (all conflict with current selection)`;
+      }
+      const lostLabels = cause.lostIds.map(labelOf);
+      return `requires ${joinWithConjunction(lostLabels, "and")} which conflicts with current selection`;
+    }
+  }
+}
+
+function labelOf(skillId: string): string {
+  // Boundary cast: every id inside a cause was read out of the matrix's own
+  // relationship tables, so it names a skill the matrix holds.
+  return getLabel(getSkillById(skillId as SkillId));
 }
 
 /**
@@ -158,40 +229,6 @@ export function isIncompatible(skillId: SkillId, currentSelections: SkillId[]): 
   return getIncompatibleReason(skillId, currentSelections) !== undefined;
 }
 
-/** True if the skill directly conflicts with any selected skill (bidirectional). */
-function hasDirectConflict(skill: ResolvedSkill, selections: SkillId[]): boolean {
-  return selections.some(
-    (selectedId) =>
-      skill.conflictsWith.some((c) => c.skillId === selectedId) ||
-      matrix.skills[selectedId]?.conflictsWith.some((c) => c.skillId === skill.id),
-  );
-}
-
-/** True if a dependency skill directly conflicts with any selected skill. */
-function isDepBlockedByConflict(depId: SkillId, selections: SkillId[]): boolean {
-  const depSkill = matrix.skills[depId];
-  return depSkill ? hasDirectConflict(depSkill, selections) : false;
-}
-
-/**
- * True when the skill has no compatibleWith constraints (universal) or shares
- * one with the current selections.
- */
-export function isCompatibleWithSelections(skill: ResolvedSkill, selectedIds: SkillId[]): boolean {
-  return (
-    skill.compatibleWith.length === 0 || selectedIds.some((id) => skill.compatibleWith.includes(id))
-  );
-}
-
-/**
- * True if the skill declares compatibleWith frameworks and none of
- * them are in the current selections. Empty compatibleWith = universal.
- * e.g. Zustand is compatible with [react, nextjs, remix] — incompatible when Svelte is selected.
- */
-function isIncompatibleByFramework(skill: ResolvedSkill, selections: SkillId[]): boolean {
-  return selections.length > 0 && !isCompatibleWithSelections(skill, selections);
-}
-
 /**
  * Checks if a selected skill has unmet dependency requirements.
  * Only meaningful for skills that are currently selected.
@@ -214,32 +251,19 @@ export function getDiscourageReason(
   currentSelections: SkillId[],
 ): string | undefined {
   const skill = getSkillById(skillId);
-
   const { resolvedSelections } = initializeSelectionContext(currentSelections);
 
-  // Check discourages relationships (bidirectional)
-  for (const selectedId of resolvedSelections) {
-    const selectedSkill = matrix.skills[selectedId];
-    if (selectedSkill) {
-      const discourage = selectedSkill.discourages.find((d) => d.skillId === skillId);
-      if (discourage) {
-        return discourage.reason;
-      }
-    }
-
-    const reverseDiscourage = skill.discourages.find((d) => d.skillId === selectedId);
-    if (reverseDiscourage) {
-      return reverseDiscourage.reason;
-    }
-  }
-
-  return undefined;
+  return judgeSelections(resolvedSelections).discourageReasonOf(skill.id);
 }
 
 /**
  * Returns a human-readable reason why a skill is incompatible, or undefined if it is not.
  *
- * Only checks conflicts (bidirectional), returning the first matching reason.
+ * The verdict is the shared semantics' — a bidirectional conflict with
+ * anything the selection reaches, or a requirement the selection has ruled out
+ * (to a fixpoint, so a lost base strands everything built on it). This is the
+ * selection as it stands: the pick-one swap forgiveness belongs to the grid
+ * cell and lives in {@link getCellState}.
  *
  * @param skillId - The skill to get the incompatible reason for
  * @param currentSelections - Currently selected skill IDs
@@ -250,65 +274,42 @@ export function getIncompatibleReason(
   currentSelections: SkillId[],
 ): string | undefined {
   const skill = getSkillById(skillId);
-
   const { resolvedSelections } = initializeSelectionContext(currentSelections);
 
-  // Direct conflict (bidirectional)
-  const directReason = findDirectConflictReason(skill, skillId, resolvedSelections);
-  if (directReason) return directReason;
-
-  // Unsatisfiable requires — dependency blocked by conflict
-  const reqReason = findUnsatisfiableRequiresReason(skill, resolvedSelections);
-  if (reqReason) return reqReason;
-
-  // Framework compatibility mismatch
-  if (isIncompatibleByFramework(skill, resolvedSelections)) {
-    const compatLabels = skill.compatibleWith.map((id) => getLabel(getSkillById(id))).join(", ");
-    return `only compatible with ${compatLabels}`;
-  }
-
-  return undefined;
+  const cause = judgeSelections(resolvedSelections).incompatibilityOf(skill.id);
+  return cause === undefined ? undefined : renderIncompatibility(cause);
 }
 
-function findDirectConflictReason(
-  skill: ResolvedSkill,
-  skillId: SkillId,
-  selections: SkillId[],
-): string | undefined {
-  for (const selectedId of selections) {
-    if (skill.conflictsWith.some((c) => c.skillId === selectedId)) {
-      return `conflicts with ${getLabel(getSkillById(selectedId))}`;
-    }
-    const selectedSkill = matrix.skills[selectedId];
-    if (selectedSkill?.conflictsWith.some((c) => c.skillId === skillId)) {
-      return `conflicts with ${getLabel(selectedSkill)}`;
-    }
-  }
-  return undefined;
+/**
+ * The verdict a grid cell renders, judged against the selection a click on it
+ * would produce. A pick-one category is a radio group: the click drops every
+ * same-category member — selected or implied — so a conflict the swap
+ * resolves is forgiven, and an impossibility it leaves standing (a requirement
+ * the rest of the selection has ruled out) keeps its verdict and its reason,
+ * exactly as a multi-select category renders it.
+ */
+export function getCellState(skillId: SkillId, currentSelections: SkillId[]): OptionState {
+  const skill = getSkillById(skillId);
+  const { resolvedSelections } = initializeSelectionContext(currentSelections);
+
+  const verdict = judgeSelections(resolvedSelections).verdictOf(skill.id);
+  return verdict.status === "incompatible"
+    ? { status: "incompatible", reason: renderIncompatibility(verdict.cause) }
+    : verdict;
 }
 
-function findUnsatisfiableRequiresReason(
-  skill: ResolvedSkill,
-  selections: SkillId[],
-): string | undefined {
-  for (const req of skill.requires) {
-    if (req.needsAny) {
-      const allBlocked = req.skillIds.every((depId) => isDepBlockedByConflict(depId, selections));
-      if (allBlocked) {
-        const labels = joinWithConjunction(
-          req.skillIds.map((id) => getLabel(getSkillById(id))),
-          "or",
-        );
-        return `requires ${labels} (all conflict with current selection)`;
-      }
-    } else {
-      const blockedDep = req.skillIds.find((depId) => isDepBlockedByConflict(depId, selections));
-      if (blockedDep) {
-        return `requires ${getLabel(getSkillById(blockedDep))} which conflicts with current selection`;
-      }
-    }
-  }
-  return undefined;
+/**
+ * Everything the selection is necessarily built on without having been picked:
+ * the requires-closure minus the selection itself. Choosing Next.js is
+ * choosing React whether or not React was ever clicked; a requirement
+ * offering a choice commits the user to none of its options.
+ */
+export function getImpliedSkills(currentSelections: SkillId[]): SkillId[] {
+  const { resolvedSelections } = initializeSelectionContext(currentSelections);
+
+  // Boundary cast: the closure only ever adds ids read from the matrix's own
+  // `requires` tables, which type them as SkillId.
+  return judgeSelections(resolvedSelections).implied as SkillId[];
 }
 
 /**
@@ -338,51 +339,27 @@ export function getUnmetRequirementsReason(
 }
 
 /**
- * Checks if a skill is recommended based on the flat recommends list
- * and compatibility with current selections.
- *
- * A skill is recommended when:
- * 1. It appears in the flat recommends list (isRecommended === true), AND
- * 2. It is compatible with the user's current selections (shares a compatibleWith
- *    group with at least one selected skill, or has no compatibility constraints)
+ * `{ unmetRequirementsReason }` only when there is one to state — an unselected skill,
+ * or a selected skill whose requirements are all met, carries no key at all.
  */
-export function isRecommended(skillId: SkillId, currentSelections: SkillId[]): boolean {
-  const skill = getSkillById(skillId);
-
-  if (!skill.isRecommended) {
-    return false;
-  }
-
-  // If no selections yet, isRecommended alone is sufficient
-  if (currentSelections.length === 0) {
-    return true;
-  }
-
-  const { resolvedSelections } = initializeSelectionContext(currentSelections);
-  return isCompatibleWithSelections(skill, resolvedSelections);
-}
-
-/** Returns the reason from the flat recommends entry */
-export function getRecommendReason(
+function unmetRequirementsReasonFor(
+  isSelected: boolean,
   skillId: SkillId,
-  _currentSelections: SkillId[],
-): string | undefined {
-  const skill = getSkillById(skillId);
-
-  return skill.recommendedReason;
+  currentSelections: SkillId[],
+): { unmetRequirementsReason?: string } {
+  if (!isSelected) return {};
+  const reason = getUnmetRequirementsReason(skillId, currentSelections);
+  return reason === undefined ? {} : { unmetRequirementsReason: reason };
 }
 
-export type ValidationPartial = Pick<SelectionValidation, "errors" | "warnings">;
-
-export function validateConflicts(resolvedSelections: SkillId[]): ValidationPartial {
+export function validateConflicts(resolvedSelections: SkillId[]): ValidationError[] {
   const errors: ValidationError[] = [];
 
-  for (let i = 0; i < resolvedSelections.length; i++) {
-    const skillA = matrix.skills[resolvedSelections[i]];
+  for (const [index, skillAId] of resolvedSelections.entries()) {
+    const skillA = matrix.skills[skillAId];
     if (!skillA) continue;
 
-    for (let j = i + 1; j < resolvedSelections.length; j++) {
-      const skillBId = resolvedSelections[j];
+    for (const skillBId of resolvedSelections.slice(index + 1)) {
       const conflict = skillA.conflictsWith.find((c) => c.skillId === skillBId);
       if (conflict) {
         errors.push({
@@ -394,13 +371,13 @@ export function validateConflicts(resolvedSelections: SkillId[]): ValidationPart
     }
   }
 
-  return { errors, warnings: [] };
+  return errors;
 }
 
 export function validateRequirements(
   resolvedSelections: SkillId[],
   selectedSet: Set<SkillId>,
-): ValidationPartial {
+): ValidationError[] {
   const errors: ValidationError[] = [];
 
   for (const skillId of resolvedSelections) {
@@ -430,10 +407,10 @@ export function validateRequirements(
     }
   }
 
-  return { errors, warnings: [] };
+  return errors;
 }
 
-export function validateExclusivity(resolvedSelections: SkillId[]): ValidationPartial {
+export function validateExclusivity(resolvedSelections: SkillId[]): ValidationError[] {
   const errors: ValidationError[] = [];
 
   const validSkills = resolvedSelections
@@ -457,84 +434,48 @@ export function validateExclusivity(resolvedSelections: SkillId[]): ValidationPa
     }
   }
 
-  return { errors, warnings: [] };
-}
-
-/**
- * Validates recommendations: for each recommended skill that is NOT selected
- * but IS compatible with current selections, produce a missing_recommendation warning.
- */
-export function validateRecommendations(
-  resolvedSelections: SkillId[],
-  selectedSet: Set<SkillId>,
-): ValidationPartial {
-  const warnings: ValidationWarning[] = [];
-
-  // Iterate the flat recommends list from relationships
-  for (const skill of allSkills()) {
-    if (!skill.isRecommended) continue;
-    if (selectedSet.has(skill.id)) continue;
-
-    if (!isCompatibleWithSelections(skill, resolvedSelections)) continue;
-
-    // Check no conflict with current selections
-    const hasConflict = skill.conflictsWith.some((c) => selectedSet.has(c.skillId));
-    if (hasConflict) continue;
-
-    warnings.push({
-      type: "missing_recommendation",
-      message: `${getLabel(skill)} is recommended: ${skill.recommendedReason ?? "Recommended for this stack"}`,
-      skills: [skill.id],
-    });
-  }
-
-  return { errors: [], warnings };
+  return errors;
 }
 
 /**
  * Validates a complete set of skill selections against all matrix constraints.
  *
- * Runs four validation passes:
+ * Runs three validation passes:
  * 1. **Conflicts** - Checks for mutually exclusive skill pairs (errors)
  * 2. **Requirements** - Checks that all required dependencies are selected (errors)
  * 3. **Exclusivity** - Checks that exclusive categories have at most one selection (errors)
- * 4. **Recommendations** - Checks for missing recommended companion skills (warnings)
+ *
+ * `valid` is derived from `errors` rather than asserted: a literal `true` beside a populated
+ * `errors` array is a comment with a type annotation, and the first `if (validation.valid)`
+ * written against it would pass on every rejected selection there is.
  *
  * @param selections - Complete list of selected skill IDs to validate
- * @returns Validation result with `valid` flag, error list, and warning list
+ * @returns Validation result with `valid` flag and error list
  */
 export function validateSelection(selections: SkillId[]): SelectionValidation {
   const { resolvedSelections, selectedSet } = initializeSelectionContext(selections);
 
-  const { errors, warnings } = mergeValidationResults([
-    validateConflicts(resolvedSelections),
-    validateRequirements(resolvedSelections, selectedSet),
-    validateExclusivity(resolvedSelections),
-    validateRecommendations(resolvedSelections, selectedSet),
-  ]);
+  const errors = [
+    ...validateConflicts(resolvedSelections),
+    ...validateRequirements(resolvedSelections, selectedSet),
+    ...validateExclusivity(resolvedSelections),
+  ];
 
   return {
-    valid: true,
+    valid: errors.length === 0,
     errors,
-    warnings,
   };
 }
 
-function computeAdvisoryState(skillId: SkillId, currentSelections: SkillId[]): OptionState {
-  // Priority: incompatible > discouraged > recommended > normal
-  const incompatibleReason = getIncompatibleReason(skillId, currentSelections);
-  if (incompatibleReason !== undefined) {
-    return { status: "incompatible", reason: incompatibleReason };
+function advisoryStateFrom(judgement: SelectionJudgement, skillId: SkillId): OptionState {
+  // Priority: incompatible > discouraged > normal
+  const cause = judgement.incompatibilityOf(skillId);
+  if (cause !== undefined) {
+    return { status: "incompatible", reason: renderIncompatibility(cause) };
   }
-  const discourageReason = getDiscourageReason(skillId, currentSelections);
+  const discourageReason = judgement.discourageReasonOf(skillId);
   if (discourageReason !== undefined) {
     return { status: "discouraged", reason: discourageReason };
-  }
-  if (isRecommended(skillId, currentSelections)) {
-    return {
-      status: "recommended",
-      reason: getRecommendReason(skillId, currentSelections) ?? "Recommended",
-    };
   }
   return { status: "normal" };
 }
@@ -545,7 +486,7 @@ function computeAdvisoryState(skillId: SkillId, currentSelections: SkillId[]): O
  *
  * Each skill is checked against the current selections to determine its visual
  * state in the wizard UI. States are prioritized:
- * incompatible > discouraged > recommended > normal.
+ * incompatible > discouraged > normal.
  *
  * @param categoryId - Category path to filter skills by
  * @param currentSelections - Currently selected skill IDs
@@ -555,18 +496,17 @@ export function getAvailableSkills(
   categoryId: CategoryPath,
   currentSelections: SkillId[],
 ): SkillOption[] {
-  const { selectedSet } = initializeSelectionContext(currentSelections);
+  const { resolvedSelections, selectedSet } = initializeSelectionContext(currentSelections);
+  const judgement = judgeSelections(resolvedSelections);
 
   return getSkillsByCategory(categoryId).map((skill) => {
     const isSelected = selectedSet.has(skill.id);
     return {
       id: skill.id,
-      advisoryState: computeAdvisoryState(skill.id, currentSelections),
+      advisoryState: advisoryStateFrom(judgement, skill.id),
       selected: isSelected,
       hasUnmetRequirements: isSelected && hasUnmetRequirements(skill.id, currentSelections),
-      unmetRequirementsReason: isSelected
-        ? getUnmetRequirementsReason(skill.id, currentSelections)
-        : undefined,
+      ...unmetRequirementsReasonFor(isSelected, skill.id, currentSelections),
       alternatives: skill.alternatives.map((a) => a.skillId),
     };
   });

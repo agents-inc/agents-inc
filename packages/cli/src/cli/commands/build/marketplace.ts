@@ -23,8 +23,8 @@ const AUTHOR_STRING_PATTERN = /^(.*?)\s*<([^>]+)>\s*(?:\(([^)]+)\))?\s*$/;
 
 const packageAuthorObjectSchema = z.object({
   name: z.string(),
-  email: z.string().optional(),
-  url: z.string().optional(),
+  email: z.string().exactOptional(),
+  url: z.string().exactOptional(),
 });
 
 const packageJsonSchema = z
@@ -32,7 +32,7 @@ const packageJsonSchema = z
     name: z.string(),
     version: z.string(),
     description: z.string(),
-    author: z.union([z.string(), packageAuthorObjectSchema]).optional(),
+    author: z.union([z.string(), packageAuthorObjectSchema]).exactOptional(),
   })
   .passthrough();
 
@@ -67,9 +67,6 @@ export default class BuildMarketplace extends BaseCommand {
       command: "<%= config.bin %> <%= command.id %> --name my-marketplace",
     },
   ];
-
-  // Override parent baseFlags to drop --source (marketplace reads identity from package.json)
-  static baseFlags = {} as (typeof BaseCommand)["baseFlags"];
 
   static flags = {
     name: Flags.string({
@@ -178,7 +175,7 @@ export default class BuildMarketplace extends BaseCommand {
       version,
       description,
       ownerName: owner.name,
-      ownerEmail: owner.email,
+      ...(owner.email !== undefined && { ownerEmail: owner.email }),
     };
   }
 
@@ -203,7 +200,7 @@ export default class BuildMarketplace extends BaseCommand {
       version: identity.version,
       description: identity.description,
       ownerName: identity.ownerName,
-      ownerEmail: identity.ownerEmail,
+      ...(identity.ownerEmail !== undefined && { ownerEmail: identity.ownerEmail }),
       pluginRoot: `./${pluginsDirFlag}`,
     });
 
@@ -266,13 +263,13 @@ function parseAuthor(author: string | { name: string; email?: string } | undefin
   }
 
   if (typeof author === "object") {
-    return { name: author.name, email: author.email };
+    return { name: author.name, ...(author.email !== undefined && { email: author.email }) };
   }
 
-  const match = author.match(AUTHOR_STRING_PATTERN);
-  if (match) {
-    const name = match[1].trim();
-    const email = match[2].trim();
+  const [, matchedName, matchedEmail] = author.match(AUTHOR_STRING_PATTERN) ?? [];
+  if (matchedName !== undefined && matchedEmail !== undefined) {
+    const name = matchedName.trim();
+    const email = matchedEmail.trim();
     if (name === "") {
       warn(
         `package.json 'author' field "${author}" has no parseable name — marketplace owner.name will be empty`,

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { hydrateWizardStore, useWizardStore } from "./wizard-store";
+import { getActiveStepFlow, hydrateWizardStore, useWizardStore } from "./wizard-store";
 import { initializeMatrix } from "../lib/matrix/matrix-provider";
 import { SKILLS, TEST_CATEGORIES } from "../lib/__tests__/test-fixtures";
 import { createMockMatrix } from "../lib/__tests__/factories/matrix-factories";
@@ -11,10 +11,23 @@ import {
   ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX,
   ALL_SKILLS_WEB_AND_API_MATRIX,
   REACT_HONO_FRAMEWORK_API_MATRIX,
+  REACT_HONO_ONE_STACK_MATRIX,
   REACT_HONO_WEB_API_DOMAINS_MATRIX,
 } from "../lib/__tests__/mock-data/mock-matrices";
-import type { AgentScopeConfig, SkillConfig, SkillSource } from "../types";
+import type { AgentScopeConfig, Category, SkillConfig } from "../types";
 import { EXPECTED_AGENTS } from "../lib/__tests__/expected-values";
+import { BUILT_IN_MATRIX } from "../types/generated/matrix";
+import { getIncompatibleReason, validateSelection } from "../lib/matrix";
+import { DEFAULT_PUBLIC_SOURCE_NAME, DEFAULT_SCRATCH_DOMAINS } from "../consts";
+import { elementAt, firstElement } from "../lib/__tests__/helpers/element-at.js";
+
+/**
+ * Mirrors how the wizard supplies the `exclusive` argument in
+ * `components/hooks/use-build-step-props.ts` — read off the live matrix, never hardcoded —
+ * so these tests exercise the real radio-versus-multi-select decision.
+ */
+const categoryIsExclusive = (category: Category): boolean =>
+  BUILT_IN_MATRIX.categories[category]?.exclusive ?? true;
 
 describe("WizardStore", () => {
   beforeEach(() => {
@@ -154,7 +167,6 @@ describe("WizardStore", () => {
       expect(state.selectedDomains).toStrictEqual([]);
       expect(state.skillConfigs).toStrictEqual([]);
       expect(state.selectedAgents).toStrictEqual([]);
-      expect(state.boundSkills).toStrictEqual([]);
       expect(state.stackAction).toBeNull();
     });
 
@@ -171,7 +183,6 @@ describe("WizardStore", () => {
       expect(state.selectedDomains).toStrictEqual([]);
       expect(state.skillConfigs).toStrictEqual([]);
       expect(state.selectedAgents).toStrictEqual([]);
-      expect(state.boundSkills).toStrictEqual([]);
       expect(state.currentDomainIndex).toBe(0);
       expect(state.stackAction).toBeNull();
     });
@@ -195,7 +206,6 @@ describe("WizardStore", () => {
       expect(stateAfterClear.selectedDomains).toStrictEqual([]);
       expect(stateAfterClear.skillConfigs).toStrictEqual([]);
       expect(stateAfterClear.selectedAgents).toStrictEqual([]);
-      expect(stateAfterClear.boundSkills).toStrictEqual([]);
       expect(stateAfterClear.stackAction).toBeNull();
     });
   });
@@ -514,6 +524,217 @@ describe("WizardStore", () => {
     });
   });
 
+  describe("non-exclusive categories in the built-in matrix", () => {
+    beforeEach(() => {
+      initializeMatrix(BUILT_IN_MATRIX);
+    });
+
+    it("should keep the task runner and the workspace manager both selected, in their own categories", () => {
+      const store = useWizardStore.getState();
+
+      store.toggleTechnology(
+        "shared",
+        "shared-task-runner",
+        "shared-monorepo-turborepo",
+        categoryIsExclusive("shared-task-runner"),
+      );
+      store.toggleTechnology(
+        "shared",
+        "shared-monorepo",
+        "shared-monorepo-pnpm-workspaces",
+        categoryIsExclusive("shared-monorepo"),
+      );
+
+      const { domainSelections, skillConfigs } = useWizardStore.getState();
+      expect(domainSelections.shared!["shared-task-runner"]).toStrictEqual([
+        "shared-monorepo-turborepo",
+      ]);
+      expect(domainSelections.shared!["shared-monorepo"]).toStrictEqual([
+        "shared-monorepo-pnpm-workspaces",
+      ]);
+      expect(skillConfigs).toStrictEqual(
+        buildSkillConfigs(["shared-monorepo-turborepo", "shared-monorepo-pnpm-workspaces"], {
+          scope: "global",
+          source: DEFAULT_PUBLIC_SOURCE_NAME,
+        }),
+      );
+    });
+
+    it("should raise no validation error for either task runner alongside pnpm-workspaces", () => {
+      expect(
+        validateSelection(["shared-monorepo-turborepo", "shared-monorepo-pnpm-workspaces"]).errors,
+      ).toStrictEqual([]);
+      expect(
+        validateSelection(["shared-monorepo-nx", "shared-monorepo-pnpm-workspaces"]).errors,
+      ).toStrictEqual([]);
+    });
+
+    it("should keep resend setup and resend usage both selected in the email category", () => {
+      const store = useWizardStore.getState();
+
+      store.toggleTechnology(
+        "api",
+        "api-email",
+        "api-email-setup-resend",
+        categoryIsExclusive("api-email"),
+      );
+      store.toggleTechnology(
+        "api",
+        "api-email",
+        "api-email-resend-react-email",
+        categoryIsExclusive("api-email"),
+      );
+
+      const { domainSelections, skillConfigs } = useWizardStore.getState();
+      expect(domainSelections.api!["api-email"]).toStrictEqual([
+        "api-email-setup-resend",
+        "api-email-resend-react-email",
+      ]);
+      expect(skillConfigs).toStrictEqual(
+        buildSkillConfigs(["api-email-setup-resend", "api-email-resend-react-email"], {
+          scope: "global",
+          source: DEFAULT_PUBLIC_SOURCE_NAME,
+        }),
+      );
+    });
+
+    it("should raise no validation error for both resend skills alongside the React they require", () => {
+      expect(
+        validateSelection([
+          "web-framework-react",
+          "api-email-setup-resend",
+          "api-email-resend-react-email",
+        ]).errors,
+      ).toStrictEqual([]);
+    });
+  });
+
+  describe("restoring a saved selection whose skill has since changed category", () => {
+    beforeEach(() => {
+      initializeMatrix(BUILT_IN_MATRIX);
+    });
+
+    // A saved config.ts lists skills by id, so restore asks the live matrix
+    // which category each one is in rather than trusting a stored key. A skill
+    // that moved between releases therefore lands under its new header.
+    it("should place a moved skill under the category the matrix names now", () => {
+      const store = useWizardStore.getState();
+
+      store.populateFromSkillIds(["shared-monorepo-turborepo", "shared-tooling-eslint-prettier"]);
+
+      const { domainSelections, unresolvableSkillIds } = useWizardStore.getState();
+      expect(domainSelections.shared).toStrictEqual({
+        "shared-task-runner": ["shared-monorepo-turborepo"],
+        "shared-lint": ["shared-tooling-eslint-prettier"],
+      });
+      expect(unresolvableSkillIds).toStrictEqual([]);
+    });
+  });
+
+  describe("pick-one shared categories in the built-in matrix", () => {
+    beforeEach(() => {
+      initializeMatrix(BUILT_IN_MATRIX);
+    });
+
+    it("should let the radio swap the task runner rather than hold both", () => {
+      const store = useWizardStore.getState();
+
+      store.toggleTechnology(
+        "shared",
+        "shared-task-runner",
+        "shared-monorepo-turborepo",
+        categoryIsExclusive("shared-task-runner"),
+      );
+      store.toggleTechnology(
+        "shared",
+        "shared-task-runner",
+        "shared-monorepo-nx",
+        categoryIsExclusive("shared-task-runner"),
+      );
+
+      const { domainSelections, skillConfigs } = useWizardStore.getState();
+      expect(domainSelections.shared!["shared-task-runner"]).toStrictEqual(["shared-monorepo-nx"]);
+      expect(skillConfigs).toStrictEqual(
+        buildSkillConfigs(["shared-monorepo-nx"], {
+          scope: "global",
+          source: DEFAULT_PUBLIC_SOURCE_NAME,
+        }),
+      );
+    });
+
+    it("should let the radio swap the linter rather than hold both", () => {
+      const store = useWizardStore.getState();
+
+      store.toggleTechnology(
+        "shared",
+        "shared-lint",
+        "shared-tooling-biome",
+        categoryIsExclusive("shared-lint"),
+      );
+      store.toggleTechnology(
+        "shared",
+        "shared-lint",
+        "shared-tooling-eslint-prettier",
+        categoryIsExclusive("shared-lint"),
+      );
+
+      const { domainSelections, skillConfigs } = useWizardStore.getState();
+      expect(domainSelections.shared!["shared-lint"]).toStrictEqual([
+        "shared-tooling-eslint-prettier",
+      ]);
+      expect(skillConfigs).toStrictEqual(
+        buildSkillConfigs(["shared-tooling-eslint-prettier"], {
+          scope: "global",
+          source: DEFAULT_PUBLIC_SOURCE_NAME,
+        }),
+      );
+    });
+
+    it("should still name the conflict for a pair the radio can no longer produce", () => {
+      expect(getIncompatibleReason("shared-monorepo-nx", ["shared-monorepo-turborepo"])).toBe(
+        "conflicts with Turborepo",
+      );
+      expect(
+        getIncompatibleReason("shared-tooling-eslint-prettier", ["shared-tooling-biome"]),
+      ).toBe("conflicts with Biome");
+    });
+
+    it("should report both the conflict and the category error for a hand-written co-selection", () => {
+      expect(
+        validateSelection(["shared-monorepo-turborepo", "shared-monorepo-nx"]).errors,
+      ).toStrictEqual([
+        {
+          type: "conflict",
+          message:
+            "Turborepo conflicts with Nx: Monorepo build orchestrators are mutually exclusive",
+          skills: ["shared-monorepo-turborepo", "shared-monorepo-nx"],
+        },
+        {
+          type: "categoryExclusive",
+          message:
+            'Category "Task Runner" only allows one selection, but multiple selected: Turborepo, Nx',
+          skills: ["shared-monorepo-turborepo", "shared-monorepo-nx"],
+        },
+      ]);
+      expect(
+        validateSelection(["shared-tooling-biome", "shared-tooling-eslint-prettier"]).errors,
+      ).toStrictEqual([
+        {
+          type: "conflict",
+          message:
+            "Biome conflicts with ESLint & Prettier: Linting and formatting tools are mutually exclusive",
+          skills: ["shared-tooling-biome", "shared-tooling-eslint-prettier"],
+        },
+        {
+          type: "categoryExclusive",
+          message:
+            'Category "Lint & Format" only allows one selection, but multiple selected: Biome, ESLint & Prettier',
+          skills: ["shared-tooling-biome", "shared-tooling-eslint-prettier"],
+        },
+      ]);
+    });
+  });
+
   describe("domain navigation", () => {
     it("should move to next domain", () => {
       const store = useWizardStore.getState();
@@ -655,33 +876,9 @@ describe("WizardStore", () => {
       expect(showInfo).toBe(false);
     });
 
-    it("should toggle settings on", () => {
-      const store = useWizardStore.getState();
-
-      store.toggleSettings();
-
-      const { showSettings } = useWizardStore.getState();
-      expect(showSettings).toBe(true);
-    });
-
-    it("should toggle settings off (show then hide)", () => {
-      const store = useWizardStore.getState();
-
-      store.toggleSettings();
-      store.toggleSettings();
-
-      const { showSettings } = useWizardStore.getState();
-      expect(showSettings).toBe(false);
-    });
-
     it("should start with showInfo false", () => {
       const { showInfo } = useWizardStore.getState();
       expect(showInfo).toBe(false);
-    });
-
-    it("should start with showSettings false", () => {
-      const { showSettings } = useWizardStore.getState();
-      expect(showSettings).toBe(false);
     });
 
     it("should reset showInfo to false after reset", () => {
@@ -691,15 +888,6 @@ describe("WizardStore", () => {
 
       const { showInfo } = useWizardStore.getState();
       expect(showInfo).toBe(false);
-    });
-
-    it("should reset showSettings to false after reset", () => {
-      const store = useWizardStore.getState();
-      store.toggleSettings();
-      store.reset();
-
-      const { showSettings } = useWizardStore.getState();
-      expect(showSettings).toBe(false);
     });
   });
 
@@ -852,7 +1040,7 @@ describe("WizardStore", () => {
         }),
       ];
 
-      it("leaves a dual-scope skill untouched when the selection key is pressed and emits the global-locked toast", () => {
+      it("drops the project half of a dual-scope skill when the selection key is pressed", () => {
         const store = useWizardStore.getState();
         useWizardStore.setState({
           domainSelections: { web: { "web-framework": ["web-framework-react"] } },
@@ -865,10 +1053,39 @@ describe("WizardStore", () => {
         store.toggleTechnology("web", "web-framework", "web-framework-react", true);
 
         const { skillConfigs, domainSelections, toastMessage } = useWizardStore.getState();
-        // Space is inert on a `[P][G]` row — `s` is the only key that changes a dual-scope pair.
+        // The project owns the `[P]` half, so the selection key drops it: the pair collapses to
+        // the inherited global entry and the skill stays selected, still active via global.
+        expect(toastMessage).toBeNull();
+        expect(domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
+        expect(skillConfigs).toStrictEqual(
+          buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        );
+      });
+
+      it("refuses the selection key on the global half a dual-scope collapse left behind", () => {
+        const store = useWizardStore.getState();
+        useWizardStore.setState({
+          domainSelections: { web: { "web-framework": ["web-framework-react"] } },
+          // The live config an in-session collapse produces: a plain ACTIVE global entry whose
+          // snapshot still says the project was masking a real global install. Deselecting it
+          // would tombstone that install from project scope, which is the lock's whole subject.
+          skillConfigs: buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+          installedSkillConfigs: dualScopeConfigs(),
+          isEditingFromGlobalScope: false,
+          isInitMode: false,
+        });
+
+        store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+
+        const { skillConfigs, domainSelections, toastMessage } = useWizardStore.getState();
         expect(toastMessage).toBe("Global skills cannot be changed from project scope");
         expect(domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
-        expect(skillConfigs).toStrictEqual(dualScopeConfigs());
+        expect(skillConfigs).toStrictEqual(
+          buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        );
       });
 
       it("leaves a dual-scope skill untouched when an exclusive-category sibling would replace it", () => {
@@ -881,7 +1098,9 @@ describe("WizardStore", () => {
           isInitMode: false,
         });
 
-        // A radio swap to another framework would implicitly drop the `[P][G]` pair.
+        // A radio swap to another framework would implicitly drop the `[P][G]` pair — which
+        // unmasks the global install it hides, seating two active skills in a category that
+        // permits one. The pair's own row still drops it; the swap must not do it sideways.
         store.toggleTechnology("web", "web-framework", "web-framework-vue-composition-api", true);
 
         const { skillConfigs, domainSelections, toastMessage } = useWizardStore.getState();
@@ -1005,7 +1224,7 @@ describe("WizardStore", () => {
       store.toggleSkillScope("web-framework-react");
 
       const { skillConfigs } = useWizardStore.getState();
-      expect(skillConfigs[0].scope).toBe("project");
+      expect(firstElement(skillConfigs).scope).toBe("project");
     });
 
     it("should toggle skill scope back to global", () => {
@@ -1016,7 +1235,7 @@ describe("WizardStore", () => {
       store.toggleSkillScope("web-framework-react");
 
       const { skillConfigs } = useWizardStore.getState();
-      expect(skillConfigs[0].scope).toBe("global");
+      expect(firstElement(skillConfigs).scope).toBe("global");
     });
 
     it("should block project eject to global when global eject already exists and set toastMessage", () => {
@@ -1052,7 +1271,7 @@ describe("WizardStore", () => {
 
       store.toggleSkillScope("web-framework-react");
       const { skillConfigs, toastMessage } = useWizardStore.getState();
-      expect(skillConfigs[0].scope).toBe("project");
+      expect(firstElement(skillConfigs).scope).toBe("project");
       expect(toastMessage).toBeNull();
     });
 
@@ -1066,7 +1285,7 @@ describe("WizardStore", () => {
 
       store.toggleSkillScope("web-framework-react");
       const { skillConfigs, toastMessage } = useWizardStore.getState();
-      expect(skillConfigs[0].scope).toBe("global");
+      expect(firstElement(skillConfigs).scope).toBe("global");
       expect(toastMessage).toBeNull();
     });
 
@@ -1077,7 +1296,7 @@ describe("WizardStore", () => {
 
       store.toggleSkillScope("web-framework-react");
       const { skillConfigs } = useWizardStore.getState();
-      expect(skillConfigs[0].scope).toBe("global");
+      expect(firstElement(skillConfigs).scope).toBe("global");
     });
 
     it("should add excluded global entry when toggling previously-installed global skill to project", () => {
@@ -1128,7 +1347,7 @@ describe("WizardStore", () => {
       store.toggleSkillScope("web-framework-react");
       const { skillConfigs } = useWizardStore.getState();
       expect(skillConfigs).toHaveLength(1);
-      expect(skillConfigs[0].scope).toBe("project");
+      expect(firstElement(skillConfigs).scope).toBe("project");
     });
 
     it("should allow P→G reverse toggle for ejected skills after G→P toggle (round-trip)", () => {
@@ -1201,7 +1420,7 @@ describe("WizardStore", () => {
       expect(second.toastMessage).toBeNull();
     });
 
-    it("runs the full in-session blocked-space → s-collapse → blocked-space → s-restore sequence on a persisted [P][G] skill", () => {
+    it("runs the full in-session space-collapse → s-restore → blocked-space → s-restore sequence on a persisted [P][G] skill", () => {
       // Single wizard session on a persisted dual-scope pair: the hydration snapshot stays a
       // frozen [P][G] (project-active + global tombstone) throughout, while the live config is
       // mutated by each keypress. Exercises the state machine the E2E suite drives end-to-end.
@@ -1226,21 +1445,25 @@ describe("WizardStore", () => {
         toastMessage: null,
       });
 
-      // Step 1 — spacebar on the live [P][G] row is BLOCKED: only `s` may change a dual-scope
-      // pair. Live config and selection unchanged, toast shown.
+      // Step 1 — spacebar on the live [P][G] row drops the half the PROJECT owns: the pair
+      // collapses to the inherited global entry, and the skill stays selected because that
+      // entry is still active. No toast — nothing global-owned was touched.
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      const afterBlockedSpace = useWizardStore.getState();
-      expect(afterBlockedSpace.skillConfigs).toStrictEqual(dualScope());
-      expect(afterBlockedSpace.domainSelections.web!["web-framework"]).toStrictEqual([
+      const afterProjectHalfDropped = useWizardStore.getState();
+      expect(afterProjectHalfDropped.skillConfigs).toStrictEqual(plainGlobal());
+      expect(afterProjectHalfDropped.domainSelections.web!["web-framework"]).toStrictEqual([
         "web-framework-react",
       ]);
-      expect(afterBlockedSpace.toastMessage).toBe(
-        "Global skills cannot be changed from project scope",
-      );
+      expect(afterProjectHalfDropped.toastMessage).toBeNull();
 
-      // Step 2 — `s` collapses [P][G] to a single active inherited-global entry; the skill
-      // stays selected (still active via global).
-      useWizardStore.setState({ toastMessage: null });
+      // Step 2 — `s` rebuilds the pair from that collapsed row (the snapshot still carries a
+      // global entry for the id, so the tombstone comes back with it).
+      store.toggleSkillScope("web-framework-react");
+      const afterFirstRestore = useWizardStore.getState();
+      expect(afterFirstRestore.skillConfigs).toStrictEqual(dualScope());
+      expect(afterFirstRestore.toastMessage).toBeNull();
+
+      // Step 3 — `s` collapses the pair the other way, leaving the same plain global row.
       store.toggleSkillScope("web-framework-react");
       const afterCollapse = useWizardStore.getState();
       expect(afterCollapse.skillConfigs).toStrictEqual(plainGlobal());
@@ -1249,8 +1472,9 @@ describe("WizardStore", () => {
       ]);
       expect(afterCollapse.toastMessage).toBeNull();
 
-      // Step 3 — spacebar on the collapsed row is BLOCKED too (would otherwise tombstone the
-      // still-real global install). Live config unchanged, toast shown.
+      // Step 3b — spacebar on that collapsed row IS blocked: the live entry is now the global
+      // install itself, and deselecting it from project scope would tombstone something the
+      // project does not own. The half the guard still covers.
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
       const afterBlocked = useWizardStore.getState();
       expect(afterBlocked.skillConfigs).toStrictEqual(plainGlobal());
@@ -1318,14 +1542,31 @@ describe("WizardStore", () => {
       expect(useWizardStore.getState().focusedSkillId).toBeNull();
     });
 
-    it("should update source via setSourceSelection on skillConfigs", () => {
+    it("should write the eject source via setInstallMode on skillConfigs", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
 
-      store.setSourceSelection("web-framework-react", "eject", "global");
+      store.setInstallMode("web-framework-react", "eject", "global");
 
       const { skillConfigs } = useWizardStore.getState();
-      expect(skillConfigs[0].source).toBe("eject");
+      expect(firstElement(skillConfigs).source).toBe("eject");
+    });
+
+    it("should write the marketplace source via setInstallMode on skillConfigs", () => {
+      const store = useWizardStore.getState();
+      initializeMatrix(
+        createMockMatrix({
+          ...SKILLS.react,
+          availableSources: [{ name: "Acme Corp", type: "private", installed: false }],
+        }),
+      );
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      store.setInstallMode("web-framework-react", "eject", "global");
+
+      store.setInstallMode("web-framework-react", "plugin", "global");
+
+      const { skillConfigs } = useWizardStore.getState();
+      expect(firstElement(skillConfigs).source).toBe("Acme Corp");
     });
 
     it("should populate skillConfigs from populateFromSkillIds", () => {
@@ -1383,8 +1624,8 @@ describe("WizardStore", () => {
       const excludedConfigs = skillConfigs.filter((sc) => sc.excluded);
       expect(activeConfigs).toHaveLength(2);
       expect(excludedConfigs).toHaveLength(1);
-      expect(excludedConfigs[0].id).toBe("web-testing-vitest");
-      expect(excludedConfigs[0].excluded).toBe(true);
+      expect(firstElement(excludedConfigs).id).toBe("web-testing-vitest");
+      expect(firstElement(excludedConfigs).excluded).toBe(true);
     });
 
     it("preserves excluded tombstone when active entry exists for same skill at different scope", () => {
@@ -1644,7 +1885,7 @@ describe("WizardStore", () => {
     it("should set all sources to plugin via setAllSourcesPlugin", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.setSourceSelection("web-framework-react", "eject", "global");
+      store.setInstallMode("web-framework-react", "eject", "global");
 
       initializeMatrix(
         createMockMatrix({
@@ -1656,7 +1897,7 @@ describe("WizardStore", () => {
       store.setAllSourcesPlugin();
 
       const { skillConfigs } = useWizardStore.getState();
-      expect(skillConfigs[0].source).toBe("Acme Corp");
+      expect(firstElement(skillConfigs).source).toBe("Acme Corp");
     });
 
     it("flips the active entry but leaves an excluded global tombstone's source intact via setAllSourcesEject", () => {
@@ -1902,102 +2143,54 @@ describe("WizardStore", () => {
     });
   });
 
-  describe("buildSourceRows sort order", () => {
-    function makeSource(overrides: Partial<SkillSource> & { name: string }): SkillSource {
-      return {
-        type: "private",
-        installed: false,
-        ...overrides,
-      };
-    }
-
-    it("should sort local sources before scoped marketplace sources", () => {
+  describe("buildSourceRows install-mode cells", () => {
+    it("should offer exactly the two install modes, local first", () => {
       const store = useWizardStore.getState();
-
-      const skill = {
-        ...SKILLS.react,
-        availableSources: [
-          makeSource({ name: "Acme Corp", type: "private", primary: true }),
-          makeSource({ name: "eject", type: "local", installed: true, installMode: "eject" }),
-        ],
-      };
-
-      initializeMatrix(createMockMatrix(skill));
+      initializeMatrix(
+        createMockMatrix({
+          ...SKILLS.react,
+          availableSources: [{ name: "Acme Corp", type: "private", installed: false }],
+        }),
+      );
 
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].options[0].id).toBe("eject");
-      expect(rows[0].options[1].id).toBe("Acme Corp");
+      expect(firstElement(rows).options.map((option) => option.mode)).toStrictEqual([
+        "eject",
+        "plugin",
+      ]);
     });
 
-    it("should sort scoped marketplace before default public marketplace", () => {
+    it("should select the local cell for a skill saved as ejected", () => {
       const store = useWizardStore.getState();
+      useWizardStore.setState({
+        skillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "eject",
+        }),
+      });
 
-      const skill = {
-        ...SKILLS.react,
-        availableSources: [
-          makeSource({ name: "agents-inc", type: "public" }),
-          makeSource({ name: "Acme Corp", type: "private", primary: true }),
-        ],
-      };
-
-      initializeMatrix(createMockMatrix(skill));
-
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-
-      const rows = store.buildSourceRows();
-      expect(rows).toHaveLength(1);
-      expect(rows[0].options[0].id).toBe("eject");
-      expect(rows[0].options[1].id).toBe("Acme Corp");
-      expect(rows[0].options[2].id).toBe("agents-inc");
+      const selected = firstElement(store.buildSourceRows()).options.filter(
+        (option) => option.selected,
+      );
+      expect(selected.map((option) => option.mode)).toStrictEqual(["eject"]);
     });
 
-    it("should sort default public marketplace before third-party sources", () => {
+    it("should select the plugin cell for a skill saved against a marketplace", () => {
       const store = useWizardStore.getState();
+      useWizardStore.setState({
+        skillConfigs: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          source: "Acme Corp",
+        }),
+      });
 
-      const skill = {
-        ...SKILLS.react,
-        availableSources: [
-          makeSource({ name: "Extra Corp", type: "private" }),
-          makeSource({ name: "agents-inc", type: "public" }),
-        ],
-      };
-
-      initializeMatrix(createMockMatrix(skill));
-
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-
-      const rows = store.buildSourceRows();
-      expect(rows).toHaveLength(1);
-      expect(rows[0].options[0].id).toBe("eject");
-      expect(rows[0].options[1].id).toBe("agents-inc");
-      expect(rows[0].options[2].id).toBe("Extra Corp");
-    });
-
-    it("should sort all four tiers in correct order", () => {
-      const store = useWizardStore.getState();
-
-      const skill = {
-        ...SKILLS.react,
-        availableSources: [
-          makeSource({ name: "Extra Corp", type: "private" }),
-          makeSource({ name: "agents-inc", type: "public" }),
-          makeSource({ name: "Acme Corp", type: "private", primary: true }),
-          makeSource({ name: "eject", type: "local", installed: true, installMode: "eject" }),
-        ],
-      };
-
-      initializeMatrix(createMockMatrix(skill));
-
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-
-      const rows = store.buildSourceRows();
-      expect(rows).toHaveLength(1);
-
-      const sourceNames = rows[0].options.map((opt) => opt.id);
-      expect(sourceNames).toStrictEqual(["eject", "Acme Corp", "agents-inc", "Extra Corp"]);
+      const selected = firstElement(store.buildSourceRows()).options.filter(
+        (option) => option.selected,
+      );
+      expect(selected.map((option) => option.mode)).toStrictEqual(["plugin"]);
     });
   });
 
@@ -2009,12 +2202,12 @@ describe("WizardStore", () => {
       // Default scope is "global" from createDefaultSkillConfig
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].scope).toBe("global");
+      expect(firstElement(rows).scope).toBe("global");
 
       // Toggle to project scope
       store.toggleSkillScope("web-framework-react");
       const updatedRows = store.buildSourceRows();
-      expect(updatedRows[0].scope).toBe("project");
+      expect(firstElement(updatedRows).scope).toBe("project");
     });
 
     it("should return undefined scope for skills not in skillConfigs", () => {
@@ -2027,8 +2220,8 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].skillId).toBe("web-framework-react");
-      expect(rows[0].scope).toBeUndefined();
+      expect(firstElement(rows).skillId).toBe("web-framework-react");
+      expect(firstElement(rows).scope).toBeUndefined();
     });
 
     it("should mark global-scoped skills as readOnly when previously installed globally", () => {
@@ -2043,7 +2236,7 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].readOnly).toBe(true);
+      expect(firstElement(rows).readOnly).toBe(true);
     });
 
     it("should not mark global-scoped skills as readOnly when not previously installed", () => {
@@ -2053,7 +2246,7 @@ describe("WizardStore", () => {
       // installedSkillConfigs is null (default) — no prior installs
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].readOnly).toBeUndefined();
+      expect(firstElement(rows).readOnly).toBeUndefined();
     });
 
     it("should not mark global-scoped skills as readOnly when editing from global scope", () => {
@@ -2069,7 +2262,7 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].readOnly).toBeUndefined();
+      expect(firstElement(rows).readOnly).toBeUndefined();
     });
 
     it("should not mark project-scoped skills as readOnly when previously installed as project", () => {
@@ -2093,8 +2286,8 @@ describe("WizardStore", () => {
       // One row is the contract: the skill occupies the same (id, project) slot it was saved in, so
       // no slot is emptied and nothing is pending removal.
       expect(rows).toHaveLength(1);
-      expect(rows[0].scope).toBe("project");
-      expect(rows[0].readOnly).toBeUndefined();
+      expect(firstElement(rows).scope).toBe("project");
+      expect(firstElement(rows).readOnly).toBeUndefined();
     });
 
     it("should emit both global locked and project editable rows for re-scoped skills", () => {
@@ -2116,14 +2309,14 @@ describe("WizardStore", () => {
       expect(rows).toHaveLength(2);
 
       // First row: locked global copy
-      expect(rows[0].skillId).toBe("web-framework-react");
-      expect(rows[0].scope).toBe("global");
-      expect(rows[0].readOnly).toBe(true);
+      expect(firstElement(rows).skillId).toBe("web-framework-react");
+      expect(firstElement(rows).scope).toBe("global");
+      expect(firstElement(rows).readOnly).toBe(true);
 
       // Second row: editable project copy
-      expect(rows[1].skillId).toBe("web-framework-react");
-      expect(rows[1].scope).toBe("project");
-      expect(rows[1].readOnly).toBeUndefined();
+      expect(elementAt(rows, 1).skillId).toBe("web-framework-react");
+      expect(elementAt(rows, 1).scope).toBe("project");
+      expect(elementAt(rows, 1).readOnly).toBeUndefined();
     });
 
     it("should not mark new global skills as readOnly when not previously installed", () => {
@@ -2140,8 +2333,8 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].scope).toBe("global");
-      expect(rows[0].readOnly).toBeUndefined();
+      expect(firstElement(rows).scope).toBe("global");
+      expect(firstElement(rows).readOnly).toBeUndefined();
     });
 
     it("should emit single locked row for skill that remains global-scoped", () => {
@@ -2160,8 +2353,8 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].scope).toBe("global");
-      expect(rows[0].readOnly).toBe(true);
+      expect(firstElement(rows).scope).toBe("global");
+      expect(firstElement(rows).readOnly).toBe(true);
     });
 
     it("should show excluded global skills as locked rows", () => {
@@ -2181,9 +2374,9 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].skillId).toBe("web-framework-react");
-      expect(rows[0].scope).toBe("global");
-      expect(rows[0].readOnly).toBe(true);
+      expect(firstElement(rows).skillId).toBe("web-framework-react");
+      expect(firstElement(rows).scope).toBe("global");
+      expect(firstElement(rows).readOnly).toBe(true);
     });
 
     it("should not duplicate rows for re-scoped skills with excluded tombstone", () => {
@@ -2206,10 +2399,10 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(2);
-      expect(rows[0].scope).toBe("global");
-      expect(rows[0].readOnly).toBe(true);
-      expect(rows[1].scope).toBe("project");
-      expect(rows[1].readOnly).toBeUndefined();
+      expect(firstElement(rows).scope).toBe("global");
+      expect(firstElement(rows).readOnly).toBe(true);
+      expect(elementAt(rows, 1).scope).toBe("project");
+      expect(elementAt(rows, 1).readOnly).toBeUndefined();
     });
 
     it("should emit single editable row for new project-scoped skill", () => {
@@ -2225,9 +2418,9 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].skillId).toBe("web-framework-react");
-      expect(rows[0].scope).toBe("project");
-      expect(rows[0].readOnly).toBeUndefined();
+      expect(firstElement(rows).skillId).toBe("web-framework-react");
+      expect(firstElement(rows).scope).toBe("project");
+      expect(firstElement(rows).readOnly).toBeUndefined();
     });
 
     it("should produce correct rows for mixed re-scoped and excluded skills", () => {
@@ -2259,14 +2452,14 @@ describe("WizardStore", () => {
       const vitestRows = rows.filter((r) => r.skillId === "web-testing-vitest");
 
       expect(reactRows).toHaveLength(2);
-      expect(reactRows[0].scope).toBe("global");
-      expect(reactRows[0].readOnly).toBe(true);
-      expect(reactRows[1].scope).toBe("project");
-      expect(reactRows[1].readOnly).toBeUndefined();
+      expect(firstElement(reactRows).scope).toBe("global");
+      expect(firstElement(reactRows).readOnly).toBe(true);
+      expect(elementAt(reactRows, 1).scope).toBe("project");
+      expect(elementAt(reactRows, 1).readOnly).toBeUndefined();
 
       expect(vitestRows).toHaveLength(1);
-      expect(vitestRows[0].scope).toBe("global");
-      expect(vitestRows[0].readOnly).toBe(true);
+      expect(firstElement(vitestRows).scope).toBe("global");
+      expect(firstElement(vitestRows).readOnly).toBe(true);
     });
 
     it("should keep a deselected saved project skill visible as a disabled row", () => {
@@ -2283,11 +2476,11 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].skillId).toBe("web-framework-react");
-      expect(rows[0].disabled).toBe(true);
+      expect(firstElement(rows).skillId).toBe("web-framework-react");
+      expect(firstElement(rows).disabled).toBe(true);
       // A lock would read as "installed globally"; this row is pending removal instead.
-      expect(rows[0].readOnly).toBeUndefined();
-      expect(rows[0].scope).toBe("project");
+      expect(firstElement(rows).readOnly).toBeUndefined();
+      expect(firstElement(rows).scope).toBe("project");
     });
 
     it("should show the persisted source on a deselected saved project skill", () => {
@@ -2301,7 +2494,11 @@ describe("WizardStore", () => {
       });
 
       const rows = store.buildSourceRows();
-      expect(rows[0].options.filter((o) => o.selected).map((o) => o.id)).toStrictEqual(["eject"]);
+      expect(
+        firstElement(rows)
+          .options.filter((option) => option.selected)
+          .map((option) => option.mode),
+      ).toStrictEqual(["eject"]);
     });
 
     it("should not surface a never-saved skill as a disabled row during init", () => {
@@ -2331,11 +2528,11 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].skillId).toBe("web-framework-react");
-      expect(rows[0].disabled).toBe(true);
-      expect(rows[0].scope).toBe("global");
+      expect(firstElement(rows).skillId).toBe("web-framework-react");
+      expect(firstElement(rows).disabled).toBe(true);
+      expect(firstElement(rows).scope).toBe("global");
       // A global-scope edit owns every row, so nothing renders as locked-because-inherited.
-      expect(rows[0].readOnly).toBeUndefined();
+      expect(firstElement(rows).readOnly).toBeUndefined();
     });
 
     it("should skip a saved skill the marketplace no longer carries instead of throwing", () => {
@@ -2385,12 +2582,12 @@ describe("WizardStore", () => {
       ]);
       expect(rows.map((r) => r.scope)).toStrictEqual(["global", "project"]);
       // The surviving global install is locked-because-inherited, never pending removal.
-      expect(rows[0].readOnly).toBe(true);
-      expect(rows[0].disabled).toBeUndefined();
+      expect(firstElement(rows).readOnly).toBe(true);
+      expect(firstElement(rows).disabled).toBeUndefined();
       // The emptied project slot is inert and pending removal — a lock there would read as
       // "installed globally" instead of "about to be removed".
-      expect(rows[1].disabled).toBe(true);
-      expect(rows[1].readOnly).toBeUndefined();
+      expect(elementAt(rows, 1).disabled).toBe(true);
+      expect(elementAt(rows, 1).readOnly).toBeUndefined();
       // Both slots come FROM the snapshot, so neither can be new this session.
       expect(rows.map((r) => r.added)).toStrictEqual([undefined, undefined]);
     });
@@ -2420,8 +2617,8 @@ describe("WizardStore", () => {
         "web-testing-vitest",
       ]);
       expect(rows.map((r) => r.scope)).toStrictEqual(["project", "project"]);
-      expect(rows[0].disabled).toBeUndefined();
-      expect(rows[1].disabled).toBe(true);
+      expect(firstElement(rows).disabled).toBeUndefined();
+      expect(elementAt(rows, 1).disabled).toBe(true);
     });
 
     it("should mark every row added when there is no installation snapshot", () => {
@@ -2434,7 +2631,7 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].added).toBe(true);
+      expect(firstElement(rows).added).toBe(true);
     });
 
     it("should mark every row added when the installation snapshot is empty", () => {
@@ -2447,7 +2644,7 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0].added).toBe(true);
+      expect(firstElement(rows).added).toBe(true);
     });
 
     it("should mark only the project half of an adopted global skill as added", () => {
@@ -2468,8 +2665,8 @@ describe("WizardStore", () => {
 
       const rows = store.buildSourceRows();
       expect(rows.map((r) => r.scope)).toStrictEqual(["global", "project"]);
-      expect(rows[0].added).toBeUndefined();
-      expect(rows[1].added).toBe(true);
+      expect(firstElement(rows).added).toBeUndefined();
+      expect(elementAt(rows, 1).added).toBe(true);
     });
 
     it("should render a collapsed persisted dual-scope pair as an unmarked global row plus a project pending-removal row", () => {
@@ -2503,13 +2700,13 @@ describe("WizardStore", () => {
       // The still-active global row survives the collapse — it is not swallowed by the emptied
       // project slot — and carries neither diff marker: re-occupying a tombstoned slot is not an
       // addition, and the global install is not what saving removes.
-      expect(rows[0].added).toBeUndefined();
-      expect(rows[0].disabled).toBeUndefined();
+      expect(firstElement(rows).added).toBeUndefined();
+      expect(firstElement(rows).disabled).toBeUndefined();
       // The emptied project slot is inert and pending removal — a lock there would read as
       // "installed globally" instead of "about to be removed".
-      expect(rows[1].disabled).toBe(true);
-      expect(rows[1].readOnly).toBeUndefined();
-      expect(rows[1].added).toBeUndefined();
+      expect(elementAt(rows, 1).disabled).toBe(true);
+      expect(elementAt(rows, 1).readOnly).toBeUndefined();
+      expect(elementAt(rows, 1).added).toBeUndefined();
     });
 
     it("should render a project-to-global migration as an added global row plus a project pending-removal row", () => {
@@ -2537,13 +2734,13 @@ describe("WizardStore", () => {
       expect(rows.map((r) => r.scope)).toStrictEqual(["global", "project"]);
       // The newly occupied global slot is the addition, and it is editable: no global install
       // predates this session, so there is nothing inherited to lock against.
-      expect(rows[0].added).toBe(true);
-      expect(rows[0].disabled).toBeUndefined();
-      expect(rows[0].readOnly).toBeUndefined();
+      expect(firstElement(rows).added).toBe(true);
+      expect(firstElement(rows).disabled).toBeUndefined();
+      expect(firstElement(rows).readOnly).toBeUndefined();
       // The emptied project slot is what saving deletes — inert, and never new this session.
-      expect(rows[1].disabled).toBe(true);
-      expect(rows[1].added).toBeUndefined();
-      expect(rows[1].readOnly).toBeUndefined();
+      expect(elementAt(rows, 1).disabled).toBe(true);
+      expect(elementAt(rows, 1).added).toBeUndefined();
+      expect(elementAt(rows, 1).readOnly).toBeUndefined();
     });
   });
 
@@ -2617,6 +2814,29 @@ describe("WizardStore", () => {
       expect(toastMessage).toBeNull();
     });
 
+    it("should toggle an installed PROJECT-scope agent off freely, with no toast", () => {
+      // The counterweight to the two blocked-toggle tests above: the lock is scoped to
+      // GLOBAL installs, so an agent the project owns must stay freely deselectable under
+      // the identical project-scope conditions (a hydration snapshot present, not editing
+      // from global scope, not init).
+      const store = useWizardStore.getState();
+      useWizardStore.setState({
+        selectedAgents: ["web-developer"],
+        agentConfigs: buildAgentConfigs(["web-developer"], { scope: "project" }),
+        installedAgentConfigs: buildAgentConfigs(["web-developer"], { scope: "project" }),
+        isEditingFromGlobalScope: false,
+        isInitMode: false,
+        toastMessage: null,
+      });
+
+      store.toggleAgent("web-developer");
+
+      const { selectedAgents, agentConfigs, toastMessage } = useWizardStore.getState();
+      expect(selectedAgents).toStrictEqual([]);
+      expect(agentConfigs).toStrictEqual([]);
+      expect(toastMessage, "a project-owned agent deselect must not be refused").toBeNull();
+    });
+
     it("should toggle agent off", () => {
       const store = useWizardStore.getState();
       store.toggleAgent("web-developer");
@@ -2631,10 +2851,10 @@ describe("WizardStore", () => {
       const store = useWizardStore.getState();
       store.toggleAgent("web-developer");
       store.toggleAgent("api-developer");
-      store.toggleAgent("web-reviewer");
+      store.toggleAgent("reviewer");
 
       const { selectedAgents } = useWizardStore.getState();
-      expect(selectedAgents).toStrictEqual(["web-developer", "api-developer", "web-reviewer"]);
+      expect(selectedAgents).toStrictEqual(["web-developer", "api-developer", "reviewer"]);
     });
 
     it("should reset selectedAgents on reset", () => {
@@ -3142,8 +3362,8 @@ describe("WizardStore", () => {
       const { selectedAgents } = useWizardStore.getState();
       expect(selectedAgents).toContain("web-developer");
       expect(selectedAgents).toContain("api-developer");
-      expect(selectedAgents).toContain("web-reviewer");
-      expect(selectedAgents).toContain("api-reviewer");
+      // One consolidated reviewer serves both domains — present exactly once.
+      expect(selectedAgents.filter((name) => name === "reviewer")).toHaveLength(1);
     });
 
     it("should not preselect api agents when only web domain is selected", () => {
@@ -3153,8 +3373,9 @@ describe("WizardStore", () => {
 
       const { selectedAgents } = useWizardStore.getState();
       expect(selectedAgents).toContain("web-developer");
+      expect(selectedAgents).toContain("reviewer");
       expect(selectedAgents).not.toContain("api-developer");
-      expect(selectedAgents).not.toContain("api-reviewer");
+      expect(selectedAgents).not.toContain("api-tester");
     });
 
     it("should return sorted agents", () => {
@@ -3322,6 +3543,12 @@ describe("WizardStore", () => {
   });
 
   describe("step progress with agents step", () => {
+    // A stack step can only be behind you in a flow that has one, and the
+    // suite's own matrix ships no stacks — so these say so explicitly.
+    beforeEach(() => {
+      initializeMatrix(REACT_HONO_ONE_STACK_MATRIX);
+    });
+
     it("should include agents in completed steps when on confirm", () => {
       const store = useWizardStore.getState();
       store.setApproach("scratch");
@@ -3369,6 +3596,50 @@ describe("WizardStore", () => {
     });
   });
 
+  /**
+   * The steps this session runs are what the tab bar is drawn from, so a step
+   * the wizard never opens is a tab it never paints. Both flows are spelled out
+   * literally rather than derived from `WIZARD_STEP_ORDER` — an expectation
+   * built from the constant under test agrees with it however it changes.
+   */
+  describe("active step flow", () => {
+    it("runs every step when the source ships stacks", () => {
+      initializeMatrix(REACT_HONO_ONE_STACK_MATRIX);
+
+      expect(getActiveStepFlow()).toStrictEqual([
+        "stack",
+        "domains",
+        "build",
+        "sources",
+        "agents",
+        "confirm",
+      ]);
+    });
+
+    it("has no stack step when the source ships none", () => {
+      initializeMatrix(REACT_HONO_FRAMEWORK_API_MATRIX);
+
+      expect(getActiveStepFlow()).toStrictEqual([
+        "domains",
+        "build",
+        "sources",
+        "agents",
+        "confirm",
+      ]);
+    });
+
+    it("counts no stack step as completed behind the step a stackless flow opens on", () => {
+      initializeMatrix(REACT_HONO_FRAMEWORK_API_MATRIX);
+      hydrateWizardStore({});
+
+      const store = useWizardStore.getState();
+      store.setStep("build");
+
+      const { completedSteps } = store.getStepProgress();
+      expect(completedSteps).toStrictEqual(["domains"]);
+    });
+  });
+
   describe("deriveInstallMode", () => {
     it("should return 'plugin' when all skills have default marketplace source", () => {
       const store = useWizardStore.getState();
@@ -3383,8 +3654,8 @@ describe("WizardStore", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
       store.toggleTechnology("api", "api-api", "api-framework-hono", true);
-      store.setSourceSelection("web-framework-react", "eject", "global");
-      store.setSourceSelection("api-framework-hono", "eject", "global");
+      store.setInstallMode("web-framework-react", "eject", "global");
+      store.setInstallMode("api-framework-hono", "eject", "global");
 
       const result = store.deriveInstallMode();
       expect(result).toBe("eject");
@@ -3394,8 +3665,8 @@ describe("WizardStore", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
       store.toggleTechnology("api", "api-api", "api-framework-hono", true);
-      store.setSourceSelection("web-framework-react", "eject", "global");
-      store.setSourceSelection("api-framework-hono", "agents-inc", "global");
+      store.setInstallMode("web-framework-react", "eject", "global");
+      store.setInstallMode("api-framework-hono", "plugin", "global");
 
       const result = store.deriveInstallMode();
       expect(result).toBe("mixed");
@@ -3411,7 +3682,7 @@ describe("WizardStore", () => {
     it("should handle single skill as local", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.setSourceSelection("web-framework-react", "eject", "global");
+      store.setInstallMode("web-framework-react", "eject", "global");
 
       const result = store.deriveInstallMode();
       expect(result).toBe("eject");
@@ -3423,289 +3694,6 @@ describe("WizardStore", () => {
 
       const result = store.deriveInstallMode();
       expect(result).toBe("plugin");
-    });
-  });
-
-  describe("toggleFilterIncompatible", () => {
-    it("should deselect framework-incompatible skills from web categories when enabling filter", () => {
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-
-      // Select React as framework, then select pinia (Vue-only) in client-state
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.toggleTechnology("web", "web-client-state", "web-state-pinia", false);
-
-      // Verify pinia is selected
-      expect(useWizardStore.getState().domainSelections.web!["web-client-state"]).toContain(
-        "web-state-pinia",
-      );
-
-      // Enable filter
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      expect(state.filterIncompatible).toBe(true);
-      // Pinia should be deselected (incompatible with React)
-      expect(state.domainSelections.web!["web-client-state"]).not.toContain("web-state-pinia");
-    });
-
-    it("should NOT deselect framework-compatible skills when enabling filter", () => {
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-
-      // Select React as framework, then select zustand (React-compatible) in client-state
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.toggleTechnology("web", "web-client-state", "web-state-zustand", false);
-
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      expect(state.filterIncompatible).toBe(true);
-      // Zustand should remain (compatible with React)
-      expect(state.domainSelections.web!["web-client-state"]).toContain("web-state-zustand");
-    });
-
-    it("should NOT deselect skills in non-web domains when enabling filter", () => {
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.toggleTechnology("api", "api-api", "api-framework-hono", true);
-
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      // API domain should be untouched
-      expect(state.domainSelections.api!["api-api"]).toStrictEqual(["api-framework-hono"]);
-    });
-
-    it("should NOT deselect the framework category itself when enabling filter", () => {
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      // Framework selection should be untouched
-      expect(state.domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
-    });
-
-    it("should skip excluded skills when filtering incompatible", () => {
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.toggleTechnology("web", "web-client-state", "web-state-pinia", false);
-
-      // Mark pinia as excluded so it is skipped by the filter
-      useWizardStore.setState({
-        skillConfigs: useWizardStore
-          .getState()
-          .skillConfigs.map((sc) => (sc.id === "web-state-pinia" ? { ...sc, excluded: true } : sc)),
-      });
-
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      // Pinia should remain in domainSelections because it's excluded (not affected by filter)
-      expect(state.domainSelections.web!["web-client-state"]).toContain("web-state-pinia");
-      expect(state.skillConfigs.some((sc) => sc.id === "web-state-pinia")).toBe(true);
-    });
-
-    it("should NOT deselect anything when disabling filter", () => {
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.toggleTechnology("web", "web-client-state", "web-state-zustand", false);
-
-      // Enable then disable
-      store.toggleFilterIncompatible();
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      expect(state.filterIncompatible).toBe(false);
-      // Zustand should still be selected (was compatible, not removed on enable)
-      expect(state.domainSelections.web!["web-client-state"]).toContain("web-state-zustand");
-    });
-
-    it("should remove global incompatible skills from skillConfigs during fresh init", () => {
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.toggleTechnology("web", "web-client-state", "web-state-pinia", false);
-      store.toggleTechnology("web", "web-client-state", "web-state-zustand", false);
-
-      // Verify both are in skillConfigs
-      expect(useWizardStore.getState().skillConfigs.some((sc) => sc.id === "web-state-pinia")).toBe(
-        true,
-      );
-      expect(
-        useWizardStore.getState().skillConfigs.some((sc) => sc.id === "web-state-zustand"),
-      ).toBe(true);
-
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      // Fresh init: pinia removed from both domainSelections and skillConfigs
-      expect(state.domainSelections.web!["web-client-state"]).not.toContain("web-state-pinia");
-      expect(state.skillConfigs.some((sc) => sc.id === "web-state-pinia")).toBe(false);
-      // Zustand kept in both (compatible)
-      expect(state.domainSelections.web!["web-client-state"]).toContain("web-state-zustand");
-      expect(state.skillConfigs.some((sc) => sc.id === "web-state-zustand")).toBe(true);
-    });
-
-    it("removes global incompatible skills cleanly (no tombstone) while editing from global scope", () => {
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-      useWizardStore.setState({
-        installedSkillConfigs: buildSkillConfigs(["web-state-pinia"], {
-          scope: "global",
-          source: "agents-inc",
-        }),
-        isEditingFromGlobalScope: true,
-      });
-
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.toggleTechnology("web", "web-client-state", "web-state-pinia", false);
-      store.toggleTechnology("web", "web-client-state", "web-state-zustand", false);
-
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      // Global-scope edit: incompatible pinia is uninstalled cleanly, not tombstoned.
-      expect(state.domainSelections.web!["web-client-state"]).not.toContain("web-state-pinia");
-      expect(state.skillConfigs.some((sc) => sc.id === "web-state-pinia")).toBe(false);
-      // Zustand kept in both
-      expect(state.domainSelections.web!["web-client-state"]).toContain("web-state-zustand");
-      expect(state.skillConfigs.some((sc) => sc.id === "web-state-zustand")).toBe(true);
-    });
-
-    it("should just toggle the boolean when no frameworks are selected", () => {
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-
-      // Select a client-state skill but no framework
-      store.toggleTechnology("web", "web-client-state", "web-state-pinia", false);
-
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      expect(state.filterIncompatible).toBe(true);
-      // Pinia should remain (no framework to check against)
-      expect(state.domainSelections.web!["web-client-state"]).toContain("web-state-pinia");
-    });
-
-    it("should not deselect skills with empty compatibleWith when enabling filter", () => {
-      initializeMatrix(ALL_SKILLS_TEST_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-
-      // Select React, then SCSS (which has empty compatibleWith — compatible with everything)
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.toggleTechnology("web", "web-styling", "web-styling-scss-modules", false);
-
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      // SCSS has compatibleWith: [] so it should remain
-      expect(state.domainSelections.web!["web-styling"]).toContain("web-styling-scss-modules");
-    });
-
-    it("refuses to uninstall an actively-installed global skill from project scope", () => {
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.toggleTechnology("web", "web-client-state", "web-state-pinia", false);
-      store.toggleTechnology("web", "web-client-state", "web-state-zustand", false);
-
-      // pinia is globally installed; the project-scope edit has no authority over it.
-      useWizardStore.setState({
-        installedSkillConfigs: buildSkillConfigs(["web-state-pinia"], {
-          scope: "global",
-          source: "eject",
-        }),
-        isEditingFromGlobalScope: false,
-        isInitMode: false,
-      });
-
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      expect(state.toastMessage).toBe("Global skills cannot be changed from project scope");
-      // The whole operation is refused: the filter stays off and nothing is removed.
-      expect(state.filterIncompatible).toBe(false);
-      expect(state.domainSelections.web!["web-client-state"]).toContain("web-state-pinia");
-      expect(state.skillConfigs.some((sc) => sc.id === "web-state-pinia")).toBe(true);
-      expect(state.domainSelections.web!["web-client-state"]).toContain("web-state-zustand");
-    });
-
-    it("refuses the filter when a stale global tombstone has collapsed to an active global entry", () => {
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.toggleTechnology("web", "web-client-state", "web-state-pinia", false);
-
-      // Snapshot still holds the persisted [P][G] tombstone while the live config has already
-      // collapsed to a plain active global entry — the same shape toggleTechnology blocks.
-      useWizardStore.setState({
-        skillConfigs: buildSkillConfigs(["web-state-pinia"], {
-          scope: "global",
-          source: "eject",
-        }),
-        installedSkillConfigs: [
-          ...buildSkillConfigs(["web-state-pinia"], { scope: "project", source: "eject" }),
-          ...buildSkillConfigs(["web-state-pinia"], {
-            scope: "global",
-            source: "eject",
-            excluded: true,
-          }),
-        ],
-        isEditingFromGlobalScope: false,
-        isInitMode: false,
-      });
-
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      expect(state.toastMessage).toBe("Global skills cannot be changed from project scope");
-      expect(state.filterIncompatible).toBe(false);
-      expect(state.skillConfigs).toStrictEqual(
-        buildSkillConfigs(["web-state-pinia"], { scope: "global", source: "eject" }),
-      );
-    });
-
-    it("refuses to uninstall an actively-installed global skill in init mode too", () => {
-      initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
-      const store = useWizardStore.getState();
-
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.toggleTechnology("web", "web-client-state", "web-state-pinia", false);
-
-      useWizardStore.setState({
-        installedSkillConfigs: buildSkillConfigs(["web-state-pinia"], {
-          scope: "global",
-          source: "eject",
-        }),
-        isInitMode: true,
-      });
-      const skillConfigsBefore = [...useWizardStore.getState().skillConfigs];
-
-      store.toggleFilterIncompatible();
-
-      const state = useWizardStore.getState();
-      expect(state.toastMessage).toBe("Global skills cannot be changed from project scope");
-      // The whole operation is refused: the filter stays off and nothing is removed.
-      expect(state.filterIncompatible).toBe(false);
-      expect(state.domainSelections.web!["web-client-state"]).toContain("web-state-pinia");
-      expect(
-        state.skillConfigs,
-        "a refused filter must leave skillConfigs untouched",
-      ).toStrictEqual(skillConfigsBefore);
     });
   });
 
@@ -3742,12 +3730,42 @@ describe("WizardStore", () => {
     });
 
     it("sets init-mode defaults when no options are provided", () => {
+      initializeMatrix(REACT_HONO_ONE_STACK_MATRIX);
+
       hydrateWizardStore({});
 
       const state = useWizardStore.getState();
       expect(state.step).toBe("stack");
       expect(state.history).toStrictEqual([]);
       expect(state.isInitMode).toBe(true);
+    });
+
+    it("opens past the stack step, prepared as scratch, when the source offers no stacks", () => {
+      // The beforeEach matrix carries no stacks, which is what a custom
+      // marketplace shipping none loads as: the step would hold nothing but its
+      // own scratch row, so the wizard opens where that row leads.
+      hydrateWizardStore({});
+
+      const state = useWizardStore.getState();
+      expect(state.step).toBe("domains");
+      expect(state.history).toStrictEqual([]);
+      expect(state.isInitMode).toBe(true);
+      expect(state.approach).toBe("scratch");
+      expect(state.selectedStackId).toBeNull();
+      expect(state.selectedDomains).toStrictEqual([...DEFAULT_SCRATCH_DOMAINS]);
+    });
+
+    it("merges global preselections into the opening step it skips the stack step for", () => {
+      const skillConfigs: SkillConfig[] = [
+        { id: "web-framework-react", scope: "global", source: "eject" },
+      ];
+
+      hydrateWizardStore({ installedSkillConfigs: skillConfigs });
+
+      const state = useWizardStore.getState();
+      expect(state.step).toBe("domains");
+      expect(state.skillConfigs).toStrictEqual(skillConfigs);
+      expect(state.domainSelections.web?.["web-framework"]).toStrictEqual(["web-framework-react"]);
     });
 
     it("populates installedSkillConfigs for diff rendering", () => {

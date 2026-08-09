@@ -42,7 +42,6 @@ export type CategoryGridProps = {
   showLabels: boolean;
   onToggle: (categoryId: Category, technologyId: SkillId) => void;
   onToggleLabels: () => void;
-  onToggleFilterIncompatible?: () => void;
   /** Optional initial focus row (default: 0). Use with React `key` to reset. */
   defaultFocusedRow?: number;
   /** Optional initial focus col (default: 0). Use with React `key` to reset. */
@@ -74,14 +73,12 @@ const getCompatibilityLabel = (option: CategoryOption): string | null => {
   if (option.selected) return null;
   if (option.requiredBy) return `(required by ${option.requiredBy})`;
   if (option.state.status === "incompatible") return "(incompatible)";
-  if (option.state.status === "recommended") return "(recommended)";
   if (option.state.status === "discouraged") return "(discouraged)";
   return null;
 };
 
 const STATUS_COLORS: Partial<Record<OptionState["status"], string>> = {
   incompatible: CLI_COLORS.ERROR,
-  recommended: CLI_COLORS.GRAY_1,
   discouraged: CLI_COLORS.WARNING,
 };
 
@@ -189,7 +186,6 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
   showLabels,
   onToggle,
   onToggleLabels,
-  onToggleFilterIncompatible,
   defaultFocusedRow = 0,
   defaultFocusedCol = 0,
   onFocusChange,
@@ -234,7 +230,6 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
     moveFocus,
     onToggle,
     onToggleLabels,
-    onToggleFilterIncompatible,
   });
 
   // Report the focused cell's skill on mount and whenever it changes — including

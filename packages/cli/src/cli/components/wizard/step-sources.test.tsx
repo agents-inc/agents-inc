@@ -11,6 +11,7 @@ import {
   delay,
 } from "../../lib/__tests__/test-constants";
 import { WEB_PAIR_MATRIX } from "../../lib/__tests__/mock-data/mock-matrices";
+import { INSTALL_MODE_CELL_LABELS } from "../../consts";
 
 const mockMatrix = WEB_PAIR_MATRIX;
 
@@ -44,8 +45,8 @@ describe("StepSources component", () => {
     cleanup = undefined;
   });
 
-  describe("customize view", () => {
-    it("should show source grid with selected technologies", async () => {
+  describe("install-mode grid", () => {
+    it("should show the grid with selected technologies", async () => {
       const { lastFrame, unmount } = renderStepSources();
       cleanup = unmount;
 
@@ -54,38 +55,39 @@ describe("StepSources component", () => {
       const output = lastFrame();
       expect(output).toContain("React");
       expect(output).toContain("Zustand");
-      expect(output).toContain("Agents Inc");
+      expect(output).toContain(INSTALL_MODE_CELL_LABELS.eject);
+      expect(output).toContain(INSTALL_MODE_CELL_LABELS.plugin);
     });
 
-    it("should call onContinue when Enter pressed in customize view", async () => {
+    it("should call onContinue when Enter is pressed", async () => {
       const onContinue = vi.fn();
       const { stdin, unmount } = renderStepSources({ onContinue });
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
 
-      // Press Enter to continue (starts directly in customize view)
+      // Press Enter to continue
       stdin.write(ENTER);
       await delay(INPUT_DELAY_MS);
 
       expect(onContinue).toHaveBeenCalledTimes(1);
     });
 
-    it("should call onBack when Escape pressed in customize view", async () => {
+    it("should call onBack when Escape is pressed", async () => {
       const onBack = vi.fn();
       const { stdin, unmount } = renderStepSources({ onBack });
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
 
-      // Press Escape (starts directly in customize view, goes back)
+      // Press Escape to go back
       stdin.write(ESCAPE);
       await delay(INPUT_DELAY_MS);
 
       expect(onBack).toHaveBeenCalledTimes(1);
     });
 
-    it("should show source grid content in customize view", async () => {
+    it("should render the grid content", async () => {
       const { lastFrame, unmount } = renderStepSources();
       cleanup = unmount;
 
@@ -128,7 +130,7 @@ describe("StepSources component", () => {
       expect(output).toContain("React");
     });
 
-    it("should handle multiple Enter presses in customize view", async () => {
+    it("should handle multiple Enter presses", async () => {
       const onContinue = vi.fn();
       const { stdin, unmount } = renderStepSources({ onContinue });
       cleanup = unmount;

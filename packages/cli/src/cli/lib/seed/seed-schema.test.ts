@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { seedPayloadSchema } from "./seed-schema";
+import { seedPayloadSchema } from "@workspace/matrix/seed";
 
 /**
+ * The seed contract has one home, @workspace/matrix, which the CLI bundles rather than vendors.
+ * So this asserts on the imported schema itself: it is the CLI's stake in a contract it no longer
+ * owns a copy of, and it fails here if that package changes the shape `init --from` decodes.
+ *
  * The wire contract, pinned against literals rather than the factories: a version test that builds
  * its payload from `SEED_VERSION` follows the constant wherever it goes and can never fail.
  *

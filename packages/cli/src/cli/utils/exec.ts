@@ -109,11 +109,11 @@ export async function execCommand(
     let stdout = "";
     let stderr = "";
 
-    proc.stdout.on("data", (data) => {
+    proc.stdout.on("data", (data: Buffer) => {
       stdout += data.toString();
     });
 
-    proc.stderr.on("data", (data) => {
+    proc.stderr.on("data", (data: Buffer) => {
       stderr += data.toString();
     });
 
@@ -173,8 +173,8 @@ const marketplaceInfoListSchema: z.ZodType<MarketplaceInfo[]> = z.array(
   z.object({
     name: z.string(),
     source: z.string(),
-    repo: z.string().optional(),
-    path: z.string().optional(),
+    repo: z.string().exactOptional(),
+    path: z.string().exactOptional(),
   }),
 );
 

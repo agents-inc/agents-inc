@@ -24,6 +24,7 @@ vi.mock("../../utils/logger");
 
 import { detectMigrations, executeMigration } from "./mode-migrator";
 import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
+import { firstElement } from "../__tests__/helpers/element-at.js";
 import {
   claudePluginInstall,
   claudePluginUninstall,
@@ -39,7 +40,7 @@ describe("mode-migrator", () => {
       );
 
       expect(result.toEject).toHaveLength(1);
-      expect(result.toEject[0].id).toBe("web-framework-react");
+      expect(firstElement(result.toEject).id).toBe("web-framework-react");
       expect(result.toPlugin).toStrictEqual([]);
     });
 
@@ -51,7 +52,7 @@ describe("mode-migrator", () => {
 
       expect(result.toEject).toStrictEqual([]);
       expect(result.toPlugin).toHaveLength(1);
-      expect(result.toPlugin[0].id).toBe("web-framework-react");
+      expect(firstElement(result.toPlugin).id).toBe("web-framework-react");
     });
 
     it("should detect mixed migrations", () => {
@@ -67,9 +68,9 @@ describe("mode-migrator", () => {
       );
 
       expect(result.toEject).toHaveLength(1);
-      expect(result.toEject[0].id).toBe("web-framework-react");
+      expect(firstElement(result.toEject).id).toBe("web-framework-react");
       expect(result.toPlugin).toHaveLength(1);
-      expect(result.toPlugin[0].id).toBe("web-state-zustand");
+      expect(firstElement(result.toPlugin).id).toBe("web-state-zustand");
     });
 
     it("should return empty plan when no migrations needed", () => {
@@ -138,7 +139,7 @@ describe("mode-migrator", () => {
 
       // Only react is in both old and new with a source change
       expect(result.toEject).toHaveLength(1);
-      expect(result.toEject[0].id).toBe("web-framework-react");
+      expect(firstElement(result.toEject).id).toBe("web-framework-react");
       expect(result.toPlugin).toStrictEqual([]);
     });
   });
@@ -218,8 +219,13 @@ describe("mode-migrator", () => {
         "project",
         tempDir,
       );
-      expect(result.pluginizedSkills).toStrictEqual(["web-state-zustand"]);
-      expect(result.failedPluginInstalls).toStrictEqual([]);
+      expect(result.pluginInstalls.installed).toStrictEqual([
+        {
+          id: "web-state-zustand",
+          ref: "web-state-zustand@https://marketplace.example.com",
+        },
+      ]);
+      expect(result.pluginInstalls.failed).toStrictEqual([]);
       expect(result.warnings).toStrictEqual([]);
     });
 
@@ -238,7 +244,7 @@ describe("mode-migrator", () => {
       expect(claudePluginUninstall).not.toHaveBeenCalled();
       expect(claudePluginUninstallBestEffort).not.toHaveBeenCalled();
       expect(result.ejectedSkills).toStrictEqual([]);
-      expect(result.pluginizedSkills).toStrictEqual([]);
+      expect(result.pluginInstalls.installed).toStrictEqual([]);
       expect(result.warnings).toStrictEqual([]);
     });
 
@@ -265,9 +271,9 @@ describe("mode-migrator", () => {
         deleteLocalSkill,
         "the ejected working copy must survive a migration whose plugin install failed",
       ).not.toHaveBeenCalled();
-      expect(result.pluginizedSkills).toStrictEqual([]);
+      expect(result.pluginInstalls.installed).toStrictEqual([]);
       expect(
-        result.failedPluginInstalls,
+        result.pluginInstalls.failed,
         "a failed install must be reported structurally so the caller can hard-error before writing config",
       ).toStrictEqual([{ id: "web-state-zustand", error: "install failed" }]);
       expect(result.warnings).toStrictEqual([]);
@@ -301,8 +307,13 @@ describe("mode-migrator", () => {
 
       const result = await executeMigration(plan, tempDir, sourceResult);
 
-      expect(result.pluginizedSkills).toStrictEqual(["web-framework-react"]);
-      expect(result.failedPluginInstalls).toStrictEqual([
+      expect(result.pluginInstalls.installed).toStrictEqual([
+        {
+          id: "web-framework-react",
+          ref: "web-framework-react@https://marketplace.example.com",
+        },
+      ]);
+      expect(result.pluginInstalls.failed).toStrictEqual([
         { id: "web-state-zustand", error: "install failed" },
       ]);
       expect(deleteLocalSkill).toHaveBeenCalledOnce();
@@ -423,7 +434,12 @@ describe("mode-migrator", () => {
           "project",
           tempDir,
         );
-        expect(result.pluginizedSkills).toStrictEqual(["web-state-zustand"]);
+        expect(result.pluginInstalls.installed).toStrictEqual([
+          {
+            id: "web-state-zustand",
+            ref: "web-state-zustand@https://marketplace.example.com",
+          },
+        ]);
         expect(result.warnings).toStrictEqual([]);
       });
     });
@@ -507,7 +523,12 @@ describe("mode-migrator", () => {
         const result = await executeMigration(plan, tempDir, sourceResult);
 
         expect(deleteLocalSkill).toHaveBeenCalledWith(tempDir, "web-state-zustand");
-        expect(result.pluginizedSkills).toStrictEqual(["web-state-zustand"]);
+        expect(result.pluginInstalls.installed).toStrictEqual([
+          {
+            id: "web-state-zustand",
+            ref: "web-state-zustand@https://marketplace.example.com",
+          },
+        ]);
       });
     });
   });

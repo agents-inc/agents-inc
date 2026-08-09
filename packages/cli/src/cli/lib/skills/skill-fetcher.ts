@@ -4,10 +4,6 @@ import { verbose } from "../../utils/logger";
 import { CLI_INVOKE_COMMAND, GITHUB_SOURCE, SKILLS_DIR_PATH } from "../../consts";
 import type { Marketplace, MarketplacePlugin, SkillId } from "../../types";
 
-export type FetchSkillsOptions = {
-  forceRefresh?: boolean;
-};
-
 function resolvePluginSource(plugin: MarketplacePlugin, _marketplace: Marketplace): string {
   if (typeof plugin.source === "object" && plugin.source.url) {
     return plugin.source.url;
@@ -32,7 +28,6 @@ export async function fetchSkills(
   marketplace: Marketplace,
   outputDir: string,
   sourcePath: string,
-  _options: FetchSkillsOptions = {},
 ): Promise<SkillId[]> {
   const skillsOutputDir = path.join(outputDir, "skills");
   await ensureDir(skillsOutputDir);
@@ -80,8 +75,9 @@ async function findSkillPath(baseDir: string, skillId: SkillId): Promise<string 
 
   const matches = await glob(`**/${skillId}*/SKILL.md`, baseDir);
 
-  if (matches.length > 0) {
-    return path.join(baseDir, path.dirname(matches[0]));
+  const [firstMatch] = matches;
+  if (firstMatch) {
+    return path.join(baseDir, path.dirname(firstMatch));
   }
 
   return null;

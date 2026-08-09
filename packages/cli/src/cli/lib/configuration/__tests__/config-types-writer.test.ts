@@ -244,8 +244,10 @@ describe("generateConfigTypesSource", () => {
     expect(source).toContain("agents: AgentScopeConfig[];");
     expect(source).toContain("skills: SkillConfig[];");
     expect(source).toContain("stack?: Partial<Record<ProjectAgentName, StackAgentConfig>>;");
-    expect(source).toContain("domains?: Domain[];");
-    expect(source).toContain("selectedAgents?: SelectedAgentName[];");
+    expect(source).toContain("selectedDomains?: Domain[];");
+    expect(source, "the active agents list is the only record of who is selected").not.toContain(
+      "selectedAgents",
+    );
     expect(source).toContain("source?: string;");
     expect(source).toContain("marketplace?: string;");
     expect(source).toContain("agentsSource?: string;");
@@ -261,10 +263,9 @@ describe("generateConfigTypesSource", () => {
 
   it("generates ProjectAgentName = SelectedAgentName for global config", () => {
     const matrix = SINGLE_REACT_MATRIX;
-    const agentNames: AgentName[] = ["web-developer", "web-reviewer"];
+    const agentNames: AgentName[] = ["web-developer", "web-researcher"];
     const config = buildProjectConfig({
-      agents: buildAgentConfigs(["web-developer", "web-reviewer"], { scope: "global" }),
-      selectedAgents: ["web-developer", "web-reviewer"],
+      agents: buildAgentConfigs(["web-developer", "web-researcher"], { scope: "global" }),
     });
     const source = generateConfigTypesSource(matrix, agentNames, [], undefined, config);
     expect(source).toContain("export type ProjectAgentName = SelectedAgentName;");
@@ -272,17 +273,30 @@ describe("generateConfigTypesSource", () => {
 
   it("generates ProjectAgentName narrowed to project-scoped agents", () => {
     const matrix = SINGLE_REACT_MATRIX;
-    const agentNames: AgentName[] = ["web-developer", "web-reviewer", "api-developer"];
+    const agentNames: AgentName[] = ["web-developer", "web-researcher", "api-developer"];
     const config = buildProjectConfig({
       agents: [
         ...buildAgentConfigs(["web-developer"], { scope: "global" }),
-        ...buildAgentConfigs(["web-reviewer", "api-developer"], { scope: "project" }),
+        ...buildAgentConfigs(["web-researcher", "api-developer"], { scope: "project" }),
       ],
-      selectedAgents: ["web-developer", "web-reviewer", "api-developer"],
     });
     const source = generateConfigTypesSource(matrix, agentNames, [], undefined, config);
-    expect(source).toContain('export type ProjectAgentName = "web-reviewer" | "api-developer"');
+    expect(source).toContain('export type ProjectAgentName = "web-researcher" | "api-developer"');
     expect(source).not.toContain("export type ProjectAgentName = SelectedAgentName");
+  });
+
+  it("narrows SelectedAgentName to the config's non-excluded agents", () => {
+    const matrix = SINGLE_REACT_MATRIX;
+    const agentNames: AgentName[] = ["web-developer", "web-researcher", "api-developer"];
+    const config = buildProjectConfig({
+      agents: [
+        ...buildAgentConfigs(["web-developer"], { scope: "global" }),
+        ...buildAgentConfigs(["web-researcher"], { scope: "project" }),
+        ...buildAgentConfigs(["api-developer"], { scope: "project", excluded: true }),
+      ],
+    });
+    const source = generateConfigTypesSource(matrix, agentNames, [], undefined, config);
+    expect(source).toContain('export type SelectedAgentName = "web-developer" | "web-researcher";');
   });
 
   it("emits never for empty skills", () => {
@@ -377,7 +391,7 @@ describe("generateConfigTypesSource", () => {
       const matrix = SINGLE_REACT_MATRIX;
       // Boundary cast: extra skill ID may not match built-in SkillId prefix patterns
       const source = generateConfigTypesSource(matrix, [], [], {
-        extraSkillIds: ["acme-deploy-pipeline" as string],
+        extraSkillIds: ["acme-deploy-pipeline"],
       });
       expect(source).toContain("// Custom");
       expect(source).toContain("// Marketplace");
@@ -432,7 +446,7 @@ describe("generateConfigTypesSource", () => {
       const agentNames: AgentName[] = ["web-developer"];
       // Boundary cast: extra agent name may not match built-in AgentName union
       const source = generateConfigTypesSource(matrix, agentNames, [], {
-        extraAgentNames: ["custom-agent" as string],
+        extraAgentNames: ["custom-agent"],
       });
       expect(source).toContain("// Custom");
       expect(source).toContain("// Marketplace");
@@ -447,7 +461,7 @@ describe("generateConfigTypesSource", () => {
       const acmeDeploy = "acme-deploy-pipeline" as SkillId;
       const categories = {
         "web-framework": TEST_CATEGORIES.framework,
-        "acme-deploy": createMockCategory("acme-deploy" as Category, "Deploy", {
+        "acme-deploy": createMockCategory("acme-deploy", "Deploy", {
           domain: "web",
         }),
       } as unknown as Record<Category, CategoryDefinition>;
@@ -476,7 +490,7 @@ describe("generateConfigTypesSource", () => {
       const acmeCi = "acme-ci-runner" as SkillId;
       const categories = {
         "web-framework": TEST_CATEGORIES.framework,
-        "devops-ci": createMockCategory("devops-ci" as Category, "CI/CD", {
+        "devops-ci": createMockCategory("devops-ci", "CI/CD", {
           domain: "devops" as "web",
         }),
       } as unknown as Record<Category, CategoryDefinition>;
@@ -505,7 +519,7 @@ describe("generateConfigTypesSource", () => {
       const acmeTool = "acme-web-tool" as SkillId;
       const categories = {
         "web-framework": TEST_CATEGORIES.framework,
-        "web-custom-tool": createMockCategory("web-custom-tool" as Category, "Custom Tool", {
+        "web-custom-tool": createMockCategory("web-custom-tool", "Custom Tool", {
           domain: "web",
         }),
       } as unknown as Record<Category, CategoryDefinition>;
@@ -810,7 +824,7 @@ describe("generateProjectConfigTypesSource", () => {
     const source = generateProjectConfigTypesSource({
       globalTypesImportPath: "../../.claude-src",
       projectSkillIds: ["web-framework-react", "web-testing-vitest"],
-      projectAgentNames: ["web-developer", "web-reviewer"],
+      projectAgentNames: ["web-developer", "web-researcher"],
       projectDomains: ["web"],
       projectCategories: ["web-framework", "web-testing"],
     });
@@ -818,7 +832,7 @@ describe("generateProjectConfigTypesSource", () => {
       'export type SkillId = GlobalSkillId | "web-framework-react" | "web-testing-vitest"',
     );
     expect(source).toContain(
-      'export type AgentName = GlobalAgentName | "web-developer" | "web-reviewer"',
+      'export type AgentName = GlobalAgentName | "web-developer" | "web-researcher"',
     );
     expect(source).toContain('export type Domain = GlobalDomain | "web"');
     expect(source).toContain(
@@ -918,19 +932,19 @@ describe("regenerateConfigTypes with global install", () => {
     expect(content).toContain('"custom-reviewer"');
   });
 
-  it("narrows SelectedAgentName from project config selectedAgents", async () => {
+  it("narrows SelectedAgentName from the project config's agents", async () => {
     // Create global config-types.ts
     const globalClaudeSrc = path.join(globalDir, CLAUDE_SRC_DIR);
     await mkdir(globalClaudeSrc, { recursive: true });
     await writeFile(path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS), "// global types");
 
-    // Create project .claude-src/ with a config that has selectedAgents
+    // Create project .claude-src/ with a config whose agents are the selection
     const projectClaudeSrc = path.join(tempDir, CLAUDE_SRC_DIR);
     await mkdir(projectClaudeSrc, { recursive: true });
 
     const configContent = generateConfigSource(
       buildProjectConfig({
-        selectedAgents: ["web-developer", "api-developer"],
+        agents: buildAgentConfigs(["web-developer", "api-developer"]),
       }),
     );
     await writeFile(path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TS), configContent);
@@ -941,7 +955,7 @@ describe("regenerateConfigTypes with global install", () => {
     const configTypesPath = path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS);
     const content = await readFile(configTypesPath, "utf-8");
 
-    // SelectedAgentName should be narrowed to the config's selectedAgents
+    // SelectedAgentName should be narrowed to the config's agents
     expect(content).toContain('export type SelectedAgentName = "web-developer" | "api-developer"');
     // Should NOT fall back to AgentName
     expect(content).not.toContain("export type SelectedAgentName = AgentName");
@@ -962,7 +976,6 @@ describe("regenerateConfigTypes with global install", () => {
           ...buildAgentConfigs(["web-developer"], { scope: "global" }),
           ...buildAgentConfigs(["api-developer"], { scope: "project" }),
         ],
-        selectedAgents: ["web-developer", "api-developer"],
       }),
     );
     await writeFile(path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TS), configContent);
@@ -977,7 +990,7 @@ describe("regenerateConfigTypes with global install", () => {
     expect(content).toContain('export type ProjectAgentName = "api-developer"');
     // Should NOT fall back to SelectedAgentName
     expect(content).not.toContain("export type ProjectAgentName = SelectedAgentName");
-    // SelectedAgentName should still include all selected agents
+    // SelectedAgentName should still span both scopes
     expect(content).toContain('export type SelectedAgentName = "web-developer" | "api-developer"');
   });
 
@@ -992,8 +1005,7 @@ describe("regenerateConfigTypes with global install", () => {
     // Config with all global-scoped agents (simulates global init)
     const configContent = generateConfigSource(
       buildProjectConfig({
-        agents: buildAgentConfigs(["web-developer", "web-reviewer"], { scope: "global" }),
-        selectedAgents: ["web-developer", "web-reviewer"],
+        agents: buildAgentConfigs(["web-developer", "web-researcher"], { scope: "global" }),
       }),
     );
     await writeFile(path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TS), configContent);

@@ -7,12 +7,10 @@ import {
   getIncompatibleReason,
   hasUnmetRequirements,
   getUnmetRequirementsReason,
-  isRecommended,
   validateSelection,
   validateConflicts,
   validateRequirements,
   validateExclusivity,
-  validateRecommendations,
   getSkillsByCategory,
   getAvailableSkills,
 } from "./matrix-resolver";
@@ -22,11 +20,15 @@ import { createMockSkill } from "../__tests__/factories/skill-factories.js";
 import { buildCategoryMap, createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { createMockCategory } from "../__tests__/factories/category-factories.js";
 import {
+  CATALOGUE_WITH_LOCAL_SKILL_MATRIX,
   EMPTY_MATRIX,
   SINGLE_REACT_MATRIX,
   WEB_PAIR_MATRIX,
 } from "../__tests__/mock-data/mock-matrices";
-import { initializeMatrix } from "./matrix-provider";
+import { LOCAL_HOUSE_STYLE_ID } from "../__tests__/mock-data/mock-skills";
+import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
+import { allSkills, initializeMatrix } from "./matrix-provider";
+import { firstElement } from "../__tests__/helpers/element-at.js";
 
 const REACT_ID: SkillId = "web-framework-react";
 const VUE_ID: SkillId = "web-framework-vue-composition-api";
@@ -73,7 +75,7 @@ describe("isDiscouraged", () => {
   it("should return true if selected skill discourages this skill", () => {
     const skillA = createMockSkill(REACT_ID);
     const skillB = createMockSkill(VUE_ID, {
-      discourages: [{ skillId: REACT_ID, reason: "Not recommended" }],
+      discourages: [{ skillId: REACT_ID, reason: "Prefer the alternative" }],
     });
     const matrix = createMockMatrix(skillA, skillB);
     initializeMatrix(matrix);
@@ -84,7 +86,7 @@ describe("isDiscouraged", () => {
 
   it("should return true if this skill discourages a selected skill", () => {
     const skillA = createMockSkill(REACT_ID, {
-      discourages: [{ skillId: VUE_ID, reason: "Not recommended" }],
+      discourages: [{ skillId: VUE_ID, reason: "Prefer the alternative" }],
     });
     const skillB = createMockSkill(VUE_ID);
     const matrix = createMockMatrix(skillA, skillB);
@@ -177,40 +179,6 @@ describe("isDiscouraged", () => {
   });
 });
 
-describe("isRecommended", () => {
-  it("should return false for skill not in recommends list", () => {
-    const skill = createMockSkill(REACT_ID);
-    const matrix = createMockMatrix(skill);
-    initializeMatrix(matrix);
-
-    const result = isRecommended(REACT_ID, []);
-    expect(result).toBe(false);
-  });
-
-  it("should return true if skill is recommended and has no compatibility constraints", () => {
-    const skillA = createMockSkill(REACT_ID, {
-      isRecommended: true,
-      recommendedReason: "Works well together",
-    });
-    const skillB = createMockSkill(VUE_ID);
-    const matrix = createMockMatrix(skillA, skillB);
-    initializeMatrix(matrix);
-
-    const result = isRecommended(REACT_ID, [VUE_ID]);
-    expect(result).toBe(true);
-  });
-
-  it("should return false if skill is not marked as recommended", () => {
-    const skillA = createMockSkill(REACT_ID);
-    const skillB = createMockSkill(VUE_ID);
-    const matrix = createMockMatrix(skillA, skillB);
-    initializeMatrix(matrix);
-
-    const result = isRecommended(REACT_ID, [VUE_ID]);
-    expect(result).toBe(false);
-  });
-});
-
 describe("getDiscourageReason", () => {
   it("should return undefined for non-discouraged skill", () => {
     const skill = createMockSkill(REACT_ID);
@@ -224,13 +192,13 @@ describe("getDiscourageReason", () => {
   it("should return reason for discouraged skill", () => {
     const skillA = createMockSkill(REACT_ID);
     const skillB = createMockSkill(VUE_ID, {
-      discourages: [{ skillId: REACT_ID, reason: "Not recommended together" }],
+      discourages: [{ skillId: REACT_ID, reason: "Awkward pairing" }],
     });
     const matrix = createMockMatrix(skillA, skillB);
     initializeMatrix(matrix);
 
     const result = getDiscourageReason(REACT_ID, [VUE_ID]);
-    expect(result).toContain("Not recommended together");
+    expect(result).toContain("Awkward pairing");
   });
 
   it("should return undefined for conflicts (conflicts now handled by getIncompatibleReason)", () => {
@@ -292,9 +260,9 @@ describe("validateSelection", () => {
     initializeMatrix(matrix);
 
     const result = validateSelection([REACT_ID, VUE_ID]);
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].type).toBe("conflict");
+    expect(firstElement(result.errors).type).toBe("conflict");
   });
 
   it("should return error for missing requirements", () => {
@@ -306,22 +274,8 @@ describe("validateSelection", () => {
     initializeMatrix(matrix);
 
     const result = validateSelection([REACT_ID]);
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.type === "missingRequirement")).toBe(true);
-  });
-
-  it("should return warning for missing recommendations", () => {
-    const skillA = createMockSkill(REACT_ID);
-    const skillB = createMockSkill(VUE_ID, {
-      isRecommended: true,
-      recommendedReason: "Works better together",
-    });
-    const matrix = createMockMatrix(skillA, skillB);
-    initializeMatrix(matrix);
-
-    const result = validateSelection([REACT_ID]);
-    expect(result.valid).toBe(true); // Warnings don't make it invalid
-    expect(result.warnings.some((w) => w.type === "missing_recommendation")).toBe(true);
   });
 
   it("should return error for category exclusivity violation", () => {
@@ -339,7 +293,7 @@ describe("validateSelection", () => {
     initializeMatrix(matrix);
 
     const result = validateSelection([REACT_ID, VUE_ID]);
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.type === "categoryExclusive")).toBe(true);
   });
 });
@@ -377,7 +331,6 @@ describe("Empty skill selection", () => {
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
-      expect(result.warnings).toHaveLength(0);
     });
 
     it("should return valid=true even with skills available in matrix", () => {
@@ -392,23 +345,6 @@ describe("Empty skill selection", () => {
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
-    });
-
-    it("should not flag missing recommendations for empty selection when recommended skills have compatibility constraints", () => {
-      // Recommended skill with compatibleWith won't trigger warning when nothing is selected
-      const skillA = createMockSkill(REACT_ID);
-      const skillB = createMockSkill(VUE_ID, {
-        isRecommended: true,
-        recommendedReason: "Works well together",
-        compatibleWith: [REACT_ID],
-      });
-      const matrix = createMockMatrix(skillA, skillB);
-      initializeMatrix(matrix);
-
-      const result = validateSelection([]);
-
-      // skillB is recommended but has compatibleWith constraint — not compatible with empty selection
-      expect(result.warnings).toHaveLength(0);
     });
 
     it("should not flag category requirements for empty selection", () => {
@@ -470,35 +406,11 @@ describe("Empty skill selection", () => {
     });
   });
 
-  describe("isRecommended with empty current selections", () => {
-    it("should recommend skill with isRecommended even when nothing is selected", () => {
-      const skillA = createMockSkill(REACT_ID, {
-        isRecommended: true,
-        recommendedReason: "Works well",
-      });
-      const matrix = createMockMatrix(skillA);
-      initializeMatrix(matrix);
-
-      // With no selections, isRecommended alone is sufficient
-      const result = isRecommended(REACT_ID, []);
-      expect(result).toBe(true);
-    });
-
-    it("should not recommend skill without isRecommended flag", () => {
-      const skillA = createMockSkill(REACT_ID);
-      const matrix = createMockMatrix(skillA);
-      initializeMatrix(matrix);
-
-      const result = isRecommended(REACT_ID, []);
-      expect(result).toBe(false);
-    });
-  });
-
   describe("isDiscouraged with empty current selections", () => {
     it("should not discourage anything when nothing is selected", () => {
       const skillA = createMockSkill(REACT_ID);
       const skillB = createMockSkill(VUE_ID, {
-        discourages: [{ skillId: REACT_ID, reason: "Not recommended" }],
+        discourages: [{ skillId: REACT_ID, reason: "Prefer the alternative" }],
       });
       const matrix = createMockMatrix(skillA, skillB);
       initializeMatrix(matrix);
@@ -521,13 +433,15 @@ describe("Conflicting skills", () => {
 
       const result = validateSelection([REACT_ID, VUE_ID]);
 
-      expect(result.valid).toBe(true);
+      expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].type).toBe("conflict");
-      expect(result.errors[0].message).toContain("React conflicts with Vue Composition Api");
-      expect(result.errors[0].message).toContain("These cannot work together");
-      expect(result.errors[0].skills).toContain(REACT_ID);
-      expect(result.errors[0].skills).toContain(VUE_ID);
+      expect(firstElement(result.errors).type).toBe("conflict");
+      expect(firstElement(result.errors).message).toContain(
+        "React conflicts with Vue Composition Api",
+      );
+      expect(firstElement(result.errors).message).toContain("These cannot work together");
+      expect(firstElement(result.errors).skills).toContain(REACT_ID);
+      expect(firstElement(result.errors).skills).toContain(VUE_ID);
     });
 
     it("should return multiple errors for multiple conflicts", () => {
@@ -544,7 +458,7 @@ describe("Conflicting skills", () => {
 
       const result = validateSelection([REACT_ID, VUE_ID, ZUSTAND_ID]);
 
-      expect(result.valid).toBe(true);
+      expect(result.valid).toBe(false);
       expect(result.errors.filter((e) => e.type === "conflict")).toHaveLength(2);
     });
 
@@ -558,8 +472,8 @@ describe("Conflicting skills", () => {
 
       const result = validateSelection([REACT_ID, VUE_ID]);
 
-      expect(result.valid).toBe(true);
-      expect(result.errors[0].type).toBe("conflict");
+      expect(result.valid).toBe(false);
+      expect(firstElement(result.errors).type).toBe("conflict");
     });
 
     it("documents: validateSelection depends on conflict declaration order", () => {
@@ -642,11 +556,11 @@ describe("Missing skill dependencies", () => {
 
       const result = validateSelection([REACT_ID]);
 
-      expect(result.valid).toBe(true);
+      expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].type).toBe("missingRequirement");
-      expect(result.errors[0].skills).toContain(REACT_ID);
-      expect(result.errors[0].skills).toContain(VUE_ID);
+      expect(firstElement(result.errors).type).toBe("missingRequirement");
+      expect(firstElement(result.errors).skills).toContain(REACT_ID);
+      expect(firstElement(result.errors).skills).toContain(VUE_ID);
     });
 
     it("should return error when multiple required skills are missing (AND logic)", () => {
@@ -666,12 +580,12 @@ describe("Missing skill dependencies", () => {
 
       const result = validateSelection([REACT_ID]);
 
-      expect(result.valid).toBe(true);
+      expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].type).toBe("missingRequirement");
+      expect(firstElement(result.errors).type).toBe("missingRequirement");
       // Should include both missing dependencies
-      expect(result.errors[0].skills).toContain(VUE_ID);
-      expect(result.errors[0].skills).toContain(ZUSTAND_ID);
+      expect(firstElement(result.errors).skills).toContain(VUE_ID);
+      expect(firstElement(result.errors).skills).toContain(ZUSTAND_ID);
     });
 
     it("should return error when none of the required skills are selected (OR logic)", () => {
@@ -691,10 +605,10 @@ describe("Missing skill dependencies", () => {
 
       const result = validateSelection([REACT_ID]);
 
-      expect(result.valid).toBe(true);
+      expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].type).toBe("missingRequirement");
-      expect(result.errors[0].message).toContain("one of");
+      expect(firstElement(result.errors).type).toBe("missingRequirement");
+      expect(firstElement(result.errors).message).toContain("one of");
     });
 
     it("should be valid when at least one of OR required skills is selected", () => {
@@ -734,7 +648,7 @@ describe("Missing skill dependencies", () => {
       // Both A and B are selected but their dependencies are not
       const result = validateSelection([REACT_ID, VUE_ID]);
 
-      expect(result.valid).toBe(true);
+      expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(2);
       expect(result.errors.every((e) => e.type === "missingRequirement")).toBe(true);
     });
@@ -751,7 +665,7 @@ describe("Missing skill dependencies", () => {
 
       const result = validateSelection([REACT_ID]);
 
-      expect(result.errors[0].skills).toStrictEqual([REACT_ID, VUE_ID]);
+      expect(firstElement(result.errors).skills).toStrictEqual([REACT_ID, VUE_ID]);
     });
 
     it("should include skill display name in error message", () => {
@@ -764,8 +678,8 @@ describe("Missing skill dependencies", () => {
 
       const result = validateSelection([REACT_ID]);
 
-      expect(result.errors[0].message).toContain("React");
-      expect(result.errors[0].message).toContain("Vue Composition Api");
+      expect(firstElement(result.errors).message).toContain("React");
+      expect(firstElement(result.errors).message).toContain("Vue Composition Api");
     });
 
     it("should include all missing skill display names when multiple are missing", () => {
@@ -785,74 +699,8 @@ describe("Missing skill dependencies", () => {
 
       const result = validateSelection([REACT_ID]);
 
-      expect(result.errors[0].message).toContain("Vue Composition Api");
-      expect(result.errors[0].message).toContain("Zustand");
-    });
-  });
-
-  describe("recommendation system suggests adding recommended skills", () => {
-    it("should issue warning when recommended skill is not selected", () => {
-      const skillA = createMockSkill(REACT_ID);
-      const skillB = createMockSkill(VUE_ID, {
-        isRecommended: true,
-        recommendedReason: "Better type safety",
-      });
-      const matrix = createMockMatrix(skillA, skillB);
-      initializeMatrix(matrix);
-
-      const result = validateSelection([REACT_ID]);
-
-      expect(result.valid).toBe(true); // Recommendations are warnings, not errors
-      expect(result.warnings).toHaveLength(1);
-      expect(result.warnings[0].type).toBe("missing_recommendation");
-      expect(result.warnings[0].message).toContain("Vue Composition Api");
-      expect(result.warnings[0].message).toContain("Better type safety");
-    });
-
-    it("should include recommended skill in warning skills array", () => {
-      const skillA = createMockSkill(REACT_ID);
-      const skillB = createMockSkill(VUE_ID, {
-        isRecommended: true,
-        recommendedReason: "Recommended",
-      });
-      const matrix = createMockMatrix(skillA, skillB);
-      initializeMatrix(matrix);
-
-      const result = validateSelection([REACT_ID]);
-
-      expect(result.warnings[0].skills).toContain(VUE_ID);
-    });
-
-    it("should not warn about recommendations that conflict with selected skills", () => {
-      const skillA = createMockSkill(REACT_ID);
-      const skillB = createMockSkill(VUE_ID, {
-        isRecommended: true,
-        recommendedReason: "Recommended",
-        conflictsWith: [{ skillId: ZUSTAND_ID, reason: "Incompatible" }],
-      });
-      const skillC = createMockSkill(ZUSTAND_ID);
-      const matrix = createMockMatrix(skillA, skillB, skillC);
-      initializeMatrix(matrix);
-
-      // B is recommended but conflicts with C which is selected
-      const result = validateSelection([REACT_ID, ZUSTAND_ID]);
-
-      // Should not recommend B since it conflicts with C
-      expect(result.warnings.filter((w) => w.type === "missing_recommendation")).toHaveLength(0);
-    });
-
-    it("should not warn when recommended skill is already selected", () => {
-      const skillA = createMockSkill(REACT_ID);
-      const skillB = createMockSkill(VUE_ID, {
-        isRecommended: true,
-        recommendedReason: "Recommended",
-      });
-      const matrix = createMockMatrix(skillA, skillB);
-      initializeMatrix(matrix);
-
-      const result = validateSelection([REACT_ID, VUE_ID]);
-
-      expect(result.warnings.filter((w) => w.type === "missing_recommendation")).toHaveLength(0);
+      expect(firstElement(result.errors).message).toContain("Vue Composition Api");
+      expect(firstElement(result.errors).message).toContain("Zustand");
     });
   });
 
@@ -997,8 +845,8 @@ describe("Missing skill dependencies", () => {
 
       const result = validateSelection([SCSS_ID]);
 
-      expect(result.valid).toBe(true);
-      expect(result.errors[0].type).toBe("missingRequirement");
+      expect(result.valid).toBe(false);
+      expect(firstElement(result.errors).type).toBe("missingRequirement");
     });
 
     it("should validate successfully when dependency is selected", () => {
@@ -1297,28 +1145,6 @@ describe("getAvailableSkills edge cases", () => {
     );
   });
 
-  it("should set recommended advisoryState when applicable", () => {
-    const skillA = createMockSkill(REACT_ID, {
-      category: "web-framework",
-    });
-    const skillB = createMockSkill(VUE_ID, {
-      category: "web-framework",
-      isRecommended: true,
-      recommendedReason: "Great combination",
-    });
-    const matrix = createMockMatrix(skillA, skillB, {
-      categories: NON_EXCLUSIVE_FRAMEWORK_CATEGORIES,
-    });
-    initializeMatrix(matrix);
-
-    const result = getAvailableSkills("web-framework", [REACT_ID]);
-    const optionB = result.find((o) => o.id === VUE_ID);
-    expect(optionB!.advisoryState.status).toBe("recommended");
-    expect(optionB!.advisoryState).toStrictEqual(
-      expect.objectContaining({ reason: expect.stringContaining("Great combination") }),
-    );
-  });
-
   it("should mark discouraged when skill conflicts with selected skill", () => {
     const skillA = createMockSkill(REACT_ID, {
       category: "web-framework",
@@ -1336,27 +1162,6 @@ describe("getAvailableSkills edge cases", () => {
     const result = getAvailableSkills("web-framework", [REACT_ID]);
     const optionB = result.find((o) => o.id === VUE_ID);
     // Conflicts now produce incompatible state
-    expect(optionB!.advisoryState.status).toBe("incompatible");
-  });
-
-  it("incompatible takes priority over recommended when skill has conflicts", () => {
-    const skillA = createMockSkill(REACT_ID, {
-      category: "web-framework",
-      conflictsWith: [{ skillId: VUE_ID, reason: "Incompatible" }],
-    });
-    const skillB = createMockSkill(VUE_ID, {
-      category: "web-framework",
-      isRecommended: true,
-      recommendedReason: "Good pairing",
-    });
-    const matrix = createMockMatrix(skillA, skillB, {
-      categories: NON_EXCLUSIVE_FRAMEWORK_CATEGORIES,
-    });
-    initializeMatrix(matrix);
-
-    const result = getAvailableSkills("web-framework", [REACT_ID]);
-    const optionB = result.find((o) => o.id === VUE_ID);
-    // Incompatible takes priority over recommended
     expect(optionB!.advisoryState.status).toBe("incompatible");
   });
 });
@@ -1388,7 +1193,7 @@ describe("validateSelection edge cases", () => {
     initializeMatrix(matrix);
 
     const result = validateSelection([REACT_ID, VUE_ID, ZUSTAND_ID]);
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.type === "categoryExclusive")).toBe(true);
   });
 
@@ -1404,7 +1209,7 @@ describe("validateSelection edge cases", () => {
 
     // A conflicts with B AND requires C — selecting A+B should produce conflict error
     const result = validateSelection([REACT_ID, VUE_ID]);
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.type === "conflict")).toBe(true);
     // Also reports missing requirement for C
     expect(result.errors.some((e) => e.type === "missingRequirement")).toBe(true);
@@ -1415,23 +1220,22 @@ describe("validateConflicts", () => {
   it("should return no errors for empty selections", () => {
     initializeMatrix(EMPTY_MATRIX);
 
-    const result = validateConflicts([]);
-    expect(result.errors).toStrictEqual([]);
-    expect(result.warnings).toStrictEqual([]);
+    const errors = validateConflicts([]);
+    expect(errors).toStrictEqual([]);
   });
 
   it("should return no errors for a single skill", () => {
     initializeMatrix(SINGLE_REACT_MATRIX);
 
-    const result = validateConflicts([REACT_ID]);
-    expect(result.errors).toStrictEqual([]);
+    const errors = validateConflicts([REACT_ID]);
+    expect(errors).toStrictEqual([]);
   });
 
   it("should return no errors when skills do not conflict", () => {
     initializeMatrix(WEB_PAIR_MATRIX);
 
-    const result = validateConflicts([REACT_ID, ZUSTAND_ID]);
-    expect(result.errors).toStrictEqual([]);
+    const errors = validateConflicts([REACT_ID, ZUSTAND_ID]);
+    expect(errors).toStrictEqual([]);
   });
 
   it("should detect conflict declared on first skill against second", () => {
@@ -1441,10 +1245,10 @@ describe("validateConflicts", () => {
     const skillB = createMockSkill(VUE_ID);
     initializeMatrix(createMockMatrix(skillA, skillB));
 
-    const result = validateConflicts([REACT_ID, VUE_ID]);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].type).toBe("conflict");
-    expect(result.errors[0].skills).toStrictEqual([REACT_ID, VUE_ID]);
+    const errors = validateConflicts([REACT_ID, VUE_ID]);
+    expect(errors).toHaveLength(1);
+    expect(firstElement(errors).type).toBe("conflict");
+    expect(firstElement(errors).skills).toStrictEqual([REACT_ID, VUE_ID]);
   });
 
   it("should not detect conflict when declaration is only on second skill (order-dependent)", () => {
@@ -1456,11 +1260,11 @@ describe("validateConflicts", () => {
     });
     initializeMatrix(createMockMatrix(skillA, skillB));
 
-    const result = validateConflicts([REACT_ID, VUE_ID]);
+    const errors = validateConflicts([REACT_ID, VUE_ID]);
     // B declares conflict with A, but since A (index 0) is checked first against B (index 1),
     // and A has no conflicts, nothing is found. Then B is never the "outer" loop skill
     // because j starts at i+1, so B's conflicts are not checked.
-    expect(result.errors).toHaveLength(0);
+    expect(errors).toHaveLength(0);
   });
 
   it("should detect multiple conflicts in one selection set", () => {
@@ -1474,17 +1278,17 @@ describe("validateConflicts", () => {
     const skillC = createMockSkill(ZUSTAND_ID);
     initializeMatrix(createMockMatrix(skillA, skillB, skillC));
 
-    const result = validateConflicts([REACT_ID, VUE_ID, ZUSTAND_ID]);
-    expect(result.errors).toHaveLength(2);
-    expect(result.errors.every((e) => e.type === "conflict")).toBe(true);
+    const errors = validateConflicts([REACT_ID, VUE_ID, ZUSTAND_ID]);
+    expect(errors).toHaveLength(2);
+    expect(errors.every((e) => e.type === "conflict")).toBe(true);
   });
 
   it("should skip skills not found in the matrix gracefully", () => {
     initializeMatrix(SINGLE_REACT_MATRIX);
 
     // VUE_ID is not in the matrix — should not throw, just skip
-    const result = validateConflicts([REACT_ID, VUE_ID]);
-    expect(result.errors).toStrictEqual([]);
+    const errors = validateConflicts([REACT_ID, VUE_ID]);
+    expect(errors).toStrictEqual([]);
   });
 
   it("should include conflict reason in error message", () => {
@@ -1495,19 +1299,8 @@ describe("validateConflicts", () => {
     const skillB = createMockSkill(VUE_ID);
     initializeMatrix(createMockMatrix(skillA, skillB));
 
-    const result = validateConflicts([REACT_ID, VUE_ID]);
-    expect(result.errors[0].message).toContain(reason);
-  });
-
-  it("should always return empty warnings array", () => {
-    const skillA = createMockSkill(REACT_ID, {
-      conflictsWith: [{ skillId: VUE_ID, reason: "Conflict" }],
-    });
-    const skillB = createMockSkill(VUE_ID);
-    initializeMatrix(createMockMatrix(skillA, skillB));
-
-    const result = validateConflicts([REACT_ID, VUE_ID]);
-    expect(result.warnings).toStrictEqual([]);
+    const errors = validateConflicts([REACT_ID, VUE_ID]);
+    expect(firstElement(errors).message).toContain(reason);
   });
 });
 
@@ -1515,16 +1308,15 @@ describe("validateRequirements", () => {
   it("should return no errors for empty selections", () => {
     initializeMatrix(EMPTY_MATRIX);
 
-    const result = validateRequirements([], new Set());
-    expect(result.errors).toStrictEqual([]);
-    expect(result.warnings).toStrictEqual([]);
+    const errors = validateRequirements([], new Set());
+    expect(errors).toStrictEqual([]);
   });
 
   it("should return no errors for skill with no requirements", () => {
     initializeMatrix(SINGLE_REACT_MATRIX);
 
-    const result = validateRequirements([REACT_ID], new Set([REACT_ID]));
-    expect(result.errors).toStrictEqual([]);
+    const errors = validateRequirements([REACT_ID], new Set([REACT_ID]));
+    expect(errors).toStrictEqual([]);
   });
 
   it("should return error when AND requirement is not satisfied", () => {
@@ -1534,11 +1326,11 @@ describe("validateRequirements", () => {
     const skillC = createMockSkill(ZUSTAND_ID);
     initializeMatrix(createMockMatrix(skillA, skillC));
 
-    const result = validateRequirements([REACT_ID], new Set([REACT_ID]));
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].type).toBe("missingRequirement");
-    expect(result.errors[0].skills).toContain(REACT_ID);
-    expect(result.errors[0].skills).toContain(ZUSTAND_ID);
+    const errors = validateRequirements([REACT_ID], new Set([REACT_ID]));
+    expect(errors).toHaveLength(1);
+    expect(firstElement(errors).type).toBe("missingRequirement");
+    expect(firstElement(errors).skills).toContain(REACT_ID);
+    expect(firstElement(errors).skills).toContain(ZUSTAND_ID);
   });
 
   it("should return no error when AND requirement is fully satisfied", () => {
@@ -1549,8 +1341,8 @@ describe("validateRequirements", () => {
     initializeMatrix(createMockMatrix(skillA, skillC));
 
     const selectedSet = new Set<SkillId>([REACT_ID, ZUSTAND_ID]);
-    const result = validateRequirements([REACT_ID, ZUSTAND_ID], selectedSet);
-    expect(result.errors).toStrictEqual([]);
+    const errors = validateRequirements([REACT_ID, ZUSTAND_ID], selectedSet);
+    expect(errors).toStrictEqual([]);
   });
 
   it("should return error listing all missing skills for multi-skill AND requirement", () => {
@@ -1561,11 +1353,11 @@ describe("validateRequirements", () => {
     const skillD = createMockSkill(HONO_ID);
     initializeMatrix(createMockMatrix(skillA, skillC, skillD));
 
-    const result = validateRequirements([REACT_ID], new Set([REACT_ID]));
-    expect(result.errors).toHaveLength(1);
+    const errors = validateRequirements([REACT_ID], new Set([REACT_ID]));
+    expect(errors).toHaveLength(1);
     // Should include both missing IDs
-    expect(result.errors[0].skills).toContain(ZUSTAND_ID);
-    expect(result.errors[0].skills).toContain(HONO_ID);
+    expect(firstElement(errors).skills).toContain(ZUSTAND_ID);
+    expect(firstElement(errors).skills).toContain(HONO_ID);
   });
 
   it("should return error for partially satisfied AND requirement", () => {
@@ -1578,10 +1370,10 @@ describe("validateRequirements", () => {
 
     // Only ZUSTAND_ID is selected, HONO_ID is missing
     const selectedSet = new Set<SkillId>([REACT_ID, ZUSTAND_ID]);
-    const result = validateRequirements([REACT_ID, ZUSTAND_ID], selectedSet);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].skills).toContain(HONO_ID);
-    expect(result.errors[0].skills).not.toContain(ZUSTAND_ID);
+    const errors = validateRequirements([REACT_ID, ZUSTAND_ID], selectedSet);
+    expect(errors).toHaveLength(1);
+    expect(firstElement(errors).skills).toContain(HONO_ID);
+    expect(firstElement(errors).skills).not.toContain(ZUSTAND_ID);
   });
 
   it("should return error when OR requirement has no satisfying skill selected", () => {
@@ -1592,9 +1384,9 @@ describe("validateRequirements", () => {
     const skillD = createMockSkill(HONO_ID);
     initializeMatrix(createMockMatrix(skillA, skillC, skillD));
 
-    const result = validateRequirements([REACT_ID], new Set([REACT_ID]));
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].type).toBe("missingRequirement");
+    const errors = validateRequirements([REACT_ID], new Set([REACT_ID]));
+    expect(errors).toHaveLength(1);
+    expect(firstElement(errors).type).toBe("missingRequirement");
   });
 
   it("should return no error when OR requirement has at least one satisfying skill", () => {
@@ -1606,8 +1398,8 @@ describe("validateRequirements", () => {
     initializeMatrix(createMockMatrix(skillA, skillC, skillD));
 
     const selectedSet = new Set<SkillId>([REACT_ID, HONO_ID]);
-    const result = validateRequirements([REACT_ID, HONO_ID], selectedSet);
-    expect(result.errors).toStrictEqual([]);
+    const errors = validateRequirements([REACT_ID, HONO_ID], selectedSet);
+    expect(errors).toStrictEqual([]);
   });
 
   it("should return errors for multiple skills with unmet requirements", () => {
@@ -1622,8 +1414,8 @@ describe("validateRequirements", () => {
     initializeMatrix(createMockMatrix(skillA, skillB, skillC, skillD));
 
     const selectedSet = new Set<SkillId>([REACT_ID, VUE_ID]);
-    const result = validateRequirements([REACT_ID, VUE_ID], selectedSet);
-    expect(result.errors).toHaveLength(2);
+    const errors = validateRequirements([REACT_ID, VUE_ID], selectedSet);
+    expect(errors).toHaveLength(2);
   });
 
   it("should handle skill with multiple requirement groups", () => {
@@ -1637,28 +1429,17 @@ describe("validateRequirements", () => {
     const skillD = createMockSkill(HONO_ID);
     initializeMatrix(createMockMatrix(skillA, skillC, skillD));
 
-    const result = validateRequirements([REACT_ID], new Set([REACT_ID]));
+    const errors = validateRequirements([REACT_ID], new Set([REACT_ID]));
     // Two separate requirement groups, both unmet
-    expect(result.errors).toHaveLength(2);
+    expect(errors).toHaveLength(2);
   });
 
   it("should skip skills not found in the matrix", () => {
     initializeMatrix(SINGLE_REACT_MATRIX);
 
     // VUE_ID is not in the matrix — should not throw
-    const result = validateRequirements([VUE_ID], new Set([VUE_ID]));
-    expect(result.errors).toStrictEqual([]);
-  });
-
-  it("should always return empty warnings array", () => {
-    const skillA = createMockSkill(REACT_ID, {
-      requires: [{ skillIds: [ZUSTAND_ID], needsAny: false, reason: "Needs state" }],
-    });
-    const skillC = createMockSkill(ZUSTAND_ID);
-    initializeMatrix(createMockMatrix(skillA, skillC));
-
-    const result = validateRequirements([REACT_ID], new Set([REACT_ID]));
-    expect(result.warnings).toStrictEqual([]);
+    const errors = validateRequirements([VUE_ID], new Set([VUE_ID]));
+    expect(errors).toStrictEqual([]);
   });
 });
 
@@ -1666,9 +1447,8 @@ describe("validateExclusivity", () => {
   it("should return no errors for empty selections", () => {
     initializeMatrix(EMPTY_MATRIX);
 
-    const result = validateExclusivity([]);
-    expect(result.errors).toStrictEqual([]);
-    expect(result.warnings).toStrictEqual([]);
+    const errors = validateExclusivity([]);
+    expect(errors).toStrictEqual([]);
   });
 
   it("should return no errors for single skill in exclusive category", () => {
@@ -1677,8 +1457,8 @@ describe("validateExclusivity", () => {
     });
     initializeMatrix(matrix);
 
-    const result = validateExclusivity([REACT_ID]);
-    expect(result.errors).toStrictEqual([]);
+    const errors = validateExclusivity([REACT_ID]);
+    expect(errors).toStrictEqual([]);
   });
 
   it("should return error for multiple skills in exclusive category", () => {
@@ -1689,11 +1469,11 @@ describe("validateExclusivity", () => {
     });
     initializeMatrix(matrix);
 
-    const result = validateExclusivity([REACT_ID, VUE_ID]);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].type).toBe("categoryExclusive");
-    expect(result.errors[0].skills).toContain(REACT_ID);
-    expect(result.errors[0].skills).toContain(VUE_ID);
+    const errors = validateExclusivity([REACT_ID, VUE_ID]);
+    expect(errors).toHaveLength(1);
+    expect(firstElement(errors).type).toBe("categoryExclusive");
+    expect(firstElement(errors).skills).toContain(REACT_ID);
+    expect(firstElement(errors).skills).toContain(VUE_ID);
   });
 
   it("should allow multiple skills in non-exclusive category", () => {
@@ -1706,8 +1486,8 @@ describe("validateExclusivity", () => {
     });
     initializeMatrix(matrix);
 
-    const result = validateExclusivity([REACT_ID, VUE_ID]);
-    expect(result.errors).toStrictEqual([]);
+    const errors = validateExclusivity([REACT_ID, VUE_ID]);
+    expect(errors).toStrictEqual([]);
   });
 
   it("should skip the 'local' pseudo-category even with multiple skills", () => {
@@ -1715,8 +1495,8 @@ describe("validateExclusivity", () => {
     const skillB = createMockSkill(VUE_ID, { category: "local" as CategoryPath });
     initializeMatrix(createMockMatrix(skillA, skillB));
 
-    const result = validateExclusivity([REACT_ID, VUE_ID]);
-    expect(result.errors).toStrictEqual([]);
+    const errors = validateExclusivity([REACT_ID, VUE_ID]);
+    expect(errors).toStrictEqual([]);
   });
 
   it("should handle mixed exclusive and non-exclusive categories", () => {
@@ -1732,19 +1512,19 @@ describe("validateExclusivity", () => {
     });
     initializeMatrix(matrix);
 
-    const result = validateExclusivity([REACT_ID, VUE_ID, ZUSTAND_ID, HONO_ID]);
+    const errors = validateExclusivity([REACT_ID, VUE_ID, ZUSTAND_ID, HONO_ID]);
     // Only framework is exclusive, so only one error
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].type).toBe("categoryExclusive");
-    expect(result.errors[0].message).toContain("Framework");
+    expect(errors).toHaveLength(1);
+    expect(firstElement(errors).type).toBe("categoryExclusive");
+    expect(firstElement(errors).message).toContain("Framework");
   });
 
   it("should skip skills not found in the matrix", () => {
     initializeMatrix(SINGLE_REACT_MATRIX);
 
     // VUE_ID not in matrix — should not throw
-    const result = validateExclusivity([REACT_ID, VUE_ID]);
-    expect(result.errors).toStrictEqual([]);
+    const errors = validateExclusivity([REACT_ID, VUE_ID]);
+    expect(errors).toStrictEqual([]);
   });
 
   it("should detect exclusivity violation with 3+ skills in same category", () => {
@@ -1756,9 +1536,9 @@ describe("validateExclusivity", () => {
     });
     initializeMatrix(matrix);
 
-    const result = validateExclusivity([REACT_ID, VUE_ID, ZUSTAND_ID]);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].skills).toHaveLength(3);
+    const errors = validateExclusivity([REACT_ID, VUE_ID, ZUSTAND_ID]);
+    expect(errors).toHaveLength(1);
+    expect(firstElement(errors).skills).toHaveLength(3);
   });
 
   it("should include category display name in error message", () => {
@@ -1775,165 +1555,240 @@ describe("validateExclusivity", () => {
     });
     initializeMatrix(matrix);
 
-    const result = validateExclusivity([REACT_ID, VUE_ID]);
-    expect(result.errors[0].message).toContain("Framework");
-  });
-
-  it("should always return empty warnings array", () => {
-    const skillA = createMockSkill(REACT_ID, { category: "web-framework" });
-    const skillB = createMockSkill(VUE_ID, { category: "web-framework" });
-    const matrix = createMockMatrix(skillA, skillB, {
-      categories: EXCLUSIVE_FRAMEWORK_CATEGORIES,
-    });
-    initializeMatrix(matrix);
-
-    const result = validateExclusivity([REACT_ID, VUE_ID]);
-    expect(result.warnings).toStrictEqual([]);
+    const errors = validateExclusivity([REACT_ID, VUE_ID]);
+    expect(firstElement(errors).message).toContain("Framework");
   });
 });
 
-describe("validateRecommendations", () => {
-  it("should return no warnings for empty selections", () => {
-    initializeMatrix(EMPTY_MATRIX);
+describe("mobile and desktop framework fences", () => {
+  // The real catalogue, because the subject is which rules the shipped
+  // relationships declare — a mock matrix can only carry the rules somebody
+  // wrote into it, so it would pin the fixture rather than the fence.
+  const NATIVEWIND_ID: SkillId = "mobile-styling-nativewind";
+  const DETOX_ID: SkillId = "mobile-testing-detox";
+  const MAESTRO_ID: SkillId = "mobile-testing-maestro";
+  const EXPO_ID: SkillId = "mobile-framework-expo";
+  const ELECTRON_IPC_ID: SkillId = "desktop-ipc-electron";
+  const ELECTRON_ID: SkillId = "desktop-framework-electron";
+  const TAURI_MOBILE_ID: SkillId = "desktop-mobile-tauri";
 
-    const result = validateRecommendations([], new Set());
-    expect(result.warnings).toStrictEqual([]);
-    expect(result.errors).toStrictEqual([]);
+  beforeEach(() => {
+    initializeMatrix(BUILT_IN_MATRIX);
   });
 
-  it("should return no warnings when no skills are recommended", () => {
-    initializeMatrix(WEB_PAIR_MATRIX);
-
-    const selectedSet = new Set<SkillId>([REACT_ID]);
-    const result = validateRecommendations([REACT_ID], selectedSet);
-    expect(result.warnings).toStrictEqual([]);
+  it("reports a mobile skill picked without either mobile framework as unmet", () => {
+    expect(hasUnmetRequirements(NATIVEWIND_ID, [NATIVEWIND_ID])).toBe(true);
+    expect(getUnmetRequirementsReason(NATIVEWIND_ID, [NATIVEWIND_ID])).toBe(
+      "requires React Native or Expo",
+    );
   });
 
-  it("should return warning for recommended skill not selected", () => {
-    const recommendedSkill = createMockSkill(ZUSTAND_ID, {
-      isRecommended: true,
-      recommendedReason: "Great state management",
-      compatibleWith: [REACT_ID],
-    });
-    initializeMatrix(createMockMatrix(SKILLS.react, recommendedSkill));
-
-    const selectedSet = new Set<SkillId>([REACT_ID]);
-    const result = validateRecommendations([REACT_ID], selectedSet);
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0].type).toBe("missing_recommendation");
-    expect(result.warnings[0].skills).toStrictEqual([ZUSTAND_ID]);
+  it("clears the mobile fence once either framework joins the selection", () => {
+    expect(hasUnmetRequirements(NATIVEWIND_ID, [NATIVEWIND_ID, EXPO_ID])).toBe(false);
   });
 
-  it("should not warn when recommended skill is already selected", () => {
-    const recommendedSkill = createMockSkill(ZUSTAND_ID, {
-      isRecommended: true,
-      recommendedReason: "Great state management",
-      compatibleWith: [REACT_ID],
-    });
-    initializeMatrix(createMockMatrix(SKILLS.react, recommendedSkill));
-
-    const selectedSet = new Set<SkillId>([REACT_ID, ZUSTAND_ID]);
-    const result = validateRecommendations([REACT_ID, ZUSTAND_ID], selectedSet);
-    expect(result.warnings).toStrictEqual([]);
+  it("counts Tauri's mobile target on its own as an app for Maestro to drive", () => {
+    expect(getUnmetRequirementsReason(MAESTRO_ID, [MAESTRO_ID])).toBe(
+      "requires React Native, Expo or Tauri Mobile",
+    );
+    expect(hasUnmetRequirements(MAESTRO_ID, [MAESTRO_ID, TAURI_MOBILE_ID])).toBe(false);
   });
 
-  it("should not warn when recommended skill is incompatible with selections", () => {
-    const recommendedSkill = createMockSkill(ZUSTAND_ID, {
-      isRecommended: true,
-      recommendedReason: "Great state management",
-      compatibleWith: [VUE_ID], // Only compatible with Vue, not React
-    });
-    initializeMatrix(createMockMatrix(SKILLS.react, recommendedSkill));
-
-    const selectedSet = new Set<SkillId>([REACT_ID]);
-    const result = validateRecommendations([REACT_ID], selectedSet);
-    expect(result.warnings).toStrictEqual([]);
+  it("fences a desktop skill to the framework whose APIs it teaches", () => {
+    expect(getUnmetRequirementsReason(ELECTRON_IPC_ID, [ELECTRON_IPC_ID])).toBe(
+      "requires Electron",
+    );
+    expect(hasUnmetRequirements(ELECTRON_IPC_ID, [ELECTRON_IPC_ID, ELECTRON_ID])).toBe(false);
   });
 
-  it("should warn for recommended skill with no compatibility constraints (unconditional)", () => {
-    const recommendedSkill = createMockSkill(ZUSTAND_ID, {
-      isRecommended: true,
-      recommendedReason: "Always recommended",
-      compatibleWith: [], // No constraints — recommended for everyone
-    });
-    initializeMatrix(createMockMatrix(SKILLS.react, recommendedSkill));
+  it("lets the two mobile E2E runners be selected together, since they layer", () => {
+    expect(validateExclusivity([DETOX_ID, MAESTRO_ID])).toStrictEqual([]);
+  });
+});
 
-    const selectedSet = new Set<SkillId>([REACT_ID]);
-    const result = validateRecommendations([REACT_ID], selectedSet);
-    expect(result.warnings).toHaveLength(1);
+describe("api and cross-cutting skill fences", () => {
+  // The real catalogue, for the same reason the mobile and desktop block above
+  // uses it: the subject is which rules the shipped relationships declare.
+  const MERCURIUS_ID: SkillId = "api-graphql-mercurius";
+  const FASTIFY_ID: SkillId = "api-framework-fastify";
+  const NEXTAUTH_ID: SkillId = "api-auth-nextauth";
+  const NEXTJS_ID: SkillId = "web-meta-framework-nextjs";
+  const BULLMQ_ID: SkillId = "api-queue-bullmq";
+  const REDIS_ID: SkillId = "api-database-redis";
+  const UPSTASH_ID: SkillId = "api-database-upstash";
+  const VERCEL_KV_ID: SkillId = "api-database-vercel-kv";
+  const BETTER_AUTH_ID: SkillId = "api-auth-better-auth-drizzle-hono";
+  const DRIZZLE_ID: SkillId = "api-database-drizzle";
+  const COMPOSABLE_COMPONENTS_ID: SkillId = "meta-design-composable-components";
+  const WEB_REVIEWING_ID: SkillId = "meta-reviewing-web-reviewing";
+
+  beforeEach(() => {
+    initializeMatrix(BUILT_IN_MATRIX);
   });
 
-  it("should not warn when recommended skill conflicts with a selected skill", () => {
-    const recommendedSkill = createMockSkill(ZUSTAND_ID, {
-      isRecommended: true,
-      recommendedReason: "Great state management",
-      compatibleWith: [],
-      conflictsWith: [{ skillId: REACT_ID, reason: "Incompatible" }],
-    });
-    initializeMatrix(createMockMatrix(SKILLS.react, recommendedSkill));
-
-    const selectedSet = new Set<SkillId>([REACT_ID]);
-    const result = validateRecommendations([REACT_ID], selectedSet);
-    expect(result.warnings).toStrictEqual([]);
+  it("fences Mercurius to Fastify, the server it registers as a plugin on", () => {
+    expect(getUnmetRequirementsReason(MERCURIUS_ID, [MERCURIUS_ID])).toBe("requires Fastify");
+    expect(hasUnmetRequirements(MERCURIUS_ID, [MERCURIUS_ID, HONO_ID])).toBe(true);
+    expect(hasUnmetRequirements(MERCURIUS_ID, [MERCURIUS_ID, FASTIFY_ID])).toBe(false);
   });
 
-  it("should include recommendation reason in warning message", () => {
-    const reason = "Essential for modern React apps";
-    const recommendedSkill = createMockSkill(ZUSTAND_ID, {
-      isRecommended: true,
-      recommendedReason: reason,
-      compatibleWith: [REACT_ID],
-    });
-    initializeMatrix(createMockMatrix(SKILLS.react, recommendedSkill));
-
-    const selectedSet = new Set<SkillId>([REACT_ID]);
-    const result = validateRecommendations([REACT_ID], selectedSet);
-    expect(result.warnings[0].message).toContain(reason);
+  it("fences Auth.js to the Next.js surface the skill teaches", () => {
+    expect(getUnmetRequirementsReason(NEXTAUTH_ID, [NEXTAUTH_ID])).toBe("requires Next.js");
+    expect(hasUnmetRequirements(NEXTAUTH_ID, [NEXTAUTH_ID, NEXTJS_ID])).toBe(false);
   });
 
-  it("should use default reason when recommendedReason is undefined", () => {
-    const recommendedSkill = createMockSkill(ZUSTAND_ID, {
-      isRecommended: true,
-      compatibleWith: [REACT_ID],
-    });
-    initializeMatrix(createMockMatrix(SKILLS.react, recommendedSkill));
-
-    const selectedSet = new Set<SkillId>([REACT_ID]);
-    const result = validateRecommendations([REACT_ID], selectedSet);
-    expect(result.warnings[0].message).toContain("Recommended for this stack");
+  it("accepts either Redis-compatible server for BullMQ, and neither of them alone is Vercel KV", () => {
+    expect(getUnmetRequirementsReason(BULLMQ_ID, [BULLMQ_ID])).toBe("requires Redis or Upstash");
+    expect(hasUnmetRequirements(BULLMQ_ID, [BULLMQ_ID, UPSTASH_ID])).toBe(false);
+    expect(hasUnmetRequirements(BULLMQ_ID, [BULLMQ_ID, REDIS_ID])).toBe(false);
+    expect(hasUnmetRequirements(BULLMQ_ID, [BULLMQ_ID, VERCEL_KV_ID])).toBe(true);
   });
 
-  it("should return multiple warnings for multiple unselected recommendations", () => {
-    const rec1 = createMockSkill(ZUSTAND_ID, {
-      isRecommended: true,
-      recommendedReason: "State management",
-      compatibleWith: [REACT_ID],
-    });
-    const rec2 = createMockSkill(SCSS_ID, {
-      isRecommended: true,
-      recommendedReason: "Styling solution",
-      compatibleWith: [REACT_ID],
-    });
-    initializeMatrix(createMockMatrix(SKILLS.react, rec1, rec2));
-
-    const selectedSet = new Set<SkillId>([REACT_ID]);
-    const result = validateRecommendations([REACT_ID], selectedSet);
-    expect(result.warnings).toHaveLength(2);
-    const warnedSkills = result.warnings.flatMap((w) => w.skills);
-    expect(warnedSkills).toContain(ZUSTAND_ID);
-    expect(warnedSkills).toContain(SCSS_ID);
+  it("requires both halves of what the Better Auth skill teaches, not either one", () => {
+    expect(getUnmetRequirementsReason(BETTER_AUTH_ID, [BETTER_AUTH_ID])).toBe(
+      "requires Drizzle and Hono",
+    );
+    expect(getUnmetRequirementsReason(BETTER_AUTH_ID, [BETTER_AUTH_ID, DRIZZLE_ID])).toBe(
+      "requires Hono",
+    );
+    expect(getUnmetRequirementsReason(BETTER_AUTH_ID, [BETTER_AUTH_ID, HONO_ID])).toBe(
+      "requires Drizzle",
+    );
+    expect(hasUnmetRequirements(BETTER_AUTH_ID, [BETTER_AUTH_ID, DRIZZLE_ID, HONO_ID])).toBe(false);
   });
 
-  it("should always return empty errors array", () => {
-    const recommendedSkill = createMockSkill(ZUSTAND_ID, {
-      isRecommended: true,
-      recommendedReason: "Great state management",
-      compatibleWith: [REACT_ID],
-    });
-    initializeMatrix(createMockMatrix(SKILLS.react, recommendedSkill));
+  it("binds the two React-surfaced cross-cutting skills to React", () => {
+    expect(getUnmetRequirementsReason(COMPOSABLE_COMPONENTS_ID, [COMPOSABLE_COMPONENTS_ID])).toBe(
+      "requires React",
+    );
+    expect(
+      hasUnmetRequirements(COMPOSABLE_COMPONENTS_ID, [COMPOSABLE_COMPONENTS_ID, REACT_ID]),
+    ).toBe(false);
 
-    const selectedSet = new Set<SkillId>([REACT_ID]);
-    const result = validateRecommendations([REACT_ID], selectedSet);
-    expect(result.errors).toStrictEqual([]);
+    expect(getUnmetRequirementsReason(WEB_REVIEWING_ID, [WEB_REVIEWING_ID])).toBe("requires React");
+    expect(hasUnmetRequirements(WEB_REVIEWING_ID, [WEB_REVIEWING_ID, REACT_ID])).toBe(false);
+  });
+});
+
+describe("the merged API framework category", () => {
+  beforeEach(() => {
+    initializeMatrix(BUILT_IN_MATRIX);
+  });
+
+  it("resolves Elysia in the same category as the four frameworks it competes with", () => {
+    expect(idsIn("api-api")).toStrictEqual([
+      "api-framework-elysia",
+      "api-framework-express",
+      "api-framework-fastify",
+      "api-framework-hono",
+      "api-framework-nestjs",
+    ]);
+  });
+
+  it("no longer defines the duplicate category Elysia used to sit in", () => {
+    expect("api-framework" in BUILT_IN_MATRIX.categories).toBe(false);
+  });
+});
+
+/** Category membership, ordered so the assertion does not pin readdir order. */
+const idsIn = (category: CategoryPath): string[] =>
+  getSkillsByCategory(category)
+    .map((skill) => skill.id)
+    .sort();
+
+/**
+ * Every skill the resolver reports incompatible against a selection, over
+ * whatever catalogue is currently loaded.
+ */
+const incompatibleAgainst = (selection: SkillId[]): SkillId[] =>
+  allSkills()
+    .map((skill) => skill.id)
+    .filter((skillId) => isIncompatible(skillId, selection));
+
+describe("a selection that excludes nothing", () => {
+  const SHADCN_ID: SkillId = "web-ui-shadcn-ui";
+
+  // The real catalogue: the subject is what the shipped relationships rule
+  // out, and every one of these answers was a whitelist verdict until the
+  // 2026-08-07 ruling deleted `compatibleWith` (CLI-389 phase C).
+  beforeEach(() => {
+    initializeMatrix(BUILT_IN_MATRIX);
+  });
+
+  it("rules nothing out for a universal skill that conflicts with no framework", () => {
+    expect(incompatibleAgainst([TAILWIND_ID])).toStrictEqual([]);
+  });
+
+  it("never judges a skill against itself", () => {
+    expect(getIncompatibleReason(SHADCN_ID, [SHADCN_ID])).toBeUndefined();
+    expect(incompatibleAgainst([SHADCN_ID])).toStrictEqual([]);
+  });
+
+  it("rules nothing out for a selection the catalogue declares nothing about", () => {
+    initializeMatrix(CATALOGUE_WITH_LOCAL_SKILL_MATRIX);
+
+    expect(incompatibleAgainst([LOCAL_HOUSE_STYLE_ID])).toStrictEqual([]);
+  });
+});
+
+describe("the split shared categories", () => {
+  const TURBOREPO_ID: SkillId = "shared-monorepo-turborepo";
+  const NX_ID: SkillId = "shared-monorepo-nx";
+  const PNPM_WORKSPACES_ID: SkillId = "shared-monorepo-pnpm-workspaces";
+  const BIOME_ID: SkillId = "shared-tooling-biome";
+  const ESLINT_PRETTIER_ID: SkillId = "shared-tooling-eslint-prettier";
+
+  beforeEach(() => {
+    initializeMatrix(BUILT_IN_MATRIX);
+  });
+
+  it("groups the two task runners on their own, leaving the workspace manager behind", () => {
+    expect(idsIn("shared-task-runner")).toStrictEqual([
+      "shared-monorepo-nx",
+      "shared-monorepo-turborepo",
+    ]);
+    expect(idsIn("shared-monorepo")).toStrictEqual(["shared-monorepo-pnpm-workspaces"]);
+  });
+
+  it("groups the two lint-and-format tools on their own, leaving the rest of the tooling behind", () => {
+    expect(idsIn("shared-lint")).toStrictEqual([
+      "shared-tooling-biome",
+      "shared-tooling-eslint-prettier",
+    ]);
+    expect(idsIn("shared-tooling")).toStrictEqual([
+      "meta-config-stack-detect",
+      "shared-tooling-changesets",
+      "shared-tooling-git-hooks",
+      "shared-tooling-typescript-config",
+    ]);
+  });
+
+  it("makes each new category a pick-one, so the radio carries the fence", () => {
+    expect(BUILT_IN_MATRIX.categories["shared-task-runner"]?.exclusive).toBe(true);
+    expect(BUILT_IN_MATRIX.categories["shared-lint"]?.exclusive).toBe(true);
+  });
+
+  it("reports a category error for either co-selected pair", () => {
+    expect(validateExclusivity([TURBOREPO_ID, NX_ID])).toStrictEqual([
+      {
+        type: "categoryExclusive",
+        message:
+          'Category "Task Runner" only allows one selection, but multiple selected: Turborepo, Nx',
+        skills: [TURBOREPO_ID, NX_ID],
+      },
+    ]);
+    expect(validateExclusivity([BIOME_ID, ESLINT_PRETTIER_ID])).toStrictEqual([
+      {
+        type: "categoryExclusive",
+        message:
+          'Category "Lint & Format" only allows one selection, but multiple selected: Biome, ESLint & Prettier',
+        skills: [BIOME_ID, ESLINT_PRETTIER_ID],
+      },
+    ]);
+  });
+
+  it("keeps pnpm workspaces composable with either task runner", () => {
+    expect(validateSelection([PNPM_WORKSPACES_ID, TURBOREPO_ID]).errors).toStrictEqual([]);
+    expect(validateSelection([PNPM_WORKSPACES_ID, NX_ID]).errors).toStrictEqual([]);
   });
 });

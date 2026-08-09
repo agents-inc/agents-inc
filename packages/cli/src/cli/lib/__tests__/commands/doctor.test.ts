@@ -4,11 +4,24 @@ import { mkdir, writeFile } from "fs/promises";
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { EXIT_CODES } from "../../exit-codes";
-import { renderSkillMd } from "../content-generators";
+import { renderAgentMd, renderMetadataYaml, renderSkillMd } from "../content-generators";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { buildAgentConfigs } from "../factories/config-factories.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
-import { CLAUDE_DIR, LOCAL_SKILLS_PATH, STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
+import {
+  CLAUDE_DIR,
+  CLAUDE_SRC_DIR,
+  LOCAL_SKILLS_PATH,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+} from "../../../consts";
+
+/** The installed pair a deleted configuration strands: one skill directory, one compiled agent. */
+const ORPHANED_SKILL_ID = "web-framework-react";
+const ORPHANED_AGENT_NAME = "web-developer";
+
+/** A config file the loader cannot evaluate — present on disk, and describing nothing. */
+const UNREADABLE_CONFIG = "export default {{{ not valid typescript";
 
 describe("doctor command", () => {
   let projectDir: string;
@@ -82,6 +95,40 @@ describe("doctor command", () => {
       // but should not fail on config parsing
       const output = error?.message || "";
       expect(output.toLowerCase()).not.toContain("config.ts has errors");
+    });
+
+    it("should name a config that loads and declares nothing rather than calling it missing", async () => {
+      await writeTestTsConfig(projectDir, {
+        name: "declares-nothing",
+        skills: [],
+        agents: [],
+      });
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+      const output = stdout + (error?.message || "");
+
+      expect(output).toContain("declares no skills and no agents");
+      expect(output, "the file is on disk and it loaded — it is not missing").not.toContain(
+        "config.ts not found",
+      );
+      expect(output).toContain("Nothing is configured yet");
+    });
+
+    it("should run the operational rows on an empty config instead of skipping them", async () => {
+      await writeTestTsConfig(projectDir, {
+        name: "declares-nothing",
+        skills: [],
+        agents: [],
+      });
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+      const output = stdout + (error?.message || "");
+
+      expect(output, "the rows below claimed a valid config was invalid").not.toContain(
+        "Skipped (config invalid)",
+      );
+      expect(output).toContain("No skills configured");
+      expect(output).toContain("No agents configured");
     });
   });
 
@@ -162,10 +209,12 @@ describe("doctor command", () => {
         agents: buildAgentConfigs(["web-developer"], { excluded: true }),
       });
 
-      // Stale .md file from before exclusion
+      // Stale .md file from before exclusion. It carries real frontmatter because a
+      // compile wrote it — a bare heading is content doctor rejects before it ever
+      // reaches the orphan check.
       await writeFile(
         path.join(agentsDir, "web-developer.md"),
-        "# Web Developer Agent\n\nExcluded agent content.",
+        renderAgentMd("web-developer", "Excluded agent content."),
       );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
@@ -174,6 +223,82 @@ describe("doctor command", () => {
       // Excluded project agent .md should be flagged as orphan
       expect(output).toContain("orphaned agent file");
       expect(output).toContain("web-developer.md (not in config)");
+    });
+  });
+
+  /**
+   * The row's other verdict. With no configuration at all, ownership is not
+   * unknown — it is settled, and the answer is that nothing owns any of it.
+   */
+  describe("orphans check with no configuration", () => {
+    /** An installed skill and a compiled agent, both valid enough to clear the content layer. */
+    async function installContentWithoutConfig(): Promise<void> {
+      const skillDir = path.join(projectDir, LOCAL_SKILLS_PATH, ORPHANED_SKILL_ID);
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(
+        path.join(skillDir, STANDARD_FILES.SKILL_MD),
+        renderSkillMd(ORPHANED_SKILL_ID),
+      );
+      await writeFile(
+        path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+        renderMetadataYaml({
+          displayName: ORPHANED_SKILL_ID,
+          category: "web-framework",
+          slug: "react",
+          cliDescription: "React JavaScript framework",
+          usageGuidance: "Use React for building component-based UIs",
+          contentHash: "b2c3d4e",
+        }),
+      );
+
+      const agentsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      await mkdir(agentsDir, { recursive: true });
+      await writeFile(
+        path.join(agentsDir, `${ORPHANED_AGENT_NAME}.md`),
+        renderAgentMd(ORPHANED_AGENT_NAME, "Stranded agent content."),
+      );
+    }
+
+    it("names every installed skill and agent when no config declares them", async () => {
+      await installContentWithoutConfig();
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+      const output = stdout + (error?.message || "");
+
+      expect(output).toContain("no configuration declares them");
+      expect(output).toContain(ORPHANED_SKILL_ID);
+      expect(output).toContain(`${ORPHANED_AGENT_NAME}.md`);
+      expect(output, "the row that names them cannot also report itself skipped").not.toMatch(
+        /No Orphans\s+-\s+Skipped/,
+      );
+      expect(output).toContain("Nothing declares the files above");
+    });
+
+    it("keeps the skip when there is no config and nothing installed", async () => {
+      const { stdout, error } = await runCliCommand(["doctor"]);
+      const output = stdout + (error?.message || "");
+
+      // An empty directory with no configuration is the state `init` exists for,
+      // not a stranded one — there is nothing for a configuration to have owned.
+      expect(output).toMatch(/No Orphans\s+-\s+Skipped/);
+      expect(output).not.toContain("no configuration declares them");
+    });
+
+    it("still stands down for a config that exists and cannot be read", async () => {
+      await installContentWithoutConfig();
+      const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
+      await mkdir(claudeSrcDir, { recursive: true });
+      await writeFile(path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS), UNREADABLE_CONFIG);
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+      const output = stdout + (error?.message || "");
+
+      // Absent and unreadable are different states with different remedies. Only
+      // the first settles ownership; the second is a content finding that gates
+      // the whole operational layer, this row included.
+      expect(output).toContain("exists but could not be loaded");
+      expect(output).toContain("Skipped — fix the content errors above first");
+      expect(output).not.toContain("no configuration declares them");
     });
   });
 
@@ -202,12 +327,25 @@ describe("doctor command", () => {
         skills: buildSkillConfigs(["web-framework-react"]),
       });
 
-      // Create the skill file on disk
+      // Create the skill files on disk. Both halves are written: an ejected skill
+      // with no metadata.yaml is invalid content, and doctor stops at the content
+      // layer before it reaches the eject-mode disk check under test here.
       const skillDir = path.join(projectDir, LOCAL_SKILLS_PATH, "web-framework-react");
       await mkdir(skillDir, { recursive: true });
       await writeFile(
         path.join(skillDir, STANDARD_FILES.SKILL_MD),
         renderSkillMd("web-framework-react"),
+      );
+      await writeFile(
+        path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+        renderMetadataYaml({
+          displayName: "web-framework-react",
+          category: "web-framework",
+          slug: "react",
+          cliDescription: "React JavaScript framework",
+          usageGuidance: "Use React for building component-based UIs",
+          contentHash: "b2c3d4e",
+        }),
       );
 
       const { stdout, error } = await runCliCommand(["doctor"]);

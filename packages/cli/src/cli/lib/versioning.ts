@@ -12,8 +12,10 @@ import {
 import { pluginManifestSchema } from "./schemas";
 import { SKILL_CONTENT_FILES, SKILL_CONTENT_DIRS } from "./metadata-keys";
 
+const ISO_DATE_LENGTH = 10;
+
 export function getCurrentDate(): string {
-  return new Date().toISOString().split("T")[0];
+  return new Date().toISOString().slice(0, ISO_DATE_LENGTH);
 }
 
 export function computeStringHash(content: string): string {
@@ -62,8 +64,8 @@ export async function computeSkillFolderHash(skillPath: string): Promise<string>
 const CONTENT_HASH_FILE = ".content-hash";
 
 export function parseMajorVersion(version: string): number {
-  const match = version.match(/^(\d+)\./);
-  return match ? parseInt(match[1], 10) : 1;
+  const [, major] = version.match(/^(\d+)\./) ?? [];
+  return major === undefined ? 1 : parseInt(major, 10);
 }
 
 export function bumpMajorVersion(version: string): string {

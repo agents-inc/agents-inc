@@ -31,23 +31,11 @@ const BUILT_IN_AGENT_GROUPS: AgentGroup[] = [
         label: "Web Developer",
         description: "Frontend features, components, TypeScript",
       },
-      { id: "web-reviewer", label: "Web Reviewer", description: "UI component code review" },
       { id: "web-researcher", label: "Web Researcher", description: "Frontend pattern discovery" },
       {
         id: "web-tester",
         label: "Web Tester",
         description: "Frontend tests, E2E, component tests",
-      },
-      { id: "web-pm", label: "Web PM", description: "Implementation specs and planning" },
-      {
-        id: "web-architecture",
-        label: "Web Architecture",
-        description: "App scaffolding, foundational patterns",
-      },
-      {
-        id: "web-pattern-critique",
-        label: "Web Pattern Critique",
-        description: "Critique patterns against industry standards",
       },
     ],
   },
@@ -59,8 +47,32 @@ const BUILT_IN_AGENT_GROUPS: AgentGroup[] = [
         label: "API Developer",
         description: "Backend routes, database, middleware",
       },
-      { id: "api-reviewer", label: "API Reviewer", description: "Backend and config code review" },
       { id: "api-researcher", label: "API Researcher", description: "Backend pattern discovery" },
+      {
+        id: "api-tester",
+        label: "API Tester",
+        description: "Endpoint, database, and auth flow tests",
+      },
+    ],
+  },
+  {
+    label: "AI",
+    items: [
+      {
+        id: "ai-developer",
+        label: "AI Developer",
+        description: "RAG pipelines, agent loops, tool calling",
+      },
+      {
+        id: "ai-researcher",
+        label: "AI Researcher",
+        description: "Prompt, model, and RAG pipeline discovery",
+      },
+      {
+        id: "ai-tester",
+        label: "AI Tester",
+        description: "LLM mocking, prompt regression, eval harnesses",
+      },
     ],
   },
   {
@@ -72,16 +84,25 @@ const BUILT_IN_AGENT_GROUPS: AgentGroup[] = [
         description: "CLI commands, interactive prompts",
       },
       { id: "cli-tester", label: "CLI Tester", description: "CLI application tests" },
-      { id: "cli-reviewer", label: "CLI Reviewer", description: "CLI code review" },
+      {
+        id: "cli-researcher",
+        label: "CLI Researcher",
+        description: "CLI command and config pattern discovery",
+      },
     ],
   },
   {
     label: "Meta",
     items: [
       {
-        id: "pattern-scout",
-        label: "Pattern Scout",
-        description: "Extract codebase patterns and standards",
+        id: "pm",
+        label: "PM",
+        description: "Cross-domain implementation specs; domain frameworks via skills",
+      },
+      {
+        id: "reviewer",
+        label: "Reviewer",
+        description: "Cross-domain code review; domain knowledge via skills",
       },
       { id: "agent-summoner", label: "Agent Summoner", description: "Create and improve agents" },
       {
@@ -144,6 +165,18 @@ function buildFocusableIds(groups: AgentGroup[]): FocusId[] {
   return [...groups.flatMap((group) => group.items.map((a) => a.id)), "continue"];
 }
 
+/**
+ * Asserting row lookup. `buildFocusableIds` always appends "continue", so the
+ * list is never empty and every caller below wraps within it — a miss means the
+ * wrap arithmetic is wrong, which is worth a diagnostic rather than a focus that
+ * silently stops moving.
+ */
+function focusableIdAt(ids: FocusId[], index: number): FocusId {
+  const id = ids[index];
+  if (id === undefined) throw new Error(`No focusable row at index ${index} of ${ids.length}`);
+  return id;
+}
+
 export const StepAgents: React.FC = () => {
   const selectedAgents = useWizardStore((s) => s.selectedAgents);
   const agentConfigs = useWizardStore((s) => s.agentConfigs);
@@ -154,7 +187,7 @@ export const StepAgents: React.FC = () => {
 
   const [focusedId, setFocusedId] = useState<FocusId>(() => {
     const stored = useWizardStore.getState().focusedAgentId;
-    return stored && focusableIds.includes(stored) ? stored : focusableIds[0]!;
+    return stored && focusableIds.includes(stored) ? stored : focusableIdAt(focusableIds, 0);
   });
   const { ref: listRef, measuredHeight: listHeight } = useMeasuredHeight();
 
@@ -181,13 +214,13 @@ export const StepAgents: React.FC = () => {
 
     if (key.upArrow || input === "k") {
       const nextIdx = currentIdx <= 0 ? focusableIds.length - 1 : currentIdx - 1;
-      setFocusedId(focusableIds[nextIdx]!);
+      setFocusedId(focusableIdAt(focusableIds, nextIdx));
       return;
     }
 
     if (key.downArrow || input === "j") {
       const nextIdx = currentIdx >= focusableIds.length - 1 ? 0 : currentIdx + 1;
-      setFocusedId(focusableIds[nextIdx]!);
+      setFocusedId(focusableIdAt(focusableIds, nextIdx));
       return;
     }
 
@@ -251,9 +284,9 @@ export const StepAgents: React.FC = () => {
         return (
           <Box key={row.agent.id} flexShrink={0}>
             <Text>
-              <Text color={isFocused ? CLI_COLORS.PRIMARY : undefined}>{pointer}</Text>
+              <Text {...(isFocused && { color: CLI_COLORS.PRIMARY })}>{pointer}</Text>
               <Text
-                color={isSelected || isFocused ? CLI_COLORS.PRIMARY : undefined}
+                {...((isSelected || isFocused) && { color: CLI_COLORS.PRIMARY })}
                 bold={isFocused}
               >
                 {" "}
@@ -270,7 +303,7 @@ export const StepAgents: React.FC = () => {
                 </Text>
               )}
               <Text
-                color={isSelected || isFocused ? CLI_COLORS.PRIMARY : undefined}
+                {...((isSelected || isFocused) && { color: CLI_COLORS.PRIMARY })}
                 bold={isFocused}
               >
                 {" "}
@@ -306,7 +339,7 @@ export const StepAgents: React.FC = () => {
         </Box>
       </Box>
 
-      <Text color={isContinueFocused ? CLI_COLORS.PRIMARY : undefined} bold={isContinueFocused}>
+      <Text {...(isContinueFocused && { color: CLI_COLORS.PRIMARY })} bold={isContinueFocused}>
         {isContinueFocused ? UI_SYMBOLS.CHEVRON : UI_SYMBOLS.CHEVRON_SPACER} {"\u2192"}{" "}
         {continueLabel}
       </Text>

@@ -1,4 +1,4 @@
-import { seedPayloadSchema, type SeedPayload } from "./seed-schema.js";
+import { seedPayloadSchema, type SeedPayload } from "@workspace/matrix/seed";
 
 /** The config store behind agentsinc.sh. Overridable so tests never touch the network. */
 export const SEED_API_URL = process.env.AGENTS_INC_API_URL ?? "https://api.agentsinc.sh";

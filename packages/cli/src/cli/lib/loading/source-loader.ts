@@ -17,13 +17,17 @@ import type {
   AgentDefinition,
   AgentName,
   CategoryMap,
+  ExtractedSkillMetadata,
   MergedSkillsMatrix,
   RelationshipDefinitions,
+  RequireRule,
   ResolvedSkill,
   ResolvedStack,
   SkillAssignment,
   SkillId,
+  SkillRulesConfig,
   SkillScope,
+  SkillSlug,
   Stack,
   Category,
 } from "../../types";
@@ -31,11 +35,12 @@ import { fileExists } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { typedEntries, typedFromEntries, typedKeys } from "../../utils/typed-object";
 import {
-  DEFAULT_SOURCE,
+  isDefaultSource,
   isLocalSource,
   loadProjectSourceConfig,
   resolveSource,
   type ResolvedConfig,
+  type SourceCaller,
 } from "../configuration";
 import { discoverLocalSkills, type LocalSkillDiscoveryResult } from "../skills";
 import {
@@ -53,9 +58,14 @@ import { initializeMatrix, matrix as currentMatrix } from "../matrix/matrix-prov
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 
 export type SourceLoadOptions = {
+  /**
+   * Whether this load may reach the init-time source rungs — see {@link SourceCaller}.
+   * Defaults to `"stored"`: the ambient environment can only be reached by a caller that
+   * names itself `init`, so no path arrives there by omission.
+   */
+  caller?: SourceCaller;
   sourceFlag?: string;
   projectDir?: string;
-  forceRefresh?: boolean;
   devMode?: boolean;
   /** Skip loading skills from extra sources (multi-source). Only needed for wizard UI tagging. */
   skipExtraSources?: boolean;
@@ -81,19 +91,19 @@ export async function loadSkillsMatrixFromSource(
   options: SourceLoadOptions = {},
 ): Promise<SourceLoadResult> {
   const {
+    caller = "stored",
     sourceFlag,
     projectDir,
-    forceRefresh = false,
     devMode = false,
     matrixOnly = false,
   } = options;
 
-  const sourceConfig = await resolveSource(sourceFlag, projectDir);
+  const sourceConfig = await resolveSource({ caller, flag: sourceFlag, projectDir });
   const { source } = sourceConfig;
 
   verbose(`Loading skills from source: ${source}`);
 
-  const result = await resolveBaseResult(source, sourceConfig, devMode, forceRefresh, matrixOnly);
+  const result = await resolveBaseResult(source, sourceConfig, devMode, matrixOnly);
 
   const resolvedProjectDir = projectDir || process.cwd();
 
@@ -109,7 +119,6 @@ export async function loadSkillsMatrixFromSource(
       result.matrix,
       sourceConfig,
       resolvedProjectDir,
-      forceRefresh,
       result.marketplace,
     );
   }
@@ -128,16 +137,15 @@ async function resolveBaseResult(
   source: string,
   sourceConfig: SourceLoadResult["sourceConfig"],
   devMode: boolean,
-  forceRefresh: boolean,
   matrixOnly: boolean,
 ): Promise<SourceLoadResult> {
-  if (source === DEFAULT_SOURCE && !devMode) {
+  if (isDefaultSource(source) && !devMode) {
     // Default source: use pre-computed BUILT_IN_MATRIX instead of loading from disk.
     // Still resolve sourcePath via fetchFromSource so skill files can be read
     // (e.g. for eject-mode copy) — unless the caller declared matrixOnly, in
     // which case the fetch (a network clone on a cold cache) is skipped entirely.
     // The fetch is cached, so no network call if the clone already exists.
-    const sourcePath = matrixOnly ? "" : (await fetchFromSource(source, { forceRefresh })).path;
+    const sourcePath = matrixOnly ? "" : (await fetchFromSource(source)).path;
     return {
       matrix: {
         ...BUILT_IN_MATRIX,
@@ -148,14 +156,12 @@ async function resolveBaseResult(
       sourceConfig,
       sourcePath,
       isLocal: false,
-      marketplace: sourceConfig.marketplace,
+      ...(sourceConfig.marketplace !== undefined && { marketplace: sourceConfig.marketplace }),
     };
   }
 
   const isLocal = isLocalSource(source) || devMode === true;
-  return isLocal
-    ? loadFromLocal(source, sourceConfig, forceRefresh)
-    : loadFromRemote(source, sourceConfig, forceRefresh);
+  return isLocal ? loadFromLocal(source, sourceConfig) : loadFromRemote(source, sourceConfig);
 }
 
 type MarketplaceLabels = Pick<SourceLoadResult, "marketplace">;
@@ -169,16 +175,15 @@ type MarketplaceLabels = Pick<SourceLoadResult, "marketplace">;
 async function resolveMarketplaceLabels(
   source: string,
   sourceConfig: ResolvedConfig,
-  forceRefresh: boolean,
 ): Promise<MarketplaceLabels> {
   try {
-    const marketplaceResult = await fetchMarketplace(source, { forceRefresh });
+    const marketplaceResult = await fetchMarketplace(source);
     const marketplace = sourceConfig.marketplace ?? marketplaceResult.marketplace.name;
     verbose(`Using marketplace name from marketplace.json: ${marketplace}`);
     return { marketplace };
   } catch {
     verbose(`Source does not have a marketplace.json — using source name as label`);
-    return { marketplace: sourceConfig.marketplace };
+    return sourceConfig.marketplace === undefined ? {} : { marketplace: sourceConfig.marketplace };
   }
 }
 
@@ -190,11 +195,72 @@ function mergeRelationships(
   return {
     conflicts: [...source.conflicts, ...defaults.conflicts],
     discourages: [...source.discourages, ...defaults.discourages],
-    recommends: [...source.recommends, ...defaults.recommends],
     requires: [...source.requires, ...defaults.requires],
     alternatives: [...source.alternatives, ...defaults.alternatives],
-    compatibleWith: [...(source.compatibleWith ?? []), ...(defaults.compatibleWith ?? [])],
   };
+}
+
+/** Below two present members a group rule relates nothing, so it is dropped whole. */
+const MIN_RELATABLE_GROUP_MEMBERS = 2;
+
+/** Group rules — conflicts, discourages, alternatives — keeping only present slugs. */
+function narrowGroupsToSlugs<Rule extends { skills: SkillSlug[] }>(
+  rules: Rule[],
+  shipped: ReadonlySet<SkillSlug>,
+): Rule[] {
+  return rules
+    .map((rule) => ({ ...rule, skills: rule.skills.filter((slug) => shipped.has(slug)) }))
+    .filter((rule) => rule.skills.length >= MIN_RELATABLE_GROUP_MEMBERS);
+}
+
+/**
+ * Requirements, keeping only those a present skill declares over present skills.
+ * A rule left needing nothing states no requirement — resolution already treats it
+ * that way — so it goes rather than resolving to an empty `needs`.
+ */
+function narrowRequirementsToSlugs(
+  rules: RequireRule[],
+  shipped: ReadonlySet<SkillSlug>,
+): RequireRule[] {
+  return rules
+    .filter((rule) => shipped.has(rule.skill))
+    .map((rule) => ({ ...rule, needs: rule.needs.filter((slug) => shipped.has(slug)) }))
+    .filter((rule) => rule.needs.length > 0);
+}
+
+function narrowToShippedSlugs(
+  rules: RelationshipDefinitions,
+  shipped: ReadonlySet<SkillSlug>,
+): RelationshipDefinitions {
+  return {
+    conflicts: narrowGroupsToSlugs(rules.conflicts, shipped),
+    discourages: narrowGroupsToSlugs(rules.discourages, shipped),
+    requires: narrowRequirementsToSlugs(rules.requires, shipped),
+    alternatives: narrowGroupsToSlugs(rules.alternatives, shipped),
+  };
+}
+
+/**
+ * The relationships a source's skills can actually express: the source's own rules
+ * verbatim, plus the built-ins narrowed to the slugs this source ships.
+ *
+ * The built-in rules are written against the whole public catalogue — 176 slugs — so
+ * a source shipping ten of them left the rest dangling. Resolution dropped those
+ * references either way; what it ALSO did was warn once per reference per skill, and
+ * since the startup band those warnings are painted over the wizard's step. Narrowing
+ * first removes the noise and nothing else: a member that resolves to no skill
+ * contributed nothing to the resolved matrix to begin with.
+ *
+ * A source's OWN rules are never narrowed. A slug its author typed and its skills do
+ * not carry is that source's defect, and the warning is the only place it is reported.
+ */
+function relationshipsForSource(
+  sourceRules: SkillRulesConfig | undefined,
+  skills: ExtractedSkillMetadata[],
+): RelationshipDefinitions {
+  const shipped = new Set(skills.map((skill) => skill.slug));
+  const builtIn = narrowToShippedSlugs(defaultRules.relationships, shipped);
+  return sourceRules ? mergeRelationships(sourceRules.relationships, builtIn) : builtIn;
 }
 
 /** Merges any discovered local skills for `dir` into the matrix, logging the find. */
@@ -214,18 +280,17 @@ async function mergeDiscoveredLocalSkills(
 async function loadFromLocal(
   source: string,
   sourceConfig: ResolvedConfig,
-  forceRefresh: boolean,
 ): Promise<SourceLoadResult> {
-  const skillsPath = !isLocalSource(source)
-    ? PROJECT_ROOT
-    : path.isAbsolute(source)
-      ? source
-      : path.resolve(process.cwd(), source);
+  // Resolved through `fetchFromSource` — the same call `loadFromRemote` makes — rather
+  // than joined here, so a path the user named and the CLI cannot read is REFUSED with
+  // the loader's own message. Reading it directly returned an empty matrix instead, and
+  // `init`/`edit` went on to mount a wizard over nothing the user asked for.
+  const skillsPath = isLocalSource(source) ? (await fetchFromSource(source)).path : PROJECT_ROOT;
 
   verbose(`Loading skills from local path: ${skillsPath}`);
 
-  const mergedMatrix = await loadAndMergeFromBasePath(skillsPath);
-  const labels = await resolveMarketplaceLabels(skillsPath, sourceConfig, forceRefresh);
+  const mergedMatrix = await loadAndMergeFromBasePath(skillsPath, source);
+  const labels = await resolveMarketplaceLabels(skillsPath, sourceConfig);
 
   return {
     matrix: mergedMatrix,
@@ -239,16 +304,15 @@ async function loadFromLocal(
 async function loadFromRemote(
   source: string,
   sourceConfig: ResolvedConfig,
-  forceRefresh: boolean,
 ): Promise<SourceLoadResult> {
   verbose(`Fetching skills from remote source: ${source}`);
 
-  const fetchResult = await fetchFromSource(source, { forceRefresh });
+  const fetchResult = await fetchFromSource(source);
 
   verbose(`Fetched to: ${fetchResult.path}`);
 
-  const mergedMatrix = await loadAndMergeFromBasePath(fetchResult.path);
-  const labels = await resolveMarketplaceLabels(source, sourceConfig, forceRefresh);
+  const mergedMatrix = await loadAndMergeFromBasePath(fetchResult.path, source);
+  const labels = await resolveMarketplaceLabels(source, sourceConfig);
 
   return {
     matrix: mergedMatrix,
@@ -259,7 +323,16 @@ async function loadFromRemote(
   };
 }
 
-async function loadAndMergeFromBasePath(basePath: string): Promise<MergedSkillsMatrix> {
+/**
+ * Builds the matrix for a source read from disk, from the files under
+ * `basePath`. `source` is the source string that base path stands for — the
+ * loader's only word for WHICH marketplace it is reading, and what
+ * {@link resolveOfferedStacks} decides the built-in catalogue's fate on.
+ */
+async function loadAndMergeFromBasePath(
+  basePath: string,
+  source: string,
+): Promise<MergedSkillsMatrix> {
   const sourceProjectConfig = await loadProjectSourceConfig(basePath);
 
   const skillsDirRelPath = sourceProjectConfig?.skillsDir ?? SKILLS_DIR_PATH;
@@ -287,9 +360,6 @@ async function loadAndMergeFromBasePath(basePath: string): Promise<MergedSkillsM
   if (sourceRules) {
     verbose(`Loaded source rules: ${sourceRulesPath}`);
   }
-  const relationships: RelationshipDefinitions = sourceRules
-    ? mergeRelationships(sourceRules.relationships, defaultRules.relationships)
-    : defaultRules.relationships;
 
   if (hasSourceCategories || hasSourceRules) {
     verbose(`Matrix merged: CLI (${typedKeys(defaultCategories).length} categories) + source`);
@@ -301,17 +371,14 @@ async function loadAndMergeFromBasePath(basePath: string): Promise<MergedSkillsM
   verbose(`Skills from source: ${skillsDir}`);
 
   const skills = await extractAllSkills(skillsDir);
+  const relationships = relationshipsForSource(sourceRules, skills);
   const mergedMatrix = mergeMatrixWithSkills(categories, relationships, skills);
   initializeMatrix(mergedMatrix);
 
-  // Load stacks from source first, fall back to CLI's built-in defaults
-  const sourceStacks = await loadStacks(basePath, stacksRelFile);
-  const stacks = sourceStacks.length > 0 ? sourceStacks : defaultStacks;
-  if (stacks.length > 0) {
-    mergedMatrix.suggestedStacks = stacks.map((stack) => convertStackToResolvedStack(stack));
-    const stackSource = sourceStacks.length > 0 ? "source" : "CLI";
-    verbose(`Loaded ${stacks.length} stacks from ${stackSource}`);
-  }
+  // Assigned unconditionally: a source offering no stacks is a matrix carrying
+  // none, which is the whole of what the wizard needs to skip the stack step.
+  const stacks = await resolveOfferedStacks(basePath, stacksRelFile, source);
+  mergedMatrix.suggestedStacks = stacks.map((stack) => convertStackToResolvedStack(stack));
 
   // Collect explicit domain definitions from agent metadata.yaml files
   const agents = await loadAllAgents(basePath);
@@ -327,6 +394,38 @@ async function loadAndMergeFromBasePath(basePath: string): Promise<MergedSkillsM
   }
 
   return mergedMatrix;
+}
+
+/**
+ * The stacks a source offers the wizard: the ones it ships, or — for the default
+ * public marketplace alone — the CLI's built-in catalogue standing in when it
+ * ships none.
+ *
+ * A custom marketplace gets no such stand-in. Handing it one meant offering a
+ * catalogue of stacks written against a different catalogue of skills, under a
+ * name the user never asked for, with most of each stack silently dropped for
+ * naming ids the chosen source does not carry. A marketplace ships its own
+ * stacks or offers none, and none means a wizard with no stack step rather than
+ * one showing somebody else's list.
+ */
+async function resolveOfferedStacks(
+  basePath: string,
+  stacksFile: string | undefined,
+  source: string,
+): Promise<Stack[]> {
+  const sourceStacks = await loadStacks(basePath, stacksFile);
+  if (sourceStacks.length > 0) {
+    verbose(`Offering the ${sourceStacks.length} stacks the source ships`);
+    return sourceStacks;
+  }
+
+  if (!isDefaultSource(source)) {
+    verbose(`Source '${source}' ships no stacks, and gets no built-in stand-in — offering none`);
+    return [];
+  }
+
+  verbose(`Default source ships no stacks — offering the ${defaultStacks.length} built-in stacks`);
+  return defaultStacks;
 }
 
 // Stack values are already skill IDs — no alias resolution needed
@@ -369,6 +468,7 @@ function resolveStackAgentSkills(
   const byCategory = typedEntries<Category, SkillAssignment[]>(agentConfig)
     .map(([category, assignments]) => ({
       category,
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
       validIds: (assignments ?? []).filter((a) => a.id in currentMatrix.skills).map((a) => a.id),
     }))
     .filter(({ validIds }) => validIds.length > 0);
@@ -410,25 +510,22 @@ export function mergeLocalSkillsIntoMatrix(
       slug,
       displayName,
       description: metadata.description,
-      usageGuidance: metadata.usageGuidance,
+      ...(metadata.usageGuidance !== undefined && { usageGuidance: metadata.usageGuidance }),
 
       category,
 
       author: LOCAL_DEFAULTS.AUTHOR,
 
       conflictsWith: existingSkill?.conflictsWith ?? [],
-      isRecommended: existingSkill?.isRecommended ?? false,
-      recommendedReason: existingSkill?.recommendedReason,
       requires: existingSkill?.requires ?? [],
       alternatives: existingSkill?.alternatives ?? [],
       discourages: existingSkill?.discourages ?? [],
-      compatibleWith: existingSkill?.compatibleWith ?? [],
 
       path: metadata.path,
 
       local: true,
-      localPath: metadata.localPath,
-      custom: metadata.custom,
+      ...(metadata.localPath !== undefined && { localPath: metadata.localPath }),
+      ...(metadata.custom !== undefined && { custom: metadata.custom }),
     };
 
     matrix.skills[metadata.id] = resolvedSkill;
@@ -436,7 +533,7 @@ export function mergeLocalSkillsIntoMatrix(
     // Ensure the skill's category exists in matrix.categories so that
     // config-types generation can discover its domain and category.
     // Skip "local" — it is a pseudo-category, not a real Category union member.
-    if (category !== LOCAL_PSEUDO_CATEGORY && !matrix.categories[category] && metadata.domain) {
+    if (category !== LOCAL_PSEUDO_CATEGORY && !matrix.categories[category]) {
       matrix.categories[category] = {
         id: category,
         displayName: category,

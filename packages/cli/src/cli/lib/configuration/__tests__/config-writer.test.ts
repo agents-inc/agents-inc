@@ -1,3 +1,12 @@
+/* eslint-disable @typescript-eslint/no-implied-eval --
+ * `new Function(source)` is the assertion here, not a way of running code. What
+ * this file covers is a *writer*: it renders the source of ~/.claude-src/config.ts,
+ * and "the source it rendered is parseable JavaScript" is a claim only a
+ * JavaScript parser can settle. The input is the writer's own output, built from
+ * fixtures in this file — never anything a user supplies — and the constructed
+ * function is never called. The alternative is a parser dependency carried for
+ * five assertions. Five sites, one reason, so it is stated once here.
+ */
 import os from "os";
 import path from "path";
 import { describe, it, expect } from "vitest";
@@ -48,8 +57,6 @@ describe("generateConfigSource", () => {
       name: "sparse-project",
       agents: [],
       skills: [],
-      description: undefined,
-      author: undefined,
     });
     const source = generateConfigSource(config);
     expect(source).not.toContain("description");
@@ -86,6 +93,39 @@ describe("generateConfigSource", () => {
     expect(source).not.toMatch(/"web-framework":\s*\[/);
     // Stack should be extracted as named variable
     expect(source).toContain("const stack: Partial<Record<ProjectAgentName, StackAgentConfig>>");
+  });
+
+  it("emits a bare id string for an assignment that carries no flags at all", () => {
+    const config = buildProjectConfig({
+      name: "flagless-assignment-project",
+      stack: {
+        "web-developer": {
+          "web-framework": [{ id: "web-framework-react" }],
+        },
+      },
+    });
+    const source = generateConfigSource(config);
+    // An assignment with nothing but an id says everything the id says — the object wrapper is noise
+    expect(source).toContain('"web-framework": "web-framework-react"');
+    expect(source).not.toContain('"id": "web-framework-react"');
+  });
+
+  it("keeps the object form for an assignment carrying local and path", () => {
+    const config = buildProjectConfig({
+      name: "local-assignment-project",
+      stack: {
+        "web-developer": {
+          "web-framework": [
+            { id: "web-framework-react", local: true, path: ".claude/skills/react/" },
+          ],
+        },
+      },
+    });
+    const source = generateConfigSource(config);
+    // local/path are not defaults — flattening to a bare id would silently drop them
+    expect(source).toContain('"id": "web-framework-react"');
+    expect(source).toContain('"local": true');
+    expect(source).toContain('"path": ".claude/skills/react/"');
   });
 
   it("preserves preloaded flag as a bare object in an exclusive category", () => {
@@ -163,7 +203,7 @@ describe("generateConfigSource", () => {
     expect(source).toContain("AgentScopeConfig");
   });
 
-  it("imports ProjectAgentName, SelectedAgentName, and StackAgentConfig when stack is present", () => {
+  it("imports ProjectAgentName and StackAgentConfig when stack is present", () => {
     const config = buildProjectConfig({
       stack: {
         "web-developer": {
@@ -173,73 +213,82 @@ describe("generateConfigSource", () => {
     });
     const source = generateConfigSource(config);
     expect(source).toContain("ProjectAgentName");
-    expect(source).toContain("SelectedAgentName");
     expect(source).toContain("StackAgentConfig");
   });
 
-  it("imports Domain when domains are present", () => {
-    const config = buildProjectConfig({ domains: ["web"] });
+  it("never imports SelectedAgentName — no emitted field references it", () => {
+    const config = buildProjectConfig({
+      stack: {
+        "web-developer": {
+          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+        },
+      },
+    });
     const source = generateConfigSource(config);
-    expect(source).toContain("Domain");
-    expect(source).toContain('const domains: Domain[] = ["web"]');
+    expect(source).not.toContain("SelectedAgentName");
   });
 
-  it("extracts domains as named variable", () => {
-    const config = buildProjectConfig({ domains: ["web", "api"] });
+  it("imports Domain when selected domains are present", () => {
+    const config = buildProjectConfig({ selectedDomains: ["web"] });
     const source = generateConfigSource(config);
-    expect(source).toContain("const domains: Domain[]");
+    expect(source).toContain("Domain");
+    expect(source).toContain('const selectedDomains: Domain[] = ["web"]');
+  });
+
+  it("extracts selected domains as named variable", () => {
+    const config = buildProjectConfig({ selectedDomains: ["web", "api"] });
+    const source = generateConfigSource(config);
+    expect(source).toContain("const selectedDomains: Domain[]");
     expect(source).toContain('"web"');
     expect(source).toContain('"api"');
-    // In export default, domains should be a shorthand reference
+    // In export default, selectedDomains should be a shorthand reference
     const exportBlock = source.slice(
       source.indexOf("export default"),
       source.indexOf("satisfies ProjectConfig;"),
     );
-    expect(exportBlock).toContain("domains,");
+    expect(exportBlock).toContain("selectedDomains,");
   });
 
   describe("empty config", () => {
-    it("handles config with no skills, no agents, no domains, no stack", () => {
+    it("handles config with no skills, no agents, no selected domains, no stack", () => {
       const config = buildProjectConfig({
         name: "empty-project",
         skills: [],
         agents: [],
-        domains: undefined,
-        stack: undefined,
       });
       const source = generateConfigSource(config);
       expect(source).toContain('"name": "empty-project"');
       expect(source).toContain("skills: [],");
       expect(source).toContain("agents: [],");
       expect(source).not.toContain("const stack:");
-      expect(source).not.toContain("const domains:");
+      expect(source).not.toContain("const selectedDomains:");
       expect(source).toContain("satisfies ProjectConfig;");
       // Only ProjectConfig type should be imported
       const importLine = source.split("\n")[0];
       expect(importLine).toBe('import type { ProjectConfig } from "./config-types";');
     });
 
-    it("does not emit domains field when domains is undefined", () => {
+    it("does not emit a selectedDomains field when selectedDomains is undefined", () => {
       const config = buildProjectConfig({
         name: "test-empty",
         skills: [],
         agents: [],
       });
       const source = generateConfigSource(config);
-      expect(source).not.toContain("domains");
+      expect(source).not.toContain("selectedDomains");
     });
 
-    it("handles empty domains array", () => {
+    it("handles empty selectedDomains array", () => {
       const config = buildProjectConfig({
         name: "empty-domains",
         skills: [],
         agents: [],
-        domains: [],
+        selectedDomains: [],
       });
       const source = generateConfigSource(config);
-      // Empty domains array: inline empty in export default, no extracted variable
-      expect(source).toContain("domains: [],");
-      expect(source).not.toContain("const domains:");
+      // Empty array: inline empty in export default, no extracted variable
+      expect(source).toContain("selectedDomains: [],");
+      expect(source).not.toContain("const selectedDomains:");
     });
   });
 
@@ -379,40 +428,38 @@ describe("generateConfigSource", () => {
       expect(source).toContain("...globalConfig.agents,");
     });
 
-    it("spreads global domains when project has domains", () => {
+    it("spreads global selected domains when project has selected domains", () => {
       const config = buildProjectConfig({
         name: "project-domains",
         skills: [],
         agents: [],
-        domains: ["web"],
+        selectedDomains: ["web"],
       });
       const source = generateConfigSource(config, { isProjectConfig: true });
-      expect(source).toContain("...(globalConfig.domains ?? []),");
+      expect(source).toContain("...(globalConfig.selectedDomains ?? []),");
       expect(source).toContain('"web"');
     });
 
-    it("does not declare domains variable when project has no domains", () => {
+    it("does not declare a selectedDomains variable when project has no selected domains", () => {
       const config = buildProjectConfig({
         name: "project-no-domains",
         skills: [],
         agents: [],
       });
       const source = generateConfigSource(config, { isProjectConfig: true });
-      expect(source).not.toContain("const domains:");
+      expect(source).not.toContain("const selectedDomains:");
     });
 
-    it("extracts selectedAgents as named constant when project has selectedAgents", () => {
+    it("never emits a selectedAgents constant or field", () => {
       const config = buildProjectConfig({
         name: "project-agents",
         skills: [],
-        agents: [],
-        selectedAgents: ["web-developer"],
+        agents: buildAgentConfigs(["web-developer"]),
       });
       const source = generateConfigSource(config, { isProjectConfig: true });
-      expect(source).toContain(
-        'const selectedAgents: SelectedAgentName[] = [...(globalConfig.selectedAgents ?? []), "web-developer"]',
+      expect(source, "the active agents list is the only record of who is selected").not.toContain(
+        "selectedAgents",
       );
-      expect(source).toContain("  selectedAgents,");
     });
 
     it("uses default plugin name when config name is 'global'", () => {
@@ -430,7 +477,7 @@ describe("generateConfigSource", () => {
     const globalConfig = buildProjectConfig({
       name: "global",
       skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
-      agents: buildAgentConfigs(["web-reviewer"], { scope: "global" }),
+      agents: buildAgentConfigs(["web-researcher"], { scope: "global" }),
       source: "/path/to/skills",
       marketplace: "agents-inc",
     });
@@ -476,7 +523,7 @@ describe("generateConfigSource", () => {
       });
       const agentsSection = extractNamedSection(source, "agents");
       expect(agentsSection).toContain("// global");
-      expect(agentsSection).toContain('"web-reviewer"');
+      expect(agentsSection).toContain('"web-researcher"');
     });
 
     it("adds // project comment only when project items exist", () => {
@@ -550,41 +597,38 @@ describe("generateConfigSource", () => {
       expect(source).toContain('name: "agents-inc"');
     });
 
-    it("merges global and project selectedAgents as named constant", () => {
+    it("never emits a selectedAgents constant when inlining global", () => {
       const globalWithAgents = buildProjectConfig({
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
-        agents: buildAgentConfigs(["web-reviewer"], { scope: "global" }),
-        selectedAgents: ["web-reviewer"],
+        agents: buildAgentConfigs(["web-researcher"], { scope: "global" }),
       });
       const projectConfig = buildProjectConfig({
         name: "my-project",
         skills: [],
-        agents: [],
-        selectedAgents: ["web-developer"],
+        agents: buildAgentConfigs(["web-developer"]),
       });
       const source = generateConfigSource(projectConfig, {
         isProjectConfig: true,
         globalConfig: globalWithAgents,
       });
-      expect(source).toContain(
-        'const selectedAgents: SelectedAgentName[] = ["web-reviewer", "web-developer"]',
+      expect(source, "the active agents list is the only record of who is selected").not.toContain(
+        "selectedAgents",
       );
-      expect(source).toContain("  selectedAgents,");
     });
 
-    it("merges global and project domains", () => {
+    it("merges global and project selected domains", () => {
       const globalWithDomains = buildProjectConfig({
         name: "global",
         skills: [],
         agents: [],
-        domains: ["web"],
+        selectedDomains: ["web"],
       });
       const projectConfig = buildProjectConfig({
         name: "my-project",
         skills: [],
         agents: [],
-        domains: ["api"],
+        selectedDomains: ["api"],
       });
       const source = generateConfigSource(projectConfig, {
         isProjectConfig: true,
@@ -592,7 +636,7 @@ describe("generateConfigSource", () => {
       });
       expect(source).toContain('"web"');
       expect(source).toContain('"api"');
-      expect(source).toContain("const domains: Domain[]");
+      expect(source).toContain("const selectedDomains: Domain[]");
     });
 
     it("handles empty global config with project items", () => {
@@ -830,13 +874,13 @@ describe("generateConfigSource", () => {
         skills: buildSkillConfigs(["web-framework-react", "web-styling-tailwind"], {
           scope: "global",
         }),
-        agents: buildAgentConfigs(["web-developer", "web-reviewer"], { scope: "global" }),
+        agents: buildAgentConfigs(["web-developer", "web-researcher"], { scope: "global" }),
         stack: {
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: false }],
             "web-styling": [{ id: "web-styling-tailwind", preloaded: false }],
           },
-          "web-reviewer": {
+          "web-researcher": {
             "web-framework": [{ id: "web-framework-react", preloaded: false }],
           },
         },
@@ -865,7 +909,7 @@ describe("generateConfigSource", () => {
       const stackSection = extractNamedSection(source, "stack");
       // Global agent stack entries must NOT be present in stack
       expect(stackSection).not.toMatch(/"web-developer":\s*\{/);
-      expect(stackSection).not.toMatch(/"web-reviewer":\s*\{/);
+      expect(stackSection).not.toMatch(/"web-researcher":\s*\{/);
       expect(stackSection).not.toContain('"web-framework-react"');
       expect(stackSection).not.toContain('"web-styling-tailwind"');
     });
@@ -1028,7 +1072,7 @@ describe("generateConfigSource", () => {
           },
           "api-developer": {
             "api-api": [{ id: "api-framework-hono", preloaded: false }],
-            "api-database": [{ id: "api-database-drizzle", preloaded: false }],
+            "api-orm": [{ id: "api-database-drizzle", preloaded: false }],
           },
         },
       });
@@ -1042,7 +1086,7 @@ describe("generateConfigSource", () => {
       expect(source).toContain('"web-framework"');
       expect(source).toContain('"web-styling"');
       expect(source).toContain('"api-api"');
-      expect(source).toContain('"api-database"');
+      expect(source).toContain('"api-orm"');
       // Preloaded skill should retain object format
       expect(source).toContain('"preloaded": true');
       // Non-preloaded single skills should be bare strings inside arrays
@@ -1122,7 +1166,7 @@ describe("generateConfigSource", () => {
         name: "valid-js",
         skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"]),
         agents: buildAgentConfigs(["web-developer", "api-developer"]),
-        domains: ["web", "api"],
+        selectedDomains: ["web", "api"],
         stack: {
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: false }],
@@ -1159,7 +1203,7 @@ describe("generateConfigSource", () => {
           ...buildAgentConfigs(["web-developer"], { scope: "global" }),
           ...buildAgentConfigs(["api-developer"], { scope: "project" }),
         ],
-        domains: ["web", "api"],
+        selectedDomains: ["web", "api"],
         stack: {
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
@@ -1232,11 +1276,11 @@ describe("generateBlankGlobalConfigSource", () => {
     expect(source).toContain('"name": "global"');
   });
 
-  it("has empty skills, agents, and domains arrays", () => {
+  it("has empty skills, agents, and selectedDomains arrays", () => {
     const source = generateBlankGlobalConfigSource();
     expect(source).toContain('"skills": []');
     expect(source).toContain('"agents": []');
-    expect(source).toContain('"domains": []');
+    expect(source).toContain('"selectedDomains": []');
   });
 
   it("contains import type from config-types", () => {

@@ -1,6 +1,6 @@
 import { parse as parseYaml } from "yaml";
 
-export function extractFrontmatter(content: string): unknown | null {
+export function extractFrontmatter(content: string): unknown {
   const frontmatterRegex = /^---\r?\n([\s\S]*?)\r?\n---/;
   const match = content.match(frontmatterRegex);
 

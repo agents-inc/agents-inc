@@ -1,14 +1,10 @@
-export { type FetchSkillsOptions, fetchSkills } from "./skill-fetcher";
+export { fetchSkills } from "./skill-fetcher";
 
 export {
   type ForkedFromMetadata,
   type LocalSkillMetadata,
-  type SkillComparisonResult,
   readForkedFromMetadata,
   readLocalSkillMetadata,
-  getLocalSkillsWithMetadata,
-  computeSourceHash,
-  compareLocalSkillsWithSource,
   injectForkedFromMetadata,
 } from "./skill-metadata";
 
@@ -32,4 +28,9 @@ export {
 
 export { type LocalSkillDiscoveryResult, discoverLocalSkills } from "./local-skill-loader";
 
-export { deleteLocalSkill, migrateLocalSkillScope } from "./source-switcher";
+export {
+  findUnusableSavedSkillMetadata,
+  unresolvedSkillRemovalReasons,
+} from "./unresolved-skill-entries";
+
+export { deleteLocalSkill, migrateLocalSkillScope } from "./local-skill-mover";

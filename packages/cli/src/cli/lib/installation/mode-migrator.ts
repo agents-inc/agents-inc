@@ -1,6 +1,9 @@
 import type { SkillId } from "../../types";
 import type { SkillConfig, SkillScope } from "../../types/config";
 import type { SourceLoadResult } from "../loading";
+// Type-only, so no module edge is created: the operations layer imports back into
+// this one, and the shape a plugin install reports is defined where installs live.
+import type { PluginInstallResult } from "../operations/skills/install-plugin-skills";
 import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
 import { claudePluginInstall, claudePluginUninstall } from "../../utils/exec";
 import { buildMarketplacePluginRef, toClaudePluginScope } from "../plugins/plugin-ref";
@@ -25,14 +28,17 @@ export type MigrationPlan = {
 
 export type MigrationResult = {
   ejectedSkills: SkillId[];
-  pluginizedSkills: SkillId[];
   /**
-   * Per-skill plugin install failures, in the shape of `PluginInstallResult["failed"]`.
-   * A non-empty list means this run could NOT honor the user's plugin intent for those
-   * skills, so the caller MUST hard-error before writing any config — otherwise config.ts
-   * records a marketplace `source` for a skill that has no plugin registration.
+   * What the eject→plugin half installed, in the shape a fresh install returns, so
+   * one command surface reports both. The refs are built here because this is where
+   * each migration's own scope and marketplace are already resolved.
+   *
+   * A non-empty `failed` means this run could NOT honor the user's plugin intent for
+   * those skills, so the caller MUST hard-error before writing any config — otherwise
+   * config.ts records a marketplace `source` for a skill that has no plugin
+   * registration.
    */
-  failedPluginInstalls: Array<{ id: SkillId; error: string }>;
+  pluginInstalls: PluginInstallResult;
   warnings: string[];
 };
 
@@ -92,8 +98,7 @@ export async function executeMigration(
 ): Promise<MigrationResult> {
   const warnings: string[] = [];
   const ejectedSkills: SkillId[] = [];
-  const pluginizedSkills: SkillId[] = [];
-  const failedPluginInstalls: MigrationResult["failedPluginInstalls"] = [];
+  const pluginInstalls: PluginInstallResult = { installed: [], failed: [] };
 
   // Migrate skills from plugin to eject, split by scope
   if (plan.toEject.length > 0) {
@@ -161,23 +166,23 @@ export async function executeMigration(
     // The same rule applies per skill: install FIRST and delete the ejected working
     // copy only once THAT skill's plugin is registered. A failed install then leaves
     // the skill exactly as it was, and the caller hard-errors on
-    // `failedPluginInstalls` before any config claims the plugin source.
+    // `pluginInstalls.failed` before any config claims the plugin source.
     for (const migration of plan.toPlugin) {
       const pluginScope = toClaudePluginScope(migration.newScope);
       const pluginRef = buildMarketplacePluginRef(migration.id, sourceResult.marketplace);
       try {
         await claudePluginInstall(pluginRef, pluginScope, projectDir);
       } catch (error) {
-        failedPluginInstalls.push({ id: migration.id, error: getErrorMessage(error) });
+        pluginInstalls.failed.push({ id: migration.id, error: getErrorMessage(error) });
         continue;
       }
-      pluginizedSkills.push(migration.id);
+      pluginInstalls.installed.push({ id: migration.id, ref: pluginRef });
       verbose(`Installed plugin for ${migration.id}`);
       await deleteEjectedWorkingCopy(migration, projectDir);
     }
   }
 
-  return { ejectedSkills, pluginizedSkills, failedPluginInstalls, warnings };
+  return { ejectedSkills, pluginInstalls, warnings };
 }
 
 /**

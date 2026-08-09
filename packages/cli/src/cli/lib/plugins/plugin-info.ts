@@ -74,7 +74,7 @@ export async function getInstallationInfo(): Promise<InstallationInfo | null> {
   const agentDirCounts = await countCompiledAgentsPerScope(installation, scopes);
 
   const loaded = await loadProjectConfig(installation.projectDir);
-  const name = loaded?.config?.name || DEFAULT_PLUGIN_NAME;
+  const name = loaded?.config.name || DEFAULT_PLUGIN_NAME;
 
   return {
     mode: installation.mode,

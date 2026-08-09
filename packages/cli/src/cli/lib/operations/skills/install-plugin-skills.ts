@@ -1,7 +1,7 @@
 import { claudePluginInstall } from "../../../utils/exec.js";
 import { buildMarketplacePluginRef, toClaudePluginScope } from "../../plugins/index.js";
 import { getErrorMessage } from "../../../utils/errors.js";
-import { EJECT_SOURCE } from "../../../consts.js";
+import { CLI_INVOKE_COMMAND, EJECT_SOURCE } from "../../../consts.js";
 import type { SkillId } from "../../../types/index.js";
 import type { SkillConfig } from "../../../types/config.js";
 
@@ -17,7 +17,7 @@ export type PluginInstallResult = {
  * is installed.
  */
 export function pluginInstallFailureError(failedCount: number): string {
-  return `Failed to install ${failedCount} plugin skill(s). Plugin install intent could not be honored. Verify the skill id matches the marketplace, re-run with --refresh to update the marketplace, or switch affected skills to eject mode.`;
+  return `Failed to install ${failedCount} plugin skill(s). Plugin install intent could not be honored. Verify the skill id matches the marketplace, run '${CLI_INVOKE_COMMAND} update' to refresh the marketplace, or switch affected skills to eject mode.`;
 }
 
 /**

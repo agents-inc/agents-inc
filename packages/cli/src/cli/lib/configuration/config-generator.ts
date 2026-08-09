@@ -9,12 +9,14 @@ import type {
   Category,
 } from "../../types";
 import { groupBy, indexBy, partition } from "remeda";
+import { resolveAssignment, resolveLoadState, type LoadState } from "@workspace/matrix";
 
 import type { AgentScopeConfig, SkillConfig, SkillScope } from "../../types/config";
 import { matrix } from "../matrix/matrix-provider";
 import { EJECT_SOURCE, GLOBAL_CONFIG_NAME, LOCAL_PSEUDO_CATEGORY } from "../../consts";
 import { isActiveAt, activeAgentScopeMap, effectivelyExcludedSkillIds } from "./scope-predicates";
 import { verbose, warn } from "../../utils/logger";
+import { isAgentName, isSkillId } from "../../utils/type-guards";
 import { typedEntries, typedFromEntries, typedKeys } from "../../utils/typed-object";
 
 export type SplitConfigResult = {
@@ -42,11 +44,11 @@ type StackBuildInputs = {
   /**
    * Skills that are new to this session's top-level selection (not in the prior
    * `existing.config.skills`). When `undefined`, the D-220 per-agent curation
-   * preservation rule is disabled and every scope-compatible skill lands on
-   * every existing agent (legacy behavior). When defined (possibly empty), the
-   * preservation rule applies: skills NOT in an agent's prior stack entry and
-   * NOT in this set are omitted from that agent's stack — respecting the
-   * user's curation.
+   * preservation rule is disabled and every scope-compatible, resolver-relevant
+   * skill lands on every existing agent (legacy behavior). When defined
+   * (possibly empty), the preservation rule applies: skills NOT in an agent's
+   * prior stack entry and NOT in this set are omitted from that agent's stack —
+   * respecting the user's curation.
    */
   newlyAddedSkillIds?: ReadonlySet<SkillId>;
   /**
@@ -69,14 +71,68 @@ export function scopeEligibilityKey(agent: AgentName, skillId: SkillId): string 
   return `${agent}|${skillId}`;
 }
 
-function wasPreviouslyPreloaded(
+/**
+ * What the prior save said about this triple, or `undefined` when it carried
+ * no entry for it at all. An entry with no flag is not silence: the generator
+ * only ever writes `preloaded` where it is true, so a bare `{ id }` read back
+ * off disk is the user's curated lazy and outranks any default.
+ */
+function priorLoadState(
   existingStack: Partial<Record<AgentName, StackAgentConfig>>,
   agent: AgentName,
   category: Category,
   skillId: SkillId,
-): boolean {
+): LoadState | undefined {
   const prior = existingStack[agent]?.[category]?.find((a) => a.id === skillId);
-  return prior?.preloaded === true;
+  if (prior === undefined) return undefined;
+
+  return prior.preloaded === true ? "preloaded" : "lazy";
+}
+
+/**
+ * The shared mapping's word for a triple nobody has decided on yet — the same
+ * table the editor's default assignments read, so a skill picked in either
+ * place arrives loaded the same way.
+ *
+ * Only catalog skills on roster agents are put to it. The mapping is keyed by
+ * generated skill id and agent role, so a local skill, a marketplace one or a
+ * hand-written agent has no entry it could ever match — those are lazy by
+ * rule, not by rescue. `resolveLoadState` throws on ids it does not know, and
+ * catching that throw is what would make this a silent fallback.
+ */
+function mappedLoadState(skillId: SkillId, agent: AgentName): LoadState {
+  if (!isSkillId(skillId) || !isAgentName(agent)) return "lazy";
+
+  return resolveLoadState({ skillId, agentId: agent });
+}
+
+/**
+ * The shared resolver's word on whether this sub-agent would reasonably use
+ * this skill — the same targeting the editor's default assignments read, so a
+ * pick lands on the same agents from either surface.
+ *
+ * An id outside the catalog — local, marketplace, or added this session —
+ * targets nobody: relevance unknown, assignment the user's to make.
+ */
+function isRelevantPair(skillId: SkillId, agent: AgentName): boolean {
+  return resolveAssignment(skillId).some((target) => target.agentId === agent);
+}
+
+/**
+ * The relevance rule as it applies inside a stack build: a triple the prior
+ * save carries is the user's curation — D-220 — and rides through wherever it
+ * sits, cross-domain included; a triple arriving this session lands only where
+ * the shared resolver targets it.
+ */
+function isPreservedOrRelevant(
+  agent: AgentName,
+  category: Category,
+  skillId: SkillId,
+  inputs: StackBuildInputs,
+): boolean {
+  const hasPriorEntry =
+    priorLoadState(inputs.existingStack, agent, category, skillId) !== undefined;
+  return hasPriorEntry || isRelevantPair(skillId, agent);
 }
 
 function getScopeOrThrow<K>(map: Map<K, SkillScope>, key: K, kind: "skill" | "agent"): SkillScope {
@@ -115,8 +171,9 @@ function isScopeCompatible(
  *
  * Branches:
  *   - `agent ∉ existingStack`  → seed branch (new agent); every scope-compatible
- *     skill lands with `preloaded: false` (or preserved if present for another
- *     reason, which cannot happen here).
+ *     skill the shared resolver targets at this agent lands, and with no prior
+ *     entry to inherit a `preloaded` flag from, each one takes the shared
+ *     mapping's default (see `toStackAssignment`).
  *   - `agent ∈ existingStack`  → preservation branch:
  *       * skillId was in `existingStack[agent][category]` → KEEP (idempotent).
  *       * skillId ∈ `newlyAddedSkillIds` OR `(agent, skillId)` ∈
@@ -125,8 +182,9 @@ function isScopeCompatible(
  *       * otherwise → OMIT (respect user's prior per-agent curation removal).
  *
  * Legacy path: when `newlyAddedSkillIds` is not provided, the D-220 check is
- * disabled — every scope-compatible skill lands. This preserves the contract
- * of callers that pre-date D-220.
+ * disabled — every scope-compatible skill passes this gate (the relevance
+ * filter in `buildAgentStack` still applies). This preserves the contract of
+ * callers that pre-date D-220.
  */
 function shouldIncludeTriple(
   agent: AgentName,
@@ -154,16 +212,27 @@ function shouldIncludeTriple(
   return false;
 }
 
+/** The prior stack's word for this triple, or the mapping's when it is new. */
+function toStackAssignment(
+  id: SkillId,
+  agent: AgentName,
+  category: Category,
+  inputs: StackBuildInputs,
+): SkillAssignment {
+  const prior = priorLoadState(inputs.existingStack, agent, category, id);
+  const load = prior ?? mappedLoadState(id, agent);
+
+  return load === "preloaded" ? { id, preloaded: true } : { id };
+}
+
 function buildAgentStack(agent: AgentName, inputs: StackBuildInputs): StackAgentConfig | undefined {
   const agentStack: StackAgentConfig = {};
   for (const [category, skillIds] of inputs.activeSkillsByCategory) {
     const assignments = skillIds
       .filter((id) => isScopeCompatible(id, agent, inputs.skillScope, inputs.agentScope))
       .filter((id) => shouldIncludeTriple(agent, category, id, inputs))
-      .map<SkillAssignment>((id) => ({
-        id,
-        preloaded: wasPreviouslyPreloaded(inputs.existingStack, agent, category, id),
-      }));
+      .filter((id) => isPreservedOrRelevant(agent, category, id, inputs))
+      .map((id) => toStackAssignment(id, agent, category, inputs));
     if (assignments.length > 0) {
       agentStack[category] = assignments;
     }
@@ -202,11 +271,16 @@ function buildStackForSelection(
  * Ownership rules (what lands in each agent's stack):
  * - agent is selected AND skill is non-excluded AND agent is non-excluded
  * - scope filter: a project-scoped skill never lands on a global-scoped agent
+ * - relevance filter: a NEW triple lands only where the shared resolver targets
+ *   the (skill, agent) pair — a sub-agent carries only skills it would
+ *   reasonably use. Prior entries are preserved verbatim (D-220), wherever
+ *   they sit.
  *
- * Preloaded flags are inherited from `options.existingStack` when the same
- * (agent, category, skill) triple was present before. New pairs default to
- * `preloaded: false` — preloaded is author-asserted via stack YAML at init
- * time and is never auto-set here.
+ * Load state per (agent, category, skill) triple: a triple `options.existingStack`
+ * already carries keeps exactly what it carried — flag or no flag, that entry is
+ * the author's stack YAML or the user's own curation. A triple that is new to
+ * this save has nobody's word to inherit and takes the shared mapping's default,
+ * which is what the editor resolves against too.
  *
  * @param name - Project name for the config
  * @param selectedSkillIds - Skill IDs selected by the user in the wizard
@@ -418,10 +492,26 @@ export function generateProjectConfigFromSkills(
 }
 
 /**
+ * One stack entry's load. A flag the author wrote is somebody's word and rides
+ * through untouched — a third-party source's stacks file is the explicit tier,
+ * and `loadStacks` gives even its bare strings an explicit `preloaded: false`.
+ * An entry with no flag at all is a stack stating only WHICH skill an agent
+ * gets, so HOW it loads is the shared mapping's answer, exactly as it is for a
+ * skill picked by hand. The built-in stacks carry no flags, by design.
+ */
+function toStackPropertyAssignment(assignment: SkillAssignment, agent: AgentName): SkillAssignment {
+  if (assignment.preloaded !== undefined) return assignment;
+  if (mappedLoadState(assignment.id, agent) === "lazy") return assignment;
+
+  return { ...assignment, preloaded: true };
+}
+
+/**
  * Extracts the stack property (agent -> category -> SkillAssignment[]) from a Stack definition.
  *
  * Stack values are already normalized to SkillAssignment[] by loadStacks().
- * Preserves all assignments and preloaded flags for round-trip fidelity.
+ * Preserves every assignment, and every load its author stated; an assignment
+ * that states none takes the shared mapping's, per `(skill, agent)` pair.
  *
  * @param stack - Loaded Stack definition with normalized agent configs
  * @returns Partial mapping of agent names to category-skill assignment mappings
@@ -429,12 +519,17 @@ export function generateProjectConfigFromSkills(
 export function buildStackProperty(stack: Stack): Partial<Record<AgentName, StackAgentConfig>> {
   return typedFromEntries(
     typedEntries<AgentName, StackAgentConfig>(stack.agents)
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
       .filter(([, agentConfig]) => agentConfig && typedKeys<Category>(agentConfig).length > 0)
       .map(([agentId, agentConfig]) => {
         const resolvedMappings: StackAgentConfig = typedFromEntries(
-          typedEntries<Category, SkillAssignment[]>(agentConfig).filter(
-            ([, assignments]) => assignments && assignments.length > 0,
-          ),
+          typedEntries<Category, SkillAssignment[]>(agentConfig)
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+            .filter(([, assignments]) => assignments && assignments.length > 0)
+            .map(([category, assignments]) => [
+              category,
+              assignments.map((assignment) => toStackPropertyAssignment(assignment, agentId)),
+            ]),
         );
         return [agentId, resolvedMappings] as const;
       })
@@ -448,6 +543,7 @@ function splitAgentStack(
   globalSkillIds: ReadonlySet<SkillId>,
 ): { global: StackAgentConfig; project: StackAgentConfig } {
   const perCategory = typedEntries<Category, SkillAssignment[]>(agentStack)
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
     .filter(([, assignments]) => assignments !== undefined)
     .map(([category, assignments]) => {
       const [globalOnly, projectOnly] = partition(assignments, (a) => globalSkillIds.has(a.id));
@@ -467,7 +563,8 @@ function splitAgentStack(
  * Splits a ProjectConfig by scope into global and project partitions.
  * Skills with `scope: "global"` go to the global partition, `scope: "project"` to the project partition.
  * Agents are split based on which skills reference them in the stack.
- * Domains are preserved in both configs as-is (the project config extends global at runtime).
+ * Selected domains go to the global partition only — the project config inherits them from
+ * global at runtime, so its own key is cleared rather than duplicated.
  */
 export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
   // Every entry is either active-global or project-owned (project-scoped, or an
@@ -494,18 +591,12 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
       }
     }
     for (const agent of projectAgents) {
-      if (config.stack[agent.name]) {
-        projectStack[agent.name] = config.stack[agent.name];
+      const agentStack = config.stack[agent.name];
+      if (agentStack) {
+        projectStack[agent.name] = agentStack;
       }
     }
   }
-
-  // Split selectedAgents by scope: global agents go to global config, project agents to project config
-  const globalAgentNames = new Set(globalAgents.map((a) => a.name));
-  const [globalSelectedAgents, projectSelectedAgents] = partition(
-    config.selectedAgents ?? [],
-    (a) => globalAgentNames.has(a),
-  );
 
   // Domains are a UI/preference concept — all selected domains go in global config.
   // Project config inherits domains from global at runtime, so it gets none.
@@ -514,9 +605,8 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
     name: GLOBAL_CONFIG_NAME,
     agents: globalAgents,
     skills: globalSkills,
-    ...(Object.keys(globalStack).length > 0 ? { stack: globalStack } : { stack: undefined }),
-    domains: config.domains,
-    selectedAgents: globalSelectedAgents.length > 0 ? globalSelectedAgents : undefined,
+    ...(Object.keys(globalStack).length > 0 && { stack: globalStack }),
+    ...(config.selectedDomains !== undefined && { selectedDomains: config.selectedDomains }),
   };
 
   const projectConfig: ProjectConfig = {
@@ -524,9 +614,7 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
     name: config.name,
     agents: projectAgents,
     skills: projectSkills,
-    ...(Object.keys(projectStack).length > 0 ? { stack: projectStack } : { stack: undefined }),
-    domains: undefined,
-    selectedAgents: projectSelectedAgents.length > 0 ? projectSelectedAgents : undefined,
+    ...(Object.keys(projectStack).length > 0 && { stack: projectStack }),
   };
 
   return { global: globalConfig, project: projectConfig };

@@ -4,10 +4,11 @@ import { discoverAllPluginSkills } from "../../plugins/index.js";
 import { isHomeDirectory } from "../../installation/is-home-directory.js";
 // loadSkillsFromDir lives in loading/ (a leaf) so both this module and
 // plugins/plugin-discovery can share it without an operations↔plugins cycle.
-import { loadSkillsFromDir } from "../../loading/index.js";
+import { loadSkillsFromDir, type LoadedSkills } from "../../loading/index.js";
 import { verbose } from "../../../utils/logger.js";
 import { GLOBAL_INSTALL_ROOT, LOCAL_SKILLS_PATH } from "../../../consts.js";
 import { typedEntries, typedKeys } from "../../../utils/typed-object.js";
+import type { UnusableSkillMetadata } from "../../loading/index.js";
 import type { SkillDefinition, SkillDefinitionMap, SkillId } from "../../../types/index.js";
 
 export type DiscoveredSkills = {
@@ -17,13 +18,22 @@ export type DiscoveredSkills = {
   localSkillCount: number;
   globalPluginSkillCount: number;
   globalLocalSkillCount: number;
+  /**
+   * Installed skills whose metadata.yaml exists but describes no skill, from either
+   * scope. Nothing was loaded for them; `compile` refuses the run over any entry
+   * here rather than compile agents around a skill its metadata does not describe.
+   */
+  unusableMetadata: UnusableSkillMetadata[];
 };
+
+/** The result of a local-skill scan that was not performed. */
+const NO_LOCAL_SKILLS: LoadedSkills = { skills: {}, unusableMetadata: [] };
 
 /**
  * Discovers local (non-plugin) skills from `<rootDir>/.claude/skills/`. Used for
  * both the project root and the global install root.
  */
-export async function discoverLocalProjectSkills(rootDir: string): Promise<SkillDefinitionMap> {
+export async function discoverLocalProjectSkills(rootDir: string): Promise<LoadedSkills> {
   const localSkillsDir = path.join(rootDir, LOCAL_SKILLS_PATH);
   return loadSkillsFromDir(localSkillsDir, {
     pathPrefix: LOCAL_SKILLS_PATH,
@@ -67,10 +77,10 @@ export async function discoverInstalledSkills(projectDir: string): Promise<Disco
   }
 
   // 2. Global local skills
-  const globalLocalSkills = isGlobalProject
-    ? {}
+  const globalLocal = isGlobalProject
+    ? NO_LOCAL_SKILLS
     : await discoverLocalProjectSkills(GLOBAL_INSTALL_ROOT);
-  const globalLocalSkillCount = typedKeys<SkillId>(globalLocalSkills).length;
+  const globalLocalSkillCount = typedKeys<SkillId>(globalLocal.skills).length;
   if (globalLocalSkillCount > 0) {
     verbose(`  Found ${globalLocalSkillCount} global local skills from ~/.claude/skills/`);
   }
@@ -81,12 +91,12 @@ export async function discoverInstalledSkills(projectDir: string): Promise<Disco
   verbose(`  Found ${pluginSkillCount} skills from installed plugins`);
 
   // 4. Project local skills
-  const localSkills = await discoverLocalProjectSkills(projectDir);
-  const localSkillCount = typedKeys<SkillId>(localSkills).length;
+  const local = await discoverLocalProjectSkills(projectDir);
+  const localSkillCount = typedKeys<SkillId>(local.skills).length;
   verbose(`  Found ${localSkillCount} local skills from .claude/skills/`);
 
   // Merge: global first, project second — project wins on conflict
-  const allSkills = mergeSkills(globalPluginSkills, globalLocalSkills, pluginSkills, localSkills);
+  const allSkills = mergeSkills(globalPluginSkills, globalLocal.skills, pluginSkills, local.skills);
   const totalSkillCount = typedKeys<SkillId>(allSkills).length;
 
   return {
@@ -96,5 +106,6 @@ export async function discoverInstalledSkills(projectDir: string): Promise<Disco
     localSkillCount: globalLocalSkillCount + localSkillCount,
     globalPluginSkillCount,
     globalLocalSkillCount,
+    unusableMetadata: [...globalLocal.unusableMetadata, ...local.unusableMetadata],
   };
 }

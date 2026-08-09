@@ -76,29 +76,71 @@ export async function loadProjectConfigFromDir(
   // ProjectConfig, so the boundary cast below is the only one on this path.
   const parsed = result.data;
   const normalizedStack = parsed.stack ? normalizeStackRecord(parsed.stack) : undefined;
-  // Boundary cast: loader schema is lenient (optional name, loose strings);
-  // validateProjectConfig enforces the strict shape after load
-  const config = {
-    ...parsed,
-    ...(normalizedStack && { stack: normalizedStack }),
-  } as ProjectConfig;
-
-  if (!config.name) {
+  if (parsed.name === undefined) {
     warn(
       `Project config at '${configPath}' is missing required 'name' field — defaulting to directory name`,
     );
-    config.name = path.basename(projectDir);
   }
-  if (!config.skills) {
+  if (parsed.skills === undefined) {
     warn(`Project config at '${configPath}' is missing 'skills' array — defaulting to empty`);
-    config.skills = [];
   }
+
+  // The defaults are applied here rather than mutated in afterwards, so the cast is the
+  // last thing that happens and ProjectConfig's required fields are genuinely present.
+  // `agents` is defaulted for the same reason `skills` is: the loader schema admits its
+  // absence, ProjectConfig declares it required, and every caller was paying for the gap
+  // with a `?? []` the type said was dead.
+  //
+  // Boundary cast: the loader schema is lenient about the string unions (category, slug,
+  // domain), so the literal still does not satisfy ProjectConfig even with the defaults in
+  // place; validateProjectConfig enforces the strict shape after load.
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- see above
+  const config = {
+    ...parsed,
+    name: parsed.name ?? path.basename(projectDir),
+    skills: parsed.skills ?? [],
+    agents: parsed.agents ?? [],
+    ...(normalizedStack && { stack: normalizedStack }),
+  } as ProjectConfig;
 
   verbose(`Loaded project config from ${configPath}`);
   return {
     config,
     configPath,
   };
+}
+
+/**
+ * The directories whose config a run reads: the project's own, plus the global one it
+ * inlines. At the home root the two collapse into one.
+ */
+export function configDirsInPlay(projectDir: string): string[] {
+  return isHomeDirectory(projectDir) ? [projectDir] : [projectDir, os.homedir()];
+}
+
+/**
+ * Every config a run would read that exists and cannot be loaded, in the order the run reads
+ * them. A directory whose config is absent (legitimate) or loads contributes nothing; any other
+ * failure is a real fault and propagates.
+ *
+ * Exported rather than kept private to its first caller because two surfaces have to agree on
+ * exactly which configs are in play: `BaseCommand.ensureConfigReadable`, which refuses to run over
+ * one it cannot read, and `doctor`, which reports the same fault. Two answers to that question is
+ * how the CLI ended up refusing a file in one command and calling it missing in another.
+ */
+export async function findConfigLoadFailures(projectDir: string): Promise<ConfigLoadError[]> {
+  const outcomes = await Promise.all(configDirsInPlay(projectDir).map(configLoadFailure));
+  return outcomes.filter((failure): failure is ConfigLoadError => failure !== undefined);
+}
+
+async function configLoadFailure(dir: string): Promise<ConfigLoadError | undefined> {
+  try {
+    await loadProjectConfigFromDir(dir);
+    return undefined;
+  } catch (error) {
+    if (error instanceof ConfigLoadError) return error;
+    throw error;
+  }
 }
 
 /**

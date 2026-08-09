@@ -42,9 +42,6 @@ export default class BuildPlugins extends BaseCommand {
     },
   ];
 
-  // Override parent baseFlags to drop --source (build plugins reads from local DIRS.skills, not a remote source)
-  static baseFlags = {} as (typeof BaseCommand)["baseFlags"];
-
   static flags = {
     "agents-dir": Flags.string({
       char: "a",

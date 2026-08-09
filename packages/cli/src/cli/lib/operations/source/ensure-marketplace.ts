@@ -28,7 +28,7 @@ export async function ensureMarketplace(
 ): Promise<MarketplaceResult> {
   if (!sourceResult.marketplace) {
     try {
-      const marketplaceResult = await fetchMarketplace(sourceResult.sourceConfig.source, {});
+      const marketplaceResult = await fetchMarketplace(sourceResult.sourceConfig.source);
       sourceResult.marketplace = marketplaceResult.marketplace.name;
     } catch {
       return { marketplace: null, registered: false };

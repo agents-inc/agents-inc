@@ -7,11 +7,7 @@ import { CLI_ROOT } from "./helpers/cli-runner.js";
 import { cleanupTempDir, createTempDir, fileExists } from "./test-fs-utils.js";
 import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../consts.js";
 import { withGateToken } from "../config-gate/gate-token.js";
-import {
-  GlobalPairWriteViolation,
-  writeMarketplaceScaffoldConfig,
-  writeProjectPartial,
-} from "../config-gate/index.js";
+import { GlobalPairWriteViolation, writeProjectPartial } from "../config-gate/index.js";
 import { regenerateConfigTypes } from "../configuration/config-types-writer.js";
 
 /**
@@ -41,33 +37,81 @@ import { regenerateConfigTypes } from "../configuration/config-types-writer.js";
 
 /**
  * `installation/index.ts` used to re-export these. Every one of them writes, or
- * drives a write of, some part of the config pair — `writeConfigFile` and
- * `writeScopedConfigs` write it directly; the propagation and prune functions
- * write it into every registered project; `regenerateScopeConfigTypes` writes
- * the types half; `deregisterProjectPath` rewrites the global config to drop a
- * registration. The gate is their only caller and none of them is part of the
- * barrel's public surface.
+ * drives a write of, some part of the config pair — `writeConfigFile` writes it
+ * directly; the propagation and prune functions write it into every registered
+ * project; `writeScopedFromWizard` writes both halves from a wizard result and
+ * `writeScopeConfigTypes` writes the types half alone; `deregisterProjectPath`
+ * rewrites the global config to drop a registration. The gate is their only caller
+ * and none of them is part of the barrel's public surface.
+ *
+ * Every name below is declared in `src/` — checked by grep, and the only thing that
+ * makes a row mean anything. A row for a name nothing declares cannot fail: it
+ * guards against a re-export that no file could write. Two such rows were removed
+ * here, each replaced by the live entry point that took the old one's place —
+ * `writeScopedConfigs` by `writeScopedFromWizard`, and `regenerateScopeConfigTypes`
+ * by `writeScopeConfigTypes`. Both survive as positional-argument shims inside
+ * `local-installer.test.ts`, which is why the dead names still grep to something.
  */
 const INSTALLATION_RAW_WRITERS = [
   "writeConfigFile",
-  "writeScopedConfigs",
+  "writeScopedFromWizard",
   "propagateGlobalChangesToProjects",
   "pruneGlobalEntriesFromRegisteredProjects",
-  "regenerateScopeConfigTypes",
+  "writeScopeConfigTypes",
   "deregisterProjectPath",
 ] as const;
 
 /**
  * `configuration/index.ts` used to re-export these. `generateConfigSource` and
  * `generateConfigTypesSource` render the two halves of the pair;
- * `regenerateConfigTypes` and `saveSourceToProjectConfig` render AND write.
+ * `regenerateConfigTypes` and `writeProjectPartial` render AND write. The last row
+ * named `saveSourceToProjectConfig`, which nothing declares any more —
+ * `writeProjectPartial` replaced it, and only a live name can catch a leak.
  */
 const CONFIGURATION_RAW_WRITERS = [
   "generateConfigSource",
   "generateConfigTypesSource",
   "regenerateConfigTypes",
-  "saveSourceToProjectConfig",
+  "writeProjectPartial",
 ] as const;
+
+/**
+ * A name the guard lists carried until CLI-434, replaced there by
+ * `writeScopedFromWizard`. Held here rather than in a list because it is the
+ * self-test for the check below — the shape it exists to catch — and because a
+ * future export under this spelling should fail loudly rather than quietly
+ * revive a row nobody re-derived.
+ */
+const A_NAME_NOTHING_DECLARES = "writeScopedConfigs";
+
+/**
+ * Every symbol exported by the four modules that legitimately declare the names
+ * in the two lists above — the only reason a row in either list means anything.
+ *
+ * Both guards are lists of STRINGS filtered against a barrel's exports, so a row
+ * naming something nothing declares can never fail: no file can re-export a
+ * symbol that does not exist. It is a permanently-green row that reads, to
+ * anyone scanning the list, exactly like the live ones beside it. CLI-434 found
+ * three such rows out of ten, and `grep` had endorsed two of them — both still
+ * grep to a live function declaration inside `local-installer.test.ts`, which
+ * keeps positional-argument shims under the old spellings.
+ *
+ * Importing the owners is what `grep` cannot do: a renamed export drops out of
+ * this union the moment it is renamed, however many places the old spelling
+ * survives. The specifiers are literals rather than a list, because a dynamic
+ * import of a variable specifier resolves to `any` and takes the type-checking
+ * with it.
+ */
+async function rawWriterOwnerExports(): Promise<Set<string>> {
+  const owners = await Promise.all([
+    import("../config-gate/index.js"),
+    import("../config-gate/propagate.js"),
+    import("../configuration/config-writer.js"),
+    import("../configuration/config-types-writer.js"),
+  ]);
+
+  return new Set(owners.flatMap((module) => Object.keys(module)));
+}
 
 /** A filesystem write primitive: `writeFile(` or `writeFileSync(`. */
 const WRITE_PRIMITIVE = /\bwriteFile(Sync)?\s*\(/;
@@ -237,6 +281,31 @@ describe("config-gate enforcement", () => {
   });
 
   /**
+   * The check that keeps the two lists above non-vacuous. Without it the guards
+   * degrade one row at a time and every row still looks alive, which is worse
+   * than having no guard: this file's name promises enforcement.
+   */
+  describe("every guarded name is a symbol something declares", () => {
+    // Self-test: the union is only evidence about the lists if it is first
+    // evidence about itself. A resolver that answered "declared" to everything
+    // would make the assertion below pass silently.
+    it("does not resolve a name nothing declares", async () => {
+      expect(await rawWriterOwnerExports()).not.toContain(A_NAME_NOTHING_DECLARES);
+    });
+
+    it("resolves every name in both guard lists", async () => {
+      const declared = await rawWriterOwnerExports();
+      const guarded = [...INSTALLATION_RAW_WRITERS, ...CONFIGURATION_RAW_WRITERS];
+
+      expect(guarded.length, "the check must have something to check").toBeGreaterThan(0);
+      expect(
+        guarded.filter((name) => !declared.has(name)),
+        "a guarded name nothing exports can never fail — replace it with the live entry point that took its place",
+      ).toStrictEqual([]);
+    });
+  });
+
+  /**
    * The layer that makes the ruling literal rather than procedural. Every write
    * in the CLI funnels through `utils/fs.writeFile`, which resolves its target
    * and refuses the two pair paths without the gate's token — so a bypass dies
@@ -373,12 +442,6 @@ describe("config-gate enforcement", () => {
     it("writeProjectPartial throws", async () => {
       await expect(
         writeProjectPartial(tempHome, { source: "github:x/y" }, { fallbackName: "home" }),
-      ).rejects.toThrow("may only be written through config-gate");
-    });
-
-    it("writeMarketplaceScaffoldConfig throws", async () => {
-      await expect(
-        writeMarketplaceScaffoldConfig(tempHome, { name: "m", skills: [], agents: [] }),
       ).rejects.toThrow("may only be written through config-gate");
     });
 

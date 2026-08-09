@@ -34,7 +34,6 @@ import {
 import { withGateToken } from "../config-gate/gate-token.js";
 import { writeScopeConfigTypes, writeScopedFromWizard } from "../config-gate/index.js";
 import type {
-  AgentConfig,
   AgentDefinition,
   AgentName,
   MergedSkillsMatrix,
@@ -57,12 +56,11 @@ import {
   buildAgentConfigs,
 } from "../__tests__/factories/config-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
+import { readGeneratedUnion } from "../__tests__/helpers/generated-types.js";
 import { readTestTsConfig } from "../__tests__/helpers/config-io";
 import { useFakeHome } from "../__tests__/helpers/isolated-home";
-import { createTestSource, cleanupTestSource } from "../__tests__/fixtures/create-test-source";
-import { DEFAULT_TEST_SKILLS } from "../__tests__/mock-data/mock-skills";
 import { loadSkillsFromAllSources } from "../loading";
-import { DEFAULT_SOURCE } from "../configuration";
+import { DEFAULT_SOURCE, defaultStacks } from "../configuration";
 import { fileExists } from "../../utils/fs";
 import { expectInstallResult } from "../__tests__/assertions/index.js";
 import { SKILLS } from "../__tests__/test-fixtures";
@@ -78,10 +76,13 @@ import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
   DEFAULT_PLUGIN_NAME,
+  DEFAULT_PUBLIC_SOURCE_NAME,
   LOCAL_SKILLS_PATH,
   STANDARD_FILES,
 } from "../../consts";
 import { generateConfigSource } from "../configuration/config-writer";
+import { firstElement } from "../__tests__/helpers/element-at.js";
+import { TEST_CUSTOM_SOURCE_URL } from "../__tests__/test-constants";
 
 // Mock heavy dependencies that involve file system operations outside our temp dir
 vi.mock("../skills/skill-copier", async (importOriginal) => ({
@@ -170,7 +171,7 @@ function deregisterProjectPath(
 async function writeScopedConfigs(
   finalConfig: ProjectConfig,
   matrix: MergedSkillsMatrix,
-  agents: Record<AgentName, AgentDefinition>,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
   projectDir: string,
   projectConfigPath: string,
   projectInstallationExists: boolean,
@@ -190,7 +191,7 @@ async function regenerateScopeConfigTypes(
   projectDir: string,
   config: ProjectConfig,
   matrix: MergedSkillsMatrix,
-  agents: Record<AgentName, AgentDefinition>,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
 ): Promise<void> {
   await writeScopeConfigTypes(projectDir, config, { matrix, agents });
 }
@@ -210,21 +211,8 @@ const mockLoadStackById = vi.mocked((await import("../stacks/stacks-loader")).lo
 // Boundary cast: fictional skill ID used throughout local-installer tests
 const TEST_SKILL_ID = "meta-test-skill" as SkillId;
 
-/**
- * The right-hand side of one `export type <alias> = ...;` in a generated
- * config-types.ts.
- *
- * Asserting on the whole file would let a literal satisfy an alias it has
- * nothing to do with — every skill id is also a substring of the emitted
- * StackAgentConfig, and every domain name prefixes a category. Reading one
- * alias at a time is what makes "the Domain union carries web" a claim about
- * Domain.
- */
-function readGeneratedUnion(typesSource: string, alias: string): string {
-  const declaration = new RegExp(`export type ${alias} =([\\s\\S]*?);`).exec(typesSource);
-  expect(declaration, `generated config-types.ts declares no ${alias}`).not.toBeNull();
-  return declaration?.[1] ?? "";
-}
+/** A shipped stack, read as the wizard reads it — the built-in tier under test. */
+const BUILT_IN_STACK_ID = "nextjs-fullstack";
 
 describe("local-installer", () => {
   let tempDir: string;
@@ -379,7 +367,6 @@ describe("local-installer", () => {
         configPath: path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
         compiledAgents: [],
         wasMerged: false,
-        mergedConfigPath: undefined,
         skillsDir: path.join(tempDir, LOCAL_SKILLS_PATH),
         agentsDir: path.join(tempDir, CLAUDE_DIR, "agents"),
       });
@@ -472,7 +459,6 @@ describe("local-installer", () => {
       const pluginSkill: Skill = createMockSkillEntry(TEST_SKILL_ID, false, {
         source: "agents-inc",
       });
-      // Boundary cast: test provides partial agents record; mock only needs the test agent
       mockResolveAgents.mockResolvedValueOnce({
         "web-developer": {
           name: "web-developer",
@@ -481,7 +467,7 @@ describe("local-installer", () => {
           tools: ["Read"],
           skills: [pluginSkill],
         },
-      } as unknown as Record<AgentName, AgentConfig>);
+      });
 
       // Override generateProjectConfigFromSkills to return plugin-sourced skills
       mockGenerateProjectConfig.mockReturnValueOnce(
@@ -506,7 +492,7 @@ describe("local-installer", () => {
       });
 
       expect(mockCompileAgentForPlugin).toHaveBeenCalledTimes(1);
-      const [name, agent, ...rest] = mockCompileAgentForPlugin.mock.calls[0];
+      const [name, agent, ...rest] = firstElement(mockCompileAgentForPlugin.mock.calls);
       expect(name).toBe("web-developer");
       // Only the first two positional args carry behavioural contract; the last
       // two (sourcePath, engine) are infra and asserted only by arity.
@@ -526,7 +512,6 @@ describe("local-installer", () => {
       const ejectSkill: Skill = createMockSkillEntry(TEST_SKILL_ID, false, {
         source: "eject",
       });
-      // Boundary cast: test provides partial agents record; mock only needs the test agent
       mockResolveAgents.mockResolvedValueOnce({
         "web-developer": {
           name: "web-developer",
@@ -535,7 +520,7 @@ describe("local-installer", () => {
           tools: ["Read"],
           skills: [ejectSkill],
         },
-      } as unknown as Record<AgentName, AgentConfig>);
+      });
 
       const matrix = EMPTY_MATRIX;
       const wizardResult = buildWizardResult(
@@ -552,7 +537,7 @@ describe("local-installer", () => {
       });
 
       expect(mockCompileAgentForPlugin).toHaveBeenCalledTimes(1);
-      const [name, agent, ...rest] = mockCompileAgentForPlugin.mock.calls[0];
+      const [name, agent, ...rest] = firstElement(mockCompileAgentForPlugin.mock.calls);
       expect(name).toBe("web-developer");
       expect(rest).toHaveLength(2);
       expect(agent.skills).toStrictEqual([ejectSkill]);
@@ -593,9 +578,9 @@ describe("local-installer", () => {
 
     it("should preserve preloaded flags from stack skill assignments", async () => {
       // Stack-picked init seeds `existingStack` from `buildStackProperty(loadedStack)`.
-      // The real `generateProjectConfigFromSkills` then inherits preloaded flags via
-      // `wasPreviouslyPreloaded` for every (agent, category, skill) triple the stack
-      // author marked. Exercise the real seam end-to-end — no config-generator mocks.
+      // The real `generateProjectConfigFromSkills` then inherits the author's flag for
+      // every (agent, category, skill) triple the stack marked — third-party stack YAML
+      // is the explicit tier. Exercise the real seam end-to-end — no config-generator mocks.
       initializeMatrix(FULLSTACK_PAIR_MATRIX);
 
       const configGenerator = await vi.importActual<
@@ -639,7 +624,121 @@ describe("local-installer", () => {
       const configPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
       const parsedWebDev = parsedConfig.stack?.["web-developer"] as Record<string, unknown>;
-      expect(parsedWebDev?.["web-framework"]).toStrictEqual([
+      expect(parsedWebDev["web-framework"]).toStrictEqual([
+        { id: "web-framework-react", preloaded: true },
+      ]);
+    });
+
+    it("loads a built-in stack's assignments the way the shared mapping does", async () => {
+      // A built-in stack says which skills a sub-agent gets and nothing about how
+      // any of them loads, so applying one is a NEW selection: every pair goes
+      // through the same mapping a hand-picked skill does. Per pair, which is why
+      // one framework preloads on the web developer and arrives lazily on the
+      // codex-keeper that also carries it.
+      initializeMatrix(FULLSTACK_PAIR_MATRIX);
+
+      const configGenerator = await vi.importActual<
+        typeof import("../configuration/config-generator")
+      >("../configuration/config-generator");
+      mockGenerateProjectConfig.mockImplementationOnce(
+        configGenerator.generateProjectConfigFromSkills,
+      );
+      mockBuildStackProperty.mockImplementationOnce(configGenerator.buildStackProperty);
+      mockLoadStackById.mockResolvedValueOnce(
+        defaultStacks.find((stack) => stack.id === BUILT_IN_STACK_ID)!,
+      );
+
+      const selectedAgents: AgentName[] = ["web-developer", "codex-keeper"];
+      const wizardResult = buildWizardResult(buildSkillConfigs(["web-framework-react"]), {
+        selectedStackId: BUILT_IN_STACK_ID,
+        selectedAgents,
+        agentConfigs: buildAgentConfigs(selectedAgents),
+      });
+      const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
+
+      const result = await installEject({
+        wizardResult,
+        sourceResult,
+        projectDir: tempDir,
+      });
+
+      expect(result.config.stack?.["web-developer"]?.["web-framework"]).toStrictEqual([
+        { id: "web-framework-react", preloaded: true },
+      ]);
+      expect(result.config.stack?.["codex-keeper"]?.["web-framework"]).toStrictEqual([
+        { id: "web-framework-react" },
+      ]);
+
+      const configPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+      const parsedWebDev = parsedConfig.stack?.["web-developer"] as Record<string, unknown>;
+      const parsedKeeper = parsedConfig.stack?.["codex-keeper"] as Record<string, unknown>;
+      expect(parsedWebDev["web-framework"]).toStrictEqual([
+        { id: "web-framework-react", preloaded: true },
+      ]);
+      // A lazy assignment is written in its bare form — the id says everything.
+      expect(parsedKeeper["web-framework"]).toStrictEqual(["web-framework-react"]);
+    });
+
+    it("keeps the saved load when a built-in stack is re-applied over an installed config", async () => {
+      // An installed config is the user's curation, and a re-run that re-picks the
+      // same stack must not overwrite it with the mapping's opinion — both entries
+      // below say the opposite of what the mapping would.
+      initializeMatrix(FULLSTACK_PAIR_MATRIX);
+
+      const selectedAgents: AgentName[] = ["web-developer", "codex-keeper"];
+      const configPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      await mkdir(path.dirname(configPath), { recursive: true });
+      await writeConfigFile(
+        buildProjectConfig({
+          skills: buildSkillConfigs(["web-framework-react"]),
+          agents: buildAgentConfigs(selectedAgents),
+          stack: {
+            "web-developer": { "web-framework": [{ id: "web-framework-react" }] },
+            "codex-keeper": {
+              "web-framework": [{ id: "web-framework-react", preloaded: true }],
+            },
+          },
+        }),
+        configPath,
+      );
+
+      const configGenerator = await vi.importActual<
+        typeof import("../configuration/config-generator")
+      >("../configuration/config-generator");
+      mockGenerateProjectConfig.mockImplementationOnce(
+        configGenerator.generateProjectConfigFromSkills,
+      );
+      mockBuildStackProperty.mockImplementationOnce(configGenerator.buildStackProperty);
+      mockLoadStackById.mockResolvedValueOnce(
+        defaultStacks.find((stack) => stack.id === BUILT_IN_STACK_ID)!,
+      );
+
+      const wizardResult = buildWizardResult(buildSkillConfigs(["web-framework-react"]), {
+        selectedStackId: BUILT_IN_STACK_ID,
+        selectedAgents,
+        agentConfigs: buildAgentConfigs(selectedAgents),
+      });
+      const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
+
+      const result = await installEject({
+        wizardResult,
+        sourceResult,
+        projectDir: tempDir,
+      });
+
+      expect(result.config.stack?.["web-developer"]?.["web-framework"]).toStrictEqual([
+        { id: "web-framework-react" },
+      ]);
+      expect(result.config.stack?.["codex-keeper"]?.["web-framework"]).toStrictEqual([
+        { id: "web-framework-react", preloaded: true },
+      ]);
+
+      const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+      const parsedWebDev = parsedConfig.stack?.["web-developer"] as Record<string, unknown>;
+      const parsedKeeper = parsedConfig.stack?.["codex-keeper"] as Record<string, unknown>;
+      expect(parsedWebDev["web-framework"]).toStrictEqual(["web-framework-react"]);
+      expect(parsedKeeper["web-framework"]).toStrictEqual([
         { id: "web-framework-react", preloaded: true },
       ]);
     });
@@ -700,12 +799,102 @@ describe("local-installer", () => {
         { id: "web-framework-react", preloaded: true },
       ]);
     });
+
+    it("names the stack id and the source it asked when the stack does not resolve", async () => {
+      // A saved config or a shared payload can name a stack the loaded source
+      // does not have — a built-in id under a custom marketplace being the case
+      // that used to be answered with somebody else's stack. Null is the honest
+      // answer, and the install says which id it was and where it looked.
+      initializeMatrix(FULLSTACK_PAIR_MATRIX);
+      mockLoadStackById.mockResolvedValueOnce(null);
+
+      const selectedAgents: AgentName[] = ["web-developer"];
+      const wizardResult = buildWizardResult(buildSkillConfigs(["web-framework-react"]), {
+        selectedStackId: BUILT_IN_STACK_ID,
+        selectedAgents,
+        agentConfigs: buildAgentConfigs(selectedAgents),
+      });
+      const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir, {
+        sourceConfig: { source: TEST_CUSTOM_SOURCE_URL, sourceOrigin: "flag" },
+      });
+
+      const install = installEject({ wizardResult, sourceResult, projectDir: tempDir });
+      await expect(install).rejects.toThrow(BUILT_IN_STACK_ID);
+      await expect(install).rejects.toThrow(TEST_CUSTOM_SOURCE_URL);
+
+      // The source identity is what scopes the lookup, so it has to reach it.
+      expect(mockLoadStackById).toHaveBeenCalledWith(
+        BUILT_IN_STACK_ID,
+        sourceResult.sourcePath,
+        TEST_CUSTOM_SOURCE_URL,
+      );
+    });
+
+    it("writes a seed payload's assignedStack verbatim, cross-domain rows included", async () => {
+      // `init --from` decodes per-(skill, agent) assignments into an
+      // `assignedStack` that REPLACES the ownership-derived stack. Those rows
+      // are the sharer's explicit choices — the explicit tier — so the
+      // relevance rule that scopes NEW derived triples never re-filters them,
+      // even where a pair crosses domains.
+      initializeMatrix(FULLSTACK_PAIR_MATRIX);
+
+      const configGenerator = await vi.importActual<
+        typeof import("../configuration/config-generator")
+      >("../configuration/config-generator");
+      mockGenerateProjectConfig.mockImplementationOnce(
+        configGenerator.generateProjectConfigFromSkills,
+      );
+
+      const selectedAgents: AgentName[] = ["api-developer", "web-developer"];
+      const wizardResult = buildWizardResult(
+        buildSkillConfigs(["web-framework-react", "api-framework-hono"]),
+        {
+          selectedAgents,
+          agentConfigs: buildAgentConfigs(selectedAgents),
+          assignedStack: {
+            // The sharer put the web skill on the api agent deliberately.
+            "api-developer": {
+              "web-framework": [{ id: "web-framework-react", preloaded: true }],
+            },
+            "web-developer": {
+              "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            },
+          },
+        },
+      );
+      const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
+
+      const result = await installEject({
+        wizardResult,
+        sourceResult,
+        projectDir: tempDir,
+      });
+
+      expect(result.config.stack).toStrictEqual({
+        "api-developer": {
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
+        },
+        "web-developer": {
+          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+        },
+      });
+
+      // And it must be persisted to disk with both rows intact. The writer's
+      // canonical form spells a lazy assignment as the bare id string.
+      const configPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
+      expect(parsedConfig.stack).toStrictEqual({
+        "api-developer": {
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
+        },
+        "web-developer": {
+          "web-framework": ["web-framework-react"],
+        },
+      });
+    });
   });
 
   describe("writeScopedConfigs", () => {
-    // Partial<Record<>> per CLAUDE.md — tests pass this through to callees that
-    // require Record<AgentName, AgentDefinition>; the cast happens at each call
-    // site where the empty map is acceptable because the callees don't read it.
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
     const fakeHomeHandle = useFakeHome(() => tempDir);
 
@@ -729,7 +918,7 @@ describe("local-installer", () => {
       await writeScopedConfigs(
         config,
         EMPTY_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
         projectDir,
         projectConfigPath,
         false, // no existing project installation
@@ -755,7 +944,7 @@ describe("local-installer", () => {
         ],
         agents: [
           ...buildAgentConfigs(["web-developer"], { scope: "global" }),
-          ...buildAgentConfigs(["web-reviewer"]),
+          ...buildAgentConfigs(["web-researcher"]),
         ],
       });
 
@@ -766,7 +955,7 @@ describe("local-installer", () => {
       await writeScopedConfigs(
         config,
         EMPTY_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
         projectDir,
         projectConfigPath,
         false, // no existing project installation, but project-scoped items exist
@@ -887,9 +1076,9 @@ describe("local-installer", () => {
           },
         },
       });
-      const agents: Record<AgentName, AgentDefinition> = {
+      const agents: Partial<Record<AgentName, AgentDefinition>> = {
         "web-developer": createMockAgent("web-developer"),
-      } as Record<AgentName, AgentDefinition>;
+      };
 
       const result = buildCompileAgents(config, agents);
 
@@ -904,9 +1093,9 @@ describe("local-installer", () => {
         skills: buildSkillConfigs(["web-framework-react"]),
       });
       // Only web-developer has a definition
-      const agents: Record<AgentName, AgentDefinition> = {
+      const agents: Partial<Record<AgentName, AgentDefinition>> = {
         "web-developer": createMockAgent("web-developer"),
-      } as Record<AgentName, AgentDefinition>;
+      };
 
       const result = buildCompileAgents(config, agents);
 
@@ -920,9 +1109,9 @@ describe("local-installer", () => {
         skills: buildSkillConfigs(["web-framework-react"]),
         // No stack property
       });
-      const agents: Record<AgentName, AgentDefinition> = {
+      const agents: Partial<Record<AgentName, AgentDefinition>> = {
         "web-developer": createMockAgent("web-developer"),
-      } as Record<AgentName, AgentDefinition>;
+      };
 
       const result = buildCompileAgents(config, agents);
 
@@ -949,14 +1138,14 @@ describe("local-installer", () => {
           },
         },
       });
-      const agents: Record<AgentName, AgentDefinition> = {
+      const agents: Partial<Record<AgentName, AgentDefinition>> = {
         "web-developer": createMockAgent("web-developer"),
-      } as Record<AgentName, AgentDefinition>;
+      };
 
       const result = buildCompileAgents(config, agents);
 
       // Global agent should only see web-testing-vitest (global scope), not web-framework-react (project scope)
-      const skills = result["web-developer"].skills ?? [];
+      const skills = result["web-developer"]?.skills ?? [];
       const skillIds = skills.map((s) => s.id);
       expect(skillIds).toContain("web-testing-vitest");
       expect(skillIds).not.toContain("web-framework-react");
@@ -982,14 +1171,14 @@ describe("local-installer", () => {
           },
         },
       });
-      const agents: Record<AgentName, AgentDefinition> = {
+      const agents: Partial<Record<AgentName, AgentDefinition>> = {
         "web-developer": createMockAgent("web-developer"),
-      } as Record<AgentName, AgentDefinition>;
+      };
 
       const result = buildCompileAgents(config, agents);
 
       // Project agent should see all skills regardless of scope
-      const skills = result["web-developer"].skills ?? [];
+      const skills = result["web-developer"]?.skills ?? [];
       const skillIds = skills.map((s) => s.id);
       expect(skillIds).toContain("web-framework-react");
       expect(skillIds).toContain("web-testing-vitest");
@@ -1015,13 +1204,13 @@ describe("local-installer", () => {
             },
           },
         });
-        const agents: Record<AgentName, AgentDefinition> = {
+        const agents: Partial<Record<AgentName, AgentDefinition>> = {
           "web-developer": createMockAgent("web-developer"),
-        } as Record<AgentName, AgentDefinition>;
+        };
 
         const result = buildCompileAgents(config, agents);
 
-        const skills = result["web-developer"].skills ?? [];
+        const skills = result["web-developer"]?.skills ?? [];
         const skillIds = skills.map((s) => s.id);
         expect(skillIds).toContain("web-framework-react");
         expect(skillIds).not.toContain("web-testing-vitest");
@@ -1035,10 +1224,10 @@ describe("local-installer", () => {
           ],
           skills: buildSkillConfigs(["web-framework-react"]),
         });
-        const agents: Record<AgentName, AgentDefinition> = {
+        const agents: Partial<Record<AgentName, AgentDefinition>> = {
           "web-developer": createMockAgent("web-developer"),
           "api-developer": createMockAgent("api-developer"),
-        } as Record<AgentName, AgentDefinition>;
+        };
 
         const result = buildCompileAgents(config, agents);
 
@@ -1067,14 +1256,14 @@ describe("local-installer", () => {
             },
           },
         });
-        const agents: Record<AgentName, AgentDefinition> = {
+        const agents: Partial<Record<AgentName, AgentDefinition>> = {
           "web-developer": createMockAgent("web-developer"),
-        } as Record<AgentName, AgentDefinition>;
+        };
 
         const result = buildCompileAgents(config, agents);
 
         // The active (non-excluded) entry should still produce skills
-        const skills = result["web-developer"].skills ?? [];
+        const skills = result["web-developer"]?.skills ?? [];
         expect(skills.map((s) => s.id)).toContain("web-framework-react");
       });
     });
@@ -1167,7 +1356,7 @@ describe("local-installer", () => {
             "web-framework": [{ id: "web-framework-react", preloaded: false }],
           },
           "api-developer": {
-            "api-framework": [{ id: "api-framework-hono", preloaded: false }],
+            "api-api": [{ id: "api-framework-hono", preloaded: false }],
           },
         },
       });
@@ -1189,7 +1378,7 @@ describe("local-installer", () => {
       const { config } = mergeGlobalConfigs(existing, incoming);
 
       expect(config.stack?.["api-developer"]).toStrictEqual({
-        "api-framework": [{ id: "api-framework-hono", preloaded: false }],
+        "api-api": [{ id: "api-framework-hono", preloaded: false }],
       });
       // Existing entry survives unchanged (not replaced, not merged)
       expect(config.stack?.["api-developer"]).toStrictEqual(existing.stack?.["api-developer"]);
@@ -1239,10 +1428,10 @@ describe("local-installer", () => {
     });
 
     it("adds skill to new agent while preserving it on existing agent", () => {
-      // Additive across agents: react stays on web-developer AND is added to web-reviewer.
+      // Additive across agents: react stays on web-developer AND is added to web-researcher.
       // Project-context edits cannot remove web-developer's assignment from global.
       const sharedSkills = buildSkillConfigs(["web-framework-react"], { scope: "global" });
-      const sharedAgents = buildAgentConfigs(["web-developer", "web-reviewer"], {
+      const sharedAgents = buildAgentConfigs(["web-developer", "web-researcher"], {
         scope: "global",
       });
       const existing: ProjectConfig = buildProjectConfig({
@@ -1260,7 +1449,7 @@ describe("local-installer", () => {
         skills: sharedSkills,
         agents: sharedAgents,
         stack: {
-          "web-reviewer": {
+          "web-researcher": {
             "web-framework": [{ id: "web-framework-react", preloaded: false }],
           },
         },
@@ -1271,7 +1460,7 @@ describe("local-installer", () => {
       expect(config.stack?.["web-developer"]).toStrictEqual({
         "web-framework": [{ id: "web-framework-react", preloaded: false }],
       });
-      expect(config.stack?.["web-reviewer"]).toStrictEqual({
+      expect(config.stack?.["web-researcher"]).toStrictEqual({
         "web-framework": [{ id: "web-framework-react", preloaded: false }],
       });
       expect(changed).toBe(true);
@@ -1291,16 +1480,14 @@ describe("local-installer", () => {
         skills: sharedSkills,
         agents: sharedAgents,
         stack: sharedStack,
-        domains: ["web"],
-        selectedAgents: ["web-developer"],
+        selectedDomains: ["web"],
       });
       const incoming: ProjectConfig = buildProjectConfig({
         name: "global",
         skills: sharedSkills,
         agents: sharedAgents,
         stack: sharedStack,
-        domains: ["web"],
-        selectedAgents: ["web-developer"],
+        selectedDomains: ["web"],
       });
 
       const { changed } = mergeGlobalConfigs(existing, incoming);
@@ -1395,7 +1582,7 @@ describe("local-installer", () => {
         stack: {
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: false }],
-            "api-framework": [{ id: "api-framework-hono", preloaded: false }],
+            "api-api": [{ id: "api-framework-hono", preloaded: false }],
           },
         },
       });
@@ -1414,7 +1601,7 @@ describe("local-installer", () => {
 
       expect(config.stack?.["web-developer"]).toStrictEqual({
         "web-framework": [{ id: "web-framework-react", preloaded: false }],
-        "api-framework": [{ id: "api-framework-hono", preloaded: false }],
+        "api-api": [{ id: "api-framework-hono", preloaded: false }],
       });
       expect(changed).toBe(false);
     });
@@ -1426,7 +1613,7 @@ describe("local-installer", () => {
       //   - web-developer / web-styling:    existing-only category (untouched by incoming).
       //   - web-developer / web-testing:    incoming-only new category (append-clone path).
       //   - api-developer:                  existing-only agent (must survive absence in incoming).
-      //   - web-reviewer:                   incoming-only agent (full structuredClone path).
+      //   - web-researcher:                   incoming-only agent (full structuredClone path).
       const existing: ProjectConfig = buildProjectConfig({
         name: "global",
         skills: buildSkillConfigs(
@@ -1448,7 +1635,7 @@ describe("local-installer", () => {
             "web-styling": [{ id: "web-styling-scss-modules", preloaded: false }],
           },
           "api-developer": {
-            "api-framework": [{ id: "api-framework-hono", preloaded: false }],
+            "api-api": [{ id: "api-framework-hono", preloaded: false }],
           },
         },
       });
@@ -1457,13 +1644,13 @@ describe("local-installer", () => {
         skills: buildSkillConfigs(["web-framework-react", "web-testing-vitest"], {
           scope: "global",
         }),
-        agents: buildAgentConfigs(["web-developer", "web-reviewer"], { scope: "global" }),
+        agents: buildAgentConfigs(["web-developer", "web-researcher"], { scope: "global" }),
         stack: {
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
             "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
           },
-          "web-reviewer": {
+          "web-researcher": {
             "web-framework": [{ id: "web-framework-react", preloaded: false }],
           },
         },
@@ -1498,9 +1685,9 @@ describe("local-installer", () => {
       // And the input still matches its pre-call snapshot after the sentinel push to the output.
       expect(existing).toStrictEqual(existingSnapshot);
 
-      // 3. Reference non-sharing for incoming-only agents — `web-reviewer` was cloned out
+      // 3. Reference non-sharing for incoming-only agents — `web-researcher` was cloned out
       //    of `incoming.stack`, so mutating the merged entry must not corrupt incoming.
-      const mergedWebReviewer = config.stack?.["web-reviewer"]?.["web-framework"];
+      const mergedWebReviewer = config.stack?.["web-researcher"]?.["web-framework"];
       expect(mergedWebReviewer).toBeDefined();
       mergedWebReviewer!.push(SENTINEL);
       expect(incoming).toStrictEqual(incomingSnapshot);
@@ -1587,7 +1774,7 @@ describe("local-installer", () => {
   });
 
   describe("setConfigMetadata", () => {
-    it("should return a new config with domains when selectedDomains is non-empty", () => {
+    it("should return a new config with selectedDomains when the wizard selected domains", () => {
       const config = buildProjectConfig();
       const wizardResult = buildWizardResult(buildSkillConfigs([TEST_SKILL_ID]), {
         selectedDomains: ["web", "api"],
@@ -1596,10 +1783,10 @@ describe("local-installer", () => {
 
       const result = setConfigMetadata(config, wizardResult, sourceResult);
 
-      expect(result.domains).toStrictEqual(["web", "api"]);
+      expect(result.selectedDomains).toStrictEqual(["web", "api"]);
     });
 
-    it("should not set domains when selectedDomains is empty", () => {
+    it("should not set selectedDomains when the wizard selected none", () => {
       const config = buildProjectConfig();
       const wizardResult = buildWizardResult(buildSkillConfigs([TEST_SKILL_ID]), {
         selectedDomains: [],
@@ -1608,10 +1795,10 @@ describe("local-installer", () => {
 
       const result = setConfigMetadata(config, wizardResult, sourceResult);
 
-      expect(result.domains).toBeUndefined();
+      expect(result.selectedDomains).toBeUndefined();
     });
 
-    it("should set selectedAgents when non-empty", () => {
+    it("never persists a flat agent list — agents[] is the only record of who is selected", () => {
       const config = buildProjectConfig();
       const wizardResult = buildWizardResult(buildSkillConfigs([TEST_SKILL_ID]), {
         selectedAgents: ["web-developer", "api-developer"],
@@ -1620,19 +1807,7 @@ describe("local-installer", () => {
 
       const result = setConfigMetadata(config, wizardResult, sourceResult);
 
-      expect(result.selectedAgents).toStrictEqual(["web-developer", "api-developer"]);
-    });
-
-    it("should not set selectedAgents when empty", () => {
-      const config = buildProjectConfig();
-      const wizardResult = buildWizardResult(buildSkillConfigs([TEST_SKILL_ID]), {
-        selectedAgents: [],
-      });
-      const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir);
-
-      const result = setConfigMetadata(config, wizardResult, sourceResult);
-
-      expect(result.selectedAgents).toBeUndefined();
+      expect(Object.keys(result)).not.toContain("selectedAgents");
     });
 
     it("should prefer sourceFlag over sourceResult.sourceConfig.source", () => {
@@ -1685,15 +1860,13 @@ describe("local-installer", () => {
       const result = setConfigMetadata(config, wizardResult, sourceResult, "github:my/repo");
 
       // Original config should not be mutated
-      expect(config.domains).toBeUndefined();
-      expect(config.selectedAgents).toBeUndefined();
+      expect(config.selectedDomains).toBeUndefined();
       expect(config.source).toBeUndefined();
       expect(config.marketplace).toBeUndefined();
       expect(config.name).toBe(originalName);
 
       // Result should have the new values
-      expect(result.domains).toStrictEqual(["web"]);
-      expect(result.selectedAgents).toStrictEqual(["web-developer"]);
+      expect(result.selectedDomains).toStrictEqual(["web"]);
       expect(result.source).toBe("github:my/repo");
       expect(result.marketplace).toBe("my-marketplace");
     });
@@ -1702,8 +1875,6 @@ describe("local-installer", () => {
   describe("writeScopedConfigs with HOME isolation", () => {
     // Moved from e2e/lifecycle/unified-config-view.e2e.test.ts — these are unit tests
     // that call writeScopedConfigs directly, not E2E tests.
-    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
-    // callees require Record<AgentName, AgentDefinition>.
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
     const fakeHomeHandle = useFakeHome(() => tempDir, { setHome: false });
 
@@ -1726,7 +1897,7 @@ describe("local-installer", () => {
       await writeScopedConfigs(
         config,
         EMPTY_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
         projectDir,
         projectConfigPath,
         false,
@@ -1760,7 +1931,7 @@ describe("local-installer", () => {
         ],
         agents: [
           ...buildAgentConfigs(["web-developer"], { scope: "global" }),
-          ...buildAgentConfigs(["web-reviewer"]),
+          ...buildAgentConfigs(["web-researcher"]),
         ],
       });
 
@@ -1770,7 +1941,7 @@ describe("local-installer", () => {
       await writeScopedConfigs(
         config,
         EMPTY_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
         projectDir,
         projectConfigPath,
         false,
@@ -1807,8 +1978,6 @@ describe("local-installer", () => {
   // union). Requires overriding GLOBAL_INSTALL_ROOT so getGlobalConfigTypesPath()
   // points at a test-controlled global dir.
   describe("writeScopedConfigs — project config-types imports from global", () => {
-    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
-    // callees require Record<AgentName, AgentDefinition>.
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
     let savedHome: string | undefined;
     let fakeHome: string;
@@ -1866,14 +2035,14 @@ describe("local-installer", () => {
         ],
         agents: [
           ...buildAgentConfigs(["web-developer"], { scope: "global" }),
-          ...buildAgentConfigs(["web-reviewer"], { scope: "project" }),
+          ...buildAgentConfigs(["web-researcher"], { scope: "project" }),
         ],
       });
 
       await writeScopedConfigs(
         config,
         SINGLE_REACT_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
         projectDir,
         projectConfigPath,
         false,
@@ -1902,7 +2071,7 @@ describe("local-installer", () => {
         'export type SkillId = GlobalSkillId | "web-framework-react" | "web-testing-vitest"',
       );
       expect(typesContent).toContain(
-        'export type AgentName = GlobalAgentName | "web-developer" | "web-reviewer"',
+        'export type AgentName = GlobalAgentName | "web-developer" | "web-researcher"',
       );
     });
 
@@ -1933,7 +2102,7 @@ describe("local-installer", () => {
       await writeScopedConfigs(
         config,
         SINGLE_REACT_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
         projectDir,
         projectConfigPath,
         true, // projectInstallationExists — forces project config write
@@ -1980,7 +2149,7 @@ describe("local-installer", () => {
       await writeScopedConfigs(
         config,
         SINGLE_REACT_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
         projectDir,
         projectConfigPath,
         false,
@@ -2037,14 +2206,14 @@ describe("local-installer", () => {
         ],
         agents: [
           ...buildAgentConfigs(["web-developer"], { scope: "global" }),
-          ...buildAgentConfigs(["web-reviewer"], { scope: "project" }),
+          ...buildAgentConfigs(["web-researcher"], { scope: "project" }),
         ],
       });
 
       await writeScopedConfigs(
         config,
         REACT_HONO_WEB_API_DOMAINS_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
         projectDir,
         projectConfigPath,
         false,
@@ -2103,14 +2272,14 @@ describe("local-installer", () => {
           ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
           ...buildSkillConfigs(["api-framework-hono"], { scope: "project" }),
         ],
-        agents: buildAgentConfigs(["web-reviewer"], { scope: "project" }),
-        domains: ["api", "meta"],
+        agents: buildAgentConfigs(["web-researcher"], { scope: "project" }),
+        selectedDomains: ["api", "meta"],
       });
 
       await writeScopedConfigs(
         config,
         REACT_HONO_WEB_API_DOMAINS_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
         projectDir,
         projectConfigPath,
         false,
@@ -2124,7 +2293,7 @@ describe("local-installer", () => {
       // The sibling config.ts really does name the domain — without this the
       // assertion below would be asking the types to cover something nobody wrote.
       const projectConfigContent = await readFile(projectConfigPath, "utf-8");
-      expect(projectConfigContent).toContain('const domains: Domain[] = ["api", "meta"];');
+      expect(projectConfigContent).toContain('const selectedDomains: Domain[] = ["api", "meta"];');
 
       expect(readGeneratedUnion(typesContent, "Domain")).toContain('"meta"');
     });
@@ -2134,8 +2303,6 @@ describe("local-installer", () => {
   // reproduce the wizard write path's config-types.ts for the scope it compiled —
   // standalone narrowed unions at global scope, import-and-extend at project scope.
   describe("regenerateScopeConfigTypes", () => {
-    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
-    // callees require Record<AgentName, AgentDefinition>.
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
     const fakeHomeHandle = useFakeHome(() => tempDir);
 
@@ -2159,7 +2326,7 @@ describe("local-installer", () => {
         fakeHomeHandle.dir,
         config,
         FULLSTACK_PAIR_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
       );
 
       const typesContent = await readFile(typesPath, "utf-8");
@@ -2218,18 +2385,13 @@ describe("local-installer", () => {
           ],
           agents: [
             ...buildAgentConfigs(["web-developer"], { scope: "global" }),
-            ...buildAgentConfigs(["web-reviewer"], { scope: "project" }),
+            ...buildAgentConfigs(["web-researcher"], { scope: "project" }),
           ],
         });
         await writeConfigFile(config, projectConfigPath);
         const configBefore = await readFile(projectConfigPath, "utf-8");
 
-        await regenerateScopeConfigTypes(
-          projectDir,
-          config,
-          FULLSTACK_TRIO_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
-        );
+        await regenerateScopeConfigTypes(projectDir, config, FULLSTACK_TRIO_MATRIX, emptyAgents);
 
         const projectTypesPath = path.join(
           projectDir,
@@ -2248,7 +2410,7 @@ describe("local-installer", () => {
           'export type SkillId = GlobalSkillId | "web-framework-react" | "web-testing-vitest"',
         );
         expect(typesContent).toContain(
-          'export type AgentName = GlobalAgentName | "web-developer" | "web-reviewer"',
+          'export type AgentName = GlobalAgentName | "web-developer" | "web-researcher"',
         );
 
         // Regeneration touches only config-types.ts — config.ts stays byte-identical
@@ -2267,12 +2429,7 @@ describe("local-installer", () => {
         agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
       });
 
-      await regenerateScopeConfigTypes(
-        projectDir,
-        config,
-        SINGLE_REACT_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
-      );
+      await regenerateScopeConfigTypes(projectDir, config, SINGLE_REACT_MATRIX, emptyAgents);
 
       const typesContent = await readFile(
         path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TYPES_TS),
@@ -2284,76 +2441,57 @@ describe("local-installer", () => {
 
     // The compile/uninstall refresh paths load the matrix with
     // skipExtraSources: true while the wizard write path uses the fully tagged
-    // multi-source matrix. Extra-source loading only annotates each skill's
+    // matrix. The tagging pass only annotates each skill's
     // availableSources/activeSource (wizard UI tagging) — it never adds skills
     // or categories — and the config-types writer never reads those
     // annotations, so both matrices must emit byte-identical config-types.ts.
     // This pins the parity claim documented at both skipExtraSources call sites.
-    it("emits byte-identical config-types from an untagged and a multi-source-tagged matrix", async () => {
-      // Extra source on disk sharing react/hono with the matrix, plus skills
-      // (zustand, vitest) the matrix does not know.
-      const extraDirs = await createTestSource({ skills: DEFAULT_TEST_SKILLS, agents: [] });
-      try {
-        const globalClaudeSrc = path.join(fakeHomeHandle.dir, CLAUDE_SRC_DIR);
-        await mkdir(globalClaudeSrc, { recursive: true });
-        const typesPath = path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS);
+    it("emits byte-identical config-types from an untagged and a source-tagged matrix", async () => {
+      const globalClaudeSrc = path.join(fakeHomeHandle.dir, CLAUDE_SRC_DIR);
+      await mkdir(globalClaudeSrc, { recursive: true });
+      const typesPath = path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS);
 
-        const config = buildProjectConfig({
-          skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"], {
-            scope: "global",
-            source: "agents-inc",
-          }),
-          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
-          sources: [{ name: "extra", url: extraDirs.sourceDir }],
-        });
-        // On disk so the extra source registers for resolveAllSources
-        await writeConfigFile(config, path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TS));
+      const config = buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"], {
+          scope: "global",
+          source: "agents-inc",
+        }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+      });
+      await writeConfigFile(config, path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TS));
 
-        await regenerateScopeConfigTypes(
-          fakeHomeHandle.dir,
-          config,
-          createMockMatrix({ ...SKILLS.react }, { ...SKILLS.hono }),
-          emptyAgents as Record<AgentName, AgentDefinition>,
-        );
-        const untaggedTypes = await readFile(typesPath, "utf-8");
-        expect(untaggedTypes).toContain('"web-framework-react"');
-        expect(untaggedTypes).toContain('"api-framework-hono"');
+      await regenerateScopeConfigTypes(
+        fakeHomeHandle.dir,
+        config,
+        createMockMatrix({ ...SKILLS.react }, { ...SKILLS.hono }),
+        emptyAgents,
+      );
+      const untaggedTypes = await readFile(typesPath, "utf-8");
+      expect(untaggedTypes).toContain('"web-framework-react"');
+      expect(untaggedTypes).toContain('"api-framework-hono"');
 
-        // Tag a fresh copy of the same matrix exactly as the wizard load does
-        const taggedMatrix = createMockMatrix({ ...SKILLS.react }, { ...SKILLS.hono });
-        await loadSkillsFromAllSources(
-          taggedMatrix,
-          { source: DEFAULT_SOURCE, sourceOrigin: "default" },
-          fakeHomeHandle.dir,
-        );
-        const taggedReact = taggedMatrix.skills["web-framework-react"];
-        expect(
-          taggedReact?.availableSources?.map((s) => s.name),
-          "the extra source must resolve and annotate the shared skill — otherwise this test proves nothing",
-        ).toContain("extra");
+      // Tag a fresh copy of the same matrix exactly as the wizard load does
+      const taggedMatrix = createMockMatrix({ ...SKILLS.react }, { ...SKILLS.hono });
+      await loadSkillsFromAllSources(
+        taggedMatrix,
+        { source: DEFAULT_SOURCE, sourceOrigin: "default" },
+        fakeHomeHandle.dir,
+      );
+      const taggedReact = taggedMatrix.skills["web-framework-react"];
+      expect(
+        taggedReact?.availableSources?.map((source) => source.name),
+        "the marketplace must annotate the skill — otherwise this test proves nothing",
+      ).toContain(DEFAULT_PUBLIC_SOURCE_NAME);
 
-        await regenerateScopeConfigTypes(
-          fakeHomeHandle.dir,
-          config,
-          taggedMatrix,
-          emptyAgents as Record<AgentName, AgentDefinition>,
-        );
-        const taggedTypes = await readFile(typesPath, "utf-8");
+      await regenerateScopeConfigTypes(fakeHomeHandle.dir, config, taggedMatrix, emptyAgents);
+      const taggedTypes = await readFile(typesPath, "utf-8");
 
-        expect(taggedTypes).toBe(untaggedTypes);
-        // Extra-source-only skills never widen the emitted unions
-        expect(taggedTypes).not.toContain('"web-state-zustand"');
-        expect(taggedTypes).not.toContain('"web-testing-vitest"');
-      } finally {
-        await cleanupTestSource(extraDirs);
-      }
+      expect(taggedTypes).toBe(untaggedTypes);
     });
   });
 
   describe("deregisterProjectPath", () => {
     const fakeHomeHandle = useFakeHome(() => tempDir);
-    // Partial<Record<>> per CLAUDE.md — cast at the call site because writeScopedConfigs
-    // requires Record<AgentName, AgentDefinition>.
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
 
     it("should remove project from global config's projects array", async () => {
@@ -2472,7 +2610,7 @@ describe("local-installer", () => {
           agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         }),
         EMPTY_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
         linkedProjectDir,
         projectConfigPath,
         true,
@@ -2500,8 +2638,6 @@ describe("local-installer", () => {
   });
 
   describe("propagateGlobalChangesToProjects", () => {
-    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
-    // callees require Record<AgentName, AgentDefinition>.
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
 
     it("should return empty arrays when no projects registered", async () => {
@@ -2514,7 +2650,7 @@ describe("local-installer", () => {
       const result = await propagateGlobalChangesToProjects(
         globalConfig,
         EMPTY_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
       );
 
       expect(result).toStrictEqual({ updated: [], skipped: [] });
@@ -2533,7 +2669,7 @@ describe("local-installer", () => {
       const result = await propagateGlobalChangesToProjects(
         globalConfig,
         EMPTY_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
       );
 
       expect(result).toStrictEqual({ updated: [], skipped: [stalePath] });
@@ -2569,7 +2705,7 @@ describe("local-installer", () => {
       const result = await propagateGlobalChangesToProjects(
         globalConfig,
         EMPTY_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
         projectA,
       );
 
@@ -2599,11 +2735,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(
-        globalConfig,
-        SINGLE_REACT_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
-      );
+      await propagateGlobalChangesToProjects(globalConfig, SINGLE_REACT_MATRIX, emptyAgents);
 
       const typesPath = path.join(configDir, STANDARD_FILES.CONFIG_TYPES_TS);
       expect(await fileExists(typesPath)).toBe(true);
@@ -2620,7 +2752,7 @@ describe("local-installer", () => {
       const projectConfig = buildProjectConfig({
         name: "target",
         skills: buildSkillConfigs(["web-testing-vitest"]),
-        agents: buildAgentConfigs(["web-reviewer"]),
+        agents: buildAgentConfigs(["web-researcher"]),
       });
       await writeConfigFile(projectConfig, path.join(configDir, STANDARD_FILES.CONFIG_TS));
 
@@ -2634,11 +2766,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(
-        globalConfig,
-        SINGLE_REACT_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
-      );
+      await propagateGlobalChangesToProjects(globalConfig, SINGLE_REACT_MATRIX, emptyAgents);
 
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       // Verify the config file was updated with global data
@@ -2664,7 +2792,7 @@ describe("local-installer", () => {
       const result = await propagateGlobalChangesToProjects(
         globalConfig,
         EMPTY_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
       );
 
       expect(result).toStrictEqual({ updated: [], skipped: [] });
@@ -2697,11 +2825,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(
-        globalConfig,
-        SINGLE_REACT_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
-      );
+      await propagateGlobalChangesToProjects(globalConfig, SINGLE_REACT_MATRIX, emptyAgents);
 
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -2743,11 +2867,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(
-        globalConfig,
-        SINGLE_REACT_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
-      );
+      await propagateGlobalChangesToProjects(globalConfig, SINGLE_REACT_MATRIX, emptyAgents);
 
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -2770,7 +2890,7 @@ describe("local-installer", () => {
         name: "target",
         skills: [],
         agents: [
-          ...buildAgentConfigs(["web-reviewer"]),
+          ...buildAgentConfigs(["web-researcher"]),
           ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
         ],
       });
@@ -2784,16 +2904,12 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(
-        globalConfig,
-        EMPTY_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
-      );
+      await propagateGlobalChangesToProjects(globalConfig, EMPTY_MATRIX, emptyAgents);
 
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
       expect(parsedConfig.agents.every((a) => a.name !== "web-developer")).toBe(true);
-      expect(parsedConfig.agents.some((a) => a.name === "web-reviewer")).toBe(true);
+      expect(parsedConfig.agents.some((a) => a.name === "web-researcher")).toBe(true);
     });
 
     it("preserves the dual-scope pair's tombstone while the global agent still exists", async () => {
@@ -2807,7 +2923,7 @@ describe("local-installer", () => {
         name: "target",
         skills: [],
         agents: [
-          ...buildAgentConfigs(["web-reviewer"]),
+          ...buildAgentConfigs(["web-researcher"]),
           ...buildAgentConfigs(["web-developer"]),
           ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
         ],
@@ -2822,11 +2938,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(
-        globalConfig,
-        EMPTY_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
-      );
+      await propagateGlobalChangesToProjects(globalConfig, EMPTY_MATRIX, emptyAgents);
 
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -2835,7 +2947,7 @@ describe("local-installer", () => {
         "a tombstone whose global entry still exists must survive the write",
       ).toStrictEqual([
         { name: "web-developer", scope: "global", excluded: true },
-        { name: "web-reviewer", scope: "project" },
+        { name: "web-researcher", scope: "project" },
         { name: "web-developer", scope: "project" },
       ]);
     });
@@ -2847,8 +2959,6 @@ describe("local-installer", () => {
   // writeScopedConfigs uses during project init/edit — otherwise a global edit
   // would flip every project's types file from import-form back to standalone.
   describe("propagateGlobalChangesToProjects — project config-types imports from global", () => {
-    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
-    // callees require Record<AgentName, AgentDefinition>.
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
     let fakeHome: string;
     let consts: typeof import("../../consts");
@@ -2888,7 +2998,7 @@ describe("local-installer", () => {
       const projectConfig = buildProjectConfig({
         name: "target",
         skills: buildSkillConfigs(["web-testing-vitest"], { scope: "project" }),
-        agents: buildAgentConfigs(["web-reviewer"], { scope: "project" }),
+        agents: buildAgentConfigs(["web-researcher"], { scope: "project" }),
       });
       await writeConfigFile(projectConfig, path.join(configDir, STANDARD_FILES.CONFIG_TS));
 
@@ -2902,11 +3012,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(
-        globalConfig,
-        SINGLE_REACT_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
-      );
+      await propagateGlobalChangesToProjects(globalConfig, SINGLE_REACT_MATRIX, emptyAgents);
 
       const projectTypesPath = path.join(configDir, STANDARD_FILES.CONFIG_TYPES_TS);
       const typesContent = await readFile(projectTypesPath, "utf-8");
@@ -2925,7 +3031,7 @@ describe("local-installer", () => {
         'export type SkillId = GlobalSkillId | "web-framework-react" | "web-testing-vitest"',
       );
       expect(typesContent).toContain(
-        'export type AgentName = GlobalAgentName | "web-developer" | "web-reviewer"',
+        'export type AgentName = GlobalAgentName | "web-developer" | "web-researcher"',
       );
     });
   });
@@ -2937,11 +3043,9 @@ describe("local-installer", () => {
   // global config-types.ts is already gone — regenerated project types must be
   // the standalone form.
   describe("pruneGlobalEntriesFromRegisteredProjects", () => {
-    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
-    // callees require Record<AgentName, AgentDefinition>.
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
 
-    it("prunes inlined global skills, agents, selectedAgents, and stack refs while keeping project-scoped entries", async () => {
+    it("prunes inlined global skills, agents, and stack refs while keeping project-scoped entries", async () => {
       const projectDir = path.join(tempDir, "registered-project");
       const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
       await mkdir(configDir, { recursive: true });
@@ -2956,12 +3060,11 @@ describe("local-installer", () => {
           }),
         ],
         agents: [
-          ...buildAgentConfigs(["web-reviewer"]),
+          ...buildAgentConfigs(["web-researcher"]),
           ...buildAgentConfigs(["web-developer"], { scope: "global" }),
         ],
-        selectedAgents: ["web-developer", "web-reviewer"],
         stack: {
-          "web-reviewer": {
+          "web-researcher": {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
             "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
           },
@@ -2977,14 +3080,13 @@ describe("local-installer", () => {
           source: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
-        selectedAgents: ["web-developer"],
         projects: [projectDir],
       });
 
       const result = await pruneGlobalEntriesFromRegisteredProjects(
         globalConfig,
         SINGLE_REACT_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
       );
 
       expect(result).toStrictEqual({ updated: [projectDir], skipped: [] });
@@ -2993,12 +3095,11 @@ describe("local-installer", () => {
       expect(parsedConfig.skills).toStrictEqual([
         { id: "web-testing-vitest", scope: "project", source: "eject" },
       ]);
-      expect(parsedConfig.agents).toStrictEqual([{ name: "web-reviewer", scope: "project" }]);
-      expect(parsedConfig.selectedAgents).toStrictEqual(["web-reviewer"]);
+      expect(parsedConfig.agents).toStrictEqual([{ name: "web-researcher", scope: "project" }]);
       // The react ref is pruned from the stack; the emptied web-framework
       // category is dropped; the project-owned vitest ref is kept.
       expect(parsedConfig.stack).toStrictEqual({
-        "web-reviewer": { "web-testing": ["web-testing-vitest"] },
+        "web-researcher": { "web-testing": ["web-testing-vitest"] },
       });
 
       // config-types.ts is regenerated in standalone form — the global
@@ -3029,7 +3130,7 @@ describe("local-installer", () => {
             excluded: true,
           }),
         ],
-        agents: buildAgentConfigs(["web-reviewer"]),
+        agents: buildAgentConfigs(["web-researcher"]),
       });
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       await writeConfigFile(projectConfig, configPath);
@@ -3047,7 +3148,7 @@ describe("local-installer", () => {
       await pruneGlobalEntriesFromRegisteredProjects(
         globalConfig,
         SINGLE_REACT_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
       );
 
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -3072,7 +3173,7 @@ describe("local-installer", () => {
       const result = await pruneGlobalEntriesFromRegisteredProjects(
         globalConfig,
         SINGLE_REACT_MATRIX,
-        emptyAgents as Record<AgentName, AgentDefinition>,
+        emptyAgents,
       );
 
       expect(result).toStrictEqual({ updated: [], skipped: [ghostDir] });
@@ -3099,8 +3200,6 @@ describe("local-installer", () => {
    *     propagation never runs.
    */
   describe("cross-scope category exclusivity", () => {
-    // Partial<Record<>> per CLAUDE.md — cast at each call site below because the
-    // callees require Record<AgentName, AgentDefinition>.
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
 
     describe("propagateGlobalChangesToProjects", () => {
@@ -3134,7 +3233,7 @@ describe("local-installer", () => {
         await propagateGlobalChangesToProjects(
           globalConfig,
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
         );
 
         const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -3186,7 +3285,7 @@ describe("local-installer", () => {
         await propagateGlobalChangesToProjects(
           globalConfig,
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
         );
 
         const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -3231,7 +3330,7 @@ describe("local-installer", () => {
         await propagateGlobalChangesToProjects(
           globalConfig,
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
         );
 
         const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -3278,7 +3377,7 @@ describe("local-installer", () => {
         await propagateGlobalChangesToProjects(
           globalConfig,
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
         );
 
         const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -3318,7 +3417,7 @@ describe("local-installer", () => {
         await propagateGlobalChangesToProjects(
           globalConfig,
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
         );
 
         const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -3356,14 +3455,14 @@ describe("local-installer", () => {
         await propagateGlobalChangesToProjects(
           globalConfig,
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
         );
         const afterFirstRun = await readFile(configPath, "utf-8");
 
         await propagateGlobalChangesToProjects(
           globalConfig,
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
         );
         const afterSecondRun = await readFile(configPath, "utf-8");
 
@@ -3411,14 +3510,14 @@ describe("local-installer", () => {
         await propagateGlobalChangesToProjects(
           globalConfig,
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
         );
         const afterFirstRun = await readFile(configPath, "utf-8");
 
         await propagateGlobalChangesToProjects(
           globalConfig,
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
         );
 
         expect(await readFile(configPath, "utf-8")).toBe(afterFirstRun);
@@ -3475,7 +3574,7 @@ describe("local-installer", () => {
             agents: [],
           }),
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
           projectDir,
           projectConfigPath,
           true,
@@ -3523,7 +3622,7 @@ describe("local-installer", () => {
             agents: [],
           }),
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
           projectDir,
           projectConfigPath,
           true,
@@ -3566,7 +3665,7 @@ describe("local-installer", () => {
             agents: buildAgentConfigs(["web-developer"]),
           }),
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
           projectDir,
           projectConfigPath,
           true,
@@ -3625,7 +3724,7 @@ describe("local-installer", () => {
             agents: [],
           }),
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
           projectDir,
           projectConfigPath,
           true,
@@ -3683,7 +3782,7 @@ describe("local-installer", () => {
             agents: buildAgentConfigs(["web-developer"]),
           }),
           CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents as Record<AgentName, AgentDefinition>,
+          emptyAgents,
           projectDir,
           projectConfigPath,
           true,

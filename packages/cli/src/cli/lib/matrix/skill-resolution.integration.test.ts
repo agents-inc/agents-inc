@@ -28,6 +28,7 @@ import {
 import { buildMultiSourceMatrix } from "../__tests__/mock-data/mock-matrices.js";
 import type { MergedSkillsMatrix, ProjectConfig, SkillId, Category } from "../../types";
 import { initializeMatrix, getSkillById } from "./matrix-provider";
+import { firstElement } from "../__tests__/helpers/element-at.js";
 
 describe("Integration: Multi-Source Skill Resolution", () => {
   describe("Scenario 1: Skills from 3 sources resolve into unified matrix", () => {
@@ -82,7 +83,7 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       // web-state-zustand is only in public source
       const zustandSkill = matrix.skills["web-state-zustand"];
       expect(zustandSkill?.availableSources).toHaveLength(1);
-      expect(zustandSkill?.availableSources?.[0].name).toBe("public");
+      expect(zustandSkill?.availableSources?.[0]?.name).toBe("public");
     });
 
     it("should have correct activeSource defaulting to first available", () => {
@@ -107,12 +108,14 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       acmeSource.installMode = "eject";
 
       // Re-compute active source (same logic as setActiveSources in multi-source-loader)
-      const installedSource = reactSkill.availableSources!.find((s) => s.installed);
-      reactSkill.activeSource = installedSource ?? reactSkill.availableSources![0];
+      const availableSources = reactSkill.availableSources ?? [];
+      const activeSource =
+        availableSources.find((s) => s.installed) ?? firstElement(availableSources);
+      reactSkill.activeSource = activeSource;
 
-      expect(reactSkill.activeSource.name).toBe("acme-corp");
-      expect(reactSkill.activeSource.type).toBe("private");
-      expect(reactSkill.activeSource.installed).toBe(true);
+      expect(activeSource.name).toBe("acme-corp");
+      expect(activeSource.type).toBe("private");
+      expect(activeSource.installed).toBe(true);
     });
 
     it("should respect sourceSelections when determining which source is preferred", () => {
@@ -256,9 +259,9 @@ describe("Integration: Multi-Source Skill Resolution", () => {
 
       // Only drizzle selected, hono missing
       const validation = validateSelection(["api-database-drizzle"]);
-      expect(validation.valid).toBe(true);
-      expect(validation.errors[0].type).toBe("missingRequirement");
-      expect(validation.errors[0].message).toContain("Hono");
+      expect(validation.valid).toBe(false);
+      expect(firstElement(validation.errors).type).toBe("missingRequirement");
+      expect(firstElement(validation.errors).message).toContain("Hono");
     });
 
     it("should mark dependent skill as having unmet requirements when requirement is not selected", () => {
@@ -329,10 +332,10 @@ describe("Integration: Multi-Source Skill Resolution", () => {
 
       // Without any framework, sentry should fail with missing requirement
       const failValidation = validateSelection(["api-monitoring-sentry" as SkillId]);
-      expect(failValidation.valid).toBe(true);
+      expect(failValidation.valid).toBe(false);
       expect(failValidation.errors).toHaveLength(1);
-      expect(failValidation.errors[0].type).toBe("missingRequirement");
-      expect(failValidation.errors[0].message).toContain("one of");
+      expect(firstElement(failValidation.errors).type).toBe("missingRequirement");
+      expect(firstElement(failValidation.errors).message).toContain("one of");
     });
   });
 
@@ -354,9 +357,9 @@ describe("Integration: Multi-Source Skill Resolution", () => {
         "web-framework-react",
         "web-framework-vue-composition-api",
       ]);
-      expect(validation.valid).toBe(true);
-      expect(validation.errors[0].type).toBe("conflict");
-      expect(validation.errors[0].message).toContain("Choose one frontend framework");
+      expect(validation.valid).toBe(false);
+      expect(firstElement(validation.errors).type).toBe("conflict");
+      expect(firstElement(validation.errors).message).toContain("Choose one frontend framework");
     });
 
     it("should mark conflicting skill from another source as incompatible", () => {
@@ -387,47 +390,23 @@ describe("Integration: Multi-Source Skill Resolution", () => {
         "web-framework-react",
         "web-framework-vue-composition-api",
       ]);
-      expect(validation.valid).toBe(true);
+      expect(validation.valid).toBe(false);
       expect(validation.errors.some((e) => e.type === "categoryExclusive")).toBe(true);
     });
   });
 
-  describe("Scenario 6: Large-scale selection with recommendations and warnings", () => {
-    it("should validate 10 skills from 3 sources with recommendations", () => {
+  describe("Scenario 6: Large-scale multi-source selection", () => {
+    it("should validate a cross-source selection without errors", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);
 
-      // react is a recommended skill
-      const reactSkill = matrix.skills["web-framework-react"]!;
-      reactSkill.isRecommended = true;
-      reactSkill.recommendedReason = "Zustand works best with React";
-
-      // Select zustand but not react -- should be valid with recommendation warning
       const validation = validateSelection([
         "web-state-zustand",
         "api-framework-hono",
         "api-database-drizzle",
       ]);
       expect(validation.valid).toBe(true);
-      expect(validation.warnings.some((w) => w.type === "missing_recommendation")).toBe(true);
-      expect(validation.warnings[0].message).toContain("React");
-    });
-
-    it("should not warn about recommendation when recommended skill is selected", () => {
-      const matrix = buildMultiSourceMatrix();
-      initializeMatrix(matrix);
-
-      // react is a recommended skill
-      const reactSkill = matrix.skills["web-framework-react"]!;
-      reactSkill.isRecommended = true;
-      reactSkill.recommendedReason = "Zustand works best with React";
-
-      // Select both zustand and react
-      const validation = validateSelection(["web-state-zustand", "web-framework-react"]);
-      expect(validation.valid).toBe(true);
-      expect(validation.warnings.filter((w) => w.type === "missing_recommendation")).toHaveLength(
-        0,
-      );
+      expect(validation.errors).toStrictEqual([]);
     });
 
     it("should handle getAvailableSkills with multi-source skills correctly", () => {

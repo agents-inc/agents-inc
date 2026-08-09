@@ -2,43 +2,20 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import { mkdir, readFile } from "fs/promises";
 import { compileAllSkillPlugins } from "../../skills";
-import { compileStackPlugin, loadStacks } from "../../stacks";
+import { loadStacks } from "../../stacks";
 import {
   generateMarketplace,
   writeMarketplace,
   getMarketplaceStats,
 } from "../../marketplace-generator";
-import { validateAllPlugins, validatePlugin } from "../../plugins";
-import {
-  DEFAULT_BRANDING,
-  DEFAULT_PLUGIN_NAME,
-  PLUGIN_MANIFEST_DIR,
-  PLUGIN_MANIFEST_FILE,
-} from "../../../consts";
-import type { Marketplace, PluginManifest } from "../../../types";
+import { validateAllPlugins } from "../../plugins";
+import { DEFAULT_BRANDING, DEFAULT_PLUGIN_NAME } from "../../../consts";
+import type { Marketplace } from "../../../types";
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
-import { createTempDir, cleanupTempDir, directoryExists, fileExists } from "../test-fs-utils";
-import { readTestJson } from "../helpers/config-io.js";
+import { createTempDir, cleanupTempDir, directoryExists } from "../test-fs-utils";
 import { silenceConsole } from "../helpers/silence-console.js";
 import { COMPILATION_TEST_STACK } from "../mock-data/mock-stacks.js";
-
-async function readPluginManifest(pluginDir: string): Promise<PluginManifest | null> {
-  const manifestPath = path.join(pluginDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
-  if (!(await fileExists(manifestPath))) return null;
-  return readTestJson<PluginManifest>(manifestPath);
-}
-
-/** Compiles COMPILATION_TEST_STACK from the test source into `outputDir`. */
-function compileTestStack(outputDir: string, sourceDir: string) {
-  return compileStackPlugin({
-    stackId: COMPILATION_TEST_STACK.id,
-    outputDir,
-    projectRoot: sourceDir,
-    agentSourcePath: sourceDir,
-    stack: COMPILATION_TEST_STACK,
-  });
-}
 
 /** Standard marketplace-generation options shared across pipeline tests. */
 const TEST_MARKETPLACE_OPTIONS = {
@@ -115,23 +92,7 @@ describe("Integration: Full Skill Pipeline", () => {
   });
 });
 
-describe("Integration: Full Stack Pipeline", () => {
-  let dirs: TestDirs;
-  let tempDir: string;
-  let outputDir: string;
-
-  beforeEach(async () => {
-    dirs = await createTestSource();
-    tempDir = await createTempDir("stack-pipeline-test-");
-    outputDir = path.join(tempDir, "stacks");
-    await mkdir(outputDir, { recursive: true });
-  });
-
-  afterEach(async () => {
-    await cleanupTestSource(dirs);
-    await cleanupTempDir(tempDir);
-  });
-
+describe("Integration: Stack Discovery", () => {
   it("should list available stacks from fixture", async () => {
     // Create a source with stacks defined in config/stacks.ts
     const stackDirs = await createTestSource({
@@ -155,58 +116,6 @@ describe("Integration: Full Stack Pipeline", () => {
     expect(stacks.map((s) => s.id)).toStrictEqual(["test-stack"]);
 
     await cleanupTestSource(stackDirs);
-  });
-
-  it("should compile test stack successfully", async () => {
-    const result = await compileTestStack(outputDir, dirs.sourceDir);
-
-    expect(result.pluginPath).toBe(path.join(outputDir, COMPILATION_TEST_STACK.id));
-    expect(result.stackName).toBe("Test Stack");
-    expect(result.agents.sort()).toStrictEqual(["api-developer", "web-developer"]);
-
-    expect(await directoryExists(result.pluginPath)).toBe(true);
-    expect(await directoryExists(path.join(result.pluginPath, "agents"))).toBe(true);
-    expect(
-      await fileExists(path.join(result.pluginPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE)),
-    ).toBe(true);
-    expect(await fileExists(path.join(result.pluginPath, "README.md"))).toBe(true);
-
-    const manifest = await readPluginManifest(result.pluginPath);
-    expect(manifest).not.toBeNull();
-    expect(manifest!.name).toBe(COMPILATION_TEST_STACK.id);
-    // Claude Code discovers agents automatically from ./agents/ directory
-    expect(manifest!.agents).toBeUndefined();
-  });
-
-  it("should generate README with agent list", async () => {
-    const result = await compileTestStack(outputDir, dirs.sourceDir);
-
-    const readmePath = path.join(result.pluginPath, "README.md");
-    const readme = await readFile(readmePath, "utf-8");
-
-    expect(readme).toContain("# ");
-    expect(readme).toContain("## Agents");
-    expect(readme).toContain("## Installation");
-
-    for (const agent of result.agents) {
-      expect(readme).toContain(agent);
-    }
-  });
-
-  it("should include skill plugin references in manifest", async () => {
-    const result = await compileTestStack(outputDir, dirs.sourceDir);
-
-    expect(result.skillPlugins.sort()).toStrictEqual(["api-framework-hono", "web-framework-react"]);
-  });
-
-  it("should validate compiled stack plugins", async () => {
-    await compileTestStack(outputDir, dirs.sourceDir);
-
-    const pluginPath = path.join(outputDir, COMPILATION_TEST_STACK.id);
-    const validationResult = await validatePlugin(pluginPath);
-
-    expect(validationResult.valid).toBe(true);
-    expect(validationResult.errors).toHaveLength(0);
   });
 });
 
@@ -313,7 +222,6 @@ describe("Integration: End-to-End Pipeline", () => {
   let dirs: TestDirs;
   let tempDir: string;
   let pluginsDir: string;
-  let stacksDir: string;
 
   silenceConsole(["log", "warn"]);
 
@@ -321,9 +229,7 @@ describe("Integration: End-to-End Pipeline", () => {
     dirs = await createTestSource();
     tempDir = await createTempDir("e2e-pipeline-test-");
     pluginsDir = path.join(tempDir, "plugins");
-    stacksDir = path.join(tempDir, "stacks");
     await mkdir(pluginsDir, { recursive: true });
-    await mkdir(stacksDir, { recursive: true });
   });
 
   afterEach(async () => {
@@ -332,7 +238,7 @@ describe("Integration: End-to-End Pipeline", () => {
     await cleanupTempDir(tempDir);
   });
 
-  it("should compile skills then stacks in sequence", async () => {
+  it("should compile, validate and publish skills in sequence", async () => {
     const { compiled: skillResults } = await compileAllSkillPlugins(dirs.skillsDir, pluginsDir);
     const expectedSkillNames = DEFAULT_TEST_SKILLS.map((s) => s.id).sort();
     expect(skillResults.map((r) => r.skillName).sort()).toStrictEqual(expectedSkillNames);
@@ -340,34 +246,7 @@ describe("Integration: End-to-End Pipeline", () => {
     const skillValidation = await validateAllPlugins(pluginsDir);
     expect(skillValidation.summary.invalid).toBe(0);
 
-    const stackResult = await compileTestStack(stacksDir, dirs.sourceDir);
-    expect(stackResult.agents.sort()).toStrictEqual(["api-developer", "web-developer"]);
-
-    const stackValidation = await validatePlugin(stackResult.pluginPath);
-    expect(stackValidation.valid).toBe(true);
-
     const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
     expect(marketplace.plugins.map((p) => p.name).sort()).toStrictEqual(expectedSkillNames);
-  });
-
-  it("should have valid skill plugin reference format", async () => {
-    const stackResult = await compileTestStack(stacksDir, dirs.sourceDir);
-
-    expect(stackResult.skillPlugins.sort()).toStrictEqual([
-      "api-framework-hono",
-      "web-framework-react",
-    ]);
-  });
-
-  it("should compile skills and stacks that share common patterns", async () => {
-    const { compiled: skillResults } = await compileAllSkillPlugins(dirs.skillsDir, pluginsDir);
-
-    const stackResult = await compileTestStack(stacksDir, dirs.sourceDir);
-
-    const stackSkillNames = new Set(stackResult.skillPlugins);
-    const compiledSkillNames = new Set(skillResults.map((r) => r.manifest.name));
-
-    const commonSkills = [...stackSkillNames].filter((name) => compiledSkillNames.has(name)).sort();
-    expect(commonSkills).toStrictEqual(["api-framework-hono", "web-framework-react"]);
   });
 });

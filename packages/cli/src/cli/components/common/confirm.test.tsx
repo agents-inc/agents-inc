@@ -80,7 +80,7 @@ describe("Confirm component", () => {
       // Wait for component to mount and set up input handler
       await delay(RENDER_DELAY_MS);
 
-      await stdin.write(KEY_Y);
+      stdin.write(KEY_Y);
       await delay(CONFIRM_INPUT_DELAY_MS);
 
       expect(onConfirm).toHaveBeenCalled();
@@ -98,7 +98,7 @@ describe("Confirm component", () => {
 
       await delay(RENDER_DELAY_MS);
 
-      await stdin.write(KEY_N);
+      stdin.write(KEY_N);
       await delay(CONFIRM_INPUT_DELAY_MS);
 
       expect(onCancel).toHaveBeenCalled();
@@ -121,7 +121,7 @@ describe("Confirm component", () => {
 
       await delay(RENDER_DELAY_MS);
 
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(CONFIRM_INPUT_DELAY_MS);
 
       expect(onConfirm).toHaveBeenCalled();
@@ -144,7 +144,7 @@ describe("Confirm component", () => {
 
       await delay(RENDER_DELAY_MS);
 
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(CONFIRM_INPUT_DELAY_MS);
 
       expect(onCancel).toHaveBeenCalled();
@@ -161,7 +161,7 @@ describe("Confirm component", () => {
 
       await delay(RENDER_DELAY_MS);
 
-      await stdin.write("Y");
+      stdin.write("Y");
       await delay(CONFIRM_INPUT_DELAY_MS);
 
       expect(onConfirm).toHaveBeenCalled();
@@ -177,7 +177,7 @@ describe("Confirm component", () => {
 
       await delay(RENDER_DELAY_MS);
 
-      await stdin.write("N");
+      stdin.write("N");
       await delay(CONFIRM_INPUT_DELAY_MS);
 
       expect(onCancel).toHaveBeenCalled();

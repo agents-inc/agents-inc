@@ -23,8 +23,7 @@ describe("defineConfig", () => {
       agents: buildAgentConfigs(["web-developer", "api-developer"]),
       skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"]),
       author: "@vince",
-      domains: ["web", "api"],
-      selectedAgents: ["web-developer", "api-developer"],
+      selectedDomains: ["web", "api"],
       stack: {
         "web-developer": {
           "web-framework": [{ id: "web-framework-react", preloaded: false }],

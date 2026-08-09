@@ -3,6 +3,7 @@ import path from "path";
 
 import { zip } from "remeda";
 
+import { getErrorMessage } from "../../utils/errors";
 import { fileExists, readFileSafe, readFile, glob } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import {
@@ -66,7 +67,7 @@ export async function readPluginManifest(pluginDir: string): Promise<PluginManif
 
     return manifest;
   } catch (error) {
-    verbose(`  Failed to parse manifest at ${manifestPath}: ${error}`);
+    verbose(`  Failed to parse manifest at ${manifestPath}: ${getErrorMessage(error)}`);
     return null;
   }
 }

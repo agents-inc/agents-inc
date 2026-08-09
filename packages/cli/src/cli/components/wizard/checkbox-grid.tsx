@@ -85,8 +85,8 @@ export const CheckboxGrid = <T extends string = string>({
 
     return (
       <Text key={item.id}>
-        <Text color={isFocused ? CLI_COLORS.PRIMARY : undefined}>{pointer}</Text>
-        <Text color={isSelected || isFocused ? CLI_COLORS.PRIMARY : undefined} bold={isFocused}>
+        <Text {...(isFocused && { color: CLI_COLORS.PRIMARY })}>{pointer}</Text>
+        <Text {...((isSelected || isFocused) && { color: CLI_COLORS.PRIMARY })} bold={isFocused}>
           {" "}
           {checkbox} {item.label}
         </Text>

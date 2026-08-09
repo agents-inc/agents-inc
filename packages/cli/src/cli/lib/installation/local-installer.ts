@@ -24,7 +24,7 @@ import {
   loadProjectConfig,
 } from "../configuration";
 import { loadMergedAgents, loadSkillsByIds, type SourceLoadResult } from "../loading";
-import { loadStackById, getStackSkillIds } from "../stacks";
+import { loadStackById, getStackSkillIds, stackNotOfferedMessage } from "../stacks";
 import { resolveAgents, buildSkillRefsFromConfig } from "../resolver";
 import { createLiquidEngine } from "../compiler";
 import { writeCompiledAgentsByScope } from "../agents/write-compiled-agents";
@@ -214,18 +214,16 @@ async function buildEjectConfig(
       `selectedAgents=[${wizardResult.selectedAgents.join(", ")}]`,
   );
 
+  const { source } = sourceResult.sourceConfig;
   const loadedStack = wizardResult.selectedStackId
-    ? await loadStackById(wizardResult.selectedStackId, sourceResult.sourcePath)
+    ? await loadStackById(wizardResult.selectedStackId, sourceResult.sourcePath, source)
     : null;
   if (wizardResult.selectedStackId) {
     verbose(
       `buildEjectConfig: loadedStack=${loadedStack ? `found (id='${loadedStack.id}')` : "NOT FOUND"}`,
     );
     if (!loadedStack) {
-      throw new Error(
-        `Stack '${wizardResult.selectedStackId}' not found in config/stacks.ts. ` +
-          `Available stacks are defined in the CLI's config/stacks.ts file.`,
-      );
+      throw new Error(stackNotOfferedMessage(wizardResult.selectedStackId, source));
     }
   }
 
@@ -282,11 +280,16 @@ async function buildEjectConfig(
     }),
   };
 
-  // With a stack: overlay the YAML stack as `existingStack` so the ownership-based
-  // builder inherits preloaded flags for (agent, category, skill) triples the stack
-  // author marked. Ownership rules still govern which agents and categories land in
-  // the final stack, so Phase A (init) and Phase B (edit) produce equivalent stacks
-  // for the same selection.
+  // With a stack: overlay the stack as `existingStack` so its (agent, category, skill)
+  // triples reach the ownership-based builder with a load already decided — the
+  // author's flag where a third-party stacks file wrote one, and the shared mapping's
+  // verdict where none was written, which is every entry of a built-in stack.
+  // `buildStackProperty` is where that decision is made, so applying a stack is a NEW
+  // selection: it never arrives flagless and is never read as a curated lazy.
+  // The on-disk stack spreads LAST and wins per agent, so re-running over an installed
+  // config preserves what the user saved. Ownership rules still govern which agents and
+  // categories land in the final stack, so Phase A (init) and Phase B (edit) produce
+  // equivalent stacks for the same selection.
   const effectiveOptions = loadedStack
     ? { ...agentOptions, existingStack: { ...buildStackProperty(loadedStack), ...existingStack } }
     : agentOptions;
@@ -318,14 +321,9 @@ export function setConfigMetadata(
 ): ProjectConfig {
   const result = { ...config };
 
-  // Only persist domains when non-empty (sparse output)
-  if (wizardResult.selectedDomains && wizardResult.selectedDomains.length > 0) {
-    result.domains = wizardResult.selectedDomains;
-  }
-
-  // Only persist selectedAgents when non-empty (sparse output)
-  if (wizardResult.selectedAgents && wizardResult.selectedAgents.length > 0) {
-    result.selectedAgents = wizardResult.selectedAgents;
+  // Only persist selected domains when non-empty (sparse output)
+  if (wizardResult.selectedDomains.length > 0) {
+    result.selectedDomains = wizardResult.selectedDomains;
   }
 
   if (sourceFlag) {
@@ -355,11 +353,7 @@ export async function buildAndMergeConfig(
   const configWithMetadata = setConfigMetadata(config, wizardResult, sourceResult, sourceFlag);
   const result = await mergeWithExistingConfig(configWithMetadata, {
     projectDir,
-    authoritativeScope,
-    // Skills the wizard could not resolve from the loaded source this session must survive an
-    // authoritative edit — their absence from the wizard result is a resolution gap, not a
-    // deselection (D-233 Scenario C data-loss guard).
-    unresolvableSkillIds: wizardResult.unresolvableSkillIds,
+    ...(authoritativeScope !== undefined && { authoritativeScope }),
   });
   verbose(
     `buildAndMergeConfig: after merge — stack=${result.config.stack ? Object.keys(result.config.stack).length + " agents" : "UNDEFINED"}, merged=${result.merged}`,
@@ -369,8 +363,8 @@ export async function buildAndMergeConfig(
 
 export function buildCompileAgents(
   config: ProjectConfig,
-  agents: Record<AgentName, AgentDefinition>,
-): Record<string, CompileAgentConfig> {
+  agents: Partial<Record<AgentName, AgentDefinition>>,
+): Partial<Record<AgentName, CompileAgentConfig>> {
   const activeAgents = config.agents.filter((a) => !a.excluded);
   const excludedSkillIds = effectivelyExcludedSkillIds(config.skills);
 
@@ -402,11 +396,14 @@ export function buildCompileAgents(
           !excludedSkillIds.has(ref.id) &&
           (agentConfig.scope !== "global" || globalSkillIds.has(ref.id)),
       )
-      .map((ref) => ({ ...ref, source: sourceById.get(ref.id) }));
+      .map((ref) => {
+        const source = sourceById.get(ref.id);
+        return { ...ref, ...(source !== undefined && { source }) };
+      });
     return { ...tuning, skills: filteredRefs };
   };
 
-  return Object.fromEntries(
+  return typedFromEntries<AgentName, CompileAgentConfig>(
     activeAgents
       .filter((agentConfig) => agents[agentConfig.name])
       .map((agentConfig) => [agentConfig.name, buildAgentCompileEntry(agentConfig)]),
@@ -424,7 +421,7 @@ export function buildAgentScopeMap(config: ProjectConfig): Map<AgentName, SkillS
  */
 async function writeConfigAndCompileAgents(params: {
   finalConfig: ProjectConfig;
-  agents: Record<AgentName, AgentDefinition>;
+  agents: Partial<Record<AgentName, AgentDefinition>>;
   localSkills: Partial<Record<SkillId, LocalResolvedSkill>>;
   sourceResult: SourceLoadResult;
   projectDir: string;
@@ -462,7 +459,7 @@ async function writeConfigAndCompileAgents(params: {
 
 async function compileAndWriteAgents(
   compileConfig: CompileConfig,
-  agents: Record<AgentName, AgentDefinition>,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
   localSkills: Partial<Record<SkillId, LocalResolvedSkill>>,
   sourceResult: SourceLoadResult,
   projectDir: string,
@@ -482,12 +479,12 @@ async function compileAndWriteAgents(
     sourcePath: sourceResult.sourcePath,
     engine,
     projectAgentsDir: agentsDir,
-    agentScopeMap,
+    ...(agentScopeMap !== undefined && { agentScopeMap }),
   });
 
   // Install treats any compile failure as fatal — surface the first one.
   const failure = outcomes.find((outcome) => !outcome.ok);
-  if (failure && !failure.ok) throw failure.error;
+  if (failure) throw failure.error;
 
   return outcomes.map((outcome) => outcome.name);
 }
@@ -511,7 +508,7 @@ export type PluginConfigResult = Omit<EjectInstallResult, "copiedSkills" | "skil
  * @param options - Installation options containing wizard result, source data,
  *                  project directory, and optional source flag override
  * @returns Result containing config and agent artifacts (no skills)
- * @throws {Error} If the selected stack ID is not found in config/stacks.ts
+ * @throws {Error} If the selected stack ID is not one the loaded source offers
  */
 export async function installPluginConfig(
   options: EjectInstallOptions,
@@ -558,7 +555,9 @@ export async function installPluginConfig(
     configPath: projectPaths.configPath,
     compiledAgents: compiledAgentNames,
     wasMerged: mergeResult.merged,
-    mergedConfigPath: mergeResult.existingConfigPath,
+    ...(mergeResult.existingConfigPath !== undefined && {
+      mergedConfigPath: mergeResult.existingConfigPath,
+    }),
     agentsDir: projectPaths.agentsDir,
   };
 }
@@ -582,7 +581,7 @@ export async function installPluginConfig(
  *                  project directory, and optional source flag override
  * @returns Result containing all written artifacts (skills, config, agents) and
  *          metadata about the installation (merge status, paths)
- * @throws {Error} If the selected stack ID is not found in config/stacks.ts
+ * @throws {Error} If the selected stack ID is not one the loaded source offers
  *
  * @remarks
  * **Side effects:** Creates directories and writes files under `{projectDir}/.claude/`.
@@ -641,7 +640,9 @@ export async function installEject(options: EjectInstallOptions): Promise<EjectI
     configPath: projectPaths.configPath,
     compiledAgents: compiledAgentNames,
     wasMerged: mergeResult.merged,
-    mergedConfigPath: mergeResult.existingConfigPath,
+    ...(mergeResult.existingConfigPath !== undefined && {
+      mergedConfigPath: mergeResult.existingConfigPath,
+    }),
     skillsDir: projectPaths.skillsDir,
     agentsDir: projectPaths.agentsDir,
   };

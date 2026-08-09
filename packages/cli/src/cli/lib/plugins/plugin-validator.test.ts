@@ -10,6 +10,7 @@ import {
   validateAllPlugins,
 } from "./plugin-validator";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
+import { firstElement } from "../__tests__/helpers/element-at.js";
 import {
   PLUGIN_MANIFEST_DIR,
   PLUGIN_MANIFEST_FILE,
@@ -120,6 +121,16 @@ describe("plugin-validator", () => {
       expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0]).toContain("Invalid JSON");
+    });
+
+    it("should fail if JSON parses to something other than an object", async () => {
+      const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_FILE);
+      await writeFile(manifestPath, JSON.stringify(["not", "a", "manifest"]));
+
+      const result = await validatePluginManifest(manifestPath);
+
+      expect(result.valid).toBe(false);
+      expect(result.errors).toStrictEqual([`${PLUGIN_MANIFEST_FILE} must contain a JSON object`]);
     });
 
     it("should fail if name missing", async () => {
@@ -564,7 +575,7 @@ name: bad-skill
 
       expect(result.valid).toBe(false);
       expect(result.results).toHaveLength(1);
-      expect(result.results[0].result.errors).toStrictEqual([
+      expect(firstElement(result.results).result.errors).toStrictEqual([
         `Directory does not exist: ${nonexistentDir}`,
       ]);
       expect(result.summary).toStrictEqual({

@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import { validateBuildStep, buildCategoriesForDomain } from "./build-step-logic";
 import {
   BUILD_STEP_ADVISORY_STATES_MATRIX,
-  BUILD_STEP_API_DB_MATRIX,
   BUILD_STEP_CONFLICTS_EXCLUSIVE_MATRIX,
   BUILD_STEP_CONFLICTS_NON_EXCLUSIVE_MATRIX,
   BUILD_STEP_DISPLAY_NAME_MATRIX,
@@ -16,17 +15,19 @@ import {
   BUILD_STEP_REQUIRES_MATRIX,
   BUILD_STEP_SORTING_MATRIX,
   BUILD_STEP_UNDEFINED_ORDER_MATRIX,
-  BUILD_STEP_UNIVERSAL_COMPAT_MATRIX,
   BUILD_STEP_WEB_MATRIX,
 } from "../__tests__/mock-data/mock-matrices";
 import type { CategoryRow } from "../../components/wizard/category-grid";
-import type { SkillId, Category, CategorySelections } from "../../types";
+import { DOMAIN_ORDER } from "@workspace/matrix";
+import type { SkillId, Category, Domain } from "../../types";
+import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { getSkillById, initializeMatrix } from "../matrix/matrix-provider";
 import { EXPECTED_SKILLS } from "../__tests__/expected-values";
 import { buildSkillConfigs } from "../__tests__/helpers";
 import { SKILLS } from "../__tests__/test-fixtures";
 import { buildCategoryMap, createMockMatrix } from "../__tests__/factories/matrix-factories";
 import { WEB_FRAMEWORK_CATEGORY } from "../__tests__/mock-data/mock-categories";
+import { elementAt, firstElement } from "../__tests__/helpers/element-at.js";
 
 describe("validateBuildStep", () => {
   const requiredCategory: CategoryRow = {
@@ -133,46 +134,54 @@ describe("buildCategoriesForDomain", () => {
   const frameworkCategory: Category = "web-framework";
   const stateCategory: Category = "web-client-state";
 
+  // The real catalogue, because the rule is about which CAUSE produced a
+  // verdict and a mock matrix can only carry causes somebody wrote into it.
+  const optionIn = (domain: Domain, categoryId: Category, skillId: SkillId, selection: SkillId[]) =>
+    buildCategoriesForDomain(domain, selection)
+      .find((row) => row.id === categoryId)
+      ?.options.find((option) => option.id === skillId);
+
   it("should return categories with options for the given domain", () => {
     initializeMatrix(BUILD_STEP_WEB_MATRIX);
-    const result = buildCategoriesForDomain("web", [], {});
+    const result = buildCategoriesForDomain("web", []);
 
     expect(result).toHaveLength(2);
-    expect(result[0].id).toBe(frameworkCategory);
-    expect(result[1].id).toBe(stateCategory);
+    expect(firstElement(result).id).toBe(frameworkCategory);
+    expect(elementAt(result, 1).id).toBe(stateCategory);
   });
 
   it("should filter categories with no options", () => {
     initializeMatrix(BUILD_STEP_EMPTY_FRAMEWORK_MATRIX);
 
-    const result = buildCategoriesForDomain("web", [], {});
+    const result = buildCategoriesForDomain("web", []);
     expect(result).toHaveLength(0);
   });
 
   it("should sort categories by order", () => {
     initializeMatrix(BUILD_STEP_WEB_MATRIX);
-    const result = buildCategoriesForDomain("web", [], {});
+    const result = buildCategoriesForDomain("web", []);
 
-    expect(result[0].id).toBe(frameworkCategory);
-    expect(result[1].id).toBe(stateCategory);
+    expect(firstElement(result).id).toBe(frameworkCategory);
+    expect(elementAt(result, 1).id).toBe(stateCategory);
   });
 
-  it("should show all skills regardless of framework selection when filtering is off", () => {
+  it("should show every skill in a category whatever framework is already selected", () => {
     initializeMatrix(BUILD_STEP_WEB_MATRIX);
 
-    // With React selected, all state skills still show (no filtering)
-    const selections: CategorySelections = { "web-framework": ["web-framework-react"] };
-    const result = buildCategoriesForDomain("web", [], selections);
+    const result = buildCategoriesForDomain("web", ["web-framework-react"]);
 
     const stateRow = result.find((r) => r.id === stateCategory);
-    expect(stateRow?.options).toHaveLength(2);
+    expect(
+      stateRow?.options,
+      "no selection hides a sibling skill — the grid never filters on the framework",
+    ).toHaveLength(2);
   });
 
   it("should mark installed skills", () => {
     initializeMatrix(BUILD_STEP_WEB_MATRIX);
     const installedSkillIds: SkillId[] = ["web-framework-react"];
 
-    const result = buildCategoriesForDomain("web", [], {}, installedSkillIds);
+    const result = buildCategoriesForDomain("web", [], installedSkillIds);
 
     const frameworkRow = result.find((r) => r.id === frameworkCategory);
     const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -187,7 +196,7 @@ describe("buildCategoriesForDomain", () => {
   it("should mark all skills as not installed when no installed IDs provided", () => {
     initializeMatrix(BUILD_STEP_WEB_MATRIX);
 
-    const result = buildCategoriesForDomain("web", [], {});
+    const result = buildCategoriesForDomain("web", []);
 
     const frameworkRow = result.find((r) => r.id === frameworkCategory);
     for (const option of frameworkRow!.options) {
@@ -203,7 +212,7 @@ describe("buildCategoriesForDomain", () => {
       ...buildSkillConfigs(["web-state-zustand"]),
     ];
 
-    const result = buildCategoriesForDomain("web", [], {}, [], skillConfigs);
+    const result = buildCategoriesForDomain("web", [], [], skillConfigs);
 
     const frameworkRow = result.find((r) => r.id === frameworkCategory);
     const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -219,7 +228,7 @@ describe("buildCategoriesForDomain", () => {
 
     const skillConfigs = buildSkillConfigs(["web-framework-react"]);
 
-    const result = buildCategoriesForDomain("web", [], {}, [], skillConfigs);
+    const result = buildCategoriesForDomain("web", [], [], skillConfigs);
 
     const frameworkRow = result.find((r) => r.id === frameworkCategory);
     const vueOption = frameworkRow?.options.find(
@@ -236,7 +245,7 @@ describe("buildCategoriesForDomain", () => {
       ...buildSkillConfigs(["web-state-zustand"], { source: "agents-inc" }),
     ];
 
-    const result = buildCategoriesForDomain("web", [], {}, [], skillConfigs);
+    const result = buildCategoriesForDomain("web", [], [], skillConfigs);
 
     const frameworkRow = result.find((r) => r.id === frameworkCategory);
     const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -252,7 +261,7 @@ describe("buildCategoriesForDomain", () => {
 
     const skillConfigs = buildSkillConfigs(["web-framework-react"]);
 
-    const result = buildCategoriesForDomain("web", [], {}, [], skillConfigs);
+    const result = buildCategoriesForDomain("web", [], [], skillConfigs);
 
     const frameworkRow = result.find((r) => r.id === frameworkCategory);
     const vueOption = frameworkRow?.options.find(
@@ -270,7 +279,7 @@ describe("buildCategoriesForDomain", () => {
         ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
       ];
 
-      const result = buildCategoriesForDomain("web", [], {}, [], skillConfigs);
+      const result = buildCategoriesForDomain("web", [], [], skillConfigs);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -283,7 +292,7 @@ describe("buildCategoriesForDomain", () => {
 
       const skillConfigs = buildSkillConfigs(["web-framework-react"]);
 
-      const result = buildCategoriesForDomain("web", [], {}, [], skillConfigs);
+      const result = buildCategoriesForDomain("web", [], [], skillConfigs);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -296,7 +305,7 @@ describe("buildCategoriesForDomain", () => {
 
       const skillConfigs = buildSkillConfigs(["web-state-zustand"]);
 
-      const result = buildCategoriesForDomain("web", [], {}, [], skillConfigs);
+      const result = buildCategoriesForDomain("web", [], [], skillConfigs);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -312,7 +321,7 @@ describe("buildCategoriesForDomain", () => {
         ...buildSkillConfigs(["web-framework-react"], { excluded: true }),
       ];
 
-      const result = buildCategoriesForDomain("web", [], {}, [], skillConfigs);
+      const result = buildCategoriesForDomain("web", [], [], skillConfigs);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -328,7 +337,7 @@ describe("buildCategoriesForDomain", () => {
         excluded: true,
       });
 
-      const result = buildCategoriesForDomain("web", [], {}, [], skillConfigs);
+      const result = buildCategoriesForDomain("web", [], [], skillConfigs);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -343,7 +352,7 @@ describe("buildCategoriesForDomain", () => {
       // inherited-global row that renders `[G]` read-only after a dual-scope deselect.
       const skillConfigs = buildSkillConfigs(["web-framework-react"], { scope: "global" });
 
-      const result = buildCategoriesForDomain("web", [], {}, [], skillConfigs);
+      const result = buildCategoriesForDomain("web", [], [], skillConfigs);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -360,7 +369,7 @@ describe("buildCategoriesForDomain", () => {
         ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
       ];
 
-      const result = buildCategoriesForDomain("web", ["web-framework-react"], {}, [], skillConfigs);
+      const result = buildCategoriesForDomain("web", ["web-framework-react"], [], skillConfigs);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -373,99 +382,39 @@ describe("buildCategoriesForDomain", () => {
   it("should propagate category required and exclusive flags", () => {
     initializeMatrix(BUILD_STEP_FRAMEWORK_NON_EXCLUSIVE_MATRIX);
 
-    const result = buildCategoriesForDomain("web", [], {});
+    const result = buildCategoriesForDomain("web", []);
 
-    expect(result[0].required).toBe(true);
-    expect(result[0].exclusive).toBe(false);
+    expect(firstElement(result).required).toBe(true);
+    expect(firstElement(result).exclusive).toBe(false);
   });
 
   it("should default required to false and exclusive to true when not set", () => {
     initializeMatrix(BUILD_STEP_FRAMEWORK_NO_FLAGS_MATRIX);
 
-    const result = buildCategoriesForDomain("web", [], {});
+    const result = buildCategoriesForDomain("web", []);
 
-    expect(result[0].required).toBe(false);
-    expect(result[0].exclusive).toBe(true);
+    expect(firstElement(result).required).toBe(false);
+    expect(firstElement(result).exclusive).toBe(true);
   });
 
   it("should only return categories matching the requested domain", () => {
     const apiCategory: Category = "api-api";
     initializeMatrix(BUILD_STEP_FRAMEWORK_API_MATRIX);
 
-    const webResult = buildCategoriesForDomain("web", [], {});
+    const webResult = buildCategoriesForDomain("web", []);
     expect(webResult).toHaveLength(1);
-    expect(webResult[0].id).toBe(frameworkCategory);
+    expect(firstElement(webResult).id).toBe(frameworkCategory);
 
-    const apiResult = buildCategoriesForDomain("api", [], {});
+    const apiResult = buildCategoriesForDomain("api", []);
     expect(apiResult).toHaveLength(1);
-    expect(apiResult[0].id).toBe(apiCategory);
+    expect(firstElement(apiResult).id).toBe(apiCategory);
   });
 
   it("should return empty array when no categories match the domain", () => {
     initializeMatrix(BUILD_STEP_FRAMEWORK_ONLY_MATRIX);
 
-    const result = buildCategoriesForDomain("api", [], {});
+    const result = buildCategoriesForDomain("api", []);
     expect(result).toHaveLength(0);
-  });
-
-  describe("framework-first filtering", () => {
-    it("should filter incompatible skills when filterIncompatible is true and framework selected", () => {
-      initializeMatrix(BUILD_STEP_WEB_MATRIX);
-
-      const selections: CategorySelections = { "web-framework": ["web-framework-react"] };
-      const result = buildCategoriesForDomain("web", [], selections, [], [], true);
-
-      const stateRow = result.find((r) => r.id === stateCategory);
-
-      // Zustand is compatibleWith react, pinia is compatibleWith vue
-      const skillIds = stateRow!.options.map((o) => o.id);
-      expect(skillIds).toContain("web-state-zustand");
-      expect(skillIds).not.toContain("web-state-pinia");
-    });
-
-    it("should NOT filter the framework category itself", () => {
-      initializeMatrix(BUILD_STEP_WEB_MATRIX);
-
-      const selections: CategorySelections = { "web-framework": ["web-framework-react"] };
-      const result = buildCategoriesForDomain("web", [], selections, [], [], true);
-
-      const frameworkRow = result.find((r) => r.id === frameworkCategory);
-      // Framework category should show all frameworks regardless of filtering
-      expect(frameworkRow?.options).toHaveLength(2);
-    });
-
-    it("should NOT filter on non-web domains even when filterIncompatible is true", () => {
-      const apiDbCategory: Category = "api-database";
-      initializeMatrix(BUILD_STEP_API_DB_MATRIX);
-
-      const selections: CategorySelections = { "api-api": ["api-framework-hono"] };
-      const result = buildCategoriesForDomain("api", [], selections, [], [], true);
-
-      const dbRow = result.find((r) => r.id === apiDbCategory);
-      expect(dbRow?.options).toHaveLength(1);
-    });
-
-    it("should NOT filter when no frameworks are selected even with filterIncompatible true", () => {
-      initializeMatrix(BUILD_STEP_WEB_MATRIX);
-
-      const result = buildCategoriesForDomain("web", [], {}, [], [], true);
-
-      const stateRow = result.find((r) => r.id === stateCategory);
-      // Both zustand and pinia should be visible since no framework is selected
-      expect(stateRow?.options).toHaveLength(2);
-    });
-
-    it("should show skills with empty compatibleWith regardless of framework selection", () => {
-      initializeMatrix(BUILD_STEP_UNIVERSAL_COMPAT_MATRIX);
-
-      const selections: CategorySelections = { "web-framework": ["web-framework-react"] };
-      const result = buildCategoriesForDomain("web", [], selections, [], [], true);
-
-      const stateRow = result.find((r) => r.id === stateCategory);
-      const skillIds = stateRow!.options.map((o) => o.id);
-      // universalSkill has empty compatibleWith so it should pass through
-      expect(skillIds).toContain("web-state-zustand");
-    });
   });
 
   describe("selected skill state", () => {
@@ -473,7 +422,7 @@ describe("buildCategoriesForDomain", () => {
       initializeMatrix(BUILD_STEP_WEB_MATRIX);
 
       const allSelections: SkillId[] = ["web-framework-react"];
-      const result = buildCategoriesForDomain("web", allSelections, {});
+      const result = buildCategoriesForDomain("web", allSelections);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -490,7 +439,7 @@ describe("buildCategoriesForDomain", () => {
 
       // React is selected but zustand is not
       const allSelections: SkillId[] = ["web-framework-react"];
-      const result = buildCategoriesForDomain("web", allSelections, {});
+      const result = buildCategoriesForDomain("web", allSelections);
 
       const stateRow = result.find((r) => r.id === stateCategory);
       const zustandOption = stateRow?.options.find((o) => o.id === "web-state-zustand");
@@ -503,7 +452,7 @@ describe("buildCategoriesForDomain", () => {
 
       // Both selected
       const allSelections: SkillId[] = [...EXPECTED_SKILLS.WEB_DEFAULT];
-      const result = buildCategoriesForDomain("web", allSelections, {});
+      const result = buildCategoriesForDomain("web", allSelections);
 
       const stateRow = result.find((r) => r.id === stateCategory);
       const zustandOption = stateRow?.options.find((o) => o.id === "web-state-zustand");
@@ -516,7 +465,7 @@ describe("buildCategoriesForDomain", () => {
     it("should propagate local flag from matrix skill", () => {
       initializeMatrix(BUILD_STEP_LOCAL_SKILL_MATRIX);
 
-      const result = buildCategoriesForDomain("web", [], {});
+      const result = buildCategoriesForDomain("web", []);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -526,7 +475,7 @@ describe("buildCategoriesForDomain", () => {
     it("should leave local undefined for non-local skills", () => {
       initializeMatrix(BUILD_STEP_NON_LOCAL_MATRIX);
 
-      const result = buildCategoriesForDomain("web", [], {});
+      const result = buildCategoriesForDomain("web", []);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -538,8 +487,8 @@ describe("buildCategoriesForDomain", () => {
     it("should use displayName from category definition", () => {
       initializeMatrix(BUILD_STEP_DISPLAY_NAME_MATRIX);
 
-      const result = buildCategoriesForDomain("web", [], {});
-      expect(result[0].displayName).toBe("Web Framework");
+      const result = buildCategoriesForDomain("web", []);
+      expect(firstElement(result).displayName).toBe("Web Framework");
     });
   });
 
@@ -554,7 +503,7 @@ describe("buildCategoriesForDomain", () => {
         }),
       );
 
-      const result = buildCategoriesForDomain("web", [], {});
+      const result = buildCategoriesForDomain("web", []);
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const displayNames = frameworkRow!.options.map((o) => getSkillById(o.id).displayName);
 
@@ -567,21 +516,21 @@ describe("buildCategoriesForDomain", () => {
       const stylingCategory: Category = "web-styling";
       initializeMatrix(BUILD_STEP_SORTING_MATRIX);
 
-      const result = buildCategoriesForDomain("web", [], {});
+      const result = buildCategoriesForDomain("web", []);
 
-      expect(result[0].id).toBe(stylingCategory);
-      expect(result[1].id).toBe(frameworkCategory);
-      expect(result[2].id).toBe(stateCategory);
+      expect(firstElement(result).id).toBe(stylingCategory);
+      expect(elementAt(result, 1).id).toBe(frameworkCategory);
+      expect(elementAt(result, 2).id).toBe(stateCategory);
     });
 
     it("should treat undefined order as 0", () => {
       initializeMatrix(BUILD_STEP_UNDEFINED_ORDER_MATRIX);
 
-      const result = buildCategoriesForDomain("web", [], {});
+      const result = buildCategoriesForDomain("web", []);
 
       // undefined order is treated as 0, which comes before 1
-      expect(result[0].id).toBe(frameworkCategory);
-      expect(result[1].id).toBe(stateCategory);
+      expect(firstElement(result).id).toBe(frameworkCategory);
+      expect(elementAt(result, 1).id).toBe(stateCategory);
     });
   });
 
@@ -592,7 +541,7 @@ describe("buildCategoriesForDomain", () => {
 
       // React is selected — Vue would normally be "incompatible"
       const allSelections: SkillId[] = ["web-framework-react"];
-      const result = buildCategoriesForDomain("web", allSelections, {});
+      const result = buildCategoriesForDomain("web", allSelections);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const vueOption = frameworkRow?.options.find(
@@ -608,29 +557,209 @@ describe("buildCategoriesForDomain", () => {
 
       // Zustand is selected — Pinia should remain incompatible in a non-exclusive category
       const allSelections: SkillId[] = ["web-state-zustand"];
-      const result = buildCategoriesForDomain("web", allSelections, {});
+      const result = buildCategoriesForDomain("web", allSelections);
 
       const stateRow = result.find((r) => r.id === stateCategory);
       const piniaOption = stateRow?.options.find((o) => o.id === "web-state-pinia");
       expect(piniaOption?.state.status).toBe("incompatible");
     });
 
-    it("should preserve recommended and discouraged states in exclusive categories", () => {
+    it("should preserve discouraged states in exclusive categories", () => {
       initializeMatrix(BUILD_STEP_ADVISORY_STATES_MATRIX);
 
-      // No selections — React should be recommended
-      const resultNoSelection = buildCategoriesForDomain("web", [], {});
+      // No selections — React carries no advisory state
+      const resultNoSelection = buildCategoriesForDomain("web", []);
       const frameworkRow = resultNoSelection.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
-      expect(reactOption?.state.status).toBe("recommended");
+      expect(reactOption?.state.status).toBe("normal");
 
       // SCSS selected — Vue should be discouraged (not suppressed)
-      const resultWithScss = buildCategoriesForDomain("web", ["web-styling-scss-modules"], {});
+      const resultWithScss = buildCategoriesForDomain("web", ["web-styling-scss-modules"]);
       const frameworkRow2 = resultWithScss.find((r) => r.id === frameworkCategory);
       const vueOption = frameworkRow2?.options.find(
         (o) => o.id === "web-framework-vue-composition-api",
       );
       expect(vueOption?.state.status).toBe("discouraged");
+    });
+  });
+
+  describe("exclusive category incompatibility narrowing", () => {
+    it("keeps a requirement the selection has ruled out standing inside a pick-one category", () => {
+      initializeMatrix(BUILT_IN_MATRIX);
+
+      const option = optionIn("web", "web-meta-framework", "web-meta-framework-nextjs", [
+        "web-framework-svelte",
+      ]);
+
+      expect(option?.state).toStrictEqual({
+        status: "incompatible",
+        reason: "requires React which conflicts with current selection",
+      });
+    });
+
+    it("leaves a sibling conflicting with the selected option offerable", () => {
+      initializeMatrix(BUILT_IN_MATRIX);
+
+      // Picking Vue replaces React, so the conflict between them is a swap.
+      const option = optionIn("web", "web-framework", "web-framework-vue-composition-api", [
+        "web-framework-react",
+      ]);
+
+      expect(option?.state).toStrictEqual({ status: "normal" });
+    });
+
+    it("rules out a sibling the swap alone would not rescue", () => {
+      initializeMatrix(BUILT_IN_MATRIX);
+
+      // Both conflict with the selected Next.js. Remix runs on the React that is
+      // also selected; Nuxt needs Vue, which that same React rules out — so the
+      // swap saves one and not the other.
+      const selection: SkillId[] = ["web-meta-framework-nextjs", "web-framework-react"];
+
+      expect(
+        optionIn("web", "web-meta-framework", "web-meta-framework-nuxt", selection)?.state,
+      ).toStrictEqual({
+        status: "incompatible",
+        reason: "requires Vue which conflicts with current selection",
+      });
+      expect(
+        optionIn("web", "web-meta-framework", "web-meta-framework-remix", selection)?.state,
+      ).toStrictEqual({ status: "normal" });
+    });
+
+    it("surfaces no incompatibility anywhere while nothing is selected", () => {
+      initializeMatrix(BUILT_IN_MATRIX);
+
+      const incompatible = DOMAIN_ORDER.flatMap((domain) =>
+        buildCategoriesForDomain(domain, []).flatMap((row) =>
+          row.options.filter((option) => option.state.status === "incompatible").map((o) => o.id),
+        ),
+      );
+
+      expect(incompatible).toStrictEqual([]);
+    });
+  });
+
+  describe("category headers in the shipped catalogue", () => {
+    it("renders one row per header, so no domain shows the same title twice", () => {
+      initializeMatrix(BUILT_IN_MATRIX);
+
+      const duplicated = DOMAIN_ORDER.flatMap((domain) => {
+        const titles = buildCategoriesForDomain(domain, []).map((row) => row.displayName);
+        return titles.filter((title, index) => titles.indexOf(title) !== index);
+      });
+
+      expect(duplicated).toStrictEqual([]);
+    });
+
+    it("offers every API framework under the one API Framework header", () => {
+      initializeMatrix(BUILT_IN_MATRIX);
+
+      const rows = buildCategoriesForDomain("api", []).filter(
+        (row) => row.displayName === "API Framework",
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(firstElement(rows).id).toBe("api-api");
+      expect(
+        firstElement(rows)
+          .options.map((option) => option.id)
+          .sort(),
+      ).toStrictEqual([
+        "api-framework-elysia",
+        "api-framework-express",
+        "api-framework-fastify",
+        "api-framework-hono",
+        "api-framework-nestjs",
+      ]);
+    });
+  });
+
+  describe("framework fences in the shipped catalogue", () => {
+    it("counts a rich-text editor unsatisfied until one of its React frameworks joins it", () => {
+      initializeMatrix(BUILT_IN_MATRIX);
+
+      // Lexical's only editor bootstrap and plugin registration path is
+      // @lexical/react, so picking it alone leaves a requirement outstanding.
+      const alone = optionIn("web", "web-editor", "web-editor-lexical", ["web-editor-lexical"]);
+      expect(alone?.hasUnmetRequirements).toBe(true);
+      expect(alone?.unmetRequirementsReason).toBe("requires React, Next.js or Remix");
+
+      const withReact = optionIn("web", "web-editor", "web-editor-lexical", [
+        "web-editor-lexical",
+        "web-framework-react",
+      ]);
+      expect(withReact?.hasUnmetRequirements).toBe(false);
+    });
+
+    it("offers each documentation framework beside the other family's base framework", () => {
+      initializeMatrix(BUILT_IN_MATRIX);
+
+      // A docs site is its own deployable: whichever framework it renders with
+      // is internal to it, so it fences neither the app's framework nor itself.
+      const docusaurusAlone = optionIn("web", "web-docs", "web-meta-framework-docusaurus", [
+        "web-meta-framework-docusaurus",
+      ]);
+      expect(docusaurusAlone?.hasUnmetRequirements).toBe(false);
+      expect(
+        optionIn("web", "web-docs", "web-meta-framework-docusaurus", [
+          "web-framework-vue-composition-api",
+        ])?.state,
+      ).toStrictEqual({ status: "normal" });
+
+      const vitepressAlone = optionIn("web", "web-docs", "web-meta-framework-vitepress", [
+        "web-meta-framework-vitepress",
+      ]);
+      expect(vitepressAlone?.hasUnmetRequirements).toBe(false);
+      expect(
+        optionIn("web", "web-docs", "web-meta-framework-vitepress", ["web-framework-react"])?.state,
+      ).toStrictEqual({ status: "normal" });
+      expect(
+        optionIn("web", "web-docs", "web-meta-framework-vitepress", ["web-meta-framework-nextjs"])
+          ?.state,
+      ).toStrictEqual({ status: "normal" });
+    });
+
+    it("offers Storybook in a Qwik stack and counts its requirement met there", () => {
+      initializeMatrix(BUILT_IN_MATRIX);
+
+      // Qwik is listed on Storybook's own frameworks page, so the fence its
+      // `requires` group states has to admit it.
+      expect(
+        optionIn("web", "web-tooling", "web-tooling-storybook", ["web-meta-framework-qwik"])?.state,
+      ).toStrictEqual({ status: "normal" });
+
+      const selected = optionIn("web", "web-tooling", "web-tooling-storybook", [
+        "web-tooling-storybook",
+        "web-meta-framework-qwik",
+      ]);
+      expect(selected?.hasUnmetRequirements).toBe(false);
+    });
+
+    it("stops accepting Remix alone as the React a client-side router needs", () => {
+      initializeMatrix(BUILT_IN_MATRIX);
+
+      // createBrowserRouter/RouterProvider are framework-owned inside a Remix
+      // app, so Remix does not stand in for the React the router names. The
+      // cell stays offerable — Remix is built on React, so nothing rules React
+      // out — and the fence surfaces on the selected skill's own badge instead.
+      expect(
+        optionIn("web", "web-routing", "web-routing-react-router", ["web-meta-framework-remix"])
+          ?.state,
+      ).toStrictEqual({ status: "normal" });
+
+      const withRemix = optionIn("web", "web-routing", "web-routing-react-router", [
+        "web-routing-react-router",
+        "web-meta-framework-remix",
+      ]);
+      expect(withRemix?.hasUnmetRequirements).toBe(true);
+      expect(withRemix?.unmetRequirementsReason).toBe("requires React");
+
+      const withReact = optionIn("web", "web-routing", "web-routing-react-router", [
+        "web-routing-react-router",
+        "web-framework-react",
+      ]);
+      expect(withReact?.hasUnmetRequirements).toBe(false);
     });
   });
 
@@ -641,7 +770,7 @@ describe("buildCategoriesForDomain", () => {
       const installedSkillIds: SkillId[] = ["web-framework-react"];
       const skillConfigs = buildSkillConfigs(["web-framework-react"], { scope: "global" });
 
-      const result = buildCategoriesForDomain("web", [], {}, installedSkillIds, skillConfigs);
+      const result = buildCategoriesForDomain("web", [], installedSkillIds, skillConfigs);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -655,7 +784,7 @@ describe("buildCategoriesForDomain", () => {
       const installedSkillIds: SkillId[] = ["web-framework-react"];
       const skillConfigs = buildSkillConfigs(["web-framework-react"]);
 
-      const result = buildCategoriesForDomain("web", [], {}, installedSkillIds, skillConfigs);
+      const result = buildCategoriesForDomain("web", [], installedSkillIds, skillConfigs);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");
@@ -668,7 +797,7 @@ describe("buildCategoriesForDomain", () => {
 
       const skillConfigs = buildSkillConfigs(["web-framework-react"], { scope: "global" });
 
-      const result = buildCategoriesForDomain("web", [], {}, [], skillConfigs);
+      const result = buildCategoriesForDomain("web", [], [], skillConfigs);
 
       const frameworkRow = result.find((r) => r.id === frameworkCategory);
       const reactOption = frameworkRow?.options.find((o) => o.id === "web-framework-react");

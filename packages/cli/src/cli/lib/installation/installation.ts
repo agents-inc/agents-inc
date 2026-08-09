@@ -11,7 +11,7 @@ import {
   EJECT_SOURCE,
 } from "../../consts";
 import { getProjectConfigPath } from "./install-base-dir";
-import type { SkillConfig } from "../../types/config";
+import type { ProjectConfig, SkillConfig } from "../../types/config";
 import type { InstallMode } from "../../types/matrix";
 
 // Re-exported from types/matrix.ts for existing importers of the installation barrel
@@ -23,6 +23,22 @@ export const INSTALL_MODE_LABELS = {
   eject: "Eject",
 } as const satisfies Record<InstallMode, string>;
 
+/**
+ * How a mode is described wherever a command tells the user what KIND of install is
+ * about to happen — `init`'s install-plan line, and `edit`'s line for the skills it
+ * is switching. One definition because it is one statement about one operation:
+ * switching a skill to plugin mode installs it natively exactly as a fresh plugin
+ * install does, and used to be announced in words `init` never printed.
+ *
+ * `mixed` is absent by construction. Nothing is switched TO mixed — it is a shape a
+ * whole selection can have, described with per-mode counts only the install plan
+ * holds, so `init` composes that one line itself.
+ */
+export const INSTALL_MODE_DESCRIPTIONS = {
+  plugin: `${INSTALL_MODE_LABELS.plugin} (native install)`,
+  eject: `${INSTALL_MODE_LABELS.eject} (copy to .claude/skills/)`,
+} as const satisfies Record<Exclude<InstallMode, "mixed">, string>;
+
 export type Installation = {
   mode: InstallMode;
   configPath: string;
@@ -30,6 +46,19 @@ export type Installation = {
   skillsDir: string;
   projectDir: string;
 };
+
+/**
+ * Whether a successfully-loaded config declares nothing to install — no skills and no agents.
+ *
+ * Exported rather than kept private to its one caller below because two surfaces have to agree on
+ * exactly which configs are content-less: this detection, which maps them to `null` so `init`
+ * routes to the wizard instead of the dashboard, and `doctor`, which has to name that state rather
+ * than repeat the `null` as `not found`. Two answers to that question is how one screen ended up
+ * validating a file and calling it missing four lines apart.
+ */
+export function declaresNoContent(config: ProjectConfig): boolean {
+  return config.skills.length === 0 && config.agents.length === 0;
+}
 
 /** Derive install mode from skills array at runtime */
 export function deriveInstallMode(skills: SkillConfig[]): InstallMode {
@@ -63,12 +92,9 @@ async function detectInstallationInDir(dir: string): Promise<Installation | null
   // content-less and does not count as an installation — init must route to the
   // setup wizard, not the dashboard. This is the shared detection function, so
   // returning null here covers both the project-config and global-config
-  // manifestations.
-  //
-  // skills is asserted directly: loadProjectConfigFromDir defaults it to [].
-  // agents is not defaulted by the loader, so it is guarded with `?? []` — the
-  // same treatment agents gets elsewhere (see doctor.ts, config-writer.ts).
-  if (loaded.config.skills.length === 0 && (loaded.config.agents ?? []).length === 0) {
+  // manifestations. A reporting surface must not read this `null` as "no config
+  // here": see declaresNoContent, which doctor asks the same question of.
+  if (declaresNoContent(loaded.config)) {
     return null;
   }
 

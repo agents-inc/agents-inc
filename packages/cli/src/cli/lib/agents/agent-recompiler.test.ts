@@ -62,17 +62,32 @@ describe("agent-recompiler", () => {
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
-        agents: ["web-pm"], // PM is a simple agent likely to succeed
+        agents: ["pm"], // PM is a simple agent likely to succeed
       });
 
-      expect(result.compiled).toContain("web-pm");
+      expect(result.compiled).toContain("pm");
       expect(result.failed).toStrictEqual([]);
 
-      const agentPath = path.join(testDirs.agentsDir, "web-pm.md");
+      const agentPath = path.join(testDirs.agentsDir, "pm.md");
       expect(await fileExists(agentPath)).toBe(true);
 
       const content = await readFile(agentPath, "utf-8");
-      expectValidAgentMarkdown(content, "web-pm");
+      expectValidAgentMarkdown(content, "pm");
+    });
+
+    it("writes an agent the scope map does not route into the caller's own agents directory", async () => {
+      // `agents-inc update` recompiles with no scope map at all, and a hand-authored agent has no
+      // config row in the map the other callers build — so an unrouted agent must stay where the
+      // caller pointed rather than being relocated into the user's ~/.claude.
+      const result = await recompileAgents({
+        pluginDir: testDirs.pluginDir,
+        sourcePath: CLI_ROOT,
+        agents: ["pm"],
+        agentScopeMap: new Map(),
+      });
+
+      expect(result.compiled).toStrictEqual(["pm"]);
+      expect(await fileExists(path.join(testDirs.agentsDir, "pm.md"))).toBe(true);
     });
 
     it("handles missing agent definitions gracefully", async () => {
@@ -92,7 +107,7 @@ describe("agent-recompiler", () => {
       await writeTestTsConfig(testDirs.projectDir, {
         name: "test-plugin",
         description: "Test plugin",
-        agents: buildAgentConfigs(["web-pm"]),
+        agents: buildAgentConfigs(["pm"]),
       });
 
       const result = await recompileAgents({
@@ -101,18 +116,18 @@ describe("agent-recompiler", () => {
         projectDir: testDirs.projectDir,
       });
 
-      expect(result.compiled).toContain("web-pm");
+      expect(result.compiled).toContain("pm");
     });
 
     it("uses existing compiled agents when no config exists", async () => {
-      await writeFile(path.join(testDirs.agentsDir, "web-pm.md"), "# Existing PM Agent\n");
+      await writeFile(path.join(testDirs.agentsDir, "pm.md"), "# Existing PM Agent\n");
 
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
       });
 
-      expect(result.compiled).toContain("web-pm");
+      expect(result.compiled).toContain("pm");
     });
 
     it("compiles multiple agents", async () => {
@@ -122,12 +137,12 @@ describe("agent-recompiler", () => {
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
-        agents: ["web-developer", "api-developer", "web-pm"],
+        agents: ["web-developer", "api-developer", "pm"],
       });
 
       expect(result.compiled).toContain("web-developer");
       expect(result.compiled).toContain("api-developer");
-      expect(result.compiled).toContain("web-pm");
+      expect(result.compiled).toContain("pm");
       expect(result.compiled).toHaveLength(3);
       expect(result.failed).toStrictEqual([]);
 
@@ -151,11 +166,11 @@ describe("agent-recompiler", () => {
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
-        agents: ["web-pm"],
+        agents: ["pm"],
         skills: providedSkills,
       });
 
-      expect(result.compiled).toContain("web-pm");
+      expect(result.compiled).toContain("pm");
     });
 
     it("generates valid agent markdown with frontmatter", async () => {
@@ -180,11 +195,11 @@ describe("agent-recompiler", () => {
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
-        agents: ["web-pm"],
+        agents: ["pm"],
         projectDir: testDirs.projectDir,
       });
 
-      expect(result.compiled).toContain("web-pm");
+      expect(result.compiled).toContain("pm");
     });
 
     it("should filter excluded skills from compiled agent output", async () => {

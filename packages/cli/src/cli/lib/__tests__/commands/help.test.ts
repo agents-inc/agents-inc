@@ -116,11 +116,12 @@ describe("help command", () => {
 
       // oclif should error when help is requested for a command that does not exist
       const hasError = error !== undefined;
+      const errorMessage = error?.message ?? "";
       const hasStderrMessage =
         stderr.toLowerCase().includes("not found") ||
         stderr.toLowerCase().includes("command") ||
-        error?.message?.toLowerCase().includes("not found") ||
-        error?.message?.toLowerCase().includes("command");
+        errorMessage.toLowerCase().includes("not found") ||
+        errorMessage.toLowerCase().includes("command");
 
       expect(hasError || hasStderrMessage).toBe(true);
     });

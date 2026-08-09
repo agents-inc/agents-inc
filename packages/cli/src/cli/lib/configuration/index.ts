@@ -4,14 +4,17 @@ export {
   type BrandingConfig,
   type SourceEntry,
   type ResolvedConfig,
+  type ResolveSourceRequest,
   type ResolvedBranding,
+  type SourceCaller,
   getProjectConfigPath,
   loadProjectSourceConfig,
   loadGlobalSourceConfig,
   resolveSource,
   resolveAuthor,
   resolveBranding,
-  resolveAllSources,
+  resolvePrimarySourceEntry,
+  isDefaultSource,
   isLocalSource,
   validateSourceFormat,
 } from "./config";
@@ -41,12 +44,12 @@ export {
 export {
   type LoadedProjectConfig,
   ConfigLoadError,
+  configDirsInPlay,
+  findConfigLoadFailures,
   loadProjectConfig,
   loadProjectConfigFromDir,
   validateProjectConfig,
 } from "./project-config";
-
-export { type SourceSummary, addSource, removeSource, getSourceSummary } from "./source-manager";
 
 export { defineConfig } from "./define-config";
 export { defaultCategories } from "./default-categories";

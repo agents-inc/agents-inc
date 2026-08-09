@@ -4,19 +4,16 @@ import type {
   AgentConfig,
   AgentDefinition,
   AgentName,
-  Category,
   CompileAgentConfig,
   CompileConfig,
-  ProjectConfig,
   Skill,
   SkillDefinitionMap,
   SkillReference,
-  Stack,
   StackAgentConfig,
 } from "../types";
 import { fileExists } from "../utils/fs";
 import { verbose } from "../utils/logger";
-import { typedKeys } from "../utils/typed-object";
+import { typedEntries, typedFromEntries, typedKeys } from "../utils/typed-object";
 import { resolveAgentConfigToSkills } from "./stacks/stacks-loader";
 
 export async function resolveClaudeMd(projectRoot: string, stackId: string): Promise<string> {
@@ -41,7 +38,7 @@ export function resolveSkillReference(
     ...definition,
     usage: ref.usage,
     preloaded: ref.preloaded ?? false,
-    source: ref.source,
+    ...(ref.source !== undefined && { source: ref.source }),
   };
 }
 
@@ -68,69 +65,16 @@ export function buildSkillRefsFromConfig(agentStack: StackAgentConfig): SkillRef
 }
 
 /**
- * Resolves skill references for an agent from a Stack definition.
+ * Resolves the skill references an agent compiles with.
  *
- * Stack values are already SkillAssignment[] normalized by loadStacks().
- * Returns an empty array if the agent is not present in the stack or has
- * no technology-specific skills configured.
+ * The compile config is the only source: `buildCompileAgents` has already expanded
+ * the project config's stack into `skills` by the time this runs.
  *
- * @param agentName - Agent to resolve skills for
- * @param stack - Loaded stack definition with normalized skill assignments
- * @returns Skill references with usage and preloaded flags from the stack
+ * @param agentConfig - Compile-time agent config
+ * @returns The agent's explicit skill references, or an empty array when it names none
  */
-export function resolveAgentSkillsFromStack(agentName: AgentName, stack: Stack): SkillReference[] {
-  const agentConfig = stack.agents[agentName];
-
-  if (!agentConfig) {
-    verbose(`Agent '${agentName}' not found in stack '${stack.id}'`);
-    return [];
-  }
-
-  // Empty config {} means agent has no technology-specific skills
-  if (typedKeys<Category>(agentConfig).length === 0) {
-    verbose(`Agent '${agentName}' has no technology config in stack '${stack.id}'`);
-    return [];
-  }
-
-  const skillRefs = resolveAgentConfigToSkills(agentConfig);
-
-  verbose(`Resolved ${skillRefs.length} skills for agent '${agentName}' from stack '${stack.id}'`);
-
-  return skillRefs;
-}
-
-/**
- * Resolves skill references for an agent using a priority hierarchy.
- *
- * Priority order:
- * 1. Explicit skills defined in the agent's compile config
- * 2. Skills derived from the stack definition
- *
- * @param agentName - Agent to resolve skills for
- * @param agentConfig - Compile-time agent config (may contain explicit skills)
- * @param stack - Optional stack definition for fallback skill resolution
- * @returns Skill references from the highest-priority source, or empty array
- */
-export async function resolveAgentSkillRefs(
-  agentName: AgentName,
-  agentConfig: CompileAgentConfig,
-  stack?: Stack,
-): Promise<SkillReference[]> {
-  // Priority 1: Explicit skills in compile config
-  if (agentConfig.skills && agentConfig.skills.length > 0) {
-    return agentConfig.skills;
-  }
-
-  // Priority 2: Stack-based skills — values are already skill IDs
-  if (stack) {
-    const stackSkills = resolveAgentSkillsFromStack(agentName, stack);
-    if (stackSkills.length > 0) {
-      verbose(`Resolved ${stackSkills.length} skills from stack for ${agentName}`);
-      return stackSkills;
-    }
-  }
-
-  return [];
+export function resolveAgentSkillRefs(agentConfig: CompileAgentConfig): SkillReference[] {
+  return agentConfig.skills ?? [];
 }
 
 /**
@@ -139,7 +83,7 @@ export async function resolveAgentSkillRefs(
  *
  * For each agent in `compileConfig.agents`, this function:
  * 1. Validates the agent exists in the scanned agent definitions
- * 2. Resolves skill references (from explicit config or stack fallback)
+ * 2. Resolves skill references from the agent's compile config
  * 3. Materializes skill references into full Skill objects using the skill definitions map
  * 4. Merges the agent definition with its resolved skills into an AgentConfig
  *
@@ -147,21 +91,23 @@ export async function resolveAgentSkillRefs(
  * @param skills - Available skill definitions keyed by ID (from scanning skill directories)
  * @param compileConfig - Compilation config specifying which agents to compile and their overrides
  * @param _projectRoot - Project root directory (currently unused, reserved for future use)
- * @param stack - Optional stack definition for stack-based skill resolution
  * @returns Map of agent names to fully resolved AgentConfig objects ready for compilation
  * @throws When an agent referenced in compileConfig is not found in scanned agents
  */
+// Nothing below is asynchronous any more: `resolveAgentSkillRefs` never was, and
+// dropping its `async` emptied this one too. The `Promise` stays because it is the
+// published shape — two production callers await it and local-installer.test.ts
+// doubles it with `mockResolvedValue`, so unwinding it is a change to the compile
+// pipeline rather than to this line.
+// eslint-disable-next-line @typescript-eslint/require-await -- published shape, see above
 export async function resolveAgents(
-  agents: Record<AgentName, AgentDefinition>,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
   skills: SkillDefinitionMap,
   compileConfig: CompileConfig,
   _projectRoot: string,
-  stack?: Stack,
-): Promise<Record<AgentName, AgentConfig>> {
-  const agentNames = typedKeys<AgentName>(compileConfig.agents);
-
-  const entries = await Promise.all(
-    agentNames.map(async (agentName) => {
+): Promise<Partial<Record<AgentName, AgentConfig>>> {
+  const entries = typedEntries<AgentName, CompileAgentConfig>(compileConfig.agents).map(
+    ([agentName, agentConfig]) => {
       const definition = agents[agentName];
       if (!definition) {
         const availableAgents = typedKeys<AgentName>(agents);
@@ -174,9 +120,14 @@ export async function resolveAgents(
         );
       }
 
-      const agentConfig = compileConfig.agents[agentName];
-      const skillRefs = await resolveAgentSkillRefs(agentName, agentConfig, stack);
+      const skillRefs = resolveAgentSkillRefs(agentConfig);
       const resolvedSkills = resolveSkillReferences(skillRefs, skills);
+
+      // The project config carries the user's deliberate choice; the agent's own metadata
+      // carries the default. Config wins, silently — warning on every compile for a setting
+      // someone made on purpose is noise. Neither present leaves the key off entirely.
+      const model = agentConfig.model ?? definition.model;
+      const effort = agentConfig.effort ?? definition.effort;
 
       return [
         agentName,
@@ -184,34 +135,17 @@ export async function resolveAgents(
           name: agentName,
           title: definition.title,
           description: definition.description,
-          // The project config carries the user's deliberate choice; the agent's own metadata
-          // carries the default. Config wins, silently — warning on every compile for a setting
-          // someone made on purpose is noise.
-          model: agentConfig?.model ?? definition.model,
-          effort: agentConfig?.effort ?? definition.effort,
+          ...(model !== undefined && { model }),
+          ...(effort !== undefined && { effort }),
           tools: definition.tools,
           skills: resolvedSkills,
-          path: definition.path,
-          sourceRoot: definition.sourceRoot,
-          agentBaseDir: definition.agentBaseDir,
+          ...(definition.path !== undefined && { path: definition.path }),
+          ...(definition.sourceRoot !== undefined && { sourceRoot: definition.sourceRoot }),
+          ...(definition.agentBaseDir !== undefined && { agentBaseDir: definition.agentBaseDir }),
         },
       ] as const;
-    }),
+    },
   );
 
-  // Structural cast: Object.fromEntries returns Record<string, V>, narrowing to typed keys
-  return Object.fromEntries(entries) as Record<AgentName, AgentConfig>;
-}
-
-export function convertStackToCompileConfig(stackId: string, stack: ProjectConfig): CompileConfig {
-  return {
-    name: stack.name,
-    description: stack.description || "",
-    stack: stackId,
-    // Structural cast: Object.fromEntries returns Record<string, V>, narrowing to typed keys
-    agents: Object.fromEntries(stack.agents.map((a) => [a.name, {}])) as Record<
-      AgentName,
-      CompileAgentConfig
-    >,
-  };
+  return typedFromEntries(entries);
 }

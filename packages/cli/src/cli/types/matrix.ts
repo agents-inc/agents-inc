@@ -66,14 +66,10 @@ export type RelationshipDefinitions = {
   conflicts: ConflictRule[];
   /** Selecting one shows warning for others but doesn't disable */
   discourages: DiscourageRule[];
-  /** Flat opinionated picks — skills we actively recommend */
-  recommends: Recommendation[];
   /** Skill A requires skill B to be selected first */
   requires: RequireRule[];
   /** Groups of interchangeable skills for the same purpose */
   alternatives: AlternativeGroup[];
-  /** Symmetric compatibility groups — all skills in each group work together */
-  compatibleWith?: CompatibilityGroup[];
 };
 
 /** Base shape for skill-group rules: a set of related slugs plus a reason */
@@ -88,15 +84,6 @@ export type ConflictRule = SkillGroupRule;
 
 /** Soft conflict rule - selecting any one shows a warning for ALL others */
 export type DiscourageRule = SkillGroupRule;
-
-/** Flat opinionated pick — skills we actively recommend */
-export type Recommendation = {
-  skill: SkillSlug;
-  reason: string;
-};
-
-/** Symmetric compatibility group — all skills in the group work together */
-export type CompatibilityGroup = SkillGroupRule;
 
 /** Dependency rule - skill A requires skill B to be selected first */
 export type RequireRule = {
@@ -188,22 +175,12 @@ export type SkillCore = {
 export type ResolvedSkill = SkillCore & {
   /** Selecting this skill disables these others (hard exclusion) */
   conflictsWith: SkillRelation[];
-  /** True if this skill is in the flat recommends list (opinionated pick) */
-  isRecommended: boolean;
-  /** Reason from the flat recommends entry (e.g., "Recommended client state management") */
-  recommendedReason?: string;
   /** Skills that THIS skill requires (must select first) */
   requires: SkillRequirement[];
   /** Other skills that serve the same purpose (informational, not enforced) */
   alternatives: SkillAlternative[];
   /** Selecting this skill shows a warning for these others (soft conflict) */
   discourages: SkillRelation[];
-  /**
-   * Framework skill IDs this skill is compatible with.
-   * Used for framework-first filtering in the Build step: if a framework is selected,
-   * only skills listing that framework in compatibleWith (or with an empty list) are shown.
-   */
-  compatibleWith: SkillId[];
   /** All known sources that provide this skill (populated by multi-source-loader) */
   availableSources?: SkillSource[];
   /** Currently active/installed source (if any) */
@@ -276,30 +253,9 @@ export type SkillSource = {
   primary?: boolean;
 };
 
-/** A foreign skill explicitly bound to a category via search */
-export type BoundSkill = {
-  /** The foreign skill's actual ID */
-  id: SkillId;
-  /** Source URL (e.g., "github:awesome-dev/skills") */
-  sourceUrl: string;
-  /** Display name of the source (e.g., "awesome-dev") */
-  sourceName: string;
-  /** Category alias this skill is bound to (e.g., "react") */
-  boundTo: SkillAlias;
-  /** Skill description from the source */
-  description?: string;
-};
-
-/** Search result candidate before being bound to a category */
-export type BoundSkillCandidate = Omit<BoundSkill, "boundTo"> & {
-  /** Skill alias / display name from the source */
-  alias: SkillAlias;
-};
-
 /** Advisory visual state for a skill option in the wizard UI */
 export type OptionState =
   | { status: "normal" }
-  | { status: "recommended"; reason: string }
   | { status: "discouraged"; reason: string }
   | { status: "incompatible"; reason: string };
 
@@ -309,7 +265,7 @@ export type OptionState =
  */
 export type SkillOption = {
   id: SkillId;
-  /** Advisory state computed from matrix relationships (incompatible > discouraged > recommended > normal) */
+  /** Advisory state computed from matrix relationships (incompatible > discouraged > normal) */
   advisoryState: OptionState;
   /** True if this skill is currently selected by the user */
   selected: boolean;
@@ -325,7 +281,6 @@ export type SkillOption = {
 export type SelectionValidation = {
   valid: boolean;
   errors: ValidationError[];
-  warnings: ValidationWarning[];
 };
 
 /** Advisory validation error (non-blocking) */
@@ -335,17 +290,10 @@ export type ValidationError = {
   skills: SkillId[];
 };
 
-/** Non-blocking validation warning for user awareness */
-export type ValidationWarning = {
-  type: "missing_recommendation";
-  message: string;
-  skills: SkillId[];
-};
-
 /**
  * Skill metadata extracted from SKILL.md frontmatter + metadata.yaml before matrix merge.
  *
- * Relationship fields (compatibleWith, conflictsWith, requires, etc.) are resolved from
+ * Relationship fields (conflictsWith, requires, etc.) are resolved from
  * centralized group-based declarations in skill-rules.ts — not from individual skill metadata.
  */
 export type ExtractedSkillMetadata = SkillCore & {

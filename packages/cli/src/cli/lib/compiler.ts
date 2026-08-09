@@ -33,7 +33,7 @@ import type {
   PluginSkillRef,
   Skill,
 } from "../types";
-import { typedEntries } from "../utils/typed-object";
+import { typedEntries, typedValues } from "../utils/typed-object";
 
 /** Pattern matching Liquid template delimiters that could enable template injection */
 const LIQUID_SYNTAX_PATTERN = /\{\{|\}\}|\{%|%\}/g;
@@ -55,16 +55,7 @@ export function sanitizeLiquidSyntax<T extends string>(value: T, fieldName: stri
   return sanitized as T;
 }
 
-function sanitizeString<T extends string>(value: T | undefined, fieldName: string): T | undefined {
-  if (value === undefined) return undefined;
-  return sanitizeLiquidSyntax(value, fieldName);
-}
-
-function sanitizeStringArray(
-  values: string[] | undefined,
-  fieldName: string,
-): string[] | undefined {
-  if (!values) return values;
+function sanitizeStringArray(values: string[], fieldName: string): string[] {
   return values.map((v) => sanitizeLiquidSyntax(v, fieldName));
 }
 
@@ -74,7 +65,9 @@ function sanitizeSkills(skills: Skill[]): Skill[] {
     id: sanitizeLiquidSyntax(s.id, "skill.id"),
     description: sanitizeLiquidSyntax(s.description, "skill.description"),
     usage: sanitizeLiquidSyntax(s.usage, "skill.usage"),
-    pluginRef: sanitizeString(s.pluginRef, "skill.pluginRef"),
+    ...(s.pluginRef !== undefined && {
+      pluginRef: sanitizeLiquidSyntax(s.pluginRef, "skill.pluginRef"),
+    }),
   }));
 }
 
@@ -94,11 +87,19 @@ export function sanitizeCompiledAgentData(data: CompiledAgentData): CompiledAgen
     name: sanitizeLiquidSyntax(data.agent.name, "agent.name"),
     title: sanitizeLiquidSyntax(data.agent.title, "agent.title"),
     description: sanitizeLiquidSyntax(data.agent.description, "agent.description"),
-    tools: sanitizeStringArray(data.agent.tools, "agent.tools") ?? data.agent.tools,
-    disallowedTools: sanitizeStringArray(data.agent.disallowedTools, "agent.disallowedTools"),
-    model: sanitizeString(data.agent.model, "agent.model"),
-    effort: sanitizeString(data.agent.effort, "agent.effort"),
-    permissionMode: sanitizeString(data.agent.permissionMode, "agent.permissionMode"),
+    tools: sanitizeStringArray(data.agent.tools, "agent.tools"),
+    ...(data.agent.disallowedTools !== undefined && {
+      disallowedTools: sanitizeStringArray(data.agent.disallowedTools, "agent.disallowedTools"),
+    }),
+    ...(data.agent.model !== undefined && {
+      model: sanitizeLiquidSyntax(data.agent.model, "agent.model"),
+    }),
+    ...(data.agent.effort !== undefined && {
+      effort: sanitizeLiquidSyntax(data.agent.effort, "agent.effort"),
+    }),
+    ...(data.agent.permissionMode !== undefined && {
+      permissionMode: sanitizeLiquidSyntax(data.agent.permissionMode, "agent.permissionMode"),
+    }),
   };
 
   const sanitizedSkills = sanitizeSkills(data.skills);
@@ -212,7 +213,10 @@ async function compileAgent(
   const data = buildAgentTemplateContext(name, agent, files);
 
   verbose(`Rendering template for ${name}...`);
-  return engine.renderFile("agent", sanitizeCompiledAgentData(data));
+  // Boundary cast: liquidjs types renderFile as `Promise<any>` because a template
+  // can render to any value. The agent template renders a markdown file, and this
+  // function has declared `Promise<string>` since it was written.
+  return engine.renderFile("agent", sanitizeCompiledAgentData(data)) as Promise<string>;
 }
 
 /**
@@ -228,7 +232,7 @@ async function compileAgent(
  * @throws When any agent fails to compile (missing files, template errors)
  */
 export async function compileAllAgents(
-  resolvedAgents: Record<AgentName, AgentConfig>,
+  resolvedAgents: Partial<Record<AgentName, AgentConfig>>,
   ctx: CompileContext,
   engine: Liquid,
 ): Promise<void> {
@@ -276,11 +280,11 @@ export async function compileAllAgents(
  * @throws When a skill file or directory is missing from the expected source path
  */
 export async function compileAllSkills(
-  resolvedAgents: Record<AgentName, AgentConfig>,
+  resolvedAgents: Partial<Record<AgentName, AgentConfig>>,
   ctx: CompileContext,
 ): Promise<void> {
   const allSkills = pipe(
-    Object.values(resolvedAgents),
+    typedValues(resolvedAgents),
     flatMap((a) => a.skills),
     filter((s) => Boolean(s.path)),
   );
@@ -453,9 +457,9 @@ export async function removeCompiledOutputDirs(outputDir: string): Promise<void>
  * installed from a marketplace. `undefined` source (user-authored local skills
  * with no SkillConfig entry) and `"eject"` both fall through to bare id.
  */
-function derivePluginRef(skill: Skill): PluginSkillRef | undefined {
-  if (skill.source === undefined || skill.source === EJECT_SOURCE) return undefined;
-  return `${skill.id}:${skill.id}` as const;
+function pluginRefFor(skill: Skill): { pluginRef?: PluginSkillRef } {
+  if (skill.source === undefined || skill.source === EJECT_SOURCE) return {};
+  return { pluginRef: `${skill.id}:${skill.id}` as const };
 }
 
 export async function compileAgentForPlugin(
@@ -476,8 +480,11 @@ export async function compileAgentForPlugin(
   // silent fallback.
   const data = buildAgentTemplateContext(name, agent, files, (skill) => ({
     ...skill,
-    pluginRef: derivePluginRef(skill),
+    ...pluginRefFor(skill),
   }));
 
-  return engine.renderFile("agent", sanitizeCompiledAgentData(data));
+  // Boundary cast: liquidjs types renderFile as `Promise<any>` because a template
+  // can render to any value. The agent template renders a markdown file, and this
+  // function has declared `Promise<string>` since it was written.
+  return engine.renderFile("agent", sanitizeCompiledAgentData(data)) as Promise<string>;
 }

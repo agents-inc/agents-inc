@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 import { CLI_COLORS } from "../../consts.js";
-import { WIZARD_STEP_ORDER, type WizardStep } from "../../stores/wizard-store.js";
+import type { WizardStep } from "../../stores/wizard-store.js";
 import type { Domain } from "../../types/index.js";
 
 type WizardTabStep = {
@@ -16,9 +16,9 @@ export type TabDropdownItem = {
 
 export type TabDropdownProps = {
   items: TabDropdownItem[];
-  activeId?: string;
-  isSubNav?: boolean;
-  inline?: boolean;
+  activeId?: string | undefined;
+  isSubNav?: boolean | undefined;
+  inline?: boolean | undefined;
 };
 
 export type DomainNavProps = {
@@ -31,9 +31,9 @@ export type WizardTabsProps = {
   steps: WizardTabStep[];
   currentStep: WizardStep;
   completedSteps: WizardStep[];
-  skippedSteps?: WizardStep[];
-  version?: string;
-  domainNav?: DomainNavProps;
+  skippedSteps?: WizardStep[] | undefined;
+  version?: string | undefined;
+  domainNav?: DomainNavProps | undefined;
   dropdowns?: Partial<Record<WizardStep, TabDropdownProps>>;
 };
 
@@ -47,14 +47,21 @@ const WIZARD_STEP_LABELS = {
   confirm: "Confirm",
 } as const satisfies Record<WizardStep, string>;
 
-export const WIZARD_STEPS: WizardTabStep[] = WIZARD_STEP_ORDER.map((id) => ({
-  id,
-  label: WIZARD_STEP_LABELS[id],
-}));
+/**
+ * The tabs for a step flow — one per step that flow runs, in its order.
+ *
+ * A function of the flow rather than a constant over `WIZARD_STEP_ORDER`: a
+ * source that ships no stacks gives the wizard no stack step (see
+ * `getActiveStepFlow`), and a bar drawn from every step the wizard HAS would
+ * paint a Stack tab for a step this run never opens.
+ */
+export function wizardTabsFor(flow: WizardStep[]): WizardTabStep[] {
+  return flow.map((id) => ({ id, label: WIZARD_STEP_LABELS[id] }));
+}
 
-/** Tab label for a wizard step; falls back to the raw id for unknown steps. */
+/** Tab label for a wizard step. */
 export function formatStepLabel(stepId: WizardStep): string {
-  return WIZARD_STEPS.find((s) => s.id === stepId)?.label ?? stepId;
+  return WIZARD_STEP_LABELS[stepId];
 }
 
 type StepState = "completed" | "current" | "pending" | "skipped";
@@ -100,7 +107,7 @@ const Tab: React.FC<TabProps> = ({ step, state }) => {
   }
 };
 
-const TabDropdown: React.FC<TabDropdownProps> = ({ items, activeId, isSubNav, inline }) => (
+const TabDropdown: React.FC<TabDropdownProps> = ({ items, activeId, isSubNav = false, inline }) => (
   <Box
     {...(inline ? {} : { position: "absolute" as const, marginTop: 2 })}
     flexDirection="row"

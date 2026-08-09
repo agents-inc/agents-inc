@@ -6,6 +6,8 @@ import {
   copySkillsToLocalFlattened,
   validateSkillPath,
 } from "./skill-copier";
+import { readForkedFromMetadata } from "./skill-metadata";
+import { computeFileHash } from "../versioning";
 import type { MergedSkillsMatrix, SkillId } from "../../types";
 import type { SourceLoadResult } from "../loading/source-loader.js";
 import { CLAUDE_DIR, PROJECT_ROOT, STANDARD_DIRS, STANDARD_FILES } from "../../consts";
@@ -17,6 +19,7 @@ import { buildSourceResult, initMatrixAndSource } from "../__tests__/factories/c
 import { writeTestSkill } from "../__tests__/helpers/disk-writers.js";
 import { EMPTY_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { renderSkillMd } from "../__tests__/content-generators";
+import { firstElement } from "../__tests__/helpers/element-at.js";
 
 /**
  * Write a local skill SKILL.md to .claude/skills/<skillId>/ in the project directory.
@@ -201,10 +204,10 @@ describe("skill-copier", () => {
 
       // Local skill should be returned but marked as local
       expect(result).toHaveLength(1);
-      expect(result[0].skillId).toBe("web-framework-vue-composition-api");
-      expect(result[0].local).toBe(true);
-      expect(result[0].sourcePath).toBe(localSkillPath);
-      expect(result[0].destPath).toBe(localSkillPath);
+      expect(firstElement(result).skillId).toBe("web-framework-vue-composition-api");
+      expect(firstElement(result).local).toBe(true);
+      expect(firstElement(result).sourcePath).toBe(localSkillPath);
+      expect(firstElement(result).destPath).toBe(localSkillPath);
 
       // Verify SKILL.md still exists at original local path with correct content
       const localContent = await readFile(
@@ -253,7 +256,7 @@ describe("skill-copier", () => {
         local: true,
       });
       // Content hash should be computed from the SKILL.md
-      expect(result[0].contentHash).toMatch(/^[a-f0-9]{7}$/);
+      expect(firstElement(result).contentHash).toMatch(/^[a-f0-9]{7}$/);
 
       // Verify the SKILL.md exists and has expected content at the local path
       const localContent = await readFile(
@@ -386,12 +389,12 @@ describe("skill-copier", () => {
 
       // Should copy from remote, NOT preserve local
       expect(result).toHaveLength(1);
-      expect(result[0].local).toBeUndefined();
-      expect(result[0].destPath).toContain(pluginDir);
+      expect(firstElement(result).local).toBeUndefined();
+      expect(firstElement(result).destPath).toContain(pluginDir);
 
       // Verify remote skill was actually copied to the plugin directory
       const copiedSkillMd = await readFile(
-        path.join(result[0].destPath, STANDARD_FILES.SKILL_MD),
+        path.join(firstElement(result).destPath, STANDARD_FILES.SKILL_MD),
         "utf-8",
       );
       expect(copiedSkillMd).toContain("web-framework-react");
@@ -420,8 +423,8 @@ describe("skill-copier", () => {
 
       // Should preserve local
       expect(result).toHaveLength(1);
-      expect(result[0].local).toBe(true);
-      expect(result[0].sourcePath).toBe(localSkillPath);
+      expect(firstElement(result).local).toBe(true);
+      expect(firstElement(result).sourcePath).toBe(localSkillPath);
 
       // Verify SKILL.md exists at the local path with local content
       const localContent = await readFile(
@@ -457,9 +460,9 @@ describe("skill-copier", () => {
       );
 
       expect(result).toHaveLength(1);
-      expect(result[0].skillId).toBe("web-state-zustand");
+      expect(firstElement(result).skillId).toBe("web-state-zustand");
       // Should be flattened to .claude/skills/web-state-zustand/ (using normalized ID)
-      expect(result[0].destPath).toBe(path.join(localSkillsDir, "web-state-zustand"));
+      expect(firstElement(result).destPath).toBe(path.join(localSkillsDir, "web-state-zustand"));
 
       // Verify skill was copied
       const copiedSkillMd = await readFile(
@@ -467,6 +470,39 @@ describe("skill-copier", () => {
         "utf-8",
       );
       expect(copiedSkillMd).toContain("web-state-zustand");
+    });
+
+    it("stamps the copied skill with forkedFrom provenance naming the source's own hash", async () => {
+      const remoteSkillRelPath = "skills/web/framework/web-framework-react/";
+      const sourceSkillDir = await writeRemoteSkillOnDisk(projectDir, remoteSkillRelPath, {
+        name: "web-framework-react",
+        displayName: "React",
+      });
+
+      const localSkillsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+      await mkdir(localSkillsDir, { recursive: true });
+
+      const matrix = createMockMatrix({
+        ...SKILLS.react,
+        path: remoteSkillRelPath,
+      });
+      const sourceResult = initSourceResult(matrix, projectDir);
+
+      const result = await copySkillsToLocalFlattened(
+        ["web-framework-react"],
+        localSkillsDir,
+        sourceResult,
+      );
+
+      // The stamp is provenance: it must be the hash of the SOURCE SKILL.md, recomputed here
+      // from the file on disk rather than read back off the copy. `computeFileHash` is the
+      // same primitive the production path hashes with, so this is the oracle the copier's
+      // own value has to match — not a restatement of whatever it happened to write.
+      const forkedFrom = await readForkedFromMetadata(firstElement(result).destPath);
+      expect(forkedFrom?.skillId).toBe("web-framework-react");
+      expect(forkedFrom?.contentHash).toBe(
+        await computeFileHash(path.join(sourceSkillDir, STANDARD_FILES.SKILL_MD)),
+      );
     });
 
     it("copies skills using extracted name when no alias", async () => {
@@ -494,7 +530,7 @@ describe("skill-copier", () => {
 
       expect(result).toHaveLength(1);
       // With normalized IDs, the full ID is used as the folder name when no alias
-      expect(result[0].destPath).toBe(path.join(localSkillsDir, "api-framework-hono"));
+      expect(firstElement(result).destPath).toBe(path.join(localSkillsDir, "api-framework-hono"));
 
       // Verify skill was actually copied to disk
       const copiedSkillMd = await readFile(
@@ -532,10 +568,10 @@ describe("skill-copier", () => {
 
       // Local skill should be returned but marked as local
       expect(result).toHaveLength(1);
-      expect(result[0].skillId).toBe("web-framework-vue-composition-api");
-      expect(result[0].local).toBe(true);
-      expect(result[0].sourcePath).toBe(localSkillPath);
-      expect(result[0].destPath).toBe(localSkillPath);
+      expect(firstElement(result).skillId).toBe("web-framework-vue-composition-api");
+      expect(firstElement(result).local).toBe(true);
+      expect(firstElement(result).sourcePath).toBe(localSkillPath);
+      expect(firstElement(result).destPath).toBe(localSkillPath);
 
       // Verify SKILL.md still exists at the local path with correct content
       const localContent = await readFile(
@@ -653,7 +689,7 @@ describe("skill-copier", () => {
       expect(result).toHaveLength(1);
       // Key assertion: destPath should be FLAT using normalized ID, not nested
       // The path should be ".claude/skills/web-framework-react", NOT ".claude/skills/web/framework/client-rendering/web-framework-react/"
-      expect(result[0].destPath).toBe(path.join(localSkillsDir, "web-framework-react"));
+      expect(firstElement(result).destPath).toBe(path.join(localSkillsDir, "web-framework-react"));
 
       // Verify the skill was actually copied to the flat location
       const copiedSkillMd = await readFile(
@@ -770,7 +806,7 @@ describe("skill-copier", () => {
 
       expect(result).toHaveLength(1);
       // With normalized IDs, the full ID is used as the folder name when no alias
-      expect(result[0].destPath).toBe(path.join(localSkillsDir, "api-database-drizzle"));
+      expect(firstElement(result).destPath).toBe(path.join(localSkillsDir, "api-database-drizzle"));
 
       // Verify skill was actually copied to disk
       const copiedSkillMd = await readFile(
@@ -812,8 +848,8 @@ describe("skill-copier", () => {
 
       // Should copy from remote, NOT preserve local
       expect(result).toHaveLength(1);
-      expect(result[0].local).toBeUndefined();
-      expect(result[0].destPath).toBe(path.join(localSkillsDir, "web-framework-react"));
+      expect(firstElement(result).local).toBeUndefined();
+      expect(firstElement(result).destPath).toBe(path.join(localSkillsDir, "web-framework-react"));
 
       // Verify the remote content was copied (not the local version with (@local) in name)
       const copiedContent = await readFile(
@@ -847,8 +883,8 @@ describe("skill-copier", () => {
 
       // Should preserve local
       expect(result).toHaveLength(1);
-      expect(result[0].local).toBe(true);
-      expect(result[0].sourcePath).toBe(localSkillPath);
+      expect(firstElement(result).local).toBe(true);
+      expect(firstElement(result).sourcePath).toBe(localSkillPath);
 
       // Verify SKILL.md exists at the local path with local content
       const localContent = await readFile(
@@ -881,7 +917,7 @@ describe("skill-copier", () => {
       );
 
       expect(result).toHaveLength(1);
-      expect(result[0].local).toBe(true);
+      expect(firstElement(result).local).toBe(true);
 
       // Verify SKILL.md still exists at local path
       const localContent = await readFile(

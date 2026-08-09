@@ -9,10 +9,22 @@ import { initializeMatrix } from "../matrix/matrix-provider";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { buildProjectConfig, buildAgentConfigs } from "../__tests__/factories/config-factories.js";
+import { sa } from "../__tests__/factories/skill-factories.js";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
 import { SINGLE_REACT_MATRIX, WEB_PAIR_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../consts";
 import { EXPECTED_SKILLS } from "../__tests__/expected-values";
+import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
+import type { SkillId, StackAgentConfig } from "../../types";
+
+/**
+ * A skill the catalog moved between releases: the id still spells the category
+ * it left, and the matrix answers with the one it joined. A config saved before
+ * the move keys the entry under `STALE_CATEGORY_KEY`.
+ */
+const MOVED_SKILL: SkillId = "shared-monorepo-turborepo";
+const STALE_CATEGORY_KEY = "shared-monorepo";
+const LIVE_CATEGORY_KEY = "shared-task-runner";
 
 describe("project-config", () => {
   let tempDir: string;
@@ -36,7 +48,7 @@ describe("project-config", () => {
         name: "my-project",
         agents: buildAgentConfigs(["web-developer", "api-developer"]),
       });
-      await writeTestTsConfig(tempDir, inputConfig as Record<string, unknown>);
+      await writeTestTsConfig(tempDir, inputConfig);
 
       const result = await loadProjectConfig(tempDir);
 
@@ -49,7 +61,7 @@ describe("project-config", () => {
         name: "my-project",
         agents: buildAgentConfigs(["web-developer"], { model: "haiku", effort: "xhigh" }),
       });
-      await writeTestTsConfig(tempDir, inputConfig as Record<string, unknown>);
+      await writeTestTsConfig(tempDir, inputConfig);
 
       const result = await loadProjectConfig(tempDir);
 
@@ -69,7 +81,7 @@ describe("project-config", () => {
             "web-styling": "web-styling-scss-modules",
           },
         },
-      } as Record<string, unknown>);
+      } satisfies Record<string, unknown>);
 
       const result = await loadProjectConfig(tempDir);
 
@@ -97,7 +109,7 @@ describe("project-config", () => {
             },
           },
         },
-      } as Record<string, unknown>);
+      } satisfies Record<string, unknown>);
 
       const result = await loadProjectConfig(tempDir);
 
@@ -115,13 +127,35 @@ describe("project-config", () => {
       });
     });
 
+    it("should re-key a stack entry whose skill has since changed category", async () => {
+      initializeMatrix(BUILT_IN_MATRIX);
+      await writeTestTsConfig(tempDir, {
+        ...buildProjectConfig({ name: "my-project" }),
+        stack: {
+          "web-developer": {
+            [STALE_CATEGORY_KEY]: [{ id: MOVED_SKILL, preloaded: true }],
+          },
+        },
+      } satisfies Record<string, unknown>);
+
+      const result = await loadProjectConfig(tempDir);
+
+      expect(result).not.toBeNull();
+      expect(
+        result!.config.stack,
+        "the category is where an entry is stored, not which skill it names",
+      ).toStrictEqual({
+        "web-developer": { [LIVE_CATEGORY_KEY]: [sa(MOVED_SKILL, true)] },
+      });
+    });
+
     it("should load config with extra fields (passthrough)", async () => {
       const inputConfig = {
         ...buildProjectConfig({ name: "my-stack" }),
         author: "@vince",
         description: "A config with extra fields",
       };
-      await writeTestTsConfig(tempDir, inputConfig as Record<string, unknown>);
+      await writeTestTsConfig(tempDir, inputConfig);
 
       const result = await loadProjectConfig(tempDir);
 
@@ -246,9 +280,58 @@ describe("round-trip tests", () => {
     // Load it back
     const loaded = await loadProjectConfig(tempDir);
 
-    // Verify full config shape
+    // Verify full config shape. The generator emits sparse assignments and the
+    // writer compacts them to bare ids; the loader normalizes every id back to a
+    // full SkillAssignment, so the stack comes back denser than it went out.
     expect(loaded).not.toBeNull();
-    expect(loaded!.config).toStrictEqual(generated);
+    expect(loaded!.config).toStrictEqual({
+      ...generated,
+      stack: {
+        "web-developer": {
+          "web-framework": [sa("web-framework-react", true)],
+          "web-client-state": [sa("web-state-zustand", true)],
+        },
+      },
+    });
+  });
+
+  it("should carry a moved skill's curation through an edit save", async () => {
+    initializeMatrix(BUILT_IN_MATRIX);
+    const selectedAgents: AgentName[] = ["web-developer"];
+
+    // On disk from before the move: the entry is keyed by the category the
+    // skill sat in then, and carries the load the user curated.
+    await writeTestTsConfig(tempDir, {
+      ...buildProjectConfig({ name: "test-project" }),
+      stack: {
+        "web-developer": { [STALE_CATEGORY_KEY]: [{ id: MOVED_SKILL, preloaded: true }] },
+      },
+    } satisfies Record<string, unknown>);
+
+    // The edit path: load, rebuild the stack with nothing new selected, save.
+    const loaded = await loadProjectConfig(tempDir);
+    const regenerated = generateProjectConfigFromSkills("test-project", [MOVED_SKILL], {
+      selectedAgents,
+      skillConfigs: buildSkillConfigs([MOVED_SKILL]),
+      agentConfigs: buildAgentConfigs(selectedAgents),
+      // Boundary cast: ProjectConfig.stack types agents as Record<string, …>
+      // (it comes from parsed TS); narrow to typed AgentName keys.
+      existingStack: loaded!.config.stack as Partial<Record<AgentName, StackAgentConfig>>,
+      newlyAddedSkillIds: [],
+    });
+    await writeFile(
+      path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+      generateConfigSource(regenerated),
+    );
+
+    const reloaded = await loadProjectConfig(tempDir);
+
+    expect(
+      reloaded!.config.stack,
+      "an edit must not discard per-agent curation for a skill that changed category",
+    ).toStrictEqual({
+      "web-developer": { [LIVE_CATEGORY_KEY]: [sa(MOVED_SKILL, true)] },
+    });
   });
 
   it("should round-trip config with options (description/author)", async () => {
@@ -279,8 +362,11 @@ describe("round-trip tests", () => {
     // Load it back
     const loaded = await loadProjectConfig(tempDir);
 
-    // Verify full config shape
+    // Verify full config shape — the stack densifies on load, as above.
     expect(loaded).not.toBeNull();
-    expect(loaded!.config).toStrictEqual(generated);
+    expect(loaded!.config).toStrictEqual({
+      ...generated,
+      stack: { "web-developer": { "web-framework": [sa("web-framework-react", true)] } },
+    });
   });
 });

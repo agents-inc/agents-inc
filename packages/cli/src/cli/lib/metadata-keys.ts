@@ -15,18 +15,7 @@ export const METADATA_KEYS = {
 } as const;
 
 /**
- * Default values used when importing third-party skills (no existing metadata).
- */
-export const IMPORT_DEFAULTS = {
-  // Boundary cast: deliberately outside the generated Category union — external
-  // skills have no marketplace category; "imported" is a display-only placeholder
-  CATEGORY: "imported" as CategoryPath,
-  AUTHOR: "@imported",
-  DOMAIN: "shared" as const,
-} as const;
-
-/**
- * Default values used for local skills (created via `npx agents-inc new skill` or discovered locally).
+ * Default values used for local skills (discovered on disk without full metadata).
  */
 export const LOCAL_DEFAULTS = {
   // Boundary cast: deliberately outside the generated Category union — scaffold

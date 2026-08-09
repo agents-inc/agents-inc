@@ -6,7 +6,7 @@ import { render } from "../components/render.js";
 
 import { difference, indexBy } from "remeda";
 
-import { BaseCommand, type SourceRefreshFlags } from "../base-command.js";
+import { BaseCommand } from "../base-command.js";
 import { type WizardResultV2 } from "../components/wizard/wizard.js";
 import { runWizardSession } from "../components/wizard/run-wizard-session.js";
 import {
@@ -20,8 +20,6 @@ import {
   detectProject,
   loadSource,
   copyLocalSkills,
-  installPluginSkills,
-  pluginInstallFailureError,
   uninstallPluginSkills,
   loadAgentDefs,
   type AgentDefs,
@@ -39,21 +37,26 @@ import {
   isHomeDirectory,
   installBaseDir,
   resolveInstallPaths,
+  INSTALL_MODE_DESCRIPTIONS,
 } from "../lib/installation/index.js";
-import {
-  applyMigratedGlobalSources,
-  mutateGlobal,
-  type GateReport,
-} from "../lib/config-gate/index.js";
+import { applyMigratedGlobalSources, mutateGlobal } from "../lib/config-gate/index.js";
 import { matrix, getSkillById, getSkillDisplayName } from "../lib/matrix/matrix-provider";
-import { activeAgentScopeMap, isActiveAt } from "../lib/configuration/scope-predicates.js";
+import {
+  activeAgentNames,
+  activeAgentScopeMap,
+  isActiveAt,
+} from "../lib/configuration/scope-predicates.js";
 import type { SourceLoadResult } from "../lib/loading/index.js";
 import {
   discoverAllPluginSkills,
   buildMarketplacePluginRef,
   toClaudePluginScope,
 } from "../lib/plugins/index.js";
-import { deleteLocalSkill, migrateLocalSkillScope } from "../lib/skills/index.js";
+import {
+  deleteLocalSkill,
+  migrateLocalSkillScope,
+  unresolvedSkillRemovalReasons,
+} from "../lib/skills/index.js";
 import type {
   SkillId,
   SkillConfig,
@@ -66,12 +69,24 @@ import { claudePluginInstall, claudePluginUninstall } from "../utils/exec.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { remove } from "../utils/fs.js";
 import { type StartupMessage } from "../utils/logger.js";
-import { ERROR_MESSAGES, STATUS_MESSAGES } from "../utils/messages.js";
+import {
+  ERROR_MESSAGES,
+  INFO_MESSAGES,
+  STATUS_MESSAGES,
+  recompileSummary,
+} from "../utils/messages.js";
 import { formatScopeTag } from "../lib/wizard/index.js";
 import { typedKeys } from "../utils/typed-object.js";
 
 /** A scope transition (`from` → `to`) for a re-scoped skill or agent. */
 type ScopeChange = { from: SkillScope; to: SkillScope };
+
+/**
+ * The noun `edit`'s recompile summary counts in. `edit` recompiles every scope this
+ * context owns in one pass, so it has no scope word to qualify with — `compile`,
+ * which runs one scope at a time, does.
+ */
+const RECOMPILE_SUBJECT = "agents";
 
 /**
  * Dual-scope add/remove: the project half of a [P][G] pair was toggled while the
@@ -83,6 +98,67 @@ function formatDualScopeTransition(displayName: string, to: SkillScope): string 
   const prefix = isAdd ? "+" : "-";
   const color = isAdd ? CLI_COLORS.SUCCESS : CLI_COLORS.ERROR;
   return chalk.hex(color)(`  ${prefix} ${displayName} [P]`);
+}
+
+/**
+ * One re-scoped skill's line. A dual-scope toggle is the transition above rather than a
+ * migration; a genuine `[G] → [P]` reads as an addition because the skill arrives in this
+ * project, and every other direction is the amber `~` a move is written with.
+ */
+function formatSkillScopeChangeLine(
+  skillId: SkillId,
+  change: ScopeChange,
+  dualScopeSkillTransitions: ReadonlySet<SkillId>,
+): string {
+  const displayName = getSkillDisplayName(skillId);
+  if (dualScopeSkillTransitions.has(skillId)) {
+    return formatDualScopeTransition(displayName, change.to);
+  }
+
+  const isGlobalToProject = change.from === "global" && change.to === "project";
+  const prefix = isGlobalToProject ? "+" : "~";
+  const color = isGlobalToProject ? CLI_COLORS.SUCCESS : CLI_COLORS.WARNING;
+  return (
+    chalk.hex(color)(`  ${prefix} ${displayName}`) +
+    chalk.hex(CLI_COLORS.NEUTRAL)(scopeArrow(change))
+  );
+}
+
+/**
+ * The agent mirror of the line above, with two differences preserved from how this summary has
+ * always read: there is no `[G] → [P]`-reads-as-addition arm — an agent that moves is a move —
+ * and only the dual-scope arm carries the `(agent)` suffix, since a `~` line names no skill it
+ * could be confused with.
+ */
+function formatAgentScopeChangeLine(
+  agentName: AgentName,
+  change: ScopeChange,
+  dualScopeAgentTransitions: ReadonlySet<AgentName>,
+): string {
+  const agentSuffix = chalk.hex(CLI_COLORS.NEUTRAL)(" (agent)");
+  if (dualScopeAgentTransitions.has(agentName)) {
+    return formatDualScopeTransition(agentName, change.to) + agentSuffix;
+  }
+
+  return (
+    chalk.hex(CLI_COLORS.WARNING)(`  ~ ${agentName}`) +
+    chalk.hex(CLI_COLORS.NEUTRAL)(scopeArrow(change))
+  );
+}
+
+/** The ` ([P] → [G])` half both lines above end with, in the tags the wizard writes scopes as. */
+function scopeArrow(change: ScopeChange): string {
+  return ` (${formatScopeTag(change.from)} \u2192 ${formatScopeTag(change.to)})`;
+}
+
+/**
+ * The name this session's catalogue answers to — what a marketplace-dropped entry's removal
+ * reason says the skill is not present in. The resolved marketplace where there is one,
+ * otherwise the source string itself, which is what an installation pointed at a source that
+ * never carried the skill has to be named by.
+ */
+function loadedSourceLabel(sourceResult: SourceLoadResult): string {
+  return sourceResult.marketplace ?? sourceResult.sourceConfig.source;
 }
 
 /** @internal Re-exported for testing — the transform itself lives inside the gate. */
@@ -106,22 +182,9 @@ export default class Edit extends BaseCommand {
       description: "Open the edit wizard",
       command: "<%= config.bin %> <%= command.id %>",
     },
-    {
-      description: "Edit with a custom source",
-      command: "<%= config.bin %> <%= command.id %> --source github:org/marketplace",
-    },
-    {
-      description: "Force refresh skills from remote",
-      command: "<%= config.bin %> <%= command.id %> --refresh",
-    },
   ];
 
   static flags = {
-    ...BaseCommand.baseFlags,
-    refresh: Flags.boolean({
-      description: "Force refresh from remote sources",
-      default: false,
-    }),
     [EDIT_PROJECT_SETUP_FLAG]: Flags.boolean({
       description: "Internal: this run continues an `init` project setup",
       default: false,
@@ -133,17 +196,31 @@ export default class Edit extends BaseCommand {
     const { flags } = await this.parse(Edit);
     const cwd = process.cwd();
 
+    // Before anything renders: a config that cannot be read is recreated, not edited, and
+    // refusing here is what keeps the refusal clean — past this point the wizard has already
+    // copied skills and installed plugins by the time a config read fails.
+    await this.ensureConfigReadable(cwd);
+
     const { unmount, clear: clearSpinner } = render(
       <Spinner label={STATUS_MESSAGES.LOADING_SKILLS} />,
     );
-    const context = await this.loadContext(flags);
+    const context = await this.loadContext();
     clearSpinner();
     unmount();
+
+    // Still before anything renders, one layer below the config itself: an entry whose skill
+    // IS installed and whose metadata.yaml describes it no longer would otherwise be dropped
+    // from config.ts on the way out, over a file this refusal asks to be repaired instead.
+    await this.ensureSavedSkillsReadable(
+      context.projectConfig?.skills ?? [],
+      context.sourceResult.matrix,
+      context.projectDir,
+    );
 
     const result = await this.runEditWizard(context, cwd);
     if (!result) this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
 
-    this.reportValidationErrors(result);
+    this.reportValidationErrors(result.validation);
 
     // Filter excluded entries ONCE — downstream methods receive only active entries
     const activeNewSkills = result.skills.filter((s) => !s.excluded);
@@ -177,12 +254,23 @@ export default class Edit extends BaseCommand {
     if (!hasAnyChanges(changes)) {
       this.log(chalk.hex(CLI_COLORS.NEUTRAL)("No changes made."));
       if (!isProjectSetup) return;
-      await this.writeConfigAndCompile(result, context, flags, cwd);
+      await this.writeConfigAndCompile(result, context, cwd);
       this.logCompletionSummary(changes);
       return;
     }
 
-    this.logChangeSummary(changes, filteredResult.skills, filteredOldConfig?.skills ?? []);
+    const removalReasons = await unresolvedSkillRemovalReasons(
+      result.unresolvableSkillIds,
+      activeOldSkills,
+      context.projectDir,
+      loadedSourceLabel(context.sourceResult),
+    );
+    this.logChangeSummary(
+      changes,
+      filteredResult.skills,
+      filteredOldConfig?.skills ?? [],
+      removalReasons,
+    );
     const migratedSkillIds = await this.applyMigrations(
       changes,
       filteredResult,
@@ -196,12 +284,12 @@ export default class Edit extends BaseCommand {
     await this.applyPluginChanges(changes, filteredResult, activeOldSkills, context, cwd);
     await this.copyNewLocalSkills(changes, filteredResult, context, cwd);
     await this.removeDeletedLocalSkills(changes, activeOldSkills, cwd);
-    await this.writeConfigAndCompile(result, context, flags, cwd);
+    await this.writeConfigAndCompile(result, context, cwd);
     await this.cleanupStaleAgentFiles(changes, activeOldAgents, cwd);
     this.logCompletionSummary(changes);
   }
 
-  private async loadContext(flags: SourceRefreshFlags): Promise<EditContext> {
+  private async loadContext(): Promise<EditContext> {
     const detected = await detectProject();
     if (!detected) {
       this.error(ERROR_MESSAGES.NO_INSTALLATION, {
@@ -218,12 +306,8 @@ export default class Edit extends BaseCommand {
     let sourceResult: SourceLoadResult;
     let startupMessages: StartupMessage[] = [];
     try {
-      const loaded = await loadSource({
-        sourceFlag: flags.source,
-        projectDir,
-        forceRefresh: flags.refresh,
-        captureStartupMessages: true,
-      });
+      // No source is named here: `edit` reads the one the installation stored.
+      const loaded = await loadSource({ projectDir, captureStartupMessages: true });
       sourceResult = loaded.sourceResult;
       startupMessages = loaded.startupMessages;
 
@@ -246,10 +330,10 @@ export default class Edit extends BaseCommand {
       // Exclude skills marked as excluded — they should not appear as selected in the build step.
       // They are still preserved in skillConfigs via installedSkillConfigs for info panel/confirm step.
       const excludedConfigIds = new Set(
-        projectConfig?.skills?.filter((s) => s.excluded).map((s) => s.id) ?? [],
+        projectConfig?.skills.filter((s) => s.excluded).map((s) => s.id) ?? [],
       );
       const configSkillIds =
-        projectConfig?.skills?.filter((s) => !s.excluded).map((s) => s.id) ?? [];
+        projectConfig?.skills.filter((s) => !s.excluded).map((s) => s.id) ?? [];
       const filteredPluginSkillIds = pluginSkillIds.filter((id) => !excludedConfigIds.has(id));
       const mergedIds = new Set<SkillId>([...filteredPluginSkillIds, ...configSkillIds]);
       currentSkillIds = [...mergedIds];
@@ -273,23 +357,25 @@ export default class Edit extends BaseCommand {
   }
 
   private async runEditWizard(context: EditContext, cwd: string): Promise<WizardResultV2 | null> {
-    const { projectConfig, projectDir, currentSkillIds } = context;
+    const { projectConfig, currentSkillIds } = context;
+    const selectedAgents = projectConfig?.agents && activeAgentNames(projectConfig.agents);
 
     return runWizardSession({
       hydrate: {
         initialStep: "build",
-        initialDomains: projectConfig?.domains,
-        initialAgents: projectConfig?.selectedAgents,
+        ...(projectConfig?.selectedDomains !== undefined && {
+          initialDomains: projectConfig.selectedDomains,
+        }),
+        ...(selectedAgents !== undefined && { initialAgents: selectedAgents }),
         installedSkillIds: currentSkillIds,
-        installedSkillConfigs: projectConfig?.skills,
-        installedAgentConfigs: projectConfig?.agents,
+        ...(projectConfig?.skills !== undefined && { installedSkillConfigs: projectConfig.skills }),
+        ...(projectConfig?.agents !== undefined && { installedAgentConfigs: projectConfig.agents }),
         isEditingFromGlobalScope: isHomeDirectory(cwd),
       },
       props: {
         version: this.config.version,
-        initialAgents: projectConfig?.selectedAgents,
+        initialAgents: selectedAgents,
         installedSkillIds: currentSkillIds,
-        projectDir,
         startupMessages: context.startupMessages,
       },
       onCancel: () => this.log("\nEdit cancelled"),
@@ -348,6 +434,10 @@ export default class Edit extends BaseCommand {
       const report = await mutateGlobal(
         { kind: "migrate-skill-sources", sources: migratedSources },
         {
+          // The deps contract in config-gate/deps.ts declares
+          // `() => Promise<MergedSkillsMatrix>`; this caller happens to have its
+          // matrix in hand already.
+          // eslint-disable-next-line @typescript-eslint/require-await -- deps contract
           loadMatrix: async () => context.sourceResult.matrix,
           loadAgents: async () => (await loadAgentDefs({ projectDir: cwd })).agents,
         },
@@ -358,18 +448,11 @@ export default class Edit extends BaseCommand {
     }
   }
 
-  private reportValidationErrors(result: WizardResultV2): void {
-    if (result.validation.errors.length > 0) {
-      for (const err of result.validation.errors) {
-        this.warn(err.message);
-      }
-    }
-  }
-
   private logChangeSummary(
     changes: ConfigChanges,
     newSkills: SkillConfig[],
     oldSkills: SkillConfig[],
+    removalReasons: ReadonlyMap<SkillId, string>,
   ): void {
     const {
       addedSkills,
@@ -394,7 +477,11 @@ export default class Edit extends BaseCommand {
     for (const skillId of removedSkills) {
       const scope = oldSkills.find((s) => s.id === skillId)?.scope;
       const scopeLabel = scope ? ` ${formatScopeTag(scope)}` : "";
-      this.log(chalk.hex(CLI_COLORS.ERROR)(`  - ${getSkillDisplayName(skillId)}${scopeLabel}`));
+      const reason = removalReasons.get(skillId);
+      this.log(
+        chalk.hex(CLI_COLORS.ERROR)(`  - ${getSkillDisplayName(skillId)}${scopeLabel}`) +
+          (reason ? chalk.hex(CLI_COLORS.NEUTRAL)(` (${reason})`) : ""),
+      );
     }
     for (const agentName of addedAgents) {
       this.log(
@@ -417,39 +504,10 @@ export default class Edit extends BaseCommand {
       );
     }
     for (const [skillId, change] of scopeChanges) {
-      const displayName = getSkillDisplayName(skillId);
-
-      if (dualScopeSkillTransitions.has(skillId)) {
-        this.log(formatDualScopeTransition(displayName, change.to));
-        continue;
-      }
-
-      const fromLabel = formatScopeTag(change.from);
-      const toLabel = formatScopeTag(change.to);
-      const isGlobalToProject = change.from === "global" && change.to === "project";
-      const prefix = isGlobalToProject ? "+" : "~";
-      const color = isGlobalToProject ? CLI_COLORS.SUCCESS : CLI_COLORS.WARNING;
-      this.log(
-        chalk.hex(color)(`  ${prefix} ${displayName}`) +
-          chalk.hex(CLI_COLORS.NEUTRAL)(` (${fromLabel} \u2192 ${toLabel})`),
-      );
+      this.log(formatSkillScopeChangeLine(skillId, change, dualScopeSkillTransitions));
     }
     for (const [agentName, change] of agentScopeChanges) {
-      // Dual-scope add/remove for agents \u2014 mirrors the skill path above.
-      if (dualScopeAgentTransitions.has(agentName)) {
-        this.log(
-          formatDualScopeTransition(agentName, change.to) +
-            chalk.hex(CLI_COLORS.NEUTRAL)(" (agent)"),
-        );
-        continue;
-      }
-
-      const fromLabel = formatScopeTag(change.from);
-      const toLabel = formatScopeTag(change.to);
-      this.log(
-        chalk.hex(CLI_COLORS.WARNING)(`  ~ ${agentName}`) +
-          chalk.hex(CLI_COLORS.NEUTRAL)(` (${fromLabel} \u2192 ${toLabel})`),
-      );
+      this.log(formatAgentScopeChangeLine(agentName, change, dualScopeAgentTransitions));
     }
     this.log("");
   }
@@ -462,56 +520,51 @@ export default class Edit extends BaseCommand {
     cwd: string,
   ): Promise<Set<SkillId>> {
     const migrationPlan = detectMigrations(activeOldSkills, filteredResult.skills);
-    const hasMigrations = migrationPlan.toEject.length > 0 || migrationPlan.toPlugin.length > 0;
-
-    if (hasMigrations) {
-      if (migrationPlan.toEject.length > 0) {
-        this.log(
-          chalk.hex(CLI_COLORS.NEUTRAL)(
-            `Switching ${migrationPlan.toEject.length} skill(s) to eject`,
-          ),
-        );
-      }
-      if (migrationPlan.toPlugin.length > 0) {
-        this.log(
-          chalk.hex(CLI_COLORS.NEUTRAL)(
-            `Switching ${migrationPlan.toPlugin.length} skill(s) to plugin`,
-          ),
-        );
-        // Installing a plugin needs the marketplace REGISTERED and up to date with the
-        // Claude CLI — the same precondition `applyPluginChanges` and `applyScopeChanges`
-        // establish. Without it `claude plugin install` rejects every ref against a stale
-        // local copy. Runs before `executeMigration` so an unresolvable marketplace exits
-        // while the ejected working copies are still intact. Eject-side plugin uninstalls
-        // are diagnostic-only, so only plugin-install work demands this.
-        await this.requireMarketplaceOrExit(context.sourceResult, "migrate skills to plugin mode");
-      }
-
-      const migrationResult = await executeMigration(migrationPlan, cwd, context.sourceResult);
-
-      for (const warning of migrationResult.warnings) {
-        this.warn(warning);
-      }
-      for (const item of migrationResult.failedPluginInstalls) {
-        this.warn(`Failed to install plugin ${item.id}: ${item.error}`);
-      }
-
-      // Plugin install intent is inviolable — a migration whose plugin could not be
-      // installed must not reach `recordGlobalSourceMigrations` or
-      // `writeConfigAndCompile`, either of which would persist a marketplace `source`
-      // for a skill with no plugin registration. Same guard as the newly-added-skill
-      // path in `applyPluginChanges`.
-      if (migrationResult.failedPluginInstalls.length > 0) {
-        this.error(pluginInstallFailureError(migrationResult.failedPluginInstalls.length), {
-          exit: EXIT_CODES.ERROR,
-        });
-      }
-    }
-
-    return new Set([
+    const migratedSkillIds = new Set([
       ...migrationPlan.toEject.map((m) => m.id),
       ...migrationPlan.toPlugin.map((m) => m.id),
     ]);
+    if (migratedSkillIds.size === 0) return migratedSkillIds;
+
+    if (migrationPlan.toEject.length > 0) {
+      this.logModeSwitch(migrationPlan.toEject.length, INSTALL_MODE_DESCRIPTIONS.eject);
+    }
+    if (migrationPlan.toPlugin.length > 0) {
+      this.logModeSwitch(migrationPlan.toPlugin.length, INSTALL_MODE_DESCRIPTIONS.plugin);
+      // Installing a plugin needs the marketplace REGISTERED and up to date with the
+      // Claude CLI — the same precondition `applyPluginChanges` and `applyScopeChanges`
+      // establish. Without it `claude plugin install` rejects every ref against a stale
+      // local copy. Runs before `executeMigration` so an unresolvable marketplace exits
+      // while the ejected working copies are still intact. Eject-side plugin uninstalls
+      // are diagnostic-only, so only plugin-install work demands this.
+      await this.requireMarketplaceOrExit(context.sourceResult, "migrate skills to plugin mode");
+      // The install itself happens inside `executeMigration`, which deletes each skill's
+      // working copy the moment that skill's plugin is registered — so the banner is
+      // announced here and the outcome reported below, through the same surface `init`
+      // and the newly-added-skill path narrate an install with.
+      this.announcePluginInstall();
+    }
+
+    const migrationResult = await executeMigration(migrationPlan, cwd, context.sourceResult);
+
+    for (const warning of migrationResult.warnings) {
+      this.warn(warning);
+    }
+
+    // Reports what was installed and hard-errors on any failure: a migration whose
+    // plugin could not be installed must not reach `recordGlobalSourceMigrations` or
+    // `writeConfigAndCompile`, either of which would persist a marketplace `source`
+    // for a skill with no plugin registration.
+    if (migrationPlan.toPlugin.length > 0) {
+      this.reportPluginInstalls(migrationResult.pluginInstalls);
+    }
+
+    return migratedSkillIds;
+  }
+
+  /** Names what this run is switching, in the words `init` describes an install mode with. */
+  private logModeSwitch(count: number, modeDescription: string): void {
+    this.log(chalk.hex(CLI_COLORS.NEUTRAL)(`Switching ${count} skill(s) to ${modeDescription}`));
   }
 
   private async applyScopeChanges(
@@ -601,25 +654,7 @@ export default class Edit extends BaseCommand {
     );
 
     if (addedPluginSkills.length > 0) {
-      const pluginResult = await installPluginSkills(addedPluginSkills, marketplace, cwd);
-      if (pluginResult.installed.length > 0) {
-        this.log(
-          chalk.hex(CLI_COLORS.NEUTRAL)(`Installed ${pluginResult.installed.length} plugin(s)`),
-        );
-      }
-      for (const item of pluginResult.failed) {
-        this.warn(`Failed to install plugin ${item.id}: ${item.error}`);
-      }
-
-      // Plugin install intent is inviolable — if any skill failed to install,
-      // hard-error BEFORE `writeConfigAndCompile` writes config.ts with orphan
-      // entries claiming the skill is installed. Matches the
-      // no-plugin-to-eject-fallback rule.
-      if (pluginResult.failed.length > 0) {
-        this.error(pluginInstallFailureError(pluginResult.failed.length), {
-          exit: EXIT_CODES.ERROR,
-        });
-      }
+      await this.installPluginSkillsReported(addedPluginSkills, marketplace, cwd);
     }
 
     if (removedPluginSkills.length > 0) {
@@ -682,15 +717,12 @@ export default class Edit extends BaseCommand {
   private async writeConfigAndCompile(
     result: WizardResultV2,
     context: EditContext,
-    flags: SourceRefreshFlags,
     cwd: string,
   ): Promise<void> {
     // Load agent definitions — needed for both config-types.ts and recompilation
     let agentDefsResult: AgentDefs;
     try {
-      agentDefsResult = await loadAgentDefs({
-        forceRefresh: flags.refresh,
-      });
+      agentDefsResult = await loadAgentDefs({});
     } catch (error) {
       this.handleError(error);
     }
@@ -702,7 +734,6 @@ export default class Edit extends BaseCommand {
         wizardResult: result,
         sourceResult: context.sourceResult,
         projectDir: cwd,
-        sourceFlag: flags.source,
         agents: agentDefsResult.agents,
         // A full `cc edit` pass is authoritative over the roster it owns, so deselected entries
         // are removed rather than union-preserved (D-233 Scenario C). Global-context edit owns
@@ -724,20 +755,25 @@ export default class Edit extends BaseCommand {
         agentScopeMap,
       });
 
-      if (compilationResult.failed.length > 0) {
+      const { compiled, rewritten, failed, warnings } = compilationResult;
+      const summary = recompileSummary(
+        rewritten.length,
+        compiled.length - rewritten.length,
+        RECOMPILE_SUBJECT,
+      );
+
+      if (failed.length > 0) {
         this.log(
-          chalk.hex(CLI_COLORS.NEUTRAL)(`Recompiled ${compilationResult.compiled.length} agents`) +
-            chalk.hex(CLI_COLORS.WARNING)(` (${compilationResult.failed.length} failed)`),
+          chalk.hex(CLI_COLORS.NEUTRAL)(summary) +
+            chalk.hex(CLI_COLORS.WARNING)(` (${failed.length} failed)`),
         );
-        for (const warning of compilationResult.warnings) {
+        for (const warning of warnings) {
           this.warn(warning);
         }
-      } else if (compilationResult.compiled.length > 0) {
-        this.log(
-          chalk.hex(CLI_COLORS.NEUTRAL)(`Recompiled ${compilationResult.compiled.length} agents`),
-        );
+      } else if (compiled.length > 0) {
+        this.log(chalk.hex(CLI_COLORS.NEUTRAL)(summary));
       } else {
-        this.log(chalk.hex(CLI_COLORS.NEUTRAL)("No agents to recompile"));
+        this.log(chalk.hex(CLI_COLORS.NEUTRAL)(INFO_MESSAGES.NO_AGENTS_TO_RECOMPILE));
       }
     } catch (error) {
       this.warn(`Agent recompilation failed: ${getErrorMessage(error)}`);
@@ -747,28 +783,6 @@ export default class Edit extends BaseCommand {
     if (configResult) {
       this.reportPropagatedRecompile(configResult.propagation);
     }
-  }
-
-  /**
-   * Renders the recompile the gated write already performed on every OTHER
-   * registered project this run's global change was propagated into.
-   */
-  private reportPropagatedRecompile(propagation: GateReport): void {
-    if (propagation.propagated.updated.length === 0) return;
-
-    const { recompiledCount, failedCount, warnings } = propagation.recompile;
-    for (const warning of warnings) {
-      this.warn(warning);
-    }
-
-    const summary = chalk.hex(CLI_COLORS.NEUTRAL)(
-      `Recompiled agents in ${recompiledCount} registered project(s)`,
-    );
-    this.log(
-      failedCount > 0
-        ? summary + chalk.hex(CLI_COLORS.WARNING)(` (${failedCount} failed)`)
-        : summary,
-    );
   }
 
   private async cleanupStaleAgentFiles(
@@ -859,9 +873,9 @@ export function detectConfigChanges(
   wizardResult: WizardResultV2,
   fullEntries?: FullScopeEntries,
 ): ConfigChanges {
-  const oldSkillIds = oldConfig?.skills?.map((s) => s.id) ?? [];
+  const oldSkillIds = oldConfig?.skills.map((s) => s.id) ?? [];
   const newSkillIds = wizardResult.skills.map((s) => s.id);
-  const oldAgentNames = oldConfig?.agents?.map((a) => a.name) ?? [];
+  const oldAgentNames = oldConfig?.agents.map((a) => a.name) ?? [];
   const newAgentNames = wizardResult.agentConfigs.map((a) => a.name);
 
   const oldSkillsById = indexBy(oldConfig?.skills ?? [], (s) => s.id);

@@ -380,7 +380,7 @@ describe("StepConfirm component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(RENDER_DELAY_MS);
 
       expect(onComplete).toHaveBeenCalled();
@@ -395,7 +395,7 @@ describe("StepConfirm component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ESCAPE);
+      stdin.write(ESCAPE);
       await delay(RENDER_DELAY_MS);
 
       expect(onBack).toHaveBeenCalled();
@@ -411,7 +411,7 @@ describe("StepConfirm component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(RENDER_DELAY_MS);
 
       expect(onComplete).not.toHaveBeenCalled();

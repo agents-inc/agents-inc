@@ -233,7 +233,7 @@ describe("projectConfigLoaderSchema", () => {
           },
           "api-developer": {
             "api-api": { id: "api-framework-hono", preloaded: true },
-            "api-database": [{ id: "api-database-drizzle" }],
+            "api-orm": [{ id: "api-database-drizzle" }],
           },
         },
       };

@@ -9,6 +9,7 @@ import {
 import type { Marketplace } from "../types";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../consts";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
+import { firstElement } from "./__tests__/helpers/element-at.js";
 
 /** Standard marketplace-generation options shared across tests. */
 const TEST_MARKETPLACE_OPTIONS = {
@@ -172,7 +173,7 @@ describe("marketplace-generator", () => {
       const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
       expect(marketplace.plugins).toHaveLength(1);
-      expect(marketplace.plugins[0].name).toBe("web-valid-a");
+      expect(firstElement(marketplace.plugins).name).toBe("web-valid-a");
     });
 
     it("should include plugin author in marketplace entry", async () => {
@@ -188,7 +189,7 @@ describe("marketplace-generator", () => {
 
       const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
-      const plugin = marketplace.plugins[0];
+      const plugin = firstElement(marketplace.plugins);
       expect(plugin.author?.name).toBe("@vince");
       expect(plugin.author?.email).toBe("vince@example.com");
     });
@@ -203,7 +204,7 @@ describe("marketplace-generator", () => {
 
       const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
-      const plugin = marketplace.plugins[0];
+      const plugin = firstElement(marketplace.plugins);
       expect(plugin.keywords).toStrictEqual(["web", "react", "ui"]);
     });
 
@@ -220,7 +221,7 @@ describe("marketplace-generator", () => {
         pluginRoot: "./dist/plugins",
       });
 
-      const plugin = marketplace.plugins[0];
+      const plugin = firstElement(marketplace.plugins);
       expect(plugin.source).toBe("./dist/plugins/web-test-a");
     });
   });
@@ -330,7 +331,7 @@ describe("marketplace-generator", () => {
         owner: { name: "Test" },
         plugins: [
           { name: "plugin-1", source: "./p1", category: "web-framework" },
-          { name: "plugin-2", source: "./p2", category: "api-framework" },
+          { name: "plugin-2", source: "./p2", category: "api-api" },
           { name: "plugin-3", source: "./p3", category: "web-testing" },
         ],
       };
@@ -347,7 +348,7 @@ describe("marketplace-generator", () => {
         plugins: [
           { name: "web-framework-react", source: "./p1", category: "web-framework" },
           { name: "web-framework-vue", source: "./p2", category: "web-framework" },
-          { name: "api-framework-express", source: "./p3", category: "api-framework" },
+          { name: "api-framework-express", source: "./p3", category: "api-api" },
           { name: "web-testing-vitest", source: "./p4", category: "web-testing" },
         ],
       };
@@ -355,7 +356,7 @@ describe("marketplace-generator", () => {
       const stats = getMarketplaceStats(marketplace);
 
       expect(stats.byCategory["web-framework"]).toBe(2);
-      expect(stats.byCategory["api-framework"]).toBe(1);
+      expect(stats.byCategory["api-api"]).toBe(1);
       expect(stats.byCategory["web-testing"]).toBe(1);
     });
 
@@ -394,7 +395,7 @@ describe("marketplace-generator", () => {
         owner: { name: "Test" },
         plugins: [
           { name: "p1", source: "./p1", category: "web-framework" },
-          { name: "p2", source: "./p2", category: "api-database" },
+          { name: "p2", source: "./p2", category: "api-orm" },
         ],
       };
 
@@ -404,7 +405,7 @@ describe("marketplace-generator", () => {
         total: 2,
         byCategory: {
           "web-framework": 1,
-          "api-database": 1,
+          "api-orm": 1,
         },
       });
     });

@@ -1,6 +1,10 @@
 export {
   type LoadSkillsFromDirOptions,
+  type LoadedSkills,
+  type SkillMetadataRead,
+  type UnusableSkillMetadata,
   parseFrontmatter,
+  readSkillMetadata,
   loadAllAgents,
   loadMergedAgents,
   loadProjectAgents,

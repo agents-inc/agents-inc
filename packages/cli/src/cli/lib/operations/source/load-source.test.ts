@@ -19,22 +19,22 @@ import { loadSource } from "./load-source";
 import { loadSkillsMatrixFromSource } from "../../loading/index.js";
 import { enableBuffering, drainBuffer, disableBuffering } from "../../../utils/logger.js";
 import type { SourceLoadResult } from "../../loading/index.js";
+import { EMPTY_MATRIX } from "../../__tests__/mock-data/mock-matrices.js";
 
 const mockLoadSkillsMatrixFromSource = vi.mocked(loadSkillsMatrixFromSource);
 const mockEnableBuffering = vi.mocked(enableBuffering);
 const mockDrainBuffer = vi.mocked(drainBuffer);
 const mockDisableBuffering = vi.mocked(disableBuffering);
 
-// Boundary cast: partial mock — loadSource passes this through without inspecting shape
 const MOCK_SOURCE_RESULT = {
-  matrix: { skills: {}, categories: {} },
+  matrix: EMPTY_MATRIX,
   sourceConfig: {
     source: "github:test/source",
     sourceOrigin: "default",
   },
   sourcePath: "/tmp/test-source",
   isLocal: false,
-} as SourceLoadResult;
+} satisfies SourceLoadResult;
 
 describe("loadSource", () => {
   beforeEach(() => {
@@ -52,7 +52,6 @@ describe("loadSource", () => {
     expect(mockLoadSkillsMatrixFromSource).toHaveBeenCalledWith({
       sourceFlag: undefined,
       projectDir: "/tmp/project",
-      forceRefresh: undefined,
     });
     expect(result.sourceResult).toStrictEqual(MOCK_SOURCE_RESULT);
     expect(result.startupMessages).toStrictEqual([]);
@@ -135,17 +134,15 @@ describe("loadSource", () => {
     expect(mockEnableBuffering).not.toHaveBeenCalled();
   });
 
-  it("should pass sourceFlag and forceRefresh through to loadSkillsMatrixFromSource", async () => {
+  it("should pass sourceFlag through to loadSkillsMatrixFromSource", async () => {
     await loadSource({
       projectDir: "/tmp/project",
       sourceFlag: "github:custom/source",
-      forceRefresh: true,
     });
 
     expect(mockLoadSkillsMatrixFromSource).toHaveBeenCalledWith({
       sourceFlag: "github:custom/source",
       projectDir: "/tmp/project",
-      forceRefresh: true,
     });
   });
 });

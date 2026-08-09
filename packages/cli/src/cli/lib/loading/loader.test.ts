@@ -6,13 +6,15 @@ vi.mock("../../utils/logger");
 
 import {
   parseFrontmatter,
+  readSkillMetadata,
   loadAllAgents,
   loadMergedAgents,
   loadProjectAgents,
   loadSkillsByIds,
   loadPluginSkills,
+  loadSkillsFromDir,
 } from "./loader";
-import { readFile, glob, directoryExists } from "../../utils/fs";
+import { readFile, glob, directoryExists, fileExists } from "../../utils/fs";
 import { warn } from "../../utils/logger";
 import { renderSkillMd, renderAgentYaml } from "../__tests__/content-generators";
 import type { SkillId } from "../../types";
@@ -662,5 +664,166 @@ describe("loadPluginSkills", () => {
     const result = await loadPluginSkills("/path/to/plugin");
 
     expect(result).toStrictEqual({});
+  });
+});
+
+const METADATA_PATH = "/project/.claude/skills/web-framework-react/metadata.yaml";
+
+/** A metadata.yaml carrying the fields every reader of one goes looking for. */
+const USABLE_METADATA = [
+  "displayName: React",
+  "slug: react",
+  "domain: web",
+  "category: web-framework",
+].join("\n");
+
+/** Unparseable: a flow-mapping opener followed by nested compact mappings. */
+const UNPARSEABLE_METADATA = `{{{ this is not: valid: yaml: "at all`;
+
+describe("readSkillMetadata", () => {
+  it("returns the fields of a metadata.yaml that describes its skill", async () => {
+    vi.mocked(readFile).mockResolvedValue(USABLE_METADATA);
+
+    const result = await readSkillMetadata(METADATA_PATH);
+
+    expect(result).toStrictEqual({
+      usable: true,
+      metadata: {
+        displayName: "React",
+        slug: "react",
+        domain: "web",
+        category: "web-framework",
+      },
+    });
+  });
+
+  it("refuses unparseable YAML, carrying the parser's own reason", async () => {
+    vi.mocked(readFile).mockResolvedValue(UNPARSEABLE_METADATA);
+
+    const result = await readSkillMetadata(METADATA_PATH);
+
+    expect(result.usable).toBe(false);
+    expect(result.usable === false && result.reason).toContain("Nested mappings are not allowed");
+  });
+
+  it("refuses a file that parses but holds no fields", async () => {
+    vi.mocked(readFile).mockResolvedValue("");
+
+    const result = await readSkillMetadata(METADATA_PATH);
+
+    expect(result).toStrictEqual({
+      usable: false,
+      reason: "expected metadata fields, found an empty file",
+    });
+  });
+
+  it("refuses a list where a mapping of fields belongs", async () => {
+    vi.mocked(readFile).mockResolvedValue("- displayName: React\n- slug: react");
+
+    const result = await readSkillMetadata(METADATA_PATH);
+
+    expect(result).toStrictEqual({
+      usable: false,
+      reason: "expected metadata fields, found a list",
+    });
+  });
+
+  it("refuses a scalar where a mapping of fields belongs", async () => {
+    vi.mocked(readFile).mockResolvedValue("just a plain string");
+
+    const result = await readSkillMetadata(METADATA_PATH);
+
+    expect(result).toStrictEqual({
+      usable: false,
+      reason: "expected metadata fields, found a string",
+    });
+  });
+
+  it("refuses a file it cannot read at all, carrying the read error", async () => {
+    vi.mocked(readFile).mockRejectedValue(new Error("EACCES: permission denied"));
+
+    const result = await readSkillMetadata(METADATA_PATH);
+
+    expect(result).toStrictEqual({
+      usable: false,
+      reason: "EACCES: permission denied",
+    });
+  });
+
+  it("refuses a file that parses without the fields a skill is described by, naming them", async () => {
+    vi.mocked(readFile).mockResolvedValue("displayName: React\nslug: react");
+
+    const result = await readSkillMetadata(METADATA_PATH);
+
+    expect(result).toStrictEqual({
+      usable: false,
+      reason: "missing required fields: category, domain",
+    });
+  });
+
+  it("names one absent field in the singular", async () => {
+    vi.mocked(readFile).mockResolvedValue("displayName: React\nslug: react\ndomain: web");
+
+    const result = await readSkillMetadata(METADATA_PATH);
+
+    expect(result).toStrictEqual({
+      usable: false,
+      reason: "missing required field: category",
+    });
+  });
+
+  it("says what is wrong with a field that is present but malformed", async () => {
+    vi.mocked(readFile).mockResolvedValue(
+      ["displayName: React", "slug: 42", "domain: web", "category: web-framework"].join("\n"),
+    );
+
+    const result = await readSkillMetadata(METADATA_PATH);
+
+    expect(result.usable).toBe(false);
+    expect(result.usable === false && result.reason).toBe(
+      "slug: Invalid input: expected string, received number",
+    );
+  });
+});
+
+describe("loadSkillsFromDir with requireMetadata", () => {
+  it("reports the skill directory whose metadata.yaml describes no skill instead of loading it", async () => {
+    vi.mocked(directoryExists).mockResolvedValue(true);
+    vi.mocked(glob).mockResolvedValue(["web-framework-react/SKILL.md"]);
+    vi.mocked(fileExists).mockResolvedValue(true);
+    // The metadata.yaml is read before the SKILL.md, and refusing it means the
+    // SKILL.md is never reached — the skill is not loaded from its frontmatter.
+    vi.mocked(readFile).mockResolvedValue(UNPARSEABLE_METADATA);
+
+    const result = await loadSkillsFromDir("/project/.claude/skills", {
+      pathPrefix: ".claude/skills",
+      requireMetadata: true,
+    });
+
+    expect(result.skills).toStrictEqual({});
+    expect(result.unusableMetadata).toHaveLength(1);
+    expect(result.unusableMetadata[0]?.skillDirName).toBe("web-framework-react");
+    expect(result.unusableMetadata[0]?.metadataPath).toContain("metadata.yaml");
+  });
+
+  it("loads the skill and reports nothing when its metadata.yaml describes it", async () => {
+    vi.mocked(directoryExists).mockResolvedValue(true);
+    vi.mocked(glob).mockResolvedValue(["web-framework-react/SKILL.md"]);
+    vi.mocked(fileExists).mockResolvedValue(true);
+    vi.mocked(readFile)
+      .mockResolvedValueOnce(USABLE_METADATA)
+      .mockResolvedValueOnce(renderSkillMd("web-framework-react", "React patterns"));
+
+    const result = await loadSkillsFromDir("/project/.claude/skills", {
+      pathPrefix: ".claude/skills",
+      requireMetadata: true,
+    });
+
+    expect(result.unusableMetadata).toStrictEqual([]);
+    expect(result.skills["web-framework-react"]).toStrictEqual({
+      id: "web-framework-react",
+      description: "React patterns",
+      path: ".claude/skills/web-framework-react/",
+    });
   });
 });

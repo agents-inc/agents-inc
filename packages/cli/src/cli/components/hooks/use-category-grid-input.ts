@@ -2,15 +2,9 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useInput, type Key } from "ink";
 
 import type { Category, SkillId } from "../../types/index.js";
-import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
 import type { CategoryRow } from "../wizard/category-grid.js";
 import type { Direction } from "./use-focused-list-item.js";
-import {
-  HOTKEY_FILTER_INCOMPATIBLE,
-  HOTKEY_TOGGLE_LABELS,
-  KEY_SPACE,
-  isHotkey,
-} from "../wizard/hotkeys.js";
+import { HOTKEY_TOGGLE_LABELS, KEY_SPACE, isHotkey } from "../wizard/hotkeys.js";
 
 /** Find next section index (wrapping forward) */
 const findNextIndex = (items: { length: number }, currentIndex: number): number => {
@@ -27,7 +21,6 @@ type UseCategoryGridInputOptions = {
   moveFocus: (direction: Direction) => void;
   onToggle: (categoryId: Category, technologyId: SkillId) => void;
   onToggleLabels: () => void;
-  onToggleFilterIncompatible?: () => void;
 };
 
 export function useCategoryGridInput({
@@ -38,7 +31,6 @@ export function useCategoryGridInput({
   moveFocus,
   onToggle,
   onToggleLabels,
-  onToggleFilterIncompatible,
 }: UseCategoryGridInputOptions): void {
   const currentRow = categories[focusedRow];
   // Memoised so the effect below keys on the row actually changing — the `[]`
@@ -82,20 +74,9 @@ export function useCategoryGridInput({
       return;
     }
 
-    // Gated behind FEATURE_FLAGS.FILTER_INCOMPATIBLE (default off): pressing F is a
-    // no-op until the flag is flipped back on. The store action stays intact for re-enable.
-    if (
-      FEATURE_FLAGS.FILTER_INCOMPATIBLE &&
-      isHotkey(input, HOTKEY_FILTER_INCOMPATIBLE) &&
-      onToggleFilterIncompatible
-    ) {
-      onToggleFilterIncompatible();
-      return;
-    }
-
     if (input === KEY_SPACE) {
       const currentOption = currentOptions[focusedCol];
-      if (currentOption) {
+      if (currentRow && currentOption) {
         onToggle(currentRow.id, currentOption.id);
       }
       return;

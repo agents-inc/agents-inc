@@ -1,5 +1,4 @@
 import os from "os";
-import { uniqueBy } from "remeda";
 import { fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
@@ -23,6 +22,29 @@ export type ResolvedConfig = {
   source: string;
   sourceOrigin: "flag" | "env" | "project" | "global" | "default";
   marketplace?: string;
+};
+
+/**
+ * Who is asking for a source, and therefore whether this run may CHOOSE one.
+ *
+ * Choosing is an install-time decision (owner ruling 2026-08-09): `--source` is
+ * `init`'s flag and nobody else's, and {@link SOURCE_ENV_VAR} is the same choice made
+ * without typing it — so the environment rung is read for `init` and for nothing else.
+ * Every later command asks as `"stored"` and gets what the install recorded: the
+ * project config, then the global one, then {@link DEFAULT_SOURCE}.
+ *
+ * A `"stored"` caller may still NAME a source it is reading for its own sake — `doctor`
+ * validating a source repository points the loader at a path — which is why the flag is
+ * not tied to the caller. What `init` alone gets is the ambient environment.
+ */
+export type SourceCaller = "init" | "stored";
+
+export type ResolveSourceRequest = {
+  caller: SourceCaller;
+  /** The source this run named, where it named one. */
+  flag?: string | undefined;
+  /** The project whose `config.ts` is the first stored rung. */
+  projectDir?: string | undefined;
 };
 
 async function loadSourceConfig(
@@ -79,42 +101,26 @@ async function loadEffectiveSourceConfig(
   return null;
 }
 
-// Precedence: flag > env > project > global > default
-export async function resolveSource(
-  flagValue?: string,
-  projectDir?: string,
-): Promise<ResolvedConfig> {
+/**
+ * Precedence: flag > env > project > global > default, with the first two rungs
+ * reachable by `init` alone — see {@link SourceCaller}.
+ */
+export async function resolveSource(request: ResolveSourceRequest): Promise<ResolvedConfig> {
+  const { caller, flag, projectDir } = request;
   const effective = await loadEffectiveSourceConfig(projectDir);
   const marketplace = effective?.config.marketplace;
+  // Every return below carries the same marketplace, present only when the config named one.
+  const marketplaceLabel = marketplace !== undefined && { marketplace };
 
-  if (flagValue !== undefined) {
-    if (flagValue === "" || flagValue.trim() === "") {
-      throw new Error(
-        "--source flag cannot be empty. Provide a valid source: a local directory path or a git repository URL (e.g., './my-skills' or 'https://github.com/user/repo')",
-      );
-    }
-    validateSourceFormat(flagValue.trim(), "--source");
-    verbose(`Source from --source flag: ${flagValue}`);
-    return { source: flagValue, sourceOrigin: "flag", marketplace };
+  if (flag !== undefined) {
+    assertNamedSourceUsable(flag);
+    verbose(`Source from --source flag: ${flag}`);
+    return { source: flag, sourceOrigin: "flag", ...marketplaceLabel };
   }
 
-  const envValue = process.env[SOURCE_ENV_VAR];
-  if (envValue) {
-    const trimmed = envValue.trim();
-    if (trimmed === "") {
-      warn(`${SOURCE_ENV_VAR} is set but empty — ignoring and falling back to next source.`);
-    } else {
-      try {
-        validateSourceFormat(trimmed, SOURCE_ENV_VAR);
-        verbose(`Source from ${SOURCE_ENV_VAR} env var: ${trimmed}`);
-        return { source: trimmed, sourceOrigin: "env", marketplace };
-      } catch (error) {
-        const message = getErrorMessage(error);
-        warn(
-          `${SOURCE_ENV_VAR} has an invalid value — ignoring and falling back to next source.\n${message}`,
-        );
-      }
-    }
+  const envSource = caller === "init" ? readEnvSource() : undefined;
+  if (envSource !== undefined) {
+    return { source: envSource, sourceOrigin: "env", ...marketplaceLabel };
   }
 
   if (effective?.config.source) {
@@ -122,12 +128,56 @@ export async function resolveSource(
     return {
       source: effective.config.source,
       sourceOrigin: effective.origin,
-      marketplace,
+      ...marketplaceLabel,
     };
   }
 
   verbose(`Using default source: ${DEFAULT_SOURCE}`);
-  return { source: DEFAULT_SOURCE, sourceOrigin: "default", marketplace };
+  return { source: DEFAULT_SOURCE, sourceOrigin: "default", ...marketplaceLabel };
+}
+
+/**
+ * Refuses a named source that cannot be one. Raised rather than warned: somebody typed
+ * this, so falling through to another source would install from a place they did not name.
+ */
+function assertNamedSourceUsable(flag: string): void {
+  if (flag.trim() === "") {
+    throw new Error(
+      "--source flag cannot be empty. Provide a valid source: a local directory path or a git repository URL (e.g., './my-skills' or 'https://github.com/user/repo')",
+    );
+  }
+  validateSourceFormat(flag.trim(), "--source");
+}
+
+/**
+ * The source {@link SOURCE_ENV_VAR} names, or undefined when it names none this run.
+ *
+ * Unset, empty and unusable all fall through to the next rung with a warning rather than
+ * a refusal — the environment is ambient, so an exported value nobody meant for this run
+ * must not be able to fail it. That is the opposite of {@link assertNamedSourceUsable},
+ * and deliberately so: one was typed at this command, the other was already there.
+ */
+function readEnvSource(): string | undefined {
+  const envValue = process.env[SOURCE_ENV_VAR];
+  if (!envValue) return undefined;
+
+  const trimmed = envValue.trim();
+  if (trimmed === "") {
+    warn(`${SOURCE_ENV_VAR} is set but empty — ignoring and falling back to next source.`);
+    return undefined;
+  }
+
+  try {
+    validateSourceFormat(trimmed, SOURCE_ENV_VAR);
+  } catch (error) {
+    warn(
+      `${SOURCE_ENV_VAR} has an invalid value — ignoring and falling back to next source.\n${getErrorMessage(error)}`,
+    );
+    return undefined;
+  }
+
+  verbose(`Source from ${SOURCE_ENV_VAR} env var: ${trimmed}`);
+  return trimmed;
 }
 
 export async function resolveAuthor(projectDir?: string): Promise<string | undefined> {
@@ -150,21 +200,22 @@ export async function resolveBranding(projectDir?: string): Promise<ResolvedBran
   };
 }
 
-export async function resolveAllSources(
-  projectDir?: string,
-): Promise<{ primary: SourceEntry; extras: SourceEntry[] }> {
-  const effective = await loadEffectiveSourceConfig(projectDir);
-
-  const resolvedConfig = await resolveSource(undefined, projectDir);
-  const primary: SourceEntry = {
+/**
+ * The one marketplace this installation reads skills from, as a {@link SourceEntry}.
+ *
+ * Distinct from {@link resolveSource}, which answers the same question as a
+ * {@link ResolvedConfig} (source string plus where it came from). This is the shape the
+ * surfaces that LIST sources want — `search` and `doctor` — and there is exactly one of
+ * them: the registered-extras array this used to return alongside it was withdrawn with
+ * the marketplace axis (CLI-450).
+ */
+export async function resolvePrimarySourceEntry(projectDir?: string): Promise<SourceEntry> {
+  const resolvedConfig = await resolveSource({ caller: "stored", projectDir });
+  return {
     name: "marketplace",
     url: resolvedConfig.source,
     description: "Primary skills marketplace",
   };
-
-  const extras = uniqueBy(effective?.config.sources ?? [], (s) => s.name);
-
-  return { primary, extras };
 }
 
 const REMOTE_PROTOCOLS = [
@@ -345,6 +396,21 @@ function validateLocalPath(source: string, flagName: string): void {
         `  ${flagName} https://github.com/user/repo`,
     );
   }
+}
+
+/**
+ * Whether a resolved source IS the default public marketplace.
+ *
+ * The one place that question is answered, because more than one surface asks it
+ * and they must agree: the loader decides whether the CLI's built-in stacks
+ * stand in for a source that ships none, and the install-mode tagger decides
+ * whether the marketplace it labels skills with is public or private. A source
+ * named explicitly — by flag, env or config — is the default marketplace when it
+ * spells {@link DEFAULT_SOURCE}; a local checkout of that same repository is
+ * NOT, because nothing in a path says which repository it holds.
+ */
+export function isDefaultSource(source: string): boolean {
+  return source === DEFAULT_SOURCE;
 }
 
 export function isLocalSource(source: string): boolean {

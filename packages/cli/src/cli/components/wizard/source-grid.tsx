@@ -1,16 +1,12 @@
 import React, { useCallback, useMemo } from "react";
 import { Box, Text, useInput, type Key } from "ink";
-import type { BoundSkillCandidate, SkillAlias, SkillId, SkillScope } from "../../types/index.js";
-import { CLI_COLORS, SOURCE_DISPLAY_NAMES, SOURCE_HEADER_NAMES, UI_SYMBOLS } from "../../consts.js";
+import type { InstallMode, SkillId, SkillScope } from "../../types/index.js";
+import { CLI_COLORS, INSTALL_MODE_CELL_LABELS, UI_SYMBOLS } from "../../consts.js";
 import { getSkillById } from "../../lib/matrix/matrix-provider.js";
 import { useFocusedListItem } from "../hooks/use-focused-list-item.js";
 import { useSectionScroll } from "../hooks/use-section-scroll.js";
-import { useSourceGridSearchModal } from "../hooks/use-source-grid-search-modal.js";
 import { KEY_SPACE } from "./hotkeys.js";
 import { ScrollAffordance } from "./scroll-affordance.js";
-import { SearchModal } from "./search-modal.js";
-
-const SEARCH_PILL_LABEL = "\u2315 Search";
 
 /**
  * Skill-name cell: the 24 columns the name itself gets, plus the fixed 2-column marker cell that
@@ -18,7 +14,7 @@ const SEARCH_PILL_LABEL = "\u2315 Search";
  * that fitted before the marker was reserved fitting still.
  */
 const SKILL_NAME_WIDTH = 26;
-const SOURCE_COL_WIDTH = 18;
+const INSTALL_MODE_COL_WIDTH = 18;
 
 /**
  * Scope gutter: the column of `Global` / `Project` row headers down the left of a scope-grouped
@@ -46,20 +42,18 @@ const ROW_MARKER_BLANK = "  ";
 const SOURCE_GRID_MIN_VIEWPORT_ROWS = 1;
 
 /**
- * The pinned column header and the overflow affordance each cost one row of the clipped viewport.
- * Below this height there is no room for the header AND a readable pair of content rows, so the
- * column labels yield to content — a header row = column labels (1) + content (2) + affordance (1).
+ * One cell of a row's install-mode control. There is no `id`: the two cells ARE the choice, and
+ * the `SkillConfig.source` each one writes is the store's to resolve — which is what stops this
+ * surface from writing a source value nothing installs from (CLI-450).
  */
-const SOURCE_GRID_HEADER_MIN_HEIGHT = 4;
-
 export type SourceOption = {
-  id: string;
+  mode: Exclude<InstallMode, "mixed">;
   selected: boolean;
-  installed: boolean;
 };
 
 export type SourceRow = {
   skillId: SkillId;
+  /** The row's two install-mode cells, in render order. */
   options: SourceOption[];
   scope?: SkillScope;
   readOnly?: boolean;
@@ -131,10 +125,7 @@ export type SourceGridProps = {
   rows: SourceRow[];
   /** Available height in terminal lines for the scrollable viewport. 0 = no constraint. */
   availableHeight?: number;
-  onSelect: (skillId: SkillId, sourceId: string) => void;
-  onSearch?: (alias: SkillAlias) => Promise<BoundSkillCandidate[]>;
-  onBind?: (candidate: BoundSkillCandidate) => void;
-  onSearchStateChange?: (active: boolean) => void;
+  onSelect: (skillId: SkillId, mode: Exclude<InstallMode, "mixed">) => void;
   /** Optional initial focus row (default: 0). Use with React `key` to reset. */
   defaultFocusedRow?: number;
   /** Optional initial focus col (default: 0). Use with React `key` to reset. */
@@ -143,36 +134,17 @@ export type SourceGridProps = {
   onFocusChange?: (row: number, col: number) => void;
 };
 
-type SearchPillProps = {
-  isFocused: boolean;
-};
-
-const SearchPill: React.FC<SearchPillProps> = ({ isFocused }) => {
-  return (
-    <Box marginRight={1}>
-      <Text dimColor={!isFocused} bold={isFocused}>
-        {SEARCH_PILL_LABEL}
-      </Text>
-    </Box>
-  );
-};
-
 type SourceSectionProps = {
   row: SourceRow;
   isFocused: boolean;
   focusedOptionIndex: number;
-  showSearchPill: boolean;
 };
-
-function formatSourceLabel(option: SourceOption): string {
-  return SOURCE_DISPLAY_NAMES[option.id] ?? option.id;
-}
 
 const SourceTag: React.FC<{
   option: SourceOption;
   isFocused: boolean;
-  readOnly?: boolean;
-  disabled?: boolean;
+  readOnly?: boolean | undefined;
+  disabled?: boolean | undefined;
 }> = ({ option, isFocused, readOnly, disabled }) => {
   if (readOnly || disabled) {
     // Inert rows carry selection in the same vocabulary editable ones do — weight, plus brightness
@@ -180,14 +152,14 @@ const SourceTag: React.FC<{
     // else in the grid, and on a pending-removal row it would tick the source the row is losing. The
     // prefix slot stays a blank spacer so the source labels line up with every other row's.
     return (
-      <Box width={SOURCE_COL_WIDTH}>
+      <Box width={INSTALL_MODE_COL_WIDTH}>
         <Text
-          color={disabled ? CLI_COLORS.ERROR : undefined}
+          {...(disabled && { color: CLI_COLORS.ERROR })}
           bold={option.selected}
           dimColor={!disabled && !option.selected}
         >
           {`${UI_SYMBOLS.CHEVRON_SPACER} `}
-          {formatSourceLabel(option)}
+          {INSTALL_MODE_CELL_LABELS[option.mode]}
         </Text>
       </Box>
     );
@@ -198,25 +170,18 @@ const SourceTag: React.FC<{
   const prefix = isFocused ? `${UI_SYMBOLS.CHEVRON} ` : `${UI_SYMBOLS.CHEVRON_SPACER} `;
 
   return (
-    <Box width={SOURCE_COL_WIDTH}>
+    <Box width={INSTALL_MODE_COL_WIDTH}>
       <Text color={textColor} bold={isBold} dimColor={!option.selected && !isFocused}>
         {prefix}
-        {formatSourceLabel(option)}
+        {INSTALL_MODE_CELL_LABELS[option.mode]}
       </Text>
     </Box>
   );
 };
 
-const SourceSection: React.FC<SourceSectionProps> = ({
-  row,
-  isFocused,
-  focusedOptionIndex,
-  showSearchPill,
-}) => {
-  const searchPillIndex = row.options.length;
+const SourceSection: React.FC<SourceSectionProps> = ({ row, isFocused, focusedOptionIndex }) => {
   const isInert = isRowInert(row);
   const effectiveFocused = isInert ? false : isFocused;
-  const effectiveShowSearchPill = isInert ? false : showSearchPill;
   // Unlike removal, an added row stays a normal editable row — only its marker/colour differ.
   const statusMarker = rowStatusMarker(row);
 
@@ -242,24 +207,16 @@ const SourceSection: React.FC<SourceSectionProps> = ({
       <Box flexDirection="row" flexWrap="wrap">
         {row.options.map((option, index) => (
           <SourceTag
-            key={option.id}
+            key={option.mode}
             option={option}
             isFocused={effectiveFocused && index === focusedOptionIndex}
             readOnly={row.readOnly}
             disabled={row.disabled}
           />
         ))}
-        {effectiveShowSearchPill && (
-          <SearchPill isFocused={effectiveFocused && focusedOptionIndex === searchPillIndex} />
-        )}
       </Box>
     </Box>
   );
-};
-
-/** Total navigable columns for a row (options + search pill if applicable) */
-const getNavigableCount = (row: SourceRow, showSearchPill: boolean): number => {
-  return row.options.length + (showSearchPill ? 1 : 0);
 };
 
 type ScopeGroup = {
@@ -327,31 +284,11 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
   rows,
   availableHeight = 0,
   onSelect,
-  onSearch,
-  onBind,
-  onSearchStateChange,
   defaultFocusedRow = 0,
   defaultFocusedCol = 0,
   onFocusChange,
 }) => {
-  const {
-    searchModal,
-    searchResults,
-    searchAlias,
-    handleSearchTrigger,
-    handleBind,
-    handleCloseSearch,
-  } = useSourceGridSearchModal({ rows, onSearch, onBind, onSearchStateChange });
-
-  const showSearchPill = !!onSearch;
-
-  const getColCount = useCallback(
-    (row: number): number => {
-      const rowData = rows[row];
-      return rowData ? getNavigableCount(rowData, showSearchPill) : 0;
-    },
-    [rows, showSearchPill],
-  );
+  const getColCount = useCallback((row: number): number => rows[row]?.options.length ?? 0, [rows]);
 
   const skipRow = useCallback(
     (row: number): boolean => {
@@ -365,7 +302,7 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
 
   const { focusedRow, focusedCol, moveFocus } = useFocusedListItem(rows.length, getColCount, {
     wrap: true,
-    onChange: onFocusChange,
+    ...(onFocusChange !== undefined && { onChange: onFocusChange }),
     initialRow: effectiveDefaultRow,
     initialCol: defaultFocusedCol,
     skipRow,
@@ -395,15 +332,9 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
         if (input === KEY_SPACE) {
           const currentRow = rows[focusedRow];
           if (!currentRow || isRowInert(currentRow)) return;
-          if (showSearchPill && focusedCol === currentRow.options.length) {
-            void handleSearchTrigger(focusedRow);
-            return;
-          }
-          if (focusedCol < currentRow.options.length) {
-            const currentOption = currentRow.options[focusedCol];
-            if (currentOption) {
-              onSelect(currentRow.skillId, currentOption.id);
-            }
+          const currentOption = currentRow.options[focusedCol];
+          if (currentOption) {
+            onSelect(currentRow.skillId, currentOption.mode);
           }
           return;
         }
@@ -442,8 +373,6 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
         focusedRow,
         focusedCol,
         onSelect,
-        showSearchPill,
-        handleSearchTrigger,
         moveFocus,
         scrollEnabled,
         lastFocusableRow,
@@ -452,7 +381,6 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
         scrollBy,
       ],
     ),
-    { isActive: !searchModal.isOpen },
   );
 
   if (rows.length === 0) {
@@ -466,30 +394,6 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
   const noShrink = scrollEnabled ? { flexShrink: 0 } : {};
 
   const scopeGroups = groupRowsByScope(rows);
-
-  const headerSources = rows[0]?.options ?? [];
-  // Drop the header's spacer row while clipping so the squeezed viewport keeps a content row for the
-  // pinned column header plus the affordance; the spacer is cosmetic and only shows when not scrolling.
-  const headerMarginBottom = scrollEnabled || scopeGroups.length > 0 ? 0 : 1;
-  // At the shortest viewports the pinned column header would starve the content of readable rows, so
-  // the labels give way — every row still shows its own source cells, only the column caption is lost.
-  const showPinnedHeader = !scrollEnabled || availableHeight >= SOURCE_GRID_HEADER_MIN_HEIGHT;
-  const headerElement = (
-    <Box flexDirection="row" marginBottom={headerMarginBottom} {...noShrink}>
-      {/* Neither the scope gutter nor the skill-name column carries a caption; both boxes reserve
-          their width so the source headers stay above the source cells. */}
-      {scopeGroups.length > 0 && <Box width={SCOPE_COL_WIDTH} />}
-      <Box width={SKILL_NAME_WIDTH} />
-      {headerSources.map((option) => (
-        <Box key={option.id} width={SOURCE_COL_WIDTH}>
-          <Text
-            color={CLI_COLORS.WARNING}
-            bold
-          >{`${UI_SYMBOLS.CHEVRON_SPACER} ${SOURCE_HEADER_NAMES[option.id] ?? option.id}`}</Text>
-        </Box>
-      ))}
-    </Box>
-  );
 
   const sectionElements =
     scopeGroups.length > 0
@@ -507,7 +411,6 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
                   row={row}
                   isFocused={originalIndex === focusedRow}
                   focusedOptionIndex={focusedCol}
-                  showSearchPill={showSearchPill}
                 />
               </Box>
             ))}
@@ -523,19 +426,9 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
               row={row}
               isFocused={rowIndex === focusedRow}
               focusedOptionIndex={focusedCol}
-              showSearchPill={showSearchPill}
             />
           </Box>
         ));
-
-  const searchModalElement = searchModal.isOpen && (
-    <SearchModal
-      results={searchResults}
-      alias={searchAlias}
-      onBind={handleBind}
-      onClose={handleCloseSearch}
-    />
-  );
 
   return (
     <Box
@@ -544,7 +437,6 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
         ? { height: availableHeight, overflow: "hidden" as const }
         : { flexGrow: 1 })}
     >
-      {showPinnedHeader && headerElement}
       <Box ref={setViewportRef} flexDirection="column" overflow="hidden" flexGrow={1}>
         <Box
           ref={setContentRef}
@@ -556,7 +448,6 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
         </Box>
       </Box>
       <ScrollAffordance hiddenAbove={hiddenAbove} hiddenBelow={hiddenBelow} />
-      {searchModalElement}
     </Box>
   );
 };

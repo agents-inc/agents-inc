@@ -24,8 +24,24 @@ import { EXIT_CODES } from "../../exit-codes";
 import { typedKeys } from "../../../utils/typed-object";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import type { MergedSkillsMatrix, ProjectConfig, SkillId } from "../../../types";
+import { firstElement } from "../helpers/element-at.js";
 
 const EJECT_INSTALLED_SKILL_IDS: SkillId[] = ["web-framework-react", "api-framework-hono"];
+
+/**
+ * Every directory `eject agent-partials` copies out of `src/agents/` — the
+ * templates directory plus one directory per agent role. Asserted by name
+ * rather than by count so a roster reorganization names what moved.
+ */
+const EJECTED_AGENT_DIRS = [
+  path.basename(DIRS.templates),
+  "developer",
+  "meta",
+  "planning",
+  "researcher",
+  "reviewer",
+  "tester",
+].sort();
 
 describe("eject command", () => {
   let tempDir: string;
@@ -132,11 +148,10 @@ describe("eject command", () => {
       expect(output.toLowerCase()).not.toContain("unknown flag");
     });
 
-    it("should accept --refresh flag", async () => {
+    it("rejects --refresh — every load revalidates, so there is nothing to force", async () => {
       const { error } = await runCliCommand(["eject", "skills", "--refresh"]);
 
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(error?.message).toContain("Nonexistent flag: --refresh");
     });
   });
 
@@ -370,12 +385,13 @@ describe("eject command", () => {
       expect(output.toLowerCase()).not.toContain("unknown flag");
     });
 
-    it("should accept --source flag for custom source", async () => {
+    it("should refuse a --source flag — it reads the configured source", async () => {
       const { error } = await runCliCommand(["eject", "skills", "--source", "/nonexistent/path"]);
 
-      // May error on nonexistent path, but should accept the flag
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      // The flag is withdrawn, not merely ignored: silently accepting it would eject from one
+      // source while recording another in config.ts (CLI-450).
+      expect(error?.message).toContain("--source");
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
   });
 
@@ -415,8 +431,7 @@ describe("eject command", () => {
 
       const entries = await readdir(agentsDir);
       // Should have templates AND other agent dirs
-      expect(entries).toContain(path.basename(DIRS.templates));
-      expect(entries).toHaveLength(8);
+      expect([...entries].sort()).toStrictEqual(EJECTED_AGENT_DIRS);
     });
   });
 
@@ -556,7 +571,7 @@ describe("eject skills from initialized project", () => {
 
     await runEjectCopy(dirs, outputDir, EJECT_INSTALLED_SKILL_IDS);
 
-    const targetSkill = NON_INSTALLED_SKILLS[0];
+    const targetSkill = firstElement(NON_INSTALLED_SKILLS);
     const metadataPath = path.join(outputDir, targetSkill.id, STANDARD_FILES.METADATA_YAML);
     expect(await fileExists(metadataPath)).toBe(true);
 
@@ -607,7 +622,7 @@ describe("eject skills from initialized project", () => {
 
     const partialsDir = path.join(dirs.projectDir, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
     const entries = await readdir(partialsDir);
-    expect(entries).toHaveLength(8);
+    expect([...entries].sort()).toStrictEqual(EJECTED_AGENT_DIRS);
   });
 });
 
@@ -670,7 +685,7 @@ describe("eject in plugin mode", () => {
 
     await runEjectCopy(dirs, outputDir);
 
-    const targetSkill = DEFAULT_TEST_SKILLS[0];
+    const targetSkill = firstElement(DEFAULT_TEST_SKILLS);
     const skillMdPath = path.join(outputDir, targetSkill.id, STANDARD_FILES.SKILL_MD);
     expect(await fileExists(skillMdPath)).toBe(true);
 
@@ -686,7 +701,7 @@ describe("eject in plugin mode", () => {
 
     await runEjectCopy(dirs, outputDir);
 
-    const targetSkill = DEFAULT_TEST_SKILLS[0];
+    const targetSkill = firstElement(DEFAULT_TEST_SKILLS);
     const metadataPath = path.join(outputDir, targetSkill.id, STANDARD_FILES.METADATA_YAML);
     expect(await fileExists(metadataPath)).toBe(true);
 
@@ -732,6 +747,6 @@ describe("eject in plugin mode", () => {
     expect(await directoryExists(partialsDir)).toBe(true);
 
     const entries = await readdir(partialsDir);
-    expect(entries).toHaveLength(8);
+    expect([...entries].sort()).toStrictEqual(EJECTED_AGENT_DIRS);
   });
 });

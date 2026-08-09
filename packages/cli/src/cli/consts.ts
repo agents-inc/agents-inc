@@ -1,7 +1,7 @@
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import type { Domain } from "./types/index.js";
+import type { Domain, InstallMode } from "./types/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,6 +49,15 @@ export const CACHE_DIR = path.join(os.homedir(), ".cache", DEFAULT_PLUGIN_NAME);
  * command ("the `agents-inc list` table") does not.
  */
 export const CLI_INVOKE_COMMAND = "npx agents-inc";
+
+/**
+ * The editor — the web half of the product, where a configuration is built without the wizard
+ * and handed to `init --from <id>`. `agentsinc.sh` is the editor Worker's custom domain
+ * (`apps/editor/wrangler.jsonc`); the config store it posts to is the sibling
+ * `api.agentsinc.sh`, spelled once in `lib/seed/fetch-seed.ts` because that one is
+ * overridable for tests and this one is not.
+ */
+export const EDITOR_URL = "https://agentsinc.sh";
 
 /**
  * Internal `edit` flag marking the invocation as the project-setup half of a `cc init`
@@ -185,9 +194,6 @@ export const GITHUB_SOURCE = {
   GH_PREFIX: "gh:",
 } as const;
 
-/** Conventional skills subdirectory name (same value as `STANDARD_DIRS.SKILLS`). */
-export const DEFAULT_SKILLS_SUBDIR = STANDARD_DIRS.SKILLS;
-
 /** Name written into a global-scope config's `name` field (`~/.claude-src/config.ts`). */
 export const GLOBAL_CONFIG_NAME = "global";
 
@@ -288,9 +294,6 @@ export const DEFAULT_BRANDING = {
  */
 export const DEFAULT_PUBLIC_SOURCE_NAME = DEFAULT_PLUGIN_NAME;
 
-/** Canonical name of the built-in public source. */
-export const PUBLIC_SOURCE_NAME = "public";
-
 /** Human-readable labels for skill source types shown in the wizard and edit command */
 export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   public: "Public",
@@ -298,16 +301,25 @@ export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   "agents-inc": "Agents Inc",
 };
 
+/** The two install modes a Sources row offers, in the order the grid renders them. */
+export const INSTALL_MODES = ["eject", "plugin"] as const satisfies readonly Exclude<
+  InstallMode,
+  "mixed"
+>[];
+
 /**
- * Column-header labels for source types in the source grid. Distinct from
- * `SOURCE_DISPLAY_NAMES` (inline labels): headers read "Local"/"Plugin" where
- * the inline labels read "Eject"/"Agents Inc".
+ * How the Sources grid captions each of its two cells.
+ *
+ * Deliberately not `INSTALL_MODE_LABELS` (`Eject`/`Plugin`), which names a mode by what it does
+ * to the files, nor `SOURCE_DISPLAY_NAMES`, which labels a `SkillConfig.source` VALUE on the
+ * summary surfaces. The grid asks where the skill should LIVE, and the two answers are the
+ * project's own copy or the marketplace plugin — so the cells read `Local` and `Plugin`, which
+ * is also the two-state badge the editor settled on (`.claude-design/DECISIONS.md`).
  */
-export const SOURCE_HEADER_NAMES: Record<string, string> = {
+export const INSTALL_MODE_CELL_LABELS = {
   eject: "Local",
-  "agents-inc": "Plugin",
-  public: "Public",
-};
+  plugin: "Plugin",
+} as const satisfies Record<Exclude<InstallMode, "mixed">, string>;
 
 /** Resolves a source name to its human-readable display label. */
 export function formatSourceDisplayName(source: string): string {
@@ -340,19 +352,6 @@ export const CLI_COLORS = {
   TOAST_FG: "#000000",
   HOVER_BG: "#333333",
 } as const;
-
-/** Canonical display order for built-in domains. Custom domains appear before these, alphabetically. */
-export const BUILT_IN_DOMAIN_ORDER: readonly Domain[] = [
-  "web",
-  "api",
-  "ai",
-  "mobile",
-  "desktop",
-  "cli",
-  "infra",
-  "meta",
-  "shared",
-];
 
 /** Default domains pre-selected when "Start from scratch" is chosen (all except CLI) */
 export const DEFAULT_SCRATCH_DOMAINS: readonly Domain[] = ["web", "api", "mobile"];

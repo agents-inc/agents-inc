@@ -2,21 +2,20 @@ import chalk from "chalk";
 import { render } from "ink-testing-library";
 import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 import { SourceGrid, type SourceGridProps, type SourceRow, type SourceOption } from "./source-grid";
-import type { BoundSkillCandidate, SkillId, SkillScope } from "../../types";
-import { CLI_COLORS, UI_SYMBOLS } from "../../consts";
+import type { SkillId, SkillScope } from "../../types";
+import { CLI_COLORS, INSTALL_MODE_CELL_LABELS, INSTALL_MODES, UI_SYMBOLS } from "../../consts";
 import { getSkillById, initializeMatrix } from "../../lib/matrix/matrix-provider";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { createMockSkill } from "../../lib/__tests__/factories/skill-factories";
 import { createMockMatrix } from "../../lib/__tests__/factories/matrix-factories";
 import { WEB_TRIO_MATRIX } from "../../lib/__tests__/mock-data/mock-matrices";
+import { elementAt } from "../../lib/__tests__/helpers/element-at.js";
 import {
   ARROW_UP,
   ARROW_DOWN,
   ARROW_LEFT,
   ARROW_RIGHT,
-  ENTER,
   SPACE,
-  ESCAPE,
   RENDER_DELAY_MS,
   INPUT_DELAY_MS,
   delay,
@@ -25,12 +24,9 @@ import {
 /** chalk's truecolor level — the 24-bit mode that emits the hex colours CLI_COLORS declares. */
 const TRUECOLOR_CHALK_LEVEL = 3;
 
-const createSourceOption = (id: string, overrides: Partial<SourceOption> = {}): SourceOption => ({
-  id,
-  selected: false,
-  installed: false,
-  ...overrides,
-});
+/** The two install-mode cells every row carries, with `selectedMode` marked. */
+const installModeCells = (selectedMode: SourceOption["mode"]): SourceOption[] =>
+  INSTALL_MODES.map((mode) => ({ mode, selected: mode === selectedMode }));
 
 const createSourceRow = (
   skillId: SkillId,
@@ -40,7 +36,7 @@ const createSourceRow = (
 ): SourceRow => ({
   skillId,
   options,
-  scope,
+  ...(scope !== undefined && { scope }),
   ...(readOnly ? { readOnly } : {}),
 });
 
@@ -65,21 +61,9 @@ const createAddedRow = (
 });
 
 const defaultRows: SourceRow[] = [
-  createSourceRow("web-framework-react", [createSourceOption("public", { selected: true })]),
-  createSourceRow("web-state-zustand", [createSourceOption("public", { selected: true })]),
-  createSourceRow("web-testing-vitest", [createSourceOption("public", { selected: true })]),
-];
-
-const multiSourceRows: SourceRow[] = [
-  createSourceRow("web-framework-react", [
-    createSourceOption("public", { selected: true }),
-    createSourceOption("acme-corp"),
-  ]),
-  createSourceRow("web-state-zustand", [
-    createSourceOption("public", { selected: true }),
-    createSourceOption("acme-corp"),
-    createSourceOption("internal"),
-  ]),
+  createSourceRow("web-framework-react", installModeCells("plugin")),
+  createSourceRow("web-state-zustand", installModeCells("plugin")),
+  createSourceRow("web-testing-vitest", installModeCells("plugin")),
 ];
 
 const defaultProps: SourceGridProps = {
@@ -118,21 +102,13 @@ describe("SourceGrid component", () => {
       expect(output).toContain("Vitest");
     });
 
-    it("should render source option labels", () => {
+    it("should caption both install-mode cells on every row", () => {
       const { lastFrame, unmount } = renderGrid();
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain("Public");
-    });
-
-    it("should render multiple source options per row", () => {
-      const { lastFrame, unmount } = renderGrid({ rows: multiSourceRows });
-      cleanup = unmount;
-
-      const output = lastFrame();
-      expect(output).toContain("Public");
-      expect(output).toContain("acme-corp");
+      expect(output).toContain(INSTALL_MODE_CELL_LABELS.eject);
+      expect(output).toContain(INSTALL_MODE_CELL_LABELS.plugin);
     });
 
     it("should handle empty rows array", () => {
@@ -145,7 +121,7 @@ describe("SourceGrid component", () => {
 
     it("should render single row", () => {
       const rows: SourceRow[] = [
-        createSourceRow("web-framework-react", [createSourceOption("public", { selected: true })]),
+        createSourceRow("web-framework-react", installModeCells("plugin")),
       ];
 
       const { lastFrame, unmount } = renderGrid({ rows });
@@ -153,23 +129,15 @@ describe("SourceGrid component", () => {
 
       const output = lastFrame();
       expect(output).toContain("React");
-      expect(output).toContain("Public");
+      expect(output).toContain(INSTALL_MODE_CELL_LABELS.plugin);
     });
   });
 
   describe("scope-grouped rendering", () => {
     it("should head each scope block with its own row header and caption no column", () => {
       const rows: SourceRow[] = [
-        createSourceRow(
-          "web-framework-react",
-          [createSourceOption("public", { selected: true })],
-          "global",
-        ),
-        createSourceRow(
-          "web-state-zustand",
-          [createSourceOption("public", { selected: true })],
-          "project",
-        ),
+        createSourceRow("web-framework-react", installModeCells("plugin"), "global"),
+        createSourceRow("web-state-zustand", installModeCells("plugin"), "project"),
       ];
 
       const { lastFrame, unmount } = renderGrid({ rows });
@@ -187,16 +155,8 @@ describe("SourceGrid component", () => {
 
     it("should show global rows before project rows", () => {
       const rows: SourceRow[] = [
-        createSourceRow(
-          "web-state-zustand",
-          [createSourceOption("public", { selected: true })],
-          "project",
-        ),
-        createSourceRow(
-          "web-framework-react",
-          [createSourceOption("public", { selected: true })],
-          "global",
-        ),
+        createSourceRow("web-state-zustand", installModeCells("plugin"), "project"),
+        createSourceRow("web-framework-react", installModeCells("plugin"), "global"),
       ];
 
       const { lastFrame, unmount } = renderGrid({ rows });
@@ -217,36 +177,28 @@ describe("SourceGrid component", () => {
      * two-column marker cell every row reserves, which is what keeps the focused row's name in the
      * same column as the unfocused row's.
      *
-     * It also pins the two things the caption's removal must not have disturbed: the scope gutter
-     * still heads each block on its first row only (the rest of the block indents under it), and
-     * the source captions still sit above their cells even though nothing captions the gutter.
+     * It also pins the one thing above the rows: nothing. The scope gutter heads each block on its
+     * block's first row only (the rest indents under it), and no caption row sits over the grid at
+     * all — the two install-mode cells caption themselves, so a header would print the same two
+     * words directly above themselves.
      *
      * Rows are deliberately lock-free — the 🔒 glyph is double-width, so a locked row would make
      * the name column read as ragged for reasons that have nothing to do with the layout.
      */
-    it("heads each block in the gutter and lines the source captions up with their cells", () => {
+    it("heads each block in the gutter and captions nothing above the rows", () => {
       const rows: SourceRow[] = [
-        createSourceRow(
-          "web-framework-react",
-          [createSourceOption("eject"), createSourceOption("agents-inc", { selected: true })],
-          "global",
-        ),
-        createSourceRow(
-          "web-state-zustand",
-          [createSourceOption("eject", { selected: true }), createSourceOption("agents-inc")],
-          "project",
-        ),
+        createSourceRow("web-framework-react", installModeCells("plugin"), "global"),
+        createSourceRow("web-state-zustand", installModeCells("eject"), "project"),
       ];
 
       const { lastFrame, unmount } = renderGrid({ rows });
       cleanup = unmount;
 
       expect(lastFrame()).toMatchInlineSnapshot(`
-        "                                       Local             Plugin
+        "
+        Global       React                   ❯ Local             Plugin
 
-        Global       React                   ❯ Eject             Agents Inc
-
-        Project      Zustand                   Eject             Agents Inc"
+        Project      Zustand                   Local             Plugin"
       `);
     });
 
@@ -259,50 +211,32 @@ describe("SourceGrid component", () => {
      */
     it("renders one unseparated block in the flat layout", () => {
       const rows: SourceRow[] = [
-        createSourceRow(
-          "web-framework-react",
-          [createSourceOption("eject"), createSourceOption("agents-inc", { selected: true })],
-          "project",
-        ),
-        createSourceRow(
-          "web-state-zustand",
-          [createSourceOption("eject", { selected: true }), createSourceOption("agents-inc")],
-          "project",
-        ),
+        createSourceRow("web-framework-react", installModeCells("plugin"), "project"),
+        createSourceRow("web-state-zustand", installModeCells("eject"), "project"),
       ];
 
       const { lastFrame, unmount } = renderGrid({ rows });
       cleanup = unmount;
 
       expect(lastFrame()).toMatchInlineSnapshot(`
-        "                            Local             Plugin
-
-          React                   ❯ Eject             Agents Inc
-          Zustand                   Eject             Agents Inc"
+        "  React                   ❯ Local             Plugin
+          Zustand                   Local             Plugin"
       `);
     });
 
     /** A row with no scope at all takes the same flat branch as a single-scope grid. */
     it("renders one unseparated block when no row has a scope", () => {
       const rows: SourceRow[] = [
-        createSourceRow("web-framework-react", [
-          createSourceOption("eject"),
-          createSourceOption("agents-inc", { selected: true }),
-        ]),
-        createSourceRow("web-state-zustand", [
-          createSourceOption("eject", { selected: true }),
-          createSourceOption("agents-inc"),
-        ]),
+        createSourceRow("web-framework-react", installModeCells("plugin")),
+        createSourceRow("web-state-zustand", installModeCells("eject")),
       ];
 
       const { lastFrame, unmount } = renderGrid({ rows });
       cleanup = unmount;
 
       expect(lastFrame()).toMatchInlineSnapshot(`
-        "                            Local             Plugin
-
-          React                   ❯ Eject             Agents Inc
-          Zustand                   Eject             Agents Inc"
+        "  React                   ❯ Local             Plugin
+          Zustand                   Local             Plugin"
       `);
     });
   });
@@ -371,31 +305,12 @@ describe("SourceGrid component", () => {
 
       expect(onFocusChange).toHaveBeenCalledWith(2, 0);
     });
-
-    it("should clamp column when moving to row with fewer options", async () => {
-      const onFocusChange = vi.fn();
-      const { stdin, unmount } = renderGrid({
-        rows: multiSourceRows,
-        defaultFocusedRow: 1, // Zustand has 3 options
-        defaultFocusedCol: 2, // Internal (index 2)
-        onFocusChange,
-      });
-      cleanup = unmount;
-
-      await delay(RENDER_DELAY_MS);
-      stdin.write(ARROW_UP);
-      await delay(INPUT_DELAY_MS);
-
-      // Vertical navigation clamps column to last valid index
-      expect(onFocusChange).toHaveBeenCalledWith(0, 1);
-    });
   });
 
   describe("keyboard navigation - horizontal", () => {
     it("should move right with arrow right", async () => {
       const onFocusChange = vi.fn();
       const { stdin, unmount } = renderGrid({
-        rows: multiSourceRows,
         defaultFocusedRow: 0,
         defaultFocusedCol: 0,
         onFocusChange,
@@ -412,7 +327,6 @@ describe("SourceGrid component", () => {
     it("should move left with arrow left", async () => {
       const onFocusChange = vi.fn();
       const { stdin, unmount } = renderGrid({
-        rows: multiSourceRows,
         defaultFocusedRow: 0,
         defaultFocusedCol: 1,
         onFocusChange,
@@ -429,9 +343,8 @@ describe("SourceGrid component", () => {
     it("should wrap right to first column from last column", async () => {
       const onFocusChange = vi.fn();
       const { stdin, unmount } = renderGrid({
-        rows: multiSourceRows,
         defaultFocusedRow: 0,
-        defaultFocusedCol: 1, // Last option in React row
+        defaultFocusedCol: 1, // The plugin cell — the row's last
         onFocusChange,
       });
       cleanup = unmount;
@@ -446,7 +359,6 @@ describe("SourceGrid component", () => {
     it("should wrap left to last column from first column", async () => {
       const onFocusChange = vi.fn();
       const { stdin, unmount } = renderGrid({
-        rows: multiSourceRows,
         defaultFocusedRow: 0,
         defaultFocusedCol: 0,
         onFocusChange,
@@ -475,15 +387,14 @@ describe("SourceGrid component", () => {
       stdin.write(" ");
       await delay(INPUT_DELAY_MS);
 
-      expect(onSelect).toHaveBeenCalledWith("web-framework-react", "public");
+      expect(onSelect).toHaveBeenCalledWith("web-framework-react", "eject");
     });
 
-    it("should call onSelect with correct skill and source IDs", async () => {
+    it("should report the plugin cell when it is the focused one", async () => {
       const onSelect = vi.fn();
       const { stdin, unmount } = renderGrid({
-        rows: multiSourceRows,
         defaultFocusedRow: 0,
-        defaultFocusedCol: 1, // Acme Corp
+        defaultFocusedCol: 1,
         onSelect,
       });
       cleanup = unmount;
@@ -492,15 +403,14 @@ describe("SourceGrid component", () => {
       stdin.write(" ");
       await delay(INPUT_DELAY_MS);
 
-      expect(onSelect).toHaveBeenCalledWith("web-framework-react", "acme-corp");
+      expect(onSelect).toHaveBeenCalledWith("web-framework-react", "plugin");
     });
 
     it("should call onSelect on second row", async () => {
       const onSelect = vi.fn();
       const { stdin, unmount } = renderGrid({
-        rows: multiSourceRows,
         defaultFocusedRow: 1,
-        defaultFocusedCol: 2, // Internal
+        defaultFocusedCol: 1,
         onSelect,
       });
       cleanup = unmount;
@@ -509,16 +419,16 @@ describe("SourceGrid component", () => {
       stdin.write(" ");
       await delay(INPUT_DELAY_MS);
 
-      expect(onSelect).toHaveBeenCalledWith("web-state-zustand", "internal");
+      expect(onSelect).toHaveBeenCalledWith("web-state-zustand", "plugin");
     });
   });
 
   describe("edge cases", () => {
-    it("should handle single option per row", async () => {
+    it("should wrap back to the local cell from the plugin cell", async () => {
       const onFocusChange = vi.fn();
       const { stdin, unmount } = renderGrid({
         defaultFocusedRow: 0,
-        defaultFocusedCol: 0,
+        defaultFocusedCol: 1,
         onFocusChange,
       });
       cleanup = unmount;
@@ -527,7 +437,7 @@ describe("SourceGrid component", () => {
       stdin.write(ARROW_RIGHT);
       await delay(INPUT_DELAY_MS);
 
-      // Should wrap to 0 (only one option)
+      // Two cells, so right from the last wraps to the first
       expect(onFocusChange).toHaveBeenCalledWith(0, 0);
     });
 
@@ -542,13 +452,13 @@ describe("SourceGrid component", () => {
         "web-testing-vitest",
         "web-testing-playwright-e2e",
         "web-server-state-react-query",
-        "web-tooling-vite" as SkillId,
+        "web-tooling-vite",
       ];
       const skills = Object.fromEntries(skillIds.map((id) => [id, createMockSkill(id)]));
       initializeMatrix(createMockMatrix(skills));
 
       const rows: SourceRow[] = skillIds.map((id) =>
-        createSourceRow(id, [createSourceOption("public", { selected: true })]),
+        createSourceRow(id, installModeCells("plugin")),
       );
 
       const { lastFrame, unmount } = renderGrid({ rows });
@@ -560,226 +470,10 @@ describe("SourceGrid component", () => {
     });
   });
 
-  describe("search pill", () => {
-    const mockSearch = vi.fn<(alias: string) => Promise<BoundSkillCandidate[]>>();
-    const mockBind = vi.fn();
-    const mockSearchStateChange = vi.fn();
-
-    const searchCandidates: BoundSkillCandidate[] = [
-      {
-        id: "web-framework-react-pro" as SkillId,
-        sourceUrl: "github:awesome-dev/skills",
-        sourceName: "awesome-dev",
-        alias: "react",
-      },
-      {
-        id: "web-framework-react-strict" as SkillId,
-        sourceUrl: "github:team-xyz/skills",
-        sourceName: "team-xyz",
-        alias: "react",
-      },
-    ];
-
-    afterEach(() => {
-      mockSearch.mockReset();
-      mockBind.mockReset();
-      mockSearchStateChange.mockReset();
-    });
-
-    it("should render search pill at end of each row when onSearch is provided", () => {
-      const { lastFrame, unmount } = renderGrid({
-        onSearch: mockSearch,
-      });
-      cleanup = unmount;
-
-      const output = lastFrame();
-      expect(output).toContain("Search");
-    });
-
-    it("should not render search pill when onSearch is not provided", () => {
-      const { lastFrame, unmount } = renderGrid();
-      cleanup = unmount;
-
-      const output = lastFrame();
-      expect(output).not.toContain("Search");
-    });
-
-    it("should navigate to search pill with arrow right", async () => {
-      const onFocusChange = vi.fn();
-      const { stdin, unmount } = renderGrid({
-        rows: defaultRows,
-        defaultFocusedRow: 0,
-        defaultFocusedCol: 0, // On the only option (Public)
-        onFocusChange,
-        onSearch: mockSearch,
-      });
-      cleanup = unmount;
-
-      await delay(RENDER_DELAY_MS);
-      stdin.write(ARROW_RIGHT);
-      await delay(INPUT_DELAY_MS);
-
-      // Public is at index 0, search pill at index 1
-      expect(onFocusChange).toHaveBeenCalledWith(0, 1);
-    });
-
-    it("should not call onSelect when space is pressed on search pill", async () => {
-      const onSelect = vi.fn();
-      const { stdin, unmount } = renderGrid({
-        rows: defaultRows,
-        defaultFocusedRow: 0,
-        defaultFocusedCol: 1, // Search pill position (after Public)
-        onSelect,
-        onSearch: mockSearch,
-      });
-      cleanup = unmount;
-
-      await delay(RENDER_DELAY_MS);
-      stdin.write(" ");
-      await delay(INPUT_DELAY_MS);
-
-      expect(onSelect).not.toHaveBeenCalled();
-    });
-
-    it("should trigger search on Space when search pill is focused", async () => {
-      mockSearch.mockResolvedValue(searchCandidates);
-
-      const { stdin, unmount } = renderGrid({
-        rows: defaultRows,
-        defaultFocusedRow: 0,
-        defaultFocusedCol: 1, // Search pill position
-        onSearch: mockSearch,
-        onSearchStateChange: mockSearchStateChange,
-      });
-      cleanup = unmount;
-
-      await delay(RENDER_DELAY_MS);
-      stdin.write(SPACE);
-      await delay(INPUT_DELAY_MS);
-
-      expect(mockSearch).toHaveBeenCalledWith("react");
-      expect(mockSearchStateChange).toHaveBeenCalledWith(true);
-    });
-
-    it("should render modal with results after search completes", async () => {
-      mockSearch.mockResolvedValue(searchCandidates);
-
-      const { stdin, lastFrame, unmount } = renderGrid({
-        rows: defaultRows,
-        defaultFocusedRow: 0,
-        defaultFocusedCol: 1,
-        onSearch: mockSearch,
-      });
-      cleanup = unmount;
-
-      await delay(RENDER_DELAY_MS);
-      stdin.write(SPACE);
-      // Wait for async search to resolve
-      await delay(RENDER_DELAY_MS);
-
-      const output = lastFrame();
-      expect(output).toContain("react");
-      expect(output).toContain("awesome-dev");
-      expect(output).toContain("team-xyz");
-    });
-
-    it("should close modal on Escape without binding", async () => {
-      mockSearch.mockResolvedValue(searchCandidates);
-
-      const { stdin, lastFrame, unmount } = renderGrid({
-        rows: defaultRows,
-        defaultFocusedRow: 0,
-        defaultFocusedCol: 1,
-        onSearch: mockSearch,
-        onBind: mockBind,
-        onSearchStateChange: mockSearchStateChange,
-      });
-      cleanup = unmount;
-
-      // Open modal
-      await delay(RENDER_DELAY_MS);
-      stdin.write(SPACE);
-      await delay(RENDER_DELAY_MS);
-
-      // Close modal
-      stdin.write(ESCAPE);
-      await delay(INPUT_DELAY_MS);
-
-      expect(mockBind).not.toHaveBeenCalled();
-      expect(mockSearchStateChange).toHaveBeenLastCalledWith(false);
-
-      const output = lastFrame();
-      expect(output).not.toContain("awesome-dev");
-    });
-
-    it("should not respond to grid navigation while modal is open", async () => {
-      mockSearch.mockResolvedValue(searchCandidates);
-      const onFocusChange = vi.fn();
-
-      const { stdin, unmount } = renderGrid({
-        rows: defaultRows,
-        defaultFocusedRow: 0,
-        defaultFocusedCol: 1,
-        onSearch: mockSearch,
-        onFocusChange,
-      });
-      cleanup = unmount;
-
-      // Open modal
-      await delay(RENDER_DELAY_MS);
-      stdin.write(SPACE);
-      await delay(RENDER_DELAY_MS);
-
-      // Try grid navigation while modal is open
-      onFocusChange.mockClear();
-      stdin.write(ARROW_LEFT);
-      await delay(INPUT_DELAY_MS);
-      stdin.write(ARROW_RIGHT);
-      await delay(INPUT_DELAY_MS);
-
-      expect(onFocusChange).not.toHaveBeenCalled();
-    });
-
-    it("should bind result on Enter in modal", async () => {
-      mockSearch.mockResolvedValue(searchCandidates);
-
-      const { stdin, unmount } = renderGrid({
-        rows: defaultRows,
-        defaultFocusedRow: 0,
-        defaultFocusedCol: 1,
-        onSearch: mockSearch,
-        onBind: mockBind,
-        onSearchStateChange: mockSearchStateChange,
-      });
-      cleanup = unmount;
-
-      // Open modal with Space
-      await delay(RENDER_DELAY_MS);
-      stdin.write(SPACE);
-      await delay(RENDER_DELAY_MS);
-
-      // Bind first result
-      stdin.write(ENTER);
-      await delay(INPUT_DELAY_MS);
-
-      expect(mockBind).toHaveBeenCalledWith(searchCandidates[0]);
-      expect(mockSearchStateChange).toHaveBeenLastCalledWith(false);
-    });
-  });
-
   describe("read-only rows", () => {
     const readOnlyRows: SourceRow[] = [
-      createSourceRow(
-        "web-framework-react",
-        [createSourceOption("public", { selected: true }), createSourceOption("eject")],
-        "global",
-        true,
-      ),
-      createSourceRow(
-        "web-state-zustand",
-        [createSourceOption("public", { selected: true })],
-        "project",
-      ),
+      createSourceRow("web-framework-react", installModeCells("plugin"), "global", true),
+      createSourceRow("web-state-zustand", installModeCells("plugin"), "project"),
     ];
 
     it("should render read-only rows with lock indicator", () => {
@@ -815,28 +509,14 @@ describe("SourceGrid component", () => {
       stdin.write(SPACE);
       await delay(INPUT_DELAY_MS);
 
-      expect(onSelect).toHaveBeenCalledWith("web-state-zustand", "public");
+      expect(onSelect).toHaveBeenCalledWith("web-state-zustand", "eject");
     });
 
     it("should skip read-only rows during navigation", async () => {
       const threeRows: SourceRow[] = [
-        createSourceRow(
-          "web-framework-react",
-          [createSourceOption("public", { selected: true })],
-          "global",
-          true,
-        ),
-        createSourceRow(
-          "web-state-zustand",
-          [createSourceOption("public", { selected: true })],
-          "project",
-        ),
-        createSourceRow(
-          "web-testing-vitest",
-          [createSourceOption("public", { selected: true })],
-          "global",
-          true,
-        ),
+        createSourceRow("web-framework-react", installModeCells("plugin"), "global", true),
+        createSourceRow("web-state-zustand", installModeCells("plugin"), "project"),
+        createSourceRow("web-testing-vitest", installModeCells("plugin"), "global", true),
       ];
 
       const onFocusChange = vi.fn();
@@ -872,43 +552,13 @@ describe("SourceGrid component", () => {
       stdin.write(SPACE);
       await delay(INPUT_DELAY_MS);
 
-      expect(onSelect).toHaveBeenCalledWith("web-state-zustand", "public");
-    });
-
-    it("should not show search pill on read-only rows", () => {
-      const mockSearch = vi.fn<(alias: string) => Promise<BoundSkillCandidate[]>>();
-      const { lastFrame, unmount } = renderGrid({
-        rows: [
-          createSourceRow(
-            "web-framework-react",
-            [createSourceOption("public", { selected: true })],
-            "global",
-            true,
-          ),
-        ],
-        onSearch: mockSearch,
-      });
-      cleanup = unmount;
-
-      const output = lastFrame()!;
-      expect(output).toContain("React");
-      expect(output).not.toContain("Search");
+      expect(onSelect).toHaveBeenCalledWith("web-state-zustand", "eject");
     });
 
     it("should not show focus highlight on read-only rows", () => {
       const allReadOnlyRows: SourceRow[] = [
-        createSourceRow(
-          "web-framework-react",
-          [createSourceOption("public", { selected: true })],
-          "global",
-          true,
-        ),
-        createSourceRow(
-          "web-state-zustand",
-          [createSourceOption("public", { selected: true })],
-          "global",
-          true,
-        ),
+        createSourceRow("web-framework-react", installModeCells("plugin"), "global", true),
+        createSourceRow("web-state-zustand", installModeCells("plugin"), "global", true),
       ];
 
       const { lastFrame, unmount } = renderGrid({
@@ -925,17 +575,8 @@ describe("SourceGrid component", () => {
 
     it("should render re-scoped skill once per scope group", () => {
       const reSccopedRows: SourceRow[] = [
-        createSourceRow(
-          "web-framework-react",
-          [createSourceOption("eject"), createSourceOption("public", { selected: true })],
-          "global",
-          true,
-        ),
-        createSourceRow(
-          "web-framework-react",
-          [createSourceOption("eject"), createSourceOption("public", { selected: true })],
-          "project",
-        ),
+        createSourceRow("web-framework-react", installModeCells("plugin"), "global", true),
+        createSourceRow("web-framework-react", installModeCells("plugin"), "project"),
       ];
 
       const { lastFrame, unmount } = renderGrid({ rows: reSccopedRows });
@@ -952,16 +593,8 @@ describe("SourceGrid component", () => {
 
   describe("removed (disabled) rows", () => {
     const removedRows: SourceRow[] = [
-      createSourceRow(
-        "web-framework-react",
-        [createSourceOption("public", { selected: true })],
-        "project",
-      ),
-      createRemovedRow(
-        "web-testing-vitest",
-        [createSourceOption("eject", { selected: true }), createSourceOption("public")],
-        "project",
-      ),
+      createSourceRow("web-framework-react", installModeCells("plugin"), "project"),
+      createRemovedRow("web-testing-vitest", installModeCells("eject"), "project"),
     ];
 
     it("should keep the removed skill visible", () => {
@@ -985,7 +618,7 @@ describe("SourceGrid component", () => {
     it("should not fire onSelect when space is pressed with a removed row focused", async () => {
       const onSelect = vi.fn();
       const { stdin, unmount } = renderGrid({
-        rows: [removedRows[1]],
+        rows: [elementAt(removedRows, 1)],
         defaultFocusedRow: 0,
         defaultFocusedCol: 0,
         onSelect,
@@ -1031,25 +664,12 @@ describe("SourceGrid component", () => {
       stdin.write(SPACE);
       await delay(INPUT_DELAY_MS);
 
-      expect(onSelect).toHaveBeenCalledWith("web-framework-react", "public");
-    });
-
-    it("should not show search pill on removed rows", () => {
-      const mockSearch = vi.fn<(alias: string) => Promise<BoundSkillCandidate[]>>();
-      const { lastFrame, unmount } = renderGrid({
-        rows: [removedRows[1]],
-        onSearch: mockSearch,
-      });
-      cleanup = unmount;
-
-      const output = lastFrame()!;
-      expect(output).toContain("Vitest");
-      expect(output).not.toContain("Search");
+      expect(onSelect).toHaveBeenCalledWith("web-framework-react", "eject");
     });
 
     it("should not show focus highlight on removed rows", () => {
       const { lastFrame, unmount } = renderGrid({
-        rows: [removedRows[1]],
+        rows: [elementAt(removedRows, 1)],
         defaultFocusedRow: 0,
         defaultFocusedCol: 0,
       });
@@ -1070,17 +690,8 @@ describe("SourceGrid component", () => {
       const UNTOUCHED_SKILL_ID: SkillId = "web-state-zustand";
 
       const collapsedPairRows: SourceRow[] = [
-        createSourceRow(
-          COLLAPSED_SKILL_ID,
-          [createSourceOption("public", { selected: true })],
-          "global",
-          true,
-        ),
-        createRemovedRow(
-          COLLAPSED_SKILL_ID,
-          [createSourceOption("public", { selected: true })],
-          "project",
-        ),
+        createSourceRow(COLLAPSED_SKILL_ID, installModeCells("plugin"), "global", true),
+        createRemovedRow(COLLAPSED_SKILL_ID, installModeCells("plugin"), "project"),
       ];
 
       /**
@@ -1167,11 +778,7 @@ describe("SourceGrid component", () => {
         const { stdin, unmount } = renderGrid({
           rows: [
             ...collapsedPairRows,
-            createSourceRow(
-              UNTOUCHED_SKILL_ID,
-              [createSourceOption("public", { selected: true })],
-              "project",
-            ),
+            createSourceRow(UNTOUCHED_SKILL_ID, installModeCells("plugin"), "project"),
           ],
           // The locked half of the pair — focus must fall through it AND the pending-removal row.
           defaultFocusedRow: 0,
@@ -1184,8 +791,8 @@ describe("SourceGrid component", () => {
         stdin.write(SPACE);
         await delay(INPUT_DELAY_MS);
 
-        expect(onSelect).toHaveBeenCalledWith(UNTOUCHED_SKILL_ID, "public");
-        expect(onSelect).not.toHaveBeenCalledWith(COLLAPSED_SKILL_ID, "public");
+        expect(onSelect).toHaveBeenCalledWith(UNTOUCHED_SKILL_ID, "eject");
+        expect(onSelect).not.toHaveBeenCalledWith(COLLAPSED_SKILL_ID, "eject");
       });
     });
   });
@@ -1194,12 +801,8 @@ describe("SourceGrid component", () => {
     const ADDED_SKILL_ID: SkillId = "web-framework-react";
 
     const addedRows: SourceRow[] = [
-      createAddedRow(ADDED_SKILL_ID, [createSourceOption("public", { selected: true })], "project"),
-      createSourceRow(
-        "web-state-zustand",
-        [createSourceOption("public", { selected: true })],
-        "project",
-      ),
+      createAddedRow(ADDED_SKILL_ID, installModeCells("plugin"), "project"),
+      createSourceRow("web-state-zustand", installModeCells("plugin"), "project"),
     ];
 
     /**
@@ -1271,13 +874,13 @@ describe("SourceGrid component", () => {
   describe("inert row source selection", () => {
     const LOCKED_ROW: SourceRow = createSourceRow(
       "web-framework-react",
-      [createSourceOption("public", { selected: true }), createSourceOption("eject")],
+      installModeCells("plugin"),
       "global",
       true,
     );
     const REMOVAL_ROW: SourceRow = createRemovedRow(
       "web-testing-vitest",
-      [createSourceOption("eject", { selected: true }), createSourceOption("public")],
+      installModeCells("eject"),
       "project",
     );
 
@@ -1310,11 +913,11 @@ describe("SourceGrid component", () => {
       expect(
         output,
         `the locked row's selected source must render bold. Frame:\n${JSON.stringify(output)}`,
-      ).toContain(chalk.bold(`${INERT_PREFIX}Public`));
+      ).toContain(chalk.bold(`${INERT_PREFIX}${INSTALL_MODE_CELL_LABELS.plugin}`));
       expect(
         output,
         `the locked row's unselected sources must stay dimmed. Frame:\n${JSON.stringify(output)}`,
-      ).toContain(chalk.dim(`${INERT_PREFIX}Eject`));
+      ).toContain(chalk.dim(`${INERT_PREFIX}${INSTALL_MODE_CELL_LABELS.eject}`));
       expect(output).not.toContain(UI_SYMBOLS.SELECTED);
     });
 
@@ -1328,11 +931,13 @@ describe("SourceGrid component", () => {
       expect(
         output,
         `the removal row's selected source must render bold in the removal colour. Frame:\n${JSON.stringify(output)}`,
-      ).toContain(chalk.bold(chalk.hex(CLI_COLORS.ERROR)(`${INERT_PREFIX}Eject`)));
+      ).toContain(
+        chalk.bold(chalk.hex(CLI_COLORS.ERROR)(`${INERT_PREFIX}${INSTALL_MODE_CELL_LABELS.eject}`)),
+      );
       expect(
         output,
         `the removal row's unselected sources must keep the removal colour unbolded. Frame:\n${JSON.stringify(output)}`,
-      ).toContain(chalk.hex(CLI_COLORS.ERROR)(`${INERT_PREFIX}Public`));
+      ).toContain(chalk.hex(CLI_COLORS.ERROR)(`${INERT_PREFIX}${INSTALL_MODE_CELL_LABELS.plugin}`));
       expect(output).not.toContain(UI_SYMBOLS.SELECTED);
     });
   });

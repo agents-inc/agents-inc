@@ -1,22 +1,48 @@
 import { describe, it, expect } from "vitest";
 import { defaultRules } from "../default-rules";
+import { BUILT_IN_MATRIX } from "../../../types/generated/matrix";
+import { initializeMatrix } from "../../matrix/matrix-provider";
+import { validateSelection } from "../../matrix/matrix-resolver";
 import { typedKeys } from "../../../utils/typed-object";
+import type { SkillId, SkillSlug } from "../../../types";
+
+const EXPECTED_CONFLICT_GROUP_COUNT = 12;
+const EXPECTED_REQUIRES_COUNT = 98;
+const EXPECTED_ALTERNATIVES_COUNT = 42;
+
+/** Every skill a group named before its category became the fence that states the same thing. */
+const SLUGS_WHOSE_GROUP_A_RADIO_NOW_REPLACES: SkillSlug[] = [
+  "graphql-apollo",
+  "playwright-e2e",
+  "drizzle",
+  "mongodb",
+  "pinecone",
+  "elasticsearch",
+  "payload",
+  "shadcn-ui",
+  "docusaurus",
+  "react-hook-form",
+  "vee-validate",
+  "supabase",
+  "redis",
+  "postgresql",
+  "neon",
+  "websockets",
+];
 
 describe("defaultRules", () => {
   it("has version and relationships", () => {
     expect(defaultRules.version).toBe("1.0.0");
     expect(typedKeys(defaultRules.relationships).sort()).toStrictEqual([
       "alternatives",
-      "compatibleWith",
       "conflicts",
       "discourages",
-      "recommends",
       "requires",
     ]);
   });
 
   it("has conflict rules", () => {
-    expect(defaultRules.relationships.conflicts).toHaveLength(28);
+    expect(defaultRules.relationships.conflicts).toHaveLength(EXPECTED_CONFLICT_GROUP_COUNT);
     expect(
       defaultRules.relationships.conflicts.find((c) => c.skills.includes("react")),
     ).toStrictEqual({
@@ -25,16 +51,51 @@ describe("defaultRules", () => {
     });
   });
 
-  it("has recommend rules as flat picks with skill and reason", () => {
-    expect(defaultRules.relationships.recommends).toHaveLength(26);
-    expect(defaultRules.relationships.recommends.find((r) => r.skill === "zustand")).toStrictEqual({
-      skill: "zustand",
-      reason: "Best-in-class React state management",
-    });
+  // A group and its category would then state one fence twice, and the two spellings
+  // can drift apart; the category is the one the picker renders.
+  it("drops every group a pick-one category now states on its own", () => {
+    const survivors = SLUGS_WHOSE_GROUP_A_RADIO_NOW_REPLACES.filter((slug) =>
+      defaultRules.relationships.conflicts.some((group) => group.skills.includes(slug)),
+    );
+
+    expect(survivors).toStrictEqual([]);
+  });
+
+  it("keeps the monorepo task runners in a conflicts group alongside their pick-one category", () => {
+    expect(
+      defaultRules.relationships.conflicts.filter((c) => c.skills.includes("turborepo")),
+    ).toStrictEqual([
+      {
+        skills: ["turborepo", "nx"],
+        reason: "Monorepo build orchestrators are mutually exclusive",
+      },
+    ]);
+  });
+
+  it("leaves pnpm-workspaces out of every conflicts group, since it composes with either task runner", () => {
+    expect(
+      defaultRules.relationships.conflicts.filter((c) => c.skills.includes("pnpm-workspaces")),
+    ).toStrictEqual([]);
+  });
+
+  // Better Auth needs Drizzle, BullMQ needs Redis or Upstash. While one pick-one
+  // category held all three, satisfying both rules at once was impossible and the
+  // wizard offered no way through.
+  it("lets a selection satisfy an auth rule and a queue rule at the same time", () => {
+    initializeMatrix(BUILT_IN_MATRIX);
+    const selection: SkillId[] = [
+      "api-auth-better-auth-drizzle-hono",
+      "api-queue-bullmq",
+      "api-database-drizzle",
+      "api-database-redis",
+      "api-framework-hono",
+    ];
+
+    expect(validateSelection(selection).errors).toStrictEqual([]);
   });
 
   it("has require rules", () => {
-    expect(defaultRules.relationships.requires).toHaveLength(50);
+    expect(defaultRules.relationships.requires).toHaveLength(EXPECTED_REQUIRES_COUNT);
     expect(defaultRules.relationships.requires.find((r) => r.skill === "zustand")).toStrictEqual({
       skill: "zustand",
       needs: ["react", "nextjs", "remix", "react-native"],
@@ -43,8 +104,57 @@ describe("defaultRules", () => {
     });
   });
 
+  // Plain `needs` is AND, so one rule says both — a second rule for the same
+  // skill would be an OR-group's shape and would let either half stand alone.
+  it("names both halves of an auth skill's surface in a single AND rule", () => {
+    expect(
+      defaultRules.relationships.requires.filter((r) => r.skill === "better-auth-drizzle-hono"),
+    ).toStrictEqual([
+      {
+        skill: "better-auth-drizzle-hono",
+        needs: ["drizzle", "hono"],
+        reason:
+          "Skill teaches Better Auth with the Drizzle adapter, mounted via Hono routes and typed Hono middleware",
+      },
+    ]);
+  });
+
+  // A one-option choice and a plain need fence identically, so the file writes
+  // the plain form and a single-member `needsAny` list never appears.
+  it("states a lone requirement as a plain need rather than a one-option choice", () => {
+    expect(
+      defaultRules.relationships.requires.filter((r) => r.skill === "setup-axiom-pino-sentry"),
+    ).toStrictEqual([
+      {
+        skill: "setup-axiom-pino-sentry",
+        needs: ["nextjs"],
+        reason:
+          "Every pattern is the Next.js wiring — next-axiom, @sentry/nextjs, next.config.ts wrapping, instrumentation.ts; strip the Next slice and nothing followable remains",
+      },
+    ]);
+  });
+
+  it("spells a mobile requirement out flat rather than leaning on a chain of rules", () => {
+    // Expo requires React Native, which requires React — but nothing computes
+    // that closure yet, so a rule naming only Expo would strand every bare
+    // React Native app. Each list carries every framework that satisfies it.
+    const reanimated = defaultRules.relationships.requires.find((r) => r.skill === "reanimated");
+
+    expect(reanimated).toStrictEqual({
+      skill: "reanimated",
+      needs: ["react-native", "expo"],
+      needsAny: true,
+      reason: "Reanimated animates React Native via worklets",
+    });
+  });
+
+  it("gives every requires rule a reason", () => {
+    const unexplained = defaultRules.relationships.requires.filter((rule) => !rule.reason);
+    expect(unexplained).toStrictEqual([]);
+  });
+
   it("has alternative groups", () => {
-    expect(defaultRules.relationships.alternatives).toHaveLength(42);
+    expect(defaultRules.relationships.alternatives).toHaveLength(EXPECTED_ALTERNATIVES_COUNT);
     expect(
       defaultRules.relationships.alternatives.find((a) => a.purpose === "Base Framework"),
     ).toStrictEqual({

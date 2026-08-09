@@ -18,7 +18,7 @@ const TableHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   </Text>
 );
 
-const ScopeLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+const ScopeLabel: React.FC<{ children: string }> = ({ children }) => (
   <Text color={CLI_COLORS.WHITE} backgroundColor={CLI_COLORS.LABEL_BG}>
     {` ${children} `}
   </Text>
@@ -28,14 +28,14 @@ const EjectIcon: React.FC = () => <Text color={CLI_COLORS.WARNING}> {UI_SYMBOLS.
 
 const DIFF_PREFIX: Record<DiffRowStatus, string> = {
   added: `${UI_SYMBOLS.ADDED} `,
-  "source-changed": "~ ",
+  "mode-changed": "~ ",
   removed: `${UI_SYMBOLS.REMOVED} `,
   unchanged: `${UI_SYMBOLS.BULLET} `,
 };
 
 const DIFF_COLOR: Record<DiffRowStatus, string> = {
   added: CLI_COLORS.SUCCESS,
-  "source-changed": CLI_COLORS.WARNING,
+  "mode-changed": CLI_COLORS.WARNING,
   removed: CLI_COLORS.ERROR,
   unchanged: CLI_COLORS.NEUTRAL,
 };

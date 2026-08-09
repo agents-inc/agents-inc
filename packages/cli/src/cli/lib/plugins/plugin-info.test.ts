@@ -186,7 +186,7 @@ describe("plugin-info", () => {
             createDirent("web-developer.md", { isFile: true }),
           ]) as unknown as ReturnType<typeof readdir>;
         }
-        return Promise.resolve([]) as unknown as ReturnType<typeof readdir>;
+        return Promise.resolve([]);
       });
 
       mockedLoadProjectConfig.mockResolvedValue({
@@ -246,10 +246,10 @@ describe("plugin-info", () => {
         if (dir === globalAgentsDir) {
           return Promise.resolve([
             createDirent("api-developer.md", { isFile: true }),
-            createDirent("web-reviewer.md", { isFile: true }),
+            createDirent("reviewer.md", { isFile: true }),
           ]) as unknown as ReturnType<typeof readdir>;
         }
-        return Promise.resolve([]) as unknown as ReturnType<typeof readdir>;
+        return Promise.resolve([]);
       });
 
       mockedLoadProjectConfig.mockResolvedValue({
@@ -378,7 +378,7 @@ describe("plugin-info", () => {
             createDirent("web-developer.md", { isFile: true }),
           ]) as unknown as ReturnType<typeof readdir>;
         }
-        return Promise.resolve([]) as unknown as ReturnType<typeof readdir>;
+        return Promise.resolve([]);
       });
 
       mockedLoadProjectConfig.mockResolvedValue({
@@ -422,7 +422,7 @@ describe("plugin-info", () => {
           description: "React",
           path: "/global/cache/react",
         },
-      } as Record<string, import("../../types").SkillDefinition>);
+      } satisfies Record<string, import("../../types").SkillDefinition>);
 
       // Exact path, not a suffix: getInstallationInfo also counts the global
       // agents dir, which shares the same trailing segment.
@@ -435,7 +435,7 @@ describe("plugin-info", () => {
             createDirent("agent-2.md", { isFile: true }),
           ]) as unknown as ReturnType<typeof readdir>;
         }
-        return Promise.resolve([]) as unknown as ReturnType<typeof readdir>;
+        return Promise.resolve([]);
       });
 
       const result = await getInstallationInfo();

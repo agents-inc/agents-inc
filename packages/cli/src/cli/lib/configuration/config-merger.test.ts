@@ -11,6 +11,7 @@ import {
   buildSourceConfig,
 } from "../__tests__/factories/config-factories.js";
 import { expectAgentConfigs } from "../__tests__/assertions/index.js";
+import { firstElement } from "../__tests__/helpers/element-at.js";
 
 describe("config-merger", () => {
   let tempDir: string;
@@ -26,7 +27,7 @@ describe("config-merger", () => {
   describe("mergeWithExistingConfig", () => {
     async function writeFullConfig(config: ProjectConfig): Promise<void> {
       // Boundary cast: ProjectConfig to generic record for writeTestTsConfig
-      await writeTestTsConfig(tempDir, config as unknown as Record<string, unknown>);
+      await writeTestTsConfig(tempDir, config);
     }
 
     it("should return new config unchanged when no existing config exists", async () => {
@@ -373,7 +374,7 @@ describe("config-merger", () => {
           agents: buildAgentConfigs(["web-developer"]),
           skills: [],
           author: "@existing",
-        }) as Record<string, unknown>,
+        }),
       );
 
       const newConfig = buildProjectConfig({
@@ -396,7 +397,7 @@ describe("config-merger", () => {
         buildProjectConfig({
           name: "existing",
           agents: buildAgentConfigs(["web-developer"]),
-        }) as Record<string, unknown>,
+        }),
       );
 
       const newConfig = buildProjectConfig({ name: "new-project", skills: [] });
@@ -1088,10 +1089,11 @@ describe("config-merger", () => {
         expect(result.skills.some((s) => s.id === "web-framework-react")).toBe(true);
       });
 
-      it("preserves an existing skill whose id could not be resolved this session, regardless of authoritativeScope", () => {
+      it("drops an existing skill whose id could not be resolved this session, at both scopes", () => {
         // A real installed skill absent from the currently-loaded source matrix is skipped by the
-        // wizard (populateFromSkillIds) and never reaches newConfig. Its absence is a resolution
-        // gap, NOT a deselection, so it must survive an authoritative edit at BOTH scopes.
+        // wizard (populateFromSkillIds) and never reaches newConfig. It is removed like any other
+        // absent owned entry — `edit` names it and says why rather than the config keeping an
+        // entry the same run's summary announced as gone (CLI-450).
         const newConfig = buildProjectConfig({
           name: "project",
           skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
@@ -1104,34 +1106,18 @@ describe("config-merger", () => {
           ],
         });
 
-        const unresolvableSkillIds: SkillId[] = ["web-styling-tailwind"];
-        const preservedEntry = {
-          id: "web-styling-tailwind",
-          scope: "project" as const,
-          source: "eject" as const,
-        };
-
-        const globalEdit = mergeConfigs(newConfig, existingConfig, {
-          authoritativeScope: "all",
-          unresolvableSkillIds,
-        });
-        expect(globalEdit.skills.find((s) => s.id === "web-styling-tailwind")).toStrictEqual(
-          preservedEntry,
-        );
+        const globalEdit = mergeConfigs(newConfig, existingConfig, { authoritativeScope: "all" });
+        expect(globalEdit.skills.map((s) => s.id)).toStrictEqual(["web-framework-react"]);
 
         const projectEdit = mergeConfigs(newConfig, existingConfig, {
           authoritativeScope: "owned",
-          unresolvableSkillIds,
         });
-        expect(projectEdit.skills.find((s) => s.id === "web-styling-tailwind")).toStrictEqual(
-          preservedEntry,
-        );
+        expect(projectEdit.skills.map((s) => s.id)).toStrictEqual(["web-framework-react"]);
       });
 
-      it("still drops a genuinely deselected resolvable skill even when an unrelated id is unresolvable", () => {
-        // Boundary proof: the unresolvable exemption is narrow. web-state-zustand was resolvable and
-        // shown but the user deselected it (absent from newConfig, not in the unresolvable set), so
-        // it must still drop — while the unrelated unresolvable skill is preserved.
+      it("drops an unresolvable id alongside a genuinely deselected one, keeping the selection", () => {
+        // Both absences now mean the same thing to the merge — the entry is gone from the roster
+        // the session was authoritative over — so both drop, and only what is still selected stays.
         const newConfig = buildProjectConfig({
           name: "project",
           skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
@@ -1145,17 +1131,34 @@ describe("config-merger", () => {
           ],
         });
 
-        const result = mergeConfigs(newConfig, existingConfig, {
-          authoritativeScope: "all",
-          unresolvableSkillIds: ["web-styling-tailwind"],
+        const result = mergeConfigs(newConfig, existingConfig, { authoritativeScope: "all" });
+
+        expect(result.skills.map((s) => s.id)).toStrictEqual(["web-framework-react"]);
+      });
+
+      it("keeps an unresolvable id an INHERITED global install owns during a project edit", () => {
+        // The one thing the drop must not reach: a global-active entry the project merely
+        // inherits. It is out of a project edit's authority whether or not this session could
+        // resolve it, so the removal never becomes a way to uninstall someone else's install.
+        const newConfig = buildProjectConfig({
+          name: "project",
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-styling-tailwind"], { scope: "global", source: "eject" }),
+          ],
         });
 
-        // Genuine deselection still drops.
-        expect(result.skills.some((s) => s.id === "web-state-zustand")).toBe(false);
-        // Unresolvable skill preserved.
-        expect(result.skills.some((s) => s.id === "web-styling-tailwind")).toBe(true);
-        // Actively-selected skill preserved.
-        expect(result.skills.some((s) => s.id === "web-framework-react")).toBe(true);
+        const result = mergeConfigs(newConfig, existingConfig, { authoritativeScope: "owned" });
+
+        expect(result.skills.find((s) => s.id === "web-styling-tailwind")).toStrictEqual({
+          id: "web-styling-tailwind",
+          scope: "global",
+          source: "eject",
+        });
       });
 
       it("should handle both configs having excluded entries for the same skill ID", () => {
@@ -1181,7 +1184,7 @@ describe("config-merger", () => {
         // Only one excluded entry — compound key deduplicates
         const reactEntries = result.skills.filter((s) => s.id === "web-framework-react");
         expect(reactEntries).toHaveLength(1);
-        expect(reactEntries[0].excluded).toBe(true);
+        expect(firstElement(reactEntries).excluded).toBe(true);
       });
     });
 
@@ -1190,8 +1193,8 @@ describe("config-merger", () => {
         const newConfig = buildProjectConfig({
           name: "project",
           agents: [
-            buildAgentConfigs(["api-developer"])[0],
-            buildAgentConfigs(["api-developer"], { scope: "global", excluded: true })[0],
+            firstElement(buildAgentConfigs(["api-developer"])),
+            firstElement(buildAgentConfigs(["api-developer"], { scope: "global", excluded: true })),
           ],
           skills: [],
         });
@@ -1404,7 +1407,7 @@ describe("config-merger", () => {
         // Only one excluded entry — compound key deduplicates
         const apiDevEntries = result.agents.filter((a) => a.name === "api-developer");
         expect(apiDevEntries).toHaveLength(1);
-        expect(apiDevEntries[0].excluded).toBe(true);
+        expect(firstElement(apiDevEntries).excluded).toBe(true);
       });
 
       it("should update scope of existing agent when new config has different scope", () => {

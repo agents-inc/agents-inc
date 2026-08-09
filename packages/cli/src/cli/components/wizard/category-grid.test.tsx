@@ -47,9 +47,7 @@ const defaultCategories: CategoryRow[] = [
     "web-framework",
     "Framework",
     [
-      createOption("web-framework-react", {
-        state: { status: "recommended", reason: "Popular choice" },
-      }),
+      createOption("web-framework-react"),
       createOption("web-framework-vue-composition-api"),
       createOption("web-framework-angular-standalone"),
       createOption("web-framework-solidjs"),
@@ -61,18 +59,14 @@ const defaultCategories: CategoryRow[] = [
     "Styling",
     [
       createOption("web-styling-scss-modules", { selected: true }),
-      createOption("web-styling-tailwind", {
-        state: { status: "recommended", reason: "Modern utility-first CSS" },
-      }),
+      createOption("web-styling-tailwind"),
       createOption("web-styling-cva"),
       createOption("web-meta-framework-nuxt"),
     ],
     { required: true },
   ),
   createCategory("web-client-state", "Client State", [
-    createOption("web-state-zustand", {
-      state: { status: "recommended", reason: "Simple and performant" },
-    }),
+    createOption("web-state-zustand"),
     createOption("web-state-jotai"),
     createOption("web-state-redux-toolkit", {
       state: { status: "discouraged", reason: "Complex for most apps" },
@@ -93,7 +87,6 @@ const categoriesWithFramework: CategoryRow[] = [
     "Framework",
     [
       createOption("web-framework-react", {
-        state: { status: "recommended", reason: "Popular choice" },
         selected: true, // Framework selected
       }),
       createOption("web-framework-vue-composition-api"),
@@ -107,18 +100,14 @@ const categoriesWithFramework: CategoryRow[] = [
     "Styling",
     [
       createOption("web-styling-scss-modules"),
-      createOption("web-styling-tailwind", {
-        state: { status: "recommended", reason: "Modern utility-first CSS" },
-      }),
+      createOption("web-styling-tailwind"),
       createOption("web-styling-cva"),
       createOption("web-meta-framework-nuxt"),
     ],
     { required: true },
   ),
   createCategory("web-client-state", "Client State", [
-    createOption("web-state-zustand", {
-      state: { status: "recommended", reason: "Simple and performant" },
-    }),
+    createOption("web-state-zustand"),
     createOption("web-state-jotai"),
     createOption("web-state-redux-toolkit", {
       state: { status: "discouraged", reason: "Complex for most apps" },
@@ -292,15 +281,6 @@ describe("CategoryGrid component", () => {
       expect(output).toContain("Angular");
     });
 
-    it("should NOT show star indicator for recommended options (uses background instead)", () => {
-      const { lastFrame, unmount } = renderGrid();
-      cleanup = unmount;
-
-      const output = lastFrame();
-      // Should NOT contain star (⭐) for recommended
-      expect(output).not.toContain("\u2B50");
-    });
-
     it("should NOT show warning indicator for discouraged options (uses color instead)", () => {
       const { lastFrame, unmount } = renderGrid();
       cleanup = unmount;
@@ -315,7 +295,7 @@ describe("CategoryGrid component", () => {
         createCategory("web-testing", "Test", [
           createOption("web-forms-react-hook-form"),
           createOption("web-forms-vee-validate", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
           }),
         ]),
       ];
@@ -363,7 +343,7 @@ describe("CategoryGrid component", () => {
       const categories: CategoryRow[] = [
         createCategory("web-forms", "Forms", [
           createOption("web-forms-react-hook-form", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
           }),
         ]),
       ];
@@ -379,11 +359,11 @@ describe("CategoryGrid component", () => {
       const categories: CategoryRow[] = [
         createCategory("web-forms", "Forms", [
           createOption("web-forms-react-hook-form", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
             selected: true,
           }),
           createOption("web-forms-vee-validate", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
             selected: false,
           }),
         ]),
@@ -401,7 +381,7 @@ describe("CategoryGrid component", () => {
       const categories: CategoryRow[] = [
         createCategory("web-forms", "Forms", [
           createOption("web-forms-react-hook-form", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
           }),
         ]),
       ];
@@ -581,7 +561,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS * 2);
-      await stdin.write(ARROW_LEFT);
+      stdin.write(ARROW_LEFT);
       await delay(INPUT_DELAY_MS);
 
       expect(onFocusChange).toHaveBeenCalledWith(0, 0);
@@ -597,7 +577,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_RIGHT);
+      stdin.write(ARROW_RIGHT);
       await delay(INPUT_DELAY_MS);
 
       expect(onFocusChange).toHaveBeenCalledWith(0, 1);
@@ -613,7 +593,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_UP);
+      stdin.write(ARROW_UP);
       await delay(INPUT_DELAY_MS);
 
       // Should wrap to last row (4) since no sections are locked
@@ -631,7 +611,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(INPUT_DELAY_MS);
 
       // Should move to row 1 (Styling) since framework is selected
@@ -648,7 +628,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_LEFT);
+      stdin.write(ARROW_LEFT);
       await delay(INPUT_DELAY_MS);
 
       // Should wrap to last column (index 3 for framework with 4 options)
@@ -665,7 +645,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_RIGHT);
+      stdin.write(ARROW_RIGHT);
       await delay(INPUT_DELAY_MS);
 
       // Should wrap to first column
@@ -683,7 +663,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_UP);
+      stdin.write(ARROW_UP);
       await delay(INPUT_DELAY_MS);
 
       // Should wrap to last row (index 2 for 3 categories)
@@ -702,7 +682,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write("h");
+      stdin.write("h");
       await delay(INPUT_DELAY_MS);
 
       expect(onFocusChange).toHaveBeenCalledWith(0, 0);
@@ -718,7 +698,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write("l");
+      stdin.write("l");
       await delay(INPUT_DELAY_MS);
 
       expect(onFocusChange).toHaveBeenCalledWith(0, 1);
@@ -735,7 +715,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write("k");
+      stdin.write("k");
       await delay(INPUT_DELAY_MS);
 
       expect(onFocusChange).toHaveBeenCalledWith(0, 0);
@@ -752,7 +732,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write("j");
+      stdin.write("j");
       await delay(INPUT_DELAY_MS);
 
       expect(onFocusChange).toHaveBeenCalledWith(1, 0);
@@ -770,7 +750,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(" "); // Space
+      stdin.write(" "); // Space
       await delay(INPUT_DELAY_MS);
 
       expect(onToggle).toHaveBeenCalledWith("web-framework", "web-framework-vue-composition-api");
@@ -798,7 +778,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(" ");
+      stdin.write(" ");
       await delay(INPUT_DELAY_MS);
 
       expect(onToggle).toHaveBeenCalledWith("web-framework", "web-framework-react");
@@ -809,10 +789,10 @@ describe("CategoryGrid component", () => {
       const categories: CategoryRow[] = [
         createCategory("web-testing", "Test", [
           createOption("web-forms-react-hook-form", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
           }),
           createOption("web-forms-vee-validate", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
           }),
         ]),
       ];
@@ -826,7 +806,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(" ");
+      stdin.write(" ");
       await delay(INPUT_DELAY_MS);
 
       expect(onToggle).toHaveBeenCalled();
@@ -855,7 +835,7 @@ describe("CategoryGrid component", () => {
         createCategory("web-testing", "Test", [
           createOption("web-forms-react-hook-form"),
           createOption("web-forms-vee-validate", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
           }),
           createOption("web-forms-zod-validation"),
         ]),
@@ -871,7 +851,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_RIGHT);
+      stdin.write(ARROW_RIGHT);
       await delay(INPUT_DELAY_MS);
 
       // Navigating right from index 0 goes to index 1 (opt2, discouraged but hoverable)
@@ -884,7 +864,7 @@ describe("CategoryGrid component", () => {
         createCategory("web-testing", "Test", [
           createOption("web-forms-react-hook-form"),
           createOption("web-forms-vee-validate", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
           }),
           createOption("web-forms-zod-validation"),
         ]),
@@ -900,7 +880,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_LEFT);
+      stdin.write(ARROW_LEFT);
       await delay(INPUT_DELAY_MS);
 
       // Discouraged options are hoverable — navigates to index 1 (opt2)
@@ -912,10 +892,10 @@ describe("CategoryGrid component", () => {
       const categories: CategoryRow[] = [
         createCategory("web-testing", "Test", [
           createOption("web-forms-react-hook-form", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
           }),
           createOption("web-forms-vee-validate", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
           }),
         ]),
       ];
@@ -929,7 +909,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_RIGHT);
+      stdin.write(ARROW_RIGHT);
       await delay(INPUT_DELAY_MS);
 
       // Discouraged options are hoverable — navigates to index 1
@@ -964,7 +944,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(TAB);
+      stdin.write(TAB);
       await delay(INPUT_DELAY_MS);
 
       // Should jump to next section (row 1)
@@ -981,7 +961,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(TAB);
+      stdin.write(TAB);
       await delay(INPUT_DELAY_MS);
 
       // Should jump to next section since no sections are locked
@@ -998,19 +978,10 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write("d");
+      stdin.write("d");
       await delay(INPUT_DELAY_MS);
 
       expect(onToggleLabels).toHaveBeenCalled();
-    });
-
-    it("should show compatibility labels when showLabels is true", () => {
-      const { lastFrame, unmount } = renderGrid({ showLabels: true });
-      cleanup = unmount;
-
-      const output = lastFrame();
-      // Should show compatibility label suffixes on skill tags
-      expect(output).toContain("(recommended)"); // react has state: { status: "recommended", reason: "Recommended choice" }
     });
 
     it("should not show label for selected skills when showLabels is true", () => {
@@ -1043,7 +1014,6 @@ describe("CategoryGrid component", () => {
 
       const output = lastFrame();
       // Labels should not be visible when toggle is off
-      expect(output).not.toContain("(recommended)");
       expect(output).not.toContain("(selected)");
       expect(output).not.toContain("(discouraged)");
     });
@@ -1052,7 +1022,7 @@ describe("CategoryGrid component", () => {
       const categories: CategoryRow[] = [
         createCategory("web-testing", "Test", [
           createOption("web-forms-vee-validate", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
           }),
           createOption("web-forms-react-hook-form"),
         ]),
@@ -1072,11 +1042,9 @@ describe("CategoryGrid component", () => {
       const categories: CategoryRow[] = [
         createCategory("web-client-state", "State", [
           createOption("web-state-jotai"),
-          createOption("web-state-zustand", {
-            state: { status: "recommended", reason: "Recommended choice" },
-          }),
+          createOption("web-state-zustand"),
           createOption("web-state-redux-toolkit", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
           }),
           createOption("web-state-mobx"),
         ]),
@@ -1146,7 +1114,7 @@ describe("CategoryGrid component", () => {
         createCategory("web-client-state", "State", [
           createOption("web-state-jotai"),
           createOption("web-state-zustand", {
-            state: { status: "discouraged", reason: "Not recommended" },
+            state: { status: "discouraged", reason: "Prefer the alternative" },
           }),
           createOption("web-state-redux-toolkit"),
         ]),
@@ -1289,7 +1257,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(INPUT_DELAY_MS);
 
       // Should move to row 1, and col should be clamped to 0 (only option)
@@ -1385,11 +1353,11 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(INPUT_DELAY_MS);
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(INPUT_DELAY_MS);
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(INPUT_DELAY_MS);
 
       const output = lastFrame();

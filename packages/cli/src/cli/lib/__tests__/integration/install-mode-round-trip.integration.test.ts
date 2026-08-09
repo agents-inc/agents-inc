@@ -2,7 +2,7 @@ import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 
-import { deleteLocalSkill } from "../../skills/source-switcher";
+import { deleteLocalSkill } from "../../skills/local-skill-mover";
 import { installEject } from "../../installation/local-installer";
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
 import type { ProjectConfig, SkillId } from "../../../types";
@@ -13,15 +13,15 @@ import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { readTestTsConfig } from "../helpers/config-io.js";
 import { fileExists, directoryExists } from "../test-fs-utils";
 import { expectSkillConfigs, expectInstallResult } from "../assertions/index.js";
-import { SWITCHABLE_SKILLS, LOCAL_SKILL_VARIANTS } from "../mock-data/mock-skills.js";
+import { INSTALL_MODE_SKILLS, LOCAL_SKILL_VARIANTS } from "../mock-data/mock-skills.js";
 
 const REACT_SKILL_ID: SkillId = "web-framework-react";
-// Boundary cast: TestSkill.id is string, but SWITCHABLE_SKILLS contains valid SkillIds
-const ALL_SKILL_NAMES = SWITCHABLE_SKILLS.map((s) => s.id) as SkillId[];
+// Boundary cast: TestSkill.id is string, but INSTALL_MODE_SKILLS contains valid SkillIds
+const ALL_SKILL_NAMES = INSTALL_MODE_SKILLS.map((s) => s.id) as SkillId[];
 
-/** Re-runs the eject install for every switchable skill (the re-copy path). */
+/** Re-runs the eject install for every skill (the re-copy path). */
 async function reinstallAllSkills(dirs: TestDirs) {
-  const matrix = createMatrixFromTestSkills(SWITCHABLE_SKILLS);
+  const matrix = createMatrixFromTestSkills(INSTALL_MODE_SKILLS);
   const wizardResult = buildWizardResult(buildSkillConfigs(ALL_SKILL_NAMES, { source: "eject" }), {
     selectedAgents: ["web-developer"],
   });
@@ -29,12 +29,12 @@ async function reinstallAllSkills(dirs: TestDirs) {
   return installEject({ wizardResult, sourceResult, projectDir: dirs.projectDir });
 }
 
-describe("Integration: Source Switching with Delete", () => {
+describe("Integration: install-mode round trip with delete and re-copy", () => {
   let dirs: TestDirs;
 
   beforeEach(async () => {
     dirs = await createTestSource({
-      skills: SWITCHABLE_SKILLS,
+      skills: INSTALL_MODE_SKILLS,
       localSkills: LOCAL_SKILL_VARIANTS,
     });
   });

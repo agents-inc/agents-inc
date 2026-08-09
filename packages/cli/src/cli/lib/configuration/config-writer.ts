@@ -1,6 +1,6 @@
 import os from "os";
 import path from "path";
-import type { Category, ProjectConfig } from "../../types";
+import type { Category, ProjectConfig, SkillAssignment } from "../../types";
 import { CLAUDE_SRC_DIR, DEFAULT_PLUGIN_NAME, GLOBAL_CONFIG_NAME } from "../../consts";
 import { isSkillAssignment } from "../../utils/type-guards";
 import { matrix } from "../matrix/matrix-provider";
@@ -29,7 +29,7 @@ export type ConfigSourceOptions = {
 };
 
 /** Fields that are extracted into typed named variables below the export default */
-const EXTRACTED_FIELDS = new Set(["skills", "agents", "stack", "domains", "selectedAgents"]);
+const EXTRACTED_FIELDS = new Set(["skills", "agents", "stack", "selectedDomains"]);
 
 /** One config entry as an indented array-element line. */
 function renderEntryLine(entry: unknown): string {
@@ -45,41 +45,44 @@ type ConfigArrays = {
   skills: unknown[];
   agents: unknown[];
   stack: Record<string, unknown> | undefined;
-  domains: unknown[];
-  selectedAgents: string[];
+  selectedDomains: unknown[];
 };
 
-/** The five extracted array/stack fields of a cleaned config, defaulted for emission. */
+/** The four extracted array/stack fields of a cleaned config, defaulted for emission. */
 function extractConfigArrays(cleaned: Record<string, unknown>): ConfigArrays {
-  // Boundary cast: cleaned comes from JSON.parse(JSON.stringify(...)) so arrays are plain JSON values
+  // Boundary cast: cleaned comes from JSON.parse(JSON.stringify(...)) so arrays are plain JSON
+  // values. The `??` runs BEFORE the cast on purpose — `cleaned` is a Record of `unknown`, and
+  // casting first would tell the checker the value is present when the round-trip drops any key
+  // whose value was undefined.
   return {
-    skills: (cleaned.skills as unknown[]) ?? [],
-    agents: (cleaned.agents as unknown[]) ?? [],
+    skills: (cleaned.skills ?? []) as unknown[],
+    agents: (cleaned.agents ?? []) as unknown[],
     stack: cleaned.stack as Record<string, unknown> | undefined,
-    domains: (cleaned.domains as unknown[]) ?? [],
-    selectedAgents: (cleaned.selectedAgents as string[]) ?? [],
+    selectedDomains: (cleaned.selectedDomains ?? []) as unknown[],
   };
 }
 
 /**
  * Generates a TypeScript config file source from a ProjectConfig object.
  * The export default sits at the top as a table of contents, with typed named
- * variables (skills, agents, stack, domains) declared below it.
+ * variables (skills, agents, stack, selectedDomains) declared below it.
  *
  * When `options.isProjectConfig` is true, the generated config imports from the global
- * config and spreads global arrays into skills, agents, and domains.
+ * config and spreads global arrays into skills, agents, and selectedDomains.
  */
 /**
  * Shared pre-emission cleanup: JSON round-trip (drops undefined values), optional
  * `projects` removal (project configs never emit the global tracking list), and
- * stack compaction (strip `{ id, preloaded: false }` to bare strings while
- * preserving SkillAssignment[] arrays).
+ * stack compaction (strip flag-less assignments to bare strings while preserving
+ * SkillAssignment[] arrays).
  */
 function cleanForEmission(
   config: ProjectConfig,
   options: { dropProjects: boolean },
 ): Record<string, unknown> {
-  const cleaned: Record<string, unknown> = JSON.parse(JSON.stringify(config));
+  // Boundary cast: `JSON.parse` is typed `any`, and round-tripping an object always
+  // yields one — dropping its undefined-valued keys is exactly why this is here.
+  const cleaned = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
   if (options.dropProjects) {
     delete cleaned.projects;
   }
@@ -116,21 +119,19 @@ export function generateConfigSource(config: ProjectConfig, options?: ConfigSour
  * The export default at the bottom acts as a table of contents, referencing the named variables.
  */
 function generateStandaloneConfig(cleaned: Record<string, unknown>): string {
-  const { skills, agents, stack, domains, selectedAgents } = extractConfigArrays(cleaned);
+  const { skills, agents, stack, selectedDomains } = extractConfigArrays(cleaned);
 
   const hasSkills = skills.length > 0;
   const hasAgents = agents.length > 0;
   const hasStack = stack != null && Object.keys(stack).length > 0;
-  const hasDomains = domains.length > 0;
-  const hasSelectedAgents = selectedAgents.length > 0;
+  const hasSelectedDomains = selectedDomains.length > 0;
 
   // Build type imports based on what's used
   const typeImports = buildTypeImports({
     hasSkills,
     hasAgents,
     hasStack,
-    hasDomains,
-    hasSelectedAgents,
+    hasSelectedDomains,
   });
 
   const lines: string[] = [`import type { ${typeImports} } from "./config-types";`];
@@ -156,27 +157,20 @@ function generateStandaloneConfig(cleaned: Record<string, unknown>): string {
     lines.push(`const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = ${stackBody};`);
   }
 
-  if (hasDomains) {
+  if (hasSelectedDomains) {
     lines.push(``);
-    const items = domains.map((d) => JSON.stringify(d)).join(", ");
-    lines.push(`const domains: Domain[] = [${items}];`);
-  }
-
-  if (hasSelectedAgents) {
-    lines.push(``);
-    const items = selectedAgents.map((a) => JSON.stringify(a)).join(", ");
-    lines.push(`const selectedAgents: SelectedAgentName[] = [${items}];`);
+    const items = selectedDomains.map((d) => JSON.stringify(d)).join(", ");
+    lines.push(`const selectedDomains: Domain[] = [${items}];`);
   }
 
   // Extracted fields reference their named variable (or an empty literal when the
-  // variable was not emitted); `stack`/`selectedAgents` are omitted entirely when absent.
+  // variable was not emitted); `stack` is omitted entirely when absent.
   const renderExportField = (key: string, value: unknown): string[] => {
     if (!EXTRACTED_FIELDS.has(key)) return [renderScalarField(key, value)];
     if (key === "skills") return [`  skills${hasSkills ? "" : ": []"},`];
     if (key === "agents") return [`  agents${hasAgents ? "" : ": []"},`];
     if (key === "stack") return hasStack ? [`  stack,`] : [];
-    if (key === "domains") return [`  domains${hasDomains ? "" : ": []"},`];
-    return hasSelectedAgents ? [`  selectedAgents,`] : [];
+    return [`  selectedDomains${hasSelectedDomains ? "" : ": []"},`];
   };
   const exportFields = Object.entries(cleaned).flatMap(([key, value]) =>
     renderExportField(key, value),
@@ -199,14 +193,12 @@ function buildTypeImports(flags: {
   hasSkills: boolean;
   hasAgents: boolean;
   hasStack: boolean;
-  hasDomains: boolean;
-  hasSelectedAgents?: boolean;
+  hasSelectedDomains: boolean;
 }): string {
   return [
-    flags.hasDomains && "Domain",
+    flags.hasSelectedDomains && "Domain",
     "ProjectConfig",
     flags.hasStack && "ProjectAgentName",
-    (flags.hasStack || flags.hasSelectedAgents) && "SelectedAgentName",
     flags.hasAgents && "AgentScopeConfig",
     flags.hasSkills && "SkillConfig",
     flags.hasStack && "StackAgentConfig",
@@ -218,8 +210,8 @@ function buildTypeImports(flags: {
 /**
  * Generates a project config source that imports from the global config and extends it.
  * Typed named variables are declared above the export default. The export default at
- * the bottom acts as a table of contents. Arrays (skills, agents, domains) are spread
- * with globalConfig first, then project items.
+ * the bottom acts as a table of contents. Arrays (skills, agents, selectedDomains) are
+ * spread with globalConfig first, then project items.
  */
 function generateProjectConfigWithGlobalImport(
   cleaned: Record<string, unknown>,
@@ -227,19 +219,17 @@ function generateProjectConfigWithGlobalImport(
 ): string {
   const importPath = `${globalImportPath}/config`;
 
-  const { skills, agents, stack, domains, selectedAgents } = extractConfigArrays(cleaned);
+  const { skills, agents, stack, selectedDomains } = extractConfigArrays(cleaned);
 
-  const hasProjectDomains = domains.length > 0;
+  const hasProjectDomains = selectedDomains.length > 0;
   const hasStack = stack != null && Object.keys(stack).length > 0;
-  const hasProjectSelectedAgents = selectedAgents.length > 0;
 
   // Build type imports
   const typeImports = buildTypeImports({
     hasSkills: true, // Always present (spread from global)
     hasAgents: true, // Always present (spread from global)
     hasStack,
-    hasDomains: hasProjectDomains,
-    hasSelectedAgents: hasProjectSelectedAgents,
+    hasSelectedDomains: hasProjectDomains,
   });
 
   const lines: string[] = [
@@ -270,23 +260,14 @@ function generateProjectConfigWithGlobalImport(
     lines.push(`const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = ${stackBody};`);
   }
 
-  // Domains variable (only if project has domains)
+  // Selected domains variable (only if project has selected domains)
   if (hasProjectDomains) {
     lines.push(``);
-    const domainItems = domains.map(renderEntryLine).join("\n");
-    lines.push(`const domains: Domain[] = [`);
-    lines.push(`  ...(globalConfig.domains ?? []),`);
+    const domainItems = selectedDomains.map(renderEntryLine).join("\n");
+    lines.push(`const selectedDomains: Domain[] = [`);
+    lines.push(`  ...(globalConfig.selectedDomains ?? []),`);
     if (domainItems) lines.push(domainItems);
     lines.push(`];`);
-  }
-
-  // selectedAgents variable (only if project has selectedAgents)
-  if (hasProjectSelectedAgents) {
-    lines.push(``);
-    const items = selectedAgents.map((a) => JSON.stringify(a)).join(", ");
-    lines.push(
-      `const selectedAgents: SelectedAgentName[] = [...(globalConfig.selectedAgents ?? []), ${items}];`,
-    );
   }
 
   // Build scalar fields (everything that isn't an extracted field or name)
@@ -302,8 +283,7 @@ function generateProjectConfigWithGlobalImport(
     `  skills,`,
     `  agents,`,
     ...(hasStack ? [`  stack,`] : []),
-    ...(hasProjectDomains ? [`  domains,`] : []),
-    ...(hasProjectSelectedAgents ? [`  selectedAgents,`] : []),
+    ...(hasProjectDomains ? [`  selectedDomains,`] : []),
     ...(scalarFields ? [scalarFields] : []),
   ];
 
@@ -331,8 +311,7 @@ type InlinedGlobalPartition = {
   /** Project stack filtered to project-scoped agents only. */
   filteredStack: Record<string, unknown> | undefined;
   /** Merged unique global + project values. */
-  domains: unknown[];
-  selectedAgents: string[];
+  selectedDomains: unknown[];
 };
 
 /**
@@ -387,8 +366,7 @@ function partitionInlinedConfigEntries(
     projectSkills,
     projectAgents,
     filteredStack,
-    domains: [...new Set([...global.domains, ...project.domains])],
-    selectedAgents: [...new Set([...global.selectedAgents, ...project.selectedAgents])],
+    selectedDomains: [...new Set([...global.selectedDomains, ...project.selectedDomains])],
   };
 }
 
@@ -414,15 +392,13 @@ function generateProjectConfigWithInlinedGlobal(
   const hasAgents = hasGlobalAgents || hasProjectAgents;
 
   const hasStack = filteredStack != null && Object.keys(filteredStack).length > 0;
-  const hasDomains = partition.domains.length > 0;
-  const hasSelectedAgents = partition.selectedAgents.length > 0;
+  const hasSelectedDomains = partition.selectedDomains.length > 0;
 
   const typeImports = buildTypeImports({
     hasSkills,
     hasAgents,
     hasStack,
-    hasDomains,
-    hasSelectedAgents,
+    hasSelectedDomains,
   });
 
   const lines: string[] = [`import type { ${typeImports} } from "./config-types";`];
@@ -456,18 +432,11 @@ function generateProjectConfigWithInlinedGlobal(
     lines.push(`const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = ${stackBody};`);
   }
 
-  // Domains variable
-  if (hasDomains) {
+  // Selected domains variable (merged global + project, deduplicated)
+  if (hasSelectedDomains) {
     lines.push(``);
-    const items = partition.domains.map((d) => JSON.stringify(d)).join(", ");
-    lines.push(`const domains: Domain[] = [${items}];`);
-  }
-
-  // selectedAgents variable (merged global + project, deduplicated)
-  if (hasSelectedAgents) {
-    lines.push(``);
-    const items = partition.selectedAgents.map((a) => JSON.stringify(a)).join(", ");
-    lines.push(`const selectedAgents: SelectedAgentName[] = [${items}];`);
+    const items = partition.selectedDomains.map((d) => JSON.stringify(d)).join(", ");
+    lines.push(`const selectedDomains: Domain[] = [${items}];`);
   }
 
   // Scalar fields: project values take precedence; global values emit first when not overridden
@@ -486,8 +455,7 @@ function generateProjectConfigWithInlinedGlobal(
     hasSkills ? `  skills,` : `  skills: [],`,
     hasAgents ? `  agents,` : `  agents: [],`,
     ...(hasStack ? [`  stack,`] : []),
-    ...(hasDomains ? [`  domains,`] : []),
-    ...(hasSelectedAgents ? [`  selectedAgents,`] : []),
+    ...(hasSelectedDomains ? [`  selectedDomains,`] : []),
   ];
 
   lines.push(``);
@@ -499,15 +467,18 @@ function generateProjectConfigWithInlinedGlobal(
   return lines.join("\n");
 }
 
+/** True when the assignment asserts something a bare id could not say on its own. */
+function carriesFlags(assignment: SkillAssignment): boolean {
+  return Boolean(assignment.preloaded || assignment.local || assignment.path);
+}
+
 /**
  * Compacts one SkillAssignment down to the smallest form that still carries its information.
- * - { id: "...", preloaded: false } → "..." (the flag is the default, so the id says everything)
- * - { id: "...", preloaded: true } → { id: "...", preloaded: true } (preserved)
+ * - { id: "..." } and { id: "...", preloaded: false } → "..." (the id says everything)
+ * - anything carrying a flag (preloaded, local, path) keeps the object form, flags intact
  */
 function compactAssignment(assignment: unknown): unknown {
-  if (isSkillAssignment(assignment) && "preloaded" in assignment) {
-    return assignment.preloaded ? { id: assignment.id, preloaded: true } : assignment.id;
-  }
+  if (isSkillAssignment(assignment) && !carriesFlags(assignment)) return assignment.id;
   return assignment;
 }
 
@@ -583,7 +554,7 @@ export default {
   "name": "${GLOBAL_CONFIG_NAME}",
   "skills": [],
   "agents": [],
-  "domains": []
+  "selectedDomains": []
 } satisfies ProjectConfig;\n`;
 }
 

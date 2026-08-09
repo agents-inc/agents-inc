@@ -42,6 +42,16 @@ export type SourceValidationResult = {
   warningCount: number;
 };
 
+/**
+ * True when `dir` is itself a skills source repository — it carries the skills tree
+ * `validateSource` walks, at `src/skills/` or wherever its own source config points.
+ * A marketplace author's checkout answers yes; a consumer project answers no.
+ */
+export async function isSourceRepo(dir: string): Promise<boolean> {
+  const sourceConfig = await loadProjectSourceConfig(dir);
+  return directoryExists(path.join(dir, sourceConfig?.skillsDir ?? SKILLS_DIR_PATH));
+}
+
 /** Checks if a key uses snake_case (has underscore between lowercase letters) */
 export function isSnakeCase(key: string): boolean {
   return /[a-z]_[a-z]/.test(key);
@@ -205,56 +215,11 @@ export async function validateSource(sourcePath: string): Promise<SourceValidati
   // Pair violations were already reported by phase 1 — validate only complete pairs.
   const validMetadataFiles = metadataFiles.filter((f) => skillMdDirs.has(path.dirname(f)));
   for (const metadataFile of validMetadataFiles) {
-    const metadataPath = path.join(skillsDir, metadataFile);
-    const skillDir = path.dirname(metadataFile);
-    const relPath = path.join(skillsDirRelPath, metadataFile);
-
-    // Read and parse metadata.yaml
-    let rawMetadata: unknown;
-    try {
-      const metadataContent = await readFile(metadataPath);
-      rawMetadata = parseYaml(metadataContent);
-    } catch (error) {
-      issues.push({
-        severity: "error",
-        file: relPath,
-        message: `Failed to parse YAML: ${getErrorMessage(error)}`,
-      });
-      continue;
-    }
-
-    issues.push(...checkSnakeCaseKeys(rawMetadata, relPath));
-
-    const result = validateSkillMetadata(rawMetadata);
-    if (!result.success) {
-      const { errors, warnings } = splitMetadataValidationIssues(result.error, rawMetadata);
-      issues.push(
-        ...errors.map((message) => ({ severity: "error" as const, file: relPath, message })),
-        ...warnings.map((message) => ({ severity: "warning" as const, file: relPath, message })),
-      );
-    }
-
-    // Independent of metadata validity — the id lives in SKILL.md frontmatter
-    issues.push(...(await checkSkillDirName(skillsDir, skillsDirRelPath, skillDir)));
+    issues.push(...(await validateOneSkill(skillsDir, skillsDirRelPath, metadataFile)));
   }
 
   // Phase 3: Cross-reference validation via matrix health check
-  try {
-    await loadSkillsMatrixFromSource({ sourceFlag: resolvedPath, skipExtraSources: true });
-    issues.push(
-      ...checkMatrixHealth(matrix).map((healthIssue) => ({
-        severity: healthIssue.severity,
-        file: SKILL_CATEGORIES_PATH,
-        message: healthIssue.details,
-      })),
-    );
-  } catch (error) {
-    issues.push({
-      severity: "warning",
-      file: SKILL_CATEGORIES_PATH,
-      message: `Cross-reference validation skipped: failed to load categories/rules: ${getErrorMessage(error)}`,
-    });
-  }
+  issues.push(...(await checkCrossReferences(resolvedPath)));
 
   // Phases 4–6: optional source-repo targets — run in parallel
   // Phase 4: stack skill metadata + stack configs
@@ -268,6 +233,79 @@ export async function validateSource(sourcePath: string): Promise<SourceValidati
   issues.push(...extraIssues.flat());
 
   return buildResult(issues, validMetadataFiles.length);
+}
+
+/**
+ * One complete skill pair, judged four ways: its metadata.yaml parses, its keys are camelCase,
+ * it satisfies the strict published-skill schema, and its directory is named after the id its
+ * SKILL.md declares. A file nothing can be parsed out of reports that and stops — every check
+ * after it reads the parsed value, so each would only restate the same fault.
+ */
+async function validateOneSkill(
+  skillsDir: string,
+  skillsDirRelPath: string,
+  metadataFile: string,
+): Promise<SourceValidationIssue[]> {
+  const relPath = path.join(skillsDirRelPath, metadataFile);
+
+  let rawMetadata: unknown;
+  try {
+    rawMetadata = parseYaml(await readFile(path.join(skillsDir, metadataFile)));
+  } catch (error) {
+    return [
+      {
+        severity: "error",
+        file: relPath,
+        message: `Failed to parse YAML: ${getErrorMessage(error)}`,
+      },
+    ];
+  }
+
+  return [
+    ...checkSnakeCaseKeys(rawMetadata, relPath),
+    ...checkMetadataSchema(rawMetadata, relPath),
+    // Independent of metadata validity — the id lives in SKILL.md frontmatter
+    ...(await checkSkillDirName(skillsDir, skillsDirRelPath, path.dirname(metadataFile))),
+  ];
+}
+
+/**
+ * The strict published-skill schema's verdict, as its hard errors plus the one advisory
+ * (over-length cliDescription) `splitMetadataValidationIssues` separates out.
+ */
+function checkMetadataSchema(rawMetadata: unknown, relPath: string): SourceValidationIssue[] {
+  const result = validateSkillMetadata(rawMetadata);
+  if (result.success) return [];
+
+  const { errors, warnings } = splitMetadataValidationIssues(result.error, rawMetadata);
+  return [
+    ...errors.map((message) => ({ severity: "error" as const, file: relPath, message })),
+    ...warnings.map((message) => ({ severity: "warning" as const, file: relPath, message })),
+  ];
+}
+
+/**
+ * Whether every relationship the source declares resolves to a skill it actually holds.
+ * A source whose categories/rules could not be loaded is a warning rather than a failure: the
+ * per-skill checks above already reported what they found, and this pass simply could not run.
+ */
+async function checkCrossReferences(resolvedPath: string): Promise<SourceValidationIssue[]> {
+  try {
+    await loadSkillsMatrixFromSource({ sourceFlag: resolvedPath, skipExtraSources: true });
+    return checkMatrixHealth(matrix).map((healthIssue) => ({
+      severity: healthIssue.severity,
+      file: SKILL_CATEGORIES_PATH,
+      message: healthIssue.details,
+    }));
+  } catch (error) {
+    return [
+      {
+        severity: "warning",
+        file: SKILL_CATEGORIES_PATH,
+        message: `Cross-reference validation skipped: failed to load categories/rules: ${getErrorMessage(error)}`,
+      },
+    ];
+  }
 }
 
 /**

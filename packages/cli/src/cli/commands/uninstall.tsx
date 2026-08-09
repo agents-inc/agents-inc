@@ -139,7 +139,6 @@ export default class Uninstall extends BaseCommand {
   ];
 
   static flags = {
-    ...BaseCommand.baseFlags,
     yes: Flags.boolean({
       char: "y",
       description: "Skip confirmation prompt",
@@ -333,12 +332,7 @@ export default class Uninstall extends BaseCommand {
 
       // The pruned projects' compiled agents were built from the global rows this
       // uninstall just removed, so the prune owes them a recompile too.
-      const { recompiledCount, failedCount, warnings } = report.recompile;
-      for (const warning of warnings) {
-        this.warn(warning);
-      }
-      const failureSuffix = failedCount > 0 ? ` (${failedCount} failed)` : "";
-      this.log(`Recompiled agents in ${recompiledCount} registered projects${failureSuffix}`);
+      this.reportPropagatedRecompile(report);
     } catch (error) {
       this.warn(registeredProjectsUpdateFailed(getErrorMessage(error)));
     }
@@ -423,7 +417,7 @@ export type UninstallTarget = {
 type GlobalPropagationData = {
   globalConfig: ProjectConfig;
   matrix: MergedSkillsMatrix;
-  agents: Record<AgentName, AgentDefinition>;
+  agents: Partial<Record<AgentName, AgentDefinition>>;
 };
 
 type SkillRemovalResult = {
@@ -556,8 +550,8 @@ async function detectUninstallTarget(
   const activeConfig = config
     ? {
         ...config,
-        skills: config.skills?.filter((s) => !s.excluded),
-        agents: config.agents?.filter((a) => !a.excluded),
+        skills: config.skills.filter((s) => !s.excluded),
+        agents: config.agents.filter((a) => !a.excluded),
       }
     : null;
   const configuredAgents = collectConfiguredAgents(activeConfig);
@@ -728,7 +722,7 @@ export async function uninstallPlugins(
       // to handle re-scoped plugins where the registry entry may be under the
       // original scope rather than the currently-configured one.
       const skillId = parseMarketplacePluginRef(pluginName);
-      const skillConfig = target.config?.skills?.find((s) => s.id === skillId);
+      const skillConfig = target.config?.skills.find((s) => s.id === skillId);
       const primaryScope = toClaudePluginScope(skillConfig?.scope);
       await claudePluginUninstallBestEffort(pluginName, primaryScope, projectDir);
     }

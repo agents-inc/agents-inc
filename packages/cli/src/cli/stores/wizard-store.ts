@@ -1,6 +1,11 @@
-import { flatMap } from "remeda";
 import { create } from "zustand";
-import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, FALLBACK_DOMAIN } from "../consts.js";
+import {
+  DEFAULT_PUBLIC_SOURCE_NAME,
+  DEFAULT_SCRATCH_DOMAINS,
+  EJECT_SOURCE,
+  FALLBACK_DOMAIN,
+  INSTALL_MODES,
+} from "../consts.js";
 import type { InstallMode } from "../lib/installation/index.js";
 import { deriveInstallMode as sharedDeriveInstallMode } from "../lib/installation/installation.js";
 import type { AgentScopeConfig, SkillConfig, SkillScope } from "../types/config.js";
@@ -10,21 +15,12 @@ import {
   isProjectOwned,
 } from "../lib/configuration/scope-predicates.js";
 import { matrix, getSkillById, getCategoryDomain } from "../lib/matrix/matrix-provider.js";
-import {
-  buildCategoriesForDomain,
-  isCompatibleWithSelectedFrameworks,
-  FRAMEWORK_CATEGORY_ID,
-  orderDomains,
-  skillSlotKey,
-} from "../lib/wizard/index.js";
+import { buildCategoriesForDomain, orderDomains, skillSlotKey } from "../lib/wizard/index.js";
 import type {
   AgentName,
-  BoundSkill,
   Domain,
   DomainSelections,
-  SkillAlias,
   SkillId,
-  SkillSource,
   Category,
   CategorySelections,
   ResolvedSkill,
@@ -57,42 +53,6 @@ function createDefaultSkillConfig(id: SkillId): SkillConfig {
   return { id, scope: "global", source: primarySource ?? DEFAULT_PUBLIC_SOURCE_NAME };
 }
 
-/** Finds framework-incompatible skill IDs in web domain selections, excluding already-excluded skills. */
-function findIncompatibleWebSkills(
-  webSelections: CategorySelections,
-  skillConfigs: SkillConfig[],
-): Set<SkillId> {
-  const frameworkSelections = webSelections[FRAMEWORK_CATEGORY_ID] ?? [];
-  if (frameworkSelections.length === 0) return new Set();
-
-  const excludedIds = new Set(skillConfigs.filter((s) => s.excluded).map((s) => s.id));
-  const selectedFrameworkIds = frameworkSelections.map((alias) => getSkillById(alias).id);
-
-  return new Set(
-    flatMap(typedEntries(webSelections), ([cat, skills]) =>
-      cat === FRAMEWORK_CATEGORY_ID || !skills
-        ? []
-        : skills.filter(
-            (id) =>
-              !excludedIds.has(id) && !isCompatibleWithSelectedFrameworks(id, selectedFrameworkIds),
-          ),
-    ),
-  );
-}
-
-/** Returns selections with the given skill IDs removed from all categories. */
-function removeSkillsFromSelections(
-  selections: CategorySelections,
-  toRemove: Set<SkillId>,
-): CategorySelections {
-  return typedFromEntries(
-    typedEntries(selections).map(([cat, skills]): [Category, SkillId[]] => [
-      cat,
-      skills?.filter((id) => !toRemove.has(id)) ?? [],
-    ]),
-  );
-}
-
 /** True when configs hold an active (non-excluded) project-scope entry for the id. */
 function hasProjectActive(configs: SkillConfig[], id: SkillId): boolean {
   return configs.some((sc) => sc.id === id && isActiveAt(sc, "project"));
@@ -123,13 +83,19 @@ function isDualScopePair(configs: SkillConfig[], id: SkillId): boolean {
 }
 
 /**
- * True when a SELECTED skill must not be deselected (or radio-swapped away) at project scope.
- * Three arms: an active global entry in the hydration snapshot (genuinely global-only — the
- * long-standing read-only behaviour); a snapshot tombstone paired with a LIVE plain active
- * global entry (the stale state a persisted `[P][G]` reaches after an in-session collapse,
- * whose deselect would silently tombstone the still-real global install); and a live `[P][G]`
- * dual-scope pair, which only `s` may collapse or restore. A skill freshly added this session
- * (absent from the snapshot) matches none of the arms and stays freely deselectable.
+ * True when a SELECTED skill must not be deselected at project scope.
+ *
+ * The lock protects GLOBAL-OWNED halves and nothing else. Two arms: an active global entry in
+ * the hydration snapshot (genuinely global-only — the long-standing read-only behaviour); and a
+ * snapshot tombstone paired with a LIVE plain active global entry (the stale state a persisted
+ * `[P][G]` reaches after an in-session collapse, whose deselect would silently tombstone the
+ * still-real global install).
+ *
+ * A persisted `[P][G]` pair matches neither: its live global half is a tombstone, and its project
+ * half is the project's own install to drop — `applySkillRemoval` collapses the pair to the
+ * inherited global entry, so removing it never touches the global install it masks. A skill
+ * freshly added this session (absent from the snapshot) is likewise nobody's install yet and
+ * stays freely deselectable.
  */
 function isGloballyLockedSkill(
   installed: SkillConfig[],
@@ -138,9 +104,25 @@ function isGloballyLockedSkill(
 ): boolean {
   return (
     hasGlobalActive(installed, id) ||
-    (hasGlobalTombstone(installed, id) && hasGlobalActive(liveConfigs, id)) ||
-    isDualScopePair(liveConfigs, id)
+    (hasGlobalTombstone(installed, id) && hasGlobalActive(liveConfigs, id))
   );
+}
+
+/**
+ * True when an exclusive-category radio swap must not drop this skill at project scope.
+ *
+ * The deselect lock, plus one case it deliberately allows on its own row: a live `[P][G]` pair.
+ * Dropping a pair's project half leaves the global install it masks ACTIVE, so a swap that did it
+ * implicitly would seat the new pick beside a still-active sibling in a category that permits one.
+ * Removing the pair stays the project's to do — with the selection key on its own row, where
+ * nothing takes the freed slot.
+ */
+function blocksExclusiveSwap(
+  installed: SkillConfig[],
+  liveConfigs: SkillConfig[],
+  id: SkillId,
+): boolean {
+  return isGloballyLockedSkill(installed, liveConfigs, id) || isDualScopePair(liveConfigs, id);
 }
 
 /**
@@ -200,7 +182,10 @@ function applySkillRemoval(
   removedIds: Iterable<SkillId>,
   installedSkillConfigs: SkillConfig[] | null,
 ): SkillConfig[] {
-  const removed = removedIds instanceof Set ? removedIds : new Set(removedIds);
+  // Annotated because `instanceof Set` narrows an `Iterable<SkillId>` to `Set<any>`,
+  // which then spreads out as `any[]` below.
+  const removed: ReadonlySet<SkillId> =
+    removedIds instanceof Set ? removedIds : new Set(removedIds);
   const installedIds = new Set((installedSkillConfigs ?? []).map((s) => s.id));
 
   /**
@@ -273,9 +258,13 @@ function reconcileSkillConfigs(
 
     const existingExcluded = result.find((sc) => sc.id === id && sc.excluded);
     if (existingExcluded) {
-      result = result.map((sc) =>
-        sc.id === id && sc.excluded ? { ...sc, excluded: undefined } : sc,
-      );
+      // Un-excluding drops the tombstone flag rather than setting it to `undefined`:
+      // an absent `excluded` is what "not excluded" means everywhere else in the config.
+      result = result.map((sc) => {
+        if (sc.id !== id || !sc.excluded) return sc;
+        const { excluded: _excluded, ...active } = sc;
+        return active;
+      });
     } else if (!result.some((sc) => sc.id === id)) {
       // Re-selecting a skill that the hydration snapshot still holds is a RESTORE, not a fresh
       // add: it must come back with its persisted scope and source rather than the wizard
@@ -338,9 +327,11 @@ function applyAgentToggle(
 
   const existingExcluded = configs.find((ac) => ac.name === agent && ac.excluded);
   if (existingExcluded) {
-    return configs.map((ac) =>
-      ac.name === agent && ac.excluded ? { ...ac, excluded: undefined } : ac,
-    );
+    return configs.map((ac) => {
+      if (ac.name !== agent || !ac.excluded) return ac;
+      const { excluded: _excluded, ...active } = ac;
+      return active;
+    });
   }
   return [...configs, { name: agent, scope: "global" as const }];
 }
@@ -445,47 +436,28 @@ function restoreSkillConfigs(
   const restoredSet = new Set(restoredIds);
   const existingIds = new Set(existingConfigs.map((sc) => sc.id));
 
-  const updated = existingConfigs.map((sc) =>
-    restoredSet.has(sc.id) && sc.excluded ? { ...sc, excluded: undefined } : sc,
-  );
+  const updated = existingConfigs.map((sc) => {
+    if (!restoredSet.has(sc.id) || !sc.excluded) return sc;
+    const { excluded: _excluded, ...active } = sc;
+    return active;
+  });
 
   const newConfigs = restoredIds.filter((id) => !existingIds.has(id)).map(createDefaultSkillConfig);
 
   return [...updated, ...newConfigs];
 }
 
-/** Built-in agent names grouped by domain prefix. Custom domains return no preselected agents. */
-const DOMAIN_AGENTS: Partial<Record<Domain, AgentName[]>> = {
-  web: [
-    "web-developer",
-    "web-reviewer",
-    "web-researcher",
-    "web-tester",
-    "web-pm",
-    "web-architecture",
-  ],
-  api: ["api-developer", "api-reviewer", "api-researcher"],
-  cli: ["cli-developer", "cli-tester", "cli-reviewer"],
-};
-
 /**
- * Fixed source sort tiers (lower = higher priority):
- * 1 = eject/global (installed on disk -- type "eject" or installed via plugin)
- * 2 = scoped marketplace (primary source from --source flag)
- * 3 = default public marketplace (Agents Inc)
- * 4 = third-party marketplaces (extra configured sources)
+ * Built-in agent names grouped by domain prefix. Custom domains return no preselected agents.
+ * The consolidated `pm` and `reviewer` are cross-domain by role, so every domain rosters both;
+ * the preselection union dedupes when several selected domains bring them.
  */
-const SOURCE_SORT_TIER_LOCAL = 1;
-const SOURCE_SORT_TIER_SCOPED = 2;
-const SOURCE_SORT_TIER_PUBLIC = 3;
-const SOURCE_SORT_TIER_THIRD_PARTY = 4;
-
-function getSourceSortTier(source: SkillSource): number {
-  if (source.type === "local") return SOURCE_SORT_TIER_LOCAL;
-  if (source.primary) return SOURCE_SORT_TIER_SCOPED;
-  if (source.type === "public") return SOURCE_SORT_TIER_PUBLIC;
-  return SOURCE_SORT_TIER_THIRD_PARTY;
-}
+const DOMAIN_AGENTS: Partial<Record<Domain, AgentName[]>> = {
+  web: ["web-developer", "web-researcher", "web-tester", "pm", "reviewer"],
+  api: ["api-developer", "api-researcher", "api-tester", "pm", "reviewer"],
+  cli: ["cli-developer", "cli-tester", "cli-researcher", "pm", "reviewer"],
+  ai: ["ai-developer", "ai-researcher", "ai-tester", "pm", "reviewer"],
+};
 
 function resolveSkillForPopulation(
   skillId: SkillId,
@@ -494,7 +466,7 @@ function resolveSkillForPopulation(
   const skill = skills[skillId];
   if (!skill?.category) {
     warn(
-      `Installed skill '${skillId}' is missing from the marketplace — it may have been removed or renamed`,
+      `Installed skill '${skillId}' is not present in the loaded source — it may have been removed or renamed`,
     );
     return null;
   }
@@ -524,50 +496,31 @@ function addToDomainSelections(
   return true;
 }
 
-function buildBoundSkillOptions(
-  boundSkills: BoundSkill[],
-  alias: SkillAlias,
-  selectedSource: string,
-): SourceOption[] {
-  return boundSkills
-    .filter((b) => b.boundTo === alias)
-    .map((bound) => ({
-      id: bound.sourceName,
-      selected: selectedSource === bound.sourceName,
-      installed: false,
-    }));
+/** The one marketplace a skill can be installed from as a plugin. */
+function marketplaceSourceName(skill: ResolvedSkill): string {
+  return (
+    skill.availableSources?.find((source) => source.type !== "local")?.name ??
+    DEFAULT_PUBLIC_SOURCE_NAME
+  );
 }
 
-/** All source options for one skill: eject first, sorted sources (or the public default), then bound skills. */
-function buildSkillSourceOptions(
-  skill: ResolvedSkill,
-  selectedSource: string,
-  boundSkills: BoundSkill[],
-): SourceOption[] {
-  const sortedSources = [...(skill.availableSources || [])].sort(
-    (a, b) => getSourceSortTier(a) - getSourceSortTier(b),
-  );
-  const baseOptions: SourceOption[] =
-    sortedSources.length > 0
-      ? sortedSources.map((source) => ({
-          id: source.name,
-          selected: selectedSource === source.name,
-          installed: source.installed,
-        }))
-      : [
-          {
-            id: DEFAULT_PUBLIC_SOURCE_NAME,
-            selected: selectedSource === DEFAULT_PUBLIC_SOURCE_NAME,
-            installed: false,
-          },
-        ];
-  const withEject = baseOptions.some((o) => o.id === EJECT_SOURCE)
-    ? baseOptions
-    : [
-        { id: EJECT_SOURCE, selected: selectedSource === EJECT_SOURCE, installed: false },
-        ...baseOptions,
-      ];
-  return [...withEject, ...buildBoundSkillOptions(boundSkills, skill.slug, selectedSource)];
+/** The `SkillConfig.source` value an install mode writes for this skill. */
+function sourceForInstallMode(skill: ResolvedSkill, mode: Exclude<InstallMode, "mixed">): string {
+  return mode === "eject" ? EJECT_SOURCE : marketplaceSourceName(skill);
+}
+
+/**
+ * The install mode a persisted `source` value stands for. The per-skill half of
+ * `deriveInstallMode`, which asks the same question of a whole selection: `eject` names the
+ * project's own copy and every other value names the marketplace the plugin comes from.
+ */
+function installModeOfSource(source: string | undefined): Exclude<InstallMode, "mixed"> {
+  return source === EJECT_SOURCE ? "eject" : "plugin";
+}
+
+/** The two cells of one skill's install-mode control, with the current mode selected. */
+function buildInstallModeOptions(selectedMode: Exclude<InstallMode, "mixed">): SourceOption[] {
+  return INSTALL_MODES.map((mode) => ({ mode, selected: mode === selectedMode }));
 }
 
 /**
@@ -645,9 +598,10 @@ function addedSlotFlag(
   return installedSkillSlots.has(skillSlotKey(id, scope)) ? {} : { added: true };
 }
 
-/** Copy of the options with exactly `sourceId` marked selected — for rows pinned to a persisted source. */
-function withSelectedSource(options: SourceOption[], sourceId: string | undefined): SourceOption[] {
-  return options.map((option) => ({ ...option, selected: option.id === sourceId }));
+/** Copy of the options with the persisted source's mode selected — for rows pinned to it. */
+function withSelectedMode(options: SourceOption[], source: string | undefined): SourceOption[] {
+  const mode = installModeOfSource(source);
+  return options.map((option) => ({ ...option, selected: option.mode === mode }));
 }
 
 /**
@@ -658,7 +612,6 @@ function withSelectedSource(options: SourceOption[], sourceId: string | undefine
 function resolveSkillRowInputs(
   id: SkillId,
   skillConfigs: SkillConfig[],
-  boundSkills: BoundSkill[],
 ): { skillId: SkillId; configEntry: SkillConfig | undefined; options: SourceOption[] } {
   const skill = getSkillById(id);
   const configEntry = skillConfigs.find((sc) => sc.id === skill.id);
@@ -670,7 +623,7 @@ function resolveSkillRowInputs(
   return {
     skillId: skill.id,
     configEntry,
-    options: buildSkillSourceOptions(skill, selectedSource, boundSkills),
+    options: buildInstallModeOptions(installModeOfSource(selectedSource)),
   };
 }
 
@@ -696,7 +649,7 @@ function toPendingRemovalRow(
 ): SourceRow {
   return {
     skillId,
-    options: withSelectedSource(options, removedInstalledEntry.source),
+    options: withSelectedMode(options, removedInstalledEntry.source),
     scope: removedInstalledEntry.scope,
     disabled: true,
   };
@@ -730,7 +683,7 @@ function toLockedGlobalRow(
 ): SourceRow {
   return {
     skillId,
-    options: withSelectedSource(options, installedSource),
+    options: withSelectedMode(options, installedSource),
     scope: "global" as const,
     readOnly: true,
     ...addedSlotFlag(installedSkillSlots, skillId, "global"),
@@ -784,7 +737,7 @@ function classifySkillSourceRows(
     {
       skillId,
       options,
-      scope: configEntry?.scope,
+      ...(configEntry?.scope !== undefined && { scope: configEntry.scope }),
       ...(readOnly ? { readOnly: true as const } : {}),
       ...addedSlotFlag(installedSkillSlots, skillId, configEntry?.scope),
     },
@@ -835,6 +788,33 @@ export const WIZARD_STEP_ORDER = [
   "confirm",
 ] as const satisfies readonly WizardStep[];
 
+/** Whether the loaded source offers any stack to choose between. */
+function offersStacks(): boolean {
+  return matrix.suggestedStacks.length > 0;
+}
+
+/**
+ * The steps this session's wizard actually runs, in order.
+ *
+ * `WIZARD_STEP_ORDER` is every step the wizard has; this is the ones it has
+ * THIS time. The stack step exists only where there is a stack to choose, so a
+ * source that ships none — the built-in catalogue standing in for the default
+ * public marketplace alone — drops it: hydration opens past it (see
+ * {@link FIRST_STEP_WITHOUT_STACKS}) and the tab bar is drawn without it. One
+ * answer to "does this run have a stack step", so the tabs cannot advertise a
+ * step the flow does not have.
+ */
+export function getActiveStepFlow(): WizardStep[] {
+  if (offersStacks()) return [...WIZARD_STEP_ORDER];
+  return WIZARD_STEP_ORDER.filter((step) => step !== "stack");
+}
+
+/** The flow's steps before the active one; none when the step is outside the flow. */
+function stepsBefore(flow: WizardStep[], step: WizardStep): WizardStep[] {
+  const index = flow.indexOf(step);
+  return index < 0 ? [] : flow.slice(0, index);
+}
+
 /**
  * Wizard store state and actions.
  *
@@ -860,30 +840,24 @@ export type WizardState = {
   _stackDomainSelections: DomainSelections | null;
 
   showLabels: boolean;
-  filterIncompatible: boolean;
 
   skillConfigs: SkillConfig[];
   focusedSkillId: SkillId | null;
 
   /**
    * Skill ids from the saved config that could NOT be resolved against the currently-loaded
-   * source matrix this session (populateFromSkillIds skipped them). The wizard cannot represent
-   * these skills, so their absence from the wizard result is NOT a deselection — the merge layer
-   * must preserve any existing config entry whose id is in this set, regardless of
-   * authoritativeScope (D-233 Scenario C data-loss guard).
+   * source matrix this session (`populateFromSkillIds` skipped them, warning per skill). The
+   * wizard cannot represent them, so they are absent from its result and the merge removes them
+   * like any other absent entry — this list is what lets `edit` name each one and say why it went
+   * rather than dropping it in silence (CLI-450).
    */
   unresolvableSkillIds: SkillId[];
 
-  customizeSources: boolean;
-
-  showSettings: boolean;
   showInfo: boolean;
 
   selectedAgents: AgentName[];
   agentConfigs: AgentScopeConfig[];
   focusedAgentId: AgentName | null;
-
-  boundSkills: BoundSkill[];
 
   /** Snapshot of configs that were installed before the wizard opened, used for diff rendering */
   installedSkillConfigs: SkillConfig[] | null;
@@ -934,6 +908,19 @@ export type WizardState = {
    * Side effects: sets `stackAction`
    */
   setStackAction: (action: StackAction) => void;
+  /**
+   * Prepare a build with no stack behind it — what "Start from scratch" means.
+   *
+   * Two surfaces arrive here and must agree on what it is: the stack step's
+   * scratch row, and the hydration that opens the wizard past a stack step the
+   * loaded source gave nothing to show on.
+   *
+   * Side effects: clears every stack-derived selection (via `selectStack(null)`),
+   * sets `approach` to "scratch", restores `selectedAgents` / `agentConfigs` from
+   * `globalAgentPreselections`, populates selections from `globalPreselections`,
+   * and selects the scratch domains. Does NOT navigate — the caller owns the step.
+   */
+  startFromScratch: () => void;
   /**
    * Pre-populate domainSelections from a flat list of installed skill IDs.
    *
@@ -997,8 +984,6 @@ export type WizardState = {
   setCurrentDomainIndex: (index: number) => void;
   /** Toggle compatibility label visibility on skill tags in the build step grid. */
   toggleShowLabels: () => void;
-  /** Toggle filtering of incompatible skills in the build step grid. */
-  toggleFilterIncompatible: () => void;
   /**
    * Derive the install mode from skillConfigs source values.
    * If all skills use "eject" source, returns "eject". If all use non-eject, returns "plugin".
@@ -1030,37 +1015,24 @@ export type WizardState = {
    */
   seedFocusedSkillForActiveDomain: () => void;
   /**
-   * Set which source provides a specific skill.
-   * @param skillId - Skill to configure the source for
-   * @param sourceId - Source identifier (e.g., "public", "eject", marketplace name)
+   * Set how a specific skill is installed: the project's own copy, or the marketplace plugin.
+   * @param skillId - Skill to configure the install mode for
+   * @param mode - `eject` for a local copy, `plugin` for the one marketplace
    * @param scope - Acting scope from the Sources row: only the active entry at this scope is
    *   updated; a masked global tombstone for the same id keeps its source.
    *
-   * Side effects: updates the active `skillConfigs` entry for the skill at `scope`. No-op with warning if either param is empty.
+   * Side effects: updates the active `skillConfigs` entry for the skill at `scope`, writing the
+   * `source` value the mode resolves to. No-op with a warning on an empty skill id.
    */
-  setSourceSelection: (skillId: SkillId, sourceId: string, scope: SkillScope | undefined) => void;
-  /**
-   * Enable or disable source customization on the sources step.
-   * @param customize - true to show per-skill source pickers
-   *
-   * Side effects: sets `customizeSources`
-   */
-  setCustomizeSources: (customize: boolean) => void;
-  /** Toggle the settings overlay (source management). */
-  toggleSettings: () => void;
+  setInstallMode: (
+    skillId: SkillId,
+    mode: Exclude<InstallMode, "mixed">,
+    scope: SkillScope | undefined,
+  ) => void;
   /** Toggle the info overlay (selected skills and agents). */
   toggleInfo: () => void;
   /** Set a temporary toast message, or null to clear it. */
   setToastMessage: (message: string | null) => void;
-  /**
-   * Add a bound skill from search to the wizard's bound skills list.
-   * Duplicates (same id + sourceUrl) are silently skipped with a warning.
-   *
-   * @param skill - Bound skill to add (foreign skill tied to a category alias)
-   *
-   * Side effects: appends to `boundSkills`
-   */
-  bindSkill: (skill: BoundSkill) => void;
   /**
    * Navigate to the previous wizard step using the history stack.
    * No-op when history is empty (e.g., edit flow starting at a mid-wizard step).
@@ -1094,13 +1066,20 @@ export type WizardState = {
    * Matches domains against DOMAIN_AGENTS mapping.
    * Optional agents (meta/pattern) are excluded.
    *
-   * Side effects: replaces `selectedAgents` with computed preselection
+   * The from-scratch path only: with a stack chosen, its declared roster stands and
+   * this is a no-op. Selecting a stack is the statement of which sub-agents an
+   * installation gets, and the user edits that roster in the agents step.
+   *
+   * Side effects: replaces `selectedAgents` with computed preselection, unless a
+   * stack is selected
    */
   preselectAgentsFromDomains: () => void;
   /**
    * Preselect agents for a chosen stack: merges the stack's agent keys with global
    * agent preselections, preserving dual-scope tombstones. Parallels
    * populateFromSkillIds on the skill path.
+   *
+   * This is the roster the install gets — nothing downstream re-derives it.
    *
    * Side effects: replaces `selectedAgents` and `agentConfigs` with the merged result
    */
@@ -1130,7 +1109,9 @@ export type WizardState = {
   getTechnologyCount: () => number;
   /**
    * Compute which wizard steps are completed and which are skipped.
-   * Used by WizardTabs to render step progress indicators.
+   * Used by WizardTabs to render step progress indicators. Both lists are read
+   * against {@link getActiveStepFlow} — a step this run never has cannot be one
+   * it completed.
    * @returns Object with completedSteps and skippedSteps string arrays
    */
   getStepProgress: () => { completedSteps: WizardStep[]; skippedSteps: WizardStep[] };
@@ -1140,20 +1121,18 @@ export type WizardState = {
   canGoToPreviousDomain: () => boolean;
   /** Set all selected skills to "eject" source. */
   setAllSourcesEject: () => void;
-  /** Set all selected skills to their first non-local (marketplace) source. */
+  /** Set all selected skills to install from the one marketplace. */
   setAllSourcesPlugin: () => void;
 
   /**
    * Build the source selection rows for the sources step UI.
    *
-   * For each selected technology, resolves the canonical skill ID, looks up available
-   * sources from the matrix, merges in any bound skills from search, and determines
-   * which source is currently selected. Sources are sorted: local first, then public,
-   * then private/other.
+   * For each selected technology, resolves the canonical skill ID and marks which of the two
+   * install modes its persisted `source` stands for.
    *
    * @returns Array of row objects, one per selected technology, each containing:
    *   - `skillId` - Canonical resolved skill ID
-   *   - `options` - Available sources with selection state and install status
+   *   - `options` - The two install-mode cells, with the current one selected
    */
   buildSourceRows: () => SourceRow[];
 };
@@ -1170,17 +1149,13 @@ type WizardStateData = Pick<
   | "domainSelections"
   | "_stackDomainSelections"
   | "showLabels"
-  | "filterIncompatible"
   | "skillConfigs"
   | "focusedSkillId"
   | "unresolvableSkillIds"
-  | "customizeSources"
-  | "showSettings"
   | "showInfo"
   | "selectedAgents"
   | "agentConfigs"
   | "focusedAgentId"
-  | "boundSkills"
   | "installedSkillConfigs"
   | "installedAgentConfigs"
   | "isInitMode"
@@ -1202,17 +1177,13 @@ export const createInitialState = (overrides?: Partial<WizardStateData>): Wizard
   /** Snapshot of domainSelections from populateFromSkillIds, used to restore on domain re-toggle */
   _stackDomainSelections: null,
   showLabels: false,
-  filterIncompatible: false,
   skillConfigs: [],
   focusedSkillId: null,
   unresolvableSkillIds: [],
-  customizeSources: false,
-  showSettings: false,
   showInfo: false,
   selectedAgents: [],
   agentConfigs: [],
   focusedAgentId: null,
-  boundSkills: [],
   installedSkillConfigs: null,
   installedAgentConfigs: null,
   isInitMode: false,
@@ -1246,12 +1217,37 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       skillConfigs: [],
       selectedAgents: [],
       agentConfigs: [],
-      boundSkills: [],
       currentDomainIndex: 0,
       stackAction: null,
     }),
 
   setStackAction: (action) => set({ stackAction: action }),
+
+  startFromScratch: () => {
+    // selectStack(null) wipes the agent selections along with the stack's, so the
+    // global ones are put back rather than left as collateral.
+    get().selectStack(null);
+    get().setApproach("scratch");
+
+    const { globalAgentPreselections, globalPreselections } = get();
+    if (globalAgentPreselections) {
+      set({
+        selectedAgents: globalAgentPreselections.agents,
+        agentConfigs: globalAgentPreselections.configs,
+      });
+    }
+    if (globalPreselections?.length) {
+      get().populateFromSkillIds(
+        globalPreselections.map((skill) => skill.id),
+        globalPreselections,
+      );
+    }
+
+    // Additive: a scratch domain the preselections already brought stays on.
+    for (const domain of DEFAULT_SCRATCH_DOMAINS) {
+      if (!get().selectedDomains.includes(domain)) get().toggleDomain(domain);
+    }
+  },
 
   populateFromSkillIds: (skillIds, savedConfigs) =>
     set(() => {
@@ -1270,12 +1266,6 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         if (addToDomainSelections(domainSelections, domain, subcat, techId)) {
           resolvedSkillIds.push(techId);
         }
-      }
-
-      if (unresolvableSkillIds.length > 0) {
-        warn(
-          `${unresolvableSkillIds.length} installed skill(s) could not be resolved and were skipped`,
-        );
       }
 
       const selectedDomains = orderDomains(typedKeys<Domain>(domainSelections));
@@ -1347,10 +1337,11 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       const currentSelections = state.domainSelections[domain]?.[category] || [];
       const isSelected = currentSelections.includes(technology);
 
-      // Block a globally-installed skill from being changed at project scope. On a SELECT only
-      // the active-global arm applies (an inherited-global row is read-only in both directions);
-      // the other lock arms are deselect guards, kept behind isSelected so the re-select restore
-      // path (reconcileSkillConfigs rebuilds `[P][G]`) still runs.
+      // Block a GLOBAL-OWNED entry from being changed at project scope. On a SELECT only the
+      // active-global arm applies (an inherited-global row is read-only in both directions); the
+      // stale-collapse arm is a deselect guard, kept behind isSelected so the re-select restore
+      // path (reconcileSkillConfigs rebuilds `[P][G]`) still runs. The project half of a
+      // persisted `[P][G]` pair is project-owned and passes both ways.
       const isGlobalLocked = isSelected
         ? isGloballyLockedSkill(installed, state.skillConfigs, technology)
         : hasGlobalActive(installed, technology);
@@ -1360,7 +1351,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
 
       if (isSelected) {
         const categoryDef = matrix.categories[category];
-        if (categoryDef?.exclusive && categoryDef?.required) {
+        if (categoryDef?.exclusive && categoryDef.required) {
           const categorySkillCount = typedValues(matrix.skills).filter(
             (s) => s.category === category,
           ).length;
@@ -1371,11 +1362,11 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       }
 
       // In exclusive mode, selecting a new skill replaces the current one. Block if that would
-      // implicitly deselect a globally-locked skill (a radio swap must never tombstone a global
-      // install or collapse a live `[P][G]` pair — only `s` may change one).
+      // implicitly drop a skill this scope may not drop THIS WAY: a radio swap must never
+      // tombstone a global install, and never unmask one either.
       if (exclusive && !isSelected) {
         const wouldDropLockedSkill = currentSelections.some((selectedId) =>
-          isGloballyLockedSkill(installed, state.skillConfigs, selectedId),
+          blocksExclusiveSwap(installed, state.skillConfigs, selectedId),
         );
         if (wouldDropLockedSkill && !state.isEditingFromGlobalScope) {
           return { toastMessage: TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED };
@@ -1460,46 +1451,6 @@ export const useWizardStore = create<WizardState>((set, get) => ({
   },
 
   toggleShowLabels: () => set((state) => ({ showLabels: !state.showLabels })),
-  toggleFilterIncompatible: () =>
-    set((state) => {
-      if (state.filterIncompatible) return { filterIncompatible: false };
-
-      const webSelections = state.domainSelections.web;
-      if (!webSelections) return { filterIncompatible: true };
-
-      const removed = findIncompatibleWebSkills(webSelections, state.skillConfigs);
-      if (removed.size === 0) return { filterIncompatible: true };
-
-      // F uninstalls every incompatible skill, so it must honour the same global lock the
-      // spacebar path applies in toggleTechnology: a project-scope edit may never uninstall a
-      // globally installed skill. Every targeted id is a removal here, so the tombstone arm
-      // (the stale-snapshot state a persisted `[P][G]` reaches after an in-session collapse)
-      // needs no `isSelected` gate. The whole operation is refused — filter included — rather
-      // than silently removing only the unlocked subset.
-      const installed = state.installedSkillConfigs ?? [];
-      const removesLockedGlobal = [...removed].some(
-        (id) =>
-          hasGlobalActive(installed, id) ||
-          (hasGlobalTombstone(installed, id) && hasGlobalActive(state.skillConfigs, id)),
-      );
-      if (removesLockedGlobal && !state.isEditingFromGlobalScope) {
-        return { toastMessage: TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED };
-      }
-
-      return {
-        filterIncompatible: true,
-        domainSelections: {
-          ...state.domainSelections,
-          web: removeSkillsFromSelections(webSelections, removed),
-        },
-        // Global-scope edit: clean uninstall, no tombstone (D-233 Scenario C).
-        skillConfigs: applySkillRemoval(
-          state.skillConfigs,
-          removed,
-          state.isEditingFromGlobalScope ? null : state.installedSkillConfigs,
-        ),
-      };
-    }),
 
   deriveInstallMode: (): InstallMode => {
     const { skillConfigs } = get();
@@ -1569,48 +1520,28 @@ export const useWizardStore = create<WizardState>((set, get) => ({
     const categories = buildCategoriesForDomain(
       domain,
       state.getAllSelectedTechnologies(),
-      state.domainSelections[domain] ?? {},
       undefined,
       state.skillConfigs,
-      state.filterIncompatible,
     );
     set({ focusedSkillId: categories[0]?.options[0]?.id ?? null });
   },
 
-  setSourceSelection: (skillId, sourceId, scope) =>
+  setInstallMode: (skillId, mode, scope) =>
     set((state) => {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- SkillId is a string union with no empty member, so the type rules this out; the guard is for a runtime caller handing over an empty id
       if (!skillId) {
-        warn("Ignoring setSourceSelection call with empty skillId");
+        warn("Ignoring setInstallMode call with empty skillId");
         return state;
       }
-      if (!sourceId) {
-        warn(`Ignoring setSourceSelection call with empty sourceId for skill '${skillId}'`);
-        return state;
-      }
+      const source = sourceForInstallMode(getSkillById(skillId), mode);
       return {
-        skillConfigs: withActiveEntrySource(state.skillConfigs, skillId, scope, sourceId),
+        skillConfigs: withActiveEntrySource(state.skillConfigs, skillId, scope, source),
       };
     }),
-
-  setCustomizeSources: (customize) => set({ customizeSources: customize }),
-
-  toggleSettings: () => set((state) => ({ showSettings: !state.showSettings })),
 
   toggleInfo: () => set((state) => ({ showInfo: !state.showInfo })),
 
   setToastMessage: (message) => set({ toastMessage: message }),
-
-  bindSkill: (skill) =>
-    set((state) => {
-      const exists = state.boundSkills.some(
-        (b) => b.id === skill.id && b.sourceUrl === skill.sourceUrl,
-      );
-      if (exists) {
-        warn(`Skill '${skill.id}' from '${skill.sourceUrl}' is already bound — skipping duplicate`);
-        return state;
-      }
-      return { boundSkills: [...state.boundSkills, skill] };
-    }),
 
   goBack: () =>
     set((state) => {
@@ -1713,7 +1644,15 @@ export const useWizardStore = create<WizardState>((set, get) => ({
 
   preselectAgentsFromDomains: () =>
     set((state) => {
-      const sorted = state.selectedDomains.flatMap((domain) => DOMAIN_AGENTS[domain] ?? []).sort();
+      // A stack declares its own roster, and that declaration is the whole of what
+      // choosing it means. Deriving one from the domains would run later in the step
+      // order and overwrite it, so the from-scratch path stops here.
+      if (state.selectedStackId) return state;
+
+      // Deduped: several selected domains each roster the shared `reviewer`.
+      const sorted = [
+        ...new Set(state.selectedDomains.flatMap((domain) => DOMAIN_AGENTS[domain] ?? [])),
+      ].sort();
       const roster = new Set(sorted);
       const merged = sorted.map((name) => buildAgentConfigForName(name, state.agentConfigs));
       const retained = state.agentConfigs.filter((ac) => survivesRosterRebuild(ac, roster));
@@ -1764,7 +1703,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
     const isStackDefaults =
       state.approach === "stack" && !!state.selectedStackId && state.stackAction === "defaults";
     const skippedSteps: WizardStep[] = isStackDefaults ? ["build", "sources", "agents"] : [];
-    const precedingSteps = WIZARD_STEP_ORDER.slice(0, WIZARD_STEP_ORDER.indexOf(state.step));
+    const precedingSteps = stepsBefore(getActiveStepFlow(), state.step);
     const completedSteps = precedingSteps.filter((step) => !skippedSteps.includes(step));
     return { completedSteps, skippedSteps };
   },
@@ -1794,20 +1733,16 @@ export const useWizardStore = create<WizardState>((set, get) => ({
     set((state) => ({
       // Never touch tombstones (see setAllSourcesEject) — the excluded global tombstone keeps its
       // marketplace source describing the masked global install (D-265).
-      skillConfigs: state.skillConfigs.map((sc) => {
-        if (sc.excluded) return sc;
-        const marketplaceSource = getSkillById(sc.id).availableSources?.find(
-          (source) => source.type !== "local",
-        );
-        return marketplaceSource ? { ...sc, source: marketplaceSource.name } : sc;
-      }),
+      skillConfigs: state.skillConfigs.map((sc) =>
+        sc.excluded ? sc : { ...sc, source: marketplaceSourceName(getSkillById(sc.id)) },
+      ),
     }));
   },
 
   buildSourceRows: () => {
     const state = get();
     const selectedTechnologies = get().getAllSelectedTechnologies();
-    const { skillConfigs, boundSkills } = state;
+    const { skillConfigs } = state;
 
     // Include inherited global skills (in skillConfigs but not in domainSelections)
     const selectedSet = new Set(selectedTechnologies);
@@ -1825,7 +1760,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
     // `(id, scope)` slot, so a skill adopted at a second scope registers as added on the newly
     // occupied row alone — the same classification the confirm step's computeScopeDiff makes.
     const installedSkillSlots = collectInstalledSkillSlots(state.installedSkillConfigs);
-    const resolveRowInputs = (id: SkillId) => resolveSkillRowInputs(id, skillConfigs, boundSkills);
+    const resolveRowInputs = (id: SkillId) => resolveSkillRowInputs(id, skillConfigs);
 
     const liveRows: SourceRow[] = liveSkillIds.flatMap((id) => {
       const { skillId, configEntry, options } = resolveRowInputs(id);
@@ -1933,10 +1868,19 @@ function hydrateForEdit(initialStep: WizardStep, options: HydrateOptions): void 
   useWizardStore.getState().seedFocusedSkillForActiveDomain();
 }
 
+/** Where an init opens when the loaded source offers no stack to choose. */
+const FIRST_STEP_WITHOUT_STACKS: WizardStep = "domains";
+
 /**
  * Init flow: skills are not populated yet — the stack step runs first, so saved
  * selections are stored as preselections for stack-selection.tsx to merge after
  * the stack/scratch choice (selectStack wipes agents).
+ *
+ * Unless the loaded source offers no stacks at all — a custom marketplace that
+ * ships none, since the built-in catalogue stands in for the default public
+ * marketplace alone. That step would then hold nothing but its own "Start from
+ * scratch" row, so the wizard opens where that row leads, having done what
+ * pressing it does.
  */
 function hydrateForInit(options: HydrateOptions): void {
   const {
@@ -1972,6 +1916,13 @@ function hydrateForInit(options: HydrateOptions): void {
         }
       : {}),
   });
+
+  if (!offersStacks()) {
+    useWizardStore.getState().startFromScratch();
+    // Nothing behind this step: the stack step it would have been pushed onto
+    // never rendered, so the history it would have gone into stays empty.
+    useWizardStore.setState({ step: FIRST_STEP_WITHOUT_STACKS, history: [] });
+  }
 
   useWizardStore.getState().seedFocusedSkillForActiveDomain();
 }

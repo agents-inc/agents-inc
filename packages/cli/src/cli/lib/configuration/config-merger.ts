@@ -1,6 +1,6 @@
 import { indexBy, uniqueBy } from "remeda";
 
-import type { ProjectConfig, SkillId } from "../../types";
+import type { ProjectConfig } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
 import { loadProjectConfig } from "./project-config";
 import { loadProjectSourceConfig } from "./config";
@@ -20,13 +20,6 @@ export type AuthoritativeScope = "all" | "owned";
 export type MergeContext = {
   projectDir: string;
   authoritativeScope?: AuthoritativeScope;
-  /**
-   * Skill ids the wizard could NOT resolve against the loaded source matrix this session
-   * (D-233 Scenario C). An existing config entry whose id is in this set must always be preserved:
-   * the wizard never offered a choice about it, so its absence from `newConfig` is not a
-   * deselection and must not be dropped by `authoritativeScope`.
-   */
-  unresolvableSkillIds?: readonly SkillId[];
 };
 
 export type MergeResult = {
@@ -109,11 +102,12 @@ function isWithinSessionAuthority(entry: ScopedEntry, scope: AuthoritativeScope)
  * only project-scoped entries and the project's own global tombstones — inherited global-active
  * entries are always preserved. `undefined` (init) keeps additive union-preserve.
  *
- * `unresolvableSkillIds` narrows the authoritative drop: a skill id the wizard could not resolve
- * from the loaded source this session is exempt and always preserved, because the wizard had no way
- * to offer a choice about it, so its absence is not a deselection (D-233 Scenario C data-loss guard).
+ * A skill the wizard could not resolve from the loaded source this session is NOT exempt from that
+ * drop: it is removed like any other absent entry, and `edit` names it and says why in its Changes
+ * block. Exempting it used to keep an entry in `config.ts` that the same run's summary announced as
+ * gone and the compiled agent no longer carried — three surfaces, three answers about one skill.
  */
-type MergeOptions = Pick<MergeContext, "authoritativeScope" | "unresolvableSkillIds">;
+type MergeOptions = Pick<MergeContext, "authoritativeScope">;
 
 export function mergeConfigs(
   newConfig: ProjectConfig,
@@ -121,7 +115,6 @@ export function mergeConfigs(
   options?: MergeOptions,
 ): ProjectConfig {
   const merged = { ...newConfig };
-  const unresolvableSkillIds = new Set(options?.unresolvableSkillIds ?? []);
 
   if (existingConfig.name) {
     merged.name = existingConfig.name;
@@ -135,7 +128,7 @@ export function mergeConfigs(
     merged.source = existingConfig.source;
   }
 
-  if (existingConfig.agents && existingConfig.agents.length > 0) {
+  if (existingConfig.agents.length > 0) {
     const newAgentsByKey = indexBy(merged.agents, agentKey);
     const newAgentNames = new Set(merged.agents.map((a) => a.name));
     const existingKeys = new Set(existingConfig.agents.map(agentKey));
@@ -168,7 +161,7 @@ export function mergeConfigs(
     merged.agents = uniqueBy(merged.agents, agentKey);
   }
 
-  if (existingConfig.skills && existingConfig.skills.length > 0) {
+  if (existingConfig.skills.length > 0) {
     const newSkillsByKey = indexBy(merged.skills, skillKey);
     const newSkillIds = new Set(merged.skills.map((s) => s.id));
     const existingKeys = new Set(existingConfig.skills.map(skillKey));
@@ -180,13 +173,9 @@ export function mergeConfigs(
       if (newSkillIds.has(existing.id)) return [];
       if (dualScopeSkillIds.has(existing.id)) return [];
       // Skill-side twin — see the agent branch above (D-233 Scenario C).
-      // A skill the wizard could not resolve from the loaded source this session is exempt from
-      // the authoritative drop: its absence from newConfig is a resolution gap, not a deselection,
-      // so it must always be preserved (D-233 Scenario C data-loss guard).
       if (
         options?.authoritativeScope &&
-        isWithinSessionAuthority(existing, options.authoritativeScope) &&
-        !unresolvableSkillIds.has(existing.id)
+        isWithinSessionAuthority(existing, options.authoritativeScope)
       )
         return [];
       return [existing];
@@ -237,8 +226,9 @@ export async function mergeWithExistingConfig(
     // project edit (`"owned"`). Absent owned entries were deselected and are dropped rather than
     // union-preserved (D-233 Scenario C). Init leaves the scope undefined (additive union).
     const config = mergeConfigs(newConfig, existingFullConfig.config, {
-      authoritativeScope: context.authoritativeScope,
-      unresolvableSkillIds: context.unresolvableSkillIds,
+      ...(context.authoritativeScope !== undefined && {
+        authoritativeScope: context.authoritativeScope,
+      }),
     });
 
     return {

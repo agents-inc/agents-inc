@@ -40,6 +40,7 @@ export async function discoverAllPluginSkills(projectDir: string): Promise<Skill
     // Later plugins override earlier (merge follows pluginPaths order); skip absent entries
     for (const pluginSkills of perPluginSkills) {
       for (const [id, skill] of typedEntries(pluginSkills)) {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
         if (skill) {
           allSkills[id] = skill;
         }

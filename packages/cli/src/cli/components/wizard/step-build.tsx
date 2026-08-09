@@ -1,7 +1,7 @@
 import { Box, useInput } from "ink";
 import React, { useCallback, useMemo } from "react";
-import type { Domain, SkillId, Category, CategorySelections } from "../../types/index.js";
-import { useFrameworkFiltering } from "../hooks/use-framework-filtering.js";
+import type { Domain, SkillId, Category } from "../../types/index.js";
+import { useCategoryRows } from "../hooks/use-category-rows.js";
 import { useMeasuredHeight } from "../hooks/use-measured-height.js";
 import { useWizardStore } from "../../stores/wizard-store.js";
 import { CategoryGrid } from "./category-grid.js";
@@ -9,29 +9,23 @@ import { CategoryGrid } from "./category-grid.js";
 export type StepBuildProps = {
   domain: Domain;
   selectedDomains: Domain[];
-  selections: CategorySelections;
   allSelections: SkillId[];
   showLabels: boolean;
-  filterIncompatible: boolean;
   /** Skill IDs already installed on disk, shown with a dimmed checkmark */
-  installedSkillIds?: SkillId[];
+  installedSkillIds?: SkillId[] | undefined;
   onToggle: (categoryId: Category, technologyId: SkillId) => void;
   onToggleLabels: () => void;
-  onToggleFilterIncompatible: () => void;
   onContinue: () => void;
   onBack: () => void;
 };
 
 export const StepBuild: React.FC<StepBuildProps> = ({
   domain: activeDomain,
-  selections,
   allSelections,
   showLabels,
-  filterIncompatible,
   installedSkillIds,
   onToggle,
   onToggleLabels,
-  onToggleFilterIncompatible,
   onContinue,
   onBack,
 }) => {
@@ -43,23 +37,22 @@ export const StepBuild: React.FC<StepBuildProps> = ({
     [],
   );
 
-  const categories = useFrameworkFiltering({
+  const categories = useCategoryRows({
     domain: activeDomain,
     allSelections,
-    selections,
-    installedSkillIds,
+    ...(installedSkillIds !== undefined && { installedSkillIds }),
     skillConfigs,
-    filterIncompatible,
   });
 
   const { initialRow, initialCol } = useMemo(() => {
     const skillId = useWizardStore.getState().focusedSkillId;
     if (!skillId) return { initialRow: 0, initialCol: 0 };
     const row = categories.findIndex((cat) => cat.options.some((o) => o.id === skillId));
-    if (row < 0) return { initialRow: 0, initialCol: 0 };
+    const focusedCategory = categories[row];
+    if (!focusedCategory) return { initialRow: 0, initialCol: 0 };
     return {
       initialRow: row,
-      initialCol: categories[row].options.findIndex((o) => o.id === skillId),
+      initialCol: focusedCategory.options.findIndex((o) => o.id === skillId),
     };
   }, [categories]);
 
@@ -83,7 +76,6 @@ export const StepBuild: React.FC<StepBuildProps> = ({
           defaultFocusedCol={initialCol}
           onToggle={onToggle}
           onToggleLabels={onToggleLabels}
-          onToggleFilterIncompatible={onToggleFilterIncompatible}
           onFocusedSkillChange={handleFocusedSkillChange}
         />
       </Box>

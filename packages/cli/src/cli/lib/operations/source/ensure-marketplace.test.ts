@@ -39,7 +39,7 @@ function makeSourceResult(marketplace?: string): SourceLoadResult {
   return buildSourceResult(EMPTY_MATRIX, "/tmp/test-source", {
     sourceConfig: { source: "github:test/source", sourceOrigin: "flag" },
     isLocal: false,
-    marketplace,
+    ...(marketplace !== undefined && { marketplace }),
   });
 }
 
@@ -75,7 +75,7 @@ describe("ensureMarketplace", () => {
 
     const result = await ensureMarketplace(sourceResult);
 
-    expect(mockFetchMarketplace).toHaveBeenCalledWith("github:test/source", {});
+    expect(mockFetchMarketplace).toHaveBeenCalledWith("github:test/source");
     expect(mockMarketplaceExists).not.toHaveBeenCalled();
     expect(result).toStrictEqual({ marketplace: null, registered: false });
   });
@@ -110,7 +110,7 @@ describe("ensureMarketplace", () => {
 
     const result = await ensureMarketplace(sourceResult);
 
-    expect(mockFetchMarketplace).toHaveBeenCalledWith("github:test/source", {});
+    expect(mockFetchMarketplace).toHaveBeenCalledWith("github:test/source");
     expect(sourceResult.marketplace).toBe("resolved-marketplace");
     expect(mockMarketplaceExists).toHaveBeenCalledWith("resolved-marketplace");
     expect(mockMarketplaceAdd).toHaveBeenCalledWith("test/source");

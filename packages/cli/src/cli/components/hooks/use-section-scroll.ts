@@ -192,7 +192,7 @@ export function useSectionScroll({
 /**
  * Pure function for row-based scroll offset computation.
  *
- * For views with uniform 1-line rows (step-agents, checkbox-grid, step-settings),
+ * For views with uniform 1-line rows (step-agents, checkbox-grid),
  * computes the scroll offset (in rows) to keep `focusedRow` visible within
  * a viewport of `viewportHeight` rows.
  */

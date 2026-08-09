@@ -3,8 +3,7 @@ import React, { Fragment } from "react";
 import { CLI_COLORS, FALLBACK_DOMAIN, LOGO_MIN_TERMINAL_ROWS } from "../../consts.js";
 import type { StartupMessage } from "../../utils/logger.js";
 import { formatTerminalTooSmallMessage, isTerminalLargeEnough } from "../../utils/terminal.js";
-import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
-import { useWizardStore, type WizardStep } from "../../stores/wizard-store.js";
+import { getActiveStepFlow, useWizardStore, type WizardStep } from "../../stores/wizard-store.js";
 import { useTerminalDimensions } from "../hooks/use-terminal-dimensions.js";
 import { SummaryPanel } from "./summary-panel.js";
 import { Toast } from "./toast.js";
@@ -13,8 +12,6 @@ import {
   HOTKEY_SCOPE,
   HOTKEY_SET_ALL_LOCAL,
   HOTKEY_SET_ALL_PLUGIN,
-  HOTKEY_SETTINGS,
-  HOTKEY_FILTER_INCOMPATIBLE,
   HOTKEY_TOGGLE_LABELS,
   KEY_LABEL_ENTER,
   KEY_LABEL_ESC,
@@ -22,8 +19,8 @@ import {
   isInfoPanelAvailable,
 } from "./hotkeys.js";
 import {
-  WIZARD_STEPS,
   WizardTabs,
+  wizardTabsFor,
   type DomainNavProps,
   type TabDropdownProps,
 } from "./wizard-tabs.js";
@@ -31,17 +28,11 @@ import { getDomainDisplayName, getStackName, orderDomains } from "./utils.js";
 
 type KeyHintProps = {
   isVisible?: boolean;
-  isActive?: boolean;
   label: string;
   values: readonly string[];
 };
 
-const DefinitionItem: React.FC<KeyHintProps> = ({
-  isVisible = true,
-  isActive = false,
-  label,
-  values,
-}) => {
+const DefinitionItem: React.FC<KeyHintProps> = ({ isVisible = true, label, values }) => {
   if (!isVisible) {
     return null;
   }
@@ -50,16 +41,13 @@ const DefinitionItem: React.FC<KeyHintProps> = ({
     <Text>
       {values.map((value) => (
         <Fragment key={value}>
-          <Text
-            backgroundColor={CLI_COLORS.LABEL_BG}
-            color={isActive ? CLI_COLORS.PRIMARY : CLI_COLORS.UNFOCUSED}
-          >
+          <Text backgroundColor={CLI_COLORS.LABEL_BG} color={CLI_COLORS.UNFOCUSED}>
             {" "}
             {value}{" "}
           </Text>{" "}
         </Fragment>
       ))}
-      <Text color={isActive ? CLI_COLORS.PRIMARY : undefined}>{label}</Text>
+      <Text>{label}</Text>
     </Text>
   );
 };
@@ -91,10 +79,70 @@ const WizardFooter = () => {
 };
 
 type WizardLayoutProps = {
-  version?: string;
-  logo?: string;
-  startupMessages?: StartupMessage[];
+  version?: string | undefined;
+  logo?: string | undefined;
+  startupMessages?: StartupMessage[] | undefined;
   children: React.ReactNode;
+};
+
+/**
+ * How many buffered messages the band paints before it counts the rest instead.
+ * A source that cannot resolve its own relationships warns once per unresolved
+ * name — thousands, for a source with a broken `skill-rules.ts` — and every line
+ * is a row taken from the step below it.
+ *
+ * Two budgets, because a row is worth more at some heights than others: a
+ * terminal short enough that the logo is already dropped for starving the
+ * content cannot spare four rows for news either, and there it paints the first
+ * message and counts the rest. The first is the one that matters — the fetch
+ * speaks before anything is parsed, so an unreachable source is message one.
+ */
+const MAX_PAINTED_STARTUP_MESSAGES = 3;
+const MAX_PAINTED_STARTUP_MESSAGES_CRAMPED = 1;
+
+function paintedStartupMessageCount(terminalHeight: number): number {
+  return terminalHeight >= LOGO_MIN_TERMINAL_ROWS
+    ? MAX_PAINTED_STARTUP_MESSAGES
+    : MAX_PAINTED_STARTUP_MESSAGES_CRAMPED;
+}
+
+const STARTUP_MESSAGE_COLOR = {
+  info: CLI_COLORS.NEUTRAL,
+  warn: CLI_COLORS.WARNING,
+  error: CLI_COLORS.ERROR,
+} as const satisfies Record<StartupMessage["level"], string>;
+
+/**
+ * What the load said before Ink took the terminal.
+ *
+ * `warn()` writes to stderr, which the wizard's own `clearTerminal` would wipe,
+ * so a load that opens a wizard buffers instead (`lib/operations/source/load-source.ts`)
+ * and hands the buffer here. This band is the only place those lines are ever
+ * seen — the source-unreachable warning among them.
+ *
+ * It sits above the step rather than over it, and does not shrink: a warning
+ * compressed by Yoga overprints into an unreadable row, which is worse than the
+ * row it would have cost the step.
+ */
+const StartupMessages: React.FC<{ messages: StartupMessage[]; terminalHeight: number }> = ({
+  messages,
+  terminalHeight,
+}) => {
+  if (messages.length === 0) return null;
+
+  const painted = messages.slice(0, paintedStartupMessageCount(terminalHeight));
+  const counted = messages.length - painted.length;
+
+  return (
+    <Box flexDirection="column" flexShrink={0} paddingX={1}>
+      {painted.map((message, index) => (
+        <Text key={index} color={STARTUP_MESSAGE_COLOR[message.level]}>
+          {message.text}
+        </Text>
+      ))}
+      {counted > 0 && <Text color={CLI_COLORS.NEUTRAL}>{`... and ${counted} more`}</Text>}
+    </Box>
+  );
 };
 
 const STEP_DROPDOWN_LABEL: Partial<Record<WizardStep, string>> = {
@@ -128,7 +176,12 @@ function resolveDropdownLabel(
   return STEP_DROPDOWN_LABEL[step];
 }
 
-export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, children }) => {
+export const WizardLayout: React.FC<WizardLayoutProps> = ({
+  version,
+  logo,
+  startupMessages = [],
+  children,
+}) => {
   const store = useWizardStore();
   const { columns: terminalWidth, rows: terminalHeight } = useTerminalDimensions();
 
@@ -169,7 +222,7 @@ export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, child
         </Box>
       )}
       <WizardTabs
-        steps={WIZARD_STEPS}
+        steps={wizardTabsFor(getActiveStepFlow())}
         currentStep={store.step}
         completedSteps={completedSteps}
         skippedSteps={skippedSteps}
@@ -177,7 +230,8 @@ export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, child
         domainNav={domainNav}
         dropdowns={dropdowns}
       />
-      {FEATURE_FLAGS.INFO_PANEL && store.showInfo ? (
+      <StartupMessages messages={startupMessages} terminalHeight={terminalHeight} />
+      {store.showInfo ? (
         <>
           <Box flexDirection="column" flexGrow={1} flexBasis={0} marginTop={1}>
             <SummaryPanel />
@@ -196,12 +250,6 @@ export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, child
               isVisible={store.step === "build"}
             />
             <DefinitionItem
-              label="Filter incompatible"
-              values={[HOTKEY_FILTER_INCOMPATIBLE.label]}
-              isVisible={store.step === "build" && FEATURE_FLAGS.FILTER_INCOMPATIBLE}
-              isActive={store.filterIncompatible}
-            />
-            <DefinitionItem
               label="Scope"
               values={[HOTKEY_SCOPE.label]}
               isVisible={
@@ -218,12 +266,6 @@ export const WizardLayout: React.FC<WizardLayoutProps> = ({ version, logo, child
               label="Set all plugin"
               values={[HOTKEY_SET_ALL_PLUGIN.label]}
               isVisible={store.step === "sources"}
-            />
-            <DefinitionItem
-              label="Settings"
-              values={[HOTKEY_SETTINGS.label]}
-              isVisible={store.step === "sources" && FEATURE_FLAGS.SOURCE_SEARCH}
-              isActive={store.showSettings}
             />
             <DefinitionItem
               label="Info"

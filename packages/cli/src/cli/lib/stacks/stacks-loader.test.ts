@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { StackAgentConfig } from "../../types";
+import type { SkillId, StackAgentConfig } from "../../types";
+import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { createMockSkill, createMockSkillAssignment } from "../__tests__/factories/skill-factories";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories";
 import {
   createMockRawStacksConfig,
   createMockRawStacksConfigWithArrays,
   createMockRawStacksConfigWithObjects,
-  createMockStack,
 } from "../__tests__/factories/stack-factories";
+import { LOCAL_SKILL_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { SKILLS } from "../__tests__/test-fixtures";
+import { TEST_CUSTOM_SOURCE_URL } from "../__tests__/test-constants";
 
 vi.mock("../configuration/config-loader", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../configuration/config-loader")>()),
@@ -17,10 +19,19 @@ vi.mock("../configuration/config-loader", async (importOriginal) => ({
 
 vi.mock("../../utils/logger");
 
-import { resolveAgentConfigToSkills, resolveStackSkills } from "./stacks-loader";
+import {
+  normalizeAgentConfig,
+  normalizeStackRecord,
+  resolveAgentConfigToSkills,
+} from "./stacks-loader";
 import { loadConfig } from "../configuration/config-loader";
+import { DEFAULT_SOURCE } from "../configuration/config";
 import { warn } from "../../utils/logger";
 import { initializeMatrix } from "../matrix/matrix-provider";
+import { elementAt, firstElement } from "../__tests__/helpers/element-at.js";
+
+/** A stack the CLI ships, resolvable by id under the default marketplace alone. */
+const BUILT_IN_STACK_ID = "nextjs-fullstack";
 
 // Matrix containing all skills referenced in stacks-loader test data
 const stacksTestMatrix = createMockMatrix(
@@ -53,9 +64,9 @@ describe("stacks-loader", () => {
       const stacks = await freshLoadStacks("/project");
 
       expect(stacks).toHaveLength(2);
-      expect(stacks[0].id).toBe("nextjs-fullstack");
-      expect(stacks[0].name).toBe("Next.js Full-Stack");
-      expect(stacks[1].id).toBe("vue-spa");
+      expect(firstElement(stacks).id).toBe("nextjs-fullstack");
+      expect(firstElement(stacks).name).toBe("Next.js Full-Stack");
+      expect(elementAt(stacks, 1).id).toBe("vue-spa");
     });
 
     it("returns empty array when stacks file does not exist", async () => {
@@ -125,7 +136,7 @@ describe("stacks-loader", () => {
       const { loadStacks: freshLoadStacks } = await import("./stacks-loader");
       const stacks = await freshLoadStacks("/project");
 
-      const nextjsStack = stacks[0];
+      const nextjsStack = firstElement(stacks);
       // Bare strings are normalized to SkillAssignment[] with preloaded: false
       expect(nextjsStack.agents["web-developer"]).toStrictEqual({
         "web-framework": [createMockSkillAssignment("web-framework-react")],
@@ -133,7 +144,7 @@ describe("stacks-loader", () => {
       });
       expect(nextjsStack.agents["api-developer"]).toStrictEqual({
         "api-api": [createMockSkillAssignment("api-framework-hono")],
-        "api-database": [createMockSkillAssignment("api-database-drizzle")],
+        "api-orm": [createMockSkillAssignment("api-database-drizzle")],
       });
     });
 
@@ -144,21 +155,21 @@ describe("stacks-loader", () => {
       const stacks = await freshLoadStacks("/project");
 
       expect(stacks).toHaveLength(1);
-      const stack = stacks[0];
+      const stack = firstElement(stacks);
       expect(stack.id).toBe("multi-select-stack");
 
       // Array values should be normalized to SkillAssignment[]
-      expect(stack.agents["web-developer"]!["meta-reviewing"]).toStrictEqual([
+      expect(stack.agents["web-developer"]?.["meta-reviewing"]).toStrictEqual([
         createMockSkillAssignment("meta-methodology-research-methodology"),
         createMockSkillAssignment("meta-reviewing-reviewing"),
         createMockSkillAssignment("meta-reviewing-cli-reviewing"),
       ]);
 
       // Single values normalized to SkillAssignment[]
-      expect(stack.agents["web-developer"]!["web-framework"]).toStrictEqual([
+      expect(stack.agents["web-developer"]?.["web-framework"]).toStrictEqual([
         createMockSkillAssignment("web-framework-react"),
       ]);
-      expect(stack.agents["pattern-scout"]!["meta-reviewing"]).toStrictEqual([
+      expect(stack.agents["codex-keeper"]?.["meta-reviewing"]).toStrictEqual([
         createMockSkillAssignment("meta-methodology-research-methodology"),
       ]);
     });
@@ -169,21 +180,21 @@ describe("stacks-loader", () => {
       const { loadStacks: freshLoadStacks } = await import("./stacks-loader");
       const stacks = await freshLoadStacks("/project");
 
-      const stack = stacks[0];
+      const stack = firstElement(stacks);
       expect(stack.id).toBe("object-stack");
 
       // Object-form with preloaded: true preserved
-      expect(stack.agents["web-developer"]!["web-framework"]).toStrictEqual([
+      expect(stack.agents["web-developer"]?.["web-framework"]).toStrictEqual([
         createMockSkillAssignment("web-framework-react", true),
       ]);
 
       // Bare string normalized to preloaded: false
-      expect(stack.agents["web-developer"]!["web-styling"]).toStrictEqual([
+      expect(stack.agents["web-developer"]?.["web-styling"]).toStrictEqual([
         createMockSkillAssignment("web-styling-scss-modules"),
       ]);
 
       // Mixed array: object + bare string
-      expect(stack.agents["web-developer"]!["meta-reviewing"]).toStrictEqual([
+      expect(stack.agents["web-developer"]?.["meta-reviewing"]).toStrictEqual([
         createMockSkillAssignment("meta-methodology-research-methodology", true),
         createMockSkillAssignment("meta-reviewing-reviewing"),
       ]);
@@ -195,7 +206,7 @@ describe("stacks-loader", () => {
       vi.mocked(loadConfig).mockResolvedValue(createMockRawStacksConfig());
 
       const { loadStackById: freshLoadStackById } = await import("./stacks-loader");
-      const stack = await freshLoadStackById("vue-spa", "/project");
+      const stack = await freshLoadStackById("vue-spa", "/project", TEST_CUSTOM_SOURCE_URL);
 
       expect(stack).not.toBeNull();
       expect(stack!.id).toBe("vue-spa");
@@ -206,7 +217,11 @@ describe("stacks-loader", () => {
       vi.mocked(loadConfig).mockResolvedValue(createMockRawStacksConfig());
 
       const { loadStackById: freshLoadStackById } = await import("./stacks-loader");
-      const stack = await freshLoadStackById("nonexistent-stack", "/project");
+      const stack = await freshLoadStackById(
+        "nonexistent-stack",
+        "/project",
+        TEST_CUSTOM_SOURCE_URL,
+      );
 
       expect(stack).toBeNull();
     });
@@ -215,22 +230,132 @@ describe("stacks-loader", () => {
       vi.mocked(loadConfig).mockResolvedValue(null);
 
       const { loadStackById: freshLoadStackById } = await import("./stacks-loader");
-      const stack = await freshLoadStackById("nonexistent-stack", "/project");
+      const stack = await freshLoadStackById("nonexistent-stack", "/project", DEFAULT_SOURCE);
 
       expect(stack).toBeNull();
     });
 
-    it("falls back to default stacks when source has no match", async () => {
+    it("falls back to a built-in stack under the default public marketplace", async () => {
       // Source has no stacks file, so loadStacks returns []
       vi.mocked(loadConfig).mockResolvedValue(null);
 
       const { loadStackById: freshLoadStackById } = await import("./stacks-loader");
-      const stack = await freshLoadStackById("nextjs-fullstack", "/project");
+      const stack = await freshLoadStackById(BUILT_IN_STACK_ID, "/project", DEFAULT_SOURCE);
 
       // Should fall back to the built-in default stack
       expect(stack).not.toBeNull();
-      expect(stack!.id).toBe("nextjs-fullstack");
+      expect(stack!.id).toBe(BUILT_IN_STACK_ID);
       expect(stack!.name).toBe("Next.js Full-Stack");
+    });
+
+    it("returns null for a built-in stack id under a custom source", async () => {
+      // The built-in catalogue belongs to the default public marketplace, so
+      // under any other source this id names a stack that source does not have
+      // — and standing one in would install stacks written against a different
+      // catalogue of skills.
+      vi.mocked(loadConfig).mockResolvedValue(null);
+
+      const { loadStackById: freshLoadStackById } = await import("./stacks-loader");
+      const stack = await freshLoadStackById(BUILT_IN_STACK_ID, "/project", TEST_CUSTOM_SOURCE_URL);
+
+      expect(stack).toBeNull();
+    });
+  });
+
+  describe("normalizeStackRecord", () => {
+    // The move that produced this case: the id still spells `shared-monorepo`
+    // while the matrix answers `shared-task-runner`. A config saved before the
+    // move names the old key; the skill it names is the same skill.
+    const MOVED_SKILL: SkillId = "shared-monorepo-turborepo";
+    const STALE_CATEGORY = "shared-monorepo";
+    const LIVE_CATEGORY = "shared-task-runner";
+
+    beforeEach(() => {
+      initializeMatrix(BUILT_IN_MATRIX);
+    });
+
+    it("re-keys a saved entry under the skill's live category, keeping its load flag", () => {
+      const record = normalizeStackRecord({
+        "web-developer": { [STALE_CATEGORY]: [{ id: MOVED_SKILL, preloaded: true }] },
+      });
+
+      expect(record).toStrictEqual({
+        "web-developer": { [LIVE_CATEGORY]: [createMockSkillAssignment(MOVED_SKILL, true)] },
+      });
+    });
+
+    it("re-keys an entry written in the bare-string form", () => {
+      const record = normalizeStackRecord({
+        "web-developer": { [STALE_CATEGORY]: MOVED_SKILL },
+      });
+
+      expect(record).toStrictEqual({
+        "web-developer": { [LIVE_CATEGORY]: [createMockSkillAssignment(MOVED_SKILL)] },
+      });
+    });
+
+    it("leaves an entry alone when the matrix has no such skill", () => {
+      // Boundary: an id outside the catalog — local, marketplace, or removed.
+      const record = normalizeStackRecord({
+        "web-developer": { "web-framework": [{ id: "acme-pipeline-deploy", preloaded: true }] },
+      });
+
+      expect(record).toStrictEqual({
+        "web-developer": { "web-framework": [{ id: "acme-pipeline-deploy", preloaded: true }] },
+      });
+    });
+
+    it("leaves an entry alone when the skill's category is the local pseudo-category", () => {
+      initializeMatrix(LOCAL_SKILL_MATRIX);
+
+      const record = normalizeStackRecord({
+        "web-developer": { "web-framework": [{ id: "web-local-skill", preloaded: true }] },
+      });
+
+      expect(record).toStrictEqual({
+        "web-developer": { "web-framework": [{ id: "web-local-skill", preloaded: true }] },
+      });
+    });
+
+    it("folds a stale key into the live one without listing the skill twice", () => {
+      const record = normalizeStackRecord({
+        "web-developer": {
+          [STALE_CATEGORY]: [{ id: MOVED_SKILL }],
+          [LIVE_CATEGORY]: [{ id: MOVED_SKILL, preloaded: true }],
+        },
+      });
+
+      expect(
+        record,
+        "the entry already stored under the live category is the current word for the pair",
+      ).toStrictEqual({
+        "web-developer": { [LIVE_CATEGORY]: [createMockSkillAssignment(MOVED_SKILL, true)] },
+      });
+    });
+
+    it("keeps each agent's re-keying independent", () => {
+      const record = normalizeStackRecord({
+        "web-developer": { [STALE_CATEGORY]: [{ id: MOVED_SKILL, preloaded: true }] },
+        reviewer: { "web-framework": [{ id: "web-framework-react" }] },
+      });
+
+      expect(record).toStrictEqual({
+        "web-developer": { [LIVE_CATEGORY]: [createMockSkillAssignment(MOVED_SKILL, true)] },
+        reviewer: { "web-framework": [{ id: "web-framework-react" }] },
+      });
+    });
+
+    it("does not re-key a source stack's authored grouping", () => {
+      // normalizeAgentConfig is the stacks-file path. There the category key is
+      // the author's heading for the agent's prompt, shipped with the catalog it
+      // references — not persisted user data that a later release can drift under.
+      const agentConfig = normalizeAgentConfig({
+        [STALE_CATEGORY]: [{ id: MOVED_SKILL, preloaded: true }],
+      });
+
+      expect(agentConfig).toStrictEqual({
+        [STALE_CATEGORY]: [createMockSkillAssignment(MOVED_SKILL, true)],
+      });
     });
   });
 
@@ -278,12 +403,12 @@ describe("stacks-loader", () => {
 
     it("includes usage description with category context", () => {
       const agentConfig: StackAgentConfig = {
-        "api-database": [createMockSkillAssignment("api-database-drizzle", true)],
+        "api-orm": [createMockSkillAssignment("api-database-drizzle", true)],
       };
 
       const skills = resolveAgentConfigToSkills(agentConfig);
 
-      expect(skills[0].usage).toContain("api-database");
+      expect(firstElement(skills).usage).toContain("api-orm");
     });
 
     it("passes through unknown skill IDs for downstream validation and warns", () => {
@@ -295,7 +420,7 @@ describe("stacks-loader", () => {
       const skills = resolveAgentConfigToSkills(agentConfig);
 
       expect(skills).toHaveLength(1);
-      expect(skills[0].id).toBe("Not-A-Valid-Id");
+      expect(firstElement(skills).id).toBe("Not-A-Valid-Id");
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("Not-A-Valid-Id"), {
         suppressInTest: true,
       });
@@ -310,14 +435,14 @@ describe("stacks-loader", () => {
     it("resolves full skill IDs directly", () => {
       const agentConfig: StackAgentConfig = {
         "web-framework": [createMockSkillAssignment("web-framework-react", true)],
-        "api-database": [createMockSkillAssignment("api-database-drizzle", true)],
+        "api-orm": [createMockSkillAssignment("api-database-drizzle", true)],
       };
 
       const skills = resolveAgentConfigToSkills(agentConfig);
 
       expect(skills).toStrictEqual([
         { id: "web-framework-react", usage: "when working with web-framework", preloaded: true },
-        { id: "api-database-drizzle", usage: "when working with api-database", preloaded: true },
+        { id: "api-database-drizzle", usage: "when working with api-orm", preloaded: true },
       ]);
     });
 
@@ -459,90 +584,10 @@ describe("stacks-loader", () => {
       const skills = resolveAgentConfigToSkills(agentConfig);
 
       expect(skills).toHaveLength(1);
-      expect(skills[0].id).toBe("acme-pipeline-deploy");
-      expect(skills[0].preloaded).toBe(true);
+      expect(firstElement(skills).id).toBe("acme-pipeline-deploy");
+      expect(firstElement(skills).preloaded).toBe(true);
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("acme-pipeline-deploy"), {
         suppressInTest: true,
-      });
-    });
-  });
-
-  describe("resolveStackSkills", () => {
-    it("resolves all agents in a stack", () => {
-      const stack = createMockStack("test-stack", {
-        name: "Test Stack",
-        description: "Test",
-        agents: {
-          "web-developer": {
-            "web-framework": [createMockSkillAssignment("web-framework-react", true)],
-          },
-          "api-developer": {
-            "api-api": [createMockSkillAssignment("api-framework-hono", true)],
-            "api-database": [createMockSkillAssignment("api-database-drizzle", true)],
-          },
-        },
-      });
-
-      const result = resolveStackSkills(stack);
-
-      expect(result).toStrictEqual({
-        "web-developer": [
-          { id: "web-framework-react", usage: "when working with web-framework", preloaded: true },
-        ],
-        "api-developer": [
-          { id: "api-framework-hono", usage: "when working with api-api", preloaded: true },
-          { id: "api-database-drizzle", usage: "when working with api-database", preloaded: true },
-        ],
-      });
-    });
-
-    it("handles stack with no agents", () => {
-      const stack = createMockStack("empty-stack", {
-        name: "Empty",
-        description: "No agents",
-        agents: {},
-      });
-
-      const result = resolveStackSkills(stack);
-
-      expect(Object.keys(result)).toHaveLength(0);
-    });
-
-    it("resolves agents with array-valued categories", () => {
-      const stack = createMockStack("test-stack", {
-        name: "Test Stack",
-        description: "Test",
-        agents: {
-          "pattern-scout": {
-            "meta-reviewing": [
-              createMockSkillAssignment("meta-methodology-research-methodology", true),
-              createMockSkillAssignment("meta-reviewing-reviewing", true),
-              createMockSkillAssignment("meta-reviewing-cli-reviewing", true),
-            ],
-          },
-        },
-      });
-
-      const result = resolveStackSkills(stack);
-
-      expect(result).toStrictEqual({
-        "pattern-scout": [
-          {
-            id: "meta-methodology-research-methodology",
-            usage: "when working with meta-reviewing",
-            preloaded: true,
-          },
-          {
-            id: "meta-reviewing-reviewing",
-            usage: "when working with meta-reviewing",
-            preloaded: true,
-          },
-          {
-            id: "meta-reviewing-cli-reviewing",
-            usage: "when working with meta-reviewing",
-            preloaded: true,
-          },
-        ],
       });
     });
   });

@@ -67,6 +67,7 @@ import {
 import { validateCompiledAgent } from "./output-validator";
 import { warn } from "../utils/logger";
 import type { CompiledAgentData } from "../types";
+import { elementAt, firstElement } from "./__tests__/helpers/element-at.js";
 
 /**
  * Copies fixture files into a temp directory matching the project layout
@@ -553,12 +554,12 @@ describe("compiler", () => {
 
       const result = sanitizeCompiledAgentData(data);
 
-      expect(result.skills[0].description).not.toContain("{{");
-      expect(result.skills[0].usage).not.toContain("{%");
+      expect(firstElement(result.skills).description).not.toContain("{{");
+      expect(firstElement(result.skills).usage).not.toContain("{%");
     });
 
-    it("preserves undefined optional fields", () => {
-      const data = createMockCompiledAgentData({ model: undefined, permissionMode: undefined });
+    it("leaves absent optional fields absent", () => {
+      const data = createMockCompiledAgentData({});
       const result = sanitizeCompiledAgentData(data);
 
       expect(result.agent.model).toBeUndefined();
@@ -567,8 +568,8 @@ describe("compiler", () => {
 
     it("sanitizes optional string fields when present", () => {
       const data = createMockCompiledAgentData({
-        model: "{{ inject }}" as AgentConfig["model"],
-        permissionMode: "{% evil %}" as AgentConfig["permissionMode"],
+        model: "{{ inject }}" as NonNullable<AgentConfig["model"]>,
+        permissionMode: "{% evil %}" as NonNullable<AgentConfig["permissionMode"]>,
       });
       const result = sanitizeCompiledAgentData(data);
 
@@ -584,7 +585,10 @@ describe("compiler", () => {
       const ctx = contextForProject(projectDir);
       await compileAllAgents(WEB_DEV_LIQUID_INJECTION, ctx, engine as never);
 
-      const renderCall = engine.renderFile.mock.calls[0][1] as CompiledAgentData;
+      const renderCall = elementAt(
+        firstElement(engine.renderFile.mock.calls),
+        1,
+      ) as CompiledAgentData;
       expect(renderCall.agent.name).not.toContain("{{");
       expect(renderCall.agent.name).not.toContain("}}");
       expect(renderCall.agent.title).not.toContain("{%");

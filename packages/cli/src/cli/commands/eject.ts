@@ -1,7 +1,7 @@
 import { Args, Flags } from "@oclif/core";
 import path from "path";
 import os from "os";
-import { BaseCommand, type SourceRefreshFlags } from "../base-command.js";
+import { BaseCommand } from "../base-command.js";
 import { copy, ensureDir, directoryExists, fileExists, listDirectories } from "../utils/fs.js";
 import {
   CLAUDE_SRC_DIR,
@@ -43,7 +43,8 @@ export default class Eject extends BaseCommand {
   static description =
     "Copy agent partials, templates, or skills to your project for customization. " +
     "Agent partials and templates are always copied from the CLI. " +
-    "Skills are copied from the configured source (public marketplace by default).";
+    "Skills are copied from the source this installation is configured to read " +
+    "(the public marketplace by default).";
 
   static examples = [
     {
@@ -77,7 +78,6 @@ export default class Eject extends BaseCommand {
   };
 
   static flags = {
-    ...BaseCommand.baseFlags,
     force: Flags.boolean({
       char: "f",
       description: "Overwrite existing files",
@@ -86,10 +86,6 @@ export default class Eject extends BaseCommand {
     output: Flags.string({
       char: "o",
       description: "Output directory (default: .claude/ in current directory)",
-    }),
-    refresh: Flags.boolean({
-      description: "Force refresh from remote source",
-      default: false,
     }),
   };
 
@@ -102,10 +98,9 @@ export default class Eject extends BaseCommand {
 
     this.printHeader(flags.output ? outputBase : undefined);
 
-    const sourceResult = await this.loadSourceIfNeeded(ejectType, flags, projectDir);
+    const sourceResult = await this.loadSourceIfNeeded(ejectType, projectDir);
     await this.executeEject(ejectType, outputBase, flags, projectDir, sourceResult);
-    await this.saveSourceIfFlagged(flags.source, projectDir);
-    await this.ensureConfig(projectDir, flags.source, sourceResult);
+    await this.ensureConfig(projectDir, sourceResult);
 
     this.log("");
     this.logSuccess("Eject complete!");
@@ -128,7 +123,10 @@ export default class Eject extends BaseCommand {
     return typeArg;
   }
 
-  private async resolveOutputBase(flags: { output?: string }, projectDir: string): Promise<string> {
+  private async resolveOutputBase(
+    flags: { output: string | undefined },
+    projectDir: string,
+  ): Promise<string> {
     if (flags.output) {
       const expandedPath = flags.output.startsWith("~")
         ? path.join(os.homedir(), flags.output.slice(1))
@@ -159,15 +157,10 @@ export default class Eject extends BaseCommand {
 
   private async loadSourceIfNeeded(
     ejectType: EjectType,
-    flags: SourceRefreshFlags,
     projectDir: string,
   ): Promise<SourceLoadResult | undefined> {
     if (ejectType === "skills" || ejectType === "all") {
-      const loaded = await loadSource({
-        sourceFlag: flags.source,
-        projectDir,
-        forceRefresh: flags.refresh,
-      });
+      const loaded = await loadSource({ projectDir });
       return loaded.sourceResult;
     }
     return undefined;
@@ -176,7 +169,7 @@ export default class Eject extends BaseCommand {
   private async executeEject(
     ejectType: EjectType,
     outputBase: string,
-    flags: { force: boolean; output?: string },
+    flags: { force: boolean; output: string | undefined },
     projectDir: string,
     sourceResult: SourceLoadResult | undefined,
   ): Promise<void> {
@@ -210,25 +203,13 @@ export default class Eject extends BaseCommand {
     }
   }
 
-  private async saveSourceIfFlagged(
-    sourceFlag: string | undefined,
-    projectDir: string,
-  ): Promise<void> {
-    if (!sourceFlag) return;
-
-    await recordSource(projectDir, sourceFlag);
-    this.log(`Source saved to ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
-  }
-
   private async ensureConfig(
     projectDir: string,
-    sourceFlag: string | undefined,
     sourceResult: SourceLoadResult | undefined,
   ): Promise<void> {
     const configResult = await ensureMinimalConfig({
       projectDir,
-      sourceFlag,
-      sourceResult,
+      ...(sourceResult !== undefined && { sourceResult }),
     });
     if (configResult.created) {
       this.logSuccess(`Created ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
@@ -282,7 +263,7 @@ export default class Eject extends BaseCommand {
       sourceResult,
       matrix,
       directOutput,
-      customOutputBase: directOutput ? outputBase : undefined,
+      ...(directOutput && { customOutputBase: outputBase }),
     });
 
     if (result.skipped) {
@@ -488,7 +469,6 @@ async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResu
 
 type EnsureMinimalConfigOptions = {
   projectDir: string;
-  sourceFlag?: string;
   sourceResult?: SourceLoadResult;
 };
 
@@ -510,7 +490,7 @@ type EnsureMinimalConfigResult = {
 async function ensureMinimalConfig(
   options: EnsureMinimalConfigOptions,
 ): Promise<EnsureMinimalConfigResult> {
-  const { projectDir, sourceFlag, sourceResult } = options;
+  const { projectDir, sourceResult } = options;
 
   const tsConfigPath = getProjectConfigPath(projectDir);
 
@@ -519,9 +499,9 @@ async function ensureMinimalConfig(
   }
 
   const resolvedConfig =
-    sourceResult?.sourceConfig ?? (await resolveSource(sourceFlag, projectDir));
+    sourceResult?.sourceConfig ?? (await resolveSource({ caller: "stored", projectDir }));
   const existingProjectConfig = await loadProjectSourceConfig(projectDir);
-  const source = sourceFlag || resolvedConfig.source || undefined;
+  const source = resolvedConfig.source || undefined;
 
   // At the home directory the invented config IS the global manifest, and the
   // file it opens with `import type { ProjectConfig } from "./config-types"`

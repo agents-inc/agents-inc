@@ -103,10 +103,17 @@ export async function validatePluginManifest(manifestPath: string): Promise<Vali
     return invalidResult(`Manifest file not found: ${manifestPath}`);
   }
 
+  // `JSON.parse` returns `any`, and every field read below trusts what it
+  // returns. Landing it in `unknown` and narrowing with `isRecord` first is what
+  // makes `manifest.name` a checked read of a record rather than a property
+  // fetched off `any` — and it names the array/string/null cases the schema
+  // would otherwise report as a shape mismatch several lines later.
   let manifest: Record<string, unknown>;
   try {
     const content = await readFileSafe(manifestPath, MAX_PLUGIN_FILE_SIZE);
-    manifest = JSON.parse(content);
+    const parsed: unknown = JSON.parse(content);
+    if (!isRecord(parsed)) return invalidResult(`${PLUGIN_MANIFEST} must contain a JSON object`);
+    manifest = parsed;
   } catch (err) {
     return invalidResult(`Invalid JSON in ${PLUGIN_MANIFEST}: ${getErrorMessage(err)}`);
   }

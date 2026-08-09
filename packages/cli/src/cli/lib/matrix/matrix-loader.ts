@@ -57,7 +57,6 @@ export async function loadSkillRules(configPath: string): Promise<SkillRulesConf
     relationships: data.relationships ?? {
       conflicts: [],
       discourages: [],
-      recommends: [],
       requires: [],
       alternatives: [],
     },
@@ -98,7 +97,7 @@ export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkil
     }
 
     const metadataContent = await readFile(metadataPath);
-    const rawMetadata = parseYaml(metadataContent);
+    const rawMetadata: unknown = parseYaml(metadataContent);
     const metadataResult = matrixRawMetadataSchema.safeParse(rawMetadata);
 
     if (!metadataResult.success) {
@@ -129,7 +128,7 @@ export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkil
       id: skillId,
       directoryPath: skillDir,
       description: metadata.cliDescription || frontmatter.description,
-      usageGuidance: metadata.usageGuidance,
+      ...(metadata.usageGuidance !== undefined && { usageGuidance: metadata.usageGuidance }),
       category: metadata.category,
       author: metadata.author,
       path: `skills/${skillDir}/`,

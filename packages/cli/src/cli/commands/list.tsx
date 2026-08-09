@@ -14,7 +14,7 @@ import type { AgentScopeConfig, SkillConfig } from "../types/config.js";
 
 type ListViewProps = {
   mode: string;
-  source?: string;
+  source?: string | undefined;
   skillConfigs: SkillConfig[];
   agentConfigs: AgentScopeConfig[];
 };
@@ -62,10 +62,6 @@ export default class List extends BaseCommand {
       command: "<%= config.bin %> <%= command.id %>",
     },
   ];
-
-  static flags = {
-    ...BaseCommand.baseFlags,
-  };
 
   async run(): Promise<void> {
     await this.parse(List);

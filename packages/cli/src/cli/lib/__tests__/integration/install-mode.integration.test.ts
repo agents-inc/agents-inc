@@ -226,7 +226,7 @@ describe("Integration: buildAndMergeConfig Install Mode", () => {
       dirs.projectDir,
       buildProjectConfig({
         skills: buildSkillConfigs([REACT_SKILL_ID]),
-      }) as Record<string, unknown>,
+      }),
     );
 
     // Build wizard result with "plugin" source skills

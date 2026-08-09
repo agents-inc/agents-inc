@@ -5,7 +5,9 @@ import {
   splitConfigByScope,
 } from "./config-generator";
 import type { AgentName, SkillId, StackAgentConfig } from "../../types";
+import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { initializeMatrix } from "../matrix/matrix-provider";
+import { normalizeStackRecord } from "../stacks/stacks-loader";
 import { sa } from "../__tests__/factories/skill-factories.js";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
 import { buildProjectConfig, buildAgentConfigs } from "../__tests__/factories/config-factories.js";
@@ -25,11 +27,15 @@ import {
   STACK_WITH_EMPTY_CATEGORY,
   MANY_CATEGORIES_STACK,
   LOCAL_SKILL_STACK,
+  UNFLAGGED_TWO_AGENT_STACK,
+  AUTHORED_FLAGS_STACK,
 } from "../__tests__/mock-data/mock-stacks.js";
 import {
+  CUSTOM_SKILL_MATRIX,
   LOCAL_SKILL_MATRIX,
   MIXED_LOCAL_REMOTE_MATRIX,
   METHODOLOGY_MATRIX,
+  SHARED_SECURITY_MATRIX,
   VITEST_MATRIX,
   EMPTY_MATRIX,
   SINGLE_REACT_MATRIX,
@@ -43,7 +49,7 @@ describe("config-generator", () => {
   describe("generateProjectConfigFromSkills", () => {
     it("returns a minimal ProjectConfig structure with stack when selectedAgents provided", () => {
       initializeMatrix(SINGLE_REACT_MATRIX);
-      const selectedAgents: AgentName[] = ["web-developer", "web-reviewer"];
+      const selectedAgents: AgentName[] = ["web-developer", "reviewer"];
 
       const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
         selectedAgents,
@@ -52,13 +58,13 @@ describe("config-generator", () => {
       });
 
       expect(config.name).toBe("my-project");
-      expectAgentConfigs(config, buildAgentConfigs(["web-developer", "web-reviewer"]));
+      expectAgentConfigs(config, buildAgentConfigs(["web-developer", "reviewer"]));
       expect(config.stack).toStrictEqual({
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
-        "web-reviewer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+        reviewer: {
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
       });
       // Should NOT have these fields by default
@@ -68,7 +74,7 @@ describe("config-generator", () => {
 
     it("builds stack with category->SkillAssignment[] mappings for multiple skills", () => {
       initializeMatrix(REACT_SCSS_MATRIX);
-      const selectedAgents: AgentName[] = ["web-developer", "web-reviewer"];
+      const selectedAgents: AgentName[] = ["web-developer", "reviewer"];
 
       const config = generateProjectConfigFromSkills(
         "my-project",
@@ -80,14 +86,16 @@ describe("config-generator", () => {
         },
       );
 
+      // Styling is preloaded for the roles that build with it and lazy for the
+      // reviewer — the same skill, two answers, straight from the mapping.
       expect(config.stack).toStrictEqual({
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
-          "web-styling": [{ id: "web-styling-scss-modules", preloaded: false }],
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
+          "web-styling": [{ id: "web-styling-scss-modules", preloaded: true }],
         },
-        "web-reviewer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
-          "web-styling": [{ id: "web-styling-scss-modules", preloaded: false }],
+        reviewer: {
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
+          "web-styling": [{ id: "web-styling-scss-modules" }],
         },
       });
     });
@@ -121,10 +129,10 @@ describe("config-generator", () => {
         ]),
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
             "web-styling": [
-              { id: "web-styling-scss-modules", preloaded: false },
-              { id: "web-styling-tailwind", preloaded: false },
+              { id: "web-styling-scss-modules", preloaded: true },
+              { id: "web-styling-tailwind", preloaded: true },
             ],
           },
         },
@@ -133,7 +141,7 @@ describe("config-generator", () => {
 
     it("uses selectedAgents when provided", () => {
       initializeMatrix(SINGLE_REACT_MATRIX);
-      const selectedAgents: AgentName[] = ["web-developer", "web-reviewer"];
+      const selectedAgents: AgentName[] = ["web-developer", "reviewer"];
 
       const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
         selectedAgents,
@@ -141,13 +149,13 @@ describe("config-generator", () => {
         agentConfigs: buildAgentConfigs(selectedAgents),
       });
 
-      expectAgentConfigs(config, buildAgentConfigs(["web-developer", "web-reviewer"]));
+      expectAgentConfigs(config, buildAgentConfigs(["web-developer", "reviewer"]));
       expect(config.stack).toStrictEqual({
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
-        "web-reviewer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+        reviewer: {
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
       });
     });
@@ -186,7 +194,7 @@ describe("config-generator", () => {
 
     it("handles both remote and local skills", () => {
       initializeMatrix(MIXED_LOCAL_REMOTE_MATRIX);
-      const selectedAgents: AgentName[] = ["web-developer", "web-reviewer"];
+      const selectedAgents: AgentName[] = ["web-developer", "reviewer"];
 
       const config = generateProjectConfigFromSkills(
         "my-project",
@@ -205,10 +213,10 @@ describe("config-generator", () => {
       // Stack should have framework mapping from remote skill (local skills have no category)
       expect(config.stack).toStrictEqual({
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
-        "web-reviewer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+        reviewer: {
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
       });
     });
@@ -231,7 +239,7 @@ describe("config-generator", () => {
         skills: buildSkillConfigs(["web-framework-react"]),
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         },
       });
@@ -254,7 +262,7 @@ describe("config-generator", () => {
       // Stack should only contain known skills
       expect(config.stack).toStrictEqual({
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
       });
       expectAgentConfigs(config, buildAgentConfigs(["web-developer"]));
@@ -262,7 +270,7 @@ describe("config-generator", () => {
 
     it("deduplicates agents across skills in the same domain", () => {
       initializeMatrix(REACT_SCSS_MATRIX);
-      const selectedAgents: AgentName[] = ["web-developer", "web-reviewer"];
+      const selectedAgents: AgentName[] = ["web-developer", "reviewer"];
 
       const config = generateProjectConfigFromSkills(
         "my-project",
@@ -275,13 +283,13 @@ describe("config-generator", () => {
       );
 
       // Both skills share the same domain agents — each agent should appear exactly once
-      expectAgentConfigs(config, buildAgentConfigs(["web-developer", "web-reviewer"]));
+      expectAgentConfigs(config, buildAgentConfigs(["web-developer", "reviewer"]));
     });
 
     it("sorts agents alphabetically", () => {
       initializeMatrix(SINGLE_REACT_MATRIX);
       // Input order is deliberately unsorted to verify the function sorts
-      const selectedAgents: AgentName[] = ["web-reviewer", "api-developer", "web-developer"];
+      const selectedAgents: AgentName[] = ["reviewer", "api-developer", "web-developer"];
 
       const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
         selectedAgents,
@@ -290,20 +298,12 @@ describe("config-generator", () => {
       });
 
       // Output should be alphabetically sorted regardless of input order
-      expectAgentConfigs(
-        config,
-        buildAgentConfigs(["api-developer", "web-developer", "web-reviewer"]),
-      );
+      expectAgentConfigs(config, buildAgentConfigs(["api-developer", "web-developer", "reviewer"]));
     });
 
-    it("assigns all selected skills to every selected agent", () => {
+    it("assigns each selected skill to its own domain's agents plus the reviewer", () => {
       initializeMatrix(FULLSTACK_PAIR_MATRIX);
-      const selectedAgents: AgentName[] = [
-        "api-developer",
-        "api-reviewer",
-        "web-developer",
-        "web-reviewer",
-      ];
+      const selectedAgents: AgentName[] = ["api-developer", "web-developer", "reviewer"];
 
       const config = generateProjectConfigFromSkills(
         "my-project",
@@ -315,32 +315,25 @@ describe("config-generator", () => {
         },
       );
 
-      expectAgentConfigs(
-        config,
-        buildAgentConfigs(["api-developer", "api-reviewer", "web-developer", "web-reviewer"]),
-      );
-      // All skills land on all agents (no domain ownership filtering)
+      expectAgentConfigs(config, buildAgentConfigs(["api-developer", "web-developer", "reviewer"]));
+      // Relevance-scoped: each implementation skill reaches its own domain's
+      // agents and never the other domain's — while the cross-domain reviewer
+      // carries both, preloaded per each skill's reviewer-flavor row.
       expect(config.stack).toStrictEqual({
         "api-developer": {
-          "api-api": [{ id: "api-framework-hono", preloaded: false }],
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
-        },
-        "api-reviewer": {
-          "api-api": [{ id: "api-framework-hono", preloaded: false }],
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "api-api": [{ id: "api-framework-hono", preloaded: true }],
         },
         "web-developer": {
-          "api-api": [{ id: "api-framework-hono", preloaded: false }],
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
-        "web-reviewer": {
-          "api-api": [{ id: "api-framework-hono", preloaded: false }],
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+        reviewer: {
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
+          "api-api": [{ id: "api-framework-hono", preloaded: true }],
         },
       });
     });
 
-    it("builds a per-agent stack with all skills on all agents", () => {
+    it("builds a per-agent stack scoped to each skill's domain", () => {
       initializeMatrix(FULLSTACK_PAIR_MATRIX);
       const selectedAgents: AgentName[] = ["api-developer", "web-developer"];
 
@@ -356,14 +349,60 @@ describe("config-generator", () => {
 
       expect(config.stack).toStrictEqual({
         "api-developer": {
-          "api-api": [{ id: "api-framework-hono", preloaded: false }],
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "api-api": [{ id: "api-framework-hono", preloaded: true }],
         },
         "web-developer": {
-          "api-api": [{ id: "api-framework-hono", preloaded: false }],
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
       });
+    });
+
+    it("assigns a shared skill to every selected agent, loading per its role row", () => {
+      initializeMatrix(SHARED_SECURITY_MATRIX);
+      const selectedAgents: AgentName[] = ["api-tester", "web-developer"];
+
+      const config = generateProjectConfigFromSkills(
+        "my-project",
+        ["shared-security-auth-security"],
+        {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(["shared-security-auth-security"]),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+        },
+      );
+
+      // Cross-domain use is a shared skill's nature: both agents carry it, and
+      // the mapping's row — developer yes, tester no — decides each load.
+      expect(config.stack).toStrictEqual({
+        "api-tester": {
+          "shared-security": [{ id: "shared-security-auth-security" }],
+        },
+        "web-developer": {
+          "shared-security": [{ id: "shared-security-auth-security", preloaded: true }],
+        },
+      });
+    });
+
+    it("assigns a shared skill to no meta agent", () => {
+      initializeMatrix(SHARED_SECURITY_MATRIX);
+      const selectedAgents: AgentName[] = ["agent-summoner", "web-developer"];
+
+      const config = generateProjectConfigFromSkills(
+        "my-project",
+        ["shared-security-auth-security"],
+        {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(["shared-security-auth-security"]),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+        },
+      );
+
+      expect(config.stack).toStrictEqual({
+        "web-developer": {
+          "shared-security": [{ id: "shared-security-auth-security", preloaded: true }],
+        },
+      });
+      expect(config.stack?.["agent-summoner"]).toBeUndefined();
     });
 
     it("handles bare category paths", () => {
@@ -378,7 +417,7 @@ describe("config-generator", () => {
 
       expect(config.stack).toStrictEqual({
         "web-tester": {
-          "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
+          "web-testing": [{ id: "web-testing-vitest", preloaded: true }],
         },
       });
     });
@@ -482,7 +521,7 @@ describe("config-generator", () => {
 
     it("assigns a skill to every selected agent whose domain owns the skill's category", () => {
       initializeMatrix(SINGLE_REACT_MATRIX);
-      const selectedAgents: AgentName[] = ["web-developer", "web-reviewer"];
+      const selectedAgents: AgentName[] = ["web-developer", "reviewer"];
 
       const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
         selectedAgents,
@@ -492,14 +531,14 @@ describe("config-generator", () => {
 
       expect(config).toStrictEqual({
         name: "my-project",
-        agents: buildAgentConfigs(["web-developer", "web-reviewer"]),
+        agents: buildAgentConfigs(["reviewer", "web-developer"]),
         skills: buildSkillConfigs(["web-framework-react"]),
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
-          "web-reviewer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          reviewer: {
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         },
       });
@@ -507,7 +546,7 @@ describe("config-generator", () => {
 
     it("stack only contains selectedAgents", () => {
       initializeMatrix(SINGLE_REACT_MATRIX);
-      const selectedAgents: AgentName[] = ["web-developer", "web-reviewer"];
+      const selectedAgents: AgentName[] = ["web-developer", "reviewer"];
 
       const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
         selectedAgents,
@@ -517,14 +556,14 @@ describe("config-generator", () => {
 
       expect(config).toStrictEqual({
         name: "my-project",
-        agents: buildAgentConfigs(["web-developer", "web-reviewer"]),
+        agents: buildAgentConfigs(["reviewer", "web-developer"]),
         skills: buildSkillConfigs(["web-framework-react"]),
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
-          "web-reviewer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          reviewer: {
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         },
       });
@@ -541,7 +580,29 @@ describe("config-generator", () => {
       });
     });
 
-    it("assigns methodology skills to all selectedAgents", () => {
+    it("assigns a meta skill to the flavors its mapping row names", () => {
+      initializeMatrix(METHODOLOGY_MATRIX);
+      const selectedAgents: AgentName[] = ["web-developer", "reviewer"];
+
+      const config = generateProjectConfigFromSkills("my-project", ["meta-reviewing-reviewing"], {
+        selectedAgents,
+        skillConfigs: buildSkillConfigs(["meta-reviewing-reviewing"]),
+        agentConfigs: buildAgentConfigs(selectedAgents),
+      });
+
+      expectAgentConfigs(config, buildAgentConfigs(["web-developer", "reviewer"]));
+      // The reviewing skill's row names the reviewer flavor alone, so the
+      // reviewer carries it — preloaded, as authored — and the developer does
+      // not carry it at all.
+      expect(config.stack).toStrictEqual({
+        reviewer: {
+          "meta-reviewing": [{ id: "meta-reviewing-reviewing", preloaded: true }],
+        },
+      });
+      expect(config.stack?.["web-developer"]).toBeUndefined();
+    });
+
+    it("assigns a meta skill to nobody when no selected agent has a named flavor", () => {
       initializeMatrix(METHODOLOGY_MATRIX);
       const selectedAgents: AgentName[] = ["web-developer", "api-developer"];
 
@@ -552,17 +613,13 @@ describe("config-generator", () => {
       });
 
       expectAgentConfigs(config, buildAgentConfigs(["api-developer", "web-developer"]));
-      const expectedMethodologyStack = {
-        "meta-reviewing": [{ id: "meta-reviewing-reviewing", preloaded: false }],
-      };
-      expect(config.stack).toStrictEqual({
-        "api-developer": expectedMethodologyStack,
-        "web-developer": expectedMethodologyStack,
-      });
+      // Agents are in play, so the generator rebuilt the stack and found no
+      // relevant pair — an explicit empty `{}`, not an omitted key.
+      expect(config.stack).toStrictEqual({});
     });
 
     describe("stack ownership contract", () => {
-      it("places api-framework-hono on all selected agents", () => {
+      it("places api-framework-hono on the api agent alone", () => {
         initializeMatrix(FULLSTACK_PAIR_MATRIX);
         const config = generateProjectConfigFromSkills("my-project", ["api-framework-hono"], {
           selectedAgents: ["api-developer", "web-developer"],
@@ -572,15 +629,13 @@ describe("config-generator", () => {
 
         expect(config.stack).toStrictEqual({
           "api-developer": {
-            "api-api": [{ id: "api-framework-hono", preloaded: false }],
-          },
-          "web-developer": {
-            "api-api": [{ id: "api-framework-hono", preloaded: false }],
+            "api-api": [{ id: "api-framework-hono", preloaded: true }],
           },
         });
+        expect(config.stack?.["web-developer"]).toBeUndefined();
       });
 
-      it("places web-framework-react on all selected agents", () => {
+      it("places web-framework-react on the web agent alone", () => {
         initializeMatrix(FULLSTACK_PAIR_MATRIX);
         const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
           selectedAgents: ["api-developer", "web-developer"],
@@ -589,47 +644,101 @@ describe("config-generator", () => {
         });
 
         expect(config.stack).toStrictEqual({
-          "api-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
-          },
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
+          },
+        });
+        expect(config.stack?.["api-developer"]).toBeUndefined();
+      });
+
+      // Per-agent curation preservation outranks relevance: an entry the
+      // prior save carries is the user's curation, wherever it sits, and
+      // survives verbatim. Only NEW triples take the scoped rule.
+      it("keeps a prior cross-domain entry verbatim through an edit", () => {
+        initializeMatrix(FULLSTACK_PAIR_MATRIX);
+        const selectedAgents: AgentName[] = ["api-developer", "web-developer"];
+        // A broadcast-era save: the web skill sits on the api agent, lazily.
+        const existingStack: Partial<Record<AgentName, StackAgentConfig>> = {
+          "api-developer": {
+            "web-framework": [{ id: "web-framework-react" }],
+          },
+        };
+
+        const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(["web-framework-react"]),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+          existingStack,
+          newlyAddedSkillIds: [],
+        });
+
+        expect(config.stack).toStrictEqual({
+          "api-developer": {
+            "web-framework": [{ id: "web-framework-react" }],
+          },
+          // New to the selection, so the seeding branch runs for this agent —
+          // and the scoped rule places the web skill here.
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         });
       });
 
-      it("places cross-cutting (meta) skills on every selected agent", () => {
-        initializeMatrix(METHODOLOGY_MATRIX);
-        const config = generateProjectConfigFromSkills("my-project", ["meta-reviewing-reviewing"], {
-          selectedAgents: ["web-developer", "api-developer", "cli-developer"],
-          skillConfigs: buildSkillConfigs(["meta-reviewing-reviewing"]),
-          agentConfigs: buildAgentConfigs(["web-developer", "api-developer", "cli-developer"]),
-        });
-
-        const expected = {
-          "meta-reviewing": [{ id: "meta-reviewing-reviewing", preloaded: false }],
+      it("does not append a newly added skill to another domain's existing agent", () => {
+        initializeMatrix(REACT_SCSS_HONO_MATRIX);
+        const selectedAgents: AgentName[] = ["api-developer", "web-developer"];
+        const existingStack: Partial<Record<AgentName, StackAgentConfig>> = {
+          "api-developer": {
+            "api-api": [{ id: "api-framework-hono", preloaded: true }],
+          },
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
+          },
         };
+
+        const config = generateProjectConfigFromSkills(
+          "my-project",
+          ["web-framework-react", "api-framework-hono", "web-styling-scss-modules"],
+          {
+            selectedAgents,
+            skillConfigs: buildSkillConfigs([
+              "web-framework-react",
+              "api-framework-hono",
+              "web-styling-scss-modules",
+            ]),
+            agentConfigs: buildAgentConfigs(selectedAgents),
+            existingStack,
+            newlyAddedSkillIds: ["web-styling-scss-modules"],
+          },
+        );
+
+        // The new web skill lands on the web agent and never crosses to the
+        // api agent, whose prior entries ride through untouched.
         expect(config.stack).toStrictEqual({
-          "api-developer": expected,
-          "cli-developer": expected,
-          "web-developer": expected,
+          "api-developer": {
+            "api-api": [{ id: "api-framework-hono", preloaded: true }],
+          },
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
+            "web-styling": [{ id: "web-styling-scss-modules", preloaded: true }],
+          },
         });
       });
 
       it("excludes project-scoped skills from global-scoped agents", () => {
         initializeMatrix(SINGLE_REACT_MATRIX);
         const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
-          selectedAgents: ["web-developer", "web-reviewer"],
+          selectedAgents: ["web-developer", "reviewer"],
           skillConfigs: buildSkillConfigs(["web-framework-react"]),
           agentConfigs: [
             ...buildAgentConfigs(["web-developer"], { scope: "global" }),
-            ...buildAgentConfigs(["web-reviewer"]),
+            ...buildAgentConfigs(["reviewer"]),
           ],
         });
 
         expect(config.stack).toStrictEqual({
-          "web-reviewer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          reviewer: {
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         });
       });
@@ -637,23 +746,23 @@ describe("config-generator", () => {
       it("includes global-scoped skills on agents of both scopes", () => {
         initializeMatrix(SINGLE_REACT_MATRIX);
         const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
-          selectedAgents: ["web-developer", "web-reviewer"],
+          selectedAgents: ["web-developer", "reviewer"],
           skillConfigs: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
             source: "agents-inc",
           }),
           agentConfigs: [
             ...buildAgentConfigs(["web-developer"], { scope: "global" }),
-            ...buildAgentConfigs(["web-reviewer"]),
+            ...buildAgentConfigs(["reviewer"]),
           ],
         });
 
         expect(config.stack).toStrictEqual({
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
-          "web-reviewer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          reviewer: {
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         });
       });
@@ -675,7 +784,7 @@ describe("config-generator", () => {
 
         expect(config.stack).toStrictEqual({
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         });
       });
@@ -687,16 +796,16 @@ describe("config-generator", () => {
           skillConfigs: buildSkillConfigs(["web-framework-react"]),
           agentConfigs: [
             ...buildAgentConfigs(["web-developer"]),
-            ...buildAgentConfigs(["web-reviewer"], { excluded: true }),
+            ...buildAgentConfigs(["reviewer"], { excluded: true }),
           ],
         });
 
         expect(config.stack).toStrictEqual({
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         });
-        expect(config.stack?.["web-reviewer"]).toBeUndefined();
+        expect(config.stack?.["reviewer"]).toBeUndefined();
       });
 
       it("inherits preloaded: true from existingStack when the same (agent, skill) pair re-appears", () => {
@@ -721,7 +830,9 @@ describe("config-generator", () => {
         });
       });
 
-      it("defaults new (agent, skill) pairs to preloaded: false when absent from existingStack", () => {
+      // The pair already in the stack keeps the flag it was saved with; the one
+      // arriving this session has nothing to keep and takes the mapping's word.
+      it("takes the mapping's default on a new (agent, skill) pair absent from existingStack", () => {
         initializeMatrix(REACT_SCSS_MATRIX);
         const existingStack: Partial<Record<AgentName, StackAgentConfig>> = {
           "web-developer": {
@@ -743,7 +854,7 @@ describe("config-generator", () => {
         expect(config.stack).toStrictEqual({
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
-            "web-styling": [{ id: "web-styling-scss-modules", preloaded: false }],
+            "web-styling": [{ id: "web-styling-scss-modules", preloaded: true }],
           },
         });
       });
@@ -777,7 +888,7 @@ describe("config-generator", () => {
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
-          "web-reviewer": {
+          reviewer: {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         };
@@ -794,7 +905,109 @@ describe("config-generator", () => {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         });
-        expect(config.stack?.["web-reviewer"]).toBeUndefined();
+        expect(config.stack?.["reviewer"]).toBeUndefined();
+      });
+
+      // A saved config.ts keys each agent's stack by the category the skill sat
+      // in when it was written, and the generator looks a prior entry up under
+      // the LIVE one. The loader is what makes the two agree: it re-keys every
+      // saved entry to its skill's live category before the generator sees it,
+      // so a moved skill's curation is still the user's word here.
+      describe("a saved stack entry whose skill has since changed category", () => {
+        const MOVED_SKILL: SkillId = "shared-monorepo-turborepo";
+        const STALE_CATEGORY_KEY = "shared-monorepo";
+        const LIVE_CATEGORY_KEY = "shared-task-runner";
+
+        /**
+         * The saved block as the generator receives it — through the same
+         * `normalizeStackRecord` that `loadProjectConfigFromDir` runs, which is
+         * the only way an on-disk stack reaches this function.
+         */
+        function savedStackAsLoaded(): Partial<Record<AgentName, StackAgentConfig>> {
+          // Boundary cast: normalizeStackRecord returns string-keyed agents (it
+          // takes the parsed TS shape); narrow to typed AgentName keys.
+          return normalizeStackRecord({
+            "web-developer": {
+              [STALE_CATEGORY_KEY]: [{ id: MOVED_SKILL, preloaded: true }],
+            },
+          });
+        }
+
+        it("keeps the entry on an ordinary edit, under the skill's live category", () => {
+          initializeMatrix(BUILT_IN_MATRIX);
+          const selectedAgents: AgentName[] = ["web-developer"];
+
+          const config = generateProjectConfigFromSkills("my-project", [MOVED_SKILL], {
+            selectedAgents,
+            skillConfigs: buildSkillConfigs([MOVED_SKILL]),
+            agentConfigs: buildAgentConfigs(selectedAgents),
+            existingStack: savedStackAsLoaded(),
+            newlyAddedSkillIds: [],
+          });
+
+          expect(
+            config.stack,
+            "a category move is a change of storage key, never a loss of the user's curation",
+          ).toStrictEqual({
+            "web-developer": {
+              [LIVE_CATEGORY_KEY]: [{ id: MOVED_SKILL, preloaded: true }],
+            },
+          });
+        });
+
+        it("keeps the saved load flag when the same save calls the skill newly added", () => {
+          initializeMatrix(BUILT_IN_MATRIX);
+          const selectedAgents: AgentName[] = ["web-developer"];
+
+          const config = generateProjectConfigFromSkills("my-project", [MOVED_SKILL], {
+            selectedAgents,
+            skillConfigs: buildSkillConfigs([MOVED_SKILL]),
+            agentConfigs: buildAgentConfigs(selectedAgents),
+            existingStack: savedStackAsLoaded(),
+            newlyAddedSkillIds: [MOVED_SKILL],
+          });
+
+          expect(config.stack).toStrictEqual({
+            "web-developer": {
+              [LIVE_CATEGORY_KEY]: [{ id: MOVED_SKILL, preloaded: true }],
+            },
+          });
+        });
+      });
+
+      describe("a saved stack entry whose skill moved out of a bucket that was split apart", () => {
+        const SPLIT_SKILL: SkillId = "api-database-drizzle";
+        const RETIRED_CATEGORY_KEY = "api-database";
+        const SPLIT_CATEGORY_KEY = "api-orm";
+
+        it("keeps the curation the user saved under the bucket's name", () => {
+          initializeMatrix(BUILT_IN_MATRIX);
+          const selectedAgents: AgentName[] = ["api-developer"];
+          // Boundary cast: normalizeStackRecord takes the parsed TS shape and returns
+          // string-keyed agents; narrow to typed AgentName keys.
+          const existingStack = normalizeStackRecord({
+            "api-developer": {
+              [RETIRED_CATEGORY_KEY]: [{ id: SPLIT_SKILL, preloaded: true }],
+            },
+          }) as Partial<Record<AgentName, StackAgentConfig>>;
+
+          const config = generateProjectConfigFromSkills("my-project", [SPLIT_SKILL], {
+            selectedAgents,
+            skillConfigs: buildSkillConfigs([SPLIT_SKILL]),
+            agentConfigs: buildAgentConfigs(selectedAgents),
+            existingStack,
+            newlyAddedSkillIds: [],
+          });
+
+          expect(
+            config.stack,
+            "a bucket split is a change of storage key, never a loss of the user's curation",
+          ).toStrictEqual({
+            "api-developer": {
+              [SPLIT_CATEGORY_KEY]: [{ id: SPLIT_SKILL, preloaded: true }],
+            },
+          });
+        });
       });
 
       it("is idempotent — feeding the output back as existingStack yields the same stack", () => {
@@ -848,7 +1061,7 @@ describe("config-generator", () => {
         expect(first.stack).toStrictEqual({
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
-            "web-styling": [{ id: "web-styling-scss-modules", preloaded: false }],
+            "web-styling": [{ id: "web-styling-scss-modules" }],
           },
         });
         expect(second.stack).toStrictEqual(first.stack);
@@ -895,20 +1108,20 @@ describe("config-generator", () => {
 
         expect(config.stack).toStrictEqual({
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [{ id: "web-framework-react" }],
           },
         });
       });
 
       it("rule 4: flipping a skill to project scope retroactively drops it from global agents", () => {
         initializeMatrix(SINGLE_REACT_MATRIX);
-        const selectedAgents: AgentName[] = ["web-developer", "web-reviewer"];
+        const selectedAgents: AgentName[] = ["web-developer", "reviewer"];
         // Seed: skill was previously global, so it landed on the global web-developer
         const existingStack: Partial<Record<AgentName, StackAgentConfig>> = {
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
-          "web-reviewer": {
+          reviewer: {
             "web-framework": [{ id: "web-framework-react", preloaded: false }],
           },
         };
@@ -919,14 +1132,14 @@ describe("config-generator", () => {
           skillConfigs: buildSkillConfigs(["web-framework-react"]),
           agentConfigs: [
             ...buildAgentConfigs(["web-developer"], { scope: "global" }),
-            ...buildAgentConfigs(["web-reviewer"]),
+            ...buildAgentConfigs(["reviewer"]),
           ],
           existingStack,
         });
 
         expect(config.stack).toStrictEqual({
-          "web-reviewer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          reviewer: {
+            "web-framework": [{ id: "web-framework-react" }],
           },
         });
         expect(config.stack?.["web-developer"]).toBeUndefined();
@@ -934,10 +1147,10 @@ describe("config-generator", () => {
 
       it("rule 4: flipping a skill to global scope retroactively re-adds it to global agents", () => {
         initializeMatrix(SINGLE_REACT_MATRIX);
-        const selectedAgents: AgentName[] = ["web-developer", "web-reviewer"];
+        const selectedAgents: AgentName[] = ["web-developer", "reviewer"];
         // Seed: skill was previously project-scoped, so global web-developer had no entry
         const existingStack: Partial<Record<AgentName, StackAgentConfig>> = {
-          "web-reviewer": {
+          reviewer: {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         };
@@ -951,16 +1164,19 @@ describe("config-generator", () => {
           }),
           agentConfigs: [
             ...buildAgentConfigs(["web-developer"], { scope: "global" }),
-            ...buildAgentConfigs(["web-reviewer"]),
+            ...buildAgentConfigs(["reviewer"]),
           ],
           existingStack,
         });
 
         expect(config.stack).toStrictEqual({
+          // The developer's entry is new — the flip is what brought the skill
+          // into reach — so it arrives with the mapping's default rather than
+          // the reviewer's saved flag.
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
-          "web-reviewer": {
+          reviewer: {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         });
@@ -994,20 +1210,20 @@ describe("config-generator", () => {
         expect(config.stack).toStrictEqual({
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
-            "web-styling": [{ id: "web-styling-scss-modules", preloaded: false }],
+            "web-styling": [{ id: "web-styling-scss-modules" }],
           },
         });
       });
 
       it("edit mode: adding a project-scoped skill to an existing stack applies the scope filter", () => {
         initializeMatrix(REACT_SCSS_MATRIX);
-        const selectedAgents: AgentName[] = ["web-developer", "web-reviewer"];
-        // Seed: react is already present on both agents (web-developer is global, web-reviewer is project)
+        const selectedAgents: AgentName[] = ["web-developer", "reviewer"];
+        // Seed: react is already present on both agents (web-developer is global, reviewer is project)
         const existingStack: Partial<Record<AgentName, StackAgentConfig>> = {
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
-          "web-reviewer": {
+          reviewer: {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
         };
@@ -1027,7 +1243,7 @@ describe("config-generator", () => {
             ],
             agentConfigs: [
               ...buildAgentConfigs(["web-developer"], { scope: "global" }),
-              ...buildAgentConfigs(["web-reviewer"]),
+              ...buildAgentConfigs(["reviewer"]),
             ],
             existingStack,
           },
@@ -1038,9 +1254,175 @@ describe("config-generator", () => {
             // Only the global skill lands here — project scss is filtered out
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
-          "web-reviewer": {
+          reviewer: {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
-            "web-styling": [{ id: "web-styling-scss-modules", preloaded: false }],
+            "web-styling": [{ id: "web-styling-scss-modules" }],
+          },
+        });
+      });
+    });
+
+    /**
+     * A triple with no prior entry has nobody's word to inherit, so it takes
+     * the shared mapping's — the same table the editor resolves against, so a
+     * skill picked in either place arrives loaded the same way. A triple that
+     * DOES have a prior entry keeps it, mapping or no mapping: that entry is
+     * the user's curation, and a bare `{ id }` states lazy as plainly as the
+     * flag states preloaded.
+     */
+    describe("load state on triples the prior stack does not carry", () => {
+      it("preloads a new triple on a role the mapping names", () => {
+        initializeMatrix(SINGLE_REACT_MATRIX);
+        const selectedAgents: AgentName[] = ["web-developer"];
+
+        const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(["web-framework-react"]),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+        });
+
+        expect(config.stack).toStrictEqual({
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
+          },
+        });
+      });
+
+      // The mapping lists the testing skills on `tester` alone, so the same
+      // skill lands preloaded on one agent and lazy on the next.
+      it("loads a new triple lazily on a role the mapping leaves out", () => {
+        initializeMatrix(VITEST_MATRIX);
+        const selectedAgents: AgentName[] = ["web-developer", "web-tester"];
+
+        const config = generateProjectConfigFromSkills("my-project", ["web-testing-vitest"], {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(["web-testing-vitest"]),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+        });
+
+        expect(config.stack).toStrictEqual({
+          "web-developer": {
+            "web-testing": [{ id: "web-testing-vitest" }],
+          },
+          "web-tester": {
+            "web-testing": [{ id: "web-testing-vitest", preloaded: true }],
+          },
+        });
+      });
+
+      it("keeps a prior bare entry lazy where the mapping would preload", () => {
+        initializeMatrix(SINGLE_REACT_MATRIX);
+        const selectedAgents: AgentName[] = ["web-developer"];
+        const existingStack: Partial<Record<AgentName, StackAgentConfig>> = {
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react" }],
+          },
+        };
+
+        const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(["web-framework-react"]),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+          existingStack,
+        });
+
+        expect(config.stack).toStrictEqual({
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react" }],
+          },
+        });
+      });
+
+      it("keeps a prior preloaded: false entry lazy where the mapping would preload", () => {
+        initializeMatrix(SINGLE_REACT_MATRIX);
+        const selectedAgents: AgentName[] = ["web-developer"];
+        const existingStack: Partial<Record<AgentName, StackAgentConfig>> = {
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          },
+        };
+
+        const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(["web-framework-react"]),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+          existingStack,
+        });
+
+        expect(config.stack).toStrictEqual({
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react" }],
+          },
+        });
+      });
+
+      it("keeps a prior preloaded entry preloaded where the mapping would not", () => {
+        initializeMatrix(VITEST_MATRIX);
+        const selectedAgents: AgentName[] = ["web-developer"];
+        const existingStack: Partial<Record<AgentName, StackAgentConfig>> = {
+          "web-developer": {
+            "web-testing": [{ id: "web-testing-vitest", preloaded: true }],
+          },
+        };
+
+        const config = generateProjectConfigFromSkills("my-project", ["web-testing-vitest"], {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(["web-testing-vitest"]),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+          existingStack,
+        });
+
+        expect(config.stack).toStrictEqual({
+          "web-developer": {
+            "web-testing": [{ id: "web-testing-vitest", preloaded: true }],
+          },
+        });
+      });
+
+      // The resolver is keyed by catalog skill, so a skill from a marketplace
+      // or a local directory has no domain it could be placed by. Relevance
+      // unknown means it reaches nobody as a new triple — assignment is the
+      // user's to make, not a broadcast's.
+      it("assigns a skill outside the catalog to no agent", () => {
+        initializeMatrix(CUSTOM_SKILL_MATRIX);
+        const selectedAgents: AgentName[] = ["web-developer"];
+        // Fabricated test ID outside the SkillId union — the matrix entry is local
+        const customSkillIds = ["web-framework-arbitrary" as SkillId];
+
+        const config = generateProjectConfigFromSkills("my-project", customSkillIds, {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(customSkillIds),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+        });
+
+        expect(config.stack).toStrictEqual({});
+      });
+
+      // The prior save's word covers outside-catalog entries too: what an
+      // earlier release or a hand edit placed is curation, not a candidate for
+      // the relevance rule to reclaim.
+      it("keeps a prior outside-catalog entry verbatim", () => {
+        initializeMatrix(CUSTOM_SKILL_MATRIX);
+        const selectedAgents: AgentName[] = ["web-developer"];
+        // Fabricated test ID outside the SkillId union — the matrix entry is local
+        const customSkillIds = ["web-framework-arbitrary" as SkillId];
+        const existingStack: Partial<Record<AgentName, StackAgentConfig>> = {
+          "web-developer": {
+            // Boundary cast: same fabricated outside-union id, as saved on disk
+            "web-framework": [{ id: "web-framework-arbitrary" as SkillId }],
+          },
+        };
+
+        const config = generateProjectConfigFromSkills("my-project", customSkillIds, {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(customSkillIds),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+          existingStack,
+        });
+
+        expect(config.stack).toStrictEqual({
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-arbitrary" }],
           },
         });
       });
@@ -1058,7 +1440,7 @@ describe("config-generator", () => {
         },
         "api-developer": {
           "api-api": [sa("api-framework-hono", true)],
-          "api-database": [sa("api-database-drizzle", true)],
+          "api-orm": [sa("api-database-drizzle", true)],
         },
       });
     });
@@ -1072,7 +1454,7 @@ describe("config-generator", () => {
         },
       });
       expect(result["cli-tester"]).toBeUndefined();
-      expect(result["web-pm"]).toBeUndefined();
+      expect(result["pm"]).toBeUndefined();
     });
 
     it("preserves single-element arrays", () => {
@@ -1096,7 +1478,7 @@ describe("config-generator", () => {
       const result = buildStackProperty(MULTI_METHODOLOGY_STACK);
 
       expect(result).toStrictEqual({
-        "pattern-scout": {
+        "codex-keeper": {
           "meta-reviewing": [
             sa("meta-methodology-research-methodology", true),
             sa("meta-reviewing-reviewing", true),
@@ -1132,7 +1514,7 @@ describe("config-generator", () => {
       const result = buildStackProperty(SHARED_CATEGORY_STACK);
 
       expect(result["web-developer"]?.["web-framework"]).toStrictEqual([sa("web-framework-react")]);
-      expect(result["web-reviewer"]?.["web-framework"]).toStrictEqual([sa("web-framework-react")]);
+      expect(result["reviewer"]?.["web-framework"]).toStrictEqual([sa("web-framework-react")]);
     });
 
     it("handles single agent with many categories", () => {
@@ -1162,6 +1544,37 @@ describe("config-generator", () => {
         },
       });
     });
+
+    // A stack that states only which skills an agent gets has said nothing
+    // about the load, so the shared mapping answers — per pair, which is how
+    // one skill can preload on one of its agents and not on another.
+    it("gives an unflagged entry the shared mapping's load, per agent", () => {
+      const result = buildStackProperty(UNFLAGGED_TWO_AGENT_STACK);
+
+      expect(result).toStrictEqual({
+        "web-developer": {
+          "web-framework": [sa("web-framework-react", true)],
+        },
+        "codex-keeper": {
+          "web-framework": [{ id: "web-framework-react" }],
+        },
+      });
+    });
+
+    // Third-party stack YAML is the explicit tier: what its author wrote wins
+    // over the mapping in both directions.
+    it("leaves an authored flag exactly as the author wrote it", () => {
+      const result = buildStackProperty(AUTHORED_FLAGS_STACK);
+
+      expect(result).toStrictEqual({
+        "web-developer": {
+          "web-framework": [sa("web-framework-react", false)],
+        },
+        "codex-keeper": {
+          "web-framework": [sa("web-framework-react", true)],
+        },
+      });
+    });
   });
 
   describe("splitConfigByScope", () => {
@@ -1171,7 +1584,7 @@ describe("config-generator", () => {
           scope: "global",
           source: "agents-inc",
         }),
-        agents: buildAgentConfigs(["web-developer", "web-reviewer"], { scope: "global" }),
+        agents: buildAgentConfigs(["web-developer", "reviewer"], { scope: "global" }),
       });
 
       const result = splitConfigByScope(config);
@@ -1185,7 +1598,7 @@ describe("config-generator", () => {
       );
       expectAgentConfigs(
         result.global,
-        buildAgentConfigs(["web-developer", "web-reviewer"], { scope: "global" }),
+        buildAgentConfigs(["web-developer", "reviewer"], { scope: "global" }),
       );
       expectSkillConfigs(result.project, []);
       expectAgentConfigs(result.project, []);
@@ -1212,13 +1625,13 @@ describe("config-generator", () => {
         ],
         agents: [
           ...buildAgentConfigs(["web-developer"], { scope: "global" }),
-          ...buildAgentConfigs(["web-reviewer"]),
+          ...buildAgentConfigs(["reviewer"]),
         ],
         stack: {
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: false }],
           },
-          "web-reviewer": {
+          reviewer: {
             "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
           },
         },
@@ -1237,9 +1650,9 @@ describe("config-generator", () => {
 
       // Project partition
       expectConfigSkills(result.project, ["web-testing-vitest"]);
-      expectConfigAgents(result.project, ["web-reviewer"]);
+      expectConfigAgents(result.project, ["reviewer"]);
       expect(result.project.stack).toStrictEqual({
-        "web-reviewer": {
+        reviewer: {
           "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
         },
       });
@@ -1349,7 +1762,7 @@ describe("config-generator", () => {
         skills: [],
         agents: [
           ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
-          ...buildAgentConfigs(["web-reviewer"], { scope: "global" }),
+          ...buildAgentConfigs(["reviewer"], { scope: "global" }),
         ],
       });
 
@@ -1361,7 +1774,7 @@ describe("config-generator", () => {
         buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
       );
       // Active global agent stays in global partition
-      expectAgentConfigs(result.global, buildAgentConfigs(["web-reviewer"], { scope: "global" }));
+      expectAgentConfigs(result.global, buildAgentConfigs(["reviewer"], { scope: "global" }));
     });
 
     it("should keep active global skills in global partition", () => {

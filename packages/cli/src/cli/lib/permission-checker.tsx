@@ -23,7 +23,7 @@ async function readSettingsPermissions(filePath: string): Promise<PermissionConf
   if (!(await fileExists(filePath))) return undefined;
   try {
     const content = await readFileSafe(filePath, MAX_CONFIG_FILE_SIZE);
-    const raw = JSON.parse(content);
+    const raw: unknown = JSON.parse(content);
     const result = settingsFileSchema.safeParse(raw);
     const parsed: SettingsFile = result.success ? result.data : {};
     return parsed.permissions;

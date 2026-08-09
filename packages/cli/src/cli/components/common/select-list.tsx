@@ -11,9 +11,9 @@ export type SelectListItem<T> = {
 export type SelectListProps<T> = {
   items: readonly SelectListItem<T>[];
   onSelect: (value: T) => void;
-  onCancel?: () => void;
-  renderItem?: (item: SelectListItem<T>, isFocused: boolean) => React.ReactNode;
-  active?: boolean;
+  onCancel?: (() => void) | undefined;
+  renderItem?: ((item: SelectListItem<T>, isFocused: boolean) => React.ReactNode) | undefined;
+  active?: boolean | undefined;
 };
 
 export function SelectList<T>({
@@ -25,8 +25,9 @@ export function SelectList<T>({
 }: SelectListProps<T>): React.ReactElement {
   const handleEnter = useCallback(
     (index: number) => {
-      if (items.length > 0 && items[index]) {
-        onSelect(items[index].value);
+      const item = items[index];
+      if (item) {
+        onSelect(item.value);
       }
     },
     [items, onSelect],
@@ -34,8 +35,8 @@ export function SelectList<T>({
 
   const { focusedIndex } = useKeyboardNavigation(
     items.length,
-    { onEnter: handleEnter, onEscape: onCancel },
-    { vimKeys: false, active },
+    { onEnter: handleEnter, ...(onCancel !== undefined && { onEscape: onCancel }) },
+    { vimKeys: false, ...(active !== undefined && { active }) },
   );
 
   return (
@@ -46,13 +47,13 @@ export function SelectList<T>({
 
         return (
           <Box key={index}>
-            <Text bold={isFocused} color={isFocused ? CLI_COLORS.PRIMARY : undefined}>
+            <Text bold={isFocused} {...(isFocused && { color: CLI_COLORS.PRIMARY })}>
               {marker}{" "}
             </Text>
             {renderItem ? (
               renderItem(item, isFocused)
             ) : (
-              <Text bold={isFocused} color={isFocused ? CLI_COLORS.PRIMARY : undefined}>
+              <Text bold={isFocused} {...(isFocused && { color: CLI_COLORS.PRIMARY })}>
                 {item.label}
               </Text>
             )}

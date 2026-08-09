@@ -19,7 +19,13 @@ import {
   createMockMarketplace,
   createMockMarketplacePlugin,
 } from "../__tests__/factories/plugin-factories.js";
-import { CLAUDE_DIR, STANDARD_DIRS, STANDARD_FILES, marketplaceManifestPath } from "../../consts";
+import {
+  CLAUDE_DIR,
+  SKILL_RULES_PATH,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+  marketplaceManifestPath,
+} from "../../consts";
 import {
   createTestSource,
   cleanupTestSource,
@@ -35,17 +41,50 @@ import type {
   SkillSlug,
 } from "../../types";
 import { renderConfigTs, renderSkillMd } from "../__tests__/content-generators";
+import { disableBuffering, drainBuffer, enableBuffering } from "../../utils/logger";
 import { defaultCategories } from "../configuration/default-categories";
+import { defaultStacks } from "../configuration/default-stacks";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
 import type { LocalSkillDiscoveryResult } from "../skills";
+import { firstElement } from "../__tests__/helpers/element-at.js";
 
 const FIXTURE_SKILLS = [...DEFAULT_TEST_SKILLS, ...EXTRA_DOMAIN_TEST_SKILLS];
 
 const FIXTURE_SKILL_COUNT = FIXTURE_SKILLS.length;
 
 const BUILT_IN_CATEGORY_COUNT = Object.keys(defaultCategories).length;
+
+/** An absolute local path with nothing at it — the loader must refuse, not load empty. */
+const MISSING_SOURCE_PATH = "/non/existent/path";
+
+/** The opening of the warning a rule naming a slug no loaded skill carries produces. */
+const UNRESOLVED_SLUG_WARNING = "Unresolved slug";
+
+/**
+ * A slug the built-in rules name and no test source ships — the dangling reference
+ * a source's OWN `skill-rules.ts` is written around below.
+ */
+const SLUG_NO_TEST_SOURCE_SHIPS: SkillSlug = "angular-standalone";
+
+/** A slug the test source does ship — read off the fixture so it cannot drift from it. */
+const SLUG_THE_TEST_SOURCE_SHIPS: SkillSlug = firstElement(FIXTURE_SKILLS).slug;
+
+/**
+ * What the load said, read the way `init` and `edit` read it: buffering is the
+ * production mechanism that carries `warn()` past Ink's `clearTerminal` into the
+ * wizard's startup band, so draining it is asking the question the band answers.
+ */
+async function warningsWhileLoading(sourceFlag: string, projectDir: string): Promise<string[]> {
+  enableBuffering();
+  try {
+    await loadSkillsMatrixFromSource({ sourceFlag, projectDir });
+    return drainBuffer().map((message) => message.text);
+  } finally {
+    disableBuffering();
+  }
+}
 
 const FIXTURE_STACKS: TestStack[] = [
   {
@@ -207,19 +246,16 @@ describe("source-loader", () => {
     });
 
     describe("error handling", () => {
-      it("should return empty skills for non-existent skills directory", async () => {
-        // With new architecture: matrix loads from CLI repo (always succeeds)
-        // Skills extraction gracefully returns empty for non-existent paths
-        const result = await loadSkillsMatrixFromSource({
-          sourceFlag: "/non/existent/path",
-          projectDir: tempDir,
-        });
-
-        // Matrix loads from CLI, but no skills from non-existent path
-        expect(typeof result.matrix.version).toBe("string");
-        expect(Object.keys(result.matrix.categories)).toHaveLength(BUILT_IN_CATEGORY_COUNT);
-        // No skills should be extracted from non-existent source
-        expect(Object.keys(result.matrix.skills)).toHaveLength(0);
+      it("should reject a local source path that does not exist, naming the path", async () => {
+        // A path the user named and the CLI cannot read is an argument error, not an
+        // empty catalog: silently loading nothing let `init`/`edit` mount a wizard over
+        // a source the user never asked for. This used to resolve to an empty matrix.
+        await expect(
+          loadSkillsMatrixFromSource({
+            sourceFlag: MISSING_SOURCE_PATH,
+            projectDir: tempDir,
+          }),
+        ).rejects.toThrow(`Local source not found: '${MISSING_SOURCE_PATH}'`);
       });
 
       it("should return empty skills if skills directory is missing", async () => {
@@ -240,6 +276,65 @@ describe("source-loader", () => {
         expect(Object.keys(result.matrix.skills)).toHaveLength(0);
       });
     });
+  });
+});
+
+describe("source-loader relationship rules", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("cc-relationship-rules-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  it("says nothing about the built-in slugs a source does not ship", async () => {
+    // The built-in rules are written against the whole public catalogue. A source
+    // shipping a handful of its skills leaves the rest of those names dangling, and
+    // every dangling name used to warn once per skill in the source — thousands of
+    // lines, painted above the wizard's step since the startup band landed. None of
+    // them was ever actionable: the reference resolves to nothing and is dropped.
+    const warnings = await warningsWhileLoading(fixtureDirs.sourceDir, tempDir);
+
+    expect(warnings.filter((text) => text.includes(UNRESOLVED_SLUG_WARNING))).toStrictEqual([]);
+  });
+
+  it("still warns about a slug the source's own rules name and its skills do not carry", async () => {
+    // The other half of the same rule: a slug a source AUTHOR typed is that source's
+    // defect, and this warning is the only place it is ever reported.
+    const dirs = await createTestSource({ skills: FIXTURE_SKILLS });
+    try {
+      await writeFile(
+        path.join(dirs.sourceDir, SKILL_RULES_PATH),
+        renderConfigTs({
+          version: "1.0.0",
+          relationships: {
+            conflicts: [
+              {
+                skills: [SLUG_THE_TEST_SOURCE_SHIPS, SLUG_NO_TEST_SOURCE_SHIPS],
+                reason: "One slug this source ships, one it does not",
+              },
+            ],
+            discourages: [],
+            requires: [],
+            alternatives: [],
+          },
+        }),
+      );
+
+      const warnings = await warningsWhileLoading(dirs.sourceDir, tempDir);
+      const unresolved = warnings.filter((text) => text.includes(UNRESOLVED_SLUG_WARNING));
+
+      expect(unresolved).not.toStrictEqual([]);
+      expect(
+        unresolved.filter((text) => !text.includes(SLUG_NO_TEST_SOURCE_SHIPS)),
+        "only the slug the source's own rules name may be reported unresolved",
+      ).toStrictEqual([]);
+    } finally {
+      await cleanupTestSource(dirs);
+    }
   });
 });
 
@@ -324,7 +419,7 @@ describe("source-loader local skills integration", () => {
     // Local categories should NOT be added if no local skills
     // (Matrix may already have local categories from previous tests,
     // so we check that no local skills are in the skills object)
-    const localSkills = Object.values(result.matrix.skills).filter((s) => s!.local === true);
+    const localSkills = Object.values(result.matrix.skills).filter((s) => s.local === true);
     expect(localSkills).toHaveLength(0);
   });
 
@@ -389,7 +484,7 @@ describe("source-loader local skills integration", () => {
     });
 
     // Existing marketplace skills should still be present
-    const marketplaceSkills = Object.values(result.matrix.skills).filter((s) => s!.local !== true);
+    const marketplaceSkills = Object.values(result.matrix.skills).filter((s) => s.local !== true);
     expect(marketplaceSkills.length).toBe(FIXTURE_SKILL_COUNT);
 
     // Local skill should also be present with normalized ID
@@ -617,7 +712,7 @@ describe("source-loader config-driven paths", () => {
     });
 
     expect(result.matrix.suggestedStacks).toHaveLength(1);
-    expect(result.matrix.suggestedStacks[0].id).toBe("custom-path-stack");
+    expect(firstElement(result.matrix.suggestedStacks).id).toBe("custom-path-stack");
   });
 
   it("should fall back to convention defaults when source has no config", async () => {
@@ -741,11 +836,11 @@ describe("source-loader integration", () => {
 
     // Should load the custom stack from source, not CLI stacks
     expect(result.matrix.suggestedStacks).toHaveLength(1);
-    expect(result.matrix.suggestedStacks[0].id).toBe("custom-test-stack");
-    expect(result.matrix.suggestedStacks[0].name).toBe("Custom Test Stack");
+    expect(firstElement(result.matrix.suggestedStacks).id).toBe("custom-test-stack");
+    expect(firstElement(result.matrix.suggestedStacks).name).toBe("Custom Test Stack");
   });
 
-  it("should fall back to CLI stacks when source has no config/stacks.ts", async () => {
+  it("should offer no stacks when a custom source ships none", async () => {
     // Create a source directory without stacks.ts
     const sourceDir = path.join(tempDir, "no-stacks-source");
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
@@ -755,8 +850,25 @@ describe("source-loader integration", () => {
       projectDir: tempDir,
     });
 
-    // Should fall back to CLI's stacks (which has multiple stacks)
-    expect(result.matrix.suggestedStacks.length).toBeGreaterThan(1);
+    // The built-in catalogue stands in for the default public marketplace and no
+    // other: a source the user named by path ships its own stacks or offers none.
+    expect(result.matrix.suggestedStacks).toStrictEqual([]);
+  });
+
+  it("should stand the built-in stacks in when the DEFAULT source ships none", async () => {
+    // The default source's stacks normally come pre-resolved on BUILT_IN_MATRIX,
+    // which `resolveBaseResult` short-circuits to. Dev mode is the one runtime
+    // path that resolves the default source from disk instead, so it is where
+    // the stand-in itself is observable.
+    const result = await loadSkillsMatrixFromSource({
+      projectDir: tempDir,
+      devMode: true,
+      skipExtraSources: true,
+    });
+
+    expect(result.matrix.suggestedStacks.map((stack) => stack.id)).toStrictEqual(
+      defaultStacks.map((stack) => stack.id),
+    );
   });
 
   it("should load categories", async () => {
@@ -907,7 +1019,7 @@ describe("convertStackToResolvedStack", () => {
         "web-developer": {
           "web-framework": [createMockSkillAssignment("web-framework-react")],
         },
-        "web-reviewer": {
+        reviewer: {
           "web-framework": [createMockSkillAssignment("web-framework-react")],
         },
       },
@@ -1019,8 +1131,10 @@ describe("mergeLocalSkillsIntoMatrix", () => {
 
     const skills = result.skills as Record<string, ResolvedSkill>;
     // Should inherit the remote skill's category, not the local's declaration
-    expect(skills["web-framework-react"].category).toBe("web-framework");
-    expect(skills["web-framework-react"].local).toBe(true);
+    expect(skills["web-framework-react"]).toMatchObject({
+      category: "web-framework",
+      local: true,
+    });
   });
 
   it("should use local skill category when no remote skill exists", () => {
@@ -1041,7 +1155,7 @@ describe("mergeLocalSkillsIntoMatrix", () => {
     const result = mergeLocalSkillsIntoMatrix(matrix, localResult);
 
     const skills = result.skills as Record<string, ResolvedSkill>;
-    expect(skills["web-tooling-custom"].category).toBe("web-tooling");
+    expect(skills["web-tooling-custom"]).toMatchObject({ category: "web-tooling" });
   });
 
   it("should inherit slug and displayName from existing remote skill", () => {
@@ -1068,8 +1182,7 @@ describe("mergeLocalSkillsIntoMatrix", () => {
 
     const skills = result.skills as Record<string, ResolvedSkill>;
     // Should preserve slug and displayName from the remote skill
-    expect(skills["web-framework-react"].slug).toBe("react");
-    expect(skills["web-framework-react"].displayName).toBe("React");
+    expect(skills["web-framework-react"]).toMatchObject({ slug: "react", displayName: "React" });
   });
 
   it("should preserve existing skills when adding new local skills", () => {
@@ -1098,7 +1211,7 @@ describe("mergeLocalSkillsIntoMatrix", () => {
       expect.objectContaining({ id: "web-tooling-custom", local: true }),
     );
     // Existing skill should not be marked as local
-    expect(skills["web-framework-react"].local).toBeUndefined();
+    expect(skills["web-framework-react"]).not.toHaveProperty("local");
   });
 
   it("should add category definition for local skill when category does not exist", () => {
@@ -1173,15 +1286,13 @@ describe("mergeLocalSkillsIntoMatrix", () => {
     const result = mergeLocalSkillsIntoMatrix(matrix, localResult);
 
     const skills = result.skills as Record<string, ResolvedSkill>;
-    expect(skills["web-tooling-custom"].local).toBe(true);
-    expect(skills["api-database-drizzle"].local).toBe(true);
+    expect(skills["web-tooling-custom"]).toMatchObject({ local: true });
+    expect(skills["api-database-drizzle"]).toMatchObject({ local: true });
   });
 
   it("should inherit conflict and relationship data from existing remote skill", () => {
     const remoteSkill = createMockSkill("web-framework-react", {
       conflictsWith: [{ skillId: "web-framework-vue-composition-api", reason: "Choose one" }],
-      isRecommended: true,
-      recommendedReason: "Most popular",
       requires: [{ skillIds: ["web-state-zustand"], needsAny: false, reason: "State needed" }],
     });
     const matrix = createMockMatrix(remoteSkill);
@@ -1200,11 +1311,10 @@ describe("mergeLocalSkillsIntoMatrix", () => {
 
     const skills = result.skills as Record<string, ResolvedSkill>;
     const mergedSkill = skills["web-framework-react"];
+    if (!mergedSkill) throw new Error("the merge must keep web-framework-react in the matrix");
     expect(mergedSkill.conflictsWith).toStrictEqual([
       { skillId: "web-framework-vue-composition-api", reason: "Choose one" },
     ]);
-    expect(mergedSkill.isRecommended).toBe(true);
-    expect(mergedSkill.recommendedReason).toBe("Most popular");
     expect(mergedSkill.requires).toStrictEqual([
       { skillIds: ["web-state-zustand"], needsAny: false, reason: "State needed" },
     ]);
@@ -1227,6 +1337,6 @@ describe("mergeLocalSkillsIntoMatrix", () => {
     const result = mergeLocalSkillsIntoMatrix(matrix, localResult);
 
     const skills = result.skills as Record<string, ResolvedSkill>;
-    expect(skills["web-tooling-custom"].custom).toBe(true);
+    expect(skills["web-tooling-custom"]).toMatchObject({ custom: true });
   });
 });

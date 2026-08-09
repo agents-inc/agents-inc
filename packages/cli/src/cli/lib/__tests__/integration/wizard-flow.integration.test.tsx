@@ -6,6 +6,7 @@ import { initializeMatrix } from "../../matrix/matrix-provider";
 import * as wizardLib from "../../wizard/index.js";
 import { createComprehensiveMatrix, createBasicMatrix } from "../factories/matrix-factories.js";
 import type { AgentName, SkillId } from "../../../types";
+import { firstElement } from "../helpers/element-at.js";
 import {
   ARROW_DOWN,
   ENTER,
@@ -25,15 +26,13 @@ import {
  * Focus starts on "Web" (index 0). We press down 4 times to reach
  * "Continue" (index 4) and then Enter to proceed.
  */
-const navigateDomainSelectionToBuild = async (stdin: {
-  write: (data: string) => Promise<void> | void;
-}) => {
+const navigateDomainSelectionToBuild = async (stdin: { write: (data: string) => void }) => {
   const DOMAIN_CONTINUE_NAV_COUNT = 4;
   for (let i = 0; i < DOMAIN_CONTINUE_NAV_COUNT; i++) {
-    await stdin.write(ARROW_DOWN);
+    stdin.write(ARROW_DOWN);
     await delay(STEP_TRANSITION_DELAY_MS);
   }
-  await stdin.write(ENTER); // Continue
+  stdin.write(ENTER); // Continue
   await delay(STEP_TRANSITION_DELAY_MS);
 };
 
@@ -43,18 +42,18 @@ const navigateDomainSelectionToBuild = async (stdin: {
  * completion ENTER sequence shared by the result-shape tests.
  */
 const completeStackFlowFromStart = async (stdin: { write: (data: string) => void }) => {
-  await stdin.write(ENTER); // Select first stack
+  stdin.write(ENTER); // Select first stack
   await delay(STEP_TRANSITION_DELAY_MS);
   await navigateDomainSelectionToBuild(stdin); // Domain -> Build
-  await stdin.write(ENTER); // Build: advance from web to api domain
+  stdin.write(ENTER); // Build: advance from web to api domain
   await delay(STEP_TRANSITION_DELAY_MS);
-  await stdin.write(ENTER); // Build: advance from api domain -> Sources
+  stdin.write(ENTER); // Build: advance from api domain -> Sources
   await delay(STEP_TRANSITION_DELAY_MS);
-  await stdin.write(ENTER); // Sources -> Agents
+  stdin.write(ENTER); // Sources -> Agents
   await delay(STEP_TRANSITION_DELAY_MS);
-  await stdin.write(ENTER); // Agents -> Confirm
+  stdin.write(ENTER); // Agents -> Confirm
   await delay(STEP_TRANSITION_DELAY_MS);
-  await stdin.write(ENTER); // Confirm -> complete
+  stdin.write(ENTER); // Confirm -> complete
   await delay(STEP_TRANSITION_DELAY_MS);
 };
 
@@ -85,7 +84,7 @@ describe("Wizard integration", () => {
       expect(lastFrame()).toContain("React Fullstack");
       expect(lastFrame()).toContain("Choose a stack");
 
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Domain selection sub-view (ViewTitle removed from CheckboxGrid; verify domain options)
@@ -94,25 +93,25 @@ describe("Wizard integration", () => {
       await navigateDomainSelectionToBuild(stdin);
 
       // Navigate through remaining steps manually (2 domains: web, api)
-      await stdin.write(ENTER); // Build: advance from web domain to api domain
+      stdin.write(ENTER); // Build: advance from web domain to api domain
       await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER); // Build: advance from api domain -> Sources
+      stdin.write(ENTER); // Build: advance from api domain -> Sources
       await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER); // Sources -> Agents
+      stdin.write(ENTER); // Sources -> Agents
       await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER); // Agents -> Confirm
+      stdin.write(ENTER); // Agents -> Confirm
       await delay(STEP_TRANSITION_DELAY_MS);
 
       expect(lastFrame()).toContain("Confirm");
 
       // Complete the wizard (ENTER on confirm triggers completion)
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       expect(onComplete).toHaveBeenCalledTimes(1);
       expect(onCancel).not.toHaveBeenCalled();
 
-      const result = onComplete.mock.calls[0][0];
+      const result = firstElement(firstElement(onComplete.mock.calls));
       expect(result.selectedStackId).toBe("react-fullstack");
       expect(result.cancelled).toBe(false);
     });
@@ -131,7 +130,7 @@ describe("Wizard integration", () => {
 
       await delay(RENDER_DELAY_MS);
 
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Domain selection sub-view (ViewTitle removed from CheckboxGrid; verify domain options)
@@ -161,14 +160,14 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       expect(lastFrame()).toContain("Choose a stack");
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // After scrolling down, "Start from scratch" should be visible in the viewport
       expect(lastFrame()).toContain("Start from scratch");
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Domain selection step (now its own step, not a sub-view of stack)
@@ -231,10 +230,10 @@ describe("Wizard integration", () => {
 
       expect(lastFrame()).toContain("Skills");
 
-      await stdin.write(SPACE);
+      stdin.write(SPACE);
       await delay(STEP_TRANSITION_DELAY_MS);
 
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       const state = useWizardStore.getState();
@@ -255,11 +254,11 @@ describe("Wizard integration", () => {
 
       await delay(RENDER_DELAY_MS);
 
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       const state = useWizardStore.getState();
@@ -350,7 +349,7 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Continue to next domain
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Should now be on second domain
@@ -383,7 +382,7 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Press escape to go back to first domain
-      await stdin.write(ESCAPE);
+      stdin.write(ESCAPE);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Should be back on first domain
@@ -407,7 +406,7 @@ describe("Wizard integration", () => {
 
       await delay(RENDER_DELAY_MS);
 
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Now at domain selection step, navigate to build
@@ -419,7 +418,7 @@ describe("Wizard integration", () => {
       expect(state.selectedStackId).toBe("react-fullstack");
 
       // Go back from build to domains step
-      await stdin.write(ESCAPE);
+      stdin.write(ESCAPE);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Should be back at domains step
@@ -442,11 +441,11 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Navigate to scratch (past 2 stacks)
-      await stdin.write(ARROW_DOWN); // Vue Stack
+      stdin.write(ARROW_DOWN); // Vue Stack
       await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ARROW_DOWN); // Start from scratch
+      stdin.write(ARROW_DOWN); // Start from scratch
       await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Now at domain selection - verify domains were pre-selected
@@ -471,7 +470,7 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Press escape at first step (initial stack selection)
-      await stdin.write(ESCAPE);
+      stdin.write(ESCAPE);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Should have called onCancel
@@ -491,14 +490,14 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Select a stack (approach gets set, domain selection shows)
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Should be at domain selection (ViewTitle removed; verify domain options render)
       expect(lastFrame()).toContain("Web");
 
       // Press ESC to go back from domain selection
-      await stdin.write(ESCAPE);
+      stdin.write(ESCAPE);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Should be back at stack/scratch selection (approach reset to null)
@@ -506,7 +505,7 @@ describe("Wizard integration", () => {
       expect(onCancel).not.toHaveBeenCalled();
 
       // Now escape at initial selection should cancel
-      await stdin.write(ESCAPE);
+      stdin.write(ESCAPE);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       expect(onCancel).toHaveBeenCalledTimes(1);
@@ -527,7 +526,7 @@ describe("Wizard integration", () => {
 
       // Step 1: Unified stack selection - see stacks directly
       expect(lastFrame()).toContain("React Fullstack");
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Step 1b: Domain selection (ViewTitle removed from CheckboxGrid; verify domain options)
@@ -552,16 +551,16 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Step 1: Select first stack
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Step 1b: Navigate through domain selection
       await navigateDomainSelectionToBuild(stdin);
 
       // Step 2: Build - navigate through both domains (web, api)
-      await stdin.write(ENTER); // Advance from web domain to api domain
+      stdin.write(ENTER); // Advance from web domain to api domain
       await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER); // Advance from api domain -> Sources
+      stdin.write(ENTER); // Advance from api domain -> Sources
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Should be past build step
@@ -585,7 +584,7 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Press escape at first step
-      await stdin.write(ESCAPE);
+      stdin.write(ESCAPE);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       expect(onCancel).toHaveBeenCalledTimes(1);
@@ -604,13 +603,13 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Select a stack to get to domain selection
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
       // Domain selection sub-view (ViewTitle removed from CheckboxGrid; verify domain options)
       expect(lastFrame()).toContain("Web");
 
       // Press ESC to go back from domain selection
-      await stdin.write(ESCAPE);
+      stdin.write(ESCAPE);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Should be back at stack/scratch selection
@@ -632,7 +631,7 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Select first stack
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Navigate through domain selection to build
@@ -643,7 +642,7 @@ describe("Wizard integration", () => {
       expect(state.step).toBe("build");
 
       // Go back using escape
-      await stdin.write(ESCAPE);
+      stdin.write(ESCAPE);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Should be back at domains step
@@ -662,7 +661,7 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Select first stack
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Navigate through domain selection to build
@@ -672,7 +671,7 @@ describe("Wizard integration", () => {
       expect(useWizardStore.getState().step).toBe("build");
 
       // Go back using escape
-      await stdin.write(ESCAPE);
+      stdin.write(ESCAPE);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Stack should still be selected in store
@@ -728,9 +727,9 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Navigate to second stack (Testing Stack) and select
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(STEP_TRANSITION_DELAY_MS);
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Should be at domain selection with testing-stack selected
@@ -780,7 +779,7 @@ describe("Wizard integration", () => {
 
       // Verify result structure
       expect(onComplete).toHaveBeenCalledTimes(1);
-      const result = onComplete.mock.calls[0][0];
+      const result = firstElement(firstElement(onComplete.mock.calls));
 
       expect(result).toHaveProperty("skills");
       expect(result).toHaveProperty("selectedStackId");
@@ -807,7 +806,7 @@ describe("Wizard integration", () => {
       // Complete full flow: stack -> domain -> build (2 domains) -> sources -> agents -> confirm
       await completeStackFlowFromStart(stdin);
 
-      const result = onComplete.mock.calls[0][0];
+      const result = firstElement(firstElement(onComplete.mock.calls));
 
       // Should include at least the preselected skills (methodology skills)
       expect(Array.isArray(result.skills)).toBe(true);
@@ -843,7 +842,7 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // Navigate to domain selection by selecting a stack
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       const frame = lastFrame();
@@ -895,7 +894,7 @@ describe("Wizard integration", () => {
       expect(frame).not.toContain("Intro");
 
       // Navigate to domain selection step (select a stack)
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Check tabs are still visible on domain selection step
@@ -985,7 +984,7 @@ describe("Wizard integration", () => {
 
       // Navigate from build to sources -> agents -> confirm -> complete
       // Press Enter to continue from Build (selections already pre-populated)
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       const stateAfterBuild = useWizardStore.getState();
@@ -1078,11 +1077,11 @@ describe("Wizard integration", () => {
       await delay(RENDER_DELAY_MS);
 
       // buildCategoriesForDomain signature:
-      //   (domain, allSelections, selections, installedSkillIds?, skillConfigs?, filterIncompatible?)
-      // Assert that at least one call received our prop value as the 4th arg.
+      //   (domain, allSelections, installedSkillIds?, skillConfigs?)
+      // Assert that at least one call received our prop value as the 3rd arg.
       const calls = spy.mock.calls;
       expect(calls.length).toBeGreaterThan(0);
-      const matchingCall = calls.find((c) => c[3] === PROP_INSTALLED_IDS);
+      const matchingCall = calls.find((c) => c[2] === PROP_INSTALLED_IDS);
       expect(matchingCall).toBeDefined();
 
       spy.mockRestore();
@@ -1116,7 +1115,7 @@ describe("Wizard integration", () => {
       useWizardStore.setState({ selectedAgents: [] });
 
       // Press Enter to trigger StepSources.onContinue.
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // Gate behavior: because initialAgents was non-empty at launch,
@@ -1146,7 +1145,7 @@ describe("Wizard integration", () => {
 
       await delay(RENDER_DELAY_MS);
 
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(STEP_TRANSITION_DELAY_MS);
 
       // No initialAgents gate -> preselect should have populated selectedAgents

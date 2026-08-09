@@ -14,6 +14,7 @@ import { writeTestSkill } from "../__tests__/helpers/disk-writers.js";
 import { renderSkillMd } from "../__tests__/content-generators";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { computeSkillFolderHash } from "../versioning";
+import { firstElement } from "../__tests__/helpers/element-at.js";
 import {
   PLUGIN_MANIFEST_DIR,
   PLUGIN_MANIFEST_FILE,
@@ -315,7 +316,7 @@ describe("skill-plugin-compiler", () => {
 
       expect(results).toHaveLength(1);
       // Should use frontmatter.name, not directory name
-      expect(results[0].skillName).toBe("actual-skill-name");
+      expect(firstElement(results).skillName).toBe("actual-skill-name");
     });
 
     it("should continue compiling other skills when one fails", async () => {

@@ -1,8 +1,11 @@
-import { Hook } from "@oclif/core";
+import type { Hook } from "@oclif/core";
 import { resolveSource } from "../lib/configuration/index.js";
 import { runDashboardFlow } from "../commands/init.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import type { ConfigWithSource } from "../base-command.js";
+
+/** oclif's id for the one command that may name a source. */
+const INIT_COMMAND_ID = "init";
 
 const hook: Hook<"init"> = async function (options) {
   const projectDir = process.cwd();
@@ -15,10 +18,17 @@ const hook: Hook<"init"> = async function (options) {
     }
   }
 
-  const sourceFlag = extractSourceFlag(options.argv);
+  // `init` is the one command that may name a source, so it is the one command whose
+  // argv can carry `--source` and the one caller the environment rung answers.
+  const isInit = options.id === INIT_COMMAND_ID;
+  const sourceFlag = isInit ? extractSourceFlag(options.argv) : undefined;
 
   try {
-    const resolvedConfig = await resolveSource(sourceFlag, projectDir);
+    const resolvedConfig = await resolveSource({
+      caller: isInit ? "init" : "stored",
+      flag: sourceFlag,
+      projectDir,
+    });
     // Boundary cast: oclif Config is a class (not augmentable); read in BaseCommand.sourceConfig
     (options.config as unknown as ConfigWithSource).sourceConfig = resolvedConfig;
   } catch {

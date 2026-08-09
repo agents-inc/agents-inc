@@ -6,7 +6,6 @@ import type { PluginAuthor, PluginManifest } from "../../types";
 
 const PLUGIN_DIR_NAME = PLUGIN_MANIFEST_DIR;
 const PLUGIN_MANIFEST_FILE = STANDARD_FILES.PLUGIN_JSON;
-const SKILL_PLUGIN_PREFIX = "";
 const AGENT_PLUGIN_PREFIX = "agent-";
 
 export type SkillManifestOptions = {
@@ -24,18 +23,6 @@ export type AgentManifestOptions = {
   version?: string;
 };
 
-export type StackManifestOptions = {
-  stackName: string;
-  description?: string;
-  author?: string;
-  authorEmail?: string;
-  version?: string;
-  keywords?: string[];
-  hasSkills?: boolean;
-  hasAgents?: boolean;
-  hasHooks?: boolean;
-};
-
 function buildAuthor(name?: string, email?: string): PluginAuthor | undefined {
   if (!name) {
     return undefined;
@@ -46,7 +33,7 @@ function buildAuthor(name?: string, email?: string): PluginAuthor | undefined {
 export function generateSkillPluginManifest(options: SkillManifestOptions): PluginManifest {
   const author = buildAuthor(options.author, options.authorEmail);
   return {
-    name: `${SKILL_PLUGIN_PREFIX}${options.skillName}`,
+    name: options.skillName,
     version: options.version ?? DEFAULT_VERSION,
     skills: "./skills/",
     ...(options.description ? { description: options.description } : {}),
@@ -61,21 +48,6 @@ export function generateAgentPluginManifest(options: AgentManifestOptions): Plug
     version: options.version ?? DEFAULT_VERSION,
     agents: "./agents/",
     ...(options.description ? { description: options.description } : {}),
-  };
-}
-
-// Note: Claude Code plugins don't support an agents field in the stack manifest —
-// agents are discovered from the ./agents/ directory automatically.
-export function generateStackPluginManifest(options: StackManifestOptions): PluginManifest {
-  const author = buildAuthor(options.author, options.authorEmail);
-  return {
-    name: options.stackName,
-    version: options.version ?? DEFAULT_VERSION,
-    ...(options.hasSkills ? { skills: "./skills/" } : {}),
-    ...(options.description ? { description: options.description } : {}),
-    ...(author ? { author } : {}),
-    ...(options.keywords?.length ? { keywords: options.keywords } : {}),
-    ...(options.hasHooks ? { hooks: "./hooks/hooks.json" } : {}),
   };
 }
 

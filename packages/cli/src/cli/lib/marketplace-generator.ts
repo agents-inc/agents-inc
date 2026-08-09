@@ -27,10 +27,10 @@ function convertManifestToMarketplacePlugin(
   return {
     name: manifest.name,
     source: `./${pluginRoot}/${pluginDirName}`,
-    description: manifest.description,
-    version: manifest.version,
-    author: manifest.author,
-    keywords: manifest.keywords,
+    ...(manifest.description !== undefined && { description: manifest.description }),
+    ...(manifest.version !== undefined && { version: manifest.version }),
+    ...(manifest.author !== undefined && { author: manifest.author }),
+    ...(manifest.keywords !== undefined && { keywords: manifest.keywords }),
   };
 }
 
@@ -46,7 +46,8 @@ export async function generateMarketplace(
   const plugins: MarketplacePlugin[] = [];
 
   for (const manifestFile of manifestFiles) {
-    const pluginDirName = manifestFile.split("/")[0];
+    const separator = manifestFile.indexOf("/");
+    const pluginDirName = separator === -1 ? manifestFile : manifestFile.slice(0, separator);
     const pluginDir = path.join(pluginsDir, pluginDirName);
 
     const manifest = await readPluginManifest(pluginDir);

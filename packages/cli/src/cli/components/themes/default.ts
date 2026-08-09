@@ -10,6 +10,15 @@ const VARIANT_COLORS: Partial<Record<string, string>> = {
 };
 
 /**
+ * @inkjs/ui types the props it hands a style function as `any`, so reading
+ * `variant` off them is an unchecked access at four call sites. Taking it as
+ * `unknown` here is the boundary: the value is only ever a lookup key, and a
+ * variant the map does not name falls back to what the call site passes.
+ */
+const variantColor = (variant: unknown, fallback: string): string =>
+  VARIANT_COLORS[String(variant)] ?? fallback;
+
+/**
  * CLI theme matching existing picocolors styling
  *
  * Color scheme:
@@ -48,17 +57,17 @@ export const cliTheme = extendTheme(defaultTheme, {
       styles: {
         container: ({ variant }) => ({
           borderStyle: "round",
-          borderColor: VARIANT_COLORS[variant] ?? CLI_COLORS.INFO,
+          borderColor: variantColor(variant, CLI_COLORS.INFO),
         }),
       },
     },
     Alert: {
       styles: {
         container: ({ variant }) => ({
-          borderColor: VARIANT_COLORS[variant] ?? CLI_COLORS.INFO,
+          borderColor: variantColor(variant, CLI_COLORS.INFO),
         }),
         icon: ({ variant }) => ({
-          color: VARIANT_COLORS[variant] ?? CLI_COLORS.INFO,
+          color: variantColor(variant, CLI_COLORS.INFO),
         }),
       },
     },
@@ -78,7 +87,7 @@ export const cliTheme = extendTheme(defaultTheme, {
     Badge: {
       styles: {
         container: ({ variant }) => ({
-          color: VARIANT_COLORS[variant] ?? CLI_COLORS.PRIMARY,
+          color: variantColor(variant, CLI_COLORS.PRIMARY),
         }),
       },
     },

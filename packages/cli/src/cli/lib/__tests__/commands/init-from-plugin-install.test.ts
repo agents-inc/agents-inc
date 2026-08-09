@@ -105,6 +105,10 @@ function buildTwoScopePluginPayload() {
         assignments: { [WEB_DEV]: "lazy" },
       }),
     },
+    // Pinned into the project because the project-scoped skill is assigned to it: a sub-agent
+    // resting at the shared selection default could not hold that skill, and the decode refuses
+    // the pair rather than handing the pipeline a row it has nowhere to write.
+    agents: { [WEB_DEV]: { scope: "project" } },
   });
 }
 
@@ -143,6 +147,11 @@ describe("init --from: plugin install spine", () => {
     tempDir = await createTempDir("cc-init-from-plugin-");
     projectDir = path.join(tempDir, "project");
     await mkdir(projectDir, { recursive: true });
+
+    // `--from` is greenfield-only, and the global half of that check reads `os.homedir()`. Without
+    // a fake HOME this spec would consult the developer's own ~/.claude-src and refuse to install
+    // the global-scoped skill on any machine that happens to have one.
+    vi.stubEnv("HOME", tempDir);
 
     // A settings file that already grants a permission, so the post-install
     // permission notice resolves to null and never renders.
@@ -183,13 +192,19 @@ describe("init --from: plugin install spine", () => {
       globalPluginSkillCount: 0,
       globalLocalSkillCount: 0,
     });
-    mockCompileAgentsAllScopes.mockResolvedValue({ compiled: [], failed: [], warnings: [] });
+    mockCompileAgentsAllScopes.mockResolvedValue({
+      compiled: [],
+      rewritten: [],
+      failed: [],
+      warnings: [],
+    });
     mockClaudePluginInstall.mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
     process.chdir(originalCwd);
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     await cleanupTempDir(tempDir);
   });
 

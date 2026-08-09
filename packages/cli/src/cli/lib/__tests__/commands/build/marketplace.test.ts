@@ -8,6 +8,7 @@ import { setupIsolatedHome } from "../../helpers/isolated-home.js";
 import { fileExists } from "../../test-fs-utils";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../../../consts";
 import type { Marketplace, PluginManifest } from "../../../../types";
+import { firstElement } from "../../helpers/element-at.js";
 
 /**
  * Creates a plugin directory with a valid plugin.json manifest. The manifest
@@ -341,7 +342,7 @@ describe("build:marketplace command", () => {
 
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.plugins).toHaveLength(1);
-      expect(marketplace.plugins[0].name).toBe("web-framework-react");
+      expect(firstElement(marketplace.plugins).name).toBe("web-framework-react");
     });
 
     it("should skip plugins with missing required name field in plugin.json", async () => {
@@ -368,7 +369,7 @@ describe("build:marketplace command", () => {
 
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.plugins).toHaveLength(1);
-      expect(marketplace.plugins[0].name).toBe("api-framework-hono");
+      expect(firstElement(marketplace.plugins).name).toBe("api-framework-hono");
     });
   });
 
@@ -394,9 +395,9 @@ describe("build:marketplace command", () => {
 
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.plugins).toHaveLength(1);
-      expect(marketplace.plugins[0].name).toBe("web-framework-react");
-      expect(marketplace.plugins[0].description).toBe("React framework skills");
-      expect(marketplace.plugins[0].version).toBe("1.0.0");
+      expect(firstElement(marketplace.plugins).name).toBe("web-framework-react");
+      expect(firstElement(marketplace.plugins).description).toBe("React framework skills");
+      expect(firstElement(marketplace.plugins).version).toBe("1.0.0");
     });
 
     it("should include marketplace identity from package.json in output", async () => {
@@ -498,7 +499,7 @@ describe("build:marketplace command", () => {
       await runBuildMarketplace(pluginsDir, outputPath);
 
       const marketplace = await readMarketplaceJson(outputPath);
-      const plugin = marketplace.plugins[0];
+      const plugin = firstElement(marketplace.plugins);
 
       // Source should reference the plugin directory relative to plugin root
       expect(typeof plugin.source).toBe("string");
@@ -514,7 +515,7 @@ describe("build:marketplace command", () => {
       await runBuildMarketplace(pluginsDir, outputPath);
 
       const marketplace = await readMarketplaceJson(outputPath);
-      const plugin = marketplace.plugins[0];
+      const plugin = firstElement(marketplace.plugins);
 
       expect(plugin.author?.name).toBe("@vince");
       expect(plugin.author?.email).toBe("vince@example.com");
@@ -567,7 +568,7 @@ describe("build:marketplace command", () => {
 
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.plugins).toHaveLength(1);
-      expect(marketplace.plugins[0].name).toBe("web-framework-react");
+      expect(firstElement(marketplace.plugins).name).toBe("web-framework-react");
     });
 
     it("should generate marketplace.json with 0 plugins for empty plugins directory", async () => {

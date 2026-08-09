@@ -13,7 +13,8 @@ export function buildMarketplacePluginRef(id: string, marketplace: string): stri
  * `{id}@{marketplace}` reference. Returns the whole string when no `@` is present.
  */
 export function parseMarketplacePluginRef(ref: string): string {
-  return ref.split("@")[0];
+  const separator = ref.indexOf("@");
+  return separator === -1 ? ref : ref.slice(0, separator);
 }
 
 /**

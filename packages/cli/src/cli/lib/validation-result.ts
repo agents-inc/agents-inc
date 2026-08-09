@@ -17,8 +17,8 @@ export function invalidResult(message: string): ValidationResult {
 /**
  * Flattens several validation partials into one result. `valid` is derived from
  * whether any errors were collected. Generic over the error/warning element type
- * so it serves both the string-based ValidationResult and object-based
- * SelectionValidation partials.
+ * so it can serve any {errors, warnings} partial, string-based ValidationResult
+ * included.
  */
 export function mergeValidationResults<E, W>(
   results: ReadonlyArray<{ errors: E[]; warnings: W[] }>,

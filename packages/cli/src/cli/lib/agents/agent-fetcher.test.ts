@@ -151,27 +151,11 @@ describe("agent-fetcher", () => {
 
       const result = await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE);
 
-      expect(mockFetchFromSource).toHaveBeenCalledWith(REMOTE_SOURCE, {
-        forceRefresh: undefined,
-        subdir: "",
-      });
+      expect(mockFetchFromSource).toHaveBeenCalledWith(REMOTE_SOURCE, { subdir: "" });
       expect(result).toStrictEqual({
         agentsDir: path.join(fetchedDir, "src", "agents"),
         templatesDir: path.join(fetchedDir, "src", "agents", "_templates"),
         sourcePath: fetchedDir,
-      });
-    });
-
-    it("should pass forceRefresh option to fetchFromSource", async () => {
-      await mockFetchedRemote(tempDir);
-
-      await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE, {
-        forceRefresh: true,
-      });
-
-      expect(mockFetchFromSource).toHaveBeenCalledWith(REMOTE_SOURCE, {
-        forceRefresh: true,
-        subdir: "",
       });
     });
 
@@ -348,10 +332,7 @@ describe("agent-fetcher", () => {
 
       const result = await getAgentDefinitions(REMOTE_SOURCE);
 
-      expect(mockFetchFromSource).toHaveBeenCalledWith(REMOTE_SOURCE, {
-        forceRefresh: undefined,
-        subdir: "",
-      });
+      expect(mockFetchFromSource).toHaveBeenCalledWith(REMOTE_SOURCE, { subdir: "" });
       expect(result.sourcePath).toBe(fetchedDir);
     });
 
@@ -371,17 +352,6 @@ describe("agent-fetcher", () => {
 
       expect(mockFetchFromSource).not.toHaveBeenCalled();
       expect(result.sourcePath).toBe(tempDir);
-    });
-
-    it("should pass options through to fetchAgentDefinitionsFromRemote", async () => {
-      await mockFetchedRemote(tempDir);
-
-      await getAgentDefinitions(REMOTE_SOURCE, { forceRefresh: true });
-
-      expect(mockFetchFromSource).toHaveBeenCalledWith(REMOTE_SOURCE, {
-        forceRefresh: true,
-        subdir: "",
-      });
     });
 
     it("should pass projectDir option through to getLocalAgentDefinitions", async () => {

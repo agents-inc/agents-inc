@@ -5,7 +5,7 @@ import { Flags, type Interfaces } from "@oclif/core";
 import { Box, Text, useApp } from "ink";
 import { render } from "../components/render.js";
 
-import { BaseCommand, type SourceRefreshFlags } from "../base-command.js";
+import { BaseCommand } from "../base-command.js";
 import { type WizardResultV2 } from "../components/wizard/wizard.js";
 import { runWizardSession } from "../components/wizard/run-wizard-session.js";
 import { useTerminalDimensions } from "../components/hooks/use-terminal-dimensions.js";
@@ -14,31 +14,31 @@ import {
   loadSource,
   loadAgentDefs,
   copyLocalSkills,
-  installPluginSkills,
-  pluginInstallFailureError,
   writeProjectConfig,
   compileAgentsAllScopes,
   type CompilationResult,
   type SkillCopyResult,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
-import type { GateReport } from "../lib/config-gate/index.js";
 import { fetchSeedConfig } from "../lib/seed/fetch-seed.js";
-import { seedToWizardResult } from "../lib/seed/seed-to-wizard.js";
+import { seedToWizardResult, type SeedMapping } from "../lib/seed/seed-to-wizard.js";
 import { getInstallationInfo } from "../lib/plugins/plugin-info.js";
 import {
   loadProjectConfig,
   loadProjectConfigFromDir,
 } from "../lib/configuration/project-config.js";
+import { activeAgentNames } from "../lib/configuration/scope-predicates.js";
 import {
   type InstallMode,
   detectInstallation,
   detectGlobalInstallation,
+  detectProjectInstallation,
   deriveInstallMode,
   resolveInstallPaths,
   buildAgentScopeMap,
   isHomeDirectory,
   INSTALL_MODE_LABELS,
+  INSTALL_MODE_DESCRIPTIONS,
 } from "../lib/installation/index.js";
 import { checkPermissions } from "../lib/permission-checker.js";
 import {
@@ -56,9 +56,15 @@ import { promptValue } from "../components/common/prompt-confirm.js";
 import { Spinner } from "../components/common/spinner.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
-import type { AgentName, ProjectConfig, SkillScope } from "../types/index.js";
+import type { AgentName, MergedSkillsMatrix, ProjectConfig, SkillScope } from "../types/index.js";
 import { type StartupMessage } from "../utils/logger.js";
-import { SUCCESS_MESSAGES, STATUS_MESSAGES } from "../utils/messages.js";
+import {
+  SUCCESS_MESSAGES,
+  STATUS_MESSAGES,
+  sharedConfigExistingInstall,
+  sharedConfigGlobalInstall,
+} from "../utils/messages.js";
+import type { SeedPayload } from "@workspace/matrix/seed";
 
 const DASHBOARD_OPTIONS = [
   { label: "Edit", value: "edit" },
@@ -193,6 +199,17 @@ export async function runDashboardFlow(
  * not. Keeping these on the value rather than branching on a flag downstream is what stops the
  * two paths growing separate copies of the install sequence.
  */
+/**
+ * The source this run was pointed at, as oclif hands it over.
+ *
+ * `source` is a required key holding `string | undefined` rather than `source?: string`
+ * because that is what oclif produces: a non-required flag still gets its key written on
+ * the parse result, set to `undefined` when it was not passed. Under
+ * `exactOptionalPropertyTypes` the two are different types, and `?` would be describing a
+ * producer that never omits the key.
+ */
+type SourceFlags = { source: string | undefined };
+
 type Selection = {
   result: WizardResultV2;
   sourceResult: SourceLoadResult;
@@ -201,6 +218,19 @@ type Selection = {
   /** What to say if the selection turns out to be empty — only the producer knows why it is. */
   emptyMessage: string;
 };
+
+/**
+ * Whether a decoded selection would write anything into the user's own ~/.claude. Skills and
+ * sub-agents are asked separately because either can be globally scoped on its own: a shared
+ * configuration can pin every skill to the project and still send a sub-agent home, and the
+ * reverse.
+ */
+function writesGlobalContent(result: WizardResultV2): boolean {
+  return (
+    result.skills.some((skill) => skill.scope === "global") ||
+    result.agentConfigs.some((agent) => agent.scope === "global")
+  );
+}
 
 export default class Init extends BaseCommand {
   static summary = `Initialize ${DEFAULT_BRANDING.NAME} in this project`;
@@ -216,17 +246,13 @@ export default class Init extends BaseCommand {
       description: "Initialize from a custom marketplace",
       command: "<%= config.bin %> <%= command.id %> --source github:org/marketplace",
     },
-    {
-      description: "Force refresh skills from remote",
-      command: "<%= config.bin %> <%= command.id %> --refresh",
-    },
   ];
 
   static flags = {
-    ...BaseCommand.baseFlags,
-    refresh: Flags.boolean({
-      description: "Force refresh from remote source",
-      default: false,
+    source: Flags.string({
+      char: "s",
+      description: "Skills source path or URL",
+      required: false,
     }),
     from: Flags.string({
       description: "Install a configuration shared from agentsinc.sh by its id, without the wizard",
@@ -243,15 +269,27 @@ export default class Init extends BaseCommand {
     const { flags } = await this.parse(Init);
     const projectDir = process.cwd();
 
+    // Every route below reads the configs first — to show a dashboard, to refuse a shared id, or
+    // to inline the global one. One that exists but cannot be read is recreated, not installed
+    // over, and saying so here is what keeps the raw loader error off the screen.
+    await this.ensureConfigReadable(projectDir);
+
     // Only a bare `init` is diverted to the dashboard. An id is an explicit instruction to install
     // *that* configuration, so it overrides an existing installation instead.
     if (!flags.from && (await this.showDashboardIfInitialized(projectDir))) return;
 
     const selection = flags.from
-      ? await this.selectionFromSharedConfig(flags.from, flags)
+      ? await this.selectionFromSharedConfig(flags.from, flags, projectDir)
       : await this.selectionFromWizard(flags, projectDir);
 
     if (!selection) this.exit(EXIT_CODES.CANCELLED);
+
+    // On the spine rather than in either producer: a broken constraint is a fact about the
+    // selection, not about where it came from, and `edit` reports the same fact the same way
+    // the moment the wizard hands it one. Both producers run the same validator over the same
+    // matrix — the wizard over what was chosen, `--from` over what survived the decode — so
+    // what is said here is this catalog's verdict either way.
+    this.reportValidationErrors(selection.result.validation);
 
     // A sub-agent is installable on its own — it has front-matter, a prompt and a compiled file
     // without owning a single skill — so only a selection with neither is nothing to install.
@@ -271,7 +309,7 @@ export default class Init extends BaseCommand {
 
   /** The interactive producer: load the source, run the wizard, return what was chosen. */
   private async selectionFromWizard(
-    flags: SourceRefreshFlags,
+    flags: SourceFlags,
     projectDir: string,
   ): Promise<Selection | null> {
     // The blank global config is created by writeProjectConfig() once the
@@ -310,11 +348,17 @@ export default class Init extends BaseCommand {
   /**
    * The `--from <id>` producer: fetch and map, no wizard. Nothing here may assume a TTY — running
    * headless is most of why the flag exists.
+   *
+   * It is also greenfield-only, which is what the two refusals are: a shared configuration is
+   * installed whole, so anything it would have to install over has to be uninstalled first.
    */
   private async selectionFromSharedConfig(
     id: string,
-    flags: SourceRefreshFlags,
+    flags: SourceFlags,
+    projectDir: string,
   ): Promise<Selection> {
+    await this.refuseInstalledProject(projectDir);
+
     this.log(`Fetching configuration ${id}...`);
     const fetched = await fetchSeedConfig(id);
     if (!fetched.ok) {
@@ -322,10 +366,12 @@ export default class Init extends BaseCommand {
     }
 
     const { sourceResult } = await this.loadSourceOrFail(flags);
-    const { result, skippedSkillIds, skippedAgentNames } = seedToWizardResult(
+    const { result, skippedSkillIds, skippedAgentNames } = this.decodeSeedOrFail(
       fetched.payload,
       sourceResult.matrix,
     );
+
+    await this.refuseBlockingGlobalInstall(result);
 
     // Named, not counted. "3 skills were skipped" cannot be acted on; the ids can, and this is the
     // one moment the user can tell whether what they shared is what they are getting.
@@ -354,6 +400,53 @@ export default class Init extends BaseCommand {
     };
   }
 
+  /**
+   * Refuses to install a shared configuration into a directory that already has one.
+   *
+   * Project-scoped detection rather than `detectInstallation`, whose global fallback would refuse
+   * every clean project on a machine with a global install — including for a payload that never
+   * goes near it. Whether a global install is in the way is a question about the PAYLOAD, and
+   * {@link refuseBlockingGlobalInstall} is where it is asked.
+   *
+   * This runs before the fetch: there is nothing to learn from the network about a directory that
+   * is already spoken for.
+   */
+  private async refuseInstalledProject(projectDir: string): Promise<void> {
+    const installation = await detectProjectInstallation(projectDir);
+    if (!installation) return;
+
+    this.error(sharedConfigExistingInstall(installation.configPath), { exit: EXIT_CODES.ERROR });
+  }
+
+  /**
+   * The other half of the same rule. A payload carrying global-scoped skills or sub-agents writes
+   * into the user's own ~/.claude, so an installation there is in its way even when this project
+   * is spotless. A payload with nothing global cannot reach that far and is never refused for it.
+   */
+  private async refuseBlockingGlobalInstall(result: WizardResultV2): Promise<void> {
+    if (!writesGlobalContent(result)) return;
+
+    const globalInstallation = await detectGlobalInstallation();
+    if (!globalInstallation) return;
+
+    this.error(sharedConfigGlobalInstall(globalInstallation.configPath), {
+      exit: EXIT_CODES.ERROR,
+    });
+  }
+
+  /**
+   * The decode refuses a payload the config model has nowhere to write (see `seedToWizardResult`).
+   * That is a failure of this command, reported with this command's exit code rather than left to
+   * surface as an unhandled throw.
+   */
+  private decodeSeedOrFail(payload: SeedPayload, matrix: MergedSkillsMatrix): SeedMapping {
+    try {
+      return seedToWizardResult(payload, matrix);
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
   private async showDashboardIfInitialized(projectDir: string): Promise<boolean> {
     return runDashboardFlow(projectDir, this.config, "init", (msg) => this.log(msg));
   }
@@ -365,15 +458,15 @@ export default class Init extends BaseCommand {
     return loaded?.config ?? null;
   }
 
-  private async loadSourceOrFail(flags: {
-    source?: string;
-    refresh: boolean;
-  }): Promise<{ sourceResult: SourceLoadResult; startupMessages: StartupMessage[] }> {
+  private async loadSourceOrFail(
+    flags: SourceFlags,
+  ): Promise<{ sourceResult: SourceLoadResult; startupMessages: StartupMessage[] }> {
     try {
       const loaded = await loadSource({
-        sourceFlag: flags.source,
+        // The one load that may CHOOSE a source rather than read the stored one.
+        caller: "init",
+        ...(flags.source !== undefined && { sourceFlag: flags.source }),
         projectDir: process.cwd(),
-        forceRefresh: flags.refresh,
         captureStartupMessages: true,
       });
       return { sourceResult: loaded.sourceResult, startupMessages: loaded.startupMessages };
@@ -391,20 +484,24 @@ export default class Init extends BaseCommand {
     globalConfig: ProjectConfig | null,
     isGlobalRoot: boolean,
   ): Promise<WizardResultV2 | null> {
+    const selectedAgents = globalConfig?.agents && activeAgentNames(globalConfig.agents);
+    const globalSkills = globalConfig?.skills;
+
     return runWizardSession({
       hydrate: {
-        initialAgents: globalConfig?.selectedAgents,
-        installedSkillIds: globalConfig?.skills?.map((s) => s.id),
-        installedSkillConfigs: globalConfig?.skills,
-        installedAgentConfigs: globalConfig?.agents,
+        ...(selectedAgents !== undefined && { initialAgents: selectedAgents }),
+        ...(globalSkills !== undefined && {
+          installedSkillIds: globalSkills.map((s) => s.id),
+          installedSkillConfigs: globalSkills,
+        }),
+        ...(globalConfig?.agents !== undefined && { installedAgentConfigs: globalConfig.agents }),
         isEditingFromGlobalScope: isGlobalRoot,
       },
       props: {
         version: this.config.version,
         logo: ASCII_LOGO,
-        initialAgents: globalConfig?.selectedAgents,
-        installedSkillIds: globalConfig?.skills?.map((s) => s.id),
-        projectDir,
+        initialAgents: selectedAgents,
+        installedSkillIds: globalConfig?.skills.map((s) => s.id),
         startupMessages,
       },
       onCancel: () => this.log("Setup cancelled"),
@@ -415,7 +512,7 @@ export default class Init extends BaseCommand {
   private async handleInstallation(
     result: WizardResultV2,
     sourceResult: SourceLoadResult,
-    flags: SourceRefreshFlags,
+    flags: SourceFlags,
     /**
      * Whether the caller can hold the terminal. The permission notice is an Ink app with no exit
      * of its own, so `waitUntilExit()` only ever resolves because a person is there to end it —
@@ -451,10 +548,10 @@ export default class Init extends BaseCommand {
         : null;
 
     if (resolvedMarketplace !== null) {
-      await this.installPluginsStep(pluginSkills, resolvedMarketplace, projectDir);
+      await this.installPluginSkillsReported(pluginSkills, resolvedMarketplace, projectDir);
     }
-    // installPluginsStep hard-errors on any failure, so reaching here with a
-    // resolved marketplace means plugin mode fully succeeded.
+    // The shared install reporter hard-errors on any failure, so reaching here with
+    // a resolved marketplace means plugin mode fully succeeded.
     const pluginModeSucceeded = resolvedMarketplace !== null;
 
     try {
@@ -472,21 +569,31 @@ export default class Init extends BaseCommand {
         copyResult,
       );
 
-      const permissionWarning = await checkPermissions(projectDir);
-      if (permissionWarning) {
-        if (interactive) {
-          const { waitUntilExit } = render(permissionWarning);
-          await waitUntilExit();
-        } else {
-          // Render one frame and let go. The notice is information, not a prompt — there is
-          // nothing to answer, so nothing to wait for.
-          const { unmount } = render(permissionWarning);
-          unmount();
-        }
-      }
+      await this.showPermissionNotice(projectDir, interactive);
     } catch (error) {
       this.handleError(error);
     }
+  }
+
+  /**
+   * The permission notice, where there is one to show. It is an Ink app with no exit of its own,
+   * so `waitUntilExit()` only ever resolves because a person is there to end it — which is fine
+   * after the wizard and a hang everywhere else. Without a terminal to hold, one frame is
+   * rendered and let go: the notice is information, not a prompt, so there is nothing to answer
+   * and nothing to wait for.
+   */
+  private async showPermissionNotice(projectDir: string, interactive: boolean): Promise<void> {
+    const permissionWarning = await checkPermissions(projectDir);
+    if (!permissionWarning) return;
+
+    if (!interactive) {
+      const { unmount } = render(permissionWarning);
+      unmount();
+      return;
+    }
+
+    const { waitUntilExit } = render(permissionWarning);
+    await waitUntilExit();
   }
 
   private logInstallPlan(
@@ -498,11 +605,9 @@ export default class Init extends BaseCommand {
     this.log(`Selected ${ejectedSkills.length + pluginSkills.length} skills`);
     this.log(
       `Install mode: ${
-        installMode === "plugin"
-          ? `${INSTALL_MODE_LABELS.plugin} (native install)`
-          : installMode === "mixed"
-            ? `${INSTALL_MODE_LABELS.mixed} (${ejectedSkills.length} eject, ${pluginSkills.length} plugin)`
-            : `${INSTALL_MODE_LABELS.eject} (copy to .claude/skills/)`
+        installMode === "mixed"
+          ? `${INSTALL_MODE_LABELS.mixed} (${ejectedSkills.length} eject, ${pluginSkills.length} plugin)`
+          : INSTALL_MODE_DESCRIPTIONS[installMode]
       }`,
     );
   }
@@ -533,37 +638,10 @@ export default class Init extends BaseCommand {
     return copyResult;
   }
 
-  private async installPluginsStep(
-    pluginSkills: WizardResultV2["skills"],
-    marketplace: string,
-    projectDir: string,
-  ): Promise<void> {
-    this.log("Installing skill plugins...");
-    const pluginResult = await installPluginSkills(pluginSkills, marketplace, projectDir);
-
-    for (const item of pluginResult.installed) {
-      this.log(`  Installed ${item.ref}`);
-    }
-    for (const item of pluginResult.failed) {
-      this.warn(`Failed to install plugin ${item.id}: ${item.error}`);
-    }
-
-    // Plugin install intent is inviolable — if any skill failed to install, hard-error
-    // BEFORE `writeConfigAndCompile` writes config.ts with orphan entries claiming
-    // the skill is installed. Matches the no-plugin-to-eject-fallback rule.
-    if (pluginResult.failed.length > 0) {
-      this.error(pluginInstallFailureError(pluginResult.failed.length), {
-        exit: EXIT_CODES.ERROR,
-      });
-    }
-
-    this.log(`Installed ${pluginResult.installed.length} skill plugins\n`);
-  }
-
   private async writeConfigAndCompile(
     result: WizardResultV2,
     sourceResult: SourceLoadResult,
-    flags: SourceRefreshFlags,
+    flags: SourceFlags,
   ): Promise<{
     configResult: Awaited<ReturnType<typeof writeProjectConfig>>;
     compileResult: CompilationResult;
@@ -574,7 +652,7 @@ export default class Init extends BaseCommand {
       wizardResult: result,
       sourceResult,
       projectDir: process.cwd(),
-      sourceFlag: flags.source,
+      ...(flags.source !== undefined && { sourceFlag: flags.source }),
     });
 
     if (configResult.wasMerged) {
@@ -599,22 +677,6 @@ export default class Init extends BaseCommand {
     this.reportPropagatedRecompile(configResult.propagation);
 
     return { configResult, compileResult, agentScopeMap };
-  }
-
-  /**
-   * Renders the recompile the gated write already performed on every OTHER
-   * registered project this run's global change was propagated into.
-   */
-  private reportPropagatedRecompile(propagation: GateReport): void {
-    if (propagation.propagated.updated.length === 0) return;
-
-    const { recompiledCount, failedCount, warnings } = propagation.recompile;
-    for (const warning of warnings) {
-      this.warn(warning);
-    }
-
-    const failureSuffix = failedCount > 0 ? ` (${failedCount} failed)` : "";
-    this.log(`Recompiled agents in ${recompiledCount} registered projects${failureSuffix}\n`);
   }
 
   private reportSuccess(
@@ -728,11 +790,11 @@ export type DashboardData = {
 export async function getDashboardData(projectDir: string): Promise<DashboardData> {
   const [info, loaded] = await Promise.all([getInstallationInfo(), loadProjectConfig(projectDir)]);
 
-  const activeSkills = loaded?.config?.skills?.filter((s) => !s.excluded);
+  const activeSkills = loaded?.config.skills.filter((s) => !s.excluded);
   const skillCount = info?.skillCount ?? 0;
   const agentCount = info?.agentCount ?? 0;
   const mode = info?.mode ?? (activeSkills ? deriveInstallMode(activeSkills) : "eject");
-  const source = loaded?.config?.source;
+  const source = loaded?.config.source;
 
-  return { skillCount, agentCount, mode, source };
+  return { skillCount, agentCount, mode, ...(source !== undefined && { source }) };
 }

@@ -48,14 +48,11 @@ export function useBuildStepProps({
   return {
     domain: activeDomain,
     selectedDomains: effectiveDomains,
-    selections: store.domainSelections[activeDomain] || {},
     allSelections,
     showLabels: store.showLabels,
-    filterIncompatible: store.filterIncompatible,
     installedSkillIds,
     onToggle,
     onToggleLabels: store.toggleShowLabels,
-    onToggleFilterIncompatible: store.toggleFilterIncompatible,
     onContinue,
     onBack,
   };

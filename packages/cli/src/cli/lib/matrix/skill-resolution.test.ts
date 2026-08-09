@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
 import { createMockExtractedSkill } from "../__tests__/factories/skill-factories.js";
-import { createMockMatrixConfig } from "../__tests__/factories/matrix-factories.js";
 import { FRAMEWORK_CATEGORY } from "../__tests__/mock-data/mock-categories.js";
 import {
   MERGE_BASIC_MATRIX,
@@ -47,8 +46,6 @@ describe("skill-resolution", () => {
           requires: [],
           alternatives: [],
           discourages: [],
-          compatibleWith: [],
-          isRecommended: false,
         }),
       );
     });
@@ -170,32 +167,6 @@ describe("skill-resolution", () => {
       expect(react!.requires).toStrictEqual([]);
     });
 
-    it("resolves recommendations from flat recommends list", () => {
-      const matrixConfig = createMockMatrixConfig(
-        { "web-framework": FRAMEWORK_CATEGORY },
-        {
-          relationships: {
-            recommends: [{ skill: "zustand", reason: "Best state management" }],
-          },
-        },
-      );
-
-      const merged = mergeMatrixWithSkills(matrixConfig.categories, matrixConfig.relationships, [
-        createMockExtractedSkill("web-framework-react", { description: "React" }),
-        createMockExtractedSkill("web-state-zustand", {
-          description: "Zustand",
-          category: "web-client-state",
-        }),
-      ]);
-
-      const zustand = merged.skills["web-state-zustand"];
-      expect(zustand?.isRecommended).toBe(true);
-      expect(zustand?.recommendedReason).toBe("Best state management");
-
-      const react = merged.skills["web-framework-react"];
-      expect(react?.isRecommended).toBe(false);
-    });
-
     it("returns empty relationship fields when no relationships reference a skill", () => {
       const merged = mergeMatrixWithSkills(
         MERGE_BASIC_MATRIX.categories,
@@ -208,9 +179,6 @@ describe("skill-resolution", () => {
       expect(react?.requires).toStrictEqual([]);
       expect(react?.alternatives).toStrictEqual([]);
       expect(react?.discourages).toStrictEqual([]);
-      expect(react?.compatibleWith).toStrictEqual([]);
-      expect(react?.isRecommended).toBe(false);
-      expect(react?.recommendedReason).toBeUndefined();
     });
   });
 

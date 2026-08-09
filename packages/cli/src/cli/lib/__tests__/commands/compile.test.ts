@@ -64,48 +64,24 @@ describe("compile command", () => {
       expect(output.toLowerCase()).not.toContain("unknown flag");
     });
 
-    it("should accept --source flag", async () => {
+    it("rejects --source — a recompile reads the source its config records", async () => {
       const { error } = await runCliCommand(["compile", "--source", "/some/path"]);
 
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(error?.message).toContain("Nonexistent flag: --source");
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
 
-    it("should accept -s shorthand for source", async () => {
+    it("rejects the -s shorthand for the same reason", async () => {
       const { error } = await runCliCommand(["compile", "-s", "/some/path"]);
 
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(error?.message).toContain("Nonexistent flag: -s");
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
 
-    it("should accept --refresh flag", async () => {
+    it("rejects --refresh, which no command carries any more", async () => {
       const { error } = await runCliCommand(["compile", "--refresh"]);
 
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
-    });
-  });
-
-  describe("combined flags", () => {
-    it("should accept multiple flags together", async () => {
-      const { error } = await runCliCommand(["compile", "--verbose", "--source", "/custom/source"]);
-
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
-    });
-
-    it("should accept shorthand flags together", async () => {
-      const { error } = await runCliCommand(["compile", "-v", "-s", "/custom/source"]);
-
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
-    });
-
-    it("should accept --verbose with --refresh", async () => {
-      const { error } = await runCliCommand(["compile", "--verbose", "--refresh"]);
-
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(error?.message).toContain("Nonexistent flag: --refresh");
     });
   });
 
@@ -118,9 +94,7 @@ describe("compile command", () => {
     let localDirs: TestDirs;
 
     afterEach(async () => {
-      if (localDirs) {
-        await cleanupTestSource(localDirs);
-      }
+      await cleanupTestSource(localDirs);
     });
 
     it("should include a skill that has both SKILL.md and metadata.yaml", async () => {
@@ -184,9 +158,7 @@ describe("compile command", () => {
     let localDirs: TestDirs;
 
     afterEach(async () => {
-      if (localDirs) {
-        await cleanupTestSource(localDirs);
-      }
+      await cleanupTestSource(localDirs);
     });
 
     it("should produce compiled agent files in .claude/agents/", async () => {
@@ -200,7 +172,7 @@ describe("compile command", () => {
       const { stdout, error } = await runCliCommand(["compile"]);
 
       const output = stdout + (error?.message || "");
-      expect(output).toContain("Recompiled");
+      expect(output).toMatch(/\d+ project agents rewritten, \d+ unchanged/);
       expect(output).toContain("compile complete");
 
       const agentsDir = path.join(localDirs.projectDir, CLAUDE_DIR, "agents");
@@ -240,7 +212,9 @@ describe("compile command", () => {
 
       const output = stdout + (error?.message || "");
       expect(output).toContain("Discovered 1 local skill");
-      expect(output).toMatch(/Recompiled \d+ project agent/);
+      // First compile of a fresh source, so every agent is a genuine write — the
+      // summary's two numbers are what it counts, not the roster it walked.
+      expect(output).toMatch(/[1-9]\d* project agents rewritten, 0 unchanged/);
     });
   });
 
@@ -254,16 +228,6 @@ describe("compile command", () => {
       const { error } = await runCliCommand(["compile"]);
       // Without installation, command errors with guidance to run init first
       expect(error?.message).toContain("No installation found");
-    });
-
-    it("should handle invalid source path gracefully", async () => {
-      const { error } = await runCliCommand([
-        "compile",
-        "--source",
-        "/definitely/not/real/path/xyz",
-      ]);
-
-      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
     });
   });
 });

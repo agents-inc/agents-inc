@@ -5,10 +5,7 @@ export type { LoadSourceOptions, LoadedSource } from "./source/load-source.js";
 export type { MarketplaceResult } from "./source/ensure-marketplace.js";
 
 export type { DiscoveredSkills } from "./skills/discover-skills.js";
-export type { ScopedSkillDir, ScopedSkillDirsResult } from "./skills/collect-scoped-skill-dirs.js";
 export type { SkillCopyResult } from "./skills/copy-local-skills.js";
-export type { SkillComparisonResults } from "./skills/compare-skills.js";
-export type { SkillMatchResult } from "./skills/find-skill-match.js";
 export type { PluginInstallResult } from "./skills/install-plugin-skills.js";
 export type { PluginUninstallResult } from "./skills/uninstall-plugin-skills.js";
 

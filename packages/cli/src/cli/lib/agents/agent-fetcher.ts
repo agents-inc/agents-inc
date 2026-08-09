@@ -63,10 +63,7 @@ export async function fetchAgentDefinitionsFromRemote(
 ): Promise<AgentSourcePaths> {
   verbose(`Fetching agent partials from remote: ${source}`);
 
-  const result = await fetchFromSource(source, {
-    forceRefresh: options.forceRefresh,
-    subdir: "",
-  });
+  const result = await fetchFromSource(source, { subdir: "" });
 
   const sourceProjectConfig = options.agentsDir
     ? undefined

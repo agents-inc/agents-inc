@@ -1,8 +1,10 @@
 export {
   type InstallMode,
   type Installation,
+  declaresNoContent,
   detectGlobalInstallation,
   INSTALL_MODE_LABELS,
+  INSTALL_MODE_DESCRIPTIONS,
   detectInstallation,
   detectProjectInstallation,
   getInstallationOrThrow,

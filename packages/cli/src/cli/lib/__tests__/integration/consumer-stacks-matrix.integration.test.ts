@@ -40,6 +40,8 @@ import {
   DATADOG_OBSERVABILITY_SKILL,
 } from "../mock-data/mock-skills.js";
 import { renderConfigTs } from "../content-generators";
+import { elementAt, firstElement } from "../helpers/element-at.js";
+import { TEST_CUSTOM_SOURCE_URL } from "../test-constants";
 
 const CONSUMER_MATRIX_SKILLS: Record<string, ResolvedSkill> = {
   "web-framework-react": SKILLS.react,
@@ -73,9 +75,9 @@ describe("Integration: Consumer-Defined Stacks", () => {
     const stacks = await loadStacks(dirs.sourceDir);
 
     expect(stacks.length).toBe(2);
-    expect(stacks[0].id).toBe("custom-fullstack");
-    expect(stacks[0].name).toBe("Custom Fullstack");
-    expect(stacks[1].id).toBe("custom-testing");
+    expect(firstElement(stacks).id).toBe("custom-fullstack");
+    expect(firstElement(stacks).name).toBe("Custom Fullstack");
+    expect(elementAt(stacks, 1).id).toBe("custom-testing");
   });
 
   it("should return empty array when source has no stacks.ts", async () => {
@@ -102,7 +104,7 @@ describe("Integration: Consumer-Defined Stacks", () => {
   });
 
   it("should find a specific stack by ID using loadStackById", async () => {
-    const stack = await loadStackById("custom-fullstack", dirs.sourceDir);
+    const stack = await loadStackById("custom-fullstack", dirs.sourceDir, TEST_CUSTOM_SOURCE_URL);
 
     expect(stack).not.toBeNull();
     expect(stack!.id).toBe("custom-fullstack");
@@ -111,14 +113,14 @@ describe("Integration: Consumer-Defined Stacks", () => {
   });
 
   it("should return null from loadStackById for non-existent stack", async () => {
-    const stack = await loadStackById("nonexistent-stack", dirs.sourceDir);
+    const stack = await loadStackById("nonexistent-stack", dirs.sourceDir, TEST_CUSTOM_SOURCE_URL);
 
     expect(stack).toBeNull();
   });
 
   it("should normalize bare string skill assignments to SkillAssignment arrays", async () => {
     const stacks = await loadStacks(dirs.sourceDir);
-    const fullstackStack = stacks[0];
+    const fullstackStack = firstElement(stacks);
 
     // Bare YAML strings like `framework: web-framework-react` are normalized
     // to SkillAssignment[] with preloaded: false
@@ -133,7 +135,7 @@ describe("Integration: Consumer-Defined Stacks", () => {
 
     const stacks = await loadStacks(extraDirs.sourceDir);
     expect(stacks).toHaveLength(1);
-    expect(stacks[0].philosophy).toBe("Modern fullstack with type safety");
+    expect(firstElement(stacks).philosophy).toBe("Modern fullstack with type safety");
   });
 });
 
@@ -161,9 +163,12 @@ describe("Integration: Stacks Precedence", () => {
     expect(sourceStacks).toHaveLength(2);
 
     // custom-fullstack has 2 agents: web-developer, api-developer
-    expect(Object.keys(sourceStacks[0].agents)).toStrictEqual(["web-developer", "api-developer"]);
+    expect(Object.keys(firstElement(sourceStacks).agents)).toStrictEqual([
+      "web-developer",
+      "api-developer",
+    ]);
     // custom-testing has 1 agent: web-developer
-    expect(Object.keys(sourceStacks[1].agents)).toStrictEqual(["web-developer"]);
+    expect(Object.keys(elementAt(sourceStacks, 1).agents)).toStrictEqual(["web-developer"]);
   });
 
   it("should allow a source to define a stack with an ID matching a CLI built-in", async () => {
@@ -174,10 +179,10 @@ describe("Integration: Stacks Precedence", () => {
 
     const stacks = await loadStacks(dirs.sourceDir);
     expect(stacks).toHaveLength(1);
-    expect(stacks[0].id).toBe("nextjs-fullstack");
+    expect(firstElement(stacks).id).toBe("nextjs-fullstack");
     // The consumer's custom description, not the CLI built-in
-    expect(stacks[0].name).toBe("Custom Next.js");
-    expect(stacks[0].description).toBe("Consumer override of Next.js stack");
+    expect(firstElement(stacks).name).toBe("Custom Next.js");
+    expect(firstElement(stacks).description).toBe("Consumer override of Next.js stack");
   });
 });
 
@@ -194,11 +199,14 @@ describe("Integration: Marketplace Source Stacks", () => {
 
     const stacks = await loadStacks(dirs.sourceDir);
     expect(stacks).toHaveLength(1);
-    expect(stacks[0].id).toBe("marketplace-stack");
-    expect(stacks[0].name).toBe("Marketplace Stack");
+    expect(firstElement(stacks).id).toBe("marketplace-stack");
+    expect(firstElement(stacks).name).toBe("Marketplace Stack");
 
     // Verify the stack has exactly these agents
-    expect(Object.keys(stacks[0].agents)).toStrictEqual(["web-developer", "api-developer"]);
+    expect(Object.keys(firstElement(stacks).agents)).toStrictEqual([
+      "web-developer",
+      "api-developer",
+    ]);
   });
 
   it("should load stacks alongside skills in the same source", async () => {
@@ -387,15 +395,6 @@ describe("Integration: Custom Skills Matrix Loading", () => {
         discourages: [expect.objectContaining({ skillId: "web-framework-react" })],
       }),
     );
-
-    // Verify recommended skill is marked as isRecommended
-    const skillC = merged.skills["web-framework-vue-composition-api"];
-    expect(skillC).toStrictEqual(
-      expect.objectContaining({
-        isRecommended: true,
-        recommendedReason: "These work great together",
-      }),
-    );
   });
 
   it("should preserve preloaded flag through stack loading", async () => {
@@ -429,27 +428,24 @@ describe("Integration: Custom Skills Matrix Loading", () => {
     const stacks = await loadStacks(tempDir);
 
     expect(stacks).toHaveLength(1);
-    const stack = stacks[0];
+    const webDeveloper = firstElement(stacks).agents["web-developer"];
+    if (!webDeveloper) throw new Error("the loaded stack must roster web-developer");
 
     // Framework: preloaded: true (object form)
-    const frameworkAssignments = stack.agents["web-developer"]!["web-framework"];
-    expect(frameworkAssignments).toHaveLength(1);
-    expect(frameworkAssignments![0].id).toBe("web-framework-react");
-    expect(frameworkAssignments![0].preloaded).toBe(true);
+    expect(webDeveloper["web-framework"]).toStrictEqual([
+      { id: "web-framework-react", preloaded: true },
+    ]);
 
     // Testing: bare string -> preloaded defaults to false
-    const testingAssignments = stack.agents["web-developer"]!["web-testing"];
-    expect(testingAssignments).toHaveLength(1);
-    expect(testingAssignments![0].id).toBe("web-testing-vitest");
-    expect(testingAssignments![0].preloaded).toBe(false);
+    expect(webDeveloper["web-testing"]).toStrictEqual([
+      { id: "web-testing-vitest", preloaded: false },
+    ]);
 
     // Methodology: mixed array — first preloaded: true, second defaults to false
-    const methodologyAssignments = stack.agents["web-developer"]!["meta-reviewing"];
-    expect(methodologyAssignments).toHaveLength(2);
-    expect(methodologyAssignments![0].id).toBe("meta-methodology-research-methodology");
-    expect(methodologyAssignments![0].preloaded).toBe(true);
-    expect(methodologyAssignments![1].id).toBe("meta-reviewing-reviewing");
-    expect(methodologyAssignments![1].preloaded).toBe(false);
+    expect(webDeveloper["meta-reviewing"]).toStrictEqual([
+      { id: "meta-methodology-research-methodology", preloaded: true },
+      { id: "meta-reviewing-reviewing", preloaded: false },
+    ]);
   });
 });
 
@@ -466,7 +462,7 @@ describe("Integration: Custom Matrix + Stacks Full Pipeline", () => {
     // 1. Verify stacks loaded from source
     const stacks = await loadStacks(dirs.sourceDir);
     expect(stacks).toHaveLength(1);
-    expect(stacks[0].id).toBe("custom-pipeline");
+    expect(firstElement(stacks).id).toBe("custom-pipeline");
 
     // 2. Verify skills exist at the source skills dir
     const reactSkillPath = path.join(
@@ -533,8 +529,8 @@ describe("Integration: Custom Matrix + Stacks Full Pipeline", () => {
     expect(stacks).toHaveLength(2);
 
     // Both stacks reference web-framework-react
-    const stackAReactAssignment = stacks[0].agents["web-developer"]?.["web-framework"];
-    const stackBReactAssignment = stacks[1].agents["web-developer"]?.["web-framework"];
+    const stackAReactAssignment = elementAt(stacks, 0).agents["web-developer"]?.["web-framework"];
+    const stackBReactAssignment = elementAt(stacks, 1).agents["web-developer"]?.["web-framework"];
 
     expect(stackAReactAssignment).toStrictEqual([
       expect.objectContaining({ id: "web-framework-react" }),

@@ -44,19 +44,20 @@ describe("StepAgents component", () => {
 
       const output = lastFrame();
       expect(output).toContain("Web Developer");
-      expect(output).toContain("API Developer");
-      expect(output).toContain("CLI Developer");
-      expect(output).toContain("Web Architecture");
-      expect(output).toContain("Web Reviewer");
-      expect(output).toContain("API Reviewer");
-      expect(output).toContain("CLI Reviewer");
       expect(output).toContain("Web Researcher");
-      expect(output).toContain("API Researcher");
       expect(output).toContain("Web Tester");
+      expect(output).toContain("API Developer");
+      expect(output).toContain("API Researcher");
+      expect(output).toContain("API Tester");
+      expect(output).toContain("AI Developer");
+      expect(output).toContain("AI Researcher");
+      expect(output).toContain("AI Tester");
+      expect(output).toContain("CLI Developer");
       expect(output).toContain("CLI Tester");
-      expect(output).toContain("Web PM");
-      expect(output).toContain("Pattern Scout");
-      expect(output).toContain("Pattern Critique");
+      expect(output).toContain("CLI Researcher");
+      // The two consolidated role agents sit in the Meta group, once each.
+      expect(output).toContain("PM");
+      expect(output).toContain("Reviewer");
       expect(output).toContain("Agent Summoner");
       expect(output).toContain("Skill Summoner");
       expect(output).toContain("Codex Keeper");
@@ -79,6 +80,7 @@ describe("StepAgents component", () => {
       const output = lastFrame();
       expect(output).toContain("Web");
       expect(output).toContain("API");
+      expect(output).toContain("AI");
       expect(output).toContain("CLI");
       expect(output).toContain("Meta");
     });
@@ -96,7 +98,7 @@ describe("StepAgents component", () => {
       const store = useWizardStore.getState();
       store.toggleAgent("web-developer");
       store.toggleAgent("api-developer");
-      store.toggleAgent("web-reviewer");
+      store.toggleAgent("reviewer");
 
       const { lastFrame, unmount } = render(<StepAgents />);
       cleanup = unmount;
@@ -120,7 +122,7 @@ describe("StepAgents component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(SPACE);
+      stdin.write(SPACE);
       await delay(INPUT_DELAY_MS);
 
       const store = useWizardStore.getState();
@@ -133,13 +135,13 @@ describe("StepAgents component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(INPUT_DELAY_MS);
-      await stdin.write(SPACE);
+      stdin.write(SPACE);
       await delay(INPUT_DELAY_MS);
 
       const store = useWizardStore.getState();
-      expect(store.selectedAgents).toContain("web-reviewer");
+      expect(store.selectedAgents).toContain("web-researcher");
     });
 
     it("should navigate to confirm on ENTER when agents selected", async () => {
@@ -152,7 +154,7 @@ describe("StepAgents component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(INPUT_DELAY_MS);
 
       const updatedStore = useWizardStore.getState();
@@ -167,7 +169,7 @@ describe("StepAgents component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(INPUT_DELAY_MS);
 
       const updatedStore = useWizardStore.getState();
@@ -183,7 +185,7 @@ describe("StepAgents component", () => {
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-      await stdin.write(ESCAPE);
+      stdin.write(ESCAPE);
       await delay(INPUT_DELAY_MS);
 
       const updatedStore = useWizardStore.getState();
@@ -199,7 +201,7 @@ describe("StepAgents component", () => {
 
       await delay(RENDER_DELAY_MS);
       // First item is web-developer, toggle it off
-      await stdin.write(SPACE);
+      stdin.write(SPACE);
       await delay(INPUT_DELAY_MS);
 
       const updatedStore = useWizardStore.getState();

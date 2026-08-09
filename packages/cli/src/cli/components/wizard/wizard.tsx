@@ -9,10 +9,8 @@ import { StepStack } from "./step-stack.js";
 import { StepBuild } from "./step-build.js";
 import { StepConfirm } from "./step-confirm.js";
 import { StepSources } from "./step-sources.js";
-import { StepSettings } from "./step-settings.js";
 import { StepAgents } from "./step-agents.js";
 import { DomainSelection } from "./domain-selection.js";
-import { FEATURE_FLAGS } from "../../lib/feature-flags.js";
 import { validateSelection } from "../../lib/matrix/index.js";
 import { getSkillById } from "../../lib/matrix/matrix-provider.js";
 import { findStack } from "../../lib/matrix/matrix-provider.js";
@@ -20,7 +18,6 @@ import {
   HOTKEY_ACCEPT_DEFAULTS,
   HOTKEY_INFO,
   HOTKEY_SCOPE,
-  HOTKEY_SETTINGS,
   isHotkey,
   isInfoPanelAvailable,
 } from "./hotkeys.js";
@@ -57,9 +54,10 @@ export type WizardResultV2 = {
   selectedDomains: Domain[];
   /**
    * Skill ids from the saved config that could not be resolved against the loaded source matrix
-   * this session. The wizard could not represent them, so the merge layer must preserve any
-   * existing config entry with these ids rather than treat their absence as a deselection
-   * (D-233 Scenario C data-loss guard).
+   * this session. The wizard could not represent them, so they are absent from `skills` and the
+   * merge removes their config entries. Carried out of the wizard so the command can NAME each
+   * removal and say why it happened — a removal the user never asked for must never be silent
+   * (CLI-450).
    */
   unresolvableSkillIds: SkillId[];
   cancelled: boolean;
@@ -70,11 +68,10 @@ export type WizardProps = {
   onComplete: (result: WizardResultV2) => void;
   onCancel: () => void;
   version: string;
-  logo?: string;
-  projectDir?: string;
-  startupMessages?: StartupMessage[];
-  initialAgents?: AgentName[];
-  installedSkillIds?: SkillId[];
+  logo?: string | undefined;
+  startupMessages?: StartupMessage[] | undefined;
+  initialAgents?: AgentName[] | undefined;
+  installedSkillIds?: SkillId[] | undefined;
 };
 
 /** S-key scope toggle: blocked (with a toast) in global context; no-op without a focused row. */
@@ -109,7 +106,6 @@ export const Wizard: React.FC<WizardProps> = ({
   onCancel,
   version,
   logo,
-  projectDir,
   startupMessages,
   initialAgents,
   installedSkillIds,
@@ -127,20 +123,12 @@ export const Wizard: React.FC<WizardProps> = ({
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  const buildStepProps = useBuildStepProps({ store, installedSkillIds });
+  const buildStepProps = useBuildStepProps({
+    store,
+    ...(installedSkillIds !== undefined && { installedSkillIds }),
+  });
 
   useInput((input, key) => {
-    // ESC is handled by step-settings.tsx's own useKeyboardNavigation hook.
-    // Flag-gated with the hotkey that opens the overlay (D-307): this branch
-    // swallows every other key while the overlay is up, so leaving it live behind
-    // a withdrawn overlay would let a stale `showSettings` deafen the wizard.
-    if (FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY && store.showSettings) {
-      if (isHotkey(input, HOTKEY_SETTINGS)) {
-        store.toggleSettings();
-      }
-      return;
-    }
-
     // Closing is never gated on the step: the panel is only ever open on a step
     // that allows it, and gating the close would strand the overlay.
     if (store.showInfo) {
@@ -192,17 +180,6 @@ export const Wizard: React.FC<WizardProps> = ({
       });
       return;
     }
-
-    // D-307: the marketplace-sources overlay is withdrawn, so S does nothing on
-    // the sources step. The footer never advertises it (gated on SOURCE_SEARCH).
-    if (
-      FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY &&
-      isHotkey(input, HOTKEY_SETTINGS) &&
-      store.step === "sources"
-    ) {
-      store.toggleSettings();
-      return;
-    }
   });
 
   const handleComplete = useCallback(() => {
@@ -252,17 +229,8 @@ export const Wizard: React.FC<WizardProps> = ({
         return <StepBuild {...buildStepProps} />;
 
       case "sources": {
-        if (store.showSettings) {
-          return (
-            <StepSettings
-              projectDir={projectDir || process.cwd()}
-              onClose={() => store.toggleSettings()}
-            />
-          );
-        }
         return (
           <StepSources
-            projectDir={projectDir}
             onContinue={() => {
               if (!initialAgents?.length) {
                 store.preselectAgentsFromDomains();

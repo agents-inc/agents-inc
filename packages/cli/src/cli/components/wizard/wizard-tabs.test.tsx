@@ -1,11 +1,14 @@
 import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it } from "vitest";
 import type { WizardStep } from "../../stores/wizard-store";
-import { WizardTabs, WIZARD_STEPS, formatStepLabel, type WizardTabsProps } from "./wizard-tabs";
+import { WizardTabs, wizardTabsFor, formatStepLabel, type WizardTabsProps } from "./wizard-tabs";
+
+/** Every step the wizard has, in order — the flow a source that ships stacks runs. */
+const FULL_STEP_FLOW: WizardStep[] = ["stack", "domains", "build", "sources", "agents", "confirm"];
 
 const renderWizardTabs = (props: Partial<WizardTabsProps> = {}) => {
   const defaultProps: WizardTabsProps = {
-    steps: WIZARD_STEPS,
+    steps: wizardTabsFor(FULL_STEP_FLOW),
     currentStep: "stack",
     completedSteps: [],
     skippedSteps: [],
@@ -249,8 +252,8 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      WIZARD_STEPS.forEach((step) => {
-        expect(output).toContain(formatStepLabel(step.id));
+      FULL_STEP_FLOW.forEach((step) => {
+        expect(output).toContain(formatStepLabel(step));
       });
     });
   });

@@ -5,10 +5,8 @@ import { Liquid } from "liquidjs";
 import {
   resolveSkillReference,
   resolveSkillReferences,
-  convertStackToCompileConfig,
   resolveClaudeMd,
   buildSkillRefsFromConfig,
-  resolveAgentSkillsFromStack,
   resolveAgentSkillRefs,
   resolveAgents,
 } from "./resolver";
@@ -25,23 +23,16 @@ import {
 } from "./__tests__/factories/skill-factories";
 import { createMockAgentConfig } from "./__tests__/factories/agent-factories";
 import { createMockCompileConfig } from "./__tests__/factories/plugin-factories";
-import { buildProjectConfig, buildAgentConfigs } from "./__tests__/factories/config-factories";
 import { RESOLVE_AGENTS_DEFINITIONS } from "./__tests__/mock-data/mock-agents.js";
 import {
-  FULLSTACK_STACK,
-  WEB_REACT_AND_SCSS_STACK,
-  WEB_REACT_ONLY_STACK,
-  WEB_SCSS_ONLY_STACK,
-  API_HONO_ONLY_STACK,
-  WEB_EMPTY_AGENT_STACK,
-} from "./__tests__/mock-data/mock-stacks.js";
-import {
-  WEB_AND_API_COMPILE_CONFIG,
+  WEB_AND_API_SKILLS_COMPILE_CONFIG,
+  WEB_SKILLS_API_NONE_COMPILE_CONFIG,
   WEB_ONLY_COMPILE_CONFIG,
 } from "./__tests__/mock-data/mock-matrices.js";
 import { EXPECTED_SKILLS } from "./__tests__/expected-values.js";
+import { elementAt, firstElement } from "./__tests__/helpers/element-at.js";
 import type {
-  AgentName,
+  CompileAgentConfig,
   CompiledAgentData,
   Skill,
   SkillDefinition,
@@ -152,7 +143,7 @@ describe("buildSkillRefsFromConfig", () => {
     const result = buildSkillRefsFromConfig(agentStack);
 
     expect(result).toHaveLength(1);
-    expect(result[0].preloaded).toBe(true);
+    expect(firstElement(result).preloaded).toBe(true);
   });
 
   it("should set preloaded to false when not specified", () => {
@@ -163,7 +154,7 @@ describe("buildSkillRefsFromConfig", () => {
     const result = buildSkillRefsFromConfig(agentStack);
 
     expect(result).toHaveLength(1);
-    expect(result[0].preloaded).toBe(false);
+    expect(firstElement(result).preloaded).toBe(false);
   });
 
   it("should include usage guidance with category name", () => {
@@ -173,7 +164,7 @@ describe("buildSkillRefsFromConfig", () => {
 
     const result = buildSkillRefsFromConfig(agentStack);
 
-    expect(result[0].usage).toBe("when working with web-framework");
+    expect(firstElement(result).usage).toBe("when working with web-framework");
   });
 
   it("should return empty array for empty config", () => {
@@ -190,7 +181,7 @@ describe("buildSkillRefsFromConfig", () => {
     const result = buildSkillRefsFromConfig(agentStack);
 
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("web-framework-react");
+    expect(firstElement(result).id).toBe("web-framework-react");
   });
 
   it("should handle multiple skills per category", () => {
@@ -204,10 +195,10 @@ describe("buildSkillRefsFromConfig", () => {
     const result = buildSkillRefsFromConfig(agentStack);
 
     expect(result).toHaveLength(2);
-    expect(result[0].id).toBe("meta-methodology-research-methodology");
-    expect(result[0].preloaded).toBe(true);
-    expect(result[1].id).toBe("meta-reviewing-reviewing");
-    expect(result[1].preloaded).toBe(true);
+    expect(firstElement(result).id).toBe("meta-methodology-research-methodology");
+    expect(firstElement(result).preloaded).toBe(true);
+    expect(elementAt(result, 1).id).toBe("meta-reviewing-reviewing");
+    expect(elementAt(result, 1).preloaded).toBe(true);
   });
 });
 
@@ -229,8 +220,8 @@ describe("resolveSkillReference", () => {
       preloaded: true,
       // D-217: resolver propagates `source` from SkillReference onto the
       // resolved Skill so the compiler can emit per-skill pluginRef formats.
-      // Absent on the input → undefined on the output (see dedicated test below).
-      source: undefined,
+      // Absent on the input → absent on the output, no `source` key at all
+      // (see dedicated test below).
     });
   });
 
@@ -305,7 +296,6 @@ describe("resolveSkillReferences", () => {
         usage: "for components",
         preloaded: false,
         // D-217: see resolveSkillReference test above for shape rationale.
-        source: undefined,
       },
       {
         id: "web-state-zustand",
@@ -313,7 +303,6 @@ describe("resolveSkillReferences", () => {
         description: "Lightweight state management",
         usage: "for state",
         preloaded: true,
-        source: undefined,
       },
     ]);
   });
@@ -327,59 +316,12 @@ describe("resolveSkillReferences", () => {
     const results = resolveSkillReferences(refs, RESOLVE_SKILLS_MAP);
 
     expect(results).toHaveLength(1);
-    expect(results[0].id).toBe("web-framework-react");
+    expect(firstElement(results).id).toBe("web-framework-react");
   });
 
   it("should return empty array for empty input", () => {
     const results = resolveSkillReferences([], RESOLVE_SKILLS_MAP);
     expect(results).toStrictEqual([]);
-  });
-});
-
-describe("convertStackToCompileConfig", () => {
-  it("should convert a project config to a compile config", () => {
-    const config = buildProjectConfig({
-      name: "Test Stack",
-      description: "A test stack",
-      agents: buildAgentConfigs(["web-developer", "api-developer"]),
-      skills: [],
-    });
-
-    const result = convertStackToCompileConfig("test-stack", config);
-
-    expect(result).toStrictEqual({
-      name: "Test Stack",
-      description: "A test stack",
-      stack: "test-stack",
-      agents: {
-        "web-developer": {},
-        "api-developer": {},
-      },
-    });
-  });
-
-  it("should handle empty agents array", () => {
-    const config = buildProjectConfig({
-      name: "Empty Stack",
-      agents: [],
-      skills: [],
-    });
-
-    const result = convertStackToCompileConfig("empty-stack", config);
-
-    expect(result.agents).toStrictEqual({});
-  });
-
-  it("when agent has no description field, should default to empty string", () => {
-    const config = buildProjectConfig({
-      name: "No Description",
-      agents: [{ name: "test-agent" as AgentName, scope: "project" as const }],
-      skills: [],
-    });
-
-    const result = convertStackToCompileConfig("no-desc", config);
-
-    expect(result.description).toBe("");
   });
 });
 
@@ -665,91 +607,45 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
   });
 });
 
-describe("resolveAgentSkillsFromStack", () => {
-  it("should return skill references from stack agent config", () => {
-    const result = resolveAgentSkillsFromStack("web-developer", WEB_REACT_AND_SCSS_STACK);
-
-    expect(result).toHaveLength(2);
-    expect(result.map((s) => s.id)).toContain("web-framework-react");
-    expect(result.map((s) => s.id)).toContain("web-styling-scss-modules");
-  });
-
-  it("should read preloaded from assignment directly", () => {
-    const result = resolveAgentSkillsFromStack("web-developer", WEB_REACT_ONLY_STACK);
-
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("web-framework-react");
-    expect(result[0].preloaded).toBe(true);
-  });
-
-  it("should NOT mark skills as preloaded when assignment has preloaded: false", () => {
-    const result = resolveAgentSkillsFromStack("web-developer", WEB_SCSS_ONLY_STACK);
-
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("web-styling-scss-modules");
-    expect(result[0].preloaded).toBe(false);
-  });
-
-  it("should return empty array for agent not in stack", () => {
-    const result = resolveAgentSkillsFromStack("web-developer", API_HONO_ONLY_STACK);
-
-    expect(result).toStrictEqual([]);
-  });
-
-  it("should return empty array for agent with empty config", () => {
-    const result = resolveAgentSkillsFromStack("web-developer", WEB_EMPTY_AGENT_STACK);
-
-    expect(result).toStrictEqual([]);
-  });
-});
-
 describe("resolveAgentSkillRefs", () => {
-  it("should return skills from stack when stack provided", async () => {
-    const result = await resolveAgentSkillRefs("web-developer", {}, WEB_REACT_ONLY_STACK);
-
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("web-framework-react");
-    expect(result[0].preloaded).toBe(true);
-  });
-
-  it("should prioritize explicit agentConfig.skills over stack skills", async () => {
-    const agentConfig = {
+  it("should return the skill references the compile config names", () => {
+    const agentConfig: CompileAgentConfig = {
       skills: [
         {
-          id: "web-styling-scss-modules" as const,
+          id: "web-styling-scss-modules",
           usage: "when styling",
           preloaded: true,
         },
       ],
     };
 
-    const result = await resolveAgentSkillRefs("web-developer", agentConfig, WEB_REACT_ONLY_STACK);
+    const result = resolveAgentSkillRefs(agentConfig);
 
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("web-styling-scss-modules");
+    expect(firstElement(result).id).toBe("web-styling-scss-modules");
+    expect(firstElement(result).preloaded).toBe(true);
   });
 
-  it("should return empty array when no stack provided", async () => {
-    const result = await resolveAgentSkillRefs("web-developer", {}, undefined);
+  it("should return an empty array when the compile config names no skills", () => {
+    const result = resolveAgentSkillRefs({});
 
     expect(result).toStrictEqual([]);
   });
 });
 
-describe("resolveAgents with stack", () => {
-  describe("when resolving agents from fullstack configuration", () => {
+describe("resolveAgents", () => {
+  describe("when every agent's compile config names skills", () => {
     it("should assign correct skill IDs to web-developer", async () => {
       const result = await resolveAgents(
         RESOLVE_AGENTS_DEFINITIONS,
         RESOLVE_AGENTS_SKILL_MAP,
-        WEB_AND_API_COMPILE_CONFIG,
+        WEB_AND_API_SKILLS_COMPILE_CONFIG,
         "/test/path",
-        FULLSTACK_STACK,
       );
 
-      expect(result["web-developer"].skills).toHaveLength(2);
+      expect(result["web-developer"]?.skills).toHaveLength(2);
 
-      const webSkillIds = result["web-developer"].skills.map((s) => s.id);
+      const webSkillIds = result["web-developer"]?.skills.map((s) => s.id);
       expect(webSkillIds).toContain("web-framework-react");
       expect(webSkillIds).toContain("web-styling-scss-modules");
     });
@@ -758,15 +654,16 @@ describe("resolveAgents with stack", () => {
       const result = await resolveAgents(
         RESOLVE_AGENTS_DEFINITIONS,
         RESOLVE_AGENTS_SKILL_MAP,
-        WEB_AND_API_COMPILE_CONFIG,
+        WEB_AND_API_SKILLS_COMPILE_CONFIG,
         "/test/path",
-        FULLSTACK_STACK,
       );
 
-      const reactSkill = result["web-developer"].skills.find((s) => s.id === "web-framework-react");
+      const reactSkill = result["web-developer"]?.skills.find(
+        (s) => s.id === "web-framework-react",
+      );
       expect(reactSkill?.preloaded).toBe(true);
 
-      const scssSkill = result["web-developer"].skills.find(
+      const scssSkill = result["web-developer"]?.skills.find(
         (s) => s.id === "web-styling-scss-modules",
       );
       expect(scssSkill?.preloaded).toBe(false);
@@ -776,14 +673,13 @@ describe("resolveAgents with stack", () => {
       const result = await resolveAgents(
         RESOLVE_AGENTS_DEFINITIONS,
         RESOLVE_AGENTS_SKILL_MAP,
-        WEB_AND_API_COMPILE_CONFIG,
+        WEB_AND_API_SKILLS_COMPILE_CONFIG,
         "/test/path",
-        FULLSTACK_STACK,
       );
 
-      expect(result["api-developer"].skills).toHaveLength(2);
+      expect(result["api-developer"]?.skills).toHaveLength(2);
 
-      const apiSkillIds = result["api-developer"].skills.map((s) => s.id);
+      const apiSkillIds = result["api-developer"]?.skills.map((s) => s.id);
       expect(apiSkillIds).toContain("api-framework-hono");
       expect(apiSkillIds).toContain("api-database-drizzle");
     });
@@ -792,22 +688,21 @@ describe("resolveAgents with stack", () => {
       const result = await resolveAgents(
         RESOLVE_AGENTS_DEFINITIONS,
         RESOLVE_AGENTS_SKILL_MAP,
-        WEB_AND_API_COMPILE_CONFIG,
+        WEB_AND_API_SKILLS_COMPILE_CONFIG,
         "/test/path",
-        FULLSTACK_STACK,
       );
 
-      const honoSkill = result["api-developer"].skills.find((s) => s.id === "api-framework-hono");
+      const honoSkill = result["api-developer"]?.skills.find((s) => s.id === "api-framework-hono");
       expect(honoSkill?.preloaded).toBe(true);
 
-      const drizzleSkill = result["api-developer"].skills.find(
+      const drizzleSkill = result["api-developer"]?.skills.find(
         (s) => s.id === "api-database-drizzle",
       );
       expect(drizzleSkill?.preloaded).toBe(true);
     });
   });
 
-  it("should return agents without skills when stack not provided", async () => {
+  it("should return agents without skills when the compile config names none", async () => {
     const result = await resolveAgents(
       RESOLVE_AGENTS_DEFINITIONS,
       RESOLVE_AGENTS_SKILL_MAP,
@@ -815,7 +710,7 @@ describe("resolveAgents with stack", () => {
       "/test/path",
     );
 
-    expect(result["web-developer"].skills).toStrictEqual([]);
+    expect(result["web-developer"]?.skills).toStrictEqual([]);
   });
 
   it("should throw when agent is referenced in compile config but not in agent definitions", async () => {
@@ -844,19 +739,18 @@ describe("resolveAgents with stack", () => {
     ).rejects.toThrow("Available agents: web-developer, api-developer");
   });
 
-  it("should handle agent in compileConfig but not in stack", async () => {
+  it("should resolve each agent from its own compile config entry", async () => {
     const result = await resolveAgents(
       RESOLVE_AGENTS_DEFINITIONS,
       RESOLVE_AGENTS_SKILL_MAP,
-      WEB_AND_API_COMPILE_CONFIG,
+      WEB_SKILLS_API_NONE_COMPILE_CONFIG,
       "/test/path",
-      WEB_REACT_ONLY_STACK,
     );
 
-    expect(result["web-developer"].skills).toHaveLength(1);
-    expect(result["web-developer"].skills[0].id).toBe("web-framework-react");
+    expect(result["web-developer"]?.skills).toHaveLength(1);
+    expect(result["web-developer"]?.skills[0]?.id).toBe("web-framework-react");
 
-    expect(result["api-developer"].skills).toStrictEqual([]);
+    expect(result["api-developer"]?.skills).toStrictEqual([]);
   });
 
   /**
@@ -877,8 +771,8 @@ describe("resolveAgents with stack", () => {
         "/test/path",
       );
 
-      expect(result["web-developer"].model).toBe("haiku");
-      expect(result["web-developer"].effort).toBe("xhigh");
+      expect(result["web-developer"]?.model).toBe("haiku");
+      expect(result["web-developer"]?.effort).toBe("xhigh");
     });
 
     it("should keep the metadata model when the config sets only effort", async () => {
@@ -893,8 +787,8 @@ describe("resolveAgents with stack", () => {
         "/test/path",
       );
 
-      expect(result["web-developer"].model).toBe("opus");
-      expect(result["web-developer"].effort).toBe("low");
+      expect(result["web-developer"]?.model).toBe("opus");
+      expect(result["web-developer"]?.effort).toBe("low");
     });
   });
 });

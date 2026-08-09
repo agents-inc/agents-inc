@@ -1,4 +1,5 @@
 import { loadSkillsMatrixFromSource, type SourceLoadResult } from "../../loading/index.js";
+import type { SourceCaller } from "../../configuration/index.js";
 import {
   enableBuffering,
   drainBuffer,
@@ -7,9 +8,10 @@ import {
 } from "../../../utils/logger.js";
 
 export type LoadSourceOptions = {
+  /** Whether this load may reach the init-time source rungs — see {@link SourceCaller}. */
+  caller?: SourceCaller;
   sourceFlag?: string;
   projectDir: string;
-  forceRefresh?: boolean;
   /** When true, enables message buffering and captures startup messages. Default: false. */
   captureStartupMessages?: boolean;
 };
@@ -25,12 +27,13 @@ export type LoadedSource = {
  *
  * When `captureStartupMessages` is true, wraps the load in buffer mode so
  * warn() calls during loading are captured instead of written to stderr.
- * The caller (init/edit) passes these messages to the Wizard's <Static> block.
+ * The caller (init/edit) hands them to the wizard, which paints them as a band
+ * above the step — stderr does not survive the wizard clearing the terminal.
  *
  * @throws {Error} If source resolution or fetching fails.
  */
 export async function loadSource(options: LoadSourceOptions): Promise<LoadedSource> {
-  const { sourceFlag, projectDir, forceRefresh, captureStartupMessages } = options;
+  const { caller, sourceFlag, projectDir, captureStartupMessages } = options;
 
   if (captureStartupMessages) {
     enableBuffering();
@@ -39,9 +42,9 @@ export async function loadSource(options: LoadSourceOptions): Promise<LoadedSour
   let sourceResult: SourceLoadResult;
   try {
     sourceResult = await loadSkillsMatrixFromSource({
-      sourceFlag,
+      ...(caller !== undefined && { caller }),
+      ...(sourceFlag !== undefined && { sourceFlag }),
       projectDir,
-      forceRefresh,
     });
   } catch (error) {
     if (captureStartupMessages) {

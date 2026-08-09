@@ -3,14 +3,35 @@ import path from "path";
 import { BaseCommand } from "../base-command";
 import { getErrorMessage } from "../utils/errors";
 import { EXIT_CODES } from "../lib/exit-codes";
-import { effectivelyExcludedSkillIds, validateProjectConfig } from "../lib/configuration";
-import { loadSource, detectProject } from "../lib/operations";
+import {
+  effectivelyExcludedSkillIds,
+  loadProjectConfigFromDir,
+  validateProjectConfig,
+} from "../lib/configuration";
+import { loadSource, detectProject, type DetectedProject } from "../lib/operations";
 import { matrix } from "../lib/matrix/matrix-provider";
 import { discoverLocalSkills } from "../lib/skills";
 import { getStackSkillIds } from "../lib/stacks";
 import { filterExcludedEntries, listAgentMdFiles } from "../lib/agents";
 import { getVerifiedPluginInstallPaths, parseMarketplacePluginRef } from "../lib/plugins";
-import { isHomeDirectory, installBaseDir, resolveInstallPaths } from "../lib/installation";
+import {
+  declaresNoContent,
+  isHomeDirectory,
+  installBaseDir,
+  resolveInstallPaths,
+} from "../lib/installation";
+import { getProjectConfigPath } from "../lib/configuration";
+import { isSourceRepo } from "../lib/source-validator";
+import {
+  listInstalledArtifacts,
+  validateInstalledAgents,
+  validateInstalledPlugins,
+  validateInstalledSkills,
+  validateProjectConfigFile,
+  validateRegisteredSources,
+  type ContentIssue,
+  type ContentValidation,
+} from "../lib/content-validator";
 import type { MergedSkillsMatrix, ProjectConfig, SkillConfig } from "../types";
 import { fileExists, directoryExists } from "../utils/fs";
 import {
@@ -25,7 +46,21 @@ import {
 import { countBy, unique } from "remeda";
 import { setVerbose } from "../utils/logger";
 
-type CheckKind = "config" | "skills" | "agents" | "orphans" | "installed" | "plugins" | "source";
+type CheckKind =
+  | "config"
+  | "config-empty"
+  | "skills"
+  | "agents"
+  | "orphans"
+  | "orphans-unowned"
+  | "installed"
+  | "plugins"
+  | "source"
+  | "content-config"
+  | "content-sources"
+  | "content-plugins"
+  | "content-skills"
+  | "content-agents";
 
 type CheckResult = {
   kind: CheckKind;
@@ -39,11 +74,46 @@ type ConfigCheckOutput = {
   config: ProjectConfig | null;
 };
 
+/**
+ * Which state the config these rows describe is in. `detectInstallation` answers "is there an
+ * installation here", not "is there a config here", and hands back the same `null` for an absent
+ * file and for one that loads while declaring neither skills nor agents — two states that need
+ * different sentences. The state missing from this union is the one that cannot reach this layer:
+ * a config that cannot be READ is the content layer's finding, and it skips the operational layer.
+ */
+type ConfigState =
+  | { kind: "absent" }
+  | { kind: "declares-nothing"; config: ProjectConfig }
+  | { kind: "loaded"; config: ProjectConfig };
+
 /** Project-relative path to the config file, shown in doctor messages. */
 const CONFIG_TS_REL = `${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`;
 
-function checkConfigValid(config: ProjectConfig | null): ConfigCheckOutput {
-  if (!config) {
+/**
+ * The config in THIS directory, and what state it is in. Only this directory: the global fallback
+ * is `detectInstallation`'s to make and it has already made it, so a project with no config of its
+ * own is absent here whatever the home directory holds — `init` writes exactly the declares-nothing
+ * shape as the blank global pair on every project setup, and it is not this project's config.
+ *
+ * The load cannot throw: `configDirsInPlay` is the same set the content layer just read, and any
+ * failure in it skipped this layer entirely.
+ */
+async function resolveConfigState(
+  detected: DetectedProject | null,
+  projectDir: string,
+): Promise<ConfigState> {
+  if (detected?.config) return { kind: "loaded", config: detected.config };
+
+  const loaded = await loadProjectConfigFromDir(projectDir);
+  if (!loaded) return { kind: "absent" };
+
+  return declaresNoContent(loaded.config)
+    ? { kind: "declares-nothing", config: loaded.config }
+    : { kind: "loaded", config: loaded.config };
+}
+
+function checkConfigValid(state: ConfigState): ConfigCheckOutput {
+  if (state.kind === "absent") {
     return {
       result: {
         kind: "config",
@@ -55,6 +125,21 @@ function checkConfigValid(config: ProjectConfig | null): ConfigCheckOutput {
     };
   }
 
+  // Not a fault and nothing to repair — the file is valid, it just has nothing in it. The config
+  // is still handed on: the rows below describe an empty install truthfully, where a `null` would
+  // have them all report `Skipped (config invalid)` about a config that is valid.
+  if (state.kind === "declares-nothing") {
+    return {
+      result: {
+        kind: "config-empty",
+        status: "warn",
+        message: `${CONFIG_TS_REL} is valid but declares no skills and no agents`,
+      },
+      config: state.config,
+    };
+  }
+
+  const { config } = state;
   const validation = validateProjectConfig(config);
 
   if (!validation.valid) {
@@ -122,14 +207,9 @@ async function checkSkillsResolved(
     ...(globalResult?.skills.map((s) => s.id) ?? []),
   ]);
 
-  const missingSkills: string[] = [];
-  for (const skillId of uniqueSkills) {
-    const inMatrix = skillId in matrix.skills;
-    const inLocal = localSkillIds.has(skillId);
-    if (!inMatrix && !inLocal) {
-      missingSkills.push(skillId);
-    }
-  }
+  const missingSkills = uniqueSkills.filter(
+    (skillId) => !(skillId in matrix.skills) && !localSkillIds.has(skillId),
+  );
 
   if (missingSkills.length > 0) {
     return {
@@ -151,7 +231,7 @@ async function checkAgentsCompiled(
   config: ProjectConfig,
   projectDir: string,
 ): Promise<CheckResult> {
-  const agents = config.agents ?? [];
+  const agents = config.agents;
 
   if (agents.length === 0) {
     return {
@@ -215,36 +295,27 @@ async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promis
 
   // Project files: only active project-scoped agents should have .md files here
   const activeProjectAgents: Set<string> = new Set(
-    (config.agents ?? []).filter((a) => a.scope === "project" && !a.excluded).map((a) => a.name),
+    config.agents.filter((a) => a.scope === "project" && !a.excluded).map((a) => a.name),
   );
   // Global files: all global-scoped agents (including excluded) still serve other projects
   const knownGlobalAgents: Set<string> = new Set(
-    (config.agents ?? []).filter((a) => a.scope === "global").map((a) => a.name),
+    config.agents.filter((a) => a.scope === "global").map((a) => a.name),
   );
 
   const knownProjectDirAgents = scopesShareAgentsDir
     ? new Set([...activeProjectAgents, ...knownGlobalAgents])
     : activeProjectAgents;
 
-  const orphanedFiles: string[] = [];
-  for (const file of projectMdFiles) {
-    const agentName = file.replace(/\.md$/, "");
-    if (!knownProjectDirAgents.has(agentName)) {
-      orphanedFiles.push(agentName);
-    }
-  }
-  for (const file of globalMdFiles) {
-    const agentName = file.replace(/\.md$/, "");
-    if (!knownGlobalAgents.has(agentName)) {
-      orphanedFiles.push(agentName);
-    }
-  }
+  const orphanedFiles = [
+    ...orphanedAgentNames(projectMdFiles, knownProjectDirAgents),
+    ...orphanedAgentNames(globalMdFiles, knownGlobalAgents),
+  ];
 
   if (orphanedFiles.length > 0) {
     return {
       kind: "orphans",
       status: "warn",
-      message: `${orphanedFiles.length} orphaned agent file${orphanedFiles.length === 1 ? "" : "s"}`,
+      message: plural(orphanedFiles.length, "orphaned agent file"),
       details: orphanedFiles.map((f) => `- ${f}.md (not in config)`),
     };
   }
@@ -256,11 +327,57 @@ async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promis
   };
 }
 
+/**
+ * The agents whose compiled `.md` sits in a directory whose roster does not name them. The
+ * roster differs per directory — a project directory knows only its own active agents, the
+ * global one knows every global-scoped agent including the excluded — so it is a parameter.
+ */
+function orphanedAgentNames(mdFiles: string[], knownAgents: ReadonlySet<string>): string[] {
+  return mdFiles
+    .map((fileName) => fileName.replace(/\.md$/, ""))
+    .filter((agentName) => !knownAgents.has(agentName));
+}
+
+/**
+ * The same row when there is no configuration at all. Ownership is not unknown here, it is
+ * settled: nothing declares any of it, so every installed skill directory and compiled agent
+ * file is an orphan and the row names them all. It reuses the content layer's walk — those
+ * counts four rows above and these names are the same files.
+ *
+ * A `fail`, where a stray file beside a config is a warning: that warning is earned by the next
+ * `compile` pruning what it names, and nothing prunes these. `compile` and `edit` refuse without
+ * a config, and `uninstall` cannot identify compiled agents no config declares.
+ *
+ * With nothing installed the row keeps the skip it has always printed. An empty directory with
+ * no config is the state `init` exists for — there is nothing for a configuration to have owned.
+ */
+async function checkUnownedInstallation(projectDir: string): Promise<CheckResult> {
+  const { skills, agents } = await listInstalledArtifacts(projectDir);
+  if (skills.length === 0 && agents.length === 0) return skippedResult("orphans");
+
+  return {
+    kind: "orphans-unowned",
+    status: "fail",
+    // The per-line "(not in config)" the other verdict repeats is said once here instead:
+    // with no configuration it is true of every line, and there are as many lines as files.
+    message: `${countedArtifacts(skills, agents)} installed here, and no configuration declares them`,
+    details: [...skills, ...agents].map((artifact) => `- ${artifact}`),
+  };
+}
+
+/** "7 skills and 2 agents", dropping a half with nothing in it rather than saying "0 agents". */
+function countedArtifacts(skills: string[], agents: string[]): string {
+  return [
+    ...(skills.length > 0 ? [plural(skills.length, "skill")] : []),
+    ...(agents.length > 0 ? [plural(agents.length, "agent")] : []),
+  ].join(" and ");
+}
+
 async function checkSkillsInstalled(
   config: ProjectConfig,
   projectDir: string,
 ): Promise<CheckResult> {
-  const skills: SkillConfig[] = config.skills ?? [];
+  const skills: SkillConfig[] = config.skills;
   const ejectSkills = skills.filter((s) => s.source === EJECT_SOURCE);
 
   if (ejectSkills.length === 0) {
@@ -284,7 +401,7 @@ async function checkSkillsInstalled(
     return {
       kind: "installed",
       status: "warn",
-      message: `${missingSkills.length} skill${missingSkills.length === 1 ? "" : "s"} missing from disk`,
+      message: `${plural(missingSkills.length, "skill")} missing from disk`,
       details: missingSkills.map((s) => `- ${s} (not found in ${LOCAL_SKILLS_PATH}/)`),
     };
   }
@@ -335,7 +452,7 @@ async function checkPluginSkillsInstalled(
     return {
       kind: "plugins",
       status: "warn",
-      message: `${missingSkills.length} skill${missingSkills.length === 1 ? "" : "s"} not installed as plugins`,
+      message: `${plural(missingSkills.length, "skill")} not installed as plugins`,
       details: missingSkills.map((s) => `- ${s} (no enabled plugin found)`),
     };
   }
@@ -373,7 +490,115 @@ async function checkSourceReachable(projectDir: string): Promise<CheckResult> {
   }
 }
 
+type ContentCheck = {
+  kind: CheckKind;
+  name: string;
+  noun: string;
+  run: (projectDir: string) => Promise<ContentValidation>;
+};
+
+/** A check plus whether it reads config.ts to know WHAT to validate — see {@link CONFIG_CHECK}. */
+type GatedContentCheck = ContentCheck & { readsConfig: boolean };
+
+/**
+ * The config file every other check is read against, so it is validated before any of them and
+ * on its own: a file that exists and cannot be parsed is a finding about that file, and every
+ * row underneath would be a cascade of it. It carries no gate of its own — it IS the gate.
+ */
+const CONFIG_CHECK: ContentCheck = {
+  kind: "content-config",
+  name: "Config",
+  noun: "config",
+  run: validateProjectConfigFile,
+};
+
+/**
+ * The content layer: schema and file-level validation of what is on disk. It runs
+ * before the operational layer because an unresolved skill or an uncompiled agent
+ * is usually the downstream cascade of a broken metadata.yaml, not its own finding.
+ */
+const CONTENT_CHECKS: GatedContentCheck[] = [
+  {
+    kind: "content-sources",
+    name: "Sources",
+    noun: "source",
+    // The registered sources are the ones config.ts names.
+    readsConfig: true,
+    run: validateRegisteredSources,
+  },
+  {
+    kind: "content-plugins",
+    name: "Plugins",
+    noun: "plugin",
+    readsConfig: false,
+    run: validateInstalledPlugins,
+  },
+  {
+    kind: "content-skills",
+    name: "Skills",
+    noun: "skill",
+    readsConfig: false,
+    run: validateInstalledSkills,
+  },
+  {
+    kind: "content-agents",
+    name: "Agents",
+    noun: "agent",
+    readsConfig: false,
+    run: validateInstalledAgents,
+  },
+];
+
+function contentStatus(errors: number, warnings: number): CheckResult["status"] {
+  if (errors > 0) return "fail";
+  if (warnings > 0) return "warn";
+  return "pass";
+}
+
+function contentMessage(noun: string, count: number, errors: number, warnings: number): string {
+  // A pass that walked nothing can still report an issue — an unreadable plugin
+  // registry is a finding about the directory, not about a plugin inside it.
+  if (errors === 0 && warnings === 0) {
+    return count === 0 ? `No ${noun}s to validate` : `${plural(count, noun)} validated`;
+  }
+  return `${plural(count, noun)}: ${plural(errors, "error")}, ${plural(warnings, "warning")}`;
+}
+
+function formatContentIssue(issue: ContentIssue): string {
+  const marker = issue.severity === "error" ? "ERROR" : "WARN";
+  return `- [${marker}] ${issue.file}: ${issue.message}`;
+}
+
+function toContentResult(check: ContentCheck, validation: ContentValidation): CheckResult {
+  const errors = validation.issues.filter((issue) => issue.severity === "error").length;
+  const warnings = validation.issues.length - errors;
+
+  return {
+    kind: check.kind,
+    status: contentStatus(errors, warnings),
+    message: contentMessage(check.noun, validation.count, errors, warnings),
+    details: [
+      ...validation.notes.map((note) => `- ${note}`),
+      ...validation.issues.map(formatContentIssue),
+    ],
+  };
+}
+
 const CHECK_WIDTH = 20;
+
+/** Section headings and the rows underneath them are indented one step apart. */
+const SECTION_INDENT = "  ";
+const ROW_INDENT = "    ";
+
+const SECTION_CONTENT = "Content checks";
+const SECTION_OPERATIONAL = "Operational checks";
+const SKIP_AFTER_CONTENT_ERRORS = "Skipped — fix the content errors above first";
+const SKIP_NO_INSTALLATION = "Skipped — no installation here (skills source repository)";
+const SKIP_CONFIG_UNREADABLE = "Skipped — the configuration that names them cannot be read";
+
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
 
 function formatCheckName(name: string): string {
   return name.padEnd(CHECK_WIDTH);
@@ -397,16 +622,15 @@ function formatStatus(status: CheckResult["status"]): string {
 }
 
 function formatCheckLine(name: string, result: CheckResult): string[] {
-  const headerLine = `  ${formatCheckName(name)}${formatStatus(result.status)}  ${result.message}`;
+  const headerLine = `${ROW_INDENT}${formatCheckName(name)}${formatStatus(result.status)}  ${result.message}`;
   const detailLines = (result.details ?? []).map(
-    (detail) => `  ${" ".repeat(CHECK_WIDTH)}   ${detail}`,
+    (detail) => `${ROW_INDENT}${" ".repeat(CHECK_WIDTH)}   ${detail}`,
   );
   return [headerLine, ...detailLines];
 }
 
 function formatSummary(results: CheckResult[]): string {
   const counts = countBy(results, (r) => r.status);
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
   const parts = [
     `${counts.pass ?? 0} passed`,
@@ -414,7 +638,7 @@ function formatSummary(results: CheckResult[]): string {
     plural(counts.fail ?? 0, "error"),
   ];
 
-  return `  Summary: ${parts.join(", ")}`;
+  return `${SECTION_INDENT}Summary: ${parts.join(", ")}`;
 }
 
 const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string }> = [
@@ -427,6 +651,31 @@ const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string 
     kind: "config",
     status: "fail",
     tip: `  Tip: Run '${CLI_INVOKE_COMMAND} init' to create or fix configuration`,
+  },
+  {
+    // The remedy for a valid config with nothing in it. Not the tip above: there is nothing to
+    // create and nothing to fix. `init` on this config opens the wizard rather than the dashboard
+    // — that is what the detection returning null is FOR — so it is the way to fill it in.
+    kind: "config-empty",
+    status: "warn",
+    tip: `  Tip: Nothing is configured yet — run '${CLI_INVOKE_COMMAND} init' to choose skills and sub-agents`,
+  },
+  {
+    // The one remedy that applies to a config that cannot be read. `init` does not clear such a
+    // file — it refuses it — so the tip above would send the reader in a circle; this is the same
+    // way out `edit` and `init` themselves name, worded the same way.
+    kind: "content-config",
+    status: "fail",
+    tip: `  Tip: There is no automatic repair — recreate the configuration: '${CLI_INVOKE_COMMAND} uninstall' still works on a config it cannot read, then '${CLI_INVOKE_COMMAND} init'`,
+  },
+  {
+    // Printed beside the config tip above, which says how to get a configuration back and
+    // nothing about the files that outlived the old one. Both halves are named with what they
+    // actually do: `uninstall` matches skill directories by their own `forked-from` metadata,
+    // so it clears them without a config — and identifies compiled agents only through one.
+    kind: "orphans-unowned",
+    status: "fail",
+    tip: `  Tip: Nothing declares the files above — '${CLI_INVOKE_COMMAND} init' writes a configuration that can own them again, or '${CLI_INVOKE_COMMAND} uninstall' removes the installed skills (the compiled agents outlive it: identifying them needs the configuration that is gone)`,
   },
   {
     kind: "skills",
@@ -454,6 +703,22 @@ function skippedResult(kind: CheckKind): CheckResult {
 }
 
 /**
+ * The skills row when the source never loaded. Distinct from {@link skippedResult}: the config
+ * is fine, and what is missing is the matrix to resolve its skills against.
+ */
+function sourceUnreachableSkillsResult(): CheckResult {
+  return { kind: "skills", status: "skip", message: "Skipped (source unreachable)" };
+}
+
+function skippedContentResult(kind: CheckKind): CheckResult {
+  return { kind, status: "skip", message: SKIP_CONFIG_UNREADABLE };
+}
+
+function runContentCheck(check: ContentCheck, projectDir: string): Promise<CheckResult> {
+  return safeCheck(check.kind, async () => toContentResult(check, await check.run(projectDir)));
+}
+
+/**
  * Wrap a check so a thrown exception becomes a `fail` result instead of crashing the
  * whole doctor run. Per-check isolation ensures one broken check does not mask others.
  */
@@ -472,9 +737,6 @@ export default class Doctor extends BaseCommand {
 
   static examples = ["<%= config.bin %> <%= command.id %>"];
 
-  // Override parent baseFlags to drop --source (not relevant for diagnostics)
-  static baseFlags = {} as (typeof BaseCommand)["baseFlags"];
-
   static flags = {};
 
   async run(): Promise<void> {
@@ -483,7 +745,10 @@ export default class Doctor extends BaseCommand {
     const projectDir = process.cwd();
 
     this.printHeader();
-    const results = await this.runAllChecks(projectDir);
+    const contentResults = await this.runContentChecks(projectDir);
+    const operationalResults = await this.runOperationalChecks(projectDir, contentResults);
+    const results = [...contentResults, ...operationalResults];
+
     this.printResults(results);
 
     if (results.some((r) => r.status === "fail")) {
@@ -495,13 +760,80 @@ export default class Doctor extends BaseCommand {
     this.log("");
     this.log(`${DEFAULT_BRANDING.NAME} Doctor`);
     this.log("");
-    this.log("  Checking configuration health...");
+    this.log(`${SECTION_INDENT}Checking configuration health...`);
     this.log("");
   }
 
-  private async runAllChecks(projectDir: string): Promise<CheckResult[]> {
+  /**
+   * The config is checked first and alone. A check that reads it to know what to validate would
+   * otherwise ask a file already reported as unreadable — and asking is what emitted the loader's
+   * own failure line once per read, spliced between these rows. Everything that walks installed
+   * content on disk still runs: it says something true whatever the config is in.
+   */
+  private async runContentChecks(projectDir: string): Promise<CheckResult[]> {
+    this.log(`${SECTION_INDENT}${SECTION_CONTENT}`);
+
+    const configResult = await runContentCheck(CONFIG_CHECK, projectDir);
+    const configUnreadable = configResult.status === "fail";
+
+    const rows = await Promise.all(
+      CONTENT_CHECKS.map(async (check) => ({
+        name: check.name,
+        result:
+          check.readsConfig && configUnreadable
+            ? skippedContentResult(check.kind)
+            : await runContentCheck(check, projectDir),
+      })),
+    );
+
+    const allRows = [{ name: CONFIG_CHECK.name, result: configResult }, ...rows];
+
+    for (const row of allRows) {
+      this.logCheck(row.name, row.result);
+    }
+
+    return allRows.map((row) => row.result);
+  }
+
+  /**
+   * The operational layer runs only when it can say something the reader can act on:
+   * not after content errors (its findings would be their cascades), and not in a
+   * source repository with nothing installed (a marketplace author has no install
+   * for it to describe).
+   */
+  private async runOperationalChecks(
+    projectDir: string,
+    contentResults: CheckResult[],
+  ): Promise<CheckResult[]> {
+    this.log("");
+    this.log(`${SECTION_INDENT}${SECTION_OPERATIONAL}`);
+
+    if (contentResults.some((r) => r.status === "fail")) {
+      this.log(`${ROW_INDENT}${SKIP_AFTER_CONTENT_ERRORS}`);
+      return [];
+    }
+
     const detected = await detectProject(projectDir);
-    const { result: configResult, config } = checkConfigValid(detected?.config ?? null);
+    if (!detected && (await this.isUninstalledSourceRepo(projectDir))) {
+      this.log(`${ROW_INDENT}${SKIP_NO_INSTALLATION}`);
+      return [];
+    }
+
+    return this.runAllChecks(projectDir, await resolveConfigState(detected, projectDir));
+  }
+
+  /**
+   * A config file that exists but failed to load also detects as "no project", and
+   * that is a finding rather than an absence — so the skip requires no config file
+   * at all, not merely no usable one.
+   */
+  private async isUninstalledSourceRepo(projectDir: string): Promise<boolean> {
+    if (await fileExists(getProjectConfigPath(projectDir))) return false;
+    return isSourceRepo(projectDir);
+  }
+
+  private async runAllChecks(projectDir: string, configState: ConfigState): Promise<CheckResult[]> {
+    const { result: configResult, config } = checkConfigValid(configState);
     this.logCheck("Config Valid", configResult);
 
     // loadSource (called by checkSourceReachable) populates the matrix. Run it
@@ -511,15 +843,7 @@ export default class Doctor extends BaseCommand {
 
     const filteredConfig = config ? filterExcludedEntries(config) : null;
 
-    const skillsResult = !config
-      ? skippedResult("skills")
-      : sourceResult.status === "fail"
-        ? {
-            kind: "skills" as const,
-            status: "skip" as const,
-            message: "Skipped (source unreachable)",
-          }
-        : await safeCheck("skills", () => checkSkillsResolved(config, matrix, projectDir));
+    const skillsResult = await this.resolveSkillsCheck(config, sourceResult, projectDir);
     this.logCheck("Skills Resolved", skillsResult);
 
     const agentsResult = filteredConfig
@@ -527,9 +851,7 @@ export default class Doctor extends BaseCommand {
       : skippedResult("agents");
     this.logCheck("Agents Compiled", agentsResult);
 
-    const orphansResult = config
-      ? await safeCheck("orphans", () => checkNoOrphans(config, projectDir))
-      : skippedResult("orphans");
+    const orphansResult = await this.resolveOrphansCheck(config, configState, projectDir);
     this.logCheck("No Orphans", orphansResult);
 
     const installedResult = filteredConfig
@@ -553,6 +875,41 @@ export default class Doctor extends BaseCommand {
       pluginsResult,
       sourceResult,
     ];
+  }
+
+  /**
+   * The orphan row, and which question it can answer. With a config it names the compiled
+   * agents that config does not; with no config at all every installed file is unowned and it
+   * names all of them. It skips for the one state left — a config that loads and fails
+   * validation — because there the file that says who owns what has already been rejected, and
+   * an installation must not be called stranded on the strength of one nobody can trust.
+   */
+  private async resolveOrphansCheck(
+    config: ProjectConfig | null,
+    configState: ConfigState,
+    projectDir: string,
+  ): Promise<CheckResult> {
+    if (config) return safeCheck("orphans", () => checkNoOrphans(config, projectDir));
+    if (configState.kind === "absent") {
+      return safeCheck("orphans", () => checkUnownedInstallation(projectDir));
+    }
+    return skippedResult("orphans");
+  }
+
+  /**
+   * The skills row, and the two states in which it cannot be computed: no config to read the
+   * skills out of, and a source that never loaded — so there is no populated matrix to resolve
+   * them against, and every configured skill would be reported "not found".
+   */
+  private async resolveSkillsCheck(
+    config: ProjectConfig | null,
+    sourceResult: CheckResult,
+    projectDir: string,
+  ): Promise<CheckResult> {
+    if (!config) return skippedResult("skills");
+    if (sourceResult.status === "fail") return sourceUnreachableSkillsResult();
+
+    return safeCheck("skills", () => checkSkillsResolved(config, matrix, projectDir));
   }
 
   private logCheck(name: string, result: CheckResult): void {
