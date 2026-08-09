@@ -1,0 +1,14 @@
+{
+  "extends": "@workspace/typescript-config/base.json",
+  "compilerOptions": {
+    // DOM rather than `types: ["node"]`, which is what `node.json` would bring.
+    // What this package needs from its environment is the Fetch API — msw
+    // models `Request`, `Response` and `Headers` and nothing else — and those
+    // are the same names in a browser, in Node and inside the Workers runtime
+    // the mocked worker actually runs on. Naming Node here would tie an
+    // environment-agnostic package to one of the three for no gain.
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"]
+}

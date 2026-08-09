@@ -1,0 +1,27 @@
+{
+  "name": "@workspace/api-mocks",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workspace/matrix": "workspace:*",
+    "msw": "^2"
+  },
+  "devDependencies": {
+    "@workspace/eslint-config": "workspace:*",
+    "@workspace/prettier-config": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
+    "eslint": "^10",
+    "typescript": "~6"
+  },
+  "//exports": "Three entry points, each for a consumer that must not pay for the others. `./fixtures` is deliberately free of any msw import so the Playwright runner — which keeps its own interception and wants only the payloads — never loads an interceptor it will not use. `./node` is the one place msw/node is named, which is what keeps the environment choice out of every other file.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts",
+    "./node": "./src/node.ts"
+  }
+}
