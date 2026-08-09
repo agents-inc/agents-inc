@@ -7,6 +7,39 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.153.0] - 2026-08-09
+
+**One marketplace at a time**
+
+- Sources revalidate by ETag — one conditional request per source per process, stale-if-error offline, ~1.15s when current (CLI-465)
+- Skill relationship rules cover the full catalog, replayed by one contract-scenario table in every consumer (CLI-389)
+- Preload defaults derive from the catalog at load time; the generated stack-preloads artifact is gone (CLI-390)
+- 28 user journeys documented with four assertion surfaces, and the e2e suite audited to drive them from scratch (CLI-444)
+- `update` wraps `claude plugin update` — plugin skills update in place, sub-agents keep their pointers, ejected skills untouched (CLI-428)
+- Stacks scope to the source that declares them; a stackless custom source gets no stack step (CLI-451)
+- `--source` narrows to `init`; every other command reads the configured source (CLI-466)
+- One PM serves every domain, parameterized by skills (CLI-398)
+- One reviewer serves every domain, same shape (CLI-399)
+- The agent roster sheds retired agents and dangling cross-references (CLI-400)
+- `pretest` builds, so a green `npm test` describes the current source (CLI-457)
+- turbo already hashes the matrix dependency into the build key — measured, disproven as a bug, recorded in turbo.json (CLI-458)
+- A direct `vitest run` refuses a stale dist outright via globalSetup (CLI-460)
+- A project compile stays inside the project — no more writes to the global install or other registered projects (CLI-438)
+- A fresh pick during a project edit defaults global and stays overridable (CLI-442)
+- Removing the project half of a dual-scope pair removes exactly that half (CLI-443)
+- A stack's declared sub-agent roster is what installs (CLI-441)
+- Plugin banners render identically on init and edit (CLI-439)
+- The propagated-recompile summary reports what actually recompiled (CLI-440)
+- Unparseable local skill metadata is a hard error with the file named (CLI-445)
+- Schema-invalid metadata dies just as loudly; edit refuses it, doctor validates content (CLI-446)
+- Built-in relationship rules narrow to the marketplace being loaded — 2384 spurious warnings on custom sources go to zero (CLI-471)
+- Source switching is removed; the CLI models one marketplace at a time (CLI-450)
+- `import`, `new` and `validate` retire with the feature flags that hid them (CLI-452)
+- Dead operational helpers deleted (CLI-459)
+- The dead stack installer deleted with its suites (CLI-461)
+
+See [changelogs/0.153.0.md](./changelogs/0.153.0.md) for full details.
+
 ## [0.152.1] - 2026-08-06
 
 **The README's documentation links work again**
