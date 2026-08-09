@@ -7,7 +7,7 @@ const { name: CATEGORY, first: REACT } = EXCLUSIVE_CATEGORY
 const REACT_ID = "web-framework-react"
 
 const DEVELOPER = "web-developer"
-const REVIEWER = "web-reviewer"
+const REVIEWER = "reviewer"
 
 // The CLI already carries scope on every `AgentScopeConfig`; the web had no
 // surface for it, so `--from` wrote `project` unconditionally. The field is
@@ -18,22 +18,22 @@ const SEED_VERSION = 3
 // Scope is a decision about the agent, exactly as model and effort are, and it
 // sits with them on the agent's own row.
 test.describe("agent scope", () => {
-  test("the scope control rests on project", async ({ configure }) => {
+  test("the scope control rests on global", async ({ configure }) => {
     await expect(configure.roster.scopeControl(DEVELOPER)).toHaveAccessibleName(
       `Scope for ${DEVELOPER}: ${AGENT_OPTIONS.restingScope}`
     )
   })
 
-  test("clicking the scope control toggles it to global and back", async ({
+  test("clicking the scope control toggles it to project and back", async ({
     configure,
   }) => {
     const scope = configure.roster.scopeControl(DEVELOPER)
 
     await scope.click()
-    await expect(scope).toHaveAccessibleName(`Scope for ${DEVELOPER}: global`)
+    await expect(scope).toHaveAccessibleName(`Scope for ${DEVELOPER}: project`)
 
     await scope.click()
-    await expect(scope).toHaveAccessibleName(`Scope for ${DEVELOPER}: project`)
+    await expect(scope).toHaveAccessibleName(`Scope for ${DEVELOPER}: global`)
   })
 
   // It sits on the agent's row, so the one thing it must never do is pin it —
@@ -56,7 +56,7 @@ test.describe("agent scope", () => {
     await configure.roster.scopeControl(DEVELOPER).click()
 
     await expect(configure.roster.scopeControl(REVIEWER)).toHaveAccessibleName(
-      `Scope for ${REVIEWER}: project`
+      `Scope for ${REVIEWER}: global`
     )
   })
 
@@ -65,14 +65,14 @@ test.describe("agent scope", () => {
   test("a scope choice survives a reload", async ({ configure, page }) => {
     await configure.roster.scopeControl(DEVELOPER).click()
     await expect(configure.roster.scopeControl(DEVELOPER)).toHaveAccessibleName(
-      `Scope for ${DEVELOPER}: global`
+      `Scope for ${DEVELOPER}: project`
     )
 
     await page.reload()
     await configure.stacks.waitFor()
 
     await expect(configure.roster.scopeControl(DEVELOPER)).toHaveAccessibleName(
-      `Scope for ${DEVELOPER}: global`
+      `Scope for ${DEVELOPER}: project`
     )
   })
 
@@ -88,7 +88,7 @@ test.describe("agent scope", () => {
 })
 
 // What actually leaves the browser. Scope travels on the agent's entry, and
-// only when it is the user's choice rather than the CLI's default.
+// only when it is the user's choice rather than the resting default.
 test.describe("sharing an agent's scope", () => {
   test.use({ permissions: ["clipboard-read", "clipboard-write"] })
 
@@ -117,17 +117,17 @@ test.describe("sharing an agent's scope", () => {
       skills: {
         [REACT_ID]: {
           install: "plugin",
-          scope: "project",
+          scope: "global",
           assignments: expect.any(Object),
         },
       },
-      agents: { [DEVELOPER]: { scope: "global" } },
+      agents: { [DEVELOPER]: { scope: "project" } },
     })
   })
 
-  // Absent means project, matching the CLI's default, so the resting value is
-  // the one thing the payload never says.
-  test("an agent left at project travels no scope key", async ({
+  // Absent means global, matching the shared selection default, so the resting
+  // value is the one thing the payload never says.
+  test("an agent left at global travels no scope key", async ({
     configure,
     page,
   }) => {
@@ -145,14 +145,14 @@ test.describe("sharing an agent's scope", () => {
 
     const [body] = posted
     expect(body!.agents).toEqual({
-      [DEVELOPER]: { scope: "global" },
+      [DEVELOPER]: { scope: "project" },
       [REVIEWER]: { model: "fable" },
     })
   })
 
   // The same drop-on-resting rule model and effort follow: cycling back to the
   // default removes the choice rather than recording it.
-  test("returning an agent to project drops the key again", async ({
+  test("returning an agent to global drops the key again", async ({
     configure,
     page,
   }) => {
@@ -188,23 +188,25 @@ test.describe("install dialog agent scope", () => {
     await configure.roster.installButton.click()
 
     const pane = configure.installDialog.agentsPane
-    await expect(pane).toContainText(/Project[\s\S]*web · reviewer/)
-    await expect(pane).toContainText(/Global[\s\S]*web · developer/)
+    await expect(pane).toContainText(/Project[\s\S]*web · developer/)
+    await expect(pane).toContainText(/Global[\s\S]*meta · reviewer/)
   })
 
-  test("the Global group appears only once an agent is global", async ({
+  test("the Project group appears only once an agent is project", async ({
     configure,
   }) => {
     await configure.skillIn(web, CATEGORY, REACT).toggle()
 
     await configure.roster.installButton.click()
-    await expect(configure.installDialog.agentsPane).toContainText("Project")
-    await expect(configure.installDialog.agentsPane).not.toContainText("Global")
+    await expect(configure.installDialog.agentsPane).toContainText("Global")
+    await expect(configure.installDialog.agentsPane).not.toContainText(
+      "Project"
+    )
     await configure.installDialog.close()
 
     await configure.roster.scopeControl(DEVELOPER).click()
     await configure.roster.installButton.click()
 
-    await expect(configure.installDialog.agentsPane).toContainText("Global")
+    await expect(configure.installDialog.agentsPane).toContainText("Project")
   })
 })

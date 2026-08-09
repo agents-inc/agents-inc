@@ -1,5 +1,6 @@
 import { expect, test } from "../fixtures"
 import {
+  DOMAIN_REACH,
   DOMAINS,
   EXCLUSIVE_CATEGORY,
   INCOMPATIBLE,
@@ -50,6 +51,23 @@ test.describe("catalog assumptions", () => {
     await expect(
       configure.skill(MULTI_CATEGORY.second, category).root
     ).toBeVisible()
+  })
+
+  // The roster is upstream data as well, and the relevance rule reaches a
+  // whole domain of it, so every agent count in the suite moves the moment a
+  // domain gains or loses an agent. This is the one failure that names the
+  // number rather than the six specs that lean on it.
+  test("a domain skill reaches as many agents as the specs expect", async ({
+    configure,
+  }) => {
+    const skill = configure.skillIn(
+      DOMAINS.web,
+      EXCLUSIVE_CATEGORY.name,
+      EXCLUSIVE_CATEGORY.first
+    )
+    await skill.toggle()
+
+    await expect(skill.agentCount).toHaveText(`${DOMAIN_REACH.web} agents`)
   })
 
   // The relationship data is upstream and can be re-authored, so the pair the

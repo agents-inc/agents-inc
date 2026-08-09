@@ -33,7 +33,8 @@ export class InstallDialog {
   }
 }
 
-// Targeted GitHub search, staged into pills, committed together.
+// The external skill index, filtered in the browser, staged into pills and
+// committed together.
 export class AddSkillDialog {
   readonly root: Locator
   readonly searchInput: Locator
@@ -42,16 +43,16 @@ export class AddSkillDialog {
 
   constructor(page: Page) {
     this.root = page.getByRole("dialog").filter({ hasText: "ADD SKILL" })
-    this.searchInput = this.root.getByLabel("Search GitHub")
+    this.searchInput = this.root.getByLabel("Search external skills")
     this.footerNote = this.root.locator('[data-slot="dialog-footer-note"]')
     this.cancelButton = this.root.getByRole("button", { name: "Cancel" })
   }
 
-  // Result rows are the add-skill lattice; the repo name identifies one.
-  result(fullName: string): Locator {
+  // Result rows are the add-skill lattice; the skill's own name identifies one.
+  result(name: string): Locator {
     return this.root
       .locator('[data-slot="lattice-row"]')
-      .filter({ hasText: fullName })
+      .filter({ hasText: name })
   }
 
   stagedPill(skillName: string): Locator {

@@ -76,10 +76,9 @@ test.describe("filtering", () => {
 // The assertion is only that the position is not zero, because the exact
 // number legitimately moves: removing results shortens the page, and the
 // browser's scroll anchoring then shifts the offset to keep the content you
-// were looking at in view. Measured on the Recommended chip, the maximum drops
-// 15898 → 2929 and the offset follows 1200 → 588. That is the feature working,
-// not the bug — and any assertion tighter than "not the top" ends up encoding
-// the anchoring arithmetic rather than the behaviour under test.
+// were looking at in view. That is the feature working, not the bug — and any
+// assertion tighter than "not the top" ends up encoding the anchoring
+// arithmetic rather than the behaviour under test.
 const NO_RESET = "filtering must not scroll the page back to the top"
 
 test.describe("filtering and scroll position", () => {
@@ -89,11 +88,8 @@ test.describe("filtering and scroll position", () => {
     // offset by a few pixels, and the precondition only needs "we are scrolled".
     await expect.poll(() => configure.scrollY()).toBeGreaterThan(0)
 
-    await configure.toggleChip("Recommended")
-    await expect(configure.chip("Recommended")).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    )
+    await configure.toggleChip(web)
+    await expect(configure.chip(web)).toHaveAttribute("aria-pressed", "true")
 
     await expect
       .poll(() => configure.scrollY(), { message: NO_RESET })

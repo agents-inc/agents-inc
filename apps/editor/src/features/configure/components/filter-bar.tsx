@@ -1,9 +1,9 @@
 import { useNavigate } from "@tanstack/react-router"
-import { DOMAIN_LABELS, type Domain } from "@workspace/matrix"
+import { DOMAIN_LABELS } from "@workspace/matrix"
 import { Button } from "@workspace/ui/components/button"
 import { Chip } from "@workspace/ui/components/chip"
 import { Input } from "@workspace/ui/components/input"
-import { useEffect, useRef } from "react"
+import { useRef } from "react"
 
 import {
   useBarStuckAttribute,
@@ -23,7 +23,6 @@ export function FilterBar({ search }: { search: ConfigureSearch }) {
   const setDialog = useUiStore((state) => state.setDialog)
 
   const wrapRef = useRef<HTMLDivElement>(null)
-  const searchRef = useRef<HTMLInputElement>(null)
 
   // A filter change is a router navigation, which resets scroll by default.
   // `replace` for the query only, so typing does not fill the history stack.
@@ -39,13 +38,11 @@ export function FilterBar({ search }: { search: ConfigureSearch }) {
   const stuck = usePinned(wrapRef)
   useBarStuckAttribute(stuck)
 
-  // Reaching the top is the moment searching becomes the obvious thing to do,
-  // so the caret is already there rather than one click away. Keyed on the
-  // transition, not on every scroll event: this fires once per stick, or
-  // typing anywhere else on the page would be impossible while pinned.
-  useEffect(() => {
-    if (stuck) searchRef.current?.focus({ preventScroll: true })
-  }, [stuck])
+  // Pinning changes how the bar looks and never where the caret is. It used to
+  // take focus into the search field on the transition — but focus can cause
+  // the scroll, so a Tab to anything below the fold stuck the bar and then had
+  // its own focus taken, throwing a keyboard user back to the top of the page
+  // by the act of moving down it.
 
   return (
     <>
@@ -83,7 +80,6 @@ export function FilterBar({ search }: { search: ConfigureSearch }) {
             }`}
           >
             <Input
-              ref={searchRef}
               onDark={stuck}
               value={search.q}
               placeholder="search skills"
@@ -99,8 +95,7 @@ export function FilterBar({ search }: { search: ConfigureSearch }) {
                   onDark={stuck}
                   onClick={() =>
                     update({
-                      domain:
-                        search.domain === domain ? null : (domain as Domain),
+                      domain: search.domain === domain ? null : domain,
                     })
                   }
                 >
@@ -110,13 +105,6 @@ export function FilterBar({ search }: { search: ConfigureSearch }) {
             </div>
 
             <div className="flex shrink-0 gap-[0.125rem]">
-              <Chip
-                active={search.rec}
-                onDark={stuck}
-                onClick={() => update({ rec: !search.rec })}
-              >
-                Recommended
-              </Chip>
               <Chip
                 active={search.sel}
                 onDark={stuck}

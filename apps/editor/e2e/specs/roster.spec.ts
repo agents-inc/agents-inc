@@ -3,6 +3,7 @@ import type { Locator } from "@playwright/test"
 import { expect, test } from "../fixtures"
 import {
   AGENT_OPTIONS,
+  DOMAIN_REACH,
   DOMAINS,
   EXCLUSIVE_CATEGORY,
   STACKS,
@@ -33,21 +34,28 @@ test.describe("roster panel", () => {
     ).toHaveAttribute("aria-pressed", "false")
   })
 
+  // Infra fields no agents since its reviewer folded into the consolidated
+  // `reviewer`, so it has no band to draw. The other domains keep three each:
+  // the planner folded the same way.
   test("lists every domain that has agents", async ({ configure }) => {
-    for (const domainId of ["web", "api", "ai", "cli", "infra", "meta"]) {
+    for (const domainId of ["web", "api", "ai", "cli", "meta"]) {
       await expect(configure.roster.domainBand(domainId)).toBeVisible()
     }
+    await expect(configure.roster.domainBand("infra")).toBeHidden()
   })
 
-  // The headline behaviour: selecting a skill assigns it to the domain's core
-  // agents, which is what switches them on.
-  test("selecting a skill enables its domain's core agents", async ({
+  // The headline behaviour: selecting a skill assigns it to its own domain's
+  // agents — every role flavor that domain fields — plus the two cross-domain
+  // role agents, which is what switches them on. A web skill staying out of
+  // the API column is the relevance rule, shared with the CLI's generator: a
+  // sub-agent only carries skills it would reasonably use.
+  test("selecting a skill enables its own domain's agents plus the role agents", async ({
     configure,
   }) => {
     await configure.skillIn(web, CATEGORY, REACT).toggle()
 
-    await expect(configure.roster.domainBand("web")).toContainText("4 of")
-    for (const role of ["developer", "pm", "reviewer", "tester"]) {
+    await expect(configure.roster.domainBand("web")).toContainText("3 of")
+    for (const role of ["developer", "researcher", "tester"]) {
       await expect(configure.roster.agentButton("web", role)).toHaveAttribute(
         "aria-pressed",
         "true"
@@ -56,8 +64,24 @@ test.describe("roster panel", () => {
         configure.roster.skillRow(REACT, `web-${role}`)
       ).toBeVisible()
     }
+    // The consolidated pm and reviewer sit in the meta band and carry it.
+    for (const agentId of ["pm", "reviewer"]) {
+      await expect(
+        configure.roster.agentButton("meta", agentId)
+      ).toHaveAttribute("aria-pressed", "true")
+      await expect(configure.roster.skillRow(REACT, agentId)).toBeVisible()
+    }
+    // Not past it: the whole API column stays dark.
+    await expect(configure.roster.domainBand("api")).toContainText("0 of")
+    await expect(configure.roster.skillRow(REACT, "api-developer")).toBeHidden()
+    // The meta-flavor agents receive nothing by default, as ever — the band's
+    // two lit agents are the role agents.
+    await expect(configure.roster.domainBand("meta")).toContainText("2 of")
+    await expect(
+      configure.roster.skillRow(REACT, "agent-summoner")
+    ).toBeHidden()
     await expect(configure.roster.installButton).toContainText(
-      "4 sub-agents and 1 skill"
+      `${DOMAIN_REACH.web} sub-agents and 1 skill`
     )
   })
 
@@ -107,7 +131,7 @@ test.describe("roster panel", () => {
 
     await developer.click()
     await expect(developer).toHaveAttribute("aria-pressed", "false")
-    await expect(configure.roster.domainBand("web")).toContainText("3 of")
+    await expect(configure.roster.domainBand("web")).toContainText("2 of")
     // The deselected agent keeps its skills listed, recessed.
     await expect(
       configure.roster.skillRow(REACT, "web-developer")
@@ -115,7 +139,7 @@ test.describe("roster panel", () => {
 
     await developer.click()
     await expect(developer).toHaveAttribute("aria-pressed", "true")
-    await expect(configure.roster.domainBand("web")).toContainText("4 of")
+    await expect(configure.roster.domainBand("web")).toContainText("3 of")
   })
 
   test("a pinned bare agent reads as a base agent", async ({ configure }) => {
@@ -140,7 +164,7 @@ test.describe("roster panel", () => {
       configure.roster.agentButton("web", "developer")
     ).toHaveAttribute("aria-pressed", "false")
     await expect(configure.skillIn(web, CATEGORY, REACT).agentCount).toHaveText(
-      "3 agents"
+      `${DOMAIN_REACH.web - 1} agents`
     )
 
     await row.click()
@@ -180,13 +204,22 @@ test.describe("roster panel", () => {
     await configure.skillIn(web, CATEGORY, REACT).toggle()
     const uses = configure.roster.whereUsed(REACT, "web-developer")
 
-    await expect(uses).toHaveText("4")
+    await expect(uses).toHaveText(String(DOMAIN_REACH.web))
     await uses.hover()
 
     const tip = configure.roster.whereUsedTip
     await expect(tip).toBeVisible()
     await expect(tip).toContainText("web developer")
+    await expect(tip).toContainText("web researcher")
     await expect(tip).toContainText("web tester")
+    // The two cross-domain role agents carry it too, listed under their meta
+    // group.
+    await expect(tip).toContainText("meta reviewer")
+    await expect(tip).toContainText("meta pm")
+    // Relevance keeps the skill away from other domains' implementation
+    // agents, so the carriers the tooltip lists never reach past it.
+    await expect(tip).not.toContainText("api developer")
+    await expect(tip).not.toContainText("api researcher")
 
     await configure.roster.heading.hover()
     await expect(tip).toBeHidden()
@@ -395,7 +428,7 @@ test.describe("quiet at rest", () => {
   // next one's rows.
   test("a neighbouring agent stays quiet", async ({ configure }) => {
     await configure.skillIn(web, CATEGORY, REACT).toggle()
-    const neighbour = configure.roster.loadWord(REACT, "web-reviewer")
+    const neighbour = configure.roster.loadWord(REACT, "web-researcher")
 
     await configure.roster.agentButton("web", "developer").hover()
 

@@ -15,7 +15,6 @@ import { z } from "zod"
 export const configureSearchSchema = z.object({
   domain: z.enum(DOMAINS).nullable().catch(null),
   q: z.string().trim().max(64).catch(""),
-  rec: z.boolean().catch(false),
   // Narrow to what you have actually chosen — a review pass over your setup.
   sel: z.boolean().catch(false),
   // The exception to "view state only": a share-link id, consumed once — the
@@ -30,7 +29,6 @@ export type ConfigureSearch = z.infer<typeof configureSearchSchema>
 export const CONFIGURE_SEARCH_DEFAULTS: ConfigureSearch = {
   domain: null,
   q: "",
-  rec: false,
   sel: false,
   fromId: "",
 }

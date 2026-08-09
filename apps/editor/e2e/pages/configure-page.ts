@@ -6,6 +6,15 @@ import { SkillCell } from "./skill-cell"
 
 const CONFIGURE_URL = "/"
 
+// Every skill cell on the screen. The filter bar sits outside every section,
+// so nothing on the bar can ever match this.
+const SKILL_CELL = 'main section [data-slot="lattice-cell"]'
+
+// How far the keyboard may walk looking for the pin. Reaching it takes around
+// seventy stops from the bar; this is headroom, and a walk that spends it all
+// leaves the bar unstuck for the spec to fail on.
+const MAX_TAB_STEPS = 200
+
 // The saved snapshot's cell. The app names this one rather than the generated
 // catalogue, so it lives here beside the grid rather than in
 // `support/catalog.ts` — no amount of catalog drift can move it.
@@ -134,7 +143,13 @@ export class ConfigurePage {
 
   // Every rendered skill cell, for counting what a filter left behind.
   get skillCells(): Locator {
-    return this.page.locator('main section [data-slot="lattice-cell"]')
+    return this.page.locator(SKILL_CELL)
+  }
+
+  // The cell holding the caret — the cell itself, or one of the controls
+  // inside it. Empty whenever focus is anywhere else, the filter bar included.
+  get focusedSkillCell(): Locator {
+    return this.page.locator(`${SKILL_CELL}:focus-within`)
   }
 
   // ── Scroll ─────────────────────────────────────────────────────────────
@@ -152,5 +167,16 @@ export class ConfigurePage {
     return this.page.evaluate(() =>
       document.documentElement.hasAttribute("data-bar-stuck")
     )
+  }
+
+  // Walks the keyboard down the page one control at a time. Each Tab that
+  // reaches a control the viewport is not showing scrolls it into view, and
+  // one of those scrolls crosses the pin — which is how a keyboard user
+  // sticks the bar without ever asking to scroll.
+  async tabUntilBarSticks() {
+    for (let step = 0; step < MAX_TAB_STEPS; step++) {
+      if (await this.isBarStuck()) return
+      await this.page.keyboard.press("Tab")
+    }
   }
 }

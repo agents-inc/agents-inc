@@ -249,21 +249,17 @@ export function InstallDialog({
                 </p>
                 {/* The id is what carries this configuration to the CLI, so
                     it is the one part of the command the user did not already
-                    know — amber, per rule 4, marks what they chose. */}
+                    know — amber, per rule 4, marks what they chose.
+
+                    `copyable` carries the button semantics and the keyboard
+                    path, so what belongs here is the name and the action. */}
                 <CommandBlock
                   copyable
-                  role="button"
-                  tabIndex={0}
                   // The hook's own string, not a second copy assembled here —
                   // otherwise what is announced and what is copied drift the
                   // first time the command changes shape.
                   aria-label={`Copy ${text}`}
                   onClick={() => void copy()}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return
-                    event.preventDefault()
-                    void copy()
-                  }}
                 >
                   {command.status === "ready" ? (
                     <>
@@ -291,8 +287,8 @@ export function InstallDialog({
         <DialogFooter>
           <DialogFooterNote>
             {stats.skillCount} skills · {stats.agentCount} sub-agents ·{" "}
-            {stats.ejectedCount} ejected · re-open this editor with{" "}
-            <em className="text-ink not-italic">npx agents-inc edit --ui</em>
+            {stats.ejectedCount} ejected · change it later with{" "}
+            <em className="text-ink not-italic">npx agents-inc edit</em>
           </DialogFooterNote>
           <DialogClose render={<Button variant="outline" />}>Close</DialogClose>
         </DialogFooter>

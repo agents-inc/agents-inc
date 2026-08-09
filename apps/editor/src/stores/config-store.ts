@@ -1,6 +1,8 @@
 import {
   CATALOG,
   expandStack,
+  skillById,
+  type AssignmentTarget,
   type SkillId,
   type StackExpansion,
 } from "@workspace/matrix"
@@ -105,7 +107,7 @@ const countIds = (config: PersistedConfig) => {
     entries.length +
     Object.keys(config.agents).length +
     entries.reduce(
-      (total, entry) => total + Object.keys(entry?.assignments ?? {}).length,
+      (total, entry) => total + Object.keys(entry.assignments).length,
       0
     )
   )
@@ -133,19 +135,11 @@ const isKnownSkill = (skillId: string) =>
   useAddedSkillsStore.getState().isAdded(skillId)
 
 const isInCategory = (skillId: string, categoryId: string) =>
-  CATALOG.skillsById[skillId]?.categoryId === categoryId
-
-// The skill's category, wherever it is known: the catalog for its own skills,
-// the session store for added ones (their category comes from the marketplace
-// index and may be absent — those assign nowhere).
-const categoryIdOf = (skillId: string) =>
-  CATALOG.skillsById[skillId]?.categoryId ??
-  useAddedSkillsStore.getState().added.find((skill) => skill.id === skillId)
-    ?.categoryId
+  skillById(skillId)?.categoryId === categoryId
 
 // The skill's category, but only when picking one replaces the others.
 const exclusiveCategoryOf = (skillId: string) => {
-  const categoryId = CATALOG.skillsById[skillId]?.categoryId
+  const categoryId = skillById(skillId)?.categoryId
   if (!categoryId) return undefined
 
   return CATALOG.categoriesById[categoryId]?.exclusive ? categoryId : undefined
@@ -203,7 +197,7 @@ const deselect = (
 // has to be what picking the skill would actually give you.
 export const freshEntry = (skillId: string): SkillEntry => ({
   ...DEFAULT_SKILL_OPTIONS,
-  assignments: defaultAssignmentsFor(categoryIdOf(skillId)),
+  assignments: defaultAssignmentsFor(skillId),
 })
 
 // A remembered skill restores exactly what it had instead; the rule must not
@@ -324,26 +318,18 @@ const configureAgent = (
 
 // ── Stack expansion ──────────────────────────────────────────────────────
 
-const toAssignments = (
-  agentIds: readonly string[],
-  preloaded: boolean
-): Assignments => {
-  const assignment: Assignment = {
-    load: preloaded ? "preloaded" : "lazy",
-    enabled: true,
-  }
-  return Object.fromEntries(agentIds.map((agentId) => [agentId, assignment]))
-}
+// The expansion answers per (skill, sub-agent) — the stack says who carries the
+// skill, the shared resolver says how each of them loads it — so a framework can
+// arrive resident on its domain's developer and on demand on a summoner.
+const toAssignments = (targets: readonly AssignmentTarget[]): Assignments =>
+  Object.fromEntries(
+    targets.map(({ agentId, load }) => [agentId, { load, enabled: true }])
+  )
 
 const toStackSkills = (expansion: StackExpansion): SkillMap => {
-  const preloaded = new Set<string>(expansion.preloadedSkillIds)
-
   const entryFor = (skillId: string): SkillEntry => ({
     ...DEFAULT_SKILL_OPTIONS,
-    assignments: toAssignments(
-      expansion.agentsBySkill[skillId] ?? [],
-      preloaded.has(skillId)
-    ),
+    assignments: toAssignments(expansion.assignmentsBySkill[skillId] ?? []),
   })
 
   return Object.fromEntries(
@@ -419,7 +405,7 @@ export const useConfigStore = create<ConfigState>()(
           name: "skill_toggled",
           skillId,
           // Session-added skills have no catalog entry and so no domain.
-          domainId: CATALOG.skillsById[skillId]?.domainId ?? "added",
+          domainId: skillById(skillId)?.domainId ?? "added",
           selected: nowSelected,
         })
       },
@@ -540,6 +526,13 @@ export const useConfigStore = create<ConfigState>()(
       // The one untrusted boundary: anything unparseable is discarded in
       // favour of empty state rather than crashing the app.
       merge: (persisted, current) => {
+        // Zustand runs `merge` after every load, including the ones that found
+        // an empty storage — those arrive as `undefined`, exactly as a blob
+        // `migrateConfig` refused does. Neither is a configuration this failed
+        // to read, and calling them one filed the warning below against every
+        // visitor who had never saved anything.
+        if (persisted === undefined) return current
+
         const parsed = persistedConfigSchema.safeParse(persisted)
         if (!parsed.success) {
           // The app's only *silent* failure: an afternoon of configuration

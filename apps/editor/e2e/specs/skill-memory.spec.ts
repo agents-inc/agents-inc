@@ -1,5 +1,6 @@
 import { expect, test } from "../fixtures"
 import {
+  DOMAIN_REACH,
   DOMAINS,
   EXCLUSIVE_CATEGORY,
   MULTI_CATEGORY,
@@ -34,24 +35,24 @@ test.describe("configuration survives deselection", () => {
     await react.toggle()
 
     await expect(react.installBadge).toHaveAccessibleName("Install mode: eject")
-    await expect(react.scopeBadge).toHaveAccessibleName("Scope: global")
+    await expect(react.scopeBadge).toHaveAccessibleName("Scope: project")
   })
 
   test("re-selecting restores sub-agent assignments", async ({ configure }) => {
     const react = configure.skillIn(web, EXCLUSIVE, REACT)
 
-    // Selecting auto-assigned the four core agents; unassigning one is the
-    // hand-made edit that must survive the toggle.
+    // Selecting assigned it across its own domain's roster; unassigning one is
+    // the hand-made edit that must survive the toggle.
     await react.toggle()
     await react.openOptions()
     await react.options.cycleAssignment(MATRIX_DOMAIN, MATRIX_ROLE)
-    await expect(react.agentCount).toHaveText("3 agents")
+    await expect(react.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
     await configure.roster.heading.click()
 
     await react.toggle()
     await react.toggle()
 
-    await expect(react.agentCount).toHaveText("3 agents")
+    await expect(react.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
     await expect(configure.roster.skillRow(REACT, "web-developer")).toBeHidden()
   })
 
@@ -65,19 +66,19 @@ test.describe("configuration survives deselection", () => {
 
     await react.openOptions()
     await react.options.choose("eject")
-    await react.options.choose("global")
+    await react.options.choose("project")
     await configure.roster.heading.click()
 
     await react.toggle()
     await react.toggle()
     await react.openOptions()
 
-    await expect(react.options.option("eject")).toHaveAttribute(
-      "aria-pressed",
+    await expect(react.options.segment("eject")).toHaveAttribute(
+      "aria-checked",
       "true"
     )
-    await expect(react.options.option("global")).toHaveAttribute(
-      "aria-pressed",
+    await expect(react.options.segment("project")).toHaveAttribute(
+      "aria-checked",
       "true"
     )
   })
@@ -111,7 +112,7 @@ test.describe("configuration survives deselection", () => {
     await react.toggle()
     await react.toggle()
 
-    await expect(react.scopeBadge).toHaveAccessibleName("Scope: global")
+    await expect(react.scopeBadge).toHaveAccessibleName("Scope: project")
   })
 
   // select() must restore the enabled:false row verbatim instead of
@@ -130,7 +131,7 @@ test.describe("configuration survives deselection", () => {
     const row = configure.roster.skillRow(REACT, "web-developer")
     await expect(row).toBeVisible()
     await expect(row).toHaveAttribute("aria-pressed", "false")
-    await expect(react.agentCount).toHaveText("3 agents")
+    await expect(react.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
   })
 
   test("an unconfigured skill starts from the rule every time", async ({
@@ -149,8 +150,8 @@ test.describe("configuration survives deselection", () => {
     await expect(skill.installBadge).toHaveAccessibleName(
       "Install mode: plugin"
     )
-    // Not blank — selection auto-assigns the domain's core agents afresh.
-    await expect(skill.agentCount).toHaveText("4 agents")
+    // Not blank — selection assigns across its own domain's roster afresh.
+    await expect(skill.agentCount).toHaveText(`${DOMAIN_REACH.web} agents`)
   })
 })
 
@@ -184,7 +185,7 @@ test.describe("configuration survives an exclusive swap", () => {
     await react.toggle()
 
     await expect(react.installBadge).toHaveAccessibleName("Install mode: eject")
-    await expect(react.agentCount).toHaveText("3 agents")
+    await expect(react.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
     await expect(vue.root).toHaveAttribute("aria-pressed", "false")
   })
 })

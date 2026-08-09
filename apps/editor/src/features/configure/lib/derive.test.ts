@@ -35,7 +35,6 @@ import {
 const SEARCH: ConfigureSearch = {
   domain: null,
   q: "",
-  rec: false,
   sel: false,
   fromId: "",
 }
@@ -67,32 +66,28 @@ const STACK = STACKS.find((candidate) => {
 })!
 const EXPANSION = expandStack(STACK.id)!
 
-const asApplied = (): ConfigSelection => {
-  const preloaded = new Set<string>(EXPANSION.preloadedSkillIds)
-  return {
-    stackId: STACK.id,
-    agents: {},
-    skills: Object.fromEntries(
-      EXPANSION.skillIds.map((skillId) => [
-        skillId,
-        {
-          ...DEFAULT_SKILL_OPTIONS,
-          assignments: Object.fromEntries(
-            (EXPANSION.agentsBySkill[skillId] ?? []).map((agentId) => [
-              agentId,
-              live(preloaded.has(skillId) ? "preloaded" : "lazy"),
-            ])
-          ),
-        } satisfies SkillEntry,
-      ])
-    ),
-  }
-}
+const asApplied = (): ConfigSelection => ({
+  stackId: STACK.id,
+  agents: {},
+  skills: Object.fromEntries(
+    EXPANSION.skillIds.map((skillId) => [
+      skillId,
+      {
+        ...DEFAULT_SKILL_OPTIONS,
+        assignments: Object.fromEntries(
+          (EXPANSION.assignmentsBySkill[skillId] ?? []).map(
+            ({ agentId, load }) => [agentId, live(load)]
+          )
+        ),
+      } satisfies SkillEntry,
+    ])
+  ),
+})
 
 // A stack member that definitely carries assignments, so the load-state and
 // row-off tests below can never silently sample an agentless skill.
 const FIRST_SKILL = EXPANSION.skillIds.find(
-  (id) => (EXPANSION.agentsBySkill[id] ?? []).length > 0
+  (id) => (EXPANSION.assignmentsBySkill[id] ?? []).length > 0
 )!
 
 const edit = (patch: Partial<SkillEntry>): ConfigSelection => {
@@ -142,7 +137,7 @@ describe("isStackCustom", () => {
   // would silently discard the other six.
   it.each([
     ["install mode", { install: "eject" as const }],
-    ["scope", { scope: "global" as const }],
+    ["scope", { scope: "project" as const }],
   ])("is true after changing %s", (_label, patch) => {
     expect(isStackCustom(edit(patch))).toBe(true)
   })
@@ -236,7 +231,7 @@ describe("summarize", () => {
         ...DEFAULT_SKILL_OPTIONS,
         assignments: {
           "web-developer": live("preloaded"),
-          "web-reviewer": live(),
+          reviewer: live(),
         },
       },
       b: { ...DEFAULT_SKILL_OPTIONS, assignments: { "web-developer": live() } },
@@ -257,7 +252,7 @@ describe("summarize", () => {
         ...DEFAULT_SKILL_OPTIONS,
         assignments: {
           "web-developer": live("preloaded"),
-          "web-reviewer": off("preloaded"),
+          reviewer: off("preloaded"),
         },
       },
     })
@@ -297,7 +292,7 @@ describe("summarize", () => {
       a: {
         ...DEFAULT_SKILL_OPTIONS,
         install: "eject",
-        assignments: { "web-developer": live(), "web-reviewer": live() },
+        assignments: { "web-developer": live(), reviewer: live() },
       },
       b: { ...DEFAULT_SKILL_OPTIONS, assignments: {} },
     })
@@ -324,14 +319,14 @@ describe("selectRosterGroups", () => {
       scratch({
         a: {
           ...DEFAULT_SKILL_OPTIONS,
-          assignments: { "web-developer": live(), "web-reviewer": off() },
+          assignments: { "web-developer": live(), reviewer: off() },
         },
       })
     )
 
     expect(rows.find((row) => row.agent.id === "web-developer")?.on).toBe(true)
     // A disabled row keeps the skill listed but does not switch the agent on.
-    const reviewer = rows.find((row) => row.agent.id === "web-reviewer")!
+    const reviewer = rows.find((row) => row.agent.id === "reviewer")!
     expect(reviewer.on).toBe(false)
     expect(reviewer.skills.map((skill) => skill.id)).toEqual(["a"])
     expect(reviewer.skills[0]!.enabled).toBe(false)
@@ -359,7 +354,7 @@ describe("selectRosterGroups", () => {
       scratch({
         a: {
           ...DEFAULT_SKILL_OPTIONS,
-          assignments: { "web-developer": live(), "web-reviewer": live() },
+          assignments: { "web-developer": live(), "web-tester": live() },
         },
       }),
       []
@@ -370,6 +365,23 @@ describe("selectRosterGroups", () => {
     expect(web.agents.length).toBeGreaterThan(2)
   })
 
+  // The consolidated reviewer has no domain prefix, so it counts in the meta
+  // group's badge — not in the domain whose skill it happens to carry.
+  it("counts the reviewer in the meta badge", () => {
+    const groups = selectRosterGroups(
+      scratch({
+        a: {
+          ...DEFAULT_SKILL_OPTIONS,
+          assignments: { "web-developer": live(), reviewer: live() },
+        },
+      }),
+      []
+    )
+
+    expect(groups.find((group) => group.domainId === "web")!.onCount).toBe(1)
+    expect(groups.find((group) => group.domainId === "meta")!.onCount).toBe(1)
+  })
+
   it("lists where-used only across on agents carrying the skill live", () => {
     const rows = allRows(
       scratch(
@@ -378,7 +390,7 @@ describe("selectRosterGroups", () => {
             ...DEFAULT_SKILL_OPTIONS,
             assignments: {
               "web-developer": live(),
-              "web-reviewer": live(),
+              reviewer: live(),
               // Disabled — must not appear as a use.
               "web-tester": off(),
               // Live, but the agent is pinned off — must not appear either.
@@ -394,7 +406,7 @@ describe("selectRosterGroups", () => {
       .find((row) => row.agent.id === "web-developer")!
       .skills[0]!.usedBy.map((agent) => agent.id)
 
-    expect(usedBy).toEqual(["web-developer", "web-reviewer"])
+    expect(usedBy).toEqual(["web-developer", "reviewer"])
   })
 })
 
@@ -412,8 +424,8 @@ describe("roster model, effort and scope", () => {
   // There is no single default for the model: an agent rests on the one its own
   // metadata names, and only falls back to sonnet when it names none. Scope is
   // the opposite — the catalogue says nothing about it, so every agent rests on
-  // the CLI's own default of writing front-matter into the project.
-  it("rests every agent on its catalogue model, medium effort and project", () => {
+  // the shared selection default of writing front-matter into ~/.claude.
+  it("rests every agent on its catalogue model, medium effort and global", () => {
     const rows = selectRosterGroups(scratch(), []).flatMap(
       (group) => group.agents
     )
@@ -421,7 +433,7 @@ describe("roster model, effort and scope", () => {
     for (const row of rows) {
       expect(row.model).toBe(SUB_AGENTS_BY_ID[row.agent.id]?.model ?? "sonnet")
       expect(row.effort).toBe("medium")
-      expect(row.scope).toBe("project")
+      expect(row.scope).toBe("global")
     }
   })
 
@@ -429,14 +441,14 @@ describe("roster model, effort and scope", () => {
     const row = rowFor(
       scratch(
         {},
-        { "web-developer": { model: "haiku", effort: "max", scope: "global" } }
+        { "web-developer": { model: "haiku", effort: "max", scope: "project" } }
       ),
       "web-developer"
     )
 
     expect(row.model).toBe("haiku")
     expect(row.effort).toBe("max")
-    expect(row.scope).toBe("global")
+    expect(row.scope).toBe("project")
   })
 
   // The record is sparse per field, not per agent: choosing an effort must not
@@ -449,7 +461,7 @@ describe("roster model, effort and scope", () => {
 
     expect(row.model).toBe(WEB_DEVELOPER_MODEL)
     expect(row.effort).toBe("low")
-    expect(row.scope).toBe("project")
+    expect(row.scope).toBe("global")
   })
 
   // Choosing a model is not the same as asking for the agent.
@@ -487,7 +499,7 @@ describe("selectInstallInventory", () => {
   const config = scratch({
     [FIRST_SKILL]: {
       ...DEFAULT_SKILL_OPTIONS,
-      scope: "global",
+      scope: "project",
       assignments: {},
     },
     [EXPANSION.skillIds[1]!]: {
@@ -499,8 +511,8 @@ describe("selectInstallInventory", () => {
   it("splits skills by scope", () => {
     const inventory = selectInstallInventory(config, [])
 
-    expect(inventory.global.map((skill) => skill.id)).toEqual([FIRST_SKILL])
-    expect(inventory.project.map((skill) => skill.id)).toEqual([
+    expect(inventory.project.map((skill) => skill.id)).toEqual([FIRST_SKILL])
+    expect(inventory.global.map((skill) => skill.id)).toEqual([
       EXPANSION.skillIds[1],
     ])
   })
@@ -535,14 +547,14 @@ describe("selectInstallInventory", () => {
 
   // The pane splits the agents by scope exactly as it splits the skills, so
   // every agent has to carry where its front-matter lands — resolved, since
-  // the store holds only the agents that were moved off project.
+  // the store holds only the agents that were moved off the resting scope.
   it("carries each agent's resolved scope", () => {
     const inventory = selectInstallInventory(
       scratch(
         {},
         {
-          "web-developer": { on: true, scope: "global" },
-          "web-reviewer": { on: true },
+          "web-developer": { on: true, scope: "project" },
+          reviewer: { on: true },
         }
       ),
       []
@@ -552,7 +564,7 @@ describe("selectInstallInventory", () => {
       Object.fromEntries(
         inventory.agents.map(({ agent, scope }) => [agent.id, scope])
       )
-    ).toEqual({ "web-developer": "global", "web-reviewer": "project" })
+    ).toEqual({ "web-developer": "project", reviewer: "global" })
   })
 
   it("excludes a pinned-off agent even when skills point at it", () => {
@@ -611,15 +623,6 @@ describe("selectDomainViews", () => {
     expect(views).toEqual([])
   })
 
-  it("keeps only recommended skills when asked", () => {
-    const cells = allCells(empty, { rec: true })
-
-    expect(cells.length).toBeGreaterThan(0)
-    expect(
-      cells.every((cell) => CATALOG.skillsById[cell.skill.id]?.isRecommended)
-    ).toBe(true)
-  })
-
   it("keeps only selected skills when asked", () => {
     const cells = allCells(selected, { sel: true })
 
@@ -637,7 +640,7 @@ describe("selectDomainViews", () => {
         ...DEFAULT_SKILL_OPTIONS,
         assignments: {
           "web-developer": live(),
-          "web-reviewer": live("preloaded"),
+          reviewer: live("preloaded"),
           "web-tester": off(),
         },
       },
@@ -783,24 +786,15 @@ describe("incompatible cells", () => {
     }
   })
 
-  // The exemption is about *swapping out* the thing you conflict with. When
-  // React is only implied by Next.js, clicking Angular would not remove it —
-  // the store evicts inside one category — so the pair would survive and the
-  // exemption must not apply.
-  it("disables a sibling that conflicts with a merely implied skill", () => {
-    const withNextjs = scratch({
-      "web-meta-framework-nextjs": {
-        ...DEFAULT_SKILL_OPTIONS,
-        assignments: {},
-      },
-    })
+  // A verdict is about possibility, never presence: Expo needs React Native,
+  // which React rules out of nothing, so the cell stays live even though the
+  // host it needs is unselected. The `compatibleWith` whitelist said otherwise
+  // until the owner's 2026-08-07 ruling deleted it (CLI-389 phase C).
+  it("leaves a skill selectable while the host it needs is merely unselected", () => {
+    const expo = cellFor(withReact, "mobile-framework-expo")!
 
-    const angular = cellFor(withNextjs, "web-framework-angular-standalone")!
-    expect(angular.incompatible).toBe(true)
-    expect(angular.incompatibleReason).toBe("Conflicts with React")
-
-    // React itself is implied, not selected, so it stays a live choice.
-    expect(cellFor(withNextjs, "web-framework-react")!.incompatible).toBe(false)
+    expect(expo.incompatible).toBe(false)
+    expect(expo.incompatibleReason).toBeUndefined()
   })
 
   // Both are meta-frameworks, so swapping really is the way between them.
@@ -853,6 +847,7 @@ describe("selectDomainViews with added skills", () => {
     description: "Added from GitHub",
     monogram: "WI",
     repo: "acme/widget",
+    path: "skills/widget",
     categoryId: null,
     domainId: null,
   }
@@ -871,16 +866,5 @@ describe("selectDomainViews with added skills", () => {
     const views = selectDomainViews(scratch(), [uncategorised], SEARCH)
 
     expect(views.at(-1)!.categories[0]!.cells[0]!.skill.added).toBe(true)
-  })
-
-  // `isRecommended` is a catalog flag, so an added skill can never satisfy it.
-  it("hides them under the recommended filter", () => {
-    const views = selectDomainViews(
-      scratch(),
-      [uncategorised],
-      search({ rec: true })
-    )
-
-    expect(views.some((domain) => domain.id === "added")).toBe(false)
   })
 })

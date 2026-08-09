@@ -3,14 +3,21 @@ import type { Locator, Page } from "@playwright/test"
 // The `•••` popover. Only one can be open at a time, so this resolves to the
 // single visible panel rather than being bound to a particular cell.
 //
-// Every control inside is a `Chip`, which carries `aria-pressed` — so "is this
-// the current value" is an assertion on the accessibility tree rather than on a
-// class name.
+// The tree tells the panel's two kinds of control apart: install mode and
+// install scope are exclusive rows, so their segments are radios carrying
+// `aria-checked`, while a sub-agent chip is an independent toggle carrying
+// `aria-pressed`. Either way "is this the current value" is an assertion on the
+// accessibility tree rather than on a class name.
 export class OptionsPanel {
   readonly root: Locator
 
   constructor(page: Page) {
     this.root = page.getByRole("group", { name: "Skill options" })
+  }
+
+  // One option in an exclusive row — plugin/eject, project/global.
+  segment(value: string): Locator {
+    return this.root.getByRole("radio", { name: value, exact: true })
   }
 
   option(value: string): Locator {
@@ -36,8 +43,14 @@ export class OptionsPanel {
     return this.root.getByRole("button", { name: `${domain} ${role}` })
   }
 
+  // The panel's one outward link: the skill's own directory in the repository
+  // it ships from. A link rather than a button, so it is located as one.
+  get sourceLink(): Locator {
+    return this.root.getByRole("link", { name: "Source code" })
+  }
+
   async choose(value: string) {
-    await this.option(value).click()
+    await this.segment(value).click()
   }
 
   // Cycles that sub-agent: unassigned → lazy → preloaded → unassigned.

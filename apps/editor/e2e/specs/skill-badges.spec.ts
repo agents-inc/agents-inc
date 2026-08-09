@@ -22,12 +22,12 @@ test.describe("skill state badges", () => {
     )
   })
 
-  test("scope flips between project and global", async ({ configure }) => {
+  test("scope flips between global and project", async ({ configure }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
 
-    await expect(skill.scopeBadge).toHaveAccessibleName("Scope: project")
-    await skill.flipScope()
     await expect(skill.scopeBadge).toHaveAccessibleName("Scope: global")
+    await skill.flipScope()
+    await expect(skill.scopeBadge).toHaveAccessibleName("Scope: project")
   })
 
   // A badge configures a skill; it is not a way of choosing one. The value it

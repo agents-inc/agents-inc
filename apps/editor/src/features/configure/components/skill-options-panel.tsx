@@ -25,14 +25,15 @@ import type { LoadState, SkillEntry } from "@/stores/persisted-schema"
 const SCOPE_TIP =
   "Determines where the skill is installed to. Project-level skills inherit global, but not vice versa."
 
-// The design's unified matrix: the same four role columns over every
-// implementation domain, with Meta held out as the stated exception. These are
-// also exactly the roles auto-assignment targets, so the grid shows what a
-// selection just did.
+// The design's unified matrix: the same role columns over every
+// implementation domain, with Meta held out as the stated exception. Auto-
+// assignment reaches one role more than the grid draws — see the note on
+// `matrixGroups` below. The reviewer and PM columns died with the per-domain
+// reviewers and PMs (CLI-398, CLI-399): a consolidated role agent has no
+// domain row to sit on, so both are hand-assignable through the Meta fold
+// like the other prefix-less agents.
 const ROLE_COLUMNS = [
   { id: "developer", short: "dev" },
-  { id: "pm", short: "pm" },
-  { id: "reviewer", short: "rev" },
   { id: "tester", short: "test" },
 ] as const
 
@@ -68,11 +69,13 @@ const implementationGroups = SUB_AGENT_GROUPS.filter(
 // Implementation domains that actually have at least one role-column agent.
 //
 // The grid is deliberately the whole story for these domains: the design draws
-// the four roles and nothing else, because the CLI is unifying every domain
-// onto exactly this set (CLI-351 in todo/cli.md). The catalogue's leftovers —
-// web-architecture, web-pattern-critique, the researchers — still take skills
-// from a stack and still appear in the roster, where they can be switched off;
-// they are just not hand-assignable here.
+// the four roles and nothing else, and the roster gained a fifth role after
+// that design (CLI-351 in todo/archive.md; a column for it is EDITOR-10). The
+// researchers — web, api, ai and cli — still take skills from a stack and from
+// auto-assignment, and still appear in the roster, where they can be switched
+// off; they are just not hand-assignable here. The same now goes for planning:
+// the consolidated `pm` is one agent for every domain, so it belongs to the
+// Meta fold rather than to a per-domain column.
 type MatrixGroup = {
   domainId: Domain
   label: string
@@ -168,10 +171,13 @@ function LabelledAgentCell({
     <button
       type="button"
       onClick={onCycle}
-      // The tri-state styling comes from the one CVA so the two can never drift.
+      // The tri-state styling comes from the one CVA so the two can never
+      // drift, and the focus ring is restated here for the same reason the
+      // grid's own cells carry it on the element: those variants also dress an
+      // inert gap, so the rule about being focused belongs to the button.
       className={cn(
         matrixCellVariants({ state: state ?? "empty" }),
-        "justify-between px-[0.3125rem]"
+        "justify-between px-[0.3125rem] outline-none focus-visible:ring-1 focus-visible:ring-ring"
       )}
     >
       <span className="truncate">{agent.id}</span>
@@ -187,10 +193,13 @@ function LabelledAgentCell({
 // the panel.
 export function SkillOptionsPanel({
   skillId,
+  sourceUrl,
   entry,
   flip,
 }: {
   skillId: string
+  // The skill's own directory on GitHub, derived in `derive.ts`.
+  sourceUrl: string
   entry: SkillEntry
   flip: boolean
 }) {
@@ -302,6 +311,25 @@ export function SkillOptionsPanel({
           </div>
         )}
       </div>
+
+      {/* The panel's one outward link, and the only thing in it that is about
+          the skill rather than about installing it. A new tab rather than a
+          navigation: added skills live for this session only, so leaving the
+          page would take them with it. `↗` is a text glyph like the `✕` and
+          the `＋` — the design ships no icon set beyond the GitHub mark — and
+          it is hidden from the tree so the link is announced by its words. */}
+      <a
+        href={sourceUrl}
+        target="_blank"
+        rel="noreferrer"
+        // The panel's gutter as a margin rather than padding: the ring hugs
+        // the words that way, which is what keeps it reading as a link rather
+        // than as one more full-width cell under the ones above it.
+        className="mt-[0.5625rem] ml-[0.625rem] inline-flex w-fit items-center gap-[0.3125rem] font-mono text-8 font-semibold tracking-[.06em] text-muted-foreground uppercase outline-none hover:text-brand-ink focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        Source code
+        <span aria-hidden>↗</span>
+      </a>
     </div>
   )
 }

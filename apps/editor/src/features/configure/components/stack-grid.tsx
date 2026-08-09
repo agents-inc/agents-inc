@@ -1,7 +1,7 @@
 import {
-  CATALOG,
   STACKS,
   expandStack,
+  skillById,
   type SeedPayload,
 } from "@workspace/matrix"
 import { Lattice, LatticeCell } from "@workspace/ui/components/lattice"
@@ -23,7 +23,7 @@ type StackCell = {
   name: string
   members: string
   // What clicking it would apply, which is the only thing the saved cell does
-  // differently from the seventeen beside it.
+  // differently from the catalogue cells beside it.
   request: StackRequest
 }
 
@@ -33,7 +33,7 @@ const MEMBER_LIMIT = 5
 // holds, so a snapshot and a stack describe themselves the same way.
 const membersLine = (skillIds: readonly string[]) => {
   const names = skillIds
-    .map((skillId) => CATALOG.skillsById[skillId]?.displayName ?? skillId)
+    .map((skillId) => skillById(skillId)?.displayName ?? skillId)
     .slice(0, MEMBER_LIMIT)
     .map((name) => name.toLowerCase())
 
@@ -49,7 +49,7 @@ const scratchCell: StackCell = {
   request: { kind: "stack", stackId: null },
 }
 
-// Computed once: per render this would re-expand all 17 stacks on every
+// Computed once: per render this would re-expand every stack on every
 // keystroke in the filter bar.
 const catalogueCells: StackCell[] = STACKS.map((stack) => ({
   key: stack.id,

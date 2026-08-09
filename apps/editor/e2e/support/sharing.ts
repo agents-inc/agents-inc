@@ -1,40 +1,28 @@
+import {
+  DEAD_LINK_ID,
+  NO_CONFIG_BODY,
+  STORED_ID,
+  STORED_PAYLOAD,
+  WORKER_ORIGIN,
+} from "@workspace/api-mocks/fixtures"
+
 import type { Page } from "@playwright/test"
 
 // The sharing worker is the app's second network dependency (after GitHub
 // search). The specs mock it at the browser boundary: what these test is the
 // app's half of the round trip, not KV — apps/server has its own suite.
-
-export const SHARE_API = "http://localhost:8787"
-
-export const STORED_ID = "Ab3xY9_Q"
-
-// A payload as the worker would return it: real catalog ids, since the app
-// prunes anything its catalog does not know.
 //
-// v2 moved model and effort off the skill and onto the agent, and gave agents
-// their own top-level map. Both kinds of entry are here: an agent that travels
-// only its overrides (derived on by the assignment below) and one that travels
-// as `on: true` with nothing else — a bare base agent, which v1 could not
-// express at all.
-export const STORED_PAYLOAD = {
-  v: 3,
-  matrixVersion: "1.0.0",
-  stackId: null,
-  skills: {
-    "web-framework-react": {
-      install: "plugin",
-      scope: "project",
-      assignments: { "web-developer": "preloaded" },
-    },
-  },
-  agents: {
-    "web-developer": { model: "haiku", effort: "max" },
-    "api-developer": { on: true },
-  },
-}
+// The interception stays Playwright's, because `page.route` is what works in a
+// real browser. What it answers with does not: the ids, the payload and the
+// worker's own bodies come from `@workspace/api-mocks`, which is also what the
+// unit suite serves through MSW. Two mechanisms, one statement of the response
+// — so a change to the contract cannot land in one suite and not the other.
+
+// Re-exported so a spec still reaches the whole seam through one import.
+export { DEAD_LINK_ID, STORED_ID, STORED_PAYLOAD }
 
 export const stubCreateConfig = (page: Page) =>
-  page.route(`${SHARE_API}/configs`, (route) =>
+  page.route(`${WORKER_ORIGIN}/configs`, (route) =>
     route.fulfill({ status: 201, json: { id: STORED_ID } })
   )
 
@@ -46,8 +34,14 @@ export const stubCreateConfig = (page: Page) =>
 export const captureCreateConfig = async (page: Page) => {
   const posted: Record<string, unknown>[] = []
 
-  await page.route(`${SHARE_API}/configs`, (route) => {
-    posted.push(route.request().postDataJSON())
+  await page.route(`${WORKER_ORIGIN}/configs`, (route) => {
+    // Playwright decodes a body to `any`. The annotation is the boundary; the
+    // assertion after it is deliberate rather than a parse with
+    // `seedPayloadSchema` — the schema strips keys it does not know, and what
+    // these specs check is precisely that `model` and `effort` are *absent*
+    // from a skill. Parsing would make that assertion pass for free.
+    const body: unknown = route.request().postDataJSON()
+    posted.push(body as Record<string, unknown>)
     return route.fulfill({ status: 201, json: { id: STORED_ID } })
   })
 
@@ -55,11 +49,11 @@ export const captureCreateConfig = async (page: Page) => {
 }
 
 export const stubGetConfig = (page: Page, id: string) =>
-  page.route(`${SHARE_API}/configs/${id}`, (route) =>
+  page.route(`${WORKER_ORIGIN}/configs/${id}`, (route) =>
     route.fulfill({ status: 200, json: STORED_PAYLOAD })
   )
 
 export const stubGetConfigMissing = (page: Page, id: string) =>
-  page.route(`${SHARE_API}/configs/${id}`, (route) =>
-    route.fulfill({ status: 404, body: "No config under this id" })
+  page.route(`${WORKER_ORIGIN}/configs/${id}`, (route) =>
+    route.fulfill({ status: 404, body: NO_CONFIG_BODY })
   )

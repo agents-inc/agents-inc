@@ -37,6 +37,19 @@ export const MULTI_CATEGORY = {
 // In the Next.js stack's expansion, so it is selected after applying it.
 export const STACK_MEMBER_SKILL = "React"
 
+// Selecting a skill assigns it only to the sub-agents that would reasonably
+// use it — the relevance rule, shared with the CLI's generator: a domain skill
+// reaches its own domain's roster (every role flavor that domain fields) plus
+// the cross-domain `pm` and `reviewer`, and nobody else, not even lazily.
+// Three implementation agents per domain plus those two is five. Every agent
+// count the specs pin is one of these or a step off it, which is why they are
+// named once here: a domain gaining or losing an agent moves its specs
+// together.
+export const DOMAIN_REACH = {
+  web: 5,
+  api: 5,
+} as const
+
 // An incompatibility that only exists several hops out: SvelteKit is built on
 // Svelte, and Svelte conflicts with React — nothing links React to SvelteKit
 // directly. `blocked` sits in a different category from `trigger`, so the
@@ -53,16 +66,22 @@ export const INCOMPATIBLE = {
 } as const
 
 // The other direction: choosing `implier` chooses `implied` too, so everything
-// `implied` conflicts with goes — even though `implier` names none of it.
-// `blocked` sits in `implied`'s own exclusive category, which is what makes the
-// sibling exemption the interesting part.
+// stranded by `implied` goes — even though `implier` names none of it.
+// `blocked` is stranded by an unreachable REQUIREMENT, which no category
+// forgives; the swap only forgives a conflict with a sibling, which is what
+// `impliedSibling` stands for — for implied skills exactly as for selected ones.
 export const IMPLIED = {
   implier: "Next.js",
   implierCategory: "Meta-Framework",
   implied: "React",
   impliedCategory: "Framework",
-  blocked: "Angular",
-  reason: "Conflicts with React",
+  // Vuetify accepts only the Vue family, and the implied React rules Vue out.
+  blocked: "Vuetify",
+  blockedCategory: "Design System Kit",
+  reason: "Needs one of Vue, Nuxt",
+  // A sibling of the implied React: it conflicts with React, but a pick-one
+  // category swaps rather than adds, so it stays a live choice.
+  impliedSibling: "Angular",
   // A sibling of the implier, so swapping between them still has to work.
   implierSibling: "Remix",
 } as const
@@ -75,13 +94,13 @@ export const IMPLIED = {
 // only falls back to sonnet when its metadata names none. Effort rests at
 // medium for everyone until agent metadata carries one.
 //
-// Scope rests at project for everyone, and that one is the CLI's default
-// rather than anything the catalogue says: sub-agent front-matter is written
-// into the project unless the user asks for their own ~/.claude.
+// Scope rests at global for everyone, and that one is the shared selection
+// default rather than anything the catalogue says: sub-agent front-matter is
+// written into the user's own ~/.claude unless they pin it to the project.
 export const AGENT_OPTIONS = {
   models: ["opus", "fable", "sonnet", "haiku"],
   efforts: ["low", "medium", "high", "xhigh", "max"],
   restingModel: "opus",
   restingEffort: "medium",
-  restingScope: "project",
+  restingScope: "global",
 } as const

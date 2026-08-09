@@ -2,7 +2,7 @@
 //
 // Call sites name the failure and hand over context; they do not know what
 // receives it. That is deliberate in both directions: modules like
-// `github-skills.ts` stay free of a vendor import their unit tests would
+// `api/skill-index.ts` stay free of a vendor import their unit tests would
 // otherwise have to load, and replacing the service is one file.
 export type IssueContext = Record<string, unknown>
 

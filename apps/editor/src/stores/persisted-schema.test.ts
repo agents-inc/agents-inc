@@ -1,5 +1,12 @@
-import { CATALOG, STACKS, SUB_AGENTS_BY_ID } from "@workspace/matrix"
-import { describe, expect, it } from "vitest"
+import {
+  CATALOG,
+  DEFAULT_SELECTION_OPTIONS,
+  STACKS,
+  SUB_AGENTS_BY_ID,
+} from "@workspace/matrix"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+
+import { setReportingSink } from "@/lib/observability/report"
 
 import {
   DEFAULT_SKILL_OPTIONS,
@@ -9,6 +16,7 @@ import {
   migrateConfig,
   persistedConfigSchema,
   pruneUnknownIds,
+  restingAgentOptions,
   type PersistedConfig,
   type SkillEntry,
 } from "./persisted-schema"
@@ -124,6 +132,30 @@ describe("persistedConfigSchema", () => {
   })
 })
 
+// A fresh pick is global on both surfaces. The editor said "project" while the
+// CLI wizard said "global" until the two were pointed at the matrix's one
+// spelling — so these pin the words themselves and the shared object they
+// come from, and a drift back apart fails here rather than in an install.
+describe("fresh-pick defaults", () => {
+  it("installs a freshly picked skill as a plugin, into the global scope", () => {
+    expect(DEFAULT_SKILL_OPTIONS).toStrictEqual({
+      install: "plugin",
+      scope: "global",
+    })
+  })
+
+  it("rests an untouched agent in the global scope", () => {
+    expect(restingAgentOptions(KNOWN_AGENT).scope).toBe("global")
+  })
+
+  it("spells both defaults from the shared matrix constant", () => {
+    expect(DEFAULT_SKILL_OPTIONS).toStrictEqual(DEFAULT_SELECTION_OPTIONS)
+    expect(restingAgentOptions(KNOWN_AGENT).scope).toBe(
+      DEFAULT_SELECTION_OPTIONS.scope
+    )
+  })
+})
+
 describe("isWorthRemembering", () => {
   it("drops an entry carrying no decisions", () => {
     expect(isWorthRemembering(entry())).toBe(false)
@@ -133,7 +165,7 @@ describe("isWorthRemembering", () => {
   // now says something only through its assignments or its install options.
   it.each([
     ["a non-default install mode", { install: "eject" as const }],
-    ["a non-default scope", { scope: "global" as const }],
+    ["a non-default scope", { scope: "project" as const }],
   ])("keeps an entry with %s", (_label, over) => {
     expect(isWorthRemembering(entry(over))).toBe(true)
   })
@@ -307,9 +339,19 @@ describe("pruneUnknownIds", () => {
 
 // Pre-release policy: no migrations — an old version is discarded, not upgraded.
 describe("migrateConfig", () => {
+  // The seam the discard is reported through. Recording it is what keeps the
+  // suite quiet and what lets the deliberate silence — a blob already on the
+  // current version — be asserted rather than assumed.
+  const sink = { issue: vi.fn(), error: vi.fn() }
+
+  beforeEach(() => {
+    setReportingSink(sink)
+  })
+
   it("passes the current version through unchanged", () => {
     const current = config({ skills: { [KNOWN_SKILL]: entry() } })
     expect(migrateConfig(current, PERSIST_VERSION)).toEqual(current)
+    expect(sink.issue).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -317,5 +359,17 @@ describe("migrateConfig", () => {
     ["an unknown future version", { stackId: null, skills: {} }, 99],
   ])("discards %s rather than guessing", (_label, state, version) => {
     expect(migrateConfig(state, version)).toBeUndefined()
+  })
+
+  // Discarding is the policy; discarding without saying so is what made every
+  // other path here worth a warning. Version numbers only — a persisted blob
+  // is the user's own configuration and none of it may reach a report.
+  it("reports the version it discarded", () => {
+    migrateConfig({ stackId: null, skills: {} }, PERSIST_VERSION - 1)
+
+    expect(sink.issue).toHaveBeenCalledWith(
+      "Discarded saved configuration from another version",
+      { fromVersion: PERSIST_VERSION - 1, persistVersion: PERSIST_VERSION }
+    )
   })
 })

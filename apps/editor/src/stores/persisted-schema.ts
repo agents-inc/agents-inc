@@ -1,5 +1,13 @@
-import { CATALOG, STACKS, SUB_AGENTS_BY_ID } from "@workspace/matrix"
+import {
+  CATALOG,
+  DEFAULT_SELECTION_OPTIONS,
+  STACKS,
+  SUB_AGENTS_BY_ID,
+  subAgentById,
+} from "@workspace/matrix"
 import { z } from "zod"
+
+import { reportIssue } from "@/lib/observability/report"
 
 // Bump when the persisted shape changes; older blobs are discarded on load.
 export const PERSIST_VERSION = 8
@@ -44,8 +52,8 @@ export const agentEntrySchema = z.object({
   on: z.boolean().optional(),
   model: agentModelSchema.optional(),
   effort: agentEffortSchema.optional(),
-  // Where this agent's front-matter is written. Absent means `project`, which
-  // is the CLI's default rather than anything the catalogue says.
+  // Where this agent's front-matter is written. Absent means `global` — the
+  // shared selection default — rather than anything the catalogue says.
   scope: agentScopeSchema.optional(),
 })
 
@@ -78,11 +86,12 @@ export type AgentOptions = {
   scope: AgentScope
 }
 
-// Shared so `isStackCustom` compares against what `applyStack` writes.
-export const DEFAULT_SKILL_OPTIONS = {
-  install: "plugin",
-  scope: "project",
-} as const satisfies SkillOptions
+// Shared so `isStackCustom` compares against what `applyStack` writes. The
+// values are the matrix's one spelling of "what does an untouched pick do?",
+// which the CLI's seed decode reads too — a fresh pick means the same thing
+// on either surface, and `satisfies` keeps the shared words sayable here.
+export const DEFAULT_SKILL_OPTIONS =
+  DEFAULT_SELECTION_OPTIONS satisfies SkillOptions
 
 // The web offers four models; an agent's metadata may name one outside them
 // (or none), in which case it rests here.
@@ -90,10 +99,10 @@ const FALLBACK_MODEL: AgentModel = "sonnet"
 // Agent metadata carries no effort level yet, so every agent rests on the same
 // middle of the scale until the CLI adds one.
 const RESTING_EFFORT: AgentEffort = "medium"
-// The CLI writes sub-agent front-matter into the project unless it is asked
-// for the user's own ~/.claude, so this one rests on the installer's default
-// rather than on anything the agent's own metadata names.
-const RESTING_SCOPE: AgentScope = "project"
+// The shared selection default — a fresh pick installs into the user's own
+// ~/.claude — so this one rests on the matrix's spelling rather than on
+// anything the agent's own metadata names.
+const RESTING_SCOPE: AgentScope = DEFAULT_SELECTION_OPTIONS.scope
 
 const isOfferedModel = (model: string | undefined): model is AgentModel =>
   AGENT_MODELS.some((offered) => offered === model)
@@ -101,7 +110,7 @@ const isOfferedModel = (model: string | undefined): model is AgentModel =>
 // What an agent runs on before anyone touches it. There is no single default:
 // each agent rests on the model its own `metadata.yaml` names.
 export const restingAgentOptions = (agentId: string): AgentOptions => {
-  const catalogModel = SUB_AGENTS_BY_ID[agentId]?.model
+  const catalogModel = subAgentById(agentId)?.model
 
   return {
     model: isOfferedModel(catalogModel) ? catalogModel : FALLBACK_MODEL,
@@ -191,5 +200,20 @@ export const pruneUnknownIds = (config: PersistedConfig): PersistedConfig => ({
 // Pre-release policy: no migrations. Anything but the current version is
 // discarded (`undefined`), which `merge` replaces with defaults. When the app
 // has real users, migrations start here — the version seam already exists.
-export const migrateConfig = (state: unknown, fromVersion: number): unknown =>
-  fromVersion === PERSIST_VERSION ? state : undefined
+//
+// The discard is reported for the same reason the unreadable blob next door
+// is: someone's afternoon of configuration becomes empty state and nothing on
+// screen says so. This one is the wider case — a version bump empties every
+// saved configuration at once — and it is the only path `merge` cannot see,
+// since a refused blob reaches it as the `undefined` an empty storage does.
+// Version numbers only; a persisted configuration is the user's own.
+export const migrateConfig = (state: unknown, fromVersion: number): unknown => {
+  if (fromVersion === PERSIST_VERSION) return state
+
+  reportIssue("Discarded saved configuration from another version", {
+    fromVersion,
+    persistVersion: PERSIST_VERSION,
+  })
+
+  return undefined
+}

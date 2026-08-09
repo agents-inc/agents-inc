@@ -5,10 +5,14 @@ import {
   CATALOG,
   SUB_AGENT_GROUPS,
   expandStack,
+  judgeSelection,
+  skillById,
+  type AssignmentTarget,
   type CatalogCategory,
   type CatalogDomain,
   type CatalogSkill,
-  type SkillRequirement,
+  type IncompatibilityCause,
+  type SelectionJudgement,
   type SubAgent,
 } from "@workspace/matrix"
 
@@ -43,6 +47,9 @@ export type GridSkill = {
   // Catalog skills carry a slug for the logo lookup; added ones do not.
   slug?: string
   added: boolean
+  // The skill's own directory on GitHub. Required rather than optional
+  // because every skill the grid can draw has one — see `githubTreeUrl`.
+  sourceUrl: string
 }
 
 export type SkillCellView = {
@@ -53,6 +60,8 @@ export type SkillCellView = {
   // rendered disabled, never hidden.
   incompatible: boolean
   incompatibleReason?: string
+  // A soft warning: the pairing is advised against, the choice stays open.
+  discouragedReason?: string
   agentCount: number
 }
 
@@ -79,6 +88,24 @@ export const monogramOf = (displayName: string) => {
   ).toUpperCase()
 }
 
+// A skill is a directory in a repository, on both sides of the divide: the
+// catalogue is generated from the marketplace repo, and an added skill arrived
+// through the index carrying the repo and directory it was read from. So every
+// skill on this screen has an address, and neither kind needs a fallback.
+//
+// `HEAD` rather than a branch name — it resolves to whatever the repository
+// calls its default branch, which is the one thing neither source carries.
+const githubTreeUrl = (repo: string, path: string) =>
+  `https://github.com/${repo}/tree/HEAD/${path}`
+
+// The marketplace repository, where a skill's catalogue id *is* its directory
+// name. Verified 2026-08-09: the mapping is 1:1 across all 237 of them.
+const MARKETPLACE_REPO = "agents-inc/skills"
+const MARKETPLACE_SKILLS_DIR = "src/skills"
+
+const marketplaceSourceUrl = (skillId: string) =>
+  githubTreeUrl(MARKETPLACE_REPO, `${MARKETPLACE_SKILLS_DIR}/${skillId}`)
+
 const toGridSkill = (skill: CatalogSkill): GridSkill => ({
   id: skill.id,
   displayName: skill.displayName,
@@ -86,6 +113,7 @@ const toGridSkill = (skill: CatalogSkill): GridSkill => ({
   monogram: monogramOf(skill.displayName),
   slug: skill.slug,
   added: false,
+  sourceUrl: marketplaceSourceUrl(skill.id),
 })
 
 const addedToGridSkill = (skill: AddedSkill): GridSkill => ({
@@ -94,6 +122,7 @@ const addedToGridSkill = (skill: AddedSkill): GridSkill => ({
   description: skill.description,
   monogram: skill.monogram,
   added: true,
+  sourceUrl: githubTreeUrl(skill.repo, skill.path),
 })
 
 const matchesQuery = (skill: GridSkill, query: string) => {
@@ -106,163 +135,44 @@ const matchesQuery = (skill: GridSkill, query: string) => {
   )
 }
 
-const isRecommended = (skillId: string) =>
-  CATALOG.skillsById[skillId]?.isRecommended ?? false
-
-// Every framework conflicts with every other, so counting a sibling would
-// disable them all the moment you pick one, with no way back.
-const isExclusiveSibling = (conflictId: string, category: CatalogCategory) =>
-  category.exclusive &&
-  CATALOG.skillsById[conflictId]?.categoryId === category.id
-
-// Conflicts are stored on both sides, so one direction is enough.
-//
-// Which conflicts count depends on *how* the other skill got there. A conflict
-// with something the user actually selected is forgiven inside an exclusive
-// category, because clicking this cell would swap the two. A conflict with
-// something merely *implied* is not: no swap inside this category can remove
-// whatever is implying it, so the invalid pair would survive the click.
-const findConflict = (
-  skill: CatalogSkill,
-  category: CatalogCategory,
-  selectedIds: Set<string>,
-  reachedIds: Set<string>
-) =>
-  skill.conflictsWith.find((conflictId) =>
-    selectedIds.has(conflictId)
-      ? !isExclusiveSibling(conflictId, category)
-      : reachedIds.has(conflictId)
-  )
-
 // ── Reachability ─────────────────────────────────────────────────────────
 
 export type Reachability = {
   // Selected, plus everything the selection necessarily brings with it.
-  reached: Set<string>
+  reached: ReadonlySet<string>
   // Ruled out by that.
-  outOfReach: Set<string>
+  outOfReach: ReadonlySet<string>
 }
 
-const allSkills = () => Object.values(CATALOG.skillsById)
-
-// A group offering a choice commits the user to none of the options: "Pinia
-// needs Vue *or* Nuxt" cannot say which, so it implies neither.
-const isAmbiguous = (requirement: SkillRequirement) =>
-  requirement.needsAny && requirement.skillIds.length > 1
-
-// What choosing this skill necessarily also chooses.
-const directlyImpliedBy = (skillId: string) =>
-  (CATALOG.skillsById[skillId]?.requires ?? [])
-    .filter((requirement) => !isAmbiguous(requirement))
-    .flatMap((requirement) => requirement.skillIds)
-
-// What the selection drags in behind it. Choosing Next.js is choosing React
-// whether or not React was ever clicked, so a conflict with React is a
-// conflict with the selection — this is the half that catches Angular.
-const withImplied = (selectedIds: Set<string>) => {
-  const reached = new Set(selectedIds)
-
-  for (let settled = false; !settled;) {
-    settled = true
-
-    for (const skillId of [...reached]) {
-      for (const required of directlyImpliedBy(skillId)) {
-        if (reached.has(required)) continue
-        reached.add(required)
-        settled = false
-      }
-    }
-  }
-
-  return reached
-}
-
-const conflictsWithAny = (skill: CatalogSkill, reachedIds: Set<string>) =>
-  skill.conflictsWith.some((conflictId) => reachedIds.has(conflictId))
-
-// A group is met while any candidate is still reachable — for `needsAny`,
-// one is enough; otherwise every candidate has to survive.
-const isUnmet = (
-  requirement: SkillRequirement,
-  reachedIds: Set<string>,
-  outOfReach: Set<string>
-) => {
-  const lost = (skillId: string) =>
-    !reachedIds.has(skillId) && outOfReach.has(skillId)
-
-  return requirement.needsAny
-    ? requirement.skillIds.every(lost)
-    : requirement.skillIds.some(lost)
-}
-
-// The first way in: something reached conflicts with it outright — Svelte,
-// once React is on, and equally once Next.js is on, since that implies React.
-const conflictingWith = (reachedIds: Set<string>) =>
-  new Set(
-    allSkills()
-      .filter(
-        (skill) =>
-          !reachedIds.has(skill.id) && conflictsWithAny(skill, reachedIds)
-      )
-      .map((skill) => skill.id)
+// The semantics live in `@workspace/matrix` — one implementation, shared with
+// the CLI — and only catalogue skills reach them: a session-added skill
+// declares no relationships, so it neither rules anything out nor is ruled
+// out, and its `github:` id would read to the whitelist as "no host selected".
+const judgeCatalogSelection = (selectedIds: Iterable<string>) =>
+  judgeSelection(
+    [...selectedIds].filter((skillId) => skillById(skillId) !== undefined)
   )
 
-// The second way in: losing a skill loses whatever was built on it, and so on
-// — Vue goes, then Nuxt, then Pinia. Each round can strand more than the last,
-// so this runs to a fixpoint. It terminates because a round either adds at
-// least one skill or stops, and there are finitely many.
-const withDependents = (reachedIds: Set<string>, seed: Set<string>) => {
-  const outOfReach = new Set(seed)
+export const selectReachability = (selectedIds: Set<string>): Reachability =>
+  judgeCatalogSelection(selectedIds)
 
-  for (let settled = false; !settled;) {
-    settled = true
-
-    for (const skill of allSkills()) {
-      if (reachedIds.has(skill.id) || outOfReach.has(skill.id)) continue
-      if (
-        skill.requires.some((requirement) =>
-          isUnmet(requirement, reachedIds, outOfReach)
-        )
-      ) {
-        outOfReach.add(skill.id)
-        settled = false
-      }
-    }
-  }
-
-  return outOfReach
-}
-
-// Which skills the current selection has put out of reach. `requires` is the
-// *only* place a cross-category incompatibility can be read: `conflictsWith`
-// never leaves its own category, and `compatibleWith` is too noisy to trust.
-export const selectReachability = (selectedIds: Set<string>): Reachability => {
-  const reached = withImplied(selectedIds)
-
-  return {
-    reached,
-    outOfReach: withDependents(reached, conflictingWith(reached)),
-  }
-}
+const nameOf = (skillId: string) => skillById(skillId)?.displayName ?? skillId
 
 const listNames = (skillIds: readonly string[], joiner: string) =>
-  skillIds
-    .map((skillId) => CATALOG.skillsById[skillId]?.displayName ?? skillId)
-    .join(joiner)
+  skillIds.map(nameOf).join(joiner)
 
-// The actionable half of "why": what this skill would need you to pick.
-const unmetReason = (
-  skill: CatalogSkill,
-  { reached, outOfReach }: Reachability
-) => {
-  const unmet = skill.requires.find((requirement) =>
-    isUnmet(requirement, reached, outOfReach)
-  )
-  if (!unmet) return undefined
-
-  return unmet.needsAny && unmet.skillIds.length > 1
-    ? `Needs one of ${listNames(unmet.skillIds, ", ")}`
-    : `Needs ${listNames(unmet.skillIds, " and ")}`
+// The judgement says why in structure; the cell says it in words.
+const incompatibleReasonOf = (cause: IncompatibilityCause): string => {
+  switch (cause.kind) {
+    case "conflict":
+      return `Conflicts with ${nameOf(cause.skillId)}`
+    case "unreachableRequirement": {
+      const { requirement } = cause
+      return requirement.needsAny && requirement.skillIds.length > 1
+        ? `Needs one of ${listNames(requirement.skillIds, ", ")}`
+        : `Needs ${listNames(requirement.skillIds, " and ")}`
+    }
+  }
 }
 
 // Only live assignments count, everywhere a number appears: a row the roster
@@ -275,13 +185,15 @@ const enabledAssignments = (entry: SkillEntry) =>
 const toCell = (
   skill: GridSkill,
   entry: SkillEntry | undefined,
-  reason?: string
+  reason?: string,
+  discouragedReason?: string
 ): SkillCellView => ({
   skill,
   entry,
   selected: entry !== undefined,
   incompatible: reason !== undefined,
-  incompatibleReason: reason,
+  ...(reason !== undefined && { incompatibleReason: reason }),
+  ...(discouragedReason !== undefined && { discouragedReason }),
   agentCount: entry ? enabledAssignments(entry).length : 0,
 })
 
@@ -293,10 +205,9 @@ export const UNCATEGORIZED_ID = "uncategorized"
 type GridContext = {
   config: ConfigSelection
   search: ConfigureSearch
-  selectedIds: Set<string>
-  // Computed once per derivation, not per cell — it is a whole-catalogue
-  // fixpoint and the grid asks it 222 times.
-  reachability: Reachability
+  // Judged once per derivation, not per cell — it holds a whole-catalogue
+  // fixpoint and the grid asks it once for every skill.
+  judgement: SelectionJudgement
   addedByCategory: Map<string, AddedSkill[]>
 }
 
@@ -323,36 +234,24 @@ const survivesSelectionFilter = (
 ) => !search.sel || cell.selected
 
 // A selected skill is never disabled, whatever the selection did to it — the
-// way out of a bad combination is to click it off.
-//
-// An exclusive sibling is never disabled either: picking one swaps rather than
-// adds, so disabling the rest would strand the user on their first choice.
+// way out of a bad combination is to click it off. Everything else renders
+// the shared verdict: disabled with the reason, softly warned, or clear.
 const toCatalogCell = (
   skill: GridSkill,
-  category: CatalogCategory,
-  { config, selectedIds, reachability }: GridContext
+  { config, judgement }: GridContext
 ): SkillCellView => {
   const entry = config.skills[skill.id]
-  const source = CATALOG.skillsById[skill.id]
 
-  if (entry || !source) return toCell(skill, entry)
+  if (entry || !skillById(skill.id)) return toCell(skill, entry)
 
-  const conflictId = findConflict(
-    source,
-    category,
-    selectedIds,
-    reachability.reached
-  )
-  if (conflictId) {
-    return toCell(
-      skill,
-      entry,
-      `Conflicts with ${CATALOG.skillsById[conflictId]?.displayName ?? conflictId}`
-    )
+  const verdict = judgement.verdictOf(skill.id)
+  if (verdict.status === "incompatible") {
+    return toCell(skill, entry, incompatibleReasonOf(verdict.cause))
   }
-
-  if (!reachability.outOfReach.has(skill.id)) return toCell(skill, entry)
-  return toCell(skill, entry, unmetReason(source, reachability))
+  if (verdict.status === "discouraged") {
+    return toCell(skill, entry, undefined, verdict.reason)
+  }
+  return toCell(skill, entry)
 }
 
 const catalogCellsIn = (
@@ -364,18 +263,15 @@ const catalogCellsIn = (
   return category.skills
     .map(toGridSkill)
     .filter((skill) => matchesQuery(skill, search.q))
-    .filter((skill) => !search.rec || isRecommended(skill.id))
-    .map((skill) => toCatalogCell(skill, category, context))
+    .map((skill) => toCatalogCell(skill, context))
     .filter((cell) => survivesSelectionFilter(cell, search))
 }
 
-// `recommended` is a catalog flag, so an added skill can never satisfy it.
 const addedCellsIn = (
   categoryId: string,
   context: GridContext
 ): SkillCellView[] => {
   const { config, search, addedByCategory } = context
-  if (search.rec) return []
 
   return (addedByCategory.get(categoryId) ?? [])
     .map(addedToGridSkill)
@@ -432,12 +328,10 @@ export const selectDomainViews = (
   added: AddedSkill[],
   search: ConfigureSearch
 ): DomainView[] => {
-  const selectedIds = new Set(Object.keys(config.skills))
   const context: GridContext = {
     config,
     search,
-    selectedIds,
-    reachability: selectReachability(selectedIds),
+    judgement: judgeCatalogSelection(Object.keys(config.skills)),
     addedByCategory: groupAddedByCategory(added),
   }
 
@@ -483,7 +377,7 @@ export type RosterDomainGroup = {
 }
 
 const displayNameOf = (skillId: string, added: AddedSkill[]) =>
-  CATALOG.skillsById[skillId]?.displayName ??
+  skillById(skillId)?.displayName ??
   added.find((skill) => skill.id === skillId)?.displayName ??
   skillId
 
@@ -699,18 +593,20 @@ const sameSet = (a: readonly string[], b: readonly string[]) => {
   return a.every((value) => inB.has(value))
 }
 
+// The expansion's word is per sub-agent, so an edit is any row whose load
+// differs from the one that row was applied with — not any row differing from
+// a verdict the whole skill shared.
 const sameAssignments = (
   assignments: SkillEntry["assignments"],
-  agents: readonly string[],
-  preloaded: boolean
+  targets: readonly AssignmentTarget[]
 ) => {
   const assignedIds = Object.keys(assignments)
-  if (!sameSet(assignedIds, agents)) return false
+  const expectedIds = targets.map((target) => target.agentId)
+  if (!sameSet(assignedIds, expectedIds)) return false
 
-  const expected: LoadState = preloaded ? "preloaded" : "lazy"
-  return assignedIds.every((agentId) => {
+  return targets.every(({ agentId, load }) => {
     const assignment = assignments[agentId]
-    return assignment?.enabled === true && assignment.load === expected
+    return assignment?.enabled === true && assignment.load === load
   })
 }
 
@@ -721,11 +617,8 @@ const hasDefaultOptions = (entry: SkillEntry) =>
 // Any difference from what the stack would have produced counts as an edit.
 const isSkillEdited = (
   entry: SkillEntry,
-  expectedAgents: readonly string[],
-  preloaded: boolean
-) =>
-  !hasDefaultOptions(entry) ||
-  !sameAssignments(entry.assignments, expectedAgents, preloaded)
+  expected: readonly AssignmentTarget[]
+) => !hasDefaultOptions(entry) || !sameAssignments(entry.assignments, expected)
 
 // The design's "Custom" label, where any edit counts — so options, assignments
 // and every agent decision are compared, not just which skills are selected.
@@ -742,16 +635,10 @@ export const isStackCustom = (config: ConfigSelection): boolean => {
   const selectedIds = Object.keys(config.skills)
   if (!sameSet(selectedIds, expansion.skillIds)) return true
 
-  const preloaded = new Set<string>(expansion.preloadedSkillIds)
-
   return selectedIds.some((skillId) => {
     const entry = config.skills[skillId]
     if (!entry) return true
 
-    return isSkillEdited(
-      entry,
-      expansion.agentsBySkill[skillId] ?? [],
-      preloaded.has(skillId)
-    )
+    return isSkillEdited(entry, expansion.assignmentsBySkill[skillId] ?? [])
   })
 }

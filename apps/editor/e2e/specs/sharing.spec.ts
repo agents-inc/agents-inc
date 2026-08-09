@@ -1,9 +1,10 @@
 import { expect, test } from "../fixtures"
 import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
 import {
-  SHARE_API,
+  DEAD_LINK_ID,
   STORED_ID,
   STORED_PAYLOAD,
+  captureCreateConfig,
   stubCreateConfig,
   stubGetConfig,
   stubGetConfigMissing,
@@ -44,16 +45,14 @@ test.describe("sharing a configuration", () => {
     configure,
     page,
   }) => {
-    const posted: Record<string, unknown>[] = []
-    await page.route(`${SHARE_API}/configs`, (route) => {
-      posted.push(route.request().postDataJSON())
-      return route.fulfill({ status: 201, json: { id: STORED_ID } })
-    })
+    const posted = await captureCreateConfig(page)
 
     await configure
       .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.first)
       .toggle()
-    // Pinned on with nothing assigned — the base agent case.
+    // Pinned on with nothing assigned — the base agent case. Relevance keeps
+    // the web skill inside its own domain, so any agent outside it can be
+    // pinned on bare — a state the broadcast era reserved for the meta roster.
     await configure.roster.agentButton("api", "developer").click()
 
     await configure.roster.shareButton.click()
@@ -72,8 +71,8 @@ test.describe("sharing a configuration", () => {
     expect(skill).not.toHaveProperty("effort")
     expect(skill.assignments).toMatchObject({ "web-developer": "preloaded" })
 
-    // Only the pin has anything to say: the four agents the selection reached
-    // rest on their catalogue model and medium effort, so they say nothing.
+    // Only the pin has anything to say: every agent the rule reached rests on
+    // its catalogue model and medium effort, so they say nothing.
     expect(body!.agents).toEqual({ "api-developer": { on: true } })
   })
 
@@ -171,12 +170,12 @@ test.describe("opening a share link", () => {
     configure,
     page,
   }) => {
-    await stubGetConfigMissing(page, "gone0000")
+    await stubGetConfigMissing(page, DEAD_LINK_ID)
     await configure
       .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.second)
       .toggle()
 
-    await page.goto("/?fromId=gone0000")
+    await page.goto(`/?fromId=${DEAD_LINK_ID}`)
 
     await expect(page.getByRole("alert")).toContainText("points to nothing")
     // Vue was selected before following the link and must still be.

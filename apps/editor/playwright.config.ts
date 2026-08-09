@@ -15,7 +15,10 @@ export default defineConfig({
   // A committed `test.only` should fail the pipeline, not silently skip the suite.
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  // Absent locally rather than undefined, which is how Playwright is asked for
+  // its own default (half the cores) — CI pins it instead, where two runners'
+  // worth of parallelism is what the machine has.
+  ...(process.env.CI ? { workers: 2 } : {}),
   reporter: process.env.CI
     ? [["github"], ["html", { open: "never" }]]
     : [["list"], ["html", { open: "never" }]],

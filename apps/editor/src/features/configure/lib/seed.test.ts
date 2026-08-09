@@ -130,21 +130,21 @@ describe("toSeedPayload", () => {
   // so it travels on the agent's entry — and the skill's own `scope`, which is
   // a different field with the same name, is left exactly as it was.
   it("travels an agent's scope without touching the skill's", () => {
-    const global = {
+    const pinned = {
       ...config(),
-      agents: { [AGENT]: { scope: "global" as const } },
+      agents: { [AGENT]: { scope: "project" as const } },
     }
 
-    const payload = toSeedPayload(global)
+    const payload = toSeedPayload(pinned)
 
-    expect(payload.agents[AGENT]).toEqual({ scope: "global" })
+    expect(payload.agents[AGENT]).toEqual({ scope: "project" })
     expect(payload.skills[SKILL]!.scope).toBe("global")
   })
 
-  // The store drops a scope set back to project, so the resting value cannot
-  // reach the payload — and if it ever did, it would say what absence already
-  // says. Nothing about that entry may travel.
-  it("gives an agent left at project no scope key", () => {
+  // The store drops a scope set back to the resting global, so the resting
+  // value cannot reach the payload — and if it ever did, it would say what
+  // absence already says. Nothing about that entry may travel.
+  it("gives an agent left at the resting scope no scope key", () => {
     const resting = {
       ...config(),
       agents: { [AGENT]: { model: "haiku" as const } },
@@ -201,10 +201,11 @@ describe("fromSeedPayload", () => {
     })
   })
 
-  // Absent means project on both sides of the wire, so a restored entry says
-  // nothing about scope rather than saying "project" out loud — which is what
-  // keeps a round trip from growing keys the store would then have to drop.
-  it("restores an absent scope as absent, not as project", () => {
+  // Absent means the resting global on both sides of the wire, so a restored
+  // entry says nothing about scope rather than saying "global" out loud —
+  // which is what keeps a round trip from growing keys the store would then
+  // have to drop.
+  it("restores an absent scope as absent, not spelled out", () => {
     const restored = fromSeedPayload(toSeedPayload(config()))
 
     expect(restored.agents[AGENT]).not.toHaveProperty("scope")

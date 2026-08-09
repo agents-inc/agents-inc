@@ -156,7 +156,9 @@ export function SkillCell({
         {/* Three 2px squares, not a `•••` glyph — the design draws them as
             boxes, and a font would never land on the same rhythm. They stay in
             the layout at zero opacity so revealing one cannot reflow the row,
-            and focus reveals them too, or the keyboard could never find them. */}
+            and focus reveals them too, or the keyboard could never find them.
+            Revealed and marked are two different things, so focus does both:
+            the ring is the design system's one focus treatment. */}
         <button
           type="button"
           aria-label={`Options for ${skill.displayName}`}
@@ -165,7 +167,7 @@ export function SkillCell({
             stop(event)
             requestPanel()
           }}
-          className={`group/dots ml-auto flex shrink-0 cursor-pointer flex-col gap-[2px] p-1 transition-opacity duration-[120ms] hover:bg-badge focus-visible:opacity-100 ${
+          className={`group/dots ml-auto flex shrink-0 cursor-pointer flex-col gap-[2px] p-1 transition-opacity duration-[120ms] outline-none hover:bg-badge focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring ${
             open ? "opacity-100" : "opacity-0 group-hover/cell:opacity-100"
           }`}
         >
@@ -233,6 +235,7 @@ export function SkillCell({
       {open && (
         <SkillOptionsPanel
           skillId={skill.id}
+          sourceUrl={skill.sourceUrl}
           entry={options}
           flip={column === columns - 1}
         />

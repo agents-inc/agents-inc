@@ -29,7 +29,7 @@ test.describe("install dialog", () => {
   })
 
   test("groups skills by scope", async ({ configure }) => {
-    await expect(configure.installDialog.skillsPane).toContainText("Project")
+    await expect(configure.installDialog.skillsPane).toContainText("Global")
   })
 
   test("lists the sub-agents that will be written", async ({ configure }) => {
@@ -59,6 +59,16 @@ test.describe("install dialog", () => {
     await configure.installDialog.command("npx agents-inc init").click()
 
     await expect(configure.installDialog.root).toContainText("copied")
+
+    const clipboard = await page.evaluate(() => navigator.clipboard.readText())
+    expect(clipboard).toBe(`npx agents-inc init --from ${STORED_ID}`)
+  })
+
+  // Copying is the only thing this dialog does, so it cannot be pointer-only:
+  // the block takes focus and Enter reaches the same handler a click does.
+  test("copies from the keyboard", async ({ configure, page }) => {
+    await configure.installDialog.command("npx agents-inc init").focus()
+    await page.keyboard.press("Enter")
 
     const clipboard = await page.evaluate(() => navigator.clipboard.readText())
     expect(clipboard).toBe(`npx agents-inc init --from ${STORED_ID}`)
@@ -109,10 +119,14 @@ test.describe("install dialog with pins", () => {
     await configure.roster.agentButton("web", "developer").click()
     await configure.roster.installButton.click()
 
+    // Named in full: the roster fields a researcher in every other domain, so
+    // the bare role could find one of those and pass on the wrong agent.
     // The positive assertion guards the negative one against a blank pane.
-    await expect(configure.installDialog.agentsPane).toContainText("reviewer")
+    await expect(configure.installDialog.agentsPane).toContainText(
+      "web · researcher"
+    )
     await expect(configure.installDialog.agentsPane).not.toContainText(
-      "developer"
+      "web · developer"
     )
   })
 })
@@ -131,7 +145,7 @@ test.describe("install dialog counts", () => {
     await expect(configure.installDialog.footerNote).toContainText("1 ejected")
   })
 
-  test("a skill set to global moves to the Global group", async ({
+  test("a skill set to project moves to the Project group", async ({
     configure,
   }) => {
     await configure.chooseStack(STACKS.nextjs)
@@ -139,6 +153,6 @@ test.describe("install dialog counts", () => {
 
     await configure.roster.installButton.click()
 
-    await expect(configure.installDialog.skillsPane).toContainText("Global")
+    await expect(configure.installDialog.skillsPane).toContainText("Project")
   })
 })

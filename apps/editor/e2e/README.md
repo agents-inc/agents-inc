@@ -11,13 +11,13 @@ one on port 5173 is reused locally.
 
 ## Layout
 
-| Path | Holds |
-| ---- | ----- |
-| `fixtures.ts` | The extended `test`, which hands every spec an already-navigated `ConfigurePage` |
-| `pages/` | Page and component objects — all locators live here, never in a spec |
-| `support/catalog.ts` | The catalogue values the specs pin to |
-| `support/github.ts` | Route mocks for the one external call |
-| `specs/` | The tests |
+| Path                     | Holds                                                                            |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| `fixtures.ts`            | The extended `test`, which hands every spec an already-navigated `ConfigurePage` |
+| `pages/`                 | Page and component objects — all locators live here, never in a spec             |
+| `support/catalog.ts`     | The catalogue values the specs pin to                                            |
+| `support/skill-index.ts` | Route mocks for the worker's skill index, the dialog's one external call         |
+| `specs/`                 | The tests                                                                        |
 
 ## Conventions
 
@@ -49,7 +49,7 @@ naming the value that moved rather than half the suite going red.
 
 **Scroll assertions cannot be exact.** Filtering removes results, which
 shortens the page, and the browser's scroll anchoring then shifts the offset to
-keep the visible content stable — measured at 1200 → 588 on the Recommended
+keep the visible content stable — measured at 1200 → 588 on a narrowing filter
 chip. Both are correct behaviour. The only invariant worth asserting is that
 the position is not zero; anything tighter ends up encoding the anchoring
 arithmetic instead of the behaviour under test. Two earlier versions of that

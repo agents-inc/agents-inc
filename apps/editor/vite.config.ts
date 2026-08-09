@@ -29,9 +29,18 @@ export default defineConfig(({ mode }) => {
       ...(uploadSourceMaps
         ? [
             sentryVitePlugin({
-              org: process.env.SENTRY_ORG,
-              project: process.env.SENTRY_PROJECT,
-              authToken: process.env.SENTRY_AUTH_TOKEN,
+              // Each key is passed only when it is set. The plugin reads the
+              // same three variables itself when an option is absent, so an
+              // unset one has to stay absent rather than arrive as undefined.
+              ...(process.env.SENTRY_ORG !== undefined && {
+                org: process.env.SENTRY_ORG,
+              }),
+              ...(process.env.SENTRY_PROJECT !== undefined && {
+                project: process.env.SENTRY_PROJECT,
+              }),
+              ...(process.env.SENTRY_AUTH_TOKEN !== undefined && {
+                authToken: process.env.SENTRY_AUTH_TOKEN,
+              }),
               sourcemaps: { filesToDeleteAfterUpload: ["./dist/**/*.map"] },
               // A rejected upload — wrong token scope, Sentry unreachable —
               // must not stop the site shipping. The deploy is the important

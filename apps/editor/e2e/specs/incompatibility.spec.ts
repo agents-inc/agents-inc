@@ -129,7 +129,7 @@ test.describe("incompatible skills", () => {
   })
 
   // The other direction. Next.js is built on React, so choosing Next.js
-  // chooses React, and everything React rules out goes with it — even though
+  // chooses React, and everything React strands goes with it — even though
   // Next.js itself names none of those skills.
   test("what the selection implies rules things out too", async ({
     configure,
@@ -138,19 +138,20 @@ test.describe("incompatible skills", () => {
       .skillIn(web, IMPLIED.implierCategory, IMPLIED.implier)
       .toggle()
 
-    const angular = configure.skillIn(
+    const vuetify = configure.skillIn(
       web,
-      IMPLIED.impliedCategory,
+      IMPLIED.blockedCategory,
       IMPLIED.blocked
     )
-    await expect(angular.root).toBeDisabled()
-    expect(await angular.incompatibleReason()).toBe(IMPLIED.reason)
+    await expect(vuetify.root).toBeDisabled()
+    expect(await vuetify.incompatibleReason()).toBe(IMPLIED.reason)
   })
 
-  // Angular is an exclusive sibling of React, but React is only implied here —
-  // clicking Angular would not evict Next.js, so the exemption must not apply.
-  // React itself stays live, because choosing it is consistent with Next.js.
-  test("an implied conflict does not get the sibling exemption", async ({
+  // Angular conflicts with the implied React, but a pick-one category swaps
+  // rather than adds, so the sibling exemption reaches implied skills too —
+  // and React itself stays live, because choosing it is consistent with
+  // Next.js.
+  test("an implied conflict gets the sibling exemption too", async ({
     configure,
   }) => {
     await configure
@@ -159,6 +160,10 @@ test.describe("incompatible skills", () => {
 
     await expect(
       configure.skillIn(web, IMPLIED.impliedCategory, IMPLIED.implied).root
+    ).toBeEnabled()
+    await expect(
+      configure.skillIn(web, IMPLIED.impliedCategory, IMPLIED.impliedSibling)
+        .root
     ).toBeEnabled()
     await expect(
       configure.skillIn(web, IMPLIED.implierCategory, IMPLIED.implierSibling)

@@ -1,14 +1,54 @@
+import type { Locator } from "@playwright/test"
+import { SKILL_INDEX } from "@workspace/api-mocks/fixtures"
+
 import { expect, test } from "../fixtures"
-import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
+import { DOMAIN_REACH, DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
+import { stubSkillIndex } from "../support/skill-index"
 
 const { web } = DOMAINS
 const { name: CATEGORY, first: SKILL } = EXCLUSIVE_CATEGORY
 const MATRIX_DOMAIN = "Web"
 const MATRIX_ROLE = "dev"
+// The first agent behind the Meta fold, and so the first cell a Tab out of the
+// fold's own toggle reaches.
+const FIRST_META_AGENT = "agent-summoner"
+
+// The design system draws one focus ring and nothing machine-decidable can
+// check it — axe does not look at focus indicators — so reading the drawn
+// box-shadow is the whole gate, exactly as it is in the package's own stories.
+//
+// Two things make the ring tests read oddly, and both are the app's:
+//
+// Focus has to arrive by keyboard rather than through `focus()`. Chromium only
+// matches `:focus-visible` on a programmatic move when the element it left
+// matched too, and every control here is reached past a click.
+//
+// And one snapshot rather than two reads, because the app moves focus in
+// effects, so "is it focused" and "what is it drawing" asked separately can
+// answer about two different moments.
+const focusRing = (locator: Locator) =>
+  locator.evaluate((node) => ({
+    focused: node === document.activeElement,
+    shadow: getComputedStyle(node).boxShadow,
+  }))
 
 // The one piece of explanatory copy in the panel, behind the info glyph.
 const SCOPE_TIP =
   "Determines where the skill is installed to. Project-level skills inherit global, but not vice versa."
+
+// Where React's own directory sits in the marketplace repository, written out
+// rather than rebuilt from the app's own rule — a spec that derives the URL the
+// same way the code does would agree with it however wrong both were. Resolved
+// by hand against GitHub, and it is `EXCLUSIVE_CATEGORY.first`'s id, so a
+// catalogue that renames the skill fails here naming this line.
+const CATALOG_SOURCE_URL =
+  "https://github.com/agents-inc/skills/tree/HEAD/src/skills/web-framework-react"
+
+// An entry of the mocked index, which is a real skill in a real repository —
+// the index only holds skills whose SKILL.md was read.
+const [ADDED] = SKILL_INDEX.skills
+const ADDED_NAME = ADDED!.name
+const ADDED_SOURCE_URL = `https://github.com/${ADDED!.repo}/tree/HEAD/${ADDED!.path}`
 
 test.describe("skill options panel", () => {
   test("the ellipsis opens the panel", async ({ configure }) => {
@@ -56,6 +96,20 @@ test.describe("skill options panel", () => {
     await expect.poll(() => skill.optionsOpacity()).toBe(1)
   })
 
+  // Focus reveals the ••• as hover does, but being visible is not the same as
+  // being marked as focused: the ring is what says which control the keyboard
+  // is on.
+  test("the ellipsis draws a focus ring", async ({ configure, page }) => {
+    const skill = configure.skillIn(web, CATEGORY, SKILL)
+
+    await skill.root.focus()
+    await page.keyboard.press("Tab")
+
+    const { focused, shadow } = await focusRing(skill.optionsButton)
+    expect(focused).toBe(true)
+    expect(shadow).not.toBe("none")
+  })
+
   test("the ellipsis stays out while the panel is open", async ({
     configure,
   }) => {
@@ -87,18 +141,18 @@ test.describe("skill options panel", () => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
 
     await skill.openOptions()
-    await skill.options.choose("global")
+    await skill.options.choose("project")
     await skill.options.cycleAssignment(MATRIX_DOMAIN, MATRIX_ROLE)
     await expect(skill.root).toHaveAttribute("aria-pressed", "false")
 
     await configure.roster.heading.click()
     await skill.toggle()
 
-    await expect(skill.agentCount).toHaveText("3 agents")
-    await expect(skill.scopeBadge).toHaveAccessibleName("Scope: global")
+    await expect(skill.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
+    await expect(skill.scopeBadge).toHaveAccessibleName("Scope: project")
     await skill.openOptions()
-    await expect(skill.options.option("global")).toHaveAttribute(
-      "aria-pressed",
+    await expect(skill.options.segment("project")).toHaveAttribute(
+      "aria-checked",
       "true"
     )
   })
@@ -173,12 +227,66 @@ test.describe("skill options panel", () => {
   }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
 
+    // Scope rests at global, so one flip lands on project.
     await skill.flipScope()
     await skill.openOptions()
 
-    await expect(skill.options.option("global")).toHaveAttribute(
-      "aria-pressed",
+    await expect(skill.options.segment("project")).toHaveAttribute(
+      "aria-checked",
       "true"
+    )
+  })
+})
+
+// A skill is somebody else's repository, and until now the panel described
+// everything about installing one and nothing about where it comes from.
+test.describe("source code link", () => {
+  test("a catalogue skill links into the marketplace repository", async ({
+    configure,
+  }) => {
+    const skill = configure.skillIn(web, CATEGORY, SKILL)
+    await skill.openOptions()
+
+    await expect(skill.options.sourceLink).toHaveAttribute(
+      "href",
+      CATALOG_SOURCE_URL
+    )
+  })
+
+  // The link owes the keyboard the same ring as the cells above it. This is
+  // the panel's last tab stop, so reaching it pulls the panel's foot into view
+  // — which is precisely the Tab that used to lose its focus to the filter
+  // bar, and why this test could not be written until the bar stopped taking
+  // it. With the Meta fold shut the link is the stop straight after it.
+  test("the source link draws a focus ring", async ({ configure, page }) => {
+    const skill = configure.skillIn(web, CATEGORY, SKILL)
+    await skill.openOptions()
+
+    await skill.options.root.getByRole("button", { name: "Meta" }).focus()
+    await page.keyboard.press("Tab")
+
+    const { focused, shadow } = await focusRing(skill.options.sourceLink)
+    expect(focused).toBe(true)
+    expect(shadow).not.toBe("none")
+  })
+
+  // An added skill is a directory in a repository that is not ours, and the
+  // index it arrived through carries both halves of that address.
+  test("an added skill links into the repository it came from", async ({
+    configure,
+    page,
+  }) => {
+    await stubSkillIndex(page)
+    await configure.addSkillButton.click()
+    await configure.addSkillDialog.stage(ADDED_NAME)
+    await configure.addSkillDialog.confirm()
+
+    const added = configure.skill(ADDED_NAME)
+    await added.openOptions()
+
+    await expect(added.options.sourceLink).toHaveAttribute(
+      "href",
+      ADDED_SOURCE_URL
     )
   })
 })
@@ -247,14 +355,15 @@ test.describe("sub-agent assignment", () => {
     await skill.toggle()
     await skill.openOptions()
 
-    await expect(skill.agentCount).toHaveText("4 agents")
+    await expect(skill.agentCount).toHaveText(`${DOMAIN_REACH.web} agents`)
     await skill.options.cycleAssignment(MATRIX_DOMAIN, MATRIX_ROLE)
-    await expect(skill.agentCount).toHaveText("3 agents")
+    await expect(skill.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
   })
 
-  // A web skill never reaches API on its own, so that cell starts empty and
-  // assigning it is what switches the agent on in the roster.
-  test("assigning an out-of-domain agent moves it into the roster", async ({
+  // A web skill never reaches API on its own — relevance keeps it inside its
+  // domain — so the out-of-domain cell arrives empty, and assigning it by hand
+  // is what brings the agent into the roster.
+  test("an out-of-domain agent stays out until assigned by hand", async ({
     configure,
   }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
@@ -263,6 +372,8 @@ test.describe("sub-agent assignment", () => {
     await skill.openOptions()
 
     await expect(configure.roster.domainBand("api")).toContainText("0 of")
+    await expect(configure.roster.skillRow(SKILL, "api-developer")).toBeHidden()
+
     await skill.options.cycleAssignment("API", MATRIX_ROLE)
 
     await expect(configure.roster.domainBand("api")).toContainText("1 of")
@@ -283,7 +394,31 @@ test.describe("sub-agent assignment", () => {
     await expect(metaAgent).toBeVisible()
   })
 
-  // Meta is never auto-assigned, so the fold is the only path to it.
+  // A labelled agent cell is drawn from the grid's own cell variants and is
+  // just as much a button, so it owes the keyboard the same ring the cells
+  // beside it draw.
+  test("a cell behind the meta fold draws a focus ring", async ({
+    configure,
+    page,
+  }) => {
+    const skill = configure.skillIn(web, CATEGORY, SKILL)
+    await skill.openOptions()
+    const fold = skill.options.root.getByRole("button", { name: "Meta" })
+    await fold.click()
+
+    await fold.focus()
+    await page.keyboard.press("Tab")
+
+    const { focused, shadow } = await focusRing(
+      skill.options.option(FIRST_META_AGENT)
+    )
+    expect(focused).toBe(true)
+    expect(shadow).not.toBe("none")
+  })
+
+  // A meta-flavor agent is never auto-assigned, so the fold is the only path
+  // to it. The band starts at two, not zero: the consolidated `pm` and
+  // `reviewer` share the meta group and auto-carry the selected web skill.
   test("assigning through the meta fold reaches the roster", async ({
     configure,
   }) => {
@@ -292,10 +427,10 @@ test.describe("sub-agent assignment", () => {
     await skill.openOptions()
     await skill.options.root.getByRole("button", { name: "Meta" }).click()
 
-    await expect(configure.roster.domainBand("meta")).toContainText("0 of")
+    await expect(configure.roster.domainBand("meta")).toContainText("2 of")
     await skill.options.option("agent-summoner").click()
 
-    await expect(configure.roster.domainBand("meta")).toContainText("1 of")
+    await expect(configure.roster.domainBand("meta")).toContainText("3 of")
     await expect(
       configure.roster.skillRow(SKILL, "agent-summoner")
     ).toBeVisible()

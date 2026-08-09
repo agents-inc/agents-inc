@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react"
 
+import { seedPayloadSchema } from "@workspace/matrix"
+
 import { createSharedConfig } from "@/lib/api/configs"
 import { toSeedPayload } from "./seed"
 
 import type { ConfigSelection } from "./derive"
-import type { SeedPayload } from "@workspace/matrix"
 
 const COPIED_DECAY_MS = 2_000
 
@@ -49,12 +50,19 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
     if (!open) return
     let stale = false
 
-    void createSharedConfig(JSON.parse(serialized) as SeedPayload).then(
-      (result) => {
-        if (stale) return
-        setMinted({ key: serialized, id: result.ok ? result.id : null })
-      }
-    )
+    // Round-tripping the memo key rather than calling `toSeedPayload` again is
+    // what keeps the sent payload and the cache key provably the same bytes.
+    // The parse is what makes the result a `SeedPayload` — `JSON.parse` returns
+    // `any`, and an assertion would only have claimed the shape. It throws
+    // rather than degrading to `status: "failed"` on purpose: the input is this
+    // module's own serializer output, so a rejection is a bug here, not a
+    // network condition, and the worker would answer 400 for it anyway.
+    void createSharedConfig(
+      seedPayloadSchema.parse(JSON.parse(serialized))
+    ).then((result) => {
+      if (stale) return
+      setMinted({ key: serialized, id: result.ok ? result.id : null })
+    })
 
     return () => {
       stale = true
