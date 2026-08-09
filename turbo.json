@@ -30,11 +30,19 @@
       // without becoming part of any hash.
       "passThroughEnv": ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"]
     },
+    // `^build` alongside the obvious dependency because a workspace can now
+    // consume a *generated* type from another: apps/server emits the
+    // declaration apps/editor infers its API client from, so on a cold
+    // checkout both of these read a file that does not exist yet and report it
+    // as a missing module rather than as an unbuilt dependency. `test` has
+    // carried `^build` all along for the same reason. Nothing else in the
+    // repository grows a build step from this — the packages/* the apps depend
+    // on are consumed as source and have no `build` for turbo to run.
     "lint": {
-      "dependsOn": ["^lint"]
+      "dependsOn": ["^lint", "^build"]
     },
     "typecheck": {
-      "dependsOn": ["^typecheck"]
+      "dependsOn": ["^typecheck", "^build"]
     },
     "dev": {
       "cache": false,

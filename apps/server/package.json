@@ -5,6 +5,10 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
+    "//build": "Declarations only — see tsconfig.build.json. wrangler builds the worker itself; this exists so apps/editor can infer its API client from AppType without compiling the worker's source.",
+    "build": "tsc -p tsconfig.build.json",
+    "//build:skill-index": "Crawls the allowlisted skills repositories and writes the index to the file named as its argument. Deliberately NOT part of `build` or `deploy`: it reaches the live GitHub API and the thing it produces is published to KV by .github/workflows/build-skill-index.yml, not by a deploy. Takes GITHUB_TOKEN if one is set and runs unauthenticated if not, so it can be run by hand.",
+    "build:skill-index": "bun scripts/build-skill-index.ts",
     "deploy": "wrangler deploy --env production",
     "cf-typegen": "wrangler types",
     "lint": "eslint",
@@ -16,6 +20,7 @@
     "@hono/zod-openapi": "^1",
     "@workspace/matrix": "workspace:*",
     "hono": "^4.11.4",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -23,9 +28,16 @@
     "@workspace/eslint-config": "workspace:*",
     "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
+    "@workspace/vitest-config": "workspace:*",
     "eslint": "^10",
     "typescript": "~6",
     "vitest": "^4",
     "wrangler": "^4"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./src/index.ts"
+    }
   }
 }

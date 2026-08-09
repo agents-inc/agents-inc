@@ -1,5 +1,9 @@
-import { SELF } from "cloudflare:test"
+import { SELF, env } from "cloudflare:test"
+import { hc } from "hono/client"
 import { describe, expect, it } from "vitest"
+
+import type { SeedPayload } from "@workspace/matrix/seed"
+import type { AppType } from "./index"
 
 // These run against the real worker in the real runtime with a simulated KV
 // binding, so they cover the whole contract a client sees: status codes,
@@ -13,7 +17,12 @@ const BASE = "https://api.test"
 // Model and effort belong to the agent, so the skill carries neither and the
 // payload has a second map. A pinned-on agent with no skills is expressible
 // there, which is why `agents` is not simply derivable from the assignments.
-const payload = () => ({
+//
+// Annotated rather than inferred: a bare literal widens `v` to `number` and
+// every enum to `string`, which the typed client below rejects — and rightly,
+// since that is the same widening that would let a fixture drift from the
+// contract and only say so as a 400 at runtime.
+const payload = (): SeedPayload => ({
   v: 3,
   matrixVersion: "1.0.0",
   stackId: "next",
@@ -87,6 +96,72 @@ describe("GET /configs/:id", () => {
 
   it("404s an unknown id", async () => {
     const response = await SELF.fetch(`${BASE}/configs/unknown1`)
+    expect(response.status).toBe(404)
+  })
+
+  // Nothing this worker writes can land here — the POST validates first and the
+  // id is the payload's own hash. Writing straight to the binding is how the
+  // case becomes reachable at all, and it is worth reaching: without the parse,
+  // the route serves arbitrary stored bytes on a response its OpenAPI contract
+  // declares to be a seed payload.
+  it("500s rather than serving a stored payload that no longer validates", async () => {
+    await env.CONFIGS.put("corrupt1", JSON.stringify({ v: 3, skills: "no" }))
+
+    const response = await SELF.fetch(`${BASE}/configs/corrupt1`)
+
+    expect(response.status).toBe(500)
+  })
+
+  it("500s rather than serving stored bytes that are not JSON", async () => {
+    await env.CONFIGS.put("corrupt2", "{ not json")
+
+    const response = await SELF.fetch(`${BASE}/configs/corrupt2`)
+
+    expect(response.status).toBe(500)
+  })
+})
+
+// apps/editor reaches these two routes through `hc<AppType>` rather than a
+// hand-written fetch, which makes the exported type half of the contract and
+// not a convenience. Running the editor's own client against the real worker
+// here is what keeps the two halves honest about each other: a route that
+// stops being chained onto the exported app disappears from the client's
+// surface and this block stops compiling, and a body that drifts from what
+// the route declares fails an assertion that no cast is standing in front of.
+describe("the typed client the editor uses", () => {
+  const client = hc<AppType>(BASE, { fetch: SELF.fetch.bind(SELF) })
+
+  const createConfig = () => client.configs.$post({ json: payload() })
+
+  it("mints an id whose type comes from the route, not from a cast", async () => {
+    const response = await createConfig()
+
+    expect(response.status).toBe(201)
+    if (!response.ok) throw new Error("the store refused a valid payload")
+
+    const { id } = await response.json()
+    expect(id).toHaveLength(8)
+  })
+
+  it("round-trips a payload the client reads back as a seed payload", async () => {
+    const created = await createConfig()
+    if (!created.ok) throw new Error("the store refused a valid payload")
+    const { id } = await created.json()
+
+    const response = await client.configs[":id"].$get({ param: { id } })
+
+    expect(response.status).toBe(200)
+    if (!response.ok) throw new Error("the store lost a payload it just took")
+    expect(await response.json()).toEqual(payload())
+  })
+
+  // The one failure the editor treats as ordinary rather than reportable, so
+  // it is the one status the client has to be able to tell apart.
+  it("404s an unknown id", async () => {
+    const response = await client.configs[":id"].$get({
+      param: { id: "unknown1" },
+    })
+
     expect(response.status).toBe(404)
   })
 })

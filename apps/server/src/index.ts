@@ -1,6 +1,21 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
 import { seedPayloadSchema } from "@workspace/matrix/seed"
+import {
+  SKILL_INDEX_FRESHNESS_HEADER,
+  skillIndexSchema,
+} from "@workspace/matrix/skill-index"
 import { cors } from "hono/cors"
+
+import { messageOf } from "./log"
+import { freshnessOf, readSkillIndex, secondsUntilStale } from "./skill-index"
+
+import type { RouteHandler } from "@hono/zod-openapi"
+import type { Context } from "hono"
+
+// This worker's own bindings, named once. `Env` is the global `wrangler types`
+// writes; wrapping it is what the app, its handlers and the CORS callback all
+// need, and spelling that wrapper out four times is four places to get wrong.
+type WorkerEnv = { Bindings: Env }
 
 // A realistic payload is a few KB; anything bigger is not an editor
 // config, so it is refused before JSON parsing spends memory on it.
@@ -64,21 +79,61 @@ const getConfigRoute = createRoute({
       content: { "application/json": { schema: seedPayloadSchema } },
     },
     404: { description: "No config under this id" },
+    500: { description: "What is stored under this id is not a seed payload" },
     503: { description: "The store refused the read" },
   },
 })
 
-const app = new OpenAPIHono<{ Bindings: Env }>()
+// The whole index in one response, on purpose. Three repositories yield a list
+// of a few dozen skills — small enough that the add-skills dialog filters it in
+// the browser, which is worth far more than a server-side query: no call per
+// keystroke, no debounce, and no rate limit to design around.
+const skillIndexRoute = createRoute({
+  method: "get",
+  path: "/skills",
+  operationId: "getSkillIndex",
+  tags: ["Skills"],
+  responses: {
+    200: {
+      description:
+        "Every skill the allowlisted external repositories are known to hold",
+      content: { "application/json": { schema: skillIndexSchema } },
+    },
+    503: {
+      description: "The scheduled build has not published an index yet",
+    },
+  },
+})
+
+const app = new OpenAPIHono<WorkerEnv>()
 
 // Registered before the routes so a preflight never reaches them. Only the
 // configured web origin may call from a browser; the CLI is not a browser and
 // is unaffected.
+// `cors` types its callback's context as the default `Env`, whose bindings are
+// `any` — so the annotation is what makes `WEB_ORIGIN` a checked read of this
+// worker's own binding rather than a property fetched off `any`.
+//
+// `exposeHeaders` is what lets the editor read `x-skill-index` at all. A custom
+// response header is hidden from a cross-origin caller unless the server names
+// it here — `hono/cors` exposes nothing by default and emits the header only
+// when this array is non-empty — so setting the header on the index response is
+// half the job and sending it is the other half. Nothing in either workspace's
+// suite is a browser, which is why the editor keeps a Playwright stub that
+// withholds this and a spec asserting the dialog survives it.
 const allowOnlyWebOrigin = cors({
-  origin: (origin, c) => (origin === c.env.WEB_ORIGIN ? origin : null),
+  origin: (origin, c: Context<WorkerEnv>) =>
+    origin === c.env.WEB_ORIGIN ? origin : null,
+  exposeHeaders: [SKILL_INDEX_FRESHNESS_HEADER],
 })
 
 app.use("/configs/*", allowOnlyWebOrigin)
 app.use("/configs", allowOnlyWebOrigin)
+// A plain GET preflights nothing, but the browser still refuses to hand the
+// body to the app without an allow-origin header on the response — so the
+// index needs this as much as the routes that do preflight.
+app.use("/skills", allowOnlyWebOrigin)
+app.use("/skills/*", allowOnlyWebOrigin)
 // The tunnel is called cross-origin from the web app, and an envelope's
 // content type is not CORS-safelisted, so it preflights like the rest.
 app.use("/monitoring", allowOnlyWebOrigin)
@@ -91,19 +146,22 @@ app.use("/configs", async (c, next) => {
   return next()
 })
 
-// Workers Logs is already enabled in wrangler.jsonc, and it ingests a logged
-// object as structured fields — so this is queryable in the dashboard without
-// an SDK, a dependency or a second vendor. A KV write is the one thing here
-// that can fail for reasons outside this code: the free tier allows 1000 a
-// day, and past that a share fails with nothing anywhere saying why.
+// A KV write is the one thing here that can fail for reasons outside this
+// code: the free tier allows 1000 a day, and past that a share fails with
+// nothing anywhere saying why. `messageOf` lives in ./log because the skill
+// index logs the same way and importing it back from here would be a cycle.
 const logKvFailure = (operation: string, error: unknown) =>
-  console.error({
-    event: "kv_failure",
-    operation,
-    message: error instanceof Error ? error.message : String(error),
-  })
+  console.error({ event: "kv_failure", operation, message: messageOf(error) })
 
-app.openapi(createConfigRoute, async (c) => {
+// The other thing worth a dashboard query. Unlike a KV failure this one cannot
+// happen by quota or outage: it means the bytes under a content-addressed key
+// are not the bytes that were hashed into it, so the id is logged alongside.
+const logCorruptPayload = (id: string, error: unknown) =>
+  console.error({ event: "corrupt_payload", id, message: messageOf(error) })
+
+const createConfig: RouteHandler<typeof createConfigRoute, WorkerEnv> = async (
+  c
+) => {
   const payload = c.req.valid("json")
 
   // What is stored is the re-serialized *validated* payload, so unknown keys
@@ -125,9 +183,9 @@ app.openapi(createConfigRoute, async (c) => {
   }
 
   return c.json({ id }, 201)
-})
+}
 
-app.openapi(getConfigRoute, async (c) => {
+const getConfig: RouteHandler<typeof getConfigRoute, WorkerEnv> = async (c) => {
   const { id } = c.req.valid("param")
 
   let stored: string | null
@@ -140,11 +198,64 @@ app.openapi(getConfigRoute, async (c) => {
 
   if (stored === null) return c.text("No config under this id", 404)
 
+  // The route's 200 declares `seedPayloadSchema`, so what is served has to be
+  // one — and `JSON.parse` alone promises nothing. Reaching here with something
+  // else means the store diverged from what this worker wrote: the POST
+  // validates before storing, and the key is the payload's own hash, so no
+  // write of ours can produce it. That is an integrity failure on our side,
+  // which is 500 — not 404 (the config is present) and not 503 (the store
+  // answered). Serving it unvalidated would make the contract a lie instead.
+  let payload: unknown
+  try {
+    payload = JSON.parse(stored)
+  } catch (error) {
+    logCorruptPayload(id, error)
+    return c.text("Stored config is unreadable", 500)
+  }
+
+  const parsed = seedPayloadSchema.safeParse(payload)
+  if (!parsed.success) {
+    logCorruptPayload(id, parsed.error)
+    return c.text("Stored config is unreadable", 500)
+  }
+
   // Content-addressed, therefore immutable: a CLI or proxy may cache forever.
-  return c.json(JSON.parse(stored), 200, {
+  return c.json(parsed.data, 200, {
     "cache-control": `public, max-age=${YEAR_SECONDS}, immutable`,
   })
-})
+}
+
+// One KV read. Whatever the scheduled build last published is what this
+// serves, complete, with no upstream anywhere in the request — see
+// `skill-index.ts` for why the crawl is not here any more. The stored value
+// carries no expiry, so the last good index survives an upstream outage, a
+// broken workflow and a revoked token alike.
+//
+// 503 is therefore the one narrow case left: no build has ever succeeded, or
+// what is stored is no longer readable as an index. Neither is a degraded
+// answer this route could improve on by trying harder.
+//
+// `x-skill-index` still says whether the list is the current picture, but the
+// question it answers has changed with the design. It no longer means "this is
+// part of the index" — every answer is the whole index now — it means the
+// build behind it has stopped running. Callers already handle both words and
+// need no change.
+const getSkillIndex: RouteHandler<typeof skillIndexRoute, WorkerEnv> = async (
+  c
+) => {
+  const outcome = await readSkillIndex(c.env.CONFIGS)
+
+  if (!outcome.served) {
+    return c.text("The skill index is not available yet", 503)
+  }
+
+  const { builtAt } = outcome.index
+
+  return c.json(outcome.index, 200, {
+    "cache-control": `public, max-age=${String(secondsUntilStale(builtAt))}`,
+    [SKILL_INDEX_FRESHNESS_HEADER]: freshnessOf(builtAt),
+  })
+}
 
 // ── Sentry tunnel ────────────────────────────────────────────────────────
 //
@@ -179,7 +290,9 @@ const tunnelRoute = createRoute({
   },
 })
 
-app.openapi(tunnelRoute, async (c) => {
+const tunnelEnvelope: RouteHandler<typeof tunnelRoute, WorkerEnv> = async (
+  c
+) => {
   const envelope = await c.req.text()
 
   const headerEnd = envelope.indexOf("\n")
@@ -211,8 +324,29 @@ app.openapi(tunnelRoute, async (c) => {
   // The browser has nothing to do with Sentry's response body, and forwarding
   // it would only widen what this route can be used to probe.
   return new Response(null, { status: upstream.status })
-})
+}
 
-// Named for build-time OpenAPI spec generation; default for the Workers runtime.
-export { app }
-export default app
+// One chain, not three statements, and that is a type-level requirement rather
+// than a style. `.openapi()` returns the app with the route folded into its
+// *type* while returning the very same instance at runtime, so registering
+// each route on its own line throws the return value away and leaves
+// `typeof app` claiming to serve nothing. apps/editor infers its client from
+// exactly that type, so a route dropped out of this chain would vanish from
+// the editor's API surface rather than fail here.
+const api = app
+  .openapi(createConfigRoute, createConfig)
+  .openapi(getConfigRoute, getConfig)
+  .openapi(skillIndexRoute, getSkillIndex)
+  .openapi(tunnelRoute, tunnelEnvelope)
+
+// What apps/editor imports, and the only thing it imports from this worker:
+// `hc<AppType>` reads the routes off it and gives the editor a client that
+// cannot outlive them. A type erases at compile time, so nothing here reaches
+// the browser bundle.
+export type AppType = typeof api
+
+// Named for build-time OpenAPI spec generation; default for the Workers
+// runtime. Both are the chained value, not the bare instance above: they are
+// the same object either way, but only this one carries the routes in its type.
+export { api as app }
+export default api

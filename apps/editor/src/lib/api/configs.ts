@@ -1,14 +1,27 @@
 import { seedPayloadSchema, type SeedPayload } from "@workspace/matrix"
+import { hc } from "hono/client"
 import { z } from "zod"
 
 import { env } from "@/env"
 import { reportIssue } from "@/lib/observability/report"
+
+import type { AppType } from "server"
 
 // The config-sharing worker (apps/server). Dev talks to `wrangler dev` on its
 // default port; a deployment points VITE_API_URL at the real thing. There is
 // no fallback on purpose — see `env.schema.ts`.
 const API_URL = env.VITE_API_URL
 
+// The worker's own route types, read straight off the app it exports, so the
+// two calls below cannot drift from what it serves: a renamed path or a
+// changed body shape fails this file rather than a share link. `AppType` is a
+// type and nothing else — `import type` erases before the bundler sees it, so
+// no worker code is reachable from here.
+const api = hc<AppType>(API_URL)
+
+// Kept even though `api` types the response, because those types describe the
+// worker this was *built* against. What answers at runtime is whatever is
+// deployed, and this is the seam where that assumption stops being free.
 const createdSchema = z.object({ id: z.string().min(1) })
 
 export type ShareResult =
@@ -21,11 +34,7 @@ export const createSharedConfig = async (
   payload: SeedPayload
 ): Promise<ShareResult> => {
   try {
-    const response = await fetch(`${API_URL}/configs`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    })
+    const response = await api.configs.$post({ json: payload })
     if (!response.ok) {
       // Every one of these is a bug or an outage — the payload was built from
       // the contract's own schema, so the worker should never refuse it. 413
@@ -54,7 +63,13 @@ export const fetchSharedConfig = async (
   id: string
 ): Promise<SharedConfigResult> => {
   try {
-    const response = await fetch(`${API_URL}/configs/${encodeURIComponent(id)}`)
+    // Encoded here rather than by the client: hc splices a param into the path
+    // verbatim, so keeping a pasted id to one path segment — rather than
+    // letting a stray `/` or `#` in it rewrite the request — is still this
+    // module's job, exactly as it was when the URL was a template string.
+    const response = await api.configs[":id"].$get({
+      param: { id: encodeURIComponent(id) },
+    })
     // A 404 is an ordinary dead link — someone mistyped or the id never
     // existed. Reporting it would bury the real failures below in noise.
     if (response.status === 404) {

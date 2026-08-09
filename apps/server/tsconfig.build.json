@@ -1,0 +1,26 @@
+{
+  // Types only, and only because apps/editor consumes them. The editor infers
+  // its API client from this worker's `AppType`, and it cannot read that type
+  // out of `src/index.ts` directly: the source names `Env`, the global that
+  // `wrangler types` writes, and resolving it in the editor's program means
+  // dragging in the whole Workers runtime — which redefines DOM globals the
+  // browser app relies on (`Element` was the one that broke first). Emitting a
+  // declaration cuts the module graph at the boundary instead: what crosses is
+  // one 180-line .d.ts, and `skipLibCheck` leaves the bindings the editor has
+  // no business knowing about as the `any` the RPC client ignores anyway.
+  //
+  // Nothing here compiles the worker. wrangler builds `src/index.ts` itself
+  // from `wrangler.jsonc`, and `noEmit` stays on in tsconfig.json for both the
+  // typecheck gate and the editor-less path.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  // The entry alone: it is what the `exports` map points at, and widening this
+  // to `src` would emit a declaration for every test file beside it.
+  "include": ["src/index.ts", "worker-configuration.d.ts"]
+}
