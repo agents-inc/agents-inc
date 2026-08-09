@@ -17,53 +17,6 @@
     "agentsSource": {
       "type": "string"
     },
-    "sources": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "url": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "ref": {
-            "type": "string"
-          }
-        },
-        "required": ["name", "url"],
-        "additionalProperties": false
-      }
-    },
-    "boundSkills": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "sourceUrl": {
-            "type": "string"
-          },
-          "sourceName": {
-            "type": "string"
-          },
-          "boundTo": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          }
-        },
-        "required": ["id", "sourceUrl", "sourceName", "boundTo"],
-        "additionalProperties": false
-      }
-    },
     "branding": {
       "type": "object",
       "properties": {

@@ -3,6 +3,7 @@
   "$id": "schemas/project-config.schema.json",
   "title": "Project Configuration",
   "description": "Schema for .claude-src/config.yaml consumer project files (name, agents, stack, skills).",
+  "$comment": "HAND-MAINTAINED. scripts/generate-json-schemas.ts does NOT emit this file (nor project-source-config.schema.json) — its SCHEMA_ENTRIES list has no entry for either, so `generate:schemas` only reformats them with prettier on its way past. Edit this file by hand and keep it prettier-clean, or `generate:schemas:check` fails on the reformat. Three vocabularies below are copied out of src/cli/types/generated/source-types.ts and drift silently, because no generator and no check re-derives any of them: the stack category enum is the CATEGORIES tuple, verbatim and in that tuple's order; the selectedDomains enum is the DOMAINS tuple; and the skill-id pattern's leading alternation is that same DOMAINS tuple, since a skill id is `<domain>-<category>-<name>`. Re-derive all three whenever a category or domain is added, renamed or removed — a missing domain silently rejects every skill id under it.",
   "type": "object",
   "properties": {
     "version": {
@@ -25,7 +26,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^(ai|web|api|cli|mobile|infra|meta|shared|security)-.+-.+$"
+        "pattern": "^(ai|api|cli|desktop|infra|meta|mobile|shared|web)-.+-.+$"
       }
     },
     "author": {
@@ -35,17 +36,11 @@
       "type": "string",
       "enum": ["eject", "plugin"]
     },
-    "domains": {
+    "selectedDomains": {
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["ai", "api", "cli", "infra", "meta", "mobile", "shared", "web"]
-      }
-    },
-    "selectedAgents": {
-      "type": "array",
-      "items": {
-        "type": "string"
+        "enum": ["ai", "api", "cli", "desktop", "infra", "meta", "mobile", "shared", "web"]
       }
     },
     "stack": {
@@ -67,47 +62,98 @@
             "api-api",
             "api-auth",
             "api-baas",
+            "api-caching",
             "api-cms",
             "api-commerce",
-            "api-database",
+            "api-db-host",
+            "api-document",
             "api-email",
-            "api-flags",
-            "api-framework",
+            "api-graphql",
+            "api-kv",
+            "api-messaging",
             "api-observability",
+            "api-orm",
             "api-performance",
+            "api-queue",
             "api-search",
+            "api-specs",
+            "api-sql-engine",
             "api-vector-db",
             "cli-framework",
+            "cli-prompts",
+            "desktop-backend",
+            "desktop-framework",
+            "desktop-ipc",
+            "desktop-mobile",
+            "desktop-multiwindow",
+            "desktop-packaging",
+            "desktop-plugins",
+            "desktop-security",
+            "desktop-storage",
+            "desktop-testing",
+            "desktop-ui",
+            "desktop-updates",
             "infra-ci-cd",
             "infra-config",
+            "infra-containers",
+            "infra-iac",
             "infra-platform",
+            "meta-design",
             "meta-methodology",
+            "meta-planning",
             "meta-reviewing",
+            "mobile-animation",
+            "mobile-background",
+            "mobile-camera",
+            "mobile-deep-linking",
+            "mobile-deployment",
             "mobile-framework",
+            "mobile-hardware",
+            "mobile-navigation",
+            "mobile-notifications",
+            "mobile-performance",
+            "mobile-security",
+            "mobile-storage",
+            "mobile-styling",
+            "mobile-testing",
+            "mobile-ui-components",
+            "shared-lint",
             "shared-monorepo",
             "shared-security",
+            "shared-task-runner",
             "shared-tooling",
+            "web-3d",
             "web-accessibility",
             "web-animation",
             "web-client-state",
-            "web-data-fetching",
+            "web-dataviz",
+            "web-dnd",
+            "web-docs",
+            "web-e2e",
+            "web-editor",
             "web-error-handling",
             "web-file-upload",
             "web-files",
+            "web-form-library",
             "web-forms",
             "web-framework",
+            "web-graphql-client",
             "web-i18n",
+            "web-maps",
             "web-meta-framework",
             "web-mocking",
             "web-performance",
             "web-pwa",
             "web-realtime",
             "web-routing",
+            "web-rpc",
             "web-server-state",
+            "web-streaming",
             "web-styling",
             "web-testing",
             "web-tooling",
             "web-ui-components",
+            "web-ui-kit",
             "web-utilities"
           ]
         },
@@ -117,7 +163,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(ai|web|api|cli|mobile|infra|meta|shared|security)-.+-.+$"
+                  "pattern": "^(ai|api|cli|desktop|infra|meta|mobile|shared|web)-.+-.+$"
                 },
                 {
                   "type": "object",
@@ -146,7 +192,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "pattern": "^(ai|web|api|cli|mobile|infra|meta|shared|security)-.+-.+$"
+                    "pattern": "^(ai|api|cli|desktop|infra|meta|mobile|shared|web)-.+-.+$"
                   },
                   {
                     "type": "object",
