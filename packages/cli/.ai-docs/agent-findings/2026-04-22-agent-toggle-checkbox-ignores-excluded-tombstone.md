@@ -12,7 +12,18 @@ category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
 status: resolved
-resolved_by: D-277 (0.146.0) removed the precondition. `applyAgentToggle` now returns a clean removal on deselect instead of minting an `{ excluded: true }` tombstone, and `toggleAgent` refuses a globally-installed agent at project scope with the GLOBAL_AGENTS_LOCKED toast — so the "checkbox stays [✓] while the config gets a tombstone, with no toast" state is unreachable. Verified 2026-07-30 against `wizard-store.ts` (`applyAgentToggle`, `toggleAgent`, `nextSelectedAgents`, `buildAgentConfigForName`): no path leaves an agent in `selectedAgents` whose every `agentConfigs` entry is excluded. NOT adopted: the proposed shared `effectivelySelected` selector. `step-agents.tsx` still reads `selectedAgents.includes(...)` raw for the checkbox and `selectedAgents.length` for the continue count, while `toggleAgent` computes its own `isInList && !hasExcludedTombstone` — one rule, two implementations (Pattern O). Harmless only while the divergent state stays unreachable.
+resolved_by: >-
+  D-277 (0.146.0) removed the precondition. `applyAgentToggle` now returns a clean removal on
+  deselect instead of minting an `{ excluded: true }` tombstone, and `toggleAgent` refuses a
+  globally-installed agent at project scope with the GLOBAL_AGENTS_LOCKED toast — so the "checkbox
+  stays [✓] while the config gets a tombstone, with no toast" state is unreachable. Verified
+  2026-07-30 against `wizard-store.ts` (`applyAgentToggle`, `toggleAgent`, `nextSelectedAgents`,
+  `buildAgentConfigForName`): no path leaves an agent in `selectedAgents` whose every
+  `agentConfigs` entry is excluded. NOT adopted: the proposed shared `effectivelySelected`
+  selector. `step-agents.tsx` still reads `selectedAgents.includes(...)` raw for the checkbox and
+  `selectedAgents.length` for the continue count, while `toggleAgent` computes its own
+  `isInList && !hasExcludedTombstone` — one rule, two implementations (Pattern O). Harmless only
+  while the divergent state stays unreachable.
 ---
 
 ## What Was Wrong

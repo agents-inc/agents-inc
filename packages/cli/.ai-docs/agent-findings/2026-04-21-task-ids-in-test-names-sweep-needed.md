@@ -23,7 +23,11 @@ domain: e2e
 root_cause: rule-not-visible
 status: open
 status_verified: 2026-04-21
-status_note: Sweep not performed. Re-scanned test files — 160 D-NNN occurrences across 34 files (up from the original 151/30). Rule exists in CLAUDE.md but no sweep ticket filed and no lint guard added. Top offenders unchanged: dual-scope-edit-scope-changes (24), info-panel-scope-toggle-diff (18), scope-toggle-combined (15).
+status_note: >-
+  Sweep not performed. Re-scanned test files — 160 D-NNN occurrences across 34 files (up from the
+  original 151/30). Rule exists in CLAUDE.md but no sweep ticket filed and no lint guard added. Top
+  offenders unchanged: dual-scope-edit-scope-changes (24), info-panel-scope-toggle-diff (18),
+  scope-toggle-combined (15).
 ---
 
 ## What Was Wrong

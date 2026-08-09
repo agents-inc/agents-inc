@@ -79,6 +79,27 @@ described in `standards/documentation-bible.md` -> "Agent Findings Frontmatter")
 4. Widening an enum: if an authentic value does not fit, widen the enum HERE in TEMPLATE.md
    rather than inventing an ad-hoc value in a single finding.
 
+5. **Any multi-sentence value is double-quoted or written as a `>-` block scalar.** A plain YAML
+   scalar cannot contain a bare `: ` — the parser reads colon-space as a nested key and gives up on
+   the whole block. This rule exists because ten findings broke exactly that way, and all ten broke
+   on `resolved_by:` or `partial_note:`: they are the only fields carrying a paragraph of prose, and
+   prose is where a colon turns up (a ratio, a time, a `key: value` quoted from source, an "and then
+   this happened: that"). Short enum fields like `status:` cannot break this way, so the damage lands
+   precisely on the two fields this template calls REQUIRED. The example above is written
+   `resolved_by: <short note>` with no quoting and every author followed it, which is the whole
+   cause. Prefer `>-` over quotes: it needs no escaping, so a value carrying `"` or `\` is safe in
+   it, and it wraps at the file's column limit without further thought.
+
+   Wrapping a plain scalar onto a second line is legal on its own — YAML folds it — but it fails the
+   same way the moment any line carries a colon-space, which is why "it parsed when I wrote it" is
+   not evidence that the next sentence will.
+
+   `scripts/check-findings-frontmatter.ts` parses every file in this directory and its suite fails
+   on any that does not. That is the enforcement; this rule is how not to trip it. Note what the
+   failure looks like from the outside if the scan is not run: Prettier stops recognising an
+   unreadable block as frontmatter and reformats it as Markdown, so `format:check` reports a style
+   violation — which reads as cosmetic and is not.
+
 KNOWN GAP: status backfill — CLOSED 2026-07-30
 
   Every finding on disk now declares a `status:`. The backfill was done by opening each of the 36

@@ -18,7 +18,13 @@ category: architecture
 domain: shared
 root_cause: enforcement-gap
 status: partial
-partial_note: items 1-3 landed (frontmatter-required note in README, scope-discipline-deferred enum + supersedes/superseded_by keys in TEMPLATE). Item 5a (pre-flight frontmatter presence check) landed in README "Pre-Flight Lint Check" section. Item 4 docs-side landed (README "Audit Reports vs Findings" section documents `type: audit` marker + optional `audits/` subdir). Items 5b (root_cause enum-value scan) and 5c (duplicate affected_files+root_cause+date tuple scan) remain unshipped.
+partial_note: >-
+  items 1-3 landed (frontmatter-required note in README, scope-discipline-deferred enum +
+  supersedes/superseded_by keys in TEMPLATE). Item 5a (pre-flight frontmatter presence check)
+  landed in README "Pre-Flight Lint Check" section. Item 4 docs-side landed (README "Audit Reports
+  vs Findings" section documents `type: audit` marker + optional `audits/` subdir). Items 5b
+  (root_cause enum-value scan) and 5c (duplicate affected_files+root_cause+date tuple scan) remain
+  unshipped.
 ---
 
 ## What Was Wrong

@@ -14,7 +14,11 @@ category: testing
 domain: e2e
 root_cause: rule-not-specific-enough
 status: partial
-partial_note: The order-preserving normaliser is now shared from e2e/assertions/config-assertions.ts and named for its load-bearing property. Pending: it has no test file of its own, and the two normalisers are still separate functions in separate modules (unification needs ownership of src/cli/lib/__tests__/helpers/config-comparison.ts).
+partial_note: >-
+  The order-preserving normaliser is now shared from e2e/assertions/config-assertions.ts and named
+  for its load-bearing property. Pending: it has no test file of its own, and the two normalisers
+  are still separate functions in separate modules (unification needs ownership of
+  src/cli/lib/__tests__/helpers/config-comparison.ts).
 ---
 
 ## What Was Wrong

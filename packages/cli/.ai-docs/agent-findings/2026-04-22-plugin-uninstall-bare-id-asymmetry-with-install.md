@@ -15,7 +15,15 @@ category: architecture
 domain: cli
 root_cause: convention-undocumented
 status: resolved
-resolved_by: The Fix Applied landed and survives. Verified 2026-07-30 — all four call sites pass a qualified ref built by `buildMarketplacePluginRef`: `mode-migrator.ts` (toEject loop), `edit.tsx` `migratePluginSkillScopes`, `uninstall-plugin-skills.ts` (now takes `marketplace: string`), and `uninstall.tsx` via the extracted `claudePluginUninstallBestEffort` in `utils/exec.ts`. The proposed "Plugin Reference Form" standard landed as `reference/features/plugin-system.md` -> "Plugin Reference Formats", which states the qualified-ref rule for install AND uninstall and is cross-linked from the "Which uninstall helper to use" table. Follow-up NOT taken: the branded `PluginRef` type, which the finding itself deferred.
+resolved_by: >-
+  The Fix Applied landed and survives. Verified 2026-07-30 — all four call sites pass a qualified
+  ref built by `buildMarketplacePluginRef`: `mode-migrator.ts` (toEject loop), `edit.tsx`
+  `migratePluginSkillScopes`, `uninstall-plugin-skills.ts` (now takes `marketplace: string`), and
+  `uninstall.tsx` via the extracted `claudePluginUninstallBestEffort` in `utils/exec.ts`. The
+  proposed "Plugin Reference Form" standard landed as `reference/features/plugin-system.md` ->
+  "Plugin Reference Formats", which states the qualified-ref rule for install AND uninstall and is
+  cross-linked from the "Which uninstall helper to use" table. Follow-up NOT taken: the branded
+  `PluginRef` type, which the finding itself deferred.
 ---
 
 ## What Was Wrong
