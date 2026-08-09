@@ -13,11 +13,10 @@ A generated config looks like this:
 
 ```typescript
 import type {
-  AgentScopeConfig,
   Domain,
-  ProjectAgentName,
   ProjectConfig,
-  SelectedAgentName,
+  ProjectAgentName,
+  AgentScopeConfig,
   SkillConfig,
   StackAgentConfig,
 } from "./config-types"
@@ -43,9 +42,7 @@ const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
   },
 }
 
-const domains: Domain[] = ["web", "api"]
-
-const selectedAgents: SelectedAgentName[] = ["web-developer", "api-developer"]
+const selectedDomains: Domain[] = ["web", "api"]
 
 export default {
   name: "my-project",
@@ -53,8 +50,7 @@ export default {
   skills,
   agents,
   stack,
-  domains,
-  selectedAgents,
+  selectedDomains,
 } satisfies ProjectConfig
 ```
 
@@ -111,8 +107,8 @@ The `stack` field controls which skills each agent receives, organized by catego
 
 Skills can be loaded in two ways:
 
-- **Dynamic** (default) — Loaded on-demand via Claude Code's Skill tool at runtime. Keeps the agent prompt lean.
-- **Preloaded** (`preloaded: true`) — Embedded directly in the compiled agent prompt. The agent has the skill content available immediately without needing to load it. Use this for core skills that the agent always needs.
+- **Dynamic** (default) — Loaded on-demand via Claude Code's Skill tool at runtime. Keeps the agent prompt lean. Written as a bare skill id in the stack — the config never contains `preloaded: false`.
+- **Preloaded** (`preloaded: true`) — Embedded directly in the compiled agent prompt. The agent has the skill content available immediately without needing to load it. Use this for core skills that the agent always needs. The object form (`{ id, preloaded: true }`) is what marks it.
 
 ## Config Types
 

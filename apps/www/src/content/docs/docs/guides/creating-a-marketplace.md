@@ -5,23 +5,28 @@ sidebar:
   order: 7
 ---
 
-:::caution[`new marketplace` is currently disabled]
-The scaffolding command below is switched off in the released CLI while it is being improved. Running it exits with a non-zero status and prints `The new marketplace command is currently disabled while being improved.` — no directory is created.
-
-A marketplace is an ordinary Git repository, so you can still build one by hand: create `config/skill-categories.ts`, `config/skill-rules.ts`, `config/stacks.ts`, a `package.json` with `name`, `version` and `description`, and at least one skill under `src/skills/`. Everything from **Workflow** onwards — including `build marketplace` and `build plugins` — works today.
-
-The command is being improved, not removed.
-:::
-
 Build a personal or org-level marketplace with skills curated for your conventions.
 
 ## Getting Started
 
-```bash
-npx agents-inc new marketplace
+A marketplace is an ordinary Git repository, so you create one by hand. There is no scaffolding
+command: the one that used to be here was withdrawn rather than left broken, and a replacement is
+planned.
+
+Four things make a directory a marketplace the CLI can read:
+
+```
+package.json                  # name, version and description are required; author is optional
+config/skill-categories.ts    # the categories your skills fall into
+config/skill-rules.ts         # the relationships between them
+config/stacks.ts              # the stacks the wizard offers
+src/skills/{skill-name}/      # at least one skill — SKILL.md + metadata.yaml
 ```
 
-Scaffolds a marketplace repository with the required structure and metadata.
+Copy the shapes of those four config files from the public marketplace at
+[agents-inc/skills](https://github.com/agents-inc/skills), which is the reference implementation of
+every one of them. `npx agents-inc doctor` reads a marketplace and reports what is missing or
+malformed, so run it against your directory before pointing a project at it.
 
 ## Workflow
 

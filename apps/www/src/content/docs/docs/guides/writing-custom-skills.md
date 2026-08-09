@@ -1,30 +1,25 @@
 ---
 title: Writing custom skills and sub-agents
-description: Scaffold your own skills and sub-agents to extend the framework with project-specific knowledge.
+description: Write your own skills and sub-agents to extend the framework with project-specific knowledge.
 sidebar:
   order: 5
 ---
 
-:::caution[Both commands on this page are currently disabled]
-`new skill` and `new agent` are switched off in the released CLI while they are being improved. Running either one exits with a non-zero status and prints `The <name> command is currently disabled while being improved.` — nothing is scaffolded.
-
-Until they are switched back on:
-
-- **Skills** — run `npx agents-inc eject skills` to get editable copies of the catalogue's skills, or create the two files shown below by hand. `npx agents-inc import skill <repo>` also still works for pulling skills out of a GitHub repository — see [Importing skills](/docs/guides/importing-skills).
-- **Sub-agents** — run `npx agents-inc eject agent-partials` and edit the partials of an existing sub-agent. See [Customizing sub-agents](/docs/guides/customizing-subagents).
-
-The commands are being improved, not removed. Everything below describes how they behave and will be accurate again once they return.
-:::
-
 Create your own skills and subagents to extend the framework with project-specific knowledge.
+
+Both are written by hand. The scaffolding commands that used to sit on this page were withdrawn
+rather than left broken; a replacement for skills is planned.
 
 ## Skills
 
+Start from a copy rather than a blank page:
+
 ```bash
-npx agents-inc new skill
+npx agents-inc eject skills
 ```
 
-Scaffolds a new skill with the required file structure:
+That writes editable copies of the catalogue's skills into your project, and each one is a working
+example of the shape a skill has to take. A skill is two files in a directory:
 
 ```
 skills/{skill-name}/
@@ -32,17 +27,18 @@ skills/{skill-name}/
   metadata.yaml    # Name, domain, category, relationships
 ```
 
-You can also iterate on existing skills by ejecting them first (`npx agents-inc eject skills`) and modifying the local copies. The `skill-summoner` subagent can help you author and refine skills.
+Both files are required — the loader validates the pair and `npx agents-inc doctor` reports either
+one missing. The `skill-summoner` subagent can help you author and refine skills.
 
 ## Subagents
 
 ```bash
-npx agents-inc new agent
+npx agents-inc eject agent-partials
 ```
 
-Scaffolds a new subagent with `identity.md`, `playbook.md`, and optionally `output.md` / `critical-requirements.md`. Custom subagents are composed from skills just like the built-in ones.
-
-The `agent-summoner` subagent can help you design and build new agents.
+A sub-agent is composed from partials — `identity.md`, `playbook.md`, and optionally `output.md` /
+`critical-requirements.md` — so ejecting the built-in ones gives you a set to edit or to copy into a
+new directory of your own. See [Customizing sub-agents](/docs/guides/customizing-subagents).
 
 ## After creating
 

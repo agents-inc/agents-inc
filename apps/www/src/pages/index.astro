@@ -28,16 +28,11 @@ import "../styles/site.css"
 import cliPackage from "../../../../packages/cli/package.json"
 
 /**
- * The third is not readable the same way. The catalogue is a generated
- * `SKILL_IDS` array in packages/matrix/src/vendor/generated/source-types.ts,
- * and parsing a TypeScript literal at build time to count it would be worse
- * than the staleness it prevents. Counted there on 2026-08-03: SKILL_IDS,
- * SKILL_SLUGS and SKILL_MAP all hold 222 entries.
- *
- * NOTE for whoever finds a different number in the READMEs: both of them say
- * "150+ skills", and both are out of date against that catalogue.
+ * The third is read the same way, from the catalogue package rather than from
+ * the one that ships. It was a hand-typed 222 here until 2026-08-06, which is
+ * how it survived the catalogue growing to 228 — see src/lib/catalog-counts.ts.
  */
-const SKILL_COUNT = 222
+import { SKILL_COUNT } from "../lib/catalog-counts"
 
 /**
  * The command in the hero is the first one a new user would actually run, and

@@ -45,12 +45,12 @@ src/
       init.ts            #   oclif init hook (source resolution, dashboard)
     lib/                 # Core business logic (no UI)
       agents/            #   Agent fetching, compilation, recompilation
-      configuration/     #   Config loading, merging, generation, source management
+      configuration/     #   Config loading, merging, generation
       installation/      #   Install mode detection, local installer, scope-aware config splitting
-      loading/           #   Source fetching, matrix loading, multi-source tagging
+      loading/           #   Source fetching, matrix loading, install-mode tagging
       matrix/            #   Matrix provider (skill lookups), relationship resolution
       plugins/           #   Plugin discovery, validation, manifest, versioning
-      skills/            #   Skill fetching, copying, metadata, source switching
+      skills/            #   Skill fetching, copying, metadata, local-copy moves
       stacks/            #   Stack loading, resolution, compilation
       wizard/            #   Build step logic (pure functions, no UI)
       compiler.ts        #   Liquid template engine for agent compilation
@@ -70,7 +70,7 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 1. User runs command (e.g., `agents-inc init`)
 
 2. oclif init hook runs
-   -> Extracts --source from raw argv
+   -> Extracts --source from raw argv (for `init`, the one command that has it)
    -> resolveSource() determines skills source
    -> Attaches ResolvedConfig to oclif config object
 
@@ -99,11 +99,11 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 
 ## Key Architectural Patterns
 
-- **BaseCommand**: All commands extend `BaseCommand` which provides the `--source` flag, `sourceConfig` getter (populated by init hook), and error handling with named `EXIT_CODES`.
+- **BaseCommand**: All commands extend `BaseCommand`, which provides the `sourceConfig` getter (populated by the init hook), the terminal-size gate and error handling with named `EXIT_CODES`. It declares no flags — `--source` belongs to `init` alone.
 
 - **Init hook**: Runs before every command. Resolves the skills source and attaches config to oclif's config object. When no command is given and a project is already initialized, shows a dashboard.
 
-- **Source resolution precedence**: `--source` flag > `CC_SOURCE` env var > `.claude-src/config.ts` (project) > `~/.claude-src/config.ts` (global) > default marketplace.
+- **Source resolution precedence**: `--source` flag > `CC_SOURCE` env var > `.claude-src/config.ts` (project) > `~/.claude-src/config.ts` (global) > default marketplace. The first two rungs are install-time only: `init` declares the flag and is the only caller `CC_SOURCE` is read for, so every later command starts at the project config.
 
 - **Install modes**: Skills can be installed as **Claude plugins** (managed by Claude's plugin system) or **locally** (copied to `.claude/skills/`). Agents are always written to `.claude/agents/`. Config is always at `.claude-src/config.ts`.
 

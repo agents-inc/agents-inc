@@ -83,13 +83,6 @@ only: web to CLI.
 If you started in the terminal and want to carry on in the browser, you would
 re-select in the grid by hand.
 
-:::caution
-The web editor's install dialog currently ends with a line suggesting
-`npx agents-inc edit --ui` to re-open the editor. **That flag does not
-exist.** `edit` accepts `--refresh` and `--source` and nothing else. Ignore
-the suggestion until this page says otherwise.
-:::
-
 ## Which should you use
 
 Use the **terminal wizard** if you are already in the project, want to install

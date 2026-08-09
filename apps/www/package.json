@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@astrojs/starlight": "^0.41.6",
+    "@workspace/matrix": "workspace:*",
     "@workspace/ui": "workspace:*",
     "astro": "^7.1.6"
   },
