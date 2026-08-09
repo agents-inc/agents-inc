@@ -7,13 +7,12 @@ describe("ERROR_MESSAGES", () => {
       "UNKNOWN_ERROR",
       "UNKNOWN_ERROR_SHORT",
       "NO_INSTALLATION",
-      "NO_LOCAL_SKILLS",
       "NO_SKILLS_FOUND",
       "VALIDATION_FAILED",
       "FAILED_RESOLVE_SOURCE",
       "FAILED_LOAD_AGENT_PARTIALS",
       "FAILED_COMPILE_AGENTS",
-      "SKILL_NOT_FOUND",
+      "CLAUDE_CLI_NOT_FOUND",
     ]);
   });
 
@@ -31,7 +30,6 @@ describe("SUCCESS_MESSAGES", () => {
       "UNINSTALL_COMPLETE",
       "INIT_SUCCESS",
       "PLUGIN_COMPILE_COMPLETE",
-      "ALL_SKILLS_UP_TO_DATE",
     ]);
   });
 
@@ -46,6 +44,7 @@ describe("SUCCESS_MESSAGES", () => {
 describe("STATUS_MESSAGES", () => {
   it("should have all expected keys", () => {
     expect(Object.keys(STATUS_MESSAGES)).toStrictEqual([
+      "INSTALLING_PLUGINS",
       "LOADING_SKILLS",
       "LOADING_MARKETPLACE_SOURCE",
       "RECOMPILING_AGENTS",
@@ -57,6 +56,7 @@ describe("STATUS_MESSAGES", () => {
       "FETCHING_REPOSITORY",
       "COPYING_SKILLS",
       "UPDATING_PLUGIN_SKILLS",
+      "MARKETPLACE_HAS_NEWER_CONTENT",
     ]);
   });
 
@@ -84,6 +84,8 @@ describe("INFO_MESSAGES", () => {
       "NO_LOCAL_INSTALLATION",
       "NOT_INSTALLED",
       "CONFIG_TYPES_REFRESHED",
+      "EJECTED_SKILLS_USER_OWNED",
+      "NO_PLUGIN_MARKETPLACES",
     ]);
   });
 
