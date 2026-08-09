@@ -1,0 +1,72 @@
+{
+  "$schema": "./node_modules/knip/schema-jsonc.json",
+  "workspaces": {
+    ".": {
+      // `vitest.config.mjs` at the root exists to throw. Nothing imports it and nothing ever
+      // will — read its own header — so it is stated here rather than left to read as dead.
+      "entry": ["vitest.config.mjs"],
+      // lint-staged runs `eslint` from the root, which declares no eslint. That is deliberate and
+      // written out in package.json -> "//lint-staged": ESLint 10 resolves a flat config from the
+      // directory of the FILE it is given, every workspace declares eslint ^10, and one hoisted
+      // copy serves them all. Refutable by reading, so it is not a finding.
+      "ignoreBinaries": ["eslint"],
+    },
+    "packages/cli": {
+      "entry": [
+        // oclif loads these by convention, never by import: `oclif.commands.target` in
+        // package.json points at ./dist/commands and `oclif.hooks.init` at ./dist/hooks/init.
+        // knip's oclif plugin looks for {,src/}commands/**, which this layout does not match.
+        "src/cli/commands/**/*.{ts,tsx}",
+        "src/cli/hooks/**/*.ts",
+        // Development entry points, neither published nor imported (see
+        // .ai-docs/reference/build-and-packaging.md). `bin/run.js` is what every E2E spec spawns —
+        // `execa("node", [BIN_RUN, …])` in e2e/helpers/test-utils.ts, a path string no import graph
+        // can see. `bin/dev.js` is its `npx tsx` twin.
+        "bin/*.js",
+        // vitest resolves `globalSetup` from the project root; knip resolves it from the config
+        // file's own directory, so e2e/vitest.config.ts's "./e2e/global-setup.ts" lands one level
+        // too deep. See ignoreUnresolved below — the same defect seen from the other side.
+        "e2e/global-setup.ts",
+      ],
+      // Written by `bun run generate:types`, never by hand. What it contains is a question for the
+      // generator, not for this run. `src/schemas/` needs no entry here: it is JSON only, and
+      // knip's project globs are JavaScript and TypeScript.
+      "ignore": ["src/cli/types/generated/**"],
+      "ignoreUnresolved": ["./e2e/global-setup.ts"],
+    },
+    "packages/matrix": {
+      // vitest.config.ts is `export { nodeConfig as default } from "@workspace/vitest-config/node"`,
+      // and the include it re-exports (`src/**/*.test.ts`) is one module hop away from the config
+      // file knip reads. Stated here so the suite's own files are entries rather than orphans.
+      "entry": ["src/**/*.test.ts"],
+      // Vendored by packages/cli's generate:matrix — the header in each file says so. The CLI is
+      // the single writer; nothing here is anyone's to delete. `src/generated/` is not listed
+      // because the read model reaches all of it, so an ignore there would only be one more line
+      // to keep true.
+      "ignore": ["src/vendor/**"],
+    },
+    "packages/ui": {
+      // Storybook derives its test list from `stories` in .storybook/main.ts, which is one hop
+      // further than knip's storybook plugin follows into this workspace's vitest projects.
+      "entry": ["src/**/*.stories.tsx"],
+    },
+    "apps/editor": {
+      // The vite plugin is off because knip evaluates a function config at mode "production", and
+      // this one validates the environment before it returns — by design: see src/env.schema.ts.
+      // With no VITE_API_URL set, loading it throws and the whole run reports an error instead of
+      // findings. Off, vite.config.ts is named as an entry below so its plugin imports still count.
+      "vite": false,
+      // Named so the plugins it imports still count as used; with the plugin off, nothing else
+      // reads this file.
+      "entry": ["vite.config.ts"],
+    },
+    "apps/server": {
+      // Reached from package.json only by `bun scripts/build-skill-index.ts`, which is deliberately
+      // not part of `build` or `deploy` — see the "//build:skill-index" note there.
+      "entry": ["scripts/*.ts"],
+      // `cloudflare:test` is a virtual module @cloudflare/vitest-pool-workers provides to the
+      // worker test pool. knip reads the specifier's first segment as a package name.
+      "ignoreDependencies": ["cloudflare"],
+    },
+  },
+}
