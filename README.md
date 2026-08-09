@@ -57,17 +57,17 @@ Without it `bun run build` stops at `editor#build` with `Invalid environment: VI
 
 The root scripts fan out through turbo to whichever workspaces define the matching task, so `bun run build` builds the CLI, the web app and the worker in dependency order:
 
-| Script               | What it does                                                |
-| -------------------- | ----------------------------------------------------------- |
-| `bun run build`      | Builds every workspace                                      |
-| `bun run dev`        | Starts every workspace's dev task                           |
-| `bun run lint`       | Lints every workspace                                       |
-| `bun run typecheck`  | Typechecks every workspace                                  |
-| `bun run test`       | Runs the unit tests                                         |
-| `bun run test:e2e`   | Runs the end-to-end suites                                  |
-| `bun run deploy`     | Deploys the Cloudflare workspaces                           |
-| `bun run format`     | Formats the repo (one run from the root, not through turbo) |
-| `bun run deps:check` | Reports dependency version mismatches                       |
+| Script               | What it does                                                                                                               |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `bun run build`      | Builds every workspace                                                                                                     |
+| `bun run dev`        | Starts every workspace's dev task                                                                                          |
+| `bun run lint`       | Lints every workspace                                                                                                      |
+| `bun run typecheck`  | Typechecks every workspace                                                                                                 |
+| `bun run test`       | Runs the unit tests                                                                                                        |
+| `bun run test:e2e`   | Runs the end-to-end suites                                                                                                 |
+| `bun run deploy`     | Deploys the Cloudflare workspaces                                                                                          |
+| `bun run format`     | Formats the repo (one run from the root, not through turbo)                                                                |
+| `bun run deps:check` | Reports what is only visible across workspaces: version mismatches, and tsconfigs that stopped extending the shared config |
 
 Two of those do not fan out, on purpose, and the reasons are written down where they apply:
 

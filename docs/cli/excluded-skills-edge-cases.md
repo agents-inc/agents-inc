@@ -111,7 +111,7 @@ User has React as a project plugin. They toggle to global.
 
 ### 8. Project eject (customized) → global plugin (SAFE)
 
-User has a customized ejected React at project scope. They switch source to plugin AND toggle to global.
+User has a customized ejected React at project scope. They switch install mode to plugin AND toggle to global.
 
 **What happens:**
 

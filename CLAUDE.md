@@ -25,19 +25,28 @@ publishes to npm.
   for CLI work specifically. Read both when the work is in that package — neither loads from here.
 - **[`todo/`](./todo/)** holds everything outstanding, one file per workspace:
   [`cli.md`](./todo/cli.md), [`editor.md`](./todo/editor.md), [`www.md`](./todo/www.md),
-  [`server.md`](./todo/server.md), and [`repo.md`](./todo/repo.md) for the repository itself.
+  [`server.md`](./todo/server.md), [`repo.md`](./todo/repo.md) for the repository itself, and
+  [`skills.md`](./todo/skills.md) for the skills marketplace repository, whose diffs land in
+  [`agents-inc/skills`](https://github.com/agents-inc/skills) rather than here.
   [`plans/`](./todo/plans/) holds the detail for items that need it, and
   [`archive.md`](./todo/archive.md) records what has landed.
+  [`ROADMAP.md`](./todo/ROADMAP.md) sequences everything outstanding across all six trackers —
+  phases in execution order; the trackers stay canonical, the roadmap only orders them and is
+  updated whenever a phase moves.
 - **An item is deleted when it lands rather than ticked off**, and one line is appended to
   `archive.md`. There is no done column and nothing is struck through, so everything in a tracker is
   still open — and `archive.md` is the only record that a finished item ever existed.
 
 ## Repository-wide
 
-- **Never run a git command that changes the staging area or the working tree** — no `git add`,
-  `reset`, `stash`, `checkout`, `restore` or `clean`. The user curates staging deliberately. This
-  rule is in `packages/cli/CLAUDE.md` as well, but it is not the CLI's rule and that file does not
-  load from here.
+- **Never run a git command that WRITES — read-only git is fine.** Reading is allowed and useful:
+  `git status`, `log`, `show`, `diff`, `blame`, `stash list` — checking history, dating a
+  regression, verifying what changed. What is forbidden is anything that mutates the index, the
+  working tree, history or a remote: `git add`, `commit`, `reset`, `stash` (push/pop/drop),
+  `checkout`, `restore`, `clean`, `push`, `rebase`, `merge`, amend. The user curates staging
+  deliberately (clarified by the owner 2026-08-09; the rule previously read as an absolute ban).
+  This rule is in `packages/cli/CLAUDE.md` as well, but it is not the CLI's rule and that file
+  does not load from here.
 - **`packages/cli` formats itself** — 100 columns, semicolons, double quotes — while everything else
   uses the root config. Prettier picks the nearest config walking up, so this happens on its own; the
   reasoning is in the `//` notes in [`package.json`](./package.json).

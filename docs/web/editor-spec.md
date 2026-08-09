@@ -31,7 +31,7 @@ not author (vendored CLI types, generated icon map), and tsc has no per-director
 ### Data flow
 
 ```
-BUILT_IN_MATRIX + AGENT_DEFINITIONS + STACK_PRELOADS   (packages/matrix/src/{vendor,generated})
+BUILT_IN_MATRIX + AGENT_DEFINITIONS   (packages/matrix/src/{vendor,generated})
   └─ packages/matrix/src/schema           zod safeParse at module init
       └─ packages/matrix/src/read-model   domain → category → skill tree, sub-agents, stacks
           └─ export { CATALOG, SUB_AGENT_GROUPS, STACKS, expandStack } from "@workspace/matrix"
@@ -47,12 +47,12 @@ boundary, so the app performs no second parse.
 
 ### Decisions
 
-| Question     | Decision                                                       | Rationale                                                         |
-| ------------ | -------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Router       | `@tanstack/react-router` v1, code-based routes                 | `validateSearch` + zod gives a typed, validated URL boundary.     |
-| Table        | **Removed.** `@tanstack/react-table` is gone.                  | v5 renders skills as grid cells; there is no table left to build. |
-| Server state | No react-query. One `fetch` behind `lib/api/github-skills.ts`. | Adopt on the second API call.                                     |
-| Icons        | `simple-icons` (raw path data) + hand-checked map              | Drawn in `currentColor`, never brand colour — see §4 rule 4.      |
+| Question     | Decision                                                                                | Rationale                                                                                     |
+| ------------ | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Router       | `@tanstack/react-router` v1, code-based routes                                          | `validateSearch` + zod gives a typed, validated URL boundary.                                 |
+| Table        | **Removed.** `@tanstack/react-table` is gone.                                           | v5 renders skills as grid cells; there is no table left to build.                             |
+| Server state | No react-query. `hc<AppType>` behind `lib/api/configs.ts` and `lib/api/skill-index.ts`. | Nothing is shared to cache: a config id is immutable, the index has its own freshness header. |
+| Icons        | `simple-icons` (raw path data) + hand-checked map                                       | Drawn in `currentColor`, never brand colour — see §4 rule 4.                                  |
 
 ---
 
@@ -122,12 +122,23 @@ one. `resolveAgentOptions` is where a row's displayed value comes from; setting 
 resting value removes the key, and a record left with nothing in it is dropped.
 
 **Selecting assigns automatically.** A fresh selection arrives with the rule's assignments
-(`lib/default-assignments.ts`): the core roles (developer · pm · reviewer · tester) of the
-skill's domain, `shared` reaching every implementation domain, `meta` never implicit; loads
-default lazy except the matrix's `required` / `*-framework` categories (preloaded) and testing
-skills (preloaded only on their own tester). An agent is **on** when a pin says so, else when
-it holds ≥ 1 enabled skill (`isAgentOn`) — selecting a skill is what switches its agents on,
-and the roster flashes the agents a selection just reached.
+(`lib/default-assignments.ts`), and the whole answer comes from the matrix's shared resolver —
+`resolveAssignment` (`packages/matrix/src/read-model/assignment-defaults.ts`), the same one the
+CLI's config generator reads, so a pick lands on the same agents from either surface. Its
+relevance rule: a domain skill reaches its own domain's core roles (developer · pm · researcher
+· tester) plus the cross-domain `reviewer`; a `shared` skill reaches every implementation-flavor
+agent — all four domains and the reviewer, never the meta agents; a `meta` skill reaches exactly
+the flavors its authored mapping row names, plus the craft reaches (the reviewing and design
+categories to the reviewer, the methodology category to every PM, each `meta-planning` playbook
+to its own domain's PM); an id the catalog does not carry — added from GitHub this session, or
+stale — reaches nobody, and finds a home through the ••• panel instead. Each reached agent loads
+the skill as the same table says — `resolveLoadState` over `PRELOAD_DEFAULTS`
+(`packages/matrix/src/read-model/preload-defaults.ts`), where a skill's row names the role
+flavors that carry it eagerly, absence means lazy, and the verdict is domain-gated so a
+cross-domain role match arrives lazy; a craft reach targets without preloading, so a craft the
+rows never name for that flavor arrives lazy too. An agent is **on** when a pin says so, else
+when it holds ≥ 1 enabled skill (`isAgentOn`) — selecting a skill is what switches its agents
+on, and the roster flashes the agents a selection just reached.
 
 **Deselecting is not destructive.** One click removes a skill; the configuration behind it can be a
 dozen — nine sub-agent assignments, an install mode, a scope — and the cell gives no warning, because
@@ -165,6 +176,11 @@ Session-only skills pulled in from GitHub. `config-store`'s `partialize` strips 
 referencing one, so nothing reaches localStorage that the next session could not describe. Selecting
 one is allowed because `toggleSkill`'s catalog guard widens to "catalog **or** session".
 
+`AddedSkill.categoryId` places the cell in the grid and does nothing else: it is resolved from the
+catalog when the repo's name matches a known slug, `null` renders under Uncategorized, and the
+assignment rule never reads it — a `github:` id is unknown to the catalog, so the shared resolver
+returns nobody and the skill's agents are chosen by hand in the ••• panel.
+
 ### UI store — `apps/editor/src/stores/ui-store.ts`
 
 `openPanelSkillId` · `pendingStackId` · `dialog` · `rosterCollapsed` (per-domain accordion
@@ -187,7 +203,6 @@ map, the only persisted field) · `flashedAgentIds` (the roster pulse, decays af
 | -------- | ---------------------------------------- | ------- | -------------------------------------------------------- |
 | `domain` | `z.enum(DOMAINS).nullable().catch(null)` | `null`  | `null` renders every domain — the design's resting state |
 | `q`      | `z.string().trim().max(64).catch("")`    | `""`    |                                                          |
-| `rec`    | `z.boolean().catch(false)`               | `false` |                                                          |
 | `sel`    | `z.boolean().catch(false)`               | `false` | Narrow to what you have actually chosen                  |
 
 ---
@@ -227,12 +242,13 @@ map, the only persisted field) · `flashedAgentIds` (the roster pulse, decays af
 | `.../filter-bar.tsx`          | Sticky/stuck bar + chips + `＋ add skill`                                                                                                                                    |
 | `.../domain-section.tsx`      | Sticky domain title + category groups + skill lattice                                                                                                                        |
 | `.../skill-cell.tsx`          | The core cell                                                                                                                                                                |
-| `.../skill-options-panel.tsx` | The `•••` popover                                                                                                                                                            |
+| `.../skill-options-panel.tsx` | The `•••` popover: install mode, install scope, the sub-agent matrix, the source-code link                                                                                   |
 | `.../roster-panel.tsx`        | Domain accordions (stacking sticky bands), agent pins with their model word + effort meter, per-agent skill rows with load words and the where-used tooltip, Share + Install |
 | `.../install-dialog.tsx`      | Inventory panes + numbered steps                                                                                                                                             |
 | `.../add-skill-dialog.tsx`    | Staged tray, GitHub search, result lattice                                                                                                                                   |
 | `.../stack-switch-dialog.tsx` | Confirm discard                                                                                                                                                              |
-| `lib/api/github-skills.ts`    | The one network call                                                                                                                                                         |
+| `lib/api/configs.ts`          | Share links: store a seed payload, read one back                                                                                                                             |
+| `lib/api/skill-index.ts`      | The federated skill index the add-skill dialog filters                                                                                                                       |
 
 ---
 
@@ -259,12 +275,12 @@ out to touch both vertical dividers.
 
 Four layers, in order of preference. Nothing that could sit lower sits higher.
 
-| Layer              | Holds                                                             | Files                                                                                                                                           |
-| ------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Pure functions** | Every derivation and transform. No React, independently testable. | `features/configure/lib/derive.ts`, `stores/persisted-schema.ts`, `lib/api/github-skills.ts`, the helpers exported from `added-skills-store.ts` |
-| **Stores**         | Shared mutable state and the actions that write it.               | `config-store`, `ui-store`, `added-skills-store`                                                                                                |
-| **Hooks**          | Reusable _behaviour_ — the only thing hooks are for here.         | `lib/use-pinned.ts`                                                                                                                             |
-| **Components**     | Composition and event wiring only.                                | everything in `features/configure/components/`                                                                                                  |
+| Layer              | Holds                                                             | Files                                                                                                                                         |
+| ------------------ | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pure functions** | Every derivation and transform. No React, independently testable. | `features/configure/lib/derive.ts`, `stores/persisted-schema.ts`, `lib/api/skill-index.ts`, the helpers exported from `added-skills-store.ts` |
+| **Stores**         | Shared mutable state and the actions that write it.               | `config-store`, `ui-store`, `added-skills-store`                                                                                              |
+| **Hooks**          | Reusable _behaviour_ — the only thing hooks are for here.         | `lib/use-pinned.ts`                                                                                                                           |
+| **Components**     | Composition and event wiring only.                                | everything in `features/configure/components/`                                                                                                |
 
 Only three components hold a `useEffect` at all: the add-skill dialog (debounced search), the filter
 bar (publishing pinned state), and the skill cell (outside-press / Escape dismissal). Each is
@@ -320,10 +336,12 @@ the bar passes, named for the surface rather than for the bar's own state — th
 business knowing what "stuck" means, and a prop cannot leak onto the chips and inputs inside the
 dialogs the way a root-attribute selector could.
 
-**Sticking hands focus to the search input.** Reaching the top of the grid is the moment searching
-becomes the obvious thing to do, so the caret is already there. It fires on the false → true
-transition only, never per scroll event, or typing anywhere else on the page would be impossible
-while the bar is pinned.
+**Sticking moves focus nowhere.** It used to hand the caret to the search input on the false → true
+transition, on the theory that reaching the top of the grid is when searching becomes obvious.
+Removed by owner ruling 2026-08-09, because focus can cause the scroll: a Tab to a control below
+the fold scrolls it into view, and a scroll that crossed the pin took the caret off the control the
+keyboard was moving to — throwing a keyboard user back to the top of the page by the act of moving
+down it. `sticky-bar.spec.ts` now asserts the inverse of what it used to.
 
 Domain headers re-pin from `top: 87px` to `top: 51px` to follow the bar. The horizontal padding and
 the background are the **only** animations in the design.
@@ -390,7 +408,7 @@ Each of these is a place the design could not be followed literally, with the re
 
 | Area                                 | Design                                                                                                                                        | Built                                                                                                                   | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Sub-agent matrix**                 | dev · pm · rev · test over Web/API/AI/CLI/Infra, `Meta ＋` folded beneath                                                                     | The same, and nothing else — verified against `screens/04-skill-panel.png`                                              | The four ragged non-meta agents (web-architecture, web-pattern-critique, the two researchers) are deliberately **not** hand-assignable: the design draws INFRA straight into META, and the CLI is unifying every domain onto these four roles (CLI-351 in `todo/cli.md`). They still take skills from a stack and still appear in the roster, where they can be switched off. Meta expands to its five agents — the design draws the row but leaves it static.                                                                                    |
+| **Sub-agent matrix**                 | dev · pm · rev · test over Web/API/AI/CLI/Infra, `Meta ＋` folded beneath                                                                     | The same, and nothing else — verified against `screens/04-skill-panel.png`                                              | The design draws INFRA straight into META, and the roster was unified onto these four roles plus researcher on 2026-08-05 (CLI-351 in `todo/archive.md`), deleting the three off-grid extras entirely. That leaves the four researchers off the grid: they still take skills from a stack and appear in the roster, where they can be switched off, but are **not** hand-assignable here until the grid gains the fifth role (EDITOR-10 in `todo/editor.md`). Meta expands to its four agents — the design draws the row but leaves it static.    |
 | **Matrix gap cells**                 | A plain 5 × 4 field; slots with no agent (AI pm/test, CLI pm, Infra dev/pm/test) look identical to unassigned ones                            | The same, but inert — no pointer cursor, no click                                                                       | Fidelity to `04-skill-panel.png`, which shows uniform cells. Marking them (the earlier dashed treatment) invented a distinction the design does not draw.                                                                                                                                                                                                                                                                                                                                                                                         |
 | **Incompatible cell**                | `.skc.dis{opacity:.4}` — dimmed, and nothing else                                                                                             | The same 40% dim, plus `aria-disabled` and a reason on `title`                                                          | The dimming matches the design exactly. What the design has no answer for is _why_ a cell is out, and that a mouse-only signal leaves the state unreadable to anything else — hence the reason and the ARIA state. A red outline was tried and pulled; see the todo.                                                                                                                                                                                                                                                                              |
 | **Roster footer**                    | A single Install button carrying the counts                                                                                                   | Share above Install                                                                                                     | Sharing is a shipped feature (Cloudflare KV round trip) with no other surface yet; the design's SHARE nav destination is still an empty shell.                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -403,6 +421,7 @@ Each of these is a place the design could not be followed literally, with the re
 | **Agent count opens on hover**       | "Hover/click"                                                                                                                                 | Click only                                                                                                              | A hover-opened panel containing interactive controls is hostile to reach. Click is listed in the design too.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | **Panel dismissal**                  | Click `•••` again                                                                                                                             | Also outside press and Escape                                                                                           | The design does not say, and a popover with no escape hatch is a trap.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | **Panel overflow**                   | Always opens to the right                                                                                                                     | Flips left in the last column                                                                                           | At `left: calc(100% + 5px)` a last-column panel escapes the main column.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **Source code link**                 | Nothing — the panel is entirely about installing                                                                                              | A `Source code ↗` link at the panel's foot, opening the skill's own directory in a new tab                              | A skill is somebody else's repository, and the panel described everything about installing one and nothing about where it comes from. Both kinds already carry the address — the catalogue is generated from the marketplace repo, and an added skill arrived through the index carrying its own — so neither needs a fallback. `HEAD` rather than a branch name, which is the one thing neither source knows; a new tab rather than a navigation, because added skills live for this session only and leaving the page would take them with it.  |
 | **Uncategorized added skills**       | "lands in Uncategorized" — never mocked                                                                                                       | Own trailing `Added` section                                                                                            | Appending to a real domain would imply membership of it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | **Cell lattice**                     | Border + white background on the _grid container_                                                                                             | Border + background on each **cell**, pulled back 1px so shared edges coincide                                          | Equivalent only while every row is full. The mock never shows a partial row; ours do constantly, and there the container approach paints white across the empty columns and runs a rule out past the last cell.                                                                                                                                                                                                                                                                                                                                   |
 | **Domain chips**                     | Static markup, no behaviour                                                                                                                   | Toggle filter; active chip clears                                                                                       | Chips are hardcoded in the prototype; the README lists filter behaviour as a gap to fill.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
