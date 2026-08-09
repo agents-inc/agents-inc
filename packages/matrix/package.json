@@ -3,8 +3,9 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
+  "//generate": "Delegates: packages/cli is the single writer of src/vendor/** and src/generated/**, and its scripts/generate-matrix-package.ts is what emits them. Kept as an entry point here because the files it writes carry a header telling the reader to run it from this package.",
   "scripts": {
-    "generate": "bun scripts/generate-from-cli.mjs",
+    "generate": "cd ../cli && bun run generate:matrix",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -22,12 +23,12 @@
     "eslint": "^10",
     "globals": "^17",
     "typescript": "~6",
-    "vitest": "^4",
-    "yaml": "^2.9.0"
+    "vitest": "^4"
   },
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
-    "./seed": "./src/seed.ts"
+    "./seed": "./src/seed.ts",
+    "./skill-index": "./src/skill-index.ts"
   }
 }

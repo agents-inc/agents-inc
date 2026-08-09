@@ -1,5 +1,5 @@
 import type { AgentName } from "./agents";
-import type { BoundSkill, Domain, EffortLevel, ModelName } from "./matrix";
+import type { Domain, EffortLevel, ModelName } from "./matrix";
 import type { SkillId, SkillReference } from "./skills";
 import type { StackAgentConfig } from "./stacks";
 
@@ -60,7 +60,7 @@ export type CompileConfig = {
   /** Stack reference - resolves stack skills for agents */
   stack?: string;
   /** Keys determine which agents to compile */
-  agents: Record<string, CompileAgentConfig>;
+  agents: Partial<Record<AgentName, CompileAgentConfig>>;
 };
 
 /** Compilation context passed through the compile pipeline */
@@ -122,22 +122,9 @@ export type ProjectConfig = {
   /**
    * Selected domains from the wizard.
    * Persisted so edit mode can restore the user's domain selection.
-   * Omitted when empty (sparse YAML output).
+   * Omitted when empty (sparse output).
    */
-  domains?: Domain[];
-
-  /**
-   * Selected agents from the wizard.
-   * Persisted so edit mode can restore the user's agent selection.
-   * Omitted when empty (sparse YAML output).
-   */
-  selectedAgents?: AgentName[];
-
-  /** Additional skill sources (private marketplaces, custom repos) */
-  sources?: SourceEntry[];
-
-  /** Skills explicitly bound to categories via search (from Step Sources) */
-  boundSkills?: BoundSkill[];
+  selectedDomains?: Domain[];
 
   /** Branding overrides for white-labeling the CLI */
   branding?: BrandingConfig;

@@ -9,6 +9,7 @@ import { execSync } from "child_process";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs";
 import path from "path";
 import { parse as parseYaml } from "yaml";
+import { z } from "zod";
 
 // Phase 2 imports — pure logic, no circular dependencies
 import { defaultCategories } from "../src/cli/lib/configuration/default-categories";
@@ -16,14 +17,7 @@ import { defaultRules } from "../src/cli/lib/configuration/default-rules";
 import { defaultStacks } from "../src/cli/lib/configuration/default-stacks";
 import { mergeMatrixWithSkills } from "../src/cli/lib/matrix/skill-resolution";
 
-import type {
-  CategoryDefinition,
-  ExtractedSkillMetadata,
-  MergedSkillsMatrix,
-  ResolvedSkill,
-  ResolvedStack,
-  SkillId,
-} from "../src/cli/types";
+import type { ExtractedSkillMetadata, ResolvedStack, SkillId } from "../src/cli/types";
 
 const cliRoot = path.resolve(import.meta.dirname, "..");
 const monorepoRoot = path.resolve(cliRoot, "../..");
@@ -35,6 +29,46 @@ export type AgentEntry = {
   id: string;
   domain?: string;
 };
+
+/**
+ * What this generator reads is hand-authored in the skills repository, so it is
+ * the least trustworthy input in the package — and `parseYaml` types it `any`,
+ * which made every field below an unchecked read. These schemas are the parse
+ * boundary: deliberately loose, because the generator's own `throw`s already
+ * name the two fields a skill cannot ship without, and the id-shaped fields are
+ * cast to their unions further down where the vocabulary is known.
+ */
+const skillMetadataSchema = z.object({
+  custom: z.boolean().optional(),
+  slug: z.string().optional(),
+  category: z.string().optional(),
+  domain: z.string().optional(),
+  displayName: z.string().optional(),
+  cliDescription: z.string().optional(),
+  usageGuidance: z.string().optional(),
+  author: z.string().optional(),
+});
+
+/** `name` is required: a SKILL.md without one has no id, and an id of
+ * `undefined` written into the generated unions is a compile error a long way
+ * from its cause. */
+const skillFrontmatterSchema = z.object({ name: z.string() });
+
+const agentMetadataSchema = z.object({
+  custom: z.boolean().optional(),
+  id: z.string().optional(),
+  domain: z.string().optional(),
+});
+
+/** Parses YAML against a schema, naming the directory the bad file is in —
+ * which is the one thing a zod message cannot say for itself. */
+function parseMetadata<T>(schema: z.ZodType<T>, raw: string, describe: string): T {
+  const result = schema.safeParse(parseYaml(raw));
+  if (!result.success) {
+    throw new Error(`Invalid metadata for ${describe}: ${result.error.message}`);
+  }
+  return result.data;
+}
 
 // -- Extract skills ----------------------------------------------------------
 
@@ -58,7 +92,7 @@ export function extractSkills(skillsSourcePath: string): ExtractedSkillMetadata[
       continue;
     }
 
-    const metadata = parseYaml(metadataRaw);
+    const metadata = parseMetadata(skillMetadataSchema, metadataRaw, `${dir.name}/metadata.yaml`);
     if (metadata.custom) continue; // custom skills register at runtime
 
     // Extract name + description from SKILL.md frontmatter
@@ -67,7 +101,12 @@ export function extractSkills(skillsSourcePath: string): ExtractedSkillMetadata[
       console.warn(`  ⚠ Skipping ${dir.name}: no frontmatter in SKILL.md`);
       continue;
     }
-    const frontmatter = parseYaml(fmMatch[1]);
+    const [, frontmatterYaml = ""] = fmMatch;
+    const frontmatter = parseMetadata(
+      skillFrontmatterSchema,
+      frontmatterYaml,
+      `${dir.name}/SKILL.md frontmatter`,
+    );
 
     if (!metadata.cliDescription) {
       throw new Error(`Skill ${dir.name} is missing required 'cliDescription' in metadata.yaml`);
@@ -85,7 +124,7 @@ export function extractSkills(skillsSourcePath: string): ExtractedSkillMetadata[
       domain: metadata.domain as ExtractedSkillMetadata["domain"],
       displayName: metadata.displayName,
       description: metadata.cliDescription,
-      usageGuidance: metadata.usageGuidance,
+      ...(metadata.usageGuidance !== undefined && { usageGuidance: metadata.usageGuidance }),
       author: metadata.author || "",
       directoryPath: dir.name,
       path: `skills/${dir.name}`,
@@ -117,12 +156,16 @@ export function extractAgents(cliRootPath: string): AgentEntry[] {
         continue;
       }
 
-      const metadata = parseYaml(raw);
+      const metadata = parseMetadata(
+        agentMetadataSchema,
+        raw,
+        `${group.name}/${agent.name}/metadata.yaml`,
+      );
       if (metadata.custom) continue;
       if (metadata.id) {
         agents.push({
           id: metadata.id,
-          domain: metadata.domain,
+          ...(metadata.domain !== undefined && { domain: metadata.domain }),
         });
       }
     }
@@ -241,9 +284,9 @@ export function sortedGroupBy<T>(
     (groups[key] ??= []).push(id);
   }
   return Object.fromEntries(
-    Object.keys(groups)
-      .sort()
-      .map((k) => [k, groups[k].sort()]),
+    Object.entries(groups)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, ids]) => [key, ids.sort()]),
   );
 }
 
@@ -268,24 +311,23 @@ export function generatePhase2(
 
   // Build agentDefinedDomains from agent metadata
   const agentDefinedDomains = Object.fromEntries(
-    agentEntries.filter((a) => a.domain).map((a) => [a.id, a.domain!]),
+    agentEntries.flatMap((a) => (a.domain === undefined ? [] : [[a.id, a.domain] as const])),
   );
   if (Object.keys(agentDefinedDomains).length > 0) {
     // Boundary cast: agent IDs and domains are validated by Phase 1
-    matrix.agentDefinedDomains = agentDefinedDomains as MergedSkillsMatrix["agentDefinedDomains"];
+    matrix.agentDefinedDomains = agentDefinedDomains;
   }
 
   // Build derived lookup maps (grouped + sorted by key and values)
   const sortedSkillIdsByCategory = sortedGroupBy(
-    Object.entries(matrix.skills).filter(([, s]) => s != null) as [string, ResolvedSkill][],
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    Object.entries(matrix.skills).filter(([, s]) => s != null),
     (skill) => skill.category,
   );
 
   const sortedCategoriesByDomain = sortedGroupBy(
-    Object.entries(matrix.categories).filter(([, d]) => d?.domain != null) as [
-      string,
-      CategoryDefinition,
-    ][],
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    Object.entries(matrix.categories).filter(([, d]) => d?.domain != null),
     (cat) => cat.domain!,
   );
 
@@ -342,11 +384,13 @@ export function resolveStack(
   const skills: Record<string, Record<string, string[]>> = {};
 
   for (const [agentId, agentConfig] of Object.entries(stack.agents)) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
     if (!agentConfig) continue;
 
     const agentSkills: Record<string, string[]> = {};
 
     for (const [category, assignments] of Object.entries(agentConfig)) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
       if (!assignments || !Array.isArray(assignments) || assignments.length === 0) continue;
       const validIds = assignments
         .filter((a: { id: string }) => skillIdSet.has(a.id))
@@ -368,7 +412,7 @@ export function resolveStack(
     description: stack.description,
     // Boundary casts: agent/category keys come from source stack data and skill IDs
     // are validated against skillIdSet above — narrowed to the generated unions here.
-    skills: skills as ResolvedStack["skills"],
+    skills: skills,
     allSkillIds: allSkillIds as SkillId[],
     philosophy: stack.philosophy || "",
   };

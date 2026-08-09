@@ -18,6 +18,7 @@ import {
 
 import type { AgentEntry } from "./generate-source-types";
 import type { SkillId, Stack } from "../src/cli/types";
+import { firstElement } from "../src/cli/lib/__tests__/helpers/element-at.js";
 
 // -- sortedGroupBy -----------------------------------------------------------
 
@@ -125,7 +126,7 @@ describe("resolveStack", () => {
         "web-developer": {
           "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
-        "web-reviewer": {
+        reviewer: {
           "web-framework": [{ id: "web-framework-react", preloaded: false }],
         },
       },
@@ -208,15 +209,15 @@ describe("extractSkills", () => {
     const result = extractSkills(tempDir);
 
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("web-framework-react");
-    expect(result[0].slug).toBe("react");
-    expect(result[0].category).toBe("web-framework");
-    expect(result[0].domain).toBe("web");
-    expect(result[0].displayName).toBe("React");
-    expect(result[0].description).toBe("React framework skill");
-    expect(result[0].author).toBe("@test");
-    expect(result[0].directoryPath).toBe("react");
-    expect(result[0].path).toBe("skills/react");
+    expect(firstElement(result).id).toBe("web-framework-react");
+    expect(firstElement(result).slug).toBe("react");
+    expect(firstElement(result).category).toBe("web-framework");
+    expect(firstElement(result).domain).toBe("web");
+    expect(firstElement(result).displayName).toBe("React");
+    expect(firstElement(result).description).toBe("React framework skill");
+    expect(firstElement(result).author).toBe("@test");
+    expect(firstElement(result).directoryPath).toBe("react");
+    expect(firstElement(result).path).toBe("skills/react");
   });
 
   it("skips directories missing metadata.yaml", () => {
@@ -332,7 +333,7 @@ describe("extractSkills", () => {
     const result = extractSkills(tempDir);
 
     expect(result).toHaveLength(1);
-    expect(result[0].usageGuidance).toBe("Use when building React apps");
+    expect(firstElement(result).usageGuidance).toBe("Use when building React apps");
   });
 });
 
@@ -422,7 +423,8 @@ describe("extractAgents", () => {
     const result = extractAgents(tempDir);
 
     expect(result).toHaveLength(1);
-    expect(result[0]).toStrictEqual({ id: "domainless-agent", domain: undefined });
+    // An agent with no `domain:` yields an entry with no `domain` key at all.
+    expect(result[0]).toStrictEqual({ id: "domainless-agent" });
   });
 });
 
@@ -514,7 +516,7 @@ describe("generatePhase1", () => {
       }),
       createMockExtractedSkill("api-framework-hono", {
         slug: "hono",
-        category: "api-framework",
+        category: "api-api",
         domain: "api",
       }),
     ];
@@ -529,7 +531,7 @@ describe("generatePhase1", () => {
     const content = readFileSync(outPath, "utf-8");
 
     // Categories
-    expect(content).toContain('"api-framework"');
+    expect(content).toContain('"api-api"');
     expect(content).toContain('"web-framework"');
 
     // Domains
