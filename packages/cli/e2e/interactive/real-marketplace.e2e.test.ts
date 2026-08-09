@@ -7,11 +7,15 @@ import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
 import {
   MONOREPO_ROOT,
+  agentsPath,
   createTempDir,
   cleanupTempDir,
   directoryExists,
   ensureBinaryExists,
 } from "../helpers/test-utils.js";
+import { readActiveAgentNames } from "../fixtures/dual-scope-helpers.js";
+import { BUILT_IN_STACK_DISPLAY, WEB_DOMAIN_AGENTS } from "../fixtures/expected-values.js";
+import { listCompiledAgentNames } from "../../src/cli/lib/agents/list-compiled-agents.js";
 
 /**
  * E2E tests using the REAL local skills repository.
@@ -34,12 +38,24 @@ const SKILLS_SOURCE = process.env.SKILLS_SOURCE ?? path.resolve(MONOREPO_ROOT, "
 
 const REAL_INSTALL_TIMEOUT = TIMEOUTS.PLUGIN_INSTALL;
 
+/**
+ * The two skills this suite picks out of the real catalogue, by the display
+ * title the clone's own `metadata.yaml` gives each — which is what the build
+ * grid paints and therefore what `selectSkill` matches on.
+ */
+const REAL_SKILL_DISPLAY = {
+  react: "React",
+  nextjs: "Next.js",
+} as const;
+
 const hasSkillsSource = await directoryExists(path.join(SKILLS_SOURCE, SOURCE_PATHS.SKILLS_DIR));
 
 describe.skipIf(!hasSkillsSource)("real marketplace", () => {
   let projectDir: string;
   let wizard: InitWizard | undefined;
   let initOutput: string;
+  /** Append-only PTY output of the init session — the only surface that can prove a step never painted. */
+  let initRawOutput: string;
   // Default-scope install content (compiled agents) lands in HOME. Thread ONE
   // shared HOME through the init and every follow-up CLI.run so they resolve the
   // same global root; config.ts stays under projectDir. The afterAll owns
@@ -52,21 +68,34 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
     projectDir = await createTempDir();
     sharedHome = await createTempDir();
 
-    wizard = await InitWizard.launchInProject({
+    // The clone ships no config/stacks.ts, and the CLI's built-in catalogue
+    // stands in for the default public marketplace alone — so this source offers
+    // no stacks at all and the wizard opens on domain selection.
+    const launched = await InitWizard.launchOnDomainsInProject({
       source: { sourceDir: SKILLS_SOURCE, tempDir: "" },
       projectDir,
       globalHome: sharedHome,
       loadTimeout: TIMEOUTS.INSTALL,
     });
+    wizard = launched.wizard;
+
+    // Web alone: both skills this suite installs are web skills, and one domain
+    // keeps the roster the scratch preselection brings small enough to name.
+    await launched.domain.toggleDomain(STEP_TEXT.DOMAIN_API);
+    await launched.domain.toggleDomain(STEP_TEXT.DOMAIN_MOBILE);
+    const build = await launched.domain.advance();
+
+    await build.selectSkill(REAL_SKILL_DISPLAY.react);
+    await build.selectSkill(REAL_SKILL_DISPLAY.nextjs);
+
     // Real source has variable domains (Web, API, CLI, Shared), use generic path
-    const domain = await wizard.stack.selectFirstStack();
-    const build = await domain.acceptDefaults();
     const sources = await build.passThroughAllDomainsGeneric();
     const agents = await sources.acceptDefaults();
     const confirm = await agents.acceptDefaults("init");
     const result = await confirm.confirm();
     const exitCode = await result.exitCode;
     initOutput = result.output;
+    initRawOutput = wizard.getRawOutput();
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     await result.destroy();
   }, REAL_INSTALL_TIMEOUT);
@@ -84,9 +113,18 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
   });
 
   describe("init with real marketplace", () => {
-    it("should have rendered real stacks during stack selection", () => {
-      // The CLI's built-in stacks include "Next.js Full-Stack" — verify its
-      // skills were installed (stack selection screen is cleared after wizard)
+    it("should never have offered a stack step for a marketplace that ships none", () => {
+      // Raw PTY output is append-only, so a stack step that painted for even one
+      // frame would still be in it. `initOutput` cannot answer this — the wizard
+      // clears the screen on exit, and Ink overwrites frames in place.
+      expect(initRawOutput).toContain(STEP_TEXT.DOMAINS);
+      expect(initRawOutput).not.toContain(STEP_TEXT.STACK);
+      expect(initRawOutput).not.toContain(BUILT_IN_STACK_DISPLAY);
+    });
+
+    it("should have installed the real skills picked from the catalogue", () => {
+      // The stack selection screen is cleared after the wizard, so the skill
+      // refs the install printed are what the picks are visible as.
       expect(initOutput).toContain("web-framework-react@agents-inc");
       expect(initOutput).toContain("web-meta-framework-nextjs@agents-inc");
     });
@@ -100,6 +138,21 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
         source: "agents-inc",
         agents: ["web-developer"],
       });
+    });
+
+    it("should have installed exactly the sub-agents the selected domain brings", async () => {
+      const expected = [...WEB_DOMAIN_AGENTS];
+
+      expect(
+        await readActiveAgentNames(projectDir),
+        "config.ts must name exactly the sub-agents the selected domain preselects",
+      ).toStrictEqual(expected);
+
+      const compiled = await listCompiledAgentNames(agentsPath(sharedHome));
+      expect(
+        compiled.sort(),
+        "the compiled agents on disk must be exactly that preselected roster",
+      ).toStrictEqual(expected);
     });
 
     it("should have compiled agents with real content", async () => {
@@ -118,7 +171,7 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
         ["compile"],
         { dir: projectDir, globalHome: sharedHome },
         {
-          env: { AGENTSINC_SOURCE: undefined },
+          env: { CC_SOURCE: undefined },
         },
       );
 

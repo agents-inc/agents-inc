@@ -29,7 +29,7 @@ import "../matchers/setup.js";
  * D-308 — a project's exclusive stack categories must survive a command that
  * rewrites `config.ts` for an unrelated reason.
  *
- * `eject skills --source <dir>` records the source: it reads the project config
+ * `eject skills` records the source it read from: it reads the project config
  * with the LENIENT loader, overlays `source`, and writes the result back through
  * `writeProjectPartial`. The lenient loader does not normalize stack values, and
  * the writer compacted every exclusive category to its BARE value on the previous
@@ -67,7 +67,7 @@ const EXPECTED_STACK = {
 /** The bare, array-less form the writer emits for an exclusive category. */
 const BARE_EXCLUSIVE_ENTRY = /"web-framework":\s*"web-framework-react"/;
 
-describe("eject --source preserves a project's exclusive stack categories", () => {
+describe("eject preserves a project's exclusive stack categories", () => {
   let sourceDir: string;
   let sourceTempDir: string;
   let store: SeedConfigStore;
@@ -104,6 +104,10 @@ describe("eject --source preserves a project's exclusive stack categories", () =
             [E2E_SKILL.react.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
             [E2E_SKILL.vitest.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
           },
+          // The stack under test is the PROJECT's, so the sub-agent holding it has to be pinned
+          // there: a payload naming no agent scope takes the shared selection default and the
+          // sub-agent — with its stack — lands in the user's own ~/.claude instead.
+          agents: { [WEB_DEV]: { scope: "project" } },
         }),
       );
 
@@ -121,7 +125,8 @@ describe("eject --source preserves a project's exclusive stack categories", () =
         "the writer must emit the exclusive category in its bare, array-less form",
       ).toMatch(BARE_EXCLUSIVE_ENTRY);
 
-      const eject = await CLI.run(["eject", "skills", "--source", sourceDir], project);
+      // No source override: `eject` reads the source this install recorded at `init` time.
+      const eject = await CLI.run(["eject", "skills"], project);
       expect(eject.exitCode, `eject failed: ${eject.output}`).toBe(EXIT_CODES.SUCCESS);
 
       expect(

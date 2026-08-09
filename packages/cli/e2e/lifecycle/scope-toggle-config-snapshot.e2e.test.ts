@@ -15,7 +15,11 @@ import {
   readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
+import {
+  createTestEnvironment,
+  readSkillEntries,
+  setupDualScopeWithEject,
+} from "../fixtures/dual-scope-helpers.js";
 
 /**
  * Scope toggle config snapshot E2E test.
@@ -104,27 +108,23 @@ describe("scope toggle config snapshot", () => {
         projectConfigBefore,
       );
 
-      // Project config contains web-framework-react with scope:"project"
-      const reactProjectLines = projectConfigAfter
-        .split("\n")
-        .filter((l: string) => l.includes(E2E_SKILL.react.id) && l.includes('"scope":"project"'));
-      expect(reactProjectLines.length).toBeGreaterThan(0);
+      // The three grep-style `lines.length > 0` presence checks that stood here are
+      // replaced by structural reads. A line count says a matching line exists
+      // SOMEWHERE; `toStrictEqual` on the entry list says which entries exist and
+      // that no fourth one joined them — the shape the rest of this file uses.
+      expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
+        { id: E2E_SKILL.react.id, scope: "global", source: "eject", excluded: true },
+        { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
+      ]);
+      expect(await readSkillEntries(projectDir, E2E_SKILL.hono.id)).toStrictEqual([
+        { id: E2E_SKILL.hono.id, scope: "global", source: "eject", excluded: true },
+        { id: E2E_SKILL.hono.id, scope: "project", source: "eject" },
+      ]);
+      expect(await readSkillEntries(fakeHome, E2E_SKILL.react.id)).toStrictEqual([
+        { id: E2E_SKILL.react.id, scope: "global", source: "eject" },
+      ]);
 
-      // Excluded tombstone for global scope must exist in project config
-      expect(projectConfigAfter).toContain('"excluded":true');
-
-      // Project config still contains api-framework-hono with scope:"project"
-      const honoProjectLines = projectConfigAfter
-        .split("\n")
-        .filter((l: string) => l.includes(E2E_SKILL.hono.id) && l.includes('"scope":"project"'));
-      expect(honoProjectLines.length).toBeGreaterThan(0);
-
-      // Global config STILL contains web-framework-react with scope:"global"
       const globalConfigAfter = await readTestFile(configTsPath(fakeHome));
-      const reactGlobalLines = globalConfigAfter
-        .split("\n")
-        .filter((l: string) => l.includes(E2E_SKILL.react.id) && l.includes('"scope":"global"'));
-      expect(reactGlobalLines.length).toBeGreaterThan(0);
 
       // Global config skill IDs unchanged from BEFORE snapshot
       const globalSkillIdsAfter = globalConfigAfter

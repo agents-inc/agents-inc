@@ -11,6 +11,7 @@ import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
+  cleanupFixture,
   cleanupTempDir,
   ensureBinaryExists,
   isClaudeCLIAvailable,
@@ -79,20 +80,22 @@ describe("dual-scope edit lifecycle -- agent content and config integrity", () =
         },
       });
 
-      // web-developer (global) contains its preloaded skills and all selected skills
+      // web-developer (global) carries its own domain's skills alone — under
+      // relevance-scoped assignment the api skill never reaches it.
       await expect({ dir: fakeHome }).toHaveAgentFrontmatter("web-developer", {
         skills: ["web-framework-react"],
       });
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["api-framework-hono"],
+        notContains: ["api-framework-hono"],
       });
 
-      // api-developer (project) contains its assigned skill and all selected skills
+      // api-developer (project) mirrors it: its own skill, none of the web ones.
       await expect({ dir: projectDir }).toHaveAgentFrontmatter("api-developer", {
         skills: ["api-framework-hono"],
       });
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-        contains: ["web-framework-react"],
+        contains: ["api-framework-hono"],
+        notContains: ["web-framework-react"],
       });
     },
   );
@@ -150,7 +153,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
-    if (pluginFixture) await cleanupTempDir(pluginFixture.tempDir);
+    await cleanupFixture(pluginFixture);
   });
 
   let testTempDir: string;

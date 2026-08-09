@@ -50,7 +50,10 @@ describe("wizard terminal-size guard on a mid-session resize", () => {
     "replaces the wizard with the resize prompt when the terminal shrinks below the minimum, and restores a usable wizard when it grows back",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
-      wizard = await InitWizard.launchInProject({ source, ...TERMINAL_SIZE.TALL });
+      wizard = await InitWizard.launchInProject({
+        ...(source !== undefined && { source }),
+        ...TERMINAL_SIZE.TALL,
+      });
 
       const domain = await wizard.stack.selectFirstStack();
       const build = await domain.acceptDefaults();

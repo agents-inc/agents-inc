@@ -9,7 +9,7 @@ import {
   E2E_STACK_DISPLAY,
 } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupFixture, cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import type { ConfirmStep } from "../pages/steps/confirm-step.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
@@ -81,7 +81,7 @@ describe("confirm step — info-panel parity", () => {
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (source) await cleanupTempDir(source.tempDir);
+    await cleanupFixture(source);
   });
 
   afterEach(async () => {

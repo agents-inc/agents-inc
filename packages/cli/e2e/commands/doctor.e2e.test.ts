@@ -1,7 +1,7 @@
 import path from "path";
 import { writeFile, mkdir } from "fs/promises";
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import { EXIT_CODES, DIRS, FILES } from "../pages/constants.js";
+import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import {
   createTempDir,
   cleanupTempDir,
@@ -9,6 +9,19 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
+
+/**
+ * The operational rows whose every check needs a loadable config. `doctor` skips
+ * all of them together, so naming them is what tells a skip apart from a report
+ * that stopped early.
+ */
+const CONFIG_DEPENDENT_ROWS = [
+  STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED,
+  STEP_TEXT.DOCTOR_ROW_AGENTS_COMPILED,
+  STEP_TEXT.DOCTOR_ROW_NO_ORPHANS,
+  STEP_TEXT.DOCTOR_ROW_SKILLS_INSTALLED,
+  STEP_TEXT.DOCTOR_ROW_PLUGINS_INSTALLED,
+] as const;
 
 describe("doctor command", () => {
   let tempDir: string;
@@ -21,7 +34,7 @@ describe("doctor command", () => {
     }
   });
 
-  it("should report config missing in unconfigured directory", async () => {
+  it("should report a missing config, skip every check that depends on it, and tip at init", async () => {
     tempDir = await createTempDir();
 
     const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
@@ -29,41 +42,24 @@ describe("doctor command", () => {
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     expect(stdout).toContain("Doctor");
     expect(stdout).toContain("Checking configuration health");
-    expect(stdout).toContain("Config Valid");
-    expect(stdout).toContain("config.ts not found");
-    expect(stdout).toContain("Summary:");
-    expect(stdout).toContain("error");
-  });
+    expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
+    expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_NOT_FOUND);
 
-  it("should show skipped checks when config is missing", async () => {
-    tempDir = await createTempDir();
+    // Every row that needs a config is skipped, and the one that does not is
+    // still run — otherwise "skipped" cannot be told from "the report stopped".
+    for (const row of CONFIG_DEPENDENT_ROWS) {
+      expect(stdout).toMatch(
+        new RegExp(
+          `${row}\\s+-\\s+${STEP_TEXT.DOCTOR_SKIPPED_CONFIG_INVALID.replace(/[()]/g, "\\$&")}`,
+        ),
+      );
+    }
+    expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE);
 
-    const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
-
-    expect(exitCode).toBe(EXIT_CODES.ERROR);
-    expect(stdout).toContain("Skills Resolved");
-    expect(stdout).toContain("Skipped");
-    expect(stdout).toContain("Agents Compiled");
-    expect(stdout).toContain("No Orphans");
-  });
-
-  it("should show source reachable check", async () => {
-    tempDir = await createTempDir();
-
-    const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
-
-    expect(exitCode).toBe(EXIT_CODES.ERROR);
-    expect(stdout).toContain("Source Reachable");
-  });
-
-  it("should show tip to run init when config is missing", async () => {
-    tempDir = await createTempDir();
-
-    const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
-
-    expect(exitCode).toBe(EXIT_CODES.ERROR);
-    expect(stdout).toContain("Tip:");
-    expect(stdout).toContain("init");
+    // The count, not the word: `toContain("error")` matches any text carrying it,
+    // including a skill id or a path.
+    expect(stdout).toContain(`${STEP_TEXT.DOCTOR_SUMMARY} 6 passed, 0 warnings, 1 error`);
+    expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_CREATE_CONFIG);
   });
 
   it("should pass config check with valid config file", async () => {
@@ -76,8 +72,8 @@ describe("doctor command", () => {
     const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain("Config Valid");
-    expect(stdout).toContain("is valid");
+    expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
+    expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_IS_VALID);
   });
 
   describe("--help flag", () => {
@@ -93,6 +89,9 @@ describe("doctor command", () => {
   });
 
   describe("corrupt config file", () => {
+    // What the finding says, and why the operational layer is absent from it, is
+    // doctor-corrupt-config.e2e.test.ts's subject. This one keeps its original claim: the run
+    // survives the file and still produces a report.
     it("should not crash and should report config error with corrupt config.ts", async () => {
       tempDir = await createTempDir();
 
@@ -107,9 +106,9 @@ describe("doctor command", () => {
 
       // Doctor should not crash -- it should report a config error
       expect(exitCode).toBe(EXIT_CODES.ERROR);
-      expect(stdout).toContain("Config Valid");
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_UNREADABLE);
       expect(stdout).toContain(FILES.CONFIG_TS);
-      expect(stdout).toContain("Summary:");
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_SUMMARY);
     });
   });
 
@@ -139,8 +138,8 @@ describe("doctor command", () => {
 
       // Doctor should detect the global config and validate it
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Config Valid");
-      expect(stdout).toContain("is valid");
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_IS_VALID);
     });
   });
 });

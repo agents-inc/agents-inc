@@ -10,12 +10,14 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   agentsPath,
   cleanupTempDir,
+  configTypesTsPath,
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
   ensureBinaryExists,
   fileExists,
   loadConfigOrFail,
+  readTestFile,
   renderMetadataYaml,
   writeAgentFile,
   writeProjectConfig,
@@ -25,6 +27,7 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/types/index.js";
 
 /**
@@ -41,8 +44,8 @@ import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/t
  * disappear from the project's rendered `agents[]`.
  *
  * This test verifies, via a real CLI run (not by reading the code):
- *   1. The removed global agent is gone from the project's rendered
- *      agents[] AND selectedAgents[].
+ *   1. The removed global agent is gone from the project's rendered agents[]
+ *      AND from the SelectedAgentName union derived from it.
  *   2. A separate, genuinely project-scoped agent whose stack references a
  *      skill ALSO referenced by the removed global agent is left completely
  *      untouched (no cross-contamination — the skill itself was not removed).
@@ -93,7 +96,6 @@ function buildRegisteredProjectConfig(name: string): ProjectConfig {
       ...buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       ...buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
     ],
-    selectedAgents: [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
     stack: projectStack,
   });
 }
@@ -131,8 +133,7 @@ describe("global-scope agent removal propagates to registered projects", () => {
       name: "propagation-agent-removal-global",
       skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-      domains: ["web"],
-      selectedAgents: [E2E_AGENT["web-developer"].name],
+      selectedDomains: ["web"],
       stack: globalStack,
       projects: [realpathSync(projectDir)],
     });
@@ -199,22 +200,29 @@ describe("global-scope agent removal propagates to registered projects", () => {
     ).not.toContain(E2E_AGENT["web-developer"].name);
   });
 
-  // Assertion 1b: the removed global agent should ALSO be gone from
-  // selectedAgents[] — but it is NOT. `propagateGlobalChangesToProjects`
-  // reconciles the project's `agents[]` (retainReconciledAgents) and `stack`
-  // (retainReconciledStack) against the now-current global data, but never
-  // reconciles `selectedAgents[]`. The project's stored selectedAgents (a flat
-  // union that legitimately contains the global agent's name, per the inlined
-  // writer) is carried forward verbatim and re-unioned with the shrunken
-  // global list, so the removed global agent lingers in selectedAgents[] while
-  // being absent from agents[] — an internal drift. This is the
-  // "agent REMOVAL propagation" gap explicitly deferred in D-222 (which fixed
-  // only the agent-ADDITION direction). See finding
-  // 2026-07-18-propagation-selected-agents-not-pruned-on-agent-removal.md.
-  it("removed global agent no longer lingers in the project's selectedAgents[]", () => {
+  // Assertion 1b: the generated SelectedAgentName union must shrink with it.
+  // The union is derived from the project's own agents[] rather than from a
+  // separately-persisted flat list, so a name reconciliation drops from agents[]
+  // cannot survive in the types half — the drift the old flat list allowed is
+  // unrepresentable. Asserting on the emitted union rather than on a substring
+  // of the whole file: the agent name also appears in AgentName, so a
+  // whole-file `not.toContain` could not fail. The positive assertion pins the
+  // union non-empty, so the negative one cannot pass by reading nothing.
+  it("drops the removed global agent from the generated SelectedAgentName union", async () => {
+    const configTypes = await readTestFile(configTypesTsPath(projectDir));
+    const selectedAgentName = readGeneratedUnion(configTypes, "SelectedAgentName");
+
     expect(
-      projectConfig.selectedAgents ?? [],
-      "selectedAgents[] must not contain the removed global web-developer",
+      selectedAgentName,
+      "config-types.ts must declare a SelectedAgentName alias",
+    ).toBeDefined();
+    expect(
+      selectedAgentName,
+      "SelectedAgentName must still name the project's own api-developer",
+    ).toContain(E2E_AGENT["api-developer"].name);
+    expect(
+      selectedAgentName,
+      "SelectedAgentName must not name the removed global web-developer",
     ).not.toContain(E2E_AGENT["web-developer"].name);
   });
 

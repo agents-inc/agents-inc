@@ -7,12 +7,11 @@ import {
   ensureBinaryExists,
   writeProjectConfig,
   createLocalSkill,
-  readTestFile,
-  configTsPath,
   renderMetadataYaml,
 } from "../helpers/test-utils.js";
+import { readSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 
@@ -71,7 +70,7 @@ describe("edit wizard — excluded skills", () => {
           { id: "web-testing-vitest", scope: "project", source: "eject", excluded: true },
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
-        domains: ["web"],
+        selectedDomains: ["web"],
       });
 
       // Create local skill directory only for the non-excluded skill.
@@ -121,12 +120,18 @@ describe("edit wizard — excluded skills", () => {
         skillIds: ["web-framework-react", "web-testing-vitest"],
       });
 
-      // The excluded flag must be preserved on the vitest entry
-      const configPath = configTsPath(projectDir);
-      const updatedConfig = await readTestFile(configPath);
-      expect(updatedConfig).toContain('"excluded":true');
+      // The excluded flag must survive the edit. Read structurally: a no-op edit
+      // writes nothing at all, so asserting on the emitted text would be asserting
+      // that a write happened rather than that the flag was preserved.
+      expect(await readSkillEntries(projectDir, "web-testing-vitest")).toStrictEqual([
+        { id: "web-testing-vitest", scope: "project", source: "eject", excluded: true },
+      ]);
 
-      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
+      // Hydrating the agent selection from the config's own agents[] makes this
+      // passthrough a genuine no-op, so the edit returns early: nothing is written
+      // and nothing is recompiled. Asserting the report is what proves the run
+      // reached that decision rather than failing silently before it.
+      expect(result.rawOutput).toContain(STEP_TEXT.EDIT_UNCHANGED);
     },
   );
 
@@ -145,7 +150,7 @@ describe("edit wizard — excluded skills", () => {
           { id: "web-testing-vitest", scope: "project", source: "eject", excluded: true },
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
-        domains: ["web"],
+        selectedDomains: ["web"],
       });
 
       await createLocalSkill(projectDir, "web-framework-react", {
@@ -177,13 +182,18 @@ describe("edit wizard — excluded skills", () => {
         skillIds: ["web-framework-react", "web-testing-vitest"],
       });
 
-      // The excluded flag must be preserved on the vitest entry.
-      // Production config-writer uses JSON.stringify without indent, so no space before "true".
-      const configPath = configTsPath(projectDir);
-      const updatedConfig = await readTestFile(configPath);
-      expect(updatedConfig).toContain('"excluded":true');
+      // The excluded flag must survive the edit. Read structurally: a no-op edit
+      // writes nothing at all, so asserting on the emitted text would be asserting
+      // that a write happened rather than that the flag was preserved.
+      expect(await readSkillEntries(projectDir, "web-testing-vitest")).toStrictEqual([
+        { id: "web-testing-vitest", scope: "project", source: "eject", excluded: true },
+      ]);
 
-      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
+      // Hydrating the agent selection from the config's own agents[] makes this
+      // passthrough a genuine no-op, so the edit returns early: nothing is written
+      // and nothing is recompiled. Asserting the report is what proves the run
+      // reached that decision rather than failing silently before it.
+      expect(result.rawOutput).toContain(STEP_TEXT.EDIT_UNCHANGED);
     },
   );
 
@@ -203,7 +213,7 @@ describe("edit wizard — excluded skills", () => {
           { id: "web-state-zustand", scope: "project", source: "eject", excluded: true },
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
-        domains: ["web"],
+        selectedDomains: ["web"],
       });
 
       // Create local skill directories for non-excluded skills only
@@ -260,12 +270,16 @@ describe("edit wizard — excluded skills", () => {
         skillIds: ["web-framework-react", "web-testing-vitest", "web-state-zustand"],
       });
 
-      // Production config-writer uses JSON.stringify without indent, so no space before "true".
-      const configPath = configTsPath(projectDir);
-      const updatedConfig = await readTestFile(configPath);
-      expect(updatedConfig).toContain('"excluded":true');
+      // The excluded flag must survive the edit — read structurally, as above.
+      expect(await readSkillEntries(projectDir, "web-state-zustand")).toStrictEqual([
+        { id: "web-state-zustand", scope: "project", source: "eject", excluded: true },
+      ]);
 
-      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
+      // Hydrating the agent selection from the config's own agents[] makes this
+      // passthrough a genuine no-op, so the edit returns early: nothing is written
+      // and nothing is recompiled. Asserting the report is what proves the run
+      // reached that decision rather than failing silently before it.
+      expect(result.rawOutput).toContain(STEP_TEXT.EDIT_UNCHANGED);
     },
   );
 
@@ -286,7 +300,7 @@ describe("edit wizard — excluded skills", () => {
           { id: "web-state-zustand", scope: "project", source: "eject" },
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
-        domains: ["web"],
+        selectedDomains: ["web"],
       });
 
       // Create local skill directories for both non-excluded skills
@@ -341,21 +355,23 @@ describe("edit wizard — excluded skills", () => {
         skillIds: ["web-framework-react", "web-state-zustand"],
       });
 
-      // The excluded flag and scope entries require raw config reading
-      const configPath = configTsPath(projectDir);
-      const updatedConfig = await readTestFile(configPath);
-
-      // The excluded flag must be preserved on the tombstone entry
-      expect(updatedConfig).toContain('"excluded":true');
-
-      // Both scope entries must be present: global (tombstone) and project (active)
-      expect(updatedConfig).toContain('"scope":"global"');
-      expect(updatedConfig).toContain('"scope":"project"');
+      // Both scope entries must survive: the global tombstone and the active
+      // project entry. Read structurally — a no-op edit writes nothing, and a
+      // raw-text check would also pass on any two unrelated rows carrying those
+      // scopes rather than on this skill's own pair.
+      expect(await readSkillEntries(projectDir, "web-state-zustand")).toStrictEqual([
+        { id: "web-state-zustand", scope: "global", source: "eject", excluded: true },
+        { id: "web-state-zustand", scope: "project", source: "eject" },
+      ]);
 
       // The zustand local skill directory must still exist after save
       await expect({ dir: projectDir }).toHaveLocalSkills(["web-state-zustand"]);
 
-      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
+      // Hydrating the agent selection from the config's own agents[] makes this
+      // passthrough a genuine no-op, so the edit returns early: nothing is written
+      // and nothing is recompiled. Asserting the report is what proves the run
+      // reached that decision rather than failing silently before it.
+      expect(result.rawOutput).toContain(STEP_TEXT.EDIT_UNCHANGED);
     },
   );
 
@@ -375,7 +391,7 @@ describe("edit wizard — excluded skills", () => {
           { id: "web-state-zustand", scope: "project", source: "eject" },
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
-        domains: ["web"],
+        selectedDomains: ["web"],
       });
 
       await createLocalSkill(projectDir, "web-framework-react", {
@@ -420,18 +436,20 @@ describe("edit wizard — excluded skills", () => {
         skillIds: ["web-framework-react", "web-state-zustand"],
       });
 
-      // The excluded flag and scope entries require raw config reading
-      const configPath = configTsPath(projectDir);
-      const updatedConfig = await readTestFile(configPath);
+      // Both scope entries must survive: the global tombstone and the active
+      // project entry. Read structurally — a no-op edit writes nothing, and a
+      // raw-text check would also pass on any two unrelated rows carrying those
+      // scopes rather than on this skill's own pair.
+      expect(await readSkillEntries(projectDir, "web-state-zustand")).toStrictEqual([
+        { id: "web-state-zustand", scope: "global", source: "eject", excluded: true },
+        { id: "web-state-zustand", scope: "project", source: "eject" },
+      ]);
 
-      // The excluded flag must be preserved on the tombstone entry
-      expect(updatedConfig).toContain('"excluded":true');
-
-      // Both scope entries must be present: global (tombstone) and project (active)
-      expect(updatedConfig).toContain('"scope":"global"');
-      expect(updatedConfig).toContain('"scope":"project"');
-
-      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
+      // Hydrating the agent selection from the config's own agents[] makes this
+      // passthrough a genuine no-op, so the edit returns early: nothing is written
+      // and nothing is recompiled. Asserting the report is what proves the run
+      // reached that decision rather than failing silently before it.
+      expect(result.rawOutput).toContain(STEP_TEXT.EDIT_UNCHANGED);
     },
   );
 });

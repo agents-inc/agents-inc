@@ -6,6 +6,7 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Dual-scope edit lifecycle E2E test -- display and locking.
@@ -72,6 +73,17 @@ describe("dual-scope edit lifecycle -- display and locking", () => {
         ...TERMINAL_SIZE.TALL,
       });
 
+      // D-2: the scope badge on the ONE skill whose scope this fixture pins, read
+      // off the live build grid. The assertions that stood here were
+      // `rawOutput.toContain("G ")` / `("P ")` / `("[G]")` / `("[P]")` — two-
+      // character substrings that occur throughout any wizard frame (every word
+      // beginning with G or P satisfies the first two), so they said nothing about
+      // which skill carried which scope. That is what this file is named for.
+      expect(
+        await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.display),
+        "react is installed at global scope by setupDualScopeWithEject",
+      ).toStrictEqual(["G"]);
+
       const result = await wizard.passThrough();
 
       // Phase D: Assertions
@@ -79,15 +91,6 @@ describe("dual-scope edit lifecycle -- display and locking", () => {
       // D-1: Exit code 0
       const exitCode = await result.exitCode;
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // D-2: Scope indicators visible in output
-      const rawOutput = result.rawOutput;
-      expect(rawOutput).toContain("G ");
-      expect(rawOutput).toContain("P ");
-
-      // D-3: Agent scope badges
-      expect(rawOutput).toContain("[G]");
-      expect(rawOutput).toContain("[P]");
 
       // D-4: Config files unchanged with full expected content + agent files preserved
       await expectDualScopeInstallation(fakeHome, projectDir, {

@@ -58,7 +58,7 @@ async function createUninstallableProject(
       },
     ],
     agents: [{ name: "web-developer", scope: "project" }],
-    domains: ["web"],
+    selectedDomains: ["web"],
   });
 
   const skillDir = path.join(skillsPath(projectDir), "web-framework-react");
@@ -292,7 +292,11 @@ describe("uninstall without Claude CLI on PATH", () => {
 
     expect(await directoryExists(agentsDir)).toBe(false);
 
-    expect(stderr).not.toContain("claude");
+    // The specific failure shapes a missing binary produces, not the word: a
+    // marketplace name, a cache path or any advice mentioning the CLI all carry
+    // "claude", so the generic absence fails on correct output.
+    expect(stderr).not.toContain("command not found");
+    expect(stderr).not.toContain("ENOENT");
     expect(stdout).not.toContain("claude: command not found");
   });
 });

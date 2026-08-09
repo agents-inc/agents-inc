@@ -86,8 +86,7 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
           source: "eject",
         }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-        domains: ["web"],
-        selectedAgents: [E2E_AGENT["web-developer"].name],
+        selectedDomains: ["web"],
         stack: multiCategoryStack,
       });
       await writeProjectConfig(globalHome, config);

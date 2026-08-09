@@ -63,6 +63,20 @@ export async function writeTestTsConfig(
 }
 
 /**
+ * Writes `source` verbatim as the project's `config.ts` — the raw-text sibling of
+ * {@link writeTestTsConfig}, for the corruption cases a config object cannot express (a
+ * syntax error, a missing default export, a shape the loader schema rejects). Returns the
+ * absolute path of the written file.
+ */
+export async function writeCorruptTestConfig(projectDir: string, source: string): Promise<string> {
+  const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+  await mkdir(configDir, { recursive: true });
+  const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+  await writeFile(configPath, source);
+  return configPath;
+}
+
+/**
  * Writes a package.json at the given directory.
  *
  * Used by `build marketplace` tests (unit + E2E) which read marketplace

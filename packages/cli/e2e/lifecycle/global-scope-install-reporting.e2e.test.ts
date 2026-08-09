@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AgentName, SkillId } from "../../src/cli/types/index.js";
 import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
-import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_SKILL, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   agentsPath,
@@ -38,21 +38,16 @@ const GLOBAL_STACK_SKILL_IDS: SkillId[] = [
 ];
 
 /**
- * Every agent a default E2E-stack install compiles: the two agents defined by
- * the E2E source plus the CLI's built-in agents for the selected domains. All
- * of them are global-scoped, so all of them land under HOME.
+ * Every agent a default E2E-stack install compiles: the sub-agents the stack
+ * declares, and only those. A stack's `agents` keys are the roster its selection
+ * installs — the domain-derived preselection is the from-scratch path and has no
+ * say over a stack's list. All of them are global-scoped, so all of them land
+ * under HOME.
+ *
+ * Read off the stack rather than written out, so a roster change reports the
+ * name that moved instead of agreeing with whatever the code produced.
  */
-const COMPILED_AGENT_NAMES: AgentName[] = [
-  "api-developer",
-  "api-researcher",
-  "api-reviewer",
-  "web-architecture",
-  "web-developer",
-  "web-pm",
-  "web-researcher",
-  "web-reviewer",
-  "web-tester",
-];
+const COMPILED_AGENT_NAMES: AgentName[] = E2E_STACK_AGENTS;
 
 describe("default init from a project dir — global scope reporting", () => {
   let sourceTempDir: string;
@@ -107,7 +102,7 @@ describe("default init from a project dir — global scope reporting", () => {
 
     await expect({ dir: fakeHome }).toHaveConfig({
       skillIds: GLOBAL_STACK_SKILL_IDS,
-      agents: E2E_AGENTS.WEB_AND_API,
+      agents: COMPILED_AGENT_NAMES,
     });
   });
 

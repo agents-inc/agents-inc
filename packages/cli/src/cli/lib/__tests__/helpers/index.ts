@@ -15,7 +15,6 @@ export {
   writeSourceSkill,
   writeTestAgent,
   writeSourceAgent,
-  createImportSource,
   writeTestPluginManifest,
 } from "./disk-writers.js";
 export {
@@ -30,6 +29,7 @@ export type { PluginTestDirs } from "./test-dir-setup.js";
 export { setupIsolatedHome, useFakeHome } from "./isolated-home.js";
 export type { IsolatedHome } from "./isolated-home.js";
 export { silenceConsole } from "./silence-console.js";
+export { elementAt, firstElement } from "./element-at.js";
 
 // --- Remaining utility function ---
 

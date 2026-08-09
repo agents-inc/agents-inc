@@ -105,8 +105,7 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
         name: "dual-scope-global",
         skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", source: "eject" }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-        domains: ["web"],
-        selectedAgents: [E2E_AGENT["web-developer"].name],
+        selectedDomains: ["web"],
         stack: globalStack,
         projects: [realpathSync(projectDir)],
       });
@@ -125,7 +124,6 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
           ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", source: "eject" }),
         ],
         agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
-        selectedAgents: [E2E_AGENT["api-developer"].name],
         stack: projectStack,
       });
       await writeProjectConfig(projectDir, projectConfig);

@@ -13,6 +13,7 @@ import {
   addForkedFromMetadata,
   writeAgentFile,
   configTsPath,
+  getEjectedTemplatePath,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
@@ -56,14 +57,10 @@ describe("uninstall preservation behavior", () => {
     expect(ejectResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
     // Verify ejected template exists before uninstall
-    const templatePath = path.join(
-      projectDir,
-      DIRS.CLAUDE_SRC,
-      "agents",
-      "_templates",
-      "agent.liquid",
-    );
+    const claudeSrcDir = path.join(projectDir, DIRS.CLAUDE_SRC);
+    const templatePath = getEjectedTemplatePath(projectDir);
     expect(await fileExists(templatePath)).toBe(true);
+    expect(await directoryExists(claudeSrcDir)).toBe(true);
 
     // Run uninstall --yes
     const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
@@ -77,40 +74,17 @@ describe("uninstall preservation behavior", () => {
     // The config manifest is removed even though ejected content is preserved
     expect(await fileExists(configTsPath(projectDir))).toBe(false);
 
+    // Ported from the deleted "should keep .claude-src/ when it still holds
+    // ejected content": the directory itself survives its manifest, because only
+    // an emptied one is removed.
+    expect(await directoryExists(claudeSrcDir)).toBe(true);
+
     // Compiled artifacts should be removed
     const agentsDir = agentsPath(projectDir);
     expect(await directoryExists(agentsDir)).toBe(false);
 
     const skillsDir = skillsPath(projectDir);
     expect(await directoryExists(skillsDir)).toBe(false);
-  });
-
-  it("should keep .claude-src/ when it still holds ejected content after uninstall", async () => {
-    const project = await ProjectBuilder.editable();
-    tempDir = path.dirname(project.dir);
-    const projectDir = project.dir;
-    await addForkedFromMetadata(projectDir);
-
-    // Eject templates
-    const ejectResult = await CLI.run(["eject", "templates"], { dir: projectDir });
-    expect(ejectResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-    const claudeSrcDir = path.join(projectDir, DIRS.CLAUDE_SRC);
-    expect(await directoryExists(claudeSrcDir)).toBe(true);
-
-    const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], {
-      dir: projectDir,
-    });
-
-    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
-
-    // The config manifest is removed, but the directory survives because the
-    // ejected templates still live under it (only-empty dirs are removed).
-    expect(await fileExists(configTsPath(projectDir))).toBe(false);
-    expect(await directoryExists(claudeSrcDir)).toBe(true);
-    const templatePath = path.join(claudeSrcDir, "agents", "_templates", "agent.liquid");
-    expect(await fileExists(templatePath)).toBe(true);
   });
 
   it("should preserve custom agent source in .claude-src/agents after uninstall --yes", async () => {
@@ -149,7 +123,7 @@ describe("uninstall preservation behavior", () => {
         { name: "web-developer", scope: "project" },
         { name: "my-custom-agent" as AgentName, scope: "project" }, // fabricated E2E test ID
       ],
-      domains: ["web"],
+      selectedDomains: ["web"],
     });
 
     // Run uninstall --yes

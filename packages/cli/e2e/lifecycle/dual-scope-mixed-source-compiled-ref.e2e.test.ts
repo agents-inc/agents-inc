@@ -79,6 +79,7 @@ const globalStack = {
 async function seedScope(
   baseDir: string,
   config: Partial<ProjectConfig> & Pick<ProjectConfig, "name">,
+  source: string,
 ): Promise<void> {
   await mkdir(baseDir, { recursive: true });
   await createPermissionsFile(baseDir);
@@ -86,7 +87,9 @@ async function seedScope(
     description: "Hono edge framework",
     metadata: HONO_METADATA,
   });
-  await writeProjectConfig(baseDir, config);
+  // The source belongs in the config: `compile` takes no `--source` and reads no
+  // `CC_SOURCE` — both are `init`'s — so this is where it reads one from.
+  await writeProjectConfig(baseDir, { ...config, source });
 }
 
 describe("dual-scope mixed-source compiled agent ref format", () => {
@@ -122,29 +125,44 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
       const projectDir = path.join(tempDir, "project");
 
       // Global install: hono active at global scope, sourced from the marketplace (plugin).
-      await seedScope(fakeHome, {
-        name: "dual-global-plugin",
-        skills: buildSkillConfigs([HONO], { scope: "global", source: MARKET }),
-        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-        selectedAgents: [E2E_AGENT["web-developer"].name],
-        stack: globalStack,
-        projects: [projectDir],
-      });
+      await seedScope(
+        fakeHome,
+        {
+          name: "dual-global-plugin",
+          skills: buildSkillConfigs([HONO], { scope: "global", source: MARKET }),
+          agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
+          stack: globalStack,
+          projects: [projectDir],
+        },
+        sourceDir,
+      );
 
       // Project override: global tombstone FIRST (production config-writer order),
       // active project entry SECOND. Project copy is ejected (source:"eject").
-      await seedScope(projectDir, {
-        name: "dual-project-eject",
-        skills: [
-          ...buildSkillConfigs([HONO], { scope: "global", source: MARKET, excluded: true }),
-          ...buildSkillConfigs([HONO], { scope: "project", source: "eject" }),
-        ],
-        agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
-        selectedAgents: [E2E_AGENT["api-developer"].name],
-        stack: projectStack,
-      });
+      await seedScope(
+        projectDir,
+        {
+          name: "dual-project-eject",
+          skills: [
+            ...buildSkillConfigs([HONO], { scope: "global", source: MARKET, excluded: true }),
+            ...buildSkillConfigs([HONO], { scope: "project", source: "eject" }),
+          ],
+          agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
+          stack: projectStack,
+        },
+        sourceDir,
+      );
 
-      const result = await runCLI(["compile", "--source", sourceDir], projectDir, {
+      // The global agent is compiled by a run in the GLOBAL context: a compile
+      // inside a project writes only that project.
+      const globalResult = await runCLI(["compile"], fakeHome, {
+        env: { HOME: fakeHome },
+      });
+      expect(globalResult.exitCode, `global compile failed:\n${globalResult.combined}`).toBe(
+        EXIT_CODES.SUCCESS,
+      );
+
+      const result = await runCLI(["compile"], projectDir, {
         env: { HOME: fakeHome },
       });
       expect(result.exitCode, `compile failed:\n${result.combined}`).toBe(EXIT_CODES.SUCCESS);
@@ -185,29 +203,44 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
       const projectDir = path.join(tempDir, "project");
 
       // Global install: hono active at global scope, ejected (source:"eject").
-      await seedScope(fakeHome, {
-        name: "dual-global-eject",
-        skills: buildSkillConfigs([HONO], { scope: "global", source: "eject" }),
-        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-        selectedAgents: [E2E_AGENT["web-developer"].name],
-        stack: globalStack,
-        projects: [projectDir],
-      });
+      await seedScope(
+        fakeHome,
+        {
+          name: "dual-global-eject",
+          skills: buildSkillConfigs([HONO], { scope: "global", source: "eject" }),
+          agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
+          stack: globalStack,
+          projects: [projectDir],
+        },
+        sourceDir,
+      );
 
       // Project override: global tombstone FIRST (ejected), active project entry
       // SECOND, sourced from the marketplace (plugin).
-      await seedScope(projectDir, {
-        name: "dual-project-plugin",
-        skills: [
-          ...buildSkillConfigs([HONO], { scope: "global", source: "eject", excluded: true }),
-          ...buildSkillConfigs([HONO], { scope: "project", source: MARKET }),
-        ],
-        agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
-        selectedAgents: [E2E_AGENT["api-developer"].name],
-        stack: projectStack,
-      });
+      await seedScope(
+        projectDir,
+        {
+          name: "dual-project-plugin",
+          skills: [
+            ...buildSkillConfigs([HONO], { scope: "global", source: "eject", excluded: true }),
+            ...buildSkillConfigs([HONO], { scope: "project", source: MARKET }),
+          ],
+          agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
+          stack: projectStack,
+        },
+        sourceDir,
+      );
 
-      const result = await runCLI(["compile", "--source", sourceDir], projectDir, {
+      // The global agent is compiled by a run in the GLOBAL context: a compile
+      // inside a project writes only that project.
+      const globalResult = await runCLI(["compile"], fakeHome, {
+        env: { HOME: fakeHome },
+      });
+      expect(globalResult.exitCode, `global compile failed:\n${globalResult.combined}`).toBe(
+        EXIT_CODES.SUCCESS,
+      );
+
+      const result = await runCLI(["compile"], projectDir, {
         env: { HOME: fakeHome },
       });
       expect(result.exitCode, `compile failed:\n${result.combined}`).toBe(EXIT_CODES.SUCCESS);

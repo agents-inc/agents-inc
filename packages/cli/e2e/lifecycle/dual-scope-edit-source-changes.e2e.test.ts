@@ -5,7 +5,7 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, FILES, TERMINAL_SIZE } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, FILES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   isClaudeCLIAvailable,
@@ -102,9 +102,13 @@ describe.skipIf(!claudeAvailable)(
         const exitCode = await result.exitCode;
         expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-        // D-1: Output contains migration-related text
+        // D-1: which direction the switch went. `/[Ss]witch|[Ii]nstall/` stood here
+        // and passed on either alternative — in a file whose subject is which of the
+        // two happened.
         const output = result.rawOutput;
-        expect(output).toMatch(/[Ss]witch|[Ii]nstall/);
+        expect(output).toContain(STEP_TEXT.SWITCHING_SKILLS_SUFFIX);
+        expect(output).toContain(STEP_TEXT.PLUGIN_NATIVE);
+        expect(output).not.toContain(STEP_TEXT.EJECT_LOCAL_COPY);
 
         // D-2: Local skill files removed (switched to plugin)
         const localSkillPath = path.join(
@@ -181,9 +185,12 @@ describe.skipIf(!claudeAvailable)(
         const exitCode = await result.exitCode;
         expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-        // D-1: Output contains migration text (local -> plugin migration detected)
+        // D-1: local -> plugin, named. The bare `/[Ss]witch/` could not tell this
+        // from the plugin -> local migration the sibling spec drives.
         const output = result.rawOutput;
-        expect(output).toMatch(/[Ss]witch/);
+        expect(output).toContain(STEP_TEXT.SWITCHING_SKILLS_SUFFIX);
+        expect(output).toContain(STEP_TEXT.PLUGIN_NATIVE);
+        expect(output).not.toContain(STEP_TEXT.EJECT_LOCAL_COPY);
 
         // D-2: Local skill files deleted by migration (switched to plugin)
         const localSkillPath = path.join(

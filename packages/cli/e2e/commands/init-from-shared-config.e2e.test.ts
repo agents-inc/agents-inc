@@ -4,11 +4,15 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 
 import "../matchers/setup.js";
 import {
+  agentsPath,
   createTempDir,
   cleanupTempDir,
+  configTsPath,
   ensureBinaryExists,
   listFiles,
+  loadConfigOrFail,
   readAgentEntriesFor,
+  skillsPath,
 } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
@@ -18,8 +22,9 @@ import {
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
  * `init --from <id>` end to end: the CLI fetches a configuration shared from agentsinc.sh and
@@ -50,7 +55,10 @@ function skillEntry(overrides: Record<string, unknown> = {}) {
     // Eject, because the E2E source is local and has no marketplace — plugin mode legitimately
     // refuses that, which is its own (correct) error rather than anything this path controls.
     install: "eject",
-    scope: "project",
+    // Global, because no payload in this file pins its sub-agent: every one of them rests at the
+    // shared selection default, and a project-scoped skill assigned to a sub-agent resting there
+    // is a pair the config model cannot express — the decode refuses it outright.
+    scope: "global",
     assignments: { "web-developer": "lazy" },
     ...overrides,
   };
@@ -100,10 +108,20 @@ describe("init --from <id>", () => {
     expect(output).toContain("Fetching configuration Ab3xY9_Q");
     expect(output).toContain("Installing 2 skill(s)");
 
-    const config = await readFile(path.join(tempDir, ".claude-src", "config.ts"), "utf8");
-    expect(config).toContain(E2E_SKILL.react.id);
-    expect(config).toContain(E2E_SKILL.vitest.id);
-    expect(config).toContain("web-developer");
+    // Structural, like every sibling spec in this file: `toContain` on the raw
+    // config text cannot say which skill carries which scope or source, and a
+    // third skill appearing alongside the two would satisfy it.
+    const config = await loadConfigOrFail(tempDir);
+    expect(config.skills.map((skill) => skill.id).sort()).toStrictEqual(
+      [E2E_SKILL.react.id, E2E_SKILL.vitest.id].sort(),
+    );
+    expect(await readAgentEntriesFor(tempDir, E2E_AGENT["web-developer"].name)).toStrictEqual(
+      buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
+    );
+    // The preloaded/dynamic split the payload asked for reaches the compiled agent.
+    await expect({ dir: tempDir }).toHaveAgentFrontmatter(E2E_AGENT["web-developer"].name, {
+      exactSkills: [E2E_SKILL.vitest.id],
+    });
   });
 
   it("identifies itself as the CLI, so installs are distinguishable from share-link opens", async () => {
@@ -113,8 +131,8 @@ describe("init --from <id>", () => {
     await runInit("UAcheck1");
 
     expect(store.requests).toHaveLength(1);
-    expect(store.requests[0].url).toBe("/configs/UAcheck1");
-    expect(store.requests[0].userAgent).toBe("agents-inc-cli");
+    expect(firstElement(store.requests).url).toBe("/configs/UAcheck1");
+    expect(firstElement(store.requests).userAgent).toBe("agents-inc-cli");
   });
 
   it("skips ids this catalog does not know, by name, and installs the rest", async () => {
@@ -204,10 +222,11 @@ describe("init --from <id>", () => {
       model: "haiku",
       effort: "xhigh",
     });
-    // ...and config.ts is what a later edit or recompile reads back.
+    // ...and config.ts is what a later edit or recompile reads back. The entry names a model and an
+    // effort but no scope, so the sub-agent takes the shared selection default.
     expect(await readAgentEntriesFor(tempDir, E2E_AGENT["web-developer"].name)).toStrictEqual(
       buildAgentConfigs([E2E_AGENT["web-developer"].name], {
-        scope: "project",
+        scope: "global",
         model: "haiku",
         effort: "xhigh",
       }),
@@ -245,9 +264,10 @@ describe("init --from <id>", () => {
     const { exitCode } = await runInit("Bare0001");
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    // A bare agent has no skill to carry it in, so the `agents` map is the only thing that can.
+    // A bare agent has no skill to carry it in, so the `agents` map is the only thing that can —
+    // and `on: true` alone names no scope, so it lands at the shared selection default.
     expect(await readAgentEntriesFor(tempDir, E2E_AGENT["api-developer"].name)).toStrictEqual(
-      buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
+      buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "global" }),
     );
     await expect({ dir: tempDir }).toHaveCompiledAgent(E2E_AGENT["api-developer"].name);
   });
@@ -262,22 +282,33 @@ describe("init --from <id>", () => {
     expect(flattenCliOutput(output)).toContain("no skills this catalog can install");
   });
 
-  it("overrides an existing installation rather than showing the dashboard", async () => {
+  it("refuses an existing installation rather than showing the dashboard", async () => {
     tempDir = await createTempDir();
     store.publish("First001", seedPayload({ [E2E_SKILL.react.id]: skillEntry() }));
     store.publish("Second02", seedPayload({ [E2E_SKILL.hono.id]: skillEntry() }));
 
     const first = await runInit("First001");
-    expect(first.exitCode).toBe(EXIT_CODES.SUCCESS);
+    expect(first.exitCode, `first install failed: ${first.output}`).toBe(EXIT_CODES.SUCCESS);
 
-    // A bare `init` here would show the dashboard and stop. An id is an explicit instruction to
-    // install *that* configuration, so it must not be diverted.
+    const configBefore = await readFile(configTsPath(tempDir), "utf8");
+    const skillsBefore = await listFiles(skillsPath(tempDir));
+    const agentsBefore = await listFiles(agentsPath(tempDir));
+
+    // A bare `init` here would show the dashboard and stop. An id is still not diverted to it —
+    // but it no longer installs over what it finds either: `--from` is greenfield-only, so an
+    // existing installation is a refusal naming `uninstall`, not a dashboard and not a merge.
     const second = await runInit("Second02");
 
-    expect(second.exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(second.output).toContain("Installing 1 skill(s)");
+    expect(second.exitCode).toBe(EXIT_CODES.ERROR);
+    expect(second.output).not.toContain(STEP_TEXT.DASHBOARD);
+    const said = flattenCliOutput(second.output);
+    expect(said).toContain(STEP_TEXT.SHARED_CONFIG_EXISTING_INSTALL);
+    expect(said).toContain(STEP_TEXT.SHARED_CONFIG_UNINSTALL_HINT);
 
-    const config = await readFile(path.join(tempDir, ".claude-src", "config.ts"), "utf8");
-    expect(config).toContain(E2E_SKILL.hono.id);
+    // The first install is exactly as it was, on both sides: nothing ran.
+    expect(await readFile(configTsPath(tempDir), "utf8")).toBe(configBefore);
+    expect(await listFiles(skillsPath(tempDir))).toStrictEqual(skillsBefore);
+    expect(await listFiles(agentsPath(tempDir))).toStrictEqual(agentsBefore);
+    expect(configBefore).not.toContain(E2E_SKILL.hono.id);
   });
 });

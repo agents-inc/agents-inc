@@ -51,7 +51,6 @@ export {
   createMockCompileConfig,
   createMockMarketplace,
   createMockMarketplacePlugin,
-  createMockCompiledStackPlugin,
 } from "./plugin-factories.js";
 
 export { createMockCategory } from "./category-factories.js";

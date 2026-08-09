@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
+  cleanupFixture,
   cleanupTempDir,
   configTsPath,
   createTempDir,
@@ -68,7 +69,7 @@ describe("init wizard — Sources tab marks every skill added on a first-time in
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (source) await cleanupTempDir(source.tempDir);
+    await cleanupFixture(source);
   });
 
   let projectDir: string | undefined;

@@ -10,7 +10,7 @@ import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
-  cleanupTempDir,
+  cleanupFixture,
   configTsPath,
   ensureBinaryExists,
   isClaudeCLIAvailable,
@@ -69,8 +69,8 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
     }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
-      if (fixture) await cleanupTempDir(fixture.tempDir);
-      if (localSource) await cleanupTempDir(localSource.tempDir);
+      await cleanupFixture(fixture);
+      await cleanupFixture(localSource);
     });
 
     afterEach(async () => {
@@ -83,6 +83,8 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
+          // The local source with no marketplace.json — the resolution failure point.
+          source: localSource.sourceDir,
           skills: [E2E_SKILL.react.id],
           marketplace: fixture.marketplaceName,
           agents: [...E2E_AGENTS.WEB],
@@ -147,7 +149,7 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
     }, TIMEOUTS.SETUP);
 
     afterAll(async () => {
-      if (localSource) await cleanupTempDir(localSource.tempDir);
+      await cleanupFixture(localSource);
     });
 
     afterEach(async () => {

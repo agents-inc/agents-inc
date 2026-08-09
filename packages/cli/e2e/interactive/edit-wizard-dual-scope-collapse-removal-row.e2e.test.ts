@@ -88,6 +88,7 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
         projectDir,
         buildProjectConfig({
           name: "dual-scope-collapse-test",
+          source: sourceDir,
           skills: [
             ...buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.vitest.id], {
               scope: "project",
@@ -99,8 +100,7 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
             }),
           ],
           agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
-          domains: ["web"],
-          selectedAgents: [E2E_AGENT["web-developer"].name],
+          selectedDomains: ["web"],
         }),
       );
 

@@ -35,7 +35,7 @@ describe("compile project-context global-scope hint", () => {
       name: "global-test",
       skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["web-developer"].name]: {
           "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
@@ -61,7 +61,7 @@ describe("compile project-context global-scope hint", () => {
       name: "project-test",
       skills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
     });
     await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
       description: "Project skill for hint test",
@@ -91,7 +91,7 @@ describe("compile project-context global-scope hint", () => {
       name: "project-test",
       skills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
       agents: [{ name: E2E_AGENT["api-developer"].name, scope: "project" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["api-developer"].name]: {
           "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],

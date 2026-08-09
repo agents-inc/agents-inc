@@ -1,23 +1,35 @@
 import path from "path";
 import { writeFile, mkdir, rm } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { EXIT_CODES, FILES } from "../pages/constants.js";
+import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import {
+  agentsPath,
   createTempDir,
   cleanupTempDir,
+  configTsPath,
   ensureBinaryExists,
+  listFiles,
+  recordInstallSource,
   skillsPath,
   writeAgentFile,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
+import { UI_SYMBOLS } from "../../src/cli/consts.js";
 import type { SkillId } from "../../src/cli/types/index.js";
+
+/** `checkSourceReachable` reports the whole matrix, which the E2E source defines. */
+const SOURCE_SKILL_COUNT_LINE = `${E2E_SKILL_IDS.length} ${STEP_TEXT.DOCTOR_SKILLS_AVAILABLE}`;
+
+/** A skill id the E2E source does not define, so `Skills Resolved` must fail on it. */
+const UNKNOWN_SKILL_ID = "web-framework-nonexistent" as SkillId;
 
 describe("doctor diagnostics", () => {
   let tempDir: string;
-  // Created once for the whole file — doctor only reads the source via CC_SOURCE
+  // Created once for the whole file — each install below records it as its own source
   let source: E2ESource;
 
   beforeAll(async () => {
@@ -36,45 +48,91 @@ describe("doctor diagnostics", () => {
   });
 
   describe("verbose diagnostics always emitted", () => {
-    it("should show additional details for all checks", async () => {
+    it("should count the source's skills even with no project config to check them against", async () => {
       tempDir = await createTempDir();
+
+      // The source comes from the GLOBAL config: `doctor` takes no `--source` and reads no
+      // `CC_SOURCE` (both are `init`'s), so a directory with no config of its own reads the
+      // one under HOME — the machine-wide install a bare directory still inherits.
+      const home = path.join(tempDir, "home");
+      await mkdir(home, { recursive: true });
+      await writeProjectConfig(home, { name: "global", source: source.sourceDir });
+
+      const projectWithoutConfig = path.join(tempDir, "project-without-config");
+      await mkdir(projectWithoutConfig, { recursive: true });
 
       const { exitCode, stdout } = await CLI.run(
         ["doctor"],
-        { dir: tempDir },
-        { env: { CC_SOURCE: source.sourceDir } },
+        { dir: projectWithoutConfig },
+        { env: { HOME: home } },
       );
 
-      // Doctor now always emits details (no --verbose flag needed).
-      // The Source Reachable check passes and includes "N skills available" in details.
+      // Doctor always emits details (no --verbose flag needed). The count is
+      // asserted rather than the bare phrase: an unreachable source that still
+      // printed the label would satisfy "skills available" on its own.
       expect(exitCode).toBe(EXIT_CODES.ERROR);
-      expect(stdout).toContain("skills available");
+      expect(stdout).toContain(SOURCE_SKILL_COUNT_LINE);
     });
   });
 
-  describe("valid config with local E2E source", () => {
-    it("should show Source Reachable with local source info and skill count", async () => {
-      const project = await ProjectBuilder.editable();
+  describe("healthy project", () => {
+    // One run, every pass row. Previously three `it`s ("valid config with local
+    // E2E source", "details always emitted", "healthy project") built the same
+    // fixture and asserted overlapping subsets of the same report.
+    it("should pass every check and name every row on a properly configured project", async () => {
+      const project = await ProjectBuilder.editable({
+        agents: ["web-developer"],
+      });
       tempDir = path.dirname(project.dir);
 
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: project.dir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
+      await writeAgentFile(project.dir, "web-developer", { frontmatter: true });
+
+      await recordInstallSource([project.dir], source.sourceDir);
+
+      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.dir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // Source Reachable check: "Connected to local: <path>"
-      expect(stdout).toContain("Connected to local:");
-      // Details line shows skill count
-      expect(stdout).toContain("skills available");
-      // Config Valid should pass
-      expect(stdout).toContain("Config Valid");
-      expect(stdout).toContain("is valid");
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_IS_VALID);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_AGENTS_COMPILED);
+      expect(stdout).toContain("1/1 agents compiled");
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_NO_ORPHANS);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_INSTALLED);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_PLUGINS_INSTALLED);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_SOURCE_LOCAL);
+      expect(stdout).toContain(SOURCE_SKILL_COUNT_LINE);
+      // The counts, not the word "errors": every content and operational row above
+      // passed, so a warn or a failure anywhere in the report reddens this line.
+      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_SUMMARY} 12 passed, 0 warnings, 0 errors`);
     });
   });
 
   describe("agents compiled check", () => {
+    it("should warn once per missing agent and tip at compile", async () => {
+      // Two configured agents, neither compiled. Previously two `it`s — one with
+      // one agent, one with two — asserted the same three substrings.
+      const project = await ProjectBuilder.editable({
+        agents: ["web-developer", "api-developer"],
+      });
+      tempDir = path.dirname(project.dir);
+
+      await recordInstallSource([project.dir], source.sourceDir);
+
+      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.dir });
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_AGENTS_COMPILED);
+      // The count discriminates: "1 agent needs recompilation" would pass a bare
+      // match on the word, and both agents are missing here.
+      expect(stdout).toContain(`2 agents need ${STEP_TEXT.DOCTOR_AGENTS_NEED_RECOMPILATION}`);
+      expect(stdout).toContain("- web-developer (missing)");
+      expect(stdout).toContain("- api-developer (missing)");
+      // Not `toContain("compile")` — the report's header names the command.
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_COMPILE_AGENTS);
+    });
+
     it("should pass when agent .md files exist for configured agents", async () => {
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
@@ -83,40 +141,17 @@ describe("doctor diagnostics", () => {
       const projectDir = project.dir;
 
       // Create the compiled agent .md file so checkAgentsCompiled passes
-      await writeAgentFile(projectDir, "web-developer");
+      await writeAgentFile(projectDir, "web-developer", { frontmatter: true });
 
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: projectDir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
+      await recordInstallSource([projectDir], source.sourceDir);
 
-      // checkAgentsCompiled returns pass with "N/N agents compiled"
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Agents Compiled");
-      expect(stdout).toContain("agents compiled");
-    });
-
-    it("should warn when agent .md files are missing for configured agents", async () => {
-      const project = await ProjectBuilder.editable({
-        agents: ["web-developer"],
-      });
-      tempDir = path.dirname(project.dir);
-      const projectDir = project.dir;
-      // Do NOT create web-developer.md -- it's missing
-
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: projectDir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
+      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: projectDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // checkAgentsCompiled returns warn with "N agent(s) need recompilation"
-      expect(stdout).toContain("Agents Compiled");
-      expect(stdout).toContain("recompilation");
-      // The tip suggests running compile
-      expect(stdout).toContain("compile");
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_AGENTS_COMPILED);
+      expect(stdout).toContain("1/1 agents compiled");
+      // The control for the spec above: the tip fires only on the warn result.
+      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_COMPILE_AGENTS);
     });
   });
 
@@ -129,57 +164,101 @@ describe("doctor diagnostics", () => {
       const projectDir = project.dir;
 
       // Create the configured agent file AND an orphan
-      await writeAgentFile(projectDir, "web-developer");
-      await writeAgentFile(projectDir, "orphan-agent");
+      await writeAgentFile(projectDir, "web-developer", { frontmatter: true });
+      await writeAgentFile(projectDir, "orphan-agent", { frontmatter: true });
 
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: projectDir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
+      await recordInstallSource([projectDir], source.sourceDir);
+
+      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: projectDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       // checkNoOrphans returns warn with "N orphaned agent file(s)"
-      expect(stdout).toContain("No Orphans");
-      expect(stdout).toContain("orphan");
-      expect(stdout).toContain("not in config");
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_NO_ORPHANS);
+      expect(stdout).toContain("1 orphaned agent file");
+      expect(stdout).toContain("- orphan-agent.md (not in config)");
+    });
+
+    /**
+     * The project-scope half of the same row. `lifecycle/global-config-deleted-under-install`
+     * carries the global half, where both install roots resolve to one directory and the walk
+     * covers it once; here the home directory is elsewhere, so two roots are walked and the
+     * project's own leftovers are what the row has to name.
+     */
+    it("names every installed skill and agent when the project config is deleted", async () => {
+      const project = await ProjectBuilder.editable({ agents: ["web-developer"] });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
+      await writeAgentFile(projectDir, "web-developer", { frontmatter: true });
+
+      // A home directory of its own: with HOME at the project the two install
+      // roots collapse into one, and this row's project-scope walk goes untested.
+      const home = path.join(tempDir, "home");
+      await mkdir(home, { recursive: true });
+
+      const skillIds = await listFiles(skillsPath(projectDir));
+      const agentFiles = await listFiles(agentsPath(projectDir));
+      expect(skillIds.length, "the fixture must have skills to strand").toBeGreaterThan(0);
+      expect(agentFiles.length, "the fixture must have agents to strand").toBeGreaterThan(0);
+
+      await rm(configTsPath(projectDir), { force: true });
+
+      // No source override: the config that would have named one is what this spec deleted.
+      const { exitCode, stdout } = await CLI.run(
+        ["doctor"],
+        { dir: projectDir },
+        { env: { HOME: home } },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toMatch(
+        new RegExp(`${STEP_TEXT.DOCTOR_ROW_NO_ORPHANS}\\s+${UI_SYMBOLS.CROSS}\\s`),
+      );
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_UNOWNED_INSTALL);
+      for (const name of [...skillIds, ...agentFiles]) {
+        expect(stdout, `${name} is stranded and the orphan row must name it`).toContain(name);
+      }
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_UNOWNED_INSTALL);
     });
   });
 
-  describe("missing skills directory with valid config", () => {
-    it("should report missing skills when skills directory does not exist", async () => {
+  describe("skills the config names but nothing provides", () => {
+    // One run covering what four `it`s ("missing skills directory with valid
+    // config", "missing skill dirs", "details always emitted" -> skill details,
+    // "tip discrimination" -> skill IDs) each asserted a fragment of: they all
+    // wrote a config naming one fabricated skill id and read the same report.
+    it("should fail Skills Resolved, name the skill and tip at checking skill IDs", async () => {
       tempDir = await createTempDir();
 
-      // Create valid config referencing a skill NOT in the E2E source matrix
       await writeProjectConfig(tempDir, {
         name: "test-project",
         agents: [{ name: "web-developer", scope: "project" }],
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-nonexistent" as SkillId, preloaded: true }], // fabricated E2E test ID
+            "web-framework": [{ id: UNKNOWN_SKILL_ID, preloaded: true }],
           },
         },
       });
 
-      // Do NOT create .claude/skills/ directory -- it is missing
+      // Do NOT create .claude/skills/ — the skill is absent from the source AND
+      // from disk, which is what makes the check fail rather than warn.
 
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: tempDir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
+      await recordInstallSource([tempDir], source.sourceDir);
 
-      // Config is valid, but the nonexistent skill is not in the source matrix
-      // and not found locally, so Skills Resolved should fail
+      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
+
       expect(exitCode).toBe(EXIT_CODES.ERROR);
-      expect(stdout).toContain("Config Valid");
-      expect(stdout).toContain("Skills Resolved");
-      expect(stdout).toContain("not found");
+      // The config itself is fine — the failure is about the skill, not the file.
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_IS_VALID);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED);
+      expect(stdout).toContain("0/1 skills found");
+      expect(stdout).toContain(`- ${UNKNOWN_SKILL_ID} (not found)`);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_CHECK_SKILL_IDS);
     });
   });
 
   describe("orphaned skill dirs", () => {
-    it("should warn when .claude/skills has dirs not referenced in config", async () => {
+    it("should report a skill dir that no config references as invalid content", async () => {
       // Create project with one skill in config
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
@@ -193,152 +272,24 @@ describe("doctor diagnostics", () => {
       await writeFile(path.join(orphanDir, FILES.SKILL_MD), "# Orphan Skill\n");
 
       // Create the compiled agent so checkAgentsCompiled passes
-      await writeAgentFile(project.dir, "web-developer");
+      await writeAgentFile(project.dir, "web-developer", { frontmatter: true });
 
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: project.dir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
+      await recordInstallSource([project.dir], source.sourceDir);
 
-      // Orphaned skill dirs are NOT checked by doctor (only orphaned agent files are).
-      // Doctor checks: Config Valid, Skills Resolved, Agents Compiled, No Orphans (agents), Source Reachable.
-      // The orphan skill dir does not cause a failure.
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Config Valid");
-      expect(stdout).toContain("Summary:");
-    });
-  });
+      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.dir });
 
-  describe("missing skill dirs", () => {
-    it("should fail when config references skills not found in source or locally", async () => {
-      tempDir = await createTempDir();
-
-      // Create config referencing a skill that does NOT exist in the E2E source
-      await writeProjectConfig(tempDir, {
-        name: "test-missing-skills",
-        agents: [{ name: "web-developer", scope: "project" }],
-        stack: {
-          "web-developer": {
-            "web-framework": [
-              { id: "web-framework-nonexistent-skill" as SkillId, preloaded: true },
-            ], // fabricated E2E test ID
-          },
-        },
-      });
-
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: tempDir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
-
-      // Skills Resolved should fail with "not found"
+      // The operational checks key off config (they look for orphaned AGENT files
+      // only), but the content layer walks every directory under .claude/skills/
+      // whether or not a config names it — a skill directory with no metadata.yaml
+      // is still content Claude Code would try to load.
       expect(exitCode).toBe(EXIT_CODES.ERROR);
-      expect(stdout).toContain("Skills Resolved");
-      expect(stdout).toContain("not found");
-      expect(stdout).toContain("web-framework-nonexistent-skill");
-    });
-  });
-
-  describe("no agents compiled", () => {
-    it("should warn when no agent .md files exist for configured agents", async () => {
-      const project = await ProjectBuilder.editable({
-        agents: ["web-developer", "api-developer"],
-      });
-      tempDir = path.dirname(project.dir);
-
-      // Do NOT create any agent .md files — they are all missing
-      // The editable builder creates an empty agents dir but no .md files
-
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: project.dir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
-
-      // Agents Compiled should warn (not fail) with "need recompilation"
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Agents Compiled");
-      expect(stdout).toContain("recompilation");
-      // Should suggest running compile
-      expect(stdout).toContain("compile");
-    });
-  });
-
-  describe("details always emitted", () => {
-    it("should show detailed output for passing checks", async () => {
-      const project = await ProjectBuilder.editable({
-        agents: ["web-developer"],
-      });
-      tempDir = path.dirname(project.dir);
-
-      // Create the compiled agent file
-      await writeAgentFile(project.dir, "web-developer");
-
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: project.dir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
-
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // doctor always shows details even for "pass" results
-      expect(stdout).toContain("skills available");
-      expect(stdout).toContain("Connected to local:");
-      expect(stdout).toContain("Config Valid");
-      expect(stdout).toContain("is valid");
-    });
-
-    it("should show skill resolution details when skills are missing", async () => {
-      tempDir = await createTempDir();
-      await writeProjectConfig(tempDir, {
-        name: "test-missing-skill-details",
-        agents: [{ name: "web-developer", scope: "project" }],
-        stack: {
-          "web-developer": {
-            "web-framework": [{ id: "web-framework-doesnt-exist" as SkillId, preloaded: true }], // fabricated E2E test ID
-          },
-        },
-      });
-
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: tempDir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
-
-      // Should show the specific missing skill in the details
-      expect(exitCode).toBe(EXIT_CODES.ERROR);
-      expect(stdout).toContain("web-framework-doesnt-exist");
-      expect(stdout).toContain("not found");
+      expect(stdout).toContain("web-testing-orphan-extra");
+      expect(stdout).toContain(`Missing ${FILES.METADATA_YAML}`);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_SUMMARY);
     });
   });
 
   describe("tip discrimination by check kind", () => {
-    it("should emit 'Check skill IDs' tip when skills check fails", async () => {
-      tempDir = await createTempDir();
-      await writeProjectConfig(tempDir, {
-        name: "skills-check-fails",
-        agents: [{ name: "web-developer", scope: "project" }],
-        stack: {
-          "web-developer": {
-            "web-framework": [{ id: "web-framework-unknown-skill" as SkillId, preloaded: true }],
-          },
-        },
-      });
-
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: tempDir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
-
-      expect(exitCode).toBe(EXIT_CODES.ERROR);
-      // Skills Resolved fails, so hasSkillError tip is emitted
-      expect(stdout).toContain("Check skill IDs");
-    });
-
     it("should emit re-eject tip when installed check warns", async () => {
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
@@ -354,55 +305,21 @@ describe("doctor diagnostics", () => {
       });
 
       // Make agents compile check pass so the only warn is from checkSkillsInstalled
-      await writeAgentFile(projectDir, "web-developer");
+      await writeAgentFile(projectDir, "web-developer", { frontmatter: true });
 
       // Ensure the eject skill directory is absent so checkSkillsInstalled warns
       const ejectedSkillDir = path.join(skillsPath(projectDir), "web-framework-react");
       await rm(ejectedSkillDir, { recursive: true, force: true });
 
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: projectDir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
+      await recordInstallSource([projectDir], source.sourceDir);
+
+      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: projectDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Re-eject the missing skills from the source");
-    });
-  });
-
-  describe("healthy project", () => {
-    it("should pass all checks on a properly configured project", async () => {
-      const project = await ProjectBuilder.editable({
-        agents: ["web-developer"],
-      });
-      tempDir = path.dirname(project.dir);
-
-      // Create the compiled agent file so all checks pass
-      await writeAgentFile(project.dir, "web-developer");
-
-      const { exitCode, stdout } = await CLI.run(
-        ["doctor"],
-        { dir: project.dir },
-        { env: { CC_SOURCE: source.sourceDir } },
-      );
-
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // Config Valid passes
-      expect(stdout).toContain("Config Valid");
-      expect(stdout).toContain("is valid");
-      // Skills Resolved passes
-      expect(stdout).toContain("Skills Resolved");
-      // Agents Compiled passes
-      expect(stdout).toContain("Agents Compiled");
-      expect(stdout).toContain("agents compiled");
-      // No Orphans passes
-      expect(stdout).toContain("No Orphans");
-      // Source Reachable passes
-      expect(stdout).toContain("Source Reachable");
-      // Summary shows all passed
-      expect(stdout).toContain("Summary:");
-      expect(stdout).toContain("0 errors");
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_RE_EJECT);
+      // The discriminating half: the skills tip must NOT fire — the skill resolves
+      // in the source, it is only its ejected copy that is missing.
+      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_CHECK_SKILL_IDS);
     });
   });
 });

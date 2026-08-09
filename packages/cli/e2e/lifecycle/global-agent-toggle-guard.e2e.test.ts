@@ -5,6 +5,7 @@ import {
   cleanupTempDir,
   configTsPath,
   ensureBinaryExists,
+  readCompiledAgents,
   readTestFile,
 } from "../helpers/test-utils.js";
 import { createGlobalOnlyEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
@@ -22,6 +23,12 @@ import "../matchers/setup.js";
  * from project scope in the edit wizard's agents step.
  *
  * Both guards show a toast message and leave the agent config unchanged.
+ *
+ * CLI-391 pins the LOUDNESS and the no-op together: the refusal has to reach the
+ * screen, and the session that saw it has to be saveable without moving a byte at
+ * either scope. Both halves are asserted below — the toast on the append-only raw
+ * surface, and config.ts plus the compiled agents snapshotted before the attempt and
+ * compared after the save.
  */
 
 describe("global agent toggle guard from project scope", () => {
@@ -62,6 +69,15 @@ describe("global agent toggle guard from project scope", () => {
       // guard's contract is therefore "changes nothing", not "writes nothing":
       // snapshot the project config now and assert it is byte-identical after.
       const projectConfigBefore = await readTestFile(configTsPath(env.projectDir));
+      // The global scope is where the refused agent actually lives, so it is the scope
+      // a leaked deselect would damage — snapshot its config and compiled agents too.
+      const globalConfigBefore = await readTestFile(configTsPath(env.fakeHome));
+      const globalAgentsBefore = await readCompiledAgents(env.fakeHome);
+      const projectAgentsBefore = await readCompiledAgents(env.projectDir);
+      expect(
+        Object.keys(globalAgentsBefore),
+        "the setup must compile the agent globally, or the after-comparison is vacuous",
+      ).toContain(`${E2E_AGENT["web-developer"].name}.md`);
 
       // Launch edit wizard from project scope
       wizard = await EditWizard.launch({
@@ -75,12 +91,12 @@ describe("global agent toggle guard from project scope", () => {
       const sources = await wizard.build.passThroughAllDomains();
       const agents = await sources.acceptDefaults();
 
-      // Attempt to toggle a globally installed agent
-      await agents.toggleAgent(E2E_AGENT_DISPLAY["web-developer"]);
-
-      // Verify the toast message appeared
-      const output = agents.getOutput();
-      expect(output).toContain(STEP_TEXT.GLOBAL_AGENTS_BLOCKED);
+      // Attempt to toggle a globally installed agent. The refusal is observable ONLY as
+      // a toast, so the press goes through the cursor-anchored raw wait: Ink rewrites the
+      // absolutely-positioned toast row in place, and the processed buffer can have lost
+      // the text by the time a synchronous read lands. The wait IS the loudness assertion.
+      await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["web-developer"]);
+      await agents.toggleFocusedAgentAwaiting(STEP_TEXT.GLOBAL_AGENTS_BLOCKED);
 
       // Complete the wizard without changes
       const confirm = await agents.advance("edit");
@@ -88,24 +104,31 @@ describe("global agent toggle guard from project scope", () => {
 
       expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Verify the global config still contains the agent (unchanged)
-      const globalConfigPath = configTsPath(env.fakeHome);
-      const globalConfig = await readTestFile(globalConfigPath);
-      expect(globalConfig).toContain(E2E_AGENT["web-developer"].name);
-      // Guard against a silent scope flip: the agent must remain global-scoped.
-      expect(globalConfig).toContain('"scope":"global"');
-
       // Guard blocked the toggle: the project config is byte-identical to the
       // pre-edit snapshot, so no agent entry was added, removed or re-scoped.
       expect(
         await readTestFile(configTsPath(env.projectDir)),
         "a blocked agent toggle must leave the project config byte-identical",
       ).toBe(projectConfigBefore);
+      // And the global config, where the refused agent is actually installed, is
+      // byte-identical too — a project edit may not uninstall or re-scope it.
+      expect(
+        await readTestFile(configTsPath(env.fakeHome)),
+        "a blocked agent toggle must leave the global config byte-identical",
+      ).toBe(globalConfigBefore);
 
-      // Filesystem: the agent stays compiled at global scope only — a blocked
-      // toggle must not materialise a project-scope copy of it.
+      // Filesystem: the compiled agents at BOTH scopes come out byte-identical. The
+      // roster alone would pass on a rewrite that swapped the agent's skills or model,
+      // so the comparison is on contents.
+      expect(
+        await readCompiledAgents(env.fakeHome),
+        "a blocked agent toggle must leave the global compiled agents byte-identical",
+      ).toStrictEqual(globalAgentsBefore);
+      expect(
+        await readCompiledAgents(env.projectDir),
+        "a blocked agent toggle must not materialise a project-scope compiled agent",
+      ).toStrictEqual(projectAgentsBefore);
       await expect({ dir: env.projectDir }).not.toHaveCompiledAgents();
-      await expect({ dir: env.fakeHome }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
 
       expect(result.output).toContain(STEP_TEXT.EDIT_UNCHANGED);
 

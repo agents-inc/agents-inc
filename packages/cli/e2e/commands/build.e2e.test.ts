@@ -1,16 +1,24 @@
 import path from "path";
 import { writeFile } from "fs/promises";
 import { CLI } from "../fixtures/cli.js";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import { EXIT_CODES, SOURCE_PATHS } from "../pages/constants.js";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { EXIT_CODES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
 import {
   createTempDir,
+  cleanupFixture,
   cleanupTempDir,
+  createE2ESource,
   ensureBinaryExists,
   fileExists,
+  listFiles,
   readMarketplaceJson,
   writeTestPackageJson,
+  type E2ESource,
 } from "../helpers/test-utils.js";
+import { E2E_SKILL_IDS } from "../fixtures/expected-values.js";
+
+/** The summary line `build plugins` prints for every skill the E2E source carries. */
+const SKILL_PLUGINS_COMPILED_LINE = `Compiled ${E2E_SKILL_IDS.length} skill plugins`;
 
 describe("build commands", () => {
   let tempDir: string;
@@ -24,6 +32,19 @@ describe("build commands", () => {
   });
 
   describe("build plugins", () => {
+    // A source with skills in it: an empty directory compiles zero plugins, and
+    // with nothing compiled neither --output-dir nor --verbose has an observable
+    // effect to assert.
+    let source: E2ESource;
+
+    beforeAll(async () => {
+      source = await createE2ESource();
+    }, TIMEOUTS.SETUP);
+
+    afterAll(async () => {
+      await cleanupFixture(source);
+    });
+
     it("should display help text", async () => {
       tempDir = await createTempDir();
 
@@ -56,29 +77,46 @@ describe("build commands", () => {
       expect(output).toContain("Compilation failed");
     });
 
-    it("should use a custom output directory with --output-dir", async () => {
-      tempDir = await createTempDir();
-      const customOutputDir = path.join(tempDir, "custom-plugins");
+    it("should write every plugin into the directory --output-dir names", async () => {
+      const customOutputDir = path.join(source.sourceDir, "custom-plugins");
 
       const { exitCode, stdout } = await CLI.run(
         ["build", "plugins", "--output-dir", customOutputDir],
-        { dir: tempDir },
+        { dir: source.sourceDir },
       );
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(customOutputDir);
       expect(stdout).toContain("Plugin compilation complete!");
+      // Echoing the path proves only that the flag was parsed. The plugins
+      // landing there is the behaviour the flag exists for.
+      expect((await listFiles(customOutputDir)).sort()).toStrictEqual([...E2E_SKILL_IDS].sort());
+      expect(await listFiles(path.join(source.sourceDir, SOURCE_PATHS.PLUGINS_DIST))).toStrictEqual(
+        [],
+      );
     });
 
-    it("should accept --verbose flag", async () => {
-      tempDir = await createTempDir();
+    it("should log per-skill compilation lines only under --verbose", async () => {
+      const perSkillLinePrefix = `Compiling skill plugin: ${E2E_SKILL_IDS[0]}`;
+      // Its own output directory, so the sibling spec's assertion that the
+      // default `dist/plugins` stayed empty does not depend on test order.
+      const outputDir = path.join(source.sourceDir, "verbose-plugins");
 
-      const { exitCode, stdout } = await CLI.run(["build", "plugins", "--verbose"], {
-        dir: tempDir,
+      const quiet = await CLI.run(["build", "plugins", "--output-dir", outputDir], {
+        dir: source.sourceDir,
+      });
+      const loud = await CLI.run(["build", "plugins", "--output-dir", outputDir, "--verbose"], {
+        dir: source.sourceDir,
       });
 
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Compiling skill plugins");
+      expect(quiet.exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(loud.exitCode).toBe(EXIT_CODES.SUCCESS);
+      // Both runs print the header, so the header cannot tell them apart. The
+      // per-skill line is emitted through `verbose()` and is the only difference.
+      expect(loud.stdout).toContain(perSkillLinePrefix);
+      expect(quiet.stdout).not.toContain(perSkillLinePrefix);
+      expect(quiet.stdout).toContain(SKILL_PLUGINS_COMPILED_LINE);
+      expect(loud.stdout).toContain(SKILL_PLUGINS_COMPILED_LINE);
     });
   });
 

@@ -5,16 +5,18 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_SKILL, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import {
+  cleanupFixture,
   cleanupTempDir,
   createTempDir,
   directoryExists,
   ensureBinaryExists,
   isClaudeCLIAvailable,
+  readCompiledAgents,
   readTestFile,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
@@ -27,6 +29,14 @@ import "../matchers/setup.js";
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
+/**
+ * The stack's whole sub-agent roster as compiled filenames, derived from the
+ * stack definition rather than retyped. Replaces the parameterless
+ * `toHaveCompiledAgents()`, which proved only that the directory held at least
+ * one `.md` — an install that compiled the wrong agent passed it.
+ */
+const COMPILED_AGENT_FILES = E2E_STACK_AGENTS.map((agent) => `${agent}.md`);
+
 describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
   let fixture: E2EPluginSource;
   let wizard: InitWizard | undefined;
@@ -37,7 +47,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   afterEach(async () => {
@@ -65,7 +75,9 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         expect(output).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
 
         await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
-        await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
+        expect(Object.keys(await readCompiledAgents(wizard.globalHome)).sort()).toStrictEqual(
+          COMPILED_AGENT_FILES,
+        );
       },
     );
 
@@ -84,7 +96,9 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
           compiledAgents: [],
         });
 
-        await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
+        expect(Object.keys(await readCompiledAgents(wizard.globalHome)).sort()).toStrictEqual(
+          COMPILED_AGENT_FILES,
+        );
       },
     );
 
@@ -115,7 +129,9 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         expect(output).toContain(STEP_TEXT.CONFIGURATION_LABEL);
 
         await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
-        await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
+        expect(Object.keys(await readCompiledAgents(wizard.globalHome)).sort()).toStrictEqual(
+          COMPILED_AGENT_FILES,
+        );
       },
     );
   });
@@ -132,11 +148,15 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
 
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
+        // `not.toContain("Failed to")` used to stand here. It is satisfied by a
+        // run that died before printing anything, and the success sentinel above
+        // already carries the claim.
         const output = result.output;
         expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
-        expect(output).not.toContain("Failed to");
 
-        await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
+        expect(Object.keys(await readCompiledAgents(wizard.globalHome)).sort()).toStrictEqual(
+          COMPILED_AGENT_FILES,
+        );
       },
     );
   });
@@ -159,7 +179,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
     }, TIMEOUTS.SETUP);
 
     afterAll(async () => {
-      if (localSource) await cleanupTempDir(localSource.tempDir);
+      await cleanupFixture(localSource);
     });
 
     afterEach(async () => {

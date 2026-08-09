@@ -5,11 +5,27 @@ import type {
   MergedSkillsMatrix,
   SkillConfig,
   SkillId,
+  SkillScope,
 } from "../../../types";
 import { resolveSelectedSkillIds, type WizardResultV2 } from "../../../components/wizard/wizard";
 import { useWizardStore } from "../../../stores/wizard-store";
 import { validateSelection } from "../../matrix";
 import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../../consts";
+
+/**
+ * The scope every config factory writes when its caller names none.
+ *
+ * This is the factories' OWN choice, not a mirror of any product default. It says "an installed
+ * entry that this test has nothing to say about lives in the project" — the shape the overwhelming
+ * majority of specs arrange — and it is paired with the `source: "eject"` default below for the
+ * same reason.
+ *
+ * It is deliberately NOT `DEFAULT_SELECTION_OPTIONS.scope` from `@workspace/matrix`, which is
+ * `global`: that constant answers "what does an untouched *pick* do?", a question about a fresh
+ * selection rather than about a saved config row. A spec asserting what an untouched pick produces
+ * must name its scope explicitly rather than lean on this.
+ */
+export const FACTORY_DEFAULT_SCOPE: SkillScope = "project";
 
 /** Build a single SkillConfig from an id with default scope and source */
 export function buildSkillConfig(
@@ -18,7 +34,7 @@ export function buildSkillConfig(
 ): SkillConfig {
   return {
     id,
-    scope: overrides?.scope ?? "project",
+    scope: overrides?.scope ?? FACTORY_DEFAULT_SCOPE,
     source: overrides?.source ?? "eject",
     ...(overrides?.excluded !== undefined && { excluded: overrides.excluded }),
   };

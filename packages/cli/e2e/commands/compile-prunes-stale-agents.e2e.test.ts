@@ -51,7 +51,7 @@ describe("compile prunes stale compiled agents", () => {
       name: "global-prune-test",
       skills: [{ id: E2E_SKILL.react.id, scope: "global", source: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["web-developer"].name]: {
           "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],

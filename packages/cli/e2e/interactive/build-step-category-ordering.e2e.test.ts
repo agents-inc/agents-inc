@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { STEP_TEXT } from "../pages/constants.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupFixture, ensureBinaryExists } from "../helpers/test-utils.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
@@ -23,7 +23,7 @@ describe("build step — deterministic category ordering", () => {
   });
 
   afterAll(async () => {
-    if (source) await cleanupTempDir(source.tempDir);
+    await cleanupFixture(source);
   });
 
   afterEach(async () => {

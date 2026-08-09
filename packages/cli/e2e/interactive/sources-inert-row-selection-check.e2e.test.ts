@@ -23,7 +23,7 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-si
 import {
   DEFAULT_PUBLIC_SOURCE_NAME,
   EJECT_SOURCE,
-  SOURCE_DISPLAY_NAMES,
+  INSTALL_MODE_CELL_LABELS,
   UI_SYMBOLS,
 } from "../../src/cli/consts.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -104,6 +104,7 @@ describe("edit wizard — Sources grid paints no selection check on inert rows",
         projectDir,
         buildProjectConfig({
           name: "inert-row-check-test",
+          source: sourceDir,
           skills: [
             ...buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.vitest.id], {
               scope: "project",
@@ -115,8 +116,7 @@ describe("edit wizard — Sources grid paints no selection check on inert rows",
             }),
           ],
           agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
-          domains: ["web"],
-          selectedAgents: [E2E_AGENT["web-developer"].name],
+          selectedDomains: ["web"],
         }),
       );
 
@@ -211,13 +211,13 @@ describe("edit wizard — Sources grid paints no selection check on inert rows",
         "aborting a scope-collapse preview must not add or remove skill directories",
       ).toStrictEqual(skillDirsBefore);
 
-      // The row about to be removed must not tick the source it is losing. Both inert rows
-      // resolve to the eject column here — the pending-removal row is re-pinned to its persisted
+      // The row about to be removed must not tick the mode it is losing. Both inert rows
+      // resolve to the local cell here — the pending-removal row is re-pinned to its persisted
       // source and the surviving global row to its live one — so this one string covers both.
       expect(
         frame,
-        `an inert row must not check its selected source. Screen:\n${frame}`,
-      ).not.toContain(`${UI_SYMBOLS.SELECTED} ${SOURCE_DISPLAY_NAMES[EJECT_SOURCE]}`);
+        `an inert row must not check its selected install mode. Screen:\n${frame}`,
+      ).not.toContain(`${UI_SYMBOLS.SELECTED} ${INSTALL_MODE_CELL_LABELS.eject}`);
 
       // Exhaustive: the grid has one selection vocabulary (colour and weight), so the check
       // belongs to no row at all.

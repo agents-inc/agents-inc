@@ -8,6 +8,7 @@ import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
+  cleanupFixture,
   cleanupTempDir,
   createTempDir,
   ensureBinaryExists,
@@ -26,19 +27,22 @@ import type { AgentName, Category } from "../../src/cli/types/index.js";
  * createMockSkillAssignment("web-framework-react", true)) and to
  * api-framework-hono (via createMockSkillAssignment("api-framework-hono", true)).
  *
- * Config.ts uses compact stack assignments: preloaded: true skills are stored as
- * { "id": "...", "preloaded": true }, while preloaded: false skills are stored
- * as bare strings. This test asserts on the presence of the full object form.
+ * Config.ts uses compact stack assignments: an assignment carrying a flag is
+ * stored as { "id": "...", "preloaded": true }, while a flag-less one is stored
+ * as a bare string. The generator only ever emits `preloaded` where it is true —
+ * an assignment it did not preload has no key at all — so the bare form covers
+ * both "never preloaded" and an explicit `preloaded: false` read off disk. This
+ * test asserts on the presence of the full object form.
  */
 
 /**
  * Asserts that a given skill ID appears as a preloaded assignment within a
  * specific agent's category in the structurally-loaded config.ts stack.
  *
- * The rendered compact format stores preloaded: true skills as
- * { "id": "...", "preloaded": true } and preloaded: false skills as bare
- * string IDs; the loader normalizes both, so the object-form find below
- * matches exactly the preloaded entries.
+ * The rendered compact format stores preloaded skills as
+ * { "id": "...", "preloaded": true } and flag-less ones as bare string IDs;
+ * the loader normalizes both to { id, preloaded }, so the find below matches
+ * exactly the preloaded entries.
  *
  * The stack for an agent is written to that agent's SCOPE config: a default
  * init scopes every agent global, so the stack lands in the GLOBAL config at
@@ -62,9 +66,7 @@ async function assertPreloadedInStack(
     `Expected stack to contain category "${category}" under agent "${agentName}"`,
   ).toBeDefined();
 
-  const preloadedEntry = (assignments ?? []).find(
-    (a) => typeof a === "object" && a !== null && a.id === skillId && a.preloaded === true,
-  );
+  const preloadedEntry = (assignments ?? []).find((a) => a.id === skillId && a.preloaded === true);
 
   expect(
     preloadedEntry,
@@ -83,7 +85,7 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   describe("init and edit passthrough", () => {

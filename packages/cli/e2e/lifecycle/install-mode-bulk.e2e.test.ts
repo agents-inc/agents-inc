@@ -7,25 +7,28 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { E2E_AGENTS } from "../fixtures/expected-values.js";
-import { TIMEOUTS } from "../pages/constants.js";
+import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
+import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   agentsPath,
-  isClaudeCLIAvailable,
+  cleanupFixture,
   cleanupTempDir,
   completeWithLocalSources,
   createTempDir,
+  directoryExists,
   ensureBinaryExists,
   fileExists,
+  skillsPath,
   injectMarketplaceIntoConfig,
+  isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 
 /**
- * Source switching lifecycle E2E tests -- bulk mode switching.
+ * Install-mode lifecycle E2E tests -- bulk switching.
  *
- * Tests the full flow of switching ALL skill sources mid-lifecycle:
+ * Tests the full flow of switching EVERY skill's install mode mid-lifecycle:
  *   9a: Init local -> edit switch ALL to plugin -> verify plugin state
  *   9b: Init plugin -> edit switch ALL to local -> verify local state
  *
@@ -42,7 +45,7 @@ import {
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
-describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- bulk mode switching", () => {
+describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching", () => {
   let fixture: E2EPluginSource;
 
   let tempDir: string | undefined;
@@ -53,7 +56,7 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- bulk mode s
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   afterEach(async () => {
@@ -109,8 +112,19 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- bulk mode s
         });
 
         const rawOutput = editResult.rawOutput;
-        expect(rawOutput).toContain("Switching");
-        expect(rawOutput).toContain("to plugin");
+        expect(rawOutput).toContain(STEP_TEXT.SWITCHING_SKILLS_PREFIX);
+        expect(rawOutput).toContain(`to `);
+
+        // The narration is what the run SAID; the install mode is what it DID, and
+        // that is this file's subject. A plugin-mode skill is registered in
+        // settings.json and its ejected copy is gone from .claude/skills/.
+        await expect({ dir: projectDir }).toHavePlugin(
+          `${E2E_SKILL.react.id}@${fixture.marketplaceName}`,
+        );
+        expect(
+          await directoryExists(path.join(skillsPath(projectDir), E2E_SKILL.react.id)),
+          "switching to plugin mode must remove the ejected copy",
+        ).toBe(false);
 
         await editResult.destroy();
       },
@@ -158,8 +172,13 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- bulk mode s
         });
 
         const rawOutput = editResult.rawOutput;
-        expect(rawOutput).toContain("Switching");
-        expect(rawOutput).toContain("to eject");
+        expect(rawOutput).toContain(STEP_TEXT.SWITCHING_SKILLS_PREFIX);
+        expect(rawOutput).toContain(`to `);
+
+        // Same reasoning as the sibling above, in the other direction: the ejected
+        // copy is back on disk and the plugin registration is gone.
+        await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
+        await expect({ dir: projectDir }).toHaveNoPlugins();
 
         // Agent may be compiled at project or global scope
         const projectAgentPath = path.join(agentsPath(projectDir), "web-developer.md");

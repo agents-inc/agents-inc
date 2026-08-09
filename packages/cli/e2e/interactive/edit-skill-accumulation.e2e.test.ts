@@ -31,7 +31,7 @@ import "../matchers/setup.js";
  * duplicated or accumulated across re-edits.
  *
  * Code path under test:
- *   edit.tsx -> buildAndMergeConfig() -> writeScopedConfigs() -> splitConfigByScope()
+ *   edit.tsx -> buildAndMergeConfig() -> writeScopedFromWizard() -> splitConfigByScope()
  */
 
 describe("project config does not accumulate global skills after edit", () => {
@@ -72,7 +72,7 @@ describe("project config does not accumulate global skills after edit", () => {
         name: "global",
         skills: [{ id: "web-framework-react", scope: "global", source: "eject" }],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
-        domains: ["web"],
+        selectedDomains: ["web"],
       });
 
       // Create global skill directory with SKILL.md and metadata.yaml
@@ -100,7 +100,7 @@ describe("project config does not accumulate global skills after edit", () => {
           { id: "web-testing-vitest", scope: "project", source: "eject" },
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
-        domains: ["web"],
+        selectedDomains: ["web"],
       });
 
       // Create project skill directory with SKILL.md and metadata.yaml

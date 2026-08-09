@@ -87,8 +87,7 @@ describe("edit removes one of several skills an agent references", () => {
           source: "eject",
         }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-        domains: ["web"],
-        selectedAgents: [E2E_AGENT["web-developer"].name],
+        selectedDomains: ["web"],
         stack: multiSkillStack,
       });
       await writeProjectConfig(globalHome, config);

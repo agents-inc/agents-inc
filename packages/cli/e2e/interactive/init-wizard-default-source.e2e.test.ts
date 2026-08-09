@@ -8,6 +8,7 @@ import { DashboardSession } from "../pages/dashboard-session.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import {
+  cleanupFixture,
   cleanupTempDir,
   createTempDir,
   ensureBinaryExists,
@@ -47,8 +48,8 @@ describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", ()
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (fixtureV1) await cleanupTempDir(fixtureV1.tempDir);
-    if (fixtureV2) await cleanupTempDir(fixtureV2.tempDir);
+    await cleanupFixture(fixtureV1);
+    await cleanupFixture(fixtureV2);
     if (sharedHome) await cleanupTempDir(sharedHome);
   });
 
@@ -81,10 +82,9 @@ describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", ()
       agents: ["web-developer"],
     });
 
-    // KNOWN GAP: createE2EPluginSource fixture does not include agent definition
-    // partials, so agent compilation cannot produce .md files. When the fixture
-    // is extended with agent partials, uncomment this assertion.
-    // await expect(result.project).toHaveCompiledAgents();
+    // Agents default to global scope, so they compile under the shared HOME
+    // this phase installs into rather than under the project directory.
+    await expect({ dir: sharedHome! }).toHaveCompiledAgent("web-developer");
   });
 
   it(
@@ -106,9 +106,12 @@ describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", ()
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
 
+      // The dashboard sentinel is the positive half: `not.toContain("Failed
+      // to")` said nothing a failed run would not also satisfy — a run that
+      // died before printing anything passes it.
       const output = dashboard.getOutput();
+      expect(output).toContain(STEP_TEXT.DASHBOARD);
       expect(output).not.toContain("Registering marketplace");
-      expect(output).not.toContain("Failed to");
 
       dashboard.escape();
       const exitCode = await dashboard.waitForExit();

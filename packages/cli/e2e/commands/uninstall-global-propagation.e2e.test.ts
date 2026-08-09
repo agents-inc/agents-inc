@@ -69,6 +69,7 @@ describe("global uninstall propagates to registered projects", () => {
     // CLI-inlined snapshot of the global install (skills, agents,
     // selectedAgents, and a stack ref to the global skill).
     await writeProjectConfig(projectDir, {
+      source: sourceDir,
       name: "project-test",
       skills: [
         { id: E2E_SKILL.vitest.id, scope: "project", source: "eject" },
@@ -78,8 +79,7 @@ describe("global uninstall propagates to registered projects", () => {
         { name: E2E_AGENT["api-developer"].name, scope: "project" },
         { name: E2E_AGENT["web-developer"].name, scope: "global" },
       ],
-      domains: ["web"],
-      selectedAgents: [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
+      selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["api-developer"].name]: {
           "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
@@ -90,7 +90,14 @@ describe("global uninstall propagates to registered projects", () => {
     await writeConfigTypes(projectDir);
     await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
       description: "Project-scoped skill that must survive the global uninstall",
-      metadata: renderMetadataYaml({ contentHash: "hash-project-vitest" }),
+      metadata: renderMetadataYaml({
+        displayName: "web-testing-vitest",
+        category: "web-testing",
+        slug: "vitest",
+        cliDescription: "E2E test runner skill",
+        usageGuidance: "Use when testing project-scoped survival in E2E scenarios",
+        contentHash: "a1b2c3d",
+      }),
     });
     await writeAgentFile(projectDir, E2E_AGENT["api-developer"].name, { frontmatter: true });
 
@@ -99,11 +106,11 @@ describe("global uninstall propagates to registered projects", () => {
     // deleted — the uninstall must warn about it and continue.
     const realProjectDir = realpathSync(projectDir);
     await writeProjectConfig(globalHome, {
+      source: sourceDir,
       name: "global-test",
       skills: [{ id: E2E_SKILL.react.id, scope: "global", source: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
-      domains: ["web"],
-      selectedAgents: [E2E_AGENT["web-developer"].name],
+      selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["web-developer"].name]: {
           "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
@@ -164,7 +171,6 @@ describe("global uninstall propagates to registered projects", () => {
     expect(projectConfig.agents).toStrictEqual([
       { name: E2E_AGENT["api-developer"].name, scope: "project" },
     ]);
-    expect(projectConfig.selectedAgents).toStrictEqual([E2E_AGENT["api-developer"].name]);
     expect(projectConfig.stack).toStrictEqual({
       [E2E_AGENT["api-developer"].name]: {
         "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: true }],
@@ -200,7 +206,7 @@ describe("global uninstall propagates to registered projects", () => {
 
     // Doctor passes in the project afterwards — no dangling references remain.
     const doctor = await CLI.run(["doctor"], { dir: projectDir }, { env: { HOME: globalHome } });
-    expect(doctor.exitCode).toBe(EXIT_CODES.SUCCESS);
+    expect(doctor.exitCode, doctor.stdout).toBe(EXIT_CODES.SUCCESS);
   });
 
   /**
@@ -228,14 +234,14 @@ describe("global uninstall propagates to registered projects", () => {
     // --- Project installation: a PROJECT-scoped api-developer whose stack
     // preloads BOTH its own project skill and the inherited global one.
     await writeProjectConfig(projectDir, {
+      source: sourceDir,
       name: "project-recompile",
       skills: [
         { id: E2E_SKILL.vitest.id, scope: "project", source: "eject" },
         { id: E2E_SKILL.react.id, scope: "global", source: "eject" },
       ],
       agents: [{ name: E2E_AGENT["api-developer"].name, scope: "project" }],
-      domains: ["web"],
-      selectedAgents: [E2E_AGENT["api-developer"].name],
+      selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["api-developer"].name]: {
           "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
@@ -246,16 +252,23 @@ describe("global uninstall propagates to registered projects", () => {
     await writeConfigTypes(projectDir);
     await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
       description: "Project-scoped skill that must survive the global uninstall",
-      metadata: renderMetadataYaml({ contentHash: "hash-project-vitest" }),
+      metadata: renderMetadataYaml({
+        displayName: "web-testing-vitest",
+        category: "web-testing",
+        slug: "vitest",
+        cliDescription: "E2E test runner skill",
+        usageGuidance: "Use when testing project-scoped survival in E2E scenarios",
+        contentHash: "a1b2c3d",
+      }),
     });
 
     // --- Global installation at the fake HOME, registering the project.
     await writeProjectConfig(globalHome, {
+      source: sourceDir,
       name: "global-recompile",
       skills: [{ id: E2E_SKILL.react.id, scope: "global", source: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
-      domains: ["web"],
-      selectedAgents: [E2E_AGENT["web-developer"].name],
+      selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["web-developer"].name]: {
           "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
@@ -270,7 +283,7 @@ describe("global uninstall propagates to registered projects", () => {
     });
 
     // A real compile produces the stale artifact the uninstall has to invalidate.
-    const compiled = await runCLI(["compile", "--source", sourceDir], projectDir, {
+    const compiled = await runCLI(["compile"], projectDir, {
       env: { HOME: globalHome },
     });
     expect(compiled.exitCode, `project compile must succeed: ${compiled.combined}`).toBe(

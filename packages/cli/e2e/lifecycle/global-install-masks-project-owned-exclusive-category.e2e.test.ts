@@ -114,8 +114,7 @@ describe("global install masks a project-owned skill in an exclusive category", 
       name: "exclusivity-global",
       skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", source: "eject" }),
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-      domains: ["web"],
-      selectedAgents: [E2E_AGENT["web-developer"].name],
+      selectedDomains: ["web"],
       stack: globalStack,
       projects: [realpathSync(projectDir)],
     });
@@ -137,7 +136,6 @@ describe("global install masks a project-owned skill in an exclusive category", 
         }),
       ],
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-      selectedAgents: [E2E_AGENT["web-developer"].name],
     });
     await writeProjectConfig(projectDir, projectConfig);
     await createLocalSkill(projectDir, E2E_SKILL["vue-composition-api"].id, {

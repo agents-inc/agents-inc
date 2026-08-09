@@ -6,7 +6,7 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
-import { TIMEOUTS, EXIT_CODES, FILES, TERMINAL_SIZE } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, FILES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   agentsPath,
@@ -98,8 +98,13 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
       const exitCode = await result.exitCode;
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
+      // Which direction the switch went, not merely that the word appeared. The
+      // alternation that stood here (`/[Ss]witch/`) was satisfied by a switch BACK
+      // to eject, which is the other half of the matrix this file exists to tell apart.
       const output = result.rawOutput;
-      expect(output).toMatch(/[Ss]witch/);
+      expect(output).toContain(STEP_TEXT.SWITCHING_SKILLS_SUFFIX);
+      expect(output).toContain(STEP_TEXT.PLUGIN_NATIVE);
+      expect(output).not.toContain(STEP_TEXT.EJECT_LOCAL_COPY);
 
       // D-3: api-framework-hono local files deleted (migrated to plugin)
       const localSkillPath = path.join(skillsPath(projectDir), E2E_SKILL.hono.id, FILES.SKILL_MD);
@@ -175,21 +180,20 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
 
       // Phase D: Verify agent content
 
-      // D-1: web-developer.md (global) contains all selected skills
+      // D-1: web-developer.md (global) contains its own domain's skill and,
+      // under relevance-scoped assignment, never the api one.
       const globalWebDevPath = path.join(agentsPath(fakeHome), "web-developer.md");
       expect(await fileExists(globalWebDevPath)).toBe(true);
       const webDevContent = await readTestFile(globalWebDevPath);
       expect(webDevContent).toContain(E2E_SKILL.react.id);
-      // web-developer contains api-framework-hono (all skills go to all agents)
-      expect(webDevContent).toContain(E2E_SKILL.hono.id);
+      expect(webDevContent).not.toContain(E2E_SKILL.hono.id);
 
-      // D-2: api-developer.md (project) contains all selected skills
+      // D-2: api-developer.md (project) mirrors it — the api skill alone.
       const projectApiDevPath = path.join(agentsPath(projectDir), "api-developer.md");
       expect(await fileExists(projectApiDevPath)).toBe(true);
       const apiDevContent = await readTestFile(projectApiDevPath);
       expect(apiDevContent).toContain(E2E_SKILL.hono.id);
-      // api-developer contains web-framework-react (all skills go to all agents)
-      expect(apiDevContent).toContain(E2E_SKILL.react.id);
+      expect(apiDevContent).not.toContain(E2E_SKILL.react.id);
 
       await result.destroy();
     },

@@ -101,7 +101,6 @@ function buildRegisteredProjectConfig(name: string): ProjectConfig {
     name,
     skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: MARKET }),
     agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
-    selectedAgents: [E2E_AGENT["web-developer"].name],
     stack: projectStack,
   });
 }
@@ -119,6 +118,15 @@ describe("global-scope source change propagates to registered projects", () => {
   let preEditProjectAgent: string;
   let editExitCode: number;
   let editOutput: string;
+  /**
+   * The TERMINAL BUFFER after the run, which is a different surface from the raw
+   * capture: `edit` clears the screen and the scrollback before printing its change
+   * summary, so this holds the summary alone — no wizard frames. The raw capture
+   * keeps every byte the process ever wrote, including the confirm step's own `~`
+   * source-change indicator, which a `toContain("~ <skill>")` on it matches whether
+   * or not the command printed anything.
+   */
+  let editSummaryScreen: string;
   let projectConfig: ProjectConfig;
 
   beforeAll(async () => {
@@ -143,8 +151,7 @@ describe("global-scope source change propagates to registered projects", () => {
         name: "propagation-source-toggle-global",
         skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: MARKET }),
         agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "global" }),
-        domains: ["web"],
-        selectedAgents: [E2E_AGENT["api-developer"].name],
+        selectedDomains: ["web"],
         stack: globalStack,
         projects: [realpathSync(projectDir)],
       }),
@@ -162,7 +169,7 @@ describe("global-scope source change propagates to registered projects", () => {
     // Phase 1: a real compile of the registered project while react is still
     // marketplace-sourced, producing the genuine plugin-form artifact this test
     // expects the global toggle to invalidate.
-    const compiled = await runCLI(["compile", "--source", sourceDir], projectDir, {
+    const compiled = await runCLI(["compile"], projectDir, {
       env: { HOME: fakeHome },
     });
     compileExitCode = compiled.exitCode;
@@ -187,7 +194,12 @@ describe("global-scope source change propagates to registered projects", () => {
     await sources.setAllLocal();
     const agents = await sources.advance();
     const confirm = await agents.acceptDefaults("edit");
-    const outcome = await finishWizard(await confirm.confirm());
+    const editRun = await confirm.confirm();
+    // Read the processed buffer once the process has exited but BEFORE finishWizard
+    // destroys the session — the order finishWizard's own docblock prescribes.
+    await editRun.exitCode;
+    editSummaryScreen = editRun.output;
+    const outcome = await finishWizard(editRun);
     editExitCode = outcome.exitCode;
     editOutput = outcome.output;
 
@@ -213,6 +225,23 @@ describe("global-scope source change propagates to registered projects", () => {
 
   it("completes the global-scope source change successfully", () => {
     expect(editExitCode, `global edit must succeed: ${editOutput}`).toBe(EXIT_CODES.SUCCESS);
+  });
+
+  // The same switch as the summary reports it. A plugin -> eject move keeps the skill
+  // installed, so the Changes block carries one amber `~` line; a `-`/`+` pair would
+  // read as an uninstall plus an unrelated install of something else.
+  it("reports the install-mode switch as one ~ line in the change summary", () => {
+    expect(
+      editSummaryScreen,
+      "a plugin -> eject switch is a modification, not a removal and an addition",
+    ).toContain(`~ ${E2E_SKILL.react.display}`);
+    expect(editSummaryScreen, "the summary must not double the switch as a removal").not.toContain(
+      `- ${E2E_SKILL.react.display}`,
+    );
+    expect(
+      editSummaryScreen,
+      "the summary must not double the switch as an addition",
+    ).not.toContain(`+ ${E2E_SKILL.react.display}`);
   });
 
   // Proof-of-execution: propagation actually rewrote the registered project's

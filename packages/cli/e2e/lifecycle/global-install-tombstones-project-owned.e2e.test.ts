@@ -113,8 +113,7 @@ describe("global-scope install tombstones project-owned skills and agents", () =
       name: "tombstone-project-owned-global",
       skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-      domains: ["web"],
-      selectedAgents: [E2E_AGENT["web-developer"].name],
+      selectedDomains: ["web"],
       stack: globalStack,
       projects: [realpathSync(projectDir)],
     });
@@ -136,7 +135,6 @@ describe("global-scope install tombstones project-owned skills and agents", () =
         ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", source: "eject" }),
       ],
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
-      selectedAgents: [E2E_AGENT["web-developer"].name],
     });
     await writeProjectConfig(projectDir, projectConfig);
 

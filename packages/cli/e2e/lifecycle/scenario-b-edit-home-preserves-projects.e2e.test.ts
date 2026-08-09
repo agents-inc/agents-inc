@@ -34,7 +34,7 @@ import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/t
  *
  * This exercises the merger's `projects` preservation branch through the real
  * edit-at-HOME pipeline (writeProjectConfig -> buildAndMergeConfig ->
- * mergeWithExistingConfig -> mergeConfigs -> writeScopedConfigs HOME-context).
+ * mergeWithExistingConfig -> mergeConfigs -> writeScopedFromWizard HOME-context).
  */
 
 const globalStack = {
@@ -94,8 +94,7 @@ describe("global edit at HOME preserves the registered projects array", () => {
       name: "preserve-projects-global",
       skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-      domains: ["web"],
-      selectedAgents: [E2E_AGENT["web-developer"].name],
+      selectedDomains: ["web"],
       stack: globalStack,
       projects: [realpathSync(registeredProject)],
     });

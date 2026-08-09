@@ -90,21 +90,26 @@ describe("compile after scope change", () => {
       // D-2: Output mentions compilation
       expect(combined).toContain(STEP_TEXT.COMPILE_SUCCESS);
 
-      // D-3: web-developer.md at global scope starts with YAML frontmatter
-      const globalWebDevPath = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, "web-developer.md");
-      const globalWebDevContent = await readTestFile(globalWebDevPath);
-      expect(globalWebDevContent.startsWith("---")).toBe(true);
+      // D-3: each scope holds ITS OWN agent, named in parsed frontmatter. The
+      // `startsWith("---")` checks that stood here are true of every compiled agent
+      // ever written and cannot tell one scope's file from the other's — which is
+      // this file's entire subject.
+      await expect({ dir: fakeHome }).toHaveAgentFrontmatter("web-developer", {
+        name: "web-developer",
+      });
+      await expect({ dir: projectDir }).toHaveAgentFrontmatter("api-developer", {
+        name: "api-developer",
+      });
 
-      // D-4: api-developer.md at project scope starts with YAML frontmatter
       const projectApiDevPath = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
       const projectApiDevContent = await readTestFile(projectApiDevPath);
-      expect(projectApiDevContent.startsWith("---")).toBe(true);
 
       // D-5: Project api-developer.md contains api-framework-hono
       expect(projectApiDevContent).toContain("api-framework-hono");
 
-      // D-6: Project api-developer.md contains web-framework-react (all skills go to all agents)
-      expect(projectApiDevContent).toContain("web-framework-react");
+      // D-6: Project api-developer.md does NOT contain web-framework-react —
+      // relevance-scoped assignment keeps the web skill off the api agent.
+      expect(projectApiDevContent).not.toContain("web-framework-react");
     },
   );
 
@@ -153,13 +158,24 @@ describe("compile after scope change", () => {
       // D-1: Compile exits successfully
       expect(compileExitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // D-2: web-developer.md at global scope exists with frontmatter
+      // D-2: the global scope's web agent, named in parsed frontmatter. A
+      // `startsWith("---")` stood here; it is true of every compiled agent and
+      // cannot say which scope wrote which file.
+      await expect({ dir: fakeHome }).toHaveAgentFrontmatter("web-developer", {
+        name: "web-developer",
+      });
       const globalWebDevPath = path.join(fakeHome, DIRS.CLAUDE, DIRS.AGENTS, "web-developer.md");
       const globalWebDevContent = await readTestFile(globalWebDevPath);
-      expect(globalWebDevContent.startsWith("---")).toBe(true);
 
-      // D-3: Global web-developer.md contains api-framework-hono (all skills go to all agents)
-      expect(globalWebDevContent).toContain("api-framework-hono");
+      // D-3: Global web-developer.md does NOT contain api-framework-hono —
+      // relevance-scoped assignment keeps the api skill off the web agent.
+      expect(globalWebDevContent).not.toContain("api-framework-hono");
+
+      // D-4: The scope flip moves where the skill installs, not who carries
+      // it: the api agent still compiles with its own domain's skill.
+      const projectApiDevPath = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
+      const projectApiDevContent = await readTestFile(projectApiDevPath);
+      expect(projectApiDevContent).toContain("api-framework-hono");
     },
   );
 

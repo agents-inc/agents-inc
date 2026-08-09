@@ -10,13 +10,14 @@ import {
   directoryExists,
   getEjectedTemplatePath,
   listFiles,
+  readCompiledAgents,
   readTestFile,
   renderMetadataYaml,
   writeProjectConfig,
   createLocalSkill,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
-import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { MINIMAL_PROJECT_AGENT_NAMES, ProjectBuilder } from "../fixtures/project-builder.js";
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, FILES } from "../pages/constants.js";
 import type { SkillId } from "../../src/cli/types/index.js";
@@ -41,7 +42,13 @@ describe("template ejection + custom compilation", () => {
   });
 
   describe("eject templates, modify, compile", () => {
-    it("should use custom template in compiled output", async () => {
+    // One run for what three `it`s each did in full: eject templates onto
+    // `ProjectBuilder.minimal()`, append a marker, compile, and look for the marker.
+    // "uses the custom template", "applies it to ALL agents" and "prefers the
+    // project-local template over the built-in" are three readings of the same
+    // observation — the built-in template always exists, so a marker that only the
+    // ejected copy carries reaching the output IS the precedence claim.
+    it("should compile every agent through the ejected template rather than the built-in", async () => {
       const project = await ProjectBuilder.minimal();
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
@@ -63,46 +70,23 @@ describe("template ejection + custom compilation", () => {
       const compileResult = await CLI.run(["compile"], { dir: projectDir });
       expect(compileResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Step 5: Verify the marker appears in compiled agent output
-      const outputFiles = await listFiles(agentsDir);
-      expect(outputFiles).toContain(`${E2E_AGENT["web-developer"].name}.md`);
-
-      // Verify the agent was compiled with valid frontmatter
-      await expect({ dir: projectDir }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
-
-      const webDevPath = path.join(agentsDir, `${E2E_AGENT["web-developer"].name}.md`);
-      const webDevContent = await readTestFile(webDevPath);
-      expect(webDevContent).toContain(CUSTOM_TEMPLATE_MARKER);
-      expect(webDevContent).toContain("name: web-developer");
-    });
-
-    it("should apply custom template to all compiled agents", async () => {
-      const project = await ProjectBuilder.minimal();
-      tempDir = path.dirname(project.dir);
-      const projectDir = project.dir;
-      const agentsDir = agentsPath(project.dir);
-
-      // Eject and modify template
-      const ejectResult = await CLI.run(["eject", "templates"], { dir: projectDir });
-      expect(ejectResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      const ejectedTemplatePath = getEjectedTemplatePath(projectDir);
-      const originalTemplate = await readTestFile(ejectedTemplatePath);
-      await writeFile(ejectedTemplatePath, originalTemplate + "\n" + CUSTOM_TEMPLATE_MARKER + "\n");
-
-      // Compile
-      const compileResult = await CLI.run(["compile"], { dir: projectDir });
-      expect(compileResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // Verify ALL compiled agents contain the marker (not just one)
-      const outputFiles = await listFiles(agentsDir);
-      const mdFiles = outputFiles.filter((f) => f.endsWith(".md"));
-      expect(mdFiles.length).toBeGreaterThanOrEqual(2);
-
-      for (const file of mdFiles) {
-        const content = await readTestFile(path.join(agentsDir, file));
-        expect(content).toContain(CUSTOM_TEMPLATE_MARKER);
+      // Step 5: EVERY agent the fixture declares went through the custom template.
+      // The roster is pinned rather than counted — `length >= 2` passed for a run
+      // that wrote two of two, and for one that wrote two of three.
+      const compiled = await readCompiledAgents(projectDir);
+      expect(Object.keys(compiled).sort()).toStrictEqual(
+        MINIMAL_PROJECT_AGENT_NAMES.map((name) => `${name}.md`).sort(),
+      );
+      for (const [file, content] of Object.entries(compiled)) {
+        expect(content, `${file} was not rendered through the ejected template`).toContain(
+          CUSTOM_TEMPLATE_MARKER,
+        );
       }
+
+      // The template swap did not cost the agents their frontmatter.
+      await expect({ dir: projectDir }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
+      const webDevPath = path.join(agentsDir, `${E2E_AGENT["web-developer"].name}.md`);
+      expect(await readTestFile(webDevPath)).toContain("name: web-developer");
     });
   });
 
@@ -153,7 +137,6 @@ describe("template ejection + custom compilation", () => {
     it("should produce all agents with custom template when project has multiple skills", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
-      const agentsDir = agentsPath(projectDir);
 
       // Create project with multiple skills and agents
       await writeProjectConfig(projectDir, {
@@ -190,14 +173,18 @@ describe("template ejection + custom compilation", () => {
       const compileResult = await CLI.run(["compile"], { dir: projectDir });
       expect(compileResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Verify ALL compiled agents contain the marker
-      const outputFiles = await listFiles(agentsDir);
-      const mdFiles = outputFiles.filter((f) => f.endsWith(".md"));
-      expect(mdFiles.length).toBeGreaterThanOrEqual(2);
+      // Verify ALL compiled agents contain the marker. The roster is the two the
+      // config declares, named — a count floor passed for a run that wrote one of
+      // them twice under different names.
+      const compiled = await readCompiledAgents(projectDir);
+      expect(Object.keys(compiled).sort()).toStrictEqual(
+        [`${E2E_AGENT["web-developer"].name}.md`, `${E2E_AGENT["api-developer"].name}.md`].sort(),
+      );
 
-      for (const file of mdFiles) {
-        const content = await readTestFile(path.join(agentsDir, file));
-        expect(content).toContain(CUSTOM_TEMPLATE_MARKER);
+      for (const [file, content] of Object.entries(compiled)) {
+        expect(content, `${file} was not rendered through the ejected template`).toContain(
+          CUSTOM_TEMPLATE_MARKER,
+        );
         // Also verify the agents still have valid frontmatter
         expect(content).toMatch(/^---\n/);
         expect(content).toContain("description:");
@@ -226,31 +213,6 @@ describe("template ejection + custom compilation", () => {
       // Compile should fail with a useful error, but currently exits 0
       const compileResult = await CLI.run(["compile"], { dir: projectDir });
       expect(compileResult.exitCode).not.toBe(EXIT_CODES.SUCCESS);
-    });
-
-    it("should use project-local template over built-in when both exist", async () => {
-      const project = await ProjectBuilder.minimal();
-      tempDir = path.dirname(project.dir);
-      const projectDir = project.dir;
-      const agentsDir = agentsPath(project.dir);
-
-      // Eject templates to create the project-local version
-      const ejectResult = await CLI.run(["eject", "templates"], { dir: projectDir });
-      expect(ejectResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // Modify the project-local template with a unique marker
-      const ejectedTemplatePath = getEjectedTemplatePath(projectDir);
-      const originalTemplate = await readTestFile(ejectedTemplatePath);
-      const markerText = "<!-- LOCAL-TEMPLATE-PRECEDENCE-TEST -->";
-      await writeFile(ejectedTemplatePath, originalTemplate + "\n" + markerText + "\n");
-
-      // Compile — should use the local template, not the built-in
-      const compileResult = await CLI.run(["compile"], { dir: projectDir });
-      expect(compileResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      const webDevPath = path.join(agentsDir, `${E2E_AGENT["web-developer"].name}.md`);
-      const content = await readTestFile(webDevPath);
-      expect(content).toContain(markerText);
     });
 
     it("should verify ejected template path matches Liquid engine resolution path", async () => {

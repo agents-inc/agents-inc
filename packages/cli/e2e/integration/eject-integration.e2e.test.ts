@@ -7,7 +7,6 @@ import {
   cleanupTempDir,
   ensureBinaryExists,
   directoryExists,
-  fileExists,
   getEjectedTemplatePath,
   listFiles,
   readTestFile,
@@ -26,6 +25,15 @@ import { CLI } from "../fixtures/cli.js";
  *
  * Gap 7 from e2e-test-gaps.md: Eject Integration
  */
+
+/**
+ * The one ejected agent partial these specs read. `eject agent-partials` writes
+ * the CLI's bundled `src/agents/<category>/<agent>/` tree verbatim, so naming a
+ * member is the only way an assertion can tell the right tree from any tree —
+ * the same pair `commands/eject.e2e.test.ts` pins.
+ */
+const EJECTED_PARTIAL_CATEGORY = "developer";
+const EJECTED_PARTIAL_AGENT = "web-developer";
 
 describe("eject command integration", () => {
   let tempDir: string | undefined;
@@ -69,41 +77,22 @@ describe("eject command integration", () => {
     const agentsDir = path.join(tempDir, DIRS.CLAUDE_SRC, "agents");
     expect(await directoryExists(agentsDir)).toBe(true);
 
-    // Find an agent directory (agent-partials ejects from src/agents/ which
-    // contains subdirectories like developer/web-developer/)
-    const topDirs = await listFiles(agentsDir);
-
-    // Filter out _templates — we want agent directories only
-    const agentGroupDirs = topDirs.filter((d) => !d.startsWith("_"));
-    expect(agentGroupDirs).toContain("developer");
-
-    // Collect concrete agent directories (e.g., developer/web-developer)
-    const candidateAgentDirs = (
-      await Promise.all(
-        agentGroupDirs.map(async (groupDir) => {
-          const groupPath = path.join(agentsDir, groupDir);
-          const subdirs = await listFiles(groupPath);
-          return subdirs.map((subdir) => path.join(groupPath, subdir));
-        }),
-      )
-    ).flat();
-
-    const hasAllPartials = async (agentPath: string): Promise<boolean> =>
-      (await fileExists(path.join(agentPath, FILES.IDENTITY_MD))) &&
-      (await fileExists(path.join(agentPath, FILES.PLAYBOOK_MD))) &&
-      (await fileExists(path.join(agentPath, FILES.METADATA_YAML)));
-
-    const partialFlags = await Promise.all(candidateAgentDirs.map(hasAllPartials));
-    const completeAgentDir = candidateAgentDirs.find((_, index) => partialFlags[index]);
-    if (completeAgentDir === undefined) {
-      throw new Error("No ejected agent dir has identity + playbook + metadata");
-    }
+    // The named partial, not a search for any directory that happens to hold the
+    // three files. The scan this replaced walked every category, took the first
+    // complete agent it found, and asserted about that one — so it could not say
+    // WHICH agent was ejected, and passed while `web-developer` was missing.
+    expect(await listFiles(agentsDir)).toContain(EJECTED_PARTIAL_CATEGORY);
+    const partialDir = path.join(agentsDir, EJECTED_PARTIAL_CATEGORY, EJECTED_PARTIAL_AGENT);
+    const partialFiles = await listFiles(partialDir);
+    expect(partialFiles).toContain(FILES.IDENTITY_MD);
+    expect(partialFiles).toContain(FILES.PLAYBOOK_MD);
+    expect(partialFiles).toContain(FILES.METADATA_YAML);
 
     // Verify the files contain meaningful prose content (readAgentFiles expects content)
-    const identity = await readTestFile(path.join(completeAgentDir, FILES.IDENTITY_MD));
+    const identity = await readTestFile(path.join(partialDir, FILES.IDENTITY_MD));
     expect(identity).toMatch(/\w+ \w+/);
 
-    const playbook = await readTestFile(path.join(completeAgentDir, FILES.PLAYBOOK_MD));
+    const playbook = await readTestFile(path.join(partialDir, FILES.PLAYBOOK_MD));
     expect(playbook).toContain("##");
   });
 

@@ -143,7 +143,7 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     expect(await directoryExists(agentsPath(projectDir))).toBe(false);
   });
 
-  it("dual-pass compile regenerates both scopes in their own shapes", async () => {
+  it("a compile in each context regenerates that scope's types in its own shape", async () => {
     tempDir = await createTempDir();
     const globalHome = path.join(tempDir, "global-home");
     const projectDir = path.join(tempDir, "project");
@@ -177,6 +177,17 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     const globalConfigBefore = await readTestFile(configTsPath(globalHome));
     const projectConfigBefore = await readTestFile(configTsPath(projectDir));
 
+    // One run per scope: a compile inside a project refreshes that project's
+    // types and nothing else, so the global half is the home run's to write.
+    const globalRun = await CLI.run(
+      ["compile"],
+      { dir: globalHome },
+      { env: { HOME: globalHome } },
+    );
+    expect(globalRun.exitCode).toBe(EXIT_CODES.SUCCESS);
+    expect(globalRun.output).toContain("Compiling global agents");
+    expect(globalRun.output).toContain(STEP_TEXT.CONFIG_TYPES_REFRESHED);
+
     const { exitCode, output } = await CLI.run(
       ["compile"],
       { dir: projectDir },
@@ -184,7 +195,6 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain("Compiling global agents");
     expect(output).toContain("Compiling project agents");
     expect(output).toContain(STEP_TEXT.CONFIG_TYPES_REFRESHED);
 

@@ -15,7 +15,12 @@ import {
   skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { ProjectBuilder } from "../fixtures/project-builder.js";
+import {
+  CUSTOM_PROJECT_SKILL_ID,
+  MINIMAL_PROJECT_AGENT_NAMES,
+  MINIMAL_PROJECT_SKILL_ID,
+  ProjectBuilder,
+} from "../fixtures/project-builder.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
@@ -42,7 +47,7 @@ describe("compile command", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(output).toContain("Compiling global agents");
     expect(output).toContain("Discovered 1 local skills");
-    expect(output).toMatch(/Recompiled \d+ global agents/);
+    expect(output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
     expect(output).toContain("Global compile complete");
 
     await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
@@ -70,23 +75,6 @@ describe("compile command", () => {
     });
     await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
       contains: ["name: api-developer", "description:", "tools:", "model:", "#"],
-    });
-  });
-
-  it("should support --verbose flag", async () => {
-    const project = await ProjectBuilder.minimal();
-    tempDir = path.dirname(project.dir);
-
-    const { exitCode, output } = await CLI.run(["compile", "--verbose"], project);
-
-    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain("Recompiled");
-
-    await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
-      contains: ["name: web-developer"],
-    });
-    await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
-      contains: ["name: api-developer"],
     });
   });
 
@@ -147,7 +135,7 @@ describe("compile command", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain("Discovered 3 local skills");
-      expect(output).toMatch(/Recompiled \d+ global agents/);
+      expect(output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
 
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
@@ -170,57 +158,23 @@ describe("compile command", () => {
         name: E2E_AGENT["web-developer"].name,
       });
     });
-
-    it("should list compiled agent files in verbose mode", async () => {
-      tempDir = await createTempDir();
-      const projectDir = path.join(tempDir, "project");
-      // Declare the agents so the project is a detected installation; the local
-      // skill under test is discovered from disk independently of the config.
-      await writeProjectConfig(projectDir, {
-        name: "e2e-test",
-        skills: [],
-        agents: [
-          { name: E2E_AGENT["web-developer"].name, scope: "project" },
-          { name: E2E_AGENT["api-developer"].name, scope: "project" },
-        ],
-      });
-
-      await createLocalSkill(projectDir, "web-forms-zod-validation", {
-        description: "Skill for compile listing verification",
-        metadata: renderMetadataYaml({ contentHash: "hash-content" }),
-      });
-
-      const { exitCode, output } = await CLI.run(["compile", "--verbose"], { dir: projectDir });
-
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain("Discovered 1 local skills");
-      expect(output).toContain(STEP_TEXT.COMPILED_LIST);
-
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
-        E2E_AGENT["web-developer"].name,
-        {
-          contains: ["name: web-developer"],
-        },
-      );
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
-        E2E_AGENT["api-developer"].name,
-        {
-          contains: ["name: api-developer"],
-        },
-      );
-    });
   });
 
   describe("verbose output", () => {
-    it("should show loaded skill names in verbose mode", async () => {
+    it("should name every loaded skill and every compiled agent in verbose mode", async () => {
       const project = await ProjectBuilder.minimal();
       tempDir = path.dirname(project.dir);
 
       const { exitCode, output } = await CLI.run(["compile", "--verbose"], { dir: project.dir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain(STEP_TEXT.LOADED_SKILL);
-      expect(output).toContain("web-testing-vitest");
+      expect(output).toContain("Discovered 1 local skills");
+      expect(output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
+      expect(output).toContain(`${STEP_TEXT.LOADED_SKILL} ${MINIMAL_PROJECT_SKILL_ID}`);
+      expect(
+        output,
+        "--verbose must add the per-agent listing the default output leaves out",
+      ).toContain(`${STEP_TEXT.COMPILED_LIST} ${MINIMAL_PROJECT_AGENT_NAMES.join(", ")}`);
 
       await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
         contains: ["name: web-developer"],
@@ -287,7 +241,7 @@ describe("compile command", () => {
       expect(stdout).toContain("USAGE");
       expect(stdout).toContain("Compile agents");
       expect(stdout).toContain("--verbose");
-      expect(stdout).toContain("--source");
+      expect(stdout, "compile reads the source its config records").not.toContain("--source");
     });
   });
 
@@ -344,22 +298,6 @@ describe("compile command", () => {
   });
 
   describe("agent YAML content verification", () => {
-    it("should produce agents with valid YAML frontmatter fields", async () => {
-      const project = await ProjectBuilder.minimal();
-      tempDir = path.dirname(project.dir);
-
-      const { exitCode } = await CLI.run(["compile"], { dir: project.dir });
-
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
-        contains: ["name: web-developer", "description:"],
-      });
-      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
-        contains: ["name: api-developer", "description:"],
-      });
-    });
-
     it("should produce agents with content after frontmatter", async () => {
       const project = await ProjectBuilder.minimal();
       tempDir = path.dirname(project.dir);
@@ -368,14 +306,21 @@ describe("compile command", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // toHaveCompiledAgentContent checks file exists and contains text;
-      // heading markers verify body content exists after frontmatter
-      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
-        contains: ["#"],
-      });
-      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
-        contains: ["#"],
-      });
+      for (const agentName of MINIMAL_PROJECT_AGENT_NAMES) {
+        // The matcher strips the frontmatter block before looking, so a file that
+        // is frontmatter and nothing else cannot satisfy it — which a `contains`
+        // check for a "#" anywhere in the file could.
+        await expect(project).toHaveAgentDynamicSkills(agentName, {
+          hasActivationProtocol: true,
+        });
+
+        // …and the body opens with a heading immediately after the terminator,
+        // rather than the terminator being the last thing in the file.
+        const agentContent = await readTestFile(
+          path.join(agentsPath(project.dir), `${agentName}.md`),
+        );
+        expect(agentContent).toMatch(/^---\n[\s\S]+?\n---\n\n#\s+\S/);
+      }
     });
 
     it("should produce distinct content for each compiled agent", async () => {
@@ -410,12 +355,12 @@ describe("compile command", () => {
       const { exitCode, output } = await CLI.run(["compile"], { dir: project.dir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toMatch(/Recompiled \d+ global agents/);
+      expect(output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
 
       await expect({ dir: project.dir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
         {
-          contains: ["name: web-developer", "web-custom-e2e-widget"],
+          contains: ["name: web-developer", CUSTOM_PROJECT_SKILL_ID],
         },
       );
     });
@@ -428,18 +373,17 @@ describe("compile command", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // The custom skill is assigned as preloaded in the stack config,
-      // so it should appear in the YAML frontmatter skills list
-      await expect({ dir: project.dir }).toHaveCompiledAgentContent(
-        E2E_AGENT["web-developer"].name,
-        {
-          contains: ["name: web-developer", "web-custom-e2e-widget"],
-        },
-      );
+      // The custom skill is the stack's only preloaded assignment, so the parsed
+      // frontmatter's skills list must be exactly it. `contains` on the whole
+      // file cannot tell frontmatter from body and so cannot make this claim.
+      await expect({ dir: project.dir }).toHaveAgentFrontmatter(E2E_AGENT["web-developer"].name, {
+        name: E2E_AGENT["web-developer"].name,
+        exactSkills: [CUSTOM_PROJECT_SKILL_ID],
+      });
     });
   });
 
-  describe("source flag override", () => {
+  describe("stored source resolution", () => {
     let sourceTempDir: string;
 
     afterEach(async () => {
@@ -448,11 +392,15 @@ describe("compile command", () => {
       }
     });
 
-    it("should compile using --source flag to override source resolution", async () => {
+    it("should compile from the source the installation recorded", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
       // Declare the agents so the project is a detected installation; the local
       // skill under test is discovered from disk independently of the config.
+      // Create an E2E source directory (provides agent definitions + templates)
+      const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
+      sourceTempDir = srcTempDir;
+
       await writeProjectConfig(projectDir, {
         name: "e2e-test",
         skills: [],
@@ -460,26 +408,24 @@ describe("compile command", () => {
           { name: E2E_AGENT["web-developer"].name, scope: "project" },
           { name: E2E_AGENT["api-developer"].name, scope: "project" },
         ],
+        source: sourceDir,
       });
 
       // Create a local skill in the project
       await createLocalSkill(projectDir, "web-state-pinia", {
-        description: "Skill for --source flag verification",
-        metadata: renderMetadataYaml({ contentHash: "hash-source-flag" }),
+        description: "Skill for stored-source verification",
+        metadata: renderMetadataYaml({ contentHash: "hash-source-stored" }),
       });
 
-      // Create an E2E source directory (provides agent definitions + templates)
-      const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
-      sourceTempDir = srcTempDir;
-
-      const { exitCode, output } = await CLI.run(["compile", "--source", sourceDir], {
-        dir: projectDir,
-      });
+      const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain("Discovered 1 local skills");
-      expect(output).toContain("Source: flag");
-      expect(output).toMatch(/Recompiled \d+ global agents/);
+      expect(
+        output,
+        "the source came from the project's own config, not from a flag or the environment",
+      ).toContain("Source: project");
+      expect(output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
 
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,

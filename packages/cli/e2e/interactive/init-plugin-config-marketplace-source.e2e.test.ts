@@ -8,7 +8,7 @@ import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { readAllSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
-  cleanupTempDir,
+  cleanupFixture,
   ensureBinaryExists,
   isClaudeCLIAvailable,
   loadConfigOrFail,
@@ -37,7 +37,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin source name in config.
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   afterEach(async () => {

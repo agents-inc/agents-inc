@@ -39,11 +39,19 @@ import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
  * asserted separately: WHICH sub-agents are selected, WHICH skills land in each one's stack entry,
  * and WHETHER each of those preloads.
  *
+ * Every payload here pins its sub-agents to `scope: "project"` in the `agents` map, because that is
+ * where curation is observable: a sub-agent that takes the shared selection default lands in the
+ * user's own ~/.claude, and its stack entries for these project-scoped skills go with it — the
+ * config model holds that a project skill never reaches a global sub-agent.
+ *
  * Covers Phase 5 scenarios 1, 2, 6, 7 and 9 of the tracker's `--from` matrix.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
+
+/** A sub-agent entry that keeps its agent in the project rather than at the default scope. */
+const PINNED_TO_PROJECT = { scope: "project" } as const;
 
 describe("init --from <id>: per-sub-agent curation", () => {
   let sourceDir: string;
@@ -89,6 +97,7 @@ describe("init --from <id>: per-sub-agent curation", () => {
           }),
           [E2E_SKILL.hono.id]: buildSeedSkill({ assignments: { [API_DEV]: "preloaded" } }),
         },
+        agents: { [WEB_DEV]: PINNED_TO_PROJECT, [API_DEV]: PINNED_TO_PROJECT },
       }),
     );
 
@@ -155,6 +164,7 @@ describe("init --from <id>: per-sub-agent curation", () => {
           [E2E_SKILL.zustand.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
           [E2E_SKILL.hono.id]: buildSeedSkill({ assignments: { [API_DEV]: "preloaded" } }),
         },
+        agents: { [WEB_DEV]: PINNED_TO_PROJECT, [API_DEV]: PINNED_TO_PROJECT },
       }),
     );
 
@@ -212,7 +222,7 @@ describe("init --from <id>: per-sub-agent curation", () => {
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
         },
-        agents: { [API_DEV]: { on: true } },
+        agents: { [WEB_DEV]: PINNED_TO_PROJECT, [API_DEV]: { on: true, ...PINNED_TO_PROJECT } },
       }),
     );
 
@@ -225,7 +235,9 @@ describe("init --from <id>: per-sub-agent curation", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
     const config = await loadConfigOrFail(env.projectDir);
-    expect(config.agents).toStrictEqual(buildAgentConfigs([...E2E_AGENTS.WEB_AND_API]));
+    expect(config.agents).toStrictEqual(
+      buildAgentConfigs([...E2E_AGENTS.WEB_AND_API], { scope: "project" }),
+    );
     expect(config.stack).toStrictEqual({
       [WEB_DEV]: { "web-framework": [sa(E2E_SKILL.react.id)] },
     });
@@ -246,7 +258,10 @@ describe("init --from <id>: per-sub-agent curation", () => {
 
   it("installs a payload that carries a sub-agent and no skills at all", async () => {
     env = await createTestEnvironment({ permissions: false });
-    store.publish("AgentOnly", buildSeedPayload({ agents: { [WEB_DEV]: { on: true } } }));
+    store.publish(
+      "AgentOnly",
+      buildSeedPayload({ agents: { [WEB_DEV]: { on: true, ...PINNED_TO_PROJECT } } }),
+    );
 
     const { exitCode } = await runInitFrom(
       store,
@@ -261,7 +276,7 @@ describe("init --from <id>: per-sub-agent curation", () => {
 
     const config = await loadConfigOrFail(env.projectDir);
     expect(config.skills).toStrictEqual([]);
-    expect(config.agents).toStrictEqual(buildAgentConfigs([WEB_DEV]));
+    expect(config.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
     expect(config.stack).toBeUndefined();
 
     await expect({ dir: env.projectDir }).toHaveCompiledAgent(WEB_DEV);
@@ -285,6 +300,7 @@ describe("init --from <id>: per-sub-agent curation", () => {
           [E2E_SKILL.reviewing.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
           [E2E_SKILL["cli-reviewing"].id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
         },
+        agents: { [WEB_DEV]: PINNED_TO_PROJECT },
       }),
     );
 

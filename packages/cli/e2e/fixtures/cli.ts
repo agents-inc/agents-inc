@@ -21,6 +21,11 @@ export class CLI {
    * wrote. It falls back to `project.dir` otherwise — byte-identical to the
    * previous hardcoded default for handles that carry no globalHome. An
    * explicit `options.env.HOME` still wins.
+   *
+   * `CC_SOURCE` is cleared because it is the CLI's own source override
+   * (`SOURCE_ENV_VAR`): left inherited, a developer's exported value would point
+   * `init` at a marketplace no spec declares. The name is the constant the product
+   * reads — this line spent its life spelling a variable nothing has ever set.
    */
   static async run(
     args: string[],
@@ -32,7 +37,7 @@ export class CLI {
       reject: false,
       env: {
         HOME: project.globalHome ?? project.dir,
-        AGENTSINC_SOURCE: undefined,
+        CC_SOURCE: undefined,
         ...options?.env,
       },
     });

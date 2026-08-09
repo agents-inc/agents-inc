@@ -104,8 +104,7 @@ export async function createPluginInstalledProject(
       source: options.marketplace,
     })),
     agents: options.agents.map((name) => ({ name, scope: "project" as const })),
-    domains: options.domains ?? ["web"],
-    selectedAgents: options.agents,
+    selectedDomains: options.domains ?? ["web"],
     stack: options.stack,
   });
 

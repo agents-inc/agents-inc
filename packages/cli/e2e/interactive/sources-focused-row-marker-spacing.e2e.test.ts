@@ -83,6 +83,7 @@ describe("edit wizard — focused Sources row keeps one space between its marker
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const project = await ProjectBuilder.editable({
+        source: sourceDir,
         skills: [],
         globalSkills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
         agents: ["web-developer"],

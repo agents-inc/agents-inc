@@ -11,18 +11,16 @@ export const SKILLS = {
   // Web domain
   react: createMockSkill("web-framework-react"),
   vue: createMockSkill("web-framework-vue-composition-api"),
-  zustand: createMockSkill("web-state-zustand", {
-    compatibleWith: ["web-framework-react"],
-  }),
-  pinia: createMockSkill("web-state-pinia", {
-    compatibleWith: ["web-framework-vue-composition-api"],
-  }),
+  zustand: createMockSkill("web-state-zustand"),
+  pinia: createMockSkill("web-state-pinia"),
   scss: createMockSkill("web-styling-scss-modules"),
   tailwind: createMockSkill("web-styling-tailwind"),
   vitest: createMockSkill("web-testing-vitest"),
   // API domain
   hono: createMockSkill("api-framework-hono"),
   drizzle: createMockSkill("api-database-drizzle"),
+  // Shared domain
+  authSecurity: createMockSkill("shared-security-auth-security"),
   // Methodology
   antiOverEng: createMockSkill("meta-reviewing-reviewing", {
     description: "Surgical implementation, not architectural innovation",
@@ -45,7 +43,7 @@ export const TEST_CATEGORIES = {
   accessibility: createMockCategory("web-accessibility", "Accessibility"),
   // API domain
   api: createMockCategory("api-api", "Backend Framework"),
-  database: createMockCategory("api-database", "Database"),
+  database: createMockCategory("api-orm", "Database"),
   observability: createMockCategory("api-observability", "Observability"),
   // Shared domain
   methodology: createMockCategory("meta-reviewing", "Meta", { domain: "meta" }),

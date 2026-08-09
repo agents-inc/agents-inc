@@ -50,6 +50,14 @@ const ROUTER_ID = "web-routing-react-router";
 const ROUTER_DISPLAY = "React Router";
 const ROUTER_REMOVAL_ROW = `${UI_SYMBOLS.REMOVED} ${ROUTER_DISPLAY}`;
 
+/**
+ * A second real skill, left at the default global scope so the re-edit has an
+ * inherited-global row to lock. The clone ships no stacks and the built-in
+ * catalogue stands in for the default marketplace alone, so this install picks
+ * its skills itself rather than inheriting a stack's.
+ */
+const FRAMEWORK_DISPLAY = "React";
+
 describe.skipIf(!hasSkillsSource)("edit wizard pending-removal row (real marketplace)", () => {
   let projectDir: string;
   let sharedHome: string;
@@ -61,8 +69,9 @@ describe.skipIf(!hasSkillsSource)("edit wizard pending-removal row (real marketp
     projectDir = await createTempDir();
     sharedHome = await createTempDir();
 
-    // Install the first stack's defaults (global) plus a project-scoped React Router.
-    const initWizard = await InitWizard.launchInProject({
+    // Install a global React plus a project-scoped React Router. The clone ships
+    // no stacks, so the wizard opens on domain selection.
+    const { wizard: initWizard, domain } = await InitWizard.launchOnDomainsInProject({
       source: { sourceDir: SKILLS_SOURCE, tempDir: "" },
       projectDir,
       globalHome: sharedHome,
@@ -70,8 +79,8 @@ describe.skipIf(!hasSkillsSource)("edit wizard pending-removal row (real marketp
       ...TERMINAL_SIZE.TALL,
     });
     try {
-      const domain = await initWizard.stack.selectFirstStack();
       const build = await domain.acceptDefaults();
+      await build.selectSkill(FRAMEWORK_DISPLAY); // stays at the default global scope
       await build.focusSkill(ROUTER_DISPLAY);
       await build.toggleFocusedSkill(); // select React Router (unselected by default)
       await build.toggleScopeOnFocusedSkill(); // move it to project scope

@@ -47,6 +47,15 @@ export const STEP_TEXT = {
   COMPILE_SUCCESS: "Compiled",
   COMPILE_COMPLETE: "compile complete", // Matches "Global/Project compile complete!" (case-sensitive)
   CONFIG_LOAD_FAILED: "could not be loaded", // Corrupt-config error phrase from ConfigLoadError
+  // The `edit` / `init` refusal on a config that exists but cannot be read: there are no
+  // versioned migrations, so an unreadable configuration is recreated rather than repaired.
+  // Both sentinels are single unbroken tokens because oclif word-wraps error text at the
+  // terminal width, so any multi-word fragment can straddle a line break.
+  CONFIG_UNREADABLE_RECREATE: "recreate",
+  EDITOR_URL: "https://agentsinc.sh", // The editor named as the other way to build a configuration
+  // `doctor` named as the place the same fault is reported in context. Only correct since doctor
+  // stopped calling an unreadable config "not found" — before that it contradicted the line above.
+  CONFIG_UNREADABLE_DOCTOR: "doctor",
   EJECT_SUCCESS: "Eject complete!",
   IMPORT_SUCCESS: "Import complete:",
   UNINSTALL_SUCCESS: "Uninstall complete!",
@@ -55,24 +64,66 @@ export const STEP_TEXT = {
   LOADING_SKILLS: "Loading skills",
   RECOMPILING: "Recompiling agents",
   NO_AGENTS_TO_RECOMPILE: "No agents to recompile",
+  // The two invariant fragments of the recompile summary `edit` and `compile` print —
+  // "<n> agents rewritten, <m> unchanged". The counts and `compile`'s scope word are
+  // composed per-spec around them, because the whole point of the line is that the two
+  // numbers differ: one names files this run wrote, the other files it left alone.
+  AGENTS_REWRITTEN: "agents rewritten",
+  UNCHANGED: "unchanged",
   COMPILE_GLOBAL_SCOPE_HINT: "global-scoped — run", // Stable fragment of the project-context compile hint
   CONFIG_TYPES_REFRESHED: "Refreshed config-types.ts", // Per-pass compile line after config-types regeneration
   SKILL_NOT_FOUND_WARNING: "is configured but was not found", // Compile warning for a config-listed skill with no installed files
   COMPILE_PASS_NO_SKILLS: "No skills found for", // Per-pass zero-skill line: "No skills found for global/project pass, skipping"
+  // The line a load prints when revalidation found the remote source had moved on, and the
+  // one it prints instead when it could not ask at all and served the cached copy anyway.
+  SOURCE_HAS_NEWER_CONTENT: "Marketplace has newer content",
+  SOURCE_UNREACHABLE_CACHED: "using the cached copy, which may be out of date",
+  // What a relationship rule naming a slug no loaded skill carries warns, once per
+  // reference. A source's own rules earn it; the CLI's built-ins, which are written
+  // against the whole public catalogue, are narrowed to the source's slugs first — so
+  // a fixture shipping ten skills must produce none of these.
+  UNRESOLVED_SLUG: "Unresolved slug",
   COMPILE_NO_SKILLS_ERROR: "No skills found. Add skills with", // Hard error when every compile pass discovered zero skills
+  // Hard error when an installed skill's metadata.yaml exists but nothing usable can be
+  // made of it — unparseable, or parseable and missing fields the skill is described by.
+  // Mirrors CONFIG_LOAD_FAILED's phrasing for the same class of fault one layer down.
+  COMPILE_METADATA_UNUSABLE: "does not describe",
+  // The reason line under the refusal above when the file parsed but left required fields out.
+  COMPILE_METADATA_MISSING_FIELD: "missing required field",
+  // The way out both metadata refusals close with — `compile`'s and the one `init`/`edit`
+  // raise over a saved entry whose installed skill describes itself with an unusable
+  // metadata.yaml. Asserted through `flattenCliOutput`, because oclif wraps error text.
+  METADATA_UNUSABLE_WAY_OUT: "Fix the file, or delete the skill directory",
+  // Why an unresolvable config entry went, in `edit`'s Changes block. Which one is printed is
+  // the whole classification — the marketplace dropped the skill, or its local files are gone.
+  // Both are only ever asserted with the removal row's own `[P] (` in front of them: the store
+  // warns "is not present in the loaded source" about the same skill on the way in, so a bare
+  // fragment is satisfied by a line that is not the one under test.
+  REMOVED_REASON_NOT_IN_SOURCE: "not present in",
+  REMOVED_REASON_FILES_GONE: "skill files no longer exist at",
   PROPAGATED_RECOMPILE_ONE: "Recompiled agents in 1 registered projects", // Summary after a global-scope change fans out to one registered project
-  // Command-agnostic prefix of the same summary. `init` prints "... 1 registered
-  // projects" and `edit` prints "... 1 registered project(s)", so a spec that must
-  // hold across commands — or that asserts the line's ABSENCE before the command
-  // that owes it has been given one — anchors on this instead of a whole line.
+  // Prefix of the same summary. All four fan-out commands print the one line
+  // BaseCommand.reportPropagatedRecompile owns ("Recompiled agents in N registered
+  // projects, M unchanged"), so a spec that asserts the line's ABSENCE — or must
+  // not care about the counts — anchors on this instead of a whole line.
   PROPAGATED_RECOMPILE: "Recompiled agents in",
   LOADED: "Loaded",
-  LOADED_LOCAL: "Loaded from local:",
   LOADED_SKILL: "Loaded skill:", // Verbose loader line prefix
   COMPILED_LIST: "Compiled:", // Verbose compile listing prefix, distinct from COMPILE_SUCCESS
 
+  // `update` (src/cli/commands/update.ts). The command runs Claude's own marketplace
+  // update for the marketplaces this installation's config names, and says so about the
+  // ejected copies it deliberately leaves alone. The two warn/error sentinels are short
+  // fragments on purpose: oclif wraps `warn`/`error` text at the terminal width and
+  // prefixes each continuation with ` ›  `, so a whole sentence straddles line breaks.
+  UPDATE_HELP_SUMMARY: "Refresh the marketplaces this installation uses",
+  UPDATE_EJECTED_OWNED: "Ejected skills are yours to own",
+  UPDATE_NO_MARKETPLACES: "No plugin marketplaces are configured",
+  UPDATE_MARKETPLACE_REFRESHED: "Updated marketplace",
+  UPDATE_COMPLETE: "Update complete!",
+  UPDATE_NO_CLAUDE_CLI: "Claude CLI not found",
+
   // Prompts
-  CONFIRM_UPDATE: "Proceed with update?",
   CONFIRM_UNINSTALL: "Are you sure you want to uninstall",
   SEARCH: "Search Skills",
   UNINSTALL_PREVIEW: "The following will be removed", // Loose form for waitForText
@@ -81,16 +132,21 @@ export const STEP_TEXT = {
   UNINSTALL_PROJECTS_UPDATED_ONE: "Updated 1 registered project", // Global-uninstall summary after pruning one registered project's global entries
   UNINSTALL_PROJECT_SKIPPED: "Could not update registered project at", // Warn prefix for an unreachable registered project during global uninstall
   UNINSTALL_CONFIG_UNREADABLE: "Could not read the project config", // Warn prefix when uninstall continues past a config it cannot parse
+  // The three lines `reportNothingToUninstall` prints together, in order: the warn,
+  // the state it found, and the promise it kept. Asserting one without the others
+  // cannot tell "found nothing" from "removed everything and said so".
+  UNINSTALL_NOTHING_TO_UNINSTALL: "Nothing to uninstall",
+  UNINSTALL_NOT_INSTALLED: "is not installed in this project",
+  UNINSTALL_NO_CHANGES_MADE: "No changes made.",
+  // The removal plan's annotation for the compiled-agents directory, which marks it
+  // as the CLI's to delete rather than the user's.
+  UNINSTALL_CLI_COMPILED: "(CLI-compiled)",
 
-  // Sources step
-  CONFIGURED_MARKETPLACES: "Configured marketplaces",
-  ADD_SOURCE: "Add source",
-  // Status line the settings overlay paints after `addSource` resolved the
-  // marketplace and wrote it to config.ts — the sentinel proving the add
-  // COMPLETED rather than merely that the input was submitted. The full line is
-  // `Added "<name>" (<n> skills)`; the opening quote is kept so it cannot match
-  // narrative prose elsewhere in the frame.
-  SOURCE_ADDED: 'Added "',
+  // The two cells of the Sources grid's install-mode control. They are the cells' OWN captions —
+  // there is no pinned header repeating them, because with two fixed states the caption row would
+  // print the same two words directly above themselves.
+  INSTALL_MODE_LOCAL: "Local",
+  INSTALL_MODE_PLUGIN: "Plugin",
 
   // Scope group labels. The info panel, the confirm step and the Sources grid's left-hand gutter
   // all head their per-scope blocks with these words. Paired with `SCOPE` above, which is the
@@ -100,6 +156,83 @@ export const STEP_TEXT = {
 
   // Dashboard
   DASHBOARD: "Doctor",
+
+  // `doctor` layered output (src/cli/commands/doctor.ts). The command validates
+  // content first and only reaches the operational layer when content is clean —
+  // operational failures on broken content are downstream cascades, not findings.
+  DOCTOR_CONTENT_SECTION: "Content checks",
+  DOCTOR_OPERATIONAL_SECTION: "Operational checks",
+  DOCTOR_SKIP_AFTER_CONTENT_ERRORS: "Skipped — fix the content errors above first",
+  DOCTOR_SKIP_NO_INSTALLATION: "Skipped — no installation here (skills source repository)",
+  // A row name that only the operational layer emits, so its absence proves the
+  // layer was skipped rather than merely quiet.
+  DOCTOR_CONFIG_CHECK: "Config Valid",
+  // The six remaining operational row names `runAllChecks` logs. Named here rather
+  // than retyped per spec: they are the report's skeleton, and a spec asserting one
+  // of them is asserting that the row ran, not that a word appeared.
+  DOCTOR_ROW_SKILLS_RESOLVED: "Skills Resolved",
+  DOCTOR_ROW_AGENTS_COMPILED: "Agents Compiled",
+  DOCTOR_ROW_NO_ORPHANS: "No Orphans",
+  DOCTOR_ROW_SKILLS_INSTALLED: "Skills Installed",
+  DOCTOR_ROW_PLUGINS_INSTALLED: "Plugins Installed",
+  DOCTOR_ROW_SOURCE_REACHABLE: "Source Reachable",
+  // `checkConfigValid`'s pass message and `checkSourceReachable`'s pass message
+  // plus its details line. The source label carries its colon so it cannot match
+  // narrative prose about a local source.
+  DOCTOR_CONFIG_IS_VALID: "is valid",
+  DOCTOR_SOURCE_LOCAL: "Connected to local:",
+  DOCTOR_SKILLS_AVAILABLE: "skills available",
+  // The `checkAgentsCompiled` warn message, split at the count the caller composes.
+  DOCTOR_AGENTS_NEED_RECOMPILATION: "recompilation",
+  // Tips from the `TIPS` table in src/cli/commands/doctor.ts, each anchored on the
+  // half that carries no `CLI_INVOKE_COMMAND` interpolation. The agents tip in
+  // particular must NOT be asserted as the bare word "compile" — the report's own
+  // header and several row details carry it.
+  DOCTOR_TIP_COMPILE_AGENTS: "to generate missing agent files",
+  DOCTOR_TIP_CHECK_SKILL_IDS: "Check skill IDs in config match available skills",
+  DOCTOR_TIP_RE_EJECT: "Re-eject the missing skills from the source to restore their files",
+  DOCTOR_SUMMARY: "Summary:",
+  // The content layer's two count rows, split at the number the caller composes:
+  // "<n> skills validated" / "<n> agents validated". They are what the layer
+  // found ON DISK, independent of any config — the only rows that still say
+  // something after the configuration naming that content is deleted.
+  DOCTOR_SKILLS_VALIDATED: "skills validated",
+  DOCTOR_AGENTS_VALIDATED: "agents validated",
+  // The content layer's config row. A config file that exists and cannot be parsed is a finding
+  // about a file on disk, so it is reported here — and the operational layer, every row of which
+  // would be a cascade of it, is skipped by the same rule that skips them after any content error.
+  DOCTOR_CONFIG_UNREADABLE: "exists but could not be loaded",
+  DOCTOR_CONFIG_NOT_FOUND: "config.ts not found",
+  // The fourth load outcome: a config that reads cleanly and declares neither skills nor agents.
+  // `detectInstallation` maps it to the same `null` as an absent file — right for `init`, which
+  // has to pick between a dashboard and a wizard, and wrong for the one command whose job is to
+  // name the state. It used to print that `null` as `not found` about a file the content layer
+  // had validated four lines above.
+  DOCTOR_CONFIG_DECLARES_NOTHING: "declares no skills and no agents",
+  // The content layer's verdict on that same file, and the half of the contradiction that is
+  // already true — it is the operational row beneath it that has to stop disagreeing.
+  DOCTOR_ONE_CONFIG_VALIDATED: "1 config validated",
+  // The three remedies, told apart by which state produced them: an absent config is created, an
+  // unreadable one is recreated, and a valid one that declares nothing is filled in. Pointing a
+  // user at the wrong one is what CLI-430 was.
+  DOCTOR_TIP_CREATE_CONFIG: "to create a configuration",
+  DOCTOR_TIP_RECREATE_CONFIG: "still works on a config it cannot read",
+  DOCTOR_TIP_NOTHING_CONFIGURED: "Nothing is configured yet",
+  // The No Orphans row when the configuration is absent and the installation it described is not:
+  // every installed skill directory and compiled agent file is unowned, and the row names each one
+  // instead of standing down. Its remedy is the fourth: the files outlive the config, so `init`
+  // alone — which is what the config row already advises — does not describe what to do with them.
+  DOCTOR_UNOWNED_INSTALL: "no configuration declares them",
+  DOCTOR_TIP_UNOWNED_INSTALL: "Nothing declares the files above",
+  // What the operational rows say once they are given a config that loads: the truth about an
+  // empty one, in place of the `Skipped (config invalid)` they printed about a valid file.
+  DOCTOR_SKIPPED_CONFIG_INVALID: "Skipped (config invalid)",
+  DOCTOR_NO_SKILLS_CONFIGURED: "No skills configured",
+  DOCTOR_NO_AGENTS_CONFIGURED: "No agents configured",
+  // The source loader's own diagnostic for the same file, emitted once per read. doctor runs
+  // verbose, so these used to interleave with the rows above; the finding carries the reason now
+  // and nothing re-reads the file to print it again.
+  CONFIG_SOURCE_LOAD_NOISE: "Failed to load project source config",
 
   // UI elements
   FOOTER_SELECT: "select", // Footer text used for stable render detection
@@ -116,13 +249,42 @@ export const STEP_TEXT = {
   // Installation output
   INSTALLING_PLUGINS: "Installing skill plugins",
   INSTALLING_PLUGINS_ELLIPSIS: "Installing skill plugins...", // Exact rendered form; the bare form stays for negative assertions
+  // The two install-mode descriptions, printed by BOTH commands that name a mode:
+  // `init`'s install-plan line ("Install mode: <desc>") and `edit`'s line for the
+  // skills it is switching ("Switching N skill(s) to <desc>"). One wording per mode,
+  // so a spec asserting a switch to plugin mode asserts the string a plugin install
+  // announces itself with anywhere.
   PLUGIN_NATIVE: "Plugin (native install)",
+  EJECT_LOCAL_COPY: "Eject (copy to .claude/skills/)",
+  // `edit`'s mode-switch narration (`logModeSwitch`), split at the count the caller
+  // composes: "Switching <n> skill(s) to <mode description>". Compose the whole line
+  // per-spec as `${SWITCHING_SKILLS_PREFIX} ${n} ${SWITCHING_SKILLS_SUFFIX} ${MODE}`
+  // — a spec asserting only the verb cannot tell a switch TO plugin from a switch
+  // BACK, which is what the two mode descriptions above are for.
+  SWITCHING_SKILLS_PREFIX: "Switching",
+  SWITCHING_SKILLS_SUFFIX: "skill(s) to",
   SKILLS_COPIED_TO: "Skills copied to:",
   AGENTS_COMPILED_TO: "Agents compiled to:",
   CONFIGURATION_LABEL: "Configuration:",
   READY_TO_INSTALL: "Ready to install",
   NO_SKILLS_FOUND: "No skills found",
   UNINSTALL_CANCELLED: "Uninstall cancelled",
+
+  // `init --from` refusals. The command is greenfield-only: it installs a shared
+  // configuration whole rather than merging it into what is already there, so it
+  // refuses anything it would have to install over, and refuses a payload the
+  // config model has nowhere to write.
+  SHARED_CONFIG_EXISTING_INSTALL: "An installation already exists at",
+  SHARED_CONFIG_GLOBAL_INSTALL: "a global installation already exists at",
+  SHARED_CONFIG_UNINSTALL_HINT: "Run 'npx agents-inc uninstall'",
+  SHARED_CONFIG_UNWRITABLE_PAIR: "these assignments have nowhere to be written",
+
+  // The advisory selection-validation report both `init` and `edit` print after the wizard
+  // (validateRequirements / validateConflicts / validateExclusivity in matrix-resolver.ts). The
+  // connector carries its colon deliberately: the build grid annotates a cell with a
+  // parenthesised "(requires X)" and no colon, so the colon is what tells the post-wizard warning
+  // apart from the grid's own text in a full-session output match.
+  VALIDATION_REQUIRES: "requires:",
 
   // Scope warnings
   GLOBAL_SKILLS_BLOCKED: "Global skills cannot be changed from project scope",
@@ -166,7 +328,58 @@ export const STEP_TEXT = {
   // `setAllLocal()` and it says "All skills ejected" instead — an eject source names
   // no marketplace.
   SOURCE_DISPLAY_DEFAULT: "Agents Inc",
+  // formatSourceDisplayName("eject") — the label the summary surfaces give an ejected skill's
+  // provenance. Named here so the Sources grid can be asserted NOT to use it: the grid captions
+  // an install MODE, and "Eject" is a source value, not a mode.
+  SOURCE_DISPLAY_EJECT: "Eject",
 } as const;
+
+/**
+ * Diff glyphs the info panel, the confirm step and the Sources grid all paint in
+ * front of a row. Mirrored here rather than imported from `src/cli/consts.ts`:
+ * an assertion that imports the very symbol the product rendered with cannot
+ * fail when that symbol changes, because both sides move together.
+ */
+export const ADDED_MARKER = "+";
+export const REMOVED_MARKER = "-";
+/** The confirm summary's marker for a row the edit leaves alone. */
+export const UNCHANGED_MARKER = "•";
+
+/**
+ * The invocation prefix the CLI prints in its user-facing guidance ("Run
+ * '<prefix> init'"). Mirrored for the same reason as the glyphs above — a spec
+ * that imports `CLI_INVOKE_COMMAND` from `src/cli/consts.ts` asserts the string
+ * the product printed with, so renaming the published binary moves both sides
+ * together and the assertion cannot fail.
+ */
+export const CLI_INVOKE_COMMAND = "npx agents-inc";
+
+/**
+ * The stack step's tab. Named on its own because it is the one tab a flow can
+ * lack: a source that ships no stacks gives the wizard no stack step, and a bar
+ * that still drew this label would advertise a step the run never has.
+ */
+export const WIZARD_TAB_STACK = "Stack";
+
+/**
+ * The wizard's step tabs, in the order `WizardTabs` paints them. Mirrored for
+ * the same reason as everything else in this block — and kept as the whole set
+ * because a spec naming two of the six cannot tell a complete tab bar from one
+ * that dropped the steps it did not mention.
+ */
+export const WIZARD_TAB_LABELS = [
+  WIZARD_TAB_STACK,
+  "Domains",
+  "Skills",
+  "Sources",
+  "Agents",
+  "Confirm",
+] as const;
+
+/** The whole tab bar a stackless flow paints — every tab above but the Stack one. */
+export const WIZARD_TAB_LABELS_WITHOUT_STACK = WIZARD_TAB_LABELS.filter(
+  (label) => label !== WIZARD_TAB_STACK,
+);
 
 export const TIMEOUTS = {
   /**

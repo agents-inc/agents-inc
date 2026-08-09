@@ -2,11 +2,11 @@
 // TestStack arrays are used with createTestSource() for integration tests.
 
 import type { TestStack } from "../fixtures/create-test-source.js";
-import { sa } from "../factories/skill-factories.js";
+import { sa, saUnflagged } from "../factories/skill-factories.js";
 import { createMockStack } from "../factories/stack-factories.js";
 
 // ---------------------------------------------------------------------------
-// Stacks from resolver.test.ts
+// Stacks from config-generator.test.ts
 // ---------------------------------------------------------------------------
 
 export const FULLSTACK_STACK = createMockStack("fullstack", {
@@ -19,7 +19,7 @@ export const FULLSTACK_STACK = createMockStack("fullstack", {
     },
     "api-developer": {
       "api-api": [sa("api-framework-hono", true)],
-      "api-database": [sa("api-database-drizzle", true)],
+      "api-orm": [sa("api-database-drizzle", true)],
     },
   },
 });
@@ -34,42 +34,6 @@ export const WEB_REACT_AND_SCSS_STACK = createMockStack("test-stack", {
   },
 });
 
-export const WEB_REACT_ONLY_STACK = createMockStack("test-stack", {
-  name: "Test Stack",
-  agents: {
-    "web-developer": {
-      "web-framework": [sa("web-framework-react", true)],
-    },
-  },
-});
-
-export const WEB_SCSS_ONLY_STACK = createMockStack("test-stack", {
-  name: "Test Stack",
-  agents: {
-    "web-developer": {
-      "web-styling": [sa("web-styling-scss-modules")],
-    },
-  },
-});
-
-export const API_HONO_ONLY_STACK = createMockStack("test-stack", {
-  name: "Test Stack",
-  agents: {
-    "api-developer": { "api-api": [sa("api-framework-hono", true)] },
-  },
-});
-
-export const WEB_EMPTY_AGENT_STACK = createMockStack("test-stack", {
-  name: "Test Stack",
-  agents: {
-    "web-developer": {},
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Stacks from config-generator.test.ts
-// ---------------------------------------------------------------------------
-
 export const EMPTY_AGENTS_STACK = createMockStack("empty-stack", {
   name: "Empty Stack",
   description: "No agents",
@@ -83,7 +47,7 @@ export const SHARED_CATEGORY_STACK = createMockStack("test-stack", {
     "web-developer": {
       "web-framework": [sa("web-framework-react")],
     },
-    "web-reviewer": {
+    reviewer: {
       "web-framework": [sa("web-framework-react")],
     },
   },
@@ -97,7 +61,7 @@ export const STACK_WITH_EMPTY_AGENTS = createMockStack("test-stack", {
       "web-framework": [sa("web-framework-react", true)],
     },
     "cli-tester": {},
-    "web-pm": {},
+    pm: {},
   },
 });
 
@@ -105,7 +69,7 @@ export const MULTI_METHODOLOGY_STACK = createMockStack("test-stack", {
   name: "Test Stack",
   description: "Test stack",
   agents: {
-    "pattern-scout": {
+    "codex-keeper": {
       "meta-reviewing": [
         sa("meta-methodology-research-methodology", true),
         sa("meta-reviewing-reviewing", true),
@@ -135,6 +99,42 @@ export const MANY_CATEGORIES_STACK = createMockStack("fullstack", {
       "web-styling": [sa("web-styling-scss-modules")],
       "web-client-state": [sa("web-state-zustand")],
       "web-testing": [sa("web-testing-vitest")],
+    },
+  },
+});
+
+/**
+ * The built-in stacks' shape: which skills each agent gets, and no word on how
+ * any of them loads. The same skill on two agents so the mapping's per-pair
+ * answer is visible — a web framework preloads on the web developer and arrives
+ * lazily on a meta agent that also carries it.
+ */
+export const UNFLAGGED_TWO_AGENT_STACK = createMockStack("unflagged-stack", {
+  name: "Unflagged Stack",
+  description: "States which skills, never how they load",
+  agents: {
+    "web-developer": {
+      "web-framework": [saUnflagged("web-framework-react")],
+    },
+    "codex-keeper": {
+      "web-framework": [saUnflagged("web-framework-react")],
+    },
+  },
+});
+
+/**
+ * A third-party stack's shape: the author wrote the load out, in both
+ * directions, and against what the mapping would have said for either pair.
+ */
+export const AUTHORED_FLAGS_STACK = createMockStack("authored-flags-stack", {
+  name: "Authored Flags Stack",
+  description: "The author's word on every load",
+  agents: {
+    "web-developer": {
+      "web-framework": [sa("web-framework-react", false)],
+    },
+    "codex-keeper": {
+      "web-framework": [sa("web-framework-react", true)],
     },
   },
 });

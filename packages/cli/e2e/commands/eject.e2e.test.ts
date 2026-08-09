@@ -12,11 +12,23 @@ import {
   listFiles,
   readTestFile,
   skillsPath,
+  writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import type { ProjectHandle } from "../pages/wizard-result.js";
+import { E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
+import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
+
+/**
+ * One agent partial, addressed by the category directory it lands under and its
+ * own directory name. `eject agent-partials` writes the CLI's bundled
+ * `src/agents/<category>/<agent>/` tree verbatim, so naming a member is the only
+ * way an assertion can tell the right tree from any tree.
+ */
+const EJECTED_PARTIAL_CATEGORY = "developer";
+const EJECTED_PARTIAL_AGENT = "web-developer";
 
 describe("eject command", () => {
   let tempDir: string;
@@ -43,6 +55,24 @@ describe("eject command", () => {
       await cleanupTempDir(tempDir);
     }
   });
+
+  /**
+   * A project directory whose HOME carries a global config naming `source`.
+   *
+   * `eject` declares no `--source` and reads no `CC_SOURCE` — naming a source is `init`'s
+   * decision — so the source it copies out of is one the machine already records. The project
+   * directory itself stays config-less, which is the state these specs are about: `eject`
+   * invents that config and records into it the source it read.
+   */
+  async function projectUnderGlobalSource(
+    dir: string,
+    source: string = sourceDir,
+  ): Promise<ProjectHandle> {
+    const globalHome = path.join(dir, "home");
+    await mkdir(globalHome, { recursive: true });
+    await writeProjectConfig(globalHome, { name: "global-install", source });
+    return { dir, globalHome };
+  }
 
   it("should error when no eject type is specified", async () => {
     tempDir = await createTempDir();
@@ -74,19 +104,16 @@ describe("eject command", () => {
     // Verify agent partials directory was created with content
     const agentsDir = path.join(tempDir, DIRS.CLAUDE_SRC, "agents");
     expect(await directoryExists(agentsDir)).toBe(true);
-    const entries = await listFiles(agentsDir);
-    expect(entries.length).toBeGreaterThan(0);
-
-    // Verify at least one agent partial has expected structure (identity.md or metadata.yaml)
-    const firstAgentDir = entries.find((e) => !e.startsWith("_"));
-    expect(firstAgentDir).toBeDefined();
-    const partialFiles = await listFiles(path.join(agentsDir, firstAgentDir!));
-    expect(partialFiles.length).toBeGreaterThan(0);
-
-    // At least one agent partial should contain agent content
-    const partials = await listFiles(agentsDir);
-    const agentPartials = partials.filter((e) => !e.startsWith("_"));
-    expect(agentPartials.length).toBeGreaterThan(0);
+    // Name the partial that must be there rather than counting anything. The
+    // top level holds CATEGORY directories, so the old `entries.length > 0` plus
+    // "first non-underscore entry has children" was satisfied by any category
+    // holding any agent — it never reached an agent's own files.
+    expect(await listFiles(agentsDir)).toContain(EJECTED_PARTIAL_CATEGORY);
+    const partialDir = path.join(agentsDir, EJECTED_PARTIAL_CATEGORY, EJECTED_PARTIAL_AGENT);
+    const partialFiles = await listFiles(partialDir);
+    expect(partialFiles).toContain(FILES.IDENTITY_MD);
+    expect(partialFiles).toContain(FILES.PLAYBOOK_MD);
+    expect(partialFiles).toContain(FILES.METADATA_YAML);
 
     // Config should be created
     await expect({ dir: tempDir }).toHaveConfig();
@@ -136,8 +163,7 @@ describe("eject command", () => {
     expect(entries.length).toBeGreaterThan(0);
 
     // Verify content: at least one agent partial has files
-    const firstEntry = entries[0];
-    const partialFiles = await listFiles(path.join(outputDir, firstEntry));
+    const partialFiles = await listFiles(path.join(outputDir, firstElement(entries)));
     expect(partialFiles.length).toBeGreaterThan(0);
 
     // Default .claude-src/agents should NOT exist (output was redirected)
@@ -175,28 +201,23 @@ describe("eject command", () => {
     expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
   });
 
-  it("should eject skills from a local source", async () => {
+  it("should eject every skill from a local source, save the source and touch nothing else", async () => {
     tempDir = await createTempDir();
 
-    const { exitCode, stdout } = await CLI.run(["eject", "skills", "--source", sourceDir], {
-      dir: tempDir,
-    });
+    const { exitCode, stdout } = await CLI.run(
+      ["eject", "skills"],
+      await projectUnderGlobalSource(tempDir),
+    );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain("skills ejected");
 
     const skillsDir = skillsPath(tempDir);
     expect(await directoryExists(skillsDir)).toBe(true);
-    const files = await listFiles(skillsDir);
-    expect(files).toHaveLength(9);
-
-    // Verify specific ejected skills exist with expected content
-    await expect({ dir: tempDir }).toHaveLocalSkills([
-      E2E_SKILL.react.id,
-      E2E_SKILL.vitest.id,
-      E2E_SKILL.zustand.id,
-      E2E_SKILL.hono.id,
-    ]);
+    // The whole roster, compared against the source's own skill list: a count
+    // passes on nine wrong directories, and the named subset below left five of
+    // the nine unpinned.
+    expect((await listFiles(skillsDir)).sort()).toStrictEqual([...E2E_SKILL_IDS].sort());
 
     // Verify each ejected skill has SKILL.md with content
     await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.react.id);
@@ -209,16 +230,21 @@ describe("eject command", () => {
     const skillContent = await readTestFile(skillMdPath);
     expect(skillContent).toContain(E2E_SKILL.react.id);
 
-    // Verify config was saved with source
+    // Verify config records the source the run actually read from
     await expect({ dir: tempDir }).toHaveConfig({ source: sourceDir });
+    expect(await readTestFile(configTsPath(tempDir))).toContain(sourceDir);
+
+    // `eject skills` ejects skills only — agent partials stay bundled.
+    expect(await directoryExists(path.join(tempDir, DIRS.CLAUDE_SRC, "agents"))).toBe(false);
   });
 
   it("should eject all phases from a local source", async () => {
     tempDir = await createTempDir();
 
-    const { exitCode, stdout } = await CLI.run(["eject", "all", "--source", sourceDir], {
-      dir: tempDir,
-    });
+    const { exitCode, stdout } = await CLI.run(
+      ["eject", "all"],
+      await projectUnderGlobalSource(tempDir),
+    );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain("ejected");
@@ -242,23 +268,6 @@ describe("eject command", () => {
 
     // Verify config was created with source reference
     await expect({ dir: tempDir }).toHaveConfig({ source: sourceDir });
-  });
-
-  it("should save source to config when --source flag is provided", async () => {
-    tempDir = await createTempDir();
-
-    const { exitCode, stdout } = await CLI.run(["eject", "skills", "--source", sourceDir], {
-      dir: tempDir,
-    });
-
-    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain("Source saved to .claude-src/config.ts");
-
-    // Verify the config file was actually created with source reference
-    await expect({ dir: tempDir }).toHaveConfig({ source: sourceDir });
-
-    const configContent = await readTestFile(configTsPath(tempDir));
-    expect(configContent).toContain("source");
   });
 
   it("should create config.ts in a fresh directory after eject", async () => {
@@ -287,19 +296,34 @@ describe("eject command", () => {
     expect(stdout).toContain("all");
   });
 
-  // BUG: CLI exits 0 with corrupt source — it falls back to default source
-  // instead of reporting an error for the invalid --source directory.
+  // BUG: CLI exits 0 with a corrupt source — it falls back to the default source instead of
+  // reporting an error for the invalid directory the run was pointed at.
   it.fails("should handle corrupt source without crashing", async () => {
     tempDir = await createTempDir();
     const corruptSourceDir = path.join(tempDir, "corrupt-source");
     await mkdir(corruptSourceDir, { recursive: true });
     await writeFile(path.join(corruptSourceDir, "garbage.txt"), "not a valid source");
 
-    const { exitCode } = await CLI.run(["eject", "skills", "--source", corruptSourceDir], {
+    const { exitCode } = await CLI.run(
+      ["eject", "skills"],
+      await projectUnderGlobalSource(tempDir, corruptSourceDir),
+    );
+
+    expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
+  });
+
+  it("should refuse a --source flag — it reads the source the installation is configured with", async () => {
+    tempDir = await createTempDir();
+
+    const { exitCode, output } = await CLI.run(["eject", "skills", "--source", sourceDir], {
       dir: tempDir,
     });
 
-    expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
+    // Withdrawn, not ignored: silently accepting it would eject from one source while
+    // recording another in config.ts (CLI-450).
+    expect(exitCode).toBe(EXIT_CODES.INVALID_ARGS);
+    expect(output).toContain("--source");
+    expect(await directoryExists(skillsPath(tempDir))).toBe(false);
   });
 
   it("should error when ejecting to a read-only directory", async () => {
@@ -336,24 +360,6 @@ describe("eject command", () => {
     expect(nonTemplateEntries.length).toBe(0);
   });
 
-  it("should eject skills without ejecting agent partials or templates", async () => {
-    tempDir = await createTempDir();
-
-    const { exitCode, stdout } = await CLI.run(["eject", "skills", "--source", sourceDir], {
-      dir: tempDir,
-    });
-
-    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain("skills ejected");
-
-    // Skills directory should exist with content
-    await expect({ dir: tempDir }).toHaveLocalSkills();
-
-    // The .claude-src/agents/ directory should NOT exist (no agent partials or templates ejected)
-    const agentPartialsDir = path.join(tempDir, DIRS.CLAUDE_SRC, "agents");
-    expect(await directoryExists(agentPartialsDir)).toBe(false);
-  });
-
   it("should warn when ejecting templates twice without --force", async () => {
     tempDir = await createTempDir();
 
@@ -369,14 +375,16 @@ describe("eject command", () => {
   it("should warn when ejecting skills twice without --force", async () => {
     tempDir = await createTempDir();
 
-    const { exitCode: setupExitCode } = await CLI.run(["eject", "skills", "--source", sourceDir], {
-      dir: tempDir,
-    });
+    const { exitCode: setupExitCode } = await CLI.run(
+      ["eject", "skills"],
+      await projectUnderGlobalSource(tempDir),
+    );
     expect(setupExitCode).toBe(EXIT_CODES.SUCCESS);
 
-    const { exitCode, output } = await CLI.run(["eject", "skills", "--source", sourceDir], {
-      dir: tempDir,
-    });
+    const { exitCode, output } = await CLI.run(
+      ["eject", "skills"],
+      await projectUnderGlobalSource(tempDir),
+    );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(output).toContain("already exist");
@@ -389,14 +397,15 @@ describe("eject command", () => {
   it.fails("should overwrite existing skills with --force", async () => {
     tempDir = await createTempDir();
 
-    const { exitCode: setupExitCode } = await CLI.run(["eject", "skills", "--source", sourceDir], {
-      dir: tempDir,
-    });
+    const { exitCode: setupExitCode } = await CLI.run(
+      ["eject", "skills"],
+      await projectUnderGlobalSource(tempDir),
+    );
     expect(setupExitCode).toBe(EXIT_CODES.SUCCESS);
 
     const { exitCode, stdout } = await CLI.run(
-      ["eject", "skills", "--source", sourceDir, "--force"],
-      { dir: tempDir },
+      ["eject", "skills", "--force"],
+      await projectUnderGlobalSource(tempDir),
     );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -432,16 +441,15 @@ describe("eject command", () => {
     const outputDir = path.join(tempDir, "custom-skills");
 
     const { exitCode, stdout } = await CLI.run(
-      ["eject", "skills", "--source", sourceDir, "-o", outputDir],
-      { dir: tempDir },
+      ["eject", "skills", "-o", outputDir],
+      await projectUnderGlobalSource(tempDir),
     );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain("skills ejected");
     expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
     expect(await directoryExists(outputDir)).toBe(true);
-    const files = await listFiles(outputDir);
-    expect(files).toHaveLength(9);
+    expect((await listFiles(outputDir)).sort()).toStrictEqual([...E2E_SKILL_IDS].sort());
 
     // Verify skill content in custom output directory
     const skillMdPath = path.join(outputDir, E2E_SKILL.react.id, FILES.SKILL_MD);

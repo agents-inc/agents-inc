@@ -24,9 +24,9 @@ import { TS_NOT_ASSIGNABLE, probeConfigTypesNarrowing } from "../helpers/type-ch
 /**
  * A project-scope install must not disable type checking of config.ts.
  *
- * `writeScopedConfigs` splits the merged config by scope. When every selected
+ * `writeScopedFromWizard` splits the merged config by scope. When every selected
  * skill is project-scoped the GLOBAL partition comes out with `skills: []`, and
- * that empty partition is still handed to `writeStandaloneConfigTypes` ->
+ * that empty partition is still handed to `writeGlobalPair` ->
  * `generateConfigTypesSource`. Its union formatters return the literal `"string"`
  * for an empty member list, so the global `config-types.ts` is emitted as
  * `export type SkillId = string`. The project's own types then extend those

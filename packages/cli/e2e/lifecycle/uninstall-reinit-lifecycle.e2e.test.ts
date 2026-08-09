@@ -165,6 +165,11 @@ describe("uninstall scope isolation", () => {
         true,
       );
       const globalConfigBefore = await readTestFile(globalConfigPath);
+      // The exact global sets, captured before the uninstall. The assertions at the
+      // end of this phase used `globalAfter.skills.length > 0`, which a run that
+      // deleted every global skill but one satisfies exactly as a run that touched
+      // none does.
+      const globalBefore = await loadConfigOrFail(fakeHome);
 
       // Phase C: Uninstall from project scope (no --all, just project)
       const uninstall = await runCLI(["uninstall", "--yes"], projectDir, {
@@ -208,9 +213,13 @@ describe("uninstall scope isolation", () => {
         globalAfter.projects ?? [],
         "project must be deregistered from the global config after uninstall",
       ).not.toContain(realProjectDir);
-      // Global skills/agents are otherwise untouched
-      expect(globalAfter.skills.length, "global skills must be preserved").toBeGreaterThan(0);
-      expect(globalAfter.agents.length, "global agents must be preserved").toBeGreaterThan(0);
+      // Global skills/agents are otherwise untouched — every entry, unchanged.
+      expect(globalAfter.skills, "global skills must be preserved").toStrictEqual(
+        globalBefore.skills,
+      );
+      expect(globalAfter.agents, "global agents must be preserved").toStrictEqual(
+        globalBefore.agents,
+      );
     },
   );
 });

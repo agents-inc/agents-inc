@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { STEP_TEXT } from "../pages/constants.js";
+import { ADDED_MARKER, STEP_TEXT } from "../pages/constants.js";
 import { ensureBinaryExists } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 
@@ -75,7 +75,16 @@ describe("init wizard — scratch flow", () => {
 
       const confirmOutput = confirm.getOutput();
       expect(confirmOutput).toContain(STEP_TEXT.READY_TO_INSTALL);
-      expect(confirmOutput).toContain("Global");
+      expect(confirmOutput).toContain(STEP_TEXT.SCOPE_GLOBAL);
+
+      // The technologies the name promises. The scratch flow defaults to the
+      // Web and API domains, so each domain's required framework skill is
+      // selected, and the agents column carries the pair those domains bring.
+      expect(confirmOutput).toContain(`${ADDED_MARKER} ${E2E_SKILL.react.display}`);
+      expect(confirmOutput).toContain(`${ADDED_MARKER} ${E2E_SKILL.hono.display}`);
+      for (const agentName of E2E_AGENTS.WEB_AND_API) {
+        expect(confirmOutput).toContain(`${ADDED_MARKER} ${agentName}`);
+      }
     });
 
     it("should complete a full scratch-based init flow through to install", async () => {
@@ -103,8 +112,15 @@ describe("init wizard — scratch flow", () => {
           copiedSkills: ["web-framework-react", "api-framework-hono"],
         },
       );
+      // The frontmatter list is the preload list. A scratch init asserts no
+      // load state of its own, so each pick arrives on the shared resolver's
+      // terms: a framework preloads on its own domain's agents and reaches no
+      // other domain's — react on the web agents, hono on the api ones.
       await expect({ dir: wizard.globalHome }).toHaveAgentFrontmatter("web-developer", {
-        noSkills: true,
+        exactSkills: ["web-framework-react"],
+      });
+      await expect({ dir: wizard.globalHome }).toHaveAgentFrontmatter("api-developer", {
+        exactSkills: ["api-framework-hono"],
       });
     });
   });

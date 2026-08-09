@@ -57,9 +57,16 @@ describe("init wizard — flags and permissions", () => {
   });
 
   describe("permission checker", () => {
-    // BUG: permission checker renders a blocking Ink component with no exit handler
-    // when no .claude/settings.json exists. The component has no useInput/exit handler,
-    // so the process hangs forever.
+    // BUG: the permission checker renders a blocking Ink component with no exit
+    // handler when no .claude/settings.json exists. It has no useInput and never
+    // calls exit, so the process hangs forever.
+    //
+    // No assertion carries the red — the wizard never paints a frame, so
+    // completeWithDefaults times out and the `it.fails` is satisfied by the
+    // timeout rather than by the exit-code check below. Two consequences worth
+    // knowing before "simplifying" this spec: the red cannot tell the hang from
+    // any other failure inside the launch, and the spec costs the full
+    // 30s test timeout on every run (doubled by the suite's one retry).
     it.fails("should exit after showing permission notice without settings.json", async () => {
       wizard = await InitWizard.launch({ skipPermissions: true });
       const result = await wizard.completeWithDefaults();

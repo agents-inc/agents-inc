@@ -18,9 +18,9 @@ export async function expectPhaseSuccess(
 
   if (expectations.skillIds || expectations.agents || expectations.source) {
     await expect(result.project).toHaveConfig({
-      skillIds: expectations.skillIds,
-      agents: expectations.agents,
-      source: expectations.source,
+      ...(expectations.skillIds !== undefined && { skillIds: expectations.skillIds }),
+      ...(expectations.agents !== undefined && { agents: expectations.agents }),
+      ...(expectations.source !== undefined && { source: expectations.source }),
     });
   }
   for (const agent of expectations.compiledAgents ?? expectations.agents ?? []) {
@@ -48,7 +48,7 @@ export async function expectFullInstallation(
   await expect(project).toHaveConfig({
     skillIds: expectations.skillIds,
     agents: expectations.agents,
-    source: expectations.source,
+    ...(expectations.source !== undefined && { source: expectations.source }),
   });
   for (const agent of expectations.agents) {
     await expect(project).toHaveCompiledAgent(agent);

@@ -6,7 +6,6 @@ import type {
   Marketplace,
   MarketplacePlugin,
 } from "../../../types";
-import type { CompiledStackPlugin } from "../../stacks/stack-plugin-compiler";
 
 export function createCompileContext(overrides?: Partial<CompileContext>): CompileContext {
   return {
@@ -48,19 +47,5 @@ export function createMockMarketplacePlugin(
     name,
     source,
     category,
-  };
-}
-
-export function createMockCompiledStackPlugin(
-  overrides?: Partial<CompiledStackPlugin>,
-): CompiledStackPlugin {
-  return {
-    pluginPath: "/tmp/cc-stack-123456/test-stack",
-    manifest: { name: "test-stack", version: "1.0.0" },
-    stackName: "Test Stack",
-    agents: ["web-developer"],
-    skillPlugins: ["web-framework-react"],
-    hasHooks: false,
-    ...overrides,
   };
 }

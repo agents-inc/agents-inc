@@ -77,6 +77,7 @@ describe("edit wizard — Sources grid heads its scope blocks but captions no sc
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const project = await ProjectBuilder.editable({
+        source: sourceDir,
         skills: [E2E_SKILL.vitest.id],
         globalSkills: [E2E_SKILL.react.id],
         agents: ["web-developer"],

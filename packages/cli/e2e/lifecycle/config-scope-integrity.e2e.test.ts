@@ -15,8 +15,10 @@ import {
   createTempDir,
   ensureBinaryExists,
   fileExists,
+  loadConfigOrFail,
   readTestFile,
 } from "../helpers/test-utils.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createTestEnvironment,
   finishWizard,
@@ -38,6 +40,16 @@ import {
  * Item 9: Global config includes all domains
  * D-92: Global config includes source field after splitConfigByScope
  */
+
+/** The domain whose skills the config-types spec strips while keeping the domain declared. */
+const API_DOMAIN = "api";
+
+/**
+ * A domain the E2E source has no skills for, so no config under test declares it.
+ * The generated `Domain` type must therefore not carry it — the negative that a
+ * type listing every known domain would fail.
+ */
+const UNDECLARED_DOMAIN = "mobile";
 
 /**
  * Runs init wizard from HOME, accepting defaults with all sources set to local.
@@ -100,6 +112,15 @@ describe("config-scope integrity -- source priority preservation", () => {
       const configAfterInit = await readTestFile(globalConfigPath);
       expect(configAfterInit).toContain('"eject"');
 
+      // The entries the install wrote. Captured rather than counted: Phase C used
+      // to open on `skillEntries.length >= 3`, and three wrong entries pass a floor
+      // exactly as three right ones do.
+      const entriesAfterInit = await readAllSkillEntries(fakeHome);
+      expect(
+        entriesAfterInit.map((entry) => entry.id),
+        "the default install must include react, or the comparison below is vacuous",
+      ).toContain(E2E_SKILL.react.id);
+
       // Phase B: Edit from HOME -- pass through without changes.
       wizard = await EditWizard.launch({
         projectDir: fakeHome,
@@ -114,11 +135,14 @@ describe("config-scope integrity -- source priority preservation", () => {
       await result.destroy();
       wizard = undefined;
 
-      // Phase C: every skill must still have source: "eject" — no marketplace override
+      // Phase C: the pass-through edit returned every entry exactly as the install
+      // left it — same members, same order, same source.
       const skillEntries = await readAllSkillEntries(fakeHome);
-      expect(skillEntries.length).toBeGreaterThanOrEqual(3);
+      expect(skillEntries, "a no-change edit must not rewrite any skill entry").toStrictEqual(
+        entriesAfterInit,
+      );
       for (const entry of skillEntries) {
-        expect(entry.source, `skill ${entry.id} must keep source "eject"`).toBe("eject");
+        expect(entry.source, `skill  must keep source "eject"`).toBe("eject");
       }
     },
   );
@@ -201,12 +225,13 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       await writeFile(configPath, modifiedConfig);
 
       // The config must remain loadable — a corrupt config is (correctly) rejected
-      // by edit, so a broken fixture would fail Phase C for the wrong reason.
-      // domains still lists "api"; no skills entry references api-framework-hono.
-      const verifyConfig = await readTestFile(configPath);
-      expect(verifyConfig).toContain('"api"');
-      const skillsMatch = verifyConfig.match(/const skills[\s\S]*?\];/);
-      expect(skillsMatch?.[0] ?? "").not.toContain("api-framework-hono");
+      // by edit, so a broken fixture would fail Phase C for the wrong reason. Read
+      // it structurally: a regex scan over the text answers "no match" and "no such
+      // skill" with the same empty string, so a format change would satisfy the
+      // negative for free and the edited fixture would go unverified.
+      const editedConfig = await loadConfigOrFail(fakeHome);
+      expect(editedConfig.selectedDomains).toContain(API_DOMAIN);
+      expect(editedConfig.skills.map((skill) => skill.id)).not.toContain(E2E_SKILL.hono.id);
 
       // Phase C: Run edit from HOME -- pass through without changes.
       wizard = await EditWizard.launch({
@@ -240,10 +265,14 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       expect(domainTypeMatch, "config-types.ts must contain a Domain type").not.toBeNull();
       const domainTypeBlock = domainTypeMatch![1];
 
-      // All 3 domains must appear in the Domain type -- including "api"
-      expect(domainTypeBlock).toContain('"web"');
-      expect(domainTypeBlock).toContain('"api"');
-      expect(domainTypeBlock).toContain('"meta"');
+      // Every domain the config declares must appear in the Domain type -- including
+      // "api", whose skills were removed. The negative names a domain the config
+      // never declared, so a Domain type that simply lists every known domain (and
+      // would therefore pass the positives without reading the config) fails here.
+      for (const domain of editedConfig.selectedDomains ?? []) {
+        expect(domainTypeBlock).toContain(`"${domain}"`);
+      }
+      expect(domainTypeBlock).not.toContain(`"${UNDECLARED_DOMAIN}"`);
     },
   );
 });

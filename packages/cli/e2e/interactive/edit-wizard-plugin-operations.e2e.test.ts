@@ -3,7 +3,7 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
-import { cleanupTempDir, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
+import { cleanupFixture, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { TERMINAL_SIZE, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
@@ -35,7 +35,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   afterEach(async () => {
@@ -45,8 +45,11 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
 
   describe("remove skill triggers plugin uninstall", () => {
     it("should uninstall removed plugin skills", { timeout: TIMEOUTS.PLUGIN_TEST }, async () => {
+      // web-styling-tailwind is claimed by the config and installed nowhere — the
+      // wizard cannot resolve it, so removing it is what this run has to uninstall.
       const project = await ProjectBuilder.pluginProject({
-        skills: ["web-framework-react", "web-styling-tailwind"],
+        skills: ["web-framework-react"],
+        unresolvableSkills: ["web-styling-tailwind"],
         marketplace: fixture.marketplaceName,
         agents: ["web-developer"],
         domains: ["web"],

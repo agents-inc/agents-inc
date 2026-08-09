@@ -203,7 +203,6 @@ function generateMatrix(
     relationships: {
       conflicts: [],
       discourages: [],
-      recommends: [],
       requires: [],
       alternatives: [],
     },
@@ -360,11 +359,16 @@ permissionMode: {{ agent.permissionMode }}
       await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), content);
 
       if (!skill.skipMetadata) {
-        const localDomain = skill.domain;
+        // The same four required fields the source writer above emits. A local
+        // skill installed by any product path carries them, and one that does not
+        // is refused by `compile` — the TestSkill already knows its category and
+        // slug, and dropping them here wrote a file no product path produces.
         const metadata: Record<string, unknown> = {
           displayName: skill.id,
           author: skill.author,
-          domain: localDomain,
+          domain: skill.domain,
+          category: skill.category,
+          slug: skill.slug,
         };
         if (skill.forkedFrom) {
           metadata.forkedFrom = skill.forkedFrom;
@@ -377,8 +381,16 @@ permissionMode: {{ agent.permissionMode }}
   return dirs;
 }
 
-export async function cleanupTestSource(dirs: TestDirs): Promise<void> {
-  await cleanupTempDir(dirs.tempDir);
+/**
+ * Removes a test source's temp dir, tolerating dirs that were never built.
+ *
+ * A `let dirs: TestDirs;` assigned inside `beforeAll` reads as definitely assigned to the
+ * type checker, which has no flow analysis across hook callbacks — but the hook can throw
+ * before the assignment, and then the teardown masks the real failure with a TypeError.
+ * The guard lives here, where the parameter type says what the value can actually be.
+ */
+export async function cleanupTestSource(dirs: TestDirs | undefined): Promise<void> {
+  if (dirs !== undefined) await cleanupTempDir(dirs.tempDir);
 }
 
 export async function readTestFile(filePath: string): Promise<string> {

@@ -2,13 +2,14 @@ import { mkdir } from "fs/promises";
 import path from "path";
 import { expect } from "vitest";
 import { cleanupTempDir, createPermissionsFile, createTempDir } from "../helpers/test-utils.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import type { DashboardSession } from "../pages/dashboard-session.js";
 import type { ConfirmStep } from "../pages/steps/confirm-step.js";
 import type { WizardResult } from "../pages/wizard-result.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
+import { activeAgentNames } from "../../src/cli/lib/configuration/scope-predicates.js";
 import { E2E_SKILL } from "./expected-values.js";
 import type {
   AgentName,
@@ -51,13 +52,11 @@ export async function readAgentEntries(dir: string): Promise<AgentScopeConfig[]>
   return loaded ? loaded.config.agents : [];
 }
 
-/** Load a scope's config.ts structurally and return its selectedAgents list. */
-export async function readSelectedAgents(dir: string): Promise<AgentName[]> {
+/** Load a scope's config.ts structurally and return the names of its active agents. */
+export async function readActiveAgentNames(dir: string): Promise<AgentName[]> {
   const loaded = await loadProjectConfigFromDir(dir);
   expect(loaded, `config.ts must exist at ${dir}`).not.toBeNull();
-  const selected = loaded?.config.selectedAgents;
-  expect(selected, `config.ts at ${dir} must declare selectedAgents`).toBeDefined();
-  return selected ?? [];
+  return activeAgentNames(loaded?.config.agents ?? []);
 }
 
 /** Load a scope's config.ts structurally and return its full skills array. */
@@ -81,9 +80,11 @@ export async function readConfigSkillIds(dir: string): Promise<SkillId[]> {
  *     the G->P toggle that produces the persisted dual-scope `[P][G]` pair; on a
  *     persisted `[P][G]` pair it is the P->G collapse back to `[G]`, dropping the
  *     tombstone and the project override while leaving the global install intact.
- *   - "space": press space (toggle project-scope presence). Inert on any row
- *     backed by a real global install — both a `[G]`-only inherited row and a
- *     `[P][G]` pair emit the global-locked toast and change nothing.
+ *   - "space": press space (toggle project-scope presence). On a `[P][G]` pair it
+ *     drops the half the PROJECT owns, collapsing the row to the inherited `[G]`
+ *     it was masking and leaving the global install untouched. On a `[G]`-only
+ *     inherited row it is inert and emits the global-locked toast: that entry is
+ *     global-owned, and project scope may not tombstone it.
  */
 export async function runEditWithFirstSkillAction(
   projectDir: string,
@@ -369,6 +370,91 @@ export async function initGlobalWithEject(
     return await finishWizard(await confirm.confirm());
   } catch (e) {
     await wizard.destroy();
+    throw e;
+  }
+}
+
+/**
+ * Phase A variant that installs the stack MINUS one Web-domain skill: the skill
+ * is deselected in the build grid before the install runs, so it ends up in the
+ * source and in no scope's config.
+ *
+ * That absence is the only route to a genuinely NEW pick in a later project
+ * edit — every other skill the E2E stack carries is installed globally by the
+ * plain Phase A, and picking one of those back is a re-selection of an
+ * inherited global install, which the scope guards refuse.
+ */
+export async function initGlobalWithEjectWithoutSkill(
+  sourceDir: string,
+  sourceTempDir: string,
+  homeDir: string,
+  skillLabel: string,
+): Promise<{ exitCode: number; output: string }> {
+  const wizard = await InitWizard.launch({
+    source: { sourceDir, tempDir: sourceTempDir },
+    projectDir: homeDir,
+    env: { HOME: homeDir },
+    ...TERMINAL_SIZE.TALL,
+  });
+
+  try {
+    const domain = await wizard.stack.selectFirstStack();
+    const build = await domain.acceptDefaults();
+    await build.focusSkill(skillLabel);
+    await build.toggleFocusedSkill();
+    const sources = await build.passThroughAllDomains();
+
+    await sources.waitForReady();
+    await sources.setAllLocal();
+    const agents = await sources.advance();
+
+    const confirm = await agents.acceptDefaults("init");
+    return await finishWizard(await confirm.confirm());
+  } catch (e) {
+    await wizard.destroy();
+    throw e;
+  }
+}
+
+/**
+ * Phase B variant that moves ONE AGENT to project scope and changes nothing
+ * else: the same dashboard -> Edit session `initProject` drives, without the
+ * skill-side scope toggle.
+ *
+ * The project-scoped agent is what makes a project-scoped SKILL observable in
+ * compiled output — a global agent can never carry one — so any flow asserting
+ * that the project side of a dual-scope install is real needs this shape.
+ */
+export async function initProjectWithProjectScopedAgent(
+  sourceDir: string,
+  sourceTempDir: string,
+  homeDir: string,
+  projectDir: string,
+  agentLabel: string,
+): Promise<{ exitCode: number; output: string }> {
+  const dashboard = await InitWizard.launchForDashboard({
+    projectDir,
+    source: { sourceDir, tempDir: sourceTempDir },
+    env: { HOME: homeDir },
+  });
+
+  try {
+    await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
+
+    const build = await dashboard.selectEdit();
+    const sources = await build.passThroughAllDomainsGeneric();
+
+    await sources.waitForReady();
+    await sources.setAllLocal();
+    const agents = await sources.advance();
+
+    await agents.navigateCursorToAgent(agentLabel);
+    await agents.toggleScopeOnFocusedAgent();
+    const confirm = await agents.advance("edit");
+
+    return await finalizeEdit(confirm, dashboard);
+  } catch (e) {
+    await dashboard.destroy();
     throw e;
   }
 }

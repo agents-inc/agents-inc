@@ -49,7 +49,11 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
     it("should use --source flag value over environment variable", async () => {
       process.env[SOURCE_ENV_VAR] = "github:env/source";
 
-      const result = await resolveSource("github:flag/source", projectDir);
+      const result = await resolveSource({
+        caller: "init",
+        flag: "github:flag/source",
+        projectDir,
+      });
 
       expect(result.source).toBe("github:flag/source");
       expect(result.sourceOrigin).toBe("flag");
@@ -60,7 +64,11 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
         source: "github:project/source",
       });
 
-      const result = await resolveSource("github:flag/source", projectDir);
+      const result = await resolveSource({
+        caller: "init",
+        flag: "github:flag/source",
+        projectDir,
+      });
 
       expect(result.source).toBe("github:flag/source");
       expect(result.sourceOrigin).toBe("flag");
@@ -73,28 +81,34 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
         source: "github:project/source",
       });
 
-      const result = await resolveSource("github:flag/source", projectDir);
+      const result = await resolveSource({
+        caller: "init",
+        flag: "github:flag/source",
+        projectDir,
+      });
 
       expect(result.source).toBe("github:flag/source");
       expect(result.sourceOrigin).toBe("flag");
     });
 
     it("should reject empty flag value", async () => {
-      await expect(resolveSource("", projectDir)).rejects.toThrow(/--source flag cannot be empty/);
+      await expect(resolveSource({ caller: "init", flag: "", projectDir })).rejects.toThrow(
+        /--source flag cannot be empty/,
+      );
     });
 
     it("should reject whitespace-only flag value", async () => {
-      await expect(resolveSource("   ", projectDir)).rejects.toThrow(
+      await expect(resolveSource({ caller: "init", flag: "   ", projectDir })).rejects.toThrow(
         /--source flag cannot be empty/,
       );
     });
   });
 
-  describe("environment variable precedence", () => {
+  describe("environment variable precedence — init's rung alone", () => {
     it("should use CC_SOURCE when no flag provided", async () => {
       process.env[SOURCE_ENV_VAR] = "github:env/source";
 
-      const result = await resolveSource(undefined, projectDir);
+      const result = await resolveSource({ caller: "init", projectDir });
 
       expect(result.source).toBe("github:env/source");
       expect(result.sourceOrigin).toBe("env");
@@ -106,10 +120,25 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
         source: "github:project/source",
       });
 
-      const result = await resolveSource(undefined, projectDir);
+      const result = await resolveSource({ caller: "init", projectDir });
 
       expect(result.source).toBe("github:env/source");
       expect(result.sourceOrigin).toBe("env");
+    });
+
+    it("should ignore CC_SOURCE for every command after init", async () => {
+      process.env[SOURCE_ENV_VAR] = "github:env/source";
+      await createProjectConfig(projectDir, {
+        source: "github:project/source",
+      });
+
+      const result = await resolveSource({ caller: "stored", projectDir });
+
+      expect(
+        result.source,
+        "naming a source is an install-time decision, and the environment names one",
+      ).toBe("github:project/source");
+      expect(result.sourceOrigin).toBe("project");
     });
 
     it("should support various source formats in env var", async () => {
@@ -124,7 +153,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
 
       for (const source of testSources) {
         process.env[SOURCE_ENV_VAR] = source;
-        const result = await resolveSource(undefined, projectDir);
+        const result = await resolveSource({ caller: "init", projectDir });
         expect(result.source).toBe(source);
         expect(result.sourceOrigin).toBe("env");
       }
@@ -137,7 +166,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
         source: "github:project/custom-source",
       });
 
-      const result = await resolveSource(undefined, projectDir);
+      const result = await resolveSource({ caller: "stored", projectDir });
 
       expect(result.source).toBe("github:project/custom-source");
       expect(result.sourceOrigin).toBe("project");
@@ -191,14 +220,14 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
   describe("default precedence (lowest)", () => {
     it("should use default source when no config exists", async () => {
       // No flag, no env, no project config
-      const result = await resolveSource(undefined, projectDir);
+      const result = await resolveSource({ caller: "stored", projectDir });
 
       expect(result.sourceOrigin).toBe("default");
       expect(result.source).toBe(DEFAULT_SOURCE);
     });
 
     it("should handle undefined project directory", async () => {
-      const result = await resolveSource(undefined, undefined);
+      const result = await resolveSource({ caller: "stored" });
 
       expect(result.sourceOrigin).toBe("default");
       expect(result.source).toBe(DEFAULT_SOURCE);
@@ -211,7 +240,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
         marketplace: "https://enterprise.example.com/plugins",
       });
 
-      const result = await resolveSource(undefined, projectDir);
+      const result = await resolveSource({ caller: "stored", projectDir });
 
       expect(result.marketplace).toBe("https://enterprise.example.com/plugins");
     });
@@ -222,7 +251,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
         marketplace: "https://marketplace.example.com",
       });
 
-      const result = await resolveSource(undefined, projectDir);
+      const result = await resolveSource({ caller: "stored", projectDir });
 
       expect(result.source).toBe("github:myorg/skills");
       expect(result.sourceOrigin).toBe("project");
@@ -230,7 +259,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
     });
 
     it("should return undefined marketplace when not configured in project", async () => {
-      const result = await resolveSource(undefined, projectDir);
+      const result = await resolveSource({ caller: "stored", projectDir });
 
       expect(result.marketplace).toBeUndefined();
     });
@@ -242,7 +271,11 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
       });
 
       // Flag overrides source but marketplace from config is preserved
-      const result = await resolveSource("github:flag/source", projectDir);
+      const result = await resolveSource({
+        caller: "init",
+        flag: "github:flag/source",
+        projectDir,
+      });
 
       expect(result.source).toBe("github:flag/source");
       expect(result.sourceOrigin).toBe("flag");
@@ -340,9 +373,7 @@ describe("User Journey: Config Precedence with CLI", () => {
   afterEach(async () => {
     process.chdir(originalCwd);
     delete process.env[SOURCE_ENV_VAR];
-    if (dirs) {
-      await cleanupTestSource(dirs);
-    }
+    await cleanupTestSource(dirs);
   });
 
   it("should respect config precedence in actual command execution", async () => {
@@ -382,8 +413,8 @@ describe("User Journey: Config Precedence with CLI", () => {
     // Set environment variable
     process.env[SOURCE_ENV_VAR] = "github:env/override";
 
-    // Resolve source - env should win
-    const result = await resolveSource(undefined, dirs.projectDir);
+    // Resolve source as the install-time caller — env should win
+    const result = await resolveSource({ caller: "init", projectDir: dirs.projectDir });
 
     expect(result.source).toBe("github:env/override");
     expect(result.sourceOrigin).toBe("env");
@@ -417,7 +448,7 @@ describe("User Journey: Config Edge Cases", () => {
     expect(config?.marketplace).toBe("https://marketplace.example.com");
 
     // Resolve should fall back to default for source
-    const result = await resolveSource(undefined, projectDir);
+    const result = await resolveSource({ caller: "stored", projectDir });
     expect(result.sourceOrigin).toBe("default");
     // But should still have marketplace
     expect(result.marketplace).toBe("https://marketplace.example.com");
@@ -459,14 +490,14 @@ describe("User Journey: Config Edge Cases", () => {
     const localPath = path.join(tempDir, "local-skills");
     await mkdir(localPath, { recursive: true });
 
-    const result = await resolveSource(localPath, undefined);
+    const result = await resolveSource({ caller: "init", flag: localPath });
 
     expect(result.source).toBe(localPath);
     expect(result.sourceOrigin).toBe("flag");
   });
 
   it("should support relative paths as source", async () => {
-    const result = await resolveSource("./relative/path", undefined);
+    const result = await resolveSource({ caller: "init", flag: "./relative/path" });
 
     expect(result.source).toBe("./relative/path");
     expect(result.sourceOrigin).toBe("flag");

@@ -38,7 +38,7 @@ async function readConfigArrays(projectDir: string): Promise<{
   return {
     skillIds: config.skills.map((sc) => sc.id),
     agentNames: config.agents.map((agent) => agent.name),
-    domains: config.domains ?? [],
+    domains: config.selectedDomains ?? [],
   };
 }
 
@@ -195,9 +195,10 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         expect(edit2Arrays.agentNames.sort()).toStrictEqual(edit1Arrays.agentNames.sort());
         expect(edit2Arrays.domains.sort()).toStrictEqual(edit1Arrays.domains.sort());
 
-        expect(edit2Arrays.skillIds.length).toBe(edit1Arrays.skillIds.length);
-        expect(edit2Arrays.agentNames.length).toBe(edit1Arrays.agentNames.length);
-        expect(edit2Arrays.domains.length).toBe(edit1Arrays.domains.length);
+        // The three length comparisons that stood here are dropped: they follow the
+        // `toStrictEqual`s above on the same sorted arrays, so they can only pass
+        // when those already have — a length check adds no information after an
+        // equality check on the same value.
       },
     );
   });
@@ -301,7 +302,13 @@ describe("re-edit cycles: config stability across multiple edits", () => {
 
         const addArrays = await readConfigArrays(projectDir);
 
-        expect(addArrays.skillIds.length).toBeGreaterThanOrEqual(beforeArrays.skillIds.length);
+        // The set difference, not a floor: `>= beforeArrays.skillIds.length` was
+        // satisfied by an edit that removed one skill and added two, and by one that
+        // changed nothing at all.
+        expect(
+          beforeArrays.skillIds.filter((id) => !addArrays.skillIds.includes(id)),
+          "an edit that adds a skill must remove none",
+        ).toStrictEqual([]);
         expectNoDuplicates(addArrays.skillIds, "skills after adding");
         expectNoDuplicates(addArrays.agentNames, "agents after adding");
 
@@ -350,7 +357,6 @@ describe("re-edit cycles: config stability across multiple edits", () => {
 
         // CRITICAL: No accumulation between consecutive edits.
         expect(noChangeArrays.skillIds.sort()).toStrictEqual(addArrays.skillIds.sort());
-        expect(noChangeArrays.skillIds.length).toBe(addArrays.skillIds.length);
 
         for (const addedId of addedSkillIds) {
           expect(noChangeArrays.skillIds).toContain(addedId);

@@ -45,8 +45,8 @@ function getCanonicalSkillCategories(): Record<string, string> {
       "web-testing-copier": "web-testing",
       "web-testing-metadata": "web-testing",
       "web-testing-playwright": "web-testing",
-      "web-testing-cypress-e2e": "web-testing",
-      "web-testing-playwright-e2e": "web-testing",
+      "web-testing-cypress-e2e": "web-e2e",
+      "web-testing-playwright-e2e": "web-e2e",
       "web-server-state-react-query": "web-server-state",
       "web-data-fetching-react-query": "web-server-state",
       "web-tooling-vite": "shared-tooling",
@@ -75,8 +75,9 @@ function getCanonicalSkillCategories(): Record<string, string> {
       "web-nonexistent-skill": "web-framework",
       "api-framework-hono": "api-api",
       "api-framework-express": "api-api",
-      "api-database-drizzle": "api-database",
+      "api-database-drizzle": "api-orm",
       "api-security-auth-patterns": "api-security",
+      "shared-security-auth-security": "shared-security",
       "api-observability-datadog": "api-observability",
       "cli-framework-commander": "cli-framework",
       "infra-setup-env": "infra-config",
@@ -182,11 +183,9 @@ export function createMockSkill(id: SkillId, overrides?: Partial<ResolvedSkill>)
     category,
     author: "@test",
     conflictsWith: [],
-    isRecommended: false,
     requires: [],
     alternatives: [],
     discourages: [],
-    compatibleWith: [],
     path: `skills/${category}/${id}/`,
     ...overrides,
   };
@@ -268,6 +267,14 @@ export function createMockSkillAssignment(id: SkillId, preloaded = false): Skill
 export const sa = (id: SkillId, preloaded = false): SkillAssignment =>
   createMockSkillAssignment(id, preloaded);
 
+/**
+ * An assignment that states only WHICH skill an agent gets — the built-in
+ * stacks' shape, and the one a user's saved config carries for a lazy skill.
+ * Distinct from `sa(id)`, which writes `preloaded: false` and is therefore
+ * somebody's word for the load.
+ */
+export const saUnflagged = (id: SkillId): SkillAssignment => ({ id });
+
 /** Creates a CopiedSkill mock (the record copySkillsToLocalFlattened reports). */
 export function createMockCopiedSkill(id: SkillId, overrides?: Partial<CopiedSkill>): CopiedSkill {
   return {
@@ -291,7 +298,7 @@ export function createMockMultiSourceSkill(
   const activeSource = sources.find((s) => s.installed) ?? sources[0];
   return createMockSkill(id, {
     availableSources: sources,
-    activeSource,
+    ...(activeSource !== undefined && { activeSource }),
     ...overrides,
   });
 }

@@ -20,7 +20,10 @@ export class WizardResult {
     private session: TerminalSession,
     projectDir: string,
   ) {
-    this.project = { dir: projectDir, globalHome: session.globalHome };
+    this.project = {
+      dir: projectDir,
+      ...(session.globalHome !== undefined && { globalHome: session.globalHome }),
+    };
   }
 
   /** Get the exit code (waits for process to exit). */

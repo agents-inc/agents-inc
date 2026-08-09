@@ -74,8 +74,7 @@ describe("edit wizard — skill detection across sources and scopes", () => {
             { name: E2E_AGENT["web-developer"].name, scope: "project" },
             { name: E2E_AGENT["api-developer"].name, scope: "global" },
           ],
-          domains: ["web", "api"],
-          selectedAgents: [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
+          selectedDomains: ["web", "api"],
         });
 
         // Create local skill directories with SKILL.md and metadata
@@ -114,12 +113,27 @@ describe("edit wizard — skill detection across sources and scopes", () => {
         expect(webOutput).toContain(STEP_TEXT.BUILD);
         expect(webOutput).toContain("Testing");
 
+        // The scope badge is the only rendered signal that the wizard read each
+        // skill's `scope` out of config rather than merely listing the source's
+        // catalogue. Without it "detected across sources and scopes" and
+        // "painted the grid" are the same assertion.
+        expect(await wizard.build.getScopeBadgesForSkill("web-framework-react")).toStrictEqual([
+          "P",
+        ]);
+        expect(await wizard.build.getScopeBadgesForSkill("web-testing-vitest")).toStrictEqual([
+          "G",
+        ]);
+        expect(await wizard.build.getScopeBadgesForSkill("web-state-zustand")).toStrictEqual(["P"]);
+
         // Navigate to API domain to verify api skills are also detected
         await wizard.build.advanceDomain();
 
         const apiOutput = wizard.build.getOutput();
         // The API domain's category header confirms we navigated to the API build step
         expect(apiOutput).toContain("API Framework");
+        expect(await wizard.build.getScopeBadgesForSkill("api-framework-hono")).toStrictEqual([
+          "G",
+        ]);
       },
     );
 
@@ -144,7 +158,7 @@ describe("edit wizard — skill detection across sources and scopes", () => {
             { id: "web-state-zustand", scope: "global", source: "eject" },
           ],
           agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
-          domains: ["web"],
+          selectedDomains: ["web"],
         });
 
         // Create local skill files for all 3
@@ -177,11 +191,21 @@ describe("edit wizard — skill detection across sources and scopes", () => {
 
         const buildOutput = wizard.build.getOutput();
         // All 3 installed skills should be pre-selected in the build step.
-        // Framework (1 of 1) and Testing (1 of 1) confirm 2 of the 3 are detected;
-        // the P/G scope badges confirm scope was loaded from config.
-        expect(buildOutput).toContain("(1 of 1)");
         expect(buildOutput).toContain("web-framework-react");
         expect(buildOutput).toContain("web-testing-vitest");
+        // The exclusive Framework category's own counter, read by name so a
+        // "(1 of 1)" printed by some other category cannot stand in for it.
+        expect(await wizard.build.getExclusiveCategorySelectedCount("Framework")).toBe(1);
+        // The scope badges are what say the counts came from this config: the
+        // two project-scoped skills and the one global-scoped skill each carry
+        // the badge their config entry declares.
+        expect(await wizard.build.getScopeBadgesForSkill("web-framework-react")).toStrictEqual([
+          "P",
+        ]);
+        expect(await wizard.build.getScopeBadgesForSkill("web-testing-vitest")).toStrictEqual([
+          "P",
+        ]);
+        expect(await wizard.build.getScopeBadgesForSkill("web-state-zustand")).toStrictEqual(["G"]);
       },
     );
   });

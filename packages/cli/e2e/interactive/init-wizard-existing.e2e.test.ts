@@ -13,6 +13,7 @@ import {
   cleanupTempDir,
   createPermissionsFile,
   ensureBinaryExists,
+  readTreeSnapshot,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 
@@ -80,6 +81,12 @@ describe("init wizard — existing projects", () => {
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
+
+      // The exit code alone cannot tell a dashboard from the setup wizard —
+      // both exit 0 on Escape. The pair is what says which screen `init` chose.
+      const output = dashboard.getOutput();
+      expect(output).toContain(STEP_TEXT.DASHBOARD);
+      expect(output).not.toContain(STEP_TEXT.STACK);
 
       dashboard.escape();
 
@@ -158,11 +165,16 @@ describe("init wizard — existing projects", () => {
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
+      const treeBefore = await readTreeSnapshot(dashboardDir);
 
       dashboard.escape();
 
       const exitCode = await dashboard.waitForExit();
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      // "Cleanly" is more than exit 0: leaving the dashboard is a read-only
+      // act, so nothing under the project may be rewritten. mtimes are in the
+      // snapshot, so a rewrite producing identical bytes still shows.
+      expect(await readTreeSnapshot(dashboardDir)).toStrictEqual(treeBefore);
     });
 
     it("should exit cleanly when pressing Ctrl+C", async () => {
@@ -177,11 +189,13 @@ describe("init wizard — existing projects", () => {
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
+      const treeBefore = await readTreeSnapshot(dashboardDir);
 
       dashboard.ctrlC();
 
       const exitCode = await dashboard.waitForExit();
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(await readTreeSnapshot(dashboardDir)).toStrictEqual(treeBefore);
     });
   });
 
@@ -209,6 +223,14 @@ describe("init wizard — existing projects", () => {
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
+
+      // The positive/negative pair the sibling block below asserts in reverse:
+      // a global config with content routes to the dashboard, a blank one to
+      // the setup wizard. Without the negative both specs assert "a screen
+      // appeared".
+      const output = dashboard.getOutput();
+      expect(output).toContain(STEP_TEXT.DASHBOARD);
+      expect(output).not.toContain(STEP_TEXT.STACK);
 
       dashboard.escape();
 

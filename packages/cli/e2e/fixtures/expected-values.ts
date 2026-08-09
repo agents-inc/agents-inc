@@ -25,6 +25,51 @@ export { E2E_STACK_NAME as E2E_STACK_DISPLAY } from "../helpers/create-e2e-sourc
  */
 export { E2E_STACK_ID, E2E_STACK_DESCRIPTION } from "../helpers/create-e2e-source.js";
 
+/**
+ * The sub-agent roster the E2E stack declares, derived from the stack object
+ * itself. This is the expected value for "selecting a stack installs exactly
+ * the sub-agents it declares" — unlike `E2E_AGENTS` below, which is a
+ * hand-written list that a roster change would leave silently stale.
+ */
+export { E2E_STACK_AGENTS } from "../helpers/create-e2e-source.js";
+
+/**
+ * The skills the E2E stack assigns across its agents, derived from the stack
+ * object itself. The expected value for "selecting a stack installs exactly the
+ * skills it declares" — the skill-side counterpart of `E2E_STACK_AGENTS`.
+ */
+export { E2E_STACK_SKILL_IDS } from "../helpers/create-e2e-source.js";
+
+/**
+ * The sub-agents the wizard preselects for a Web-only build — the whole roster a
+ * scratch init installs when Web is the one domain selected, sorted the way the
+ * installed roster is.
+ *
+ * Spelled out rather than read off the store's own `DOMAIN_AGENTS` map: an
+ * expectation derived from the mapping under test agrees with it however it
+ * changes.
+ */
+export const WEB_DOMAIN_AGENTS = [
+  "pm",
+  "reviewer",
+  "web-developer",
+  "web-researcher",
+  "web-tester",
+] as const satisfies readonly AgentName[];
+
+/**
+ * A built-in stack's name as the wizard paints it — `nextjs-fullstack`, the
+ * first entry of the CLI's own `defaultStacks`.
+ *
+ * The built-in catalogue stands in for the DEFAULT public marketplace and no
+ * other, so this string on the stack step is that catalogue's signature: its
+ * presence proves the default source still offers the built-ins, and its
+ * absence against a custom source proves nothing was substituted. Spelled out
+ * rather than imported from `src/cli/`, so a rename fails the assertion instead
+ * of moving both sides together.
+ */
+export const BUILT_IN_STACK_DISPLAY = "Next.js Full-Stack";
+
 // E2E source skills (from create-e2e-source.ts)
 export const E2E_SKILL_IDS = [
   "api-framework-hono",
@@ -35,6 +80,7 @@ export const E2E_SKILL_IDS = [
   "web-framework-vue-composition-api",
   "web-state-pinia",
   "web-state-zustand",
+  "web-testing-visual-regression",
   "web-testing-vitest",
 ] as const satisfies readonly SkillId[];
 
@@ -93,6 +139,12 @@ export const E2E_SKILL = {
     slug: "vue-composition-api",
     display: E2E_SKILL_TITLES["web-framework-vue-composition-api"],
   },
+  /** The source's spare — assigned to no agent by the stack, so an edit can ADD it. */
+  "visual-regression": {
+    id: "web-testing-visual-regression",
+    slug: "visual-regression",
+    display: E2E_SKILL_TITLES["web-testing-visual-regression"],
+  },
 } as const satisfies Partial<Record<SkillSlug, { id: SkillId; slug: SkillSlug; display: string }>>;
 
 /**
@@ -133,7 +185,7 @@ export const E2E_AGENT = {
  */
 export const E2E_BUILTIN_AGENT = {
   "web-tester": { name: "web-tester", defaultModel: "opus" },
-  "web-reviewer": { name: "web-reviewer", defaultModel: "opus" },
+  reviewer: { name: "reviewer", defaultModel: "opus" },
   "cli-developer": { name: "cli-developer", defaultModel: "opus" },
   "api-tester": { name: "api-tester", defaultModel: "sonnet" },
 } as const satisfies Partial<Record<AgentName, { name: AgentName; defaultModel: ModelName }>>;

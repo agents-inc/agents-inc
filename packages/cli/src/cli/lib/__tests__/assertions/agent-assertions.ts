@@ -25,12 +25,14 @@ function parseFrontmatterYaml(yaml: string): Record<string, unknown> {
 
 /** Parse compiled agent content into structured frontmatter + body sections */
 export function parseCompiledAgent(content: string): ParsedAgentOutput {
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-  const frontmatter = fmMatch ? parseFrontmatterYaml(fmMatch[1]) : {};
+  const [, frontmatterYaml] = content.match(/^---\n([\s\S]*?)\n---/) ?? [];
+  const frontmatter = frontmatterYaml === undefined ? {} : parseFrontmatterYaml(frontmatterYaml);
   const body = content.split(/^---\n[\s\S]*?\n---\n/m)[1] ?? content;
 
   const preloadedSkillIds = Array.isArray(frontmatter.skills) ? frontmatter.skills.map(String) : [];
-  const dynamicSkillIds = [...body.matchAll(/skill:\s*"([^"]+)"/g)].map((m) => m[1]);
+  const dynamicSkillIds = [...body.matchAll(/skill:\s*"([^"]+)"/g)].flatMap(([, id]) =>
+    id === undefined ? [] : [id],
+  );
 
   return { raw: content, frontmatter, body, preloadedSkillIds, dynamicSkillIds };
 }

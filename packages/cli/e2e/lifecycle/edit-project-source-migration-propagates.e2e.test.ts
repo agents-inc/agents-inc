@@ -36,7 +36,7 @@ import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/t
  * `edit` performs the migration under `$HOME` (the skill's own scope decides the
  * paths) and then records the new `source` straight into the global `config.ts`
  * with a raw config write, outside the write path that fans global changes out.
- * `writeScopedConfigs` runs afterwards and reloads that already-updated global
+ * `writeScopedFromWizard` runs afterwards and reloads that already-updated global
  * config, so its own merge reports "nothing changed" and the propagation branch
  * — which is gated on that flag — never runs. The result: the editing project
  * sees the new source, and every other registered project is left naming the old
@@ -118,8 +118,7 @@ function buildRegisteredProjectConfig(name: string): ProjectConfig {
     name,
     skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: MARKET }),
     agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
-    domains: ["web"],
-    selectedAgents: [E2E_AGENT["web-developer"].name],
+    selectedDomains: ["web"],
     stack: projectStack,
   });
 }
@@ -179,8 +178,7 @@ describe("project-context source migration of a global skill propagates to other
         source: sourceDir,
         skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: MARKET }),
         agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "global" }),
-        domains: ["web"],
-        selectedAgents: [E2E_AGENT["api-developer"].name],
+        selectedDomains: ["web"],
         stack: globalStack,
         projects: [realpathSync(projectA), realpathSync(projectB)],
       }),
@@ -199,14 +197,14 @@ describe("project-context source migration of a global skill propagates to other
     // Phase 1: a real compile of BOTH projects while react is still
     // marketplace-sourced, producing the genuine plugin-form artifacts the
     // migration has to invalidate.
-    const compiledA = await runCLI(["compile", "--source", sourceDir], projectA, {
+    const compiledA = await runCLI(["compile"], projectA, {
       env: { HOME: fakeHome },
     });
     compileAExitCode = compiledA.exitCode;
     compileAOutput = compiledA.combined;
     preEditAgentA = await readTestFile(projectAgentPath(projectA));
 
-    const compiledB = await runCLI(["compile", "--source", sourceDir], projectB, {
+    const compiledB = await runCLI(["compile"], projectB, {
       env: { HOME: fakeHome },
     });
     compileBExitCode = compiledB.exitCode;

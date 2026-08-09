@@ -24,11 +24,18 @@ describe("help and version", () => {
     expect(result.stdout).toContain("compile");
     expect(result.stdout).toContain("init");
     expect(result.stdout).toContain("doctor");
-    expect(result.stdout).toContain("validate");
+    expect(
+      result.stdout,
+      "doctor absorbed validate's content passes — two commands for one question is the bug",
+    ).not.toContain("validate");
     expect(result.stdout).toContain("config");
     expect(result.stdout).toContain("edit");
     expect(result.stdout).toContain("eject");
     expect(result.stdout).toContain("list");
+    expect(
+      result.stdout,
+      "the import and new command families are gone, so no topic may still advertise them",
+    ).not.toMatch(/^\s+(import|new)\s/m);
   });
 
   it("should display compile-specific help", async () => {
@@ -38,7 +45,10 @@ describe("help and version", () => {
     expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(result.stdout).toContain("Compile agents");
     expect(result.stdout).toContain("--verbose");
-    expect(result.stdout).toContain("--source");
+    expect(
+      result.stdout,
+      "a recompile reads the source its config records, so there is nothing to point it at",
+    ).not.toContain("--source");
   });
 
   it("should display init-specific help", async () => {
@@ -48,6 +58,7 @@ describe("help and version", () => {
     expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(result.stdout).toContain("init");
     expect(result.stdout).toContain("USAGE");
+    expect(result.stdout).toContain("--source");
   });
 
   it("should display doctor-specific help", async () => {
@@ -60,44 +71,54 @@ describe("help and version", () => {
     expect(result.stdout).not.toContain("--source");
   });
 
-  it("should display validate-specific help", async () => {
+  it("should no longer resolve validate as a command", async () => {
     tempDir = await createTempDir();
-    const result = await CLI.run(["validate", "--help"], { dir: tempDir });
+    const result = await CLI.run(["validate"], { dir: tempDir });
 
-    expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(result.stdout).toContain("Validate");
-    expect(result.stdout).not.toContain("--verbose");
-    expect(result.stdout).not.toContain("--source");
-    expect(result.stdout).not.toContain("--plugins");
-    expect(result.stdout).not.toContain("--all");
+    expect(result.exitCode).toBe(EXIT_CODES.UNKNOWN_COMMAND);
+    expect(result.output).toContain("is not a");
   });
 
-  it("should display help using 'help <command>' syntax", async () => {
+  it("should no longer resolve import skill as a command", async () => {
     tempDir = await createTempDir();
-    const result = await CLI.run(["help", "compile"], { dir: tempDir });
+    const result = await CLI.run(["import", "skill"], { dir: tempDir });
 
-    expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(result.stdout).toContain("Compile agents");
+    expect(result.exitCode).toBe(EXIT_CODES.UNKNOWN_COMMAND);
+    expect(result.output, "the third-party import path was withdrawn, not disabled").toContain(
+      "import skill is not a",
+    );
   });
 
-  it("should display init help via 'help init' syntax", async () => {
+  it("should no longer resolve any new subcommand as a command", async () => {
     tempDir = await createTempDir();
-    const result = await CLI.run(["help", "init"], { dir: tempDir });
 
-    expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(result.stdout).toContain("init");
-    expect(result.stdout).toContain("USAGE");
-    expect(result.stdout).toContain("--source");
+    for (const subcommand of ["skill", "agent", "marketplace"]) {
+      const result = await CLI.run(["new", subcommand], { dir: tempDir });
+
+      expect(result.exitCode, `new ${subcommand}`).toBe(EXIT_CODES.UNKNOWN_COMMAND);
+      expect(
+        result.output,
+        `new ${subcommand} was deleted, so it must not resolve at all`,
+      ).toContain(`new ${subcommand} is not a`);
+    }
   });
 
-  it("should display edit help via 'help edit' syntax", async () => {
+  // `help <cmd>` is a routing claim, not a content one. Three `it`s previously ran
+  // `help compile` / `help init` / `help edit` and re-asserted substrings their
+  // `<cmd> --help` siblings already assert — which cannot tell the two entry points
+  // apart, because any command printing the same word satisfies both. Identity of
+  // the whole output is what "routes to the same place" means.
+  it("should route 'help <command>' to the same output as '<command> --help'", async () => {
     tempDir = await createTempDir();
-    const result = await CLI.run(["help", "edit"], { dir: tempDir });
 
-    expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(result.stdout).toContain("Edit skills");
-    expect(result.stdout).toContain("USAGE");
-    expect(result.stdout).toContain("--source");
+    for (const command of ["compile", "init", "edit"]) {
+      const viaFlag = await CLI.run([command, "--help"], { dir: tempDir });
+      const viaHelp = await CLI.run(["help", command], { dir: tempDir });
+
+      expect(viaFlag.exitCode, `${command} --help`).toBe(EXIT_CODES.SUCCESS);
+      expect(viaHelp.exitCode, `help ${command}`).toBe(EXIT_CODES.SUCCESS);
+      expect(viaHelp.stdout, `help ${command} must equal ${command} --help`).toBe(viaFlag.stdout);
+    }
   });
 
   it("should display edit-specific help with --help flag", async () => {
@@ -106,7 +127,14 @@ describe("help and version", () => {
 
     expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(result.stdout).toContain("Edit skills");
-    expect(result.stdout).toContain("--refresh");
+    expect(result.stdout).toContain("USAGE");
+    expect(
+      result.stdout,
+      "naming a source is init's decision, so edit offers the catalogue config.ts names",
+    ).not.toContain("--source");
+    expect(result.stdout, "every load revalidates, so there is nothing to force").not.toContain(
+      "--refresh",
+    );
     expect(result.stdout).not.toContain("--agent-source");
   });
 

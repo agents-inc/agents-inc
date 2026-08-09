@@ -1,12 +1,13 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
-import { EXIT_CODES, TIMEOUTS, SOURCE_PATHS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, FILES, TIMEOUTS, SOURCE_PATHS } from "../pages/constants.js";
 import {
   ensureBinaryExists,
   cleanupTempDir,
   createTempDir,
   fileExists,
+  listFiles,
   readTestFile,
   renderAgentMd,
 } from "../helpers/test-utils.js";
@@ -40,6 +41,14 @@ import { CLI } from "../fixtures/cli.js";
 
 const AGENT_NAMES = ["web-developer", "api-developer"] as const;
 const EXPECTED_AGENT_COUNT = 2;
+/** `DEFAULT_VERSION` in src/cli/consts.ts — the version a first compile stamps. */
+const INITIAL_VERSION = "1.0.0";
+/** The `agents` field `generateAgentPluginManifest` writes, verbatim. */
+const AGENTS_MANIFEST_PATH = "./agents/";
+/** Prefix `compileAgentPlugin` gives every agent plugin directory it writes. */
+const AGENT_PLUGIN_PREFIX = "agent-";
+
+const agentDescription = (agentName: string): string => `E2E test agent for ${agentName}`;
 
 describe("build agent plugins", () => {
   let tempDir: string;
@@ -59,7 +68,7 @@ describe("build agent plugins", () => {
     for (const agentName of AGENT_NAMES) {
       await writeFile(
         path.join(agentsDir, `${agentName}.md`),
-        renderAgentMd(agentName, `E2E test agent for ${agentName}`),
+        renderAgentMd(agentName, agentDescription(agentName)),
       );
     }
   }, TIMEOUTS.INSTALL);
@@ -92,35 +101,24 @@ describe("build agent plugins", () => {
       expect(buildResult.stdout).toContain(`Compiled ${EXPECTED_AGENT_COUNT} agent plugins`);
     });
 
-    it("should produce a plugin directory for each agent", async () => {
-      const pluginsDir = path.join(sourceDir, SOURCE_PATHS.PLUGINS_DIST);
-
-      for (const agentName of AGENT_NAMES) {
-        const agentPluginDir = path.join(pluginsDir, `agent-${agentName}`);
-        const exists = await fileExists(
-          path.join(agentPluginDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR, "plugin.json"),
-        );
-        expect(exists, `Missing plugin manifest for agent-${agentName}`).toBe(true);
-      }
-    });
-
-    it("should produce valid plugin.json with name, version, and agents path", async () => {
+    it("should write each agent's whole plugin manifest", async () => {
       const pluginsDir = path.join(sourceDir, SOURCE_PATHS.PLUGINS_DIST);
 
       for (const agentName of AGENT_NAMES) {
         const manifestPath = path.join(
           pluginsDir,
-          `agent-${agentName}`,
+          `${AGENT_PLUGIN_PREFIX}${agentName}`,
           SOURCE_PATHS.PLUGIN_MANIFEST_DIR,
-          "plugin.json",
+          FILES.PLUGIN_JSON,
         );
-        const content = await readTestFile(manifestPath);
-        const manifest = JSON.parse(content);
+        const manifest: unknown = JSON.parse(await readTestFile(manifestPath));
 
-        expect(manifest.name).toBe(`agent-${agentName}`);
-        expect(typeof manifest.version).toBe("string");
-        expect(manifest.agents).toBe("./agents/");
-        expect(manifest.description).toBe(`E2E test agent for ${agentName}`);
+        expect(manifest, `plugin manifest for ${AGENT_PLUGIN_PREFIX}${agentName}`).toStrictEqual({
+          name: `${AGENT_PLUGIN_PREFIX}${agentName}`,
+          version: INITIAL_VERSION,
+          agents: AGENTS_MANIFEST_PATH,
+          description: agentDescription(agentName),
+        });
       }
     });
 
@@ -130,8 +128,8 @@ describe("build agent plugins", () => {
       for (const agentName of AGENT_NAMES) {
         const copiedAgentPath = path.join(
           pluginsDir,
-          `agent-${agentName}`,
-          "agents",
+          `${AGENT_PLUGIN_PREFIX}${agentName}`,
+          DIRS.AGENTS,
           `${agentName}.md`,
         );
         const exists = await fileExists(copiedAgentPath);
@@ -139,13 +137,13 @@ describe("build agent plugins", () => {
 
         const content = await readTestFile(copiedAgentPath);
         expect(content).toContain(`name: ${agentName}`);
-        expect(content).toContain(`description: E2E test agent for ${agentName}`);
+        expect(content).toContain(`description: ${agentDescription(agentName)}`);
       }
     });
 
     it("should report agent compilation success messages", () => {
       for (const agentName of AGENT_NAMES) {
-        expect(buildResult.stdout).toContain(`agent-${agentName}`);
+        expect(buildResult.stdout).toContain(`${AGENT_PLUGIN_PREFIX}${agentName}`);
       }
     });
   });
@@ -170,6 +168,13 @@ describe("build agent plugins", () => {
       expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(result.stdout).not.toContain("Compiling agent plugins");
       expect(result.stdout).not.toContain("agent plugins");
+
+      // The filesystem is the contract: stdout staying quiet about agents would
+      // also be satisfied by a run that wrote the plugin directories silently.
+      const builtPlugins = await listFiles(path.join(noAgentSourceDir, SOURCE_PATHS.PLUGINS_DIST));
+      expect(builtPlugins.filter((entry) => entry.startsWith(AGENT_PLUGIN_PREFIX))).toStrictEqual(
+        [],
+      );
     });
   });
 

@@ -7,6 +7,7 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import {
+  cleanupFixture,
   cleanupTempDir,
   ensureBinaryExists,
   isClaudeCLIAvailable,
@@ -59,7 +60,7 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
   });
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   it(

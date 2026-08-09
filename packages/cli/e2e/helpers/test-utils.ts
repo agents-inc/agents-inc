@@ -1,5 +1,5 @@
 import { execa } from "execa";
-import { cp, mkdir, readdir, readFile, writeFile } from "fs/promises";
+import { cp, mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
 import { stripVTControlCharacters } from "node:util";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -19,6 +19,7 @@ import {
   renderAgentMd,
   renderAgentYaml,
   renderConfigTs,
+  renderIncompleteMetadataYaml,
   renderMetadataYaml,
   renderSkillMd,
 } from "../../src/cli/lib/__tests__/content-generators.js";
@@ -67,11 +68,21 @@ const AUTO_HOME_PREFIX = "ai-e2e-home-";
 /**
  * Standard forkedFrom metadata block for E2E plugin/uninstall tests.
  * Represents a skill forked from web-framework-react in the E2E source.
+ *
+ * Carries the full descriptive field set a real fork copies from its origin, not
+ * just the fork provenance: `doctor`'s content layer validates every installed
+ * metadata.yaml against the strict schema, so a fixture missing them reads as a
+ * broken install rather than a forked one.
  */
 export const FORKED_FROM_METADATA = renderMetadataYaml({
   author: "@agents-inc",
-  contentHash: "e2e-hash",
-  forkedFrom: { skillId: "web-framework-react", contentHash: "e2e-hash", date: "2026-01-01" },
+  displayName: "web-framework-react",
+  category: "web-framework",
+  slug: "react",
+  cliDescription: "E2E forked skill",
+  usageGuidance: "Use when testing fork provenance in E2E scenarios",
+  contentHash: "e2eab01",
+  forkedFrom: { skillId: "web-framework-react", contentHash: "e2eab01", date: "2026-01-01" },
 });
 
 export async function createTempDir(): Promise<string> {
@@ -103,6 +114,20 @@ export async function pollUntil(
   }
 }
 
+/**
+ * Removes a fixture's temp dir, tolerating a fixture that was never built.
+ *
+ * The `let fixture: E2ESource;` / assign-in-`beforeAll` shape reads as definitely
+ * assigned to the type checker — it has no flow analysis across hook callbacks — but
+ * `beforeAll` can throw before the assignment lands, and then `afterAll` would mask the
+ * real setup failure with a TypeError. The guard belongs here, where the parameter type
+ * says what the value can actually be, rather than at ~50 call sites where the checker
+ * insists it is redundant.
+ */
+export async function cleanupFixture(fixture: { tempDir: string } | undefined): Promise<void> {
+  if (fixture !== undefined) await cleanupTempDir(fixture.tempDir);
+}
+
 export {
   cleanupTempDir,
   directoryExists,
@@ -111,10 +136,43 @@ export {
   renderAgentMd,
   renderAgentYaml,
   renderConfigTs,
+  renderIncompleteMetadataYaml,
   renderMetadataYaml,
   renderSkillMd,
   writeTestPackageJson,
 };
+
+/**
+ * Records `source` in an install's config.ts, the way `init --source` leaves it.
+ *
+ * `baseDirs` is searched in resolution order — the project directory, then the global HOME —
+ * because that is the order `resolveSource` reads them in: the first config that exists is the
+ * one a later command's source comes out of, and recording behind it would change nothing.
+ *
+ * Naming a source is an install-time decision: `--source` is `init`'s flag alone and
+ * `CC_SOURCE` is `init`'s environment, so every later command reads the source out of
+ * the config. A fixture that hand-writes an install therefore has to leave the source
+ * where those commands look, and this is that step.
+ *
+ * A config that already names one is left untouched — a wizard-written install recorded
+ * its own source, and re-rendering somebody else's config through the fixture renderer
+ * is not this helper's business.
+ */
+export async function recordInstallSource(baseDirs: string[], source: string): Promise<void> {
+  for (const baseDir of baseDirs) {
+    const loaded = await loadProjectConfigFromDir(baseDir);
+    if (!loaded) continue;
+    if (loaded.config.source === undefined) {
+      const { name = "e2e-project", ...rest } = loaded.config;
+      await writeProjectConfig(baseDir, { ...rest, name, source });
+    }
+    return;
+  }
+
+  throw new Error(
+    `No config.ts in ${baseDirs.join(" or ")} to record a source in — build the install before pointing it at a source.`,
+  );
+}
 
 /** Write a config.ts file to the .claude-src/ directory of the given base dir. */
 export async function writeProjectConfig(
@@ -348,8 +406,11 @@ type AgentFileOptions = {
  * Write an agent .md file to `<baseDir>/.claude/agents/`, creating the
  * directory if needed.
  *
- * Defaults to a bare `# <agentName>` heading with no frontmatter, which is all
- * `doctor` and `list` need to see an agent as present.
+ * Defaults to a bare `# <agentName>` heading with no frontmatter — the shape of a
+ * hand-authored file the CLI never wrote. Pass `frontmatter: true` for the shape a
+ * compile leaves behind: `name` AND `description`, both of which
+ * `agentFrontmatterValidationSchema` requires, so `doctor`'s content layer accepts
+ * the file instead of reporting it as an invalid agent.
  */
 export async function writeAgentFile(
   baseDir: string,
@@ -360,7 +421,8 @@ export async function writeAgentFile(
   await mkdir(agentsDir, { recursive: true });
 
   const body = options?.body ?? `# ${agentName}\n`;
-  const content = options?.frontmatter ? `---\nname: ${agentName}\n---\n${body}` : body;
+  const frontmatter = `---\nname: ${agentName}\ndescription: Test ${agentName} agent\n---\n`;
+  const content = options?.frontmatter ? `${frontmatter}${body}` : body;
 
   await writeFile(path.join(agentsDir, `${agentName}.md`), content);
 }
@@ -431,6 +493,60 @@ export function agentsPath(dir: string): string {
 /** Returns the path to installed skills dir in a project. */
 export function skillsPath(dir: string): string {
   return path.join(dir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+}
+
+/**
+ * Snapshot every compiled agent under a scope as a filename -> file-contents map.
+ *
+ * `listFiles(agentsPath(dir))` compares the ROSTER; this compares the BYTES, which is
+ * what a "must not rewrite the compiled agents" claim needs — a rewrite that swaps an
+ * agent's skills or model keeps the roster identical. Returns `{}` when the dir is
+ * absent, so callers asserting a scope stays empty need no special case; callers
+ * asserting a scope is unchanged should check the snapshot is non-empty first, or an
+ * absent dir would satisfy the comparison on both sides.
+ */
+export async function readCompiledAgents(dir: string): Promise<Record<string, string>> {
+  const agentDir = agentsPath(dir);
+  const files = (await listFiles(agentDir)).filter((file) => file.endsWith(".md"));
+  const entries = await Promise.all(
+    files.map(async (file) => [file, await readFile(path.join(agentDir, file), "utf-8")] as const),
+  );
+  return Object.fromEntries(entries);
+}
+
+/** One file in a tree snapshot: what it holds, and when it was last written. */
+export type TreeSnapshotEntry = {
+  content: string;
+  modifiedAtMs: number;
+};
+
+/**
+ * Snapshot an entire directory tree as a relative-path -> {content, mtime} map.
+ *
+ * Both fields are load-bearing for "this scope was not written to". Content
+ * alone cannot see a rewrite that produced identical bytes — which is exactly
+ * what an unwanted recompile of an unchanged config does, and why an
+ * out-of-scope write can be invisible in a diff while being plainly visible in
+ * the command's own log. The mtime is what makes such a write observable.
+ *
+ * Returns `{}` when the directory is absent, so a caller asserting a scope
+ * stays empty needs no special case; a caller asserting a scope is UNCHANGED
+ * must check the snapshot is non-empty first, or an absent tree satisfies the
+ * comparison on both sides.
+ */
+export async function readTreeSnapshot(dir: string): Promise<Record<string, TreeSnapshotEntry>> {
+  if (!(await directoryExists(dir))) return {};
+
+  const entries = await readdir(dir, { recursive: true, withFileTypes: true });
+  const files = entries.filter((entry) => entry.isFile());
+  const snapshot = await Promise.all(
+    files.map(async (file) => {
+      const absolute = path.join(file.parentPath, file.name);
+      const [content, stats] = await Promise.all([readFile(absolute, "utf-8"), stat(absolute)]);
+      return [path.relative(dir, absolute), { content, modifiedAtMs: stats.mtimeMs }] as const;
+    }),
+  );
+  return Object.fromEntries(snapshot);
 }
 
 /** Returns the path to config.ts in a project or global scope dir. */

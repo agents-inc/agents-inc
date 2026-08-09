@@ -12,7 +12,7 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 
@@ -27,31 +27,27 @@ describe("list command", () => {
     }
   });
 
-  it("should show no installation found in empty directory", async () => {
+  it("should report no installation in an empty directory and point at init", async () => {
     tempDir = await createTempDir();
 
     const { exitCode, stdout } = await CLI.run(["list"], { dir: tempDir });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.NO_INSTALLATION);
-  });
-
-  it("should work with ls alias", async () => {
-    tempDir = await createTempDir();
-
-    const { exitCode, stdout } = await CLI.run(["ls"], { dir: tempDir });
-
-    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain(STEP_TEXT.NO_INSTALLATION);
-  });
-
-  it("should suggest running init when no installation found", async () => {
-    tempDir = await createTempDir();
-
-    const { exitCode, stdout } = await CLI.run(["list"], { dir: tempDir });
-
-    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain("init");
+  });
+
+  it("should answer to the ls alias identically", async () => {
+    tempDir = await createTempDir();
+
+    const viaList = await CLI.run(["list"], { dir: tempDir });
+    const viaAlias = await CLI.run(["ls"], { dir: tempDir });
+
+    expect(viaAlias.exitCode).toBe(EXIT_CODES.SUCCESS);
+    // The alias is a routing claim: same command, same report. Asserting one
+    // shared substring cannot tell the alias apart from a different command that
+    // happens to print it too.
+    expect(viaAlias.stdout).toBe(viaList.stdout);
   });
 
   it("should display help text with --help flag", async () => {
@@ -74,74 +70,32 @@ describe("list command", () => {
   });
 
   describe("with local installation", () => {
-    it("should show installation details for a local project", async () => {
-      const project = await ProjectBuilder.editable();
+    it("should report the installation's mode, config path and its exact counts", async () => {
+      const skills = [E2E_SKILL.react.id, E2E_SKILL.vitest.id];
+      const agents = [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name];
+      const project = await ProjectBuilder.editable({ skills, agents });
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
-
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Installation:");
-      expect(stdout).toContain("Eject");
-      expect(stdout).toContain("Skills:");
-      expect(stdout).toContain("Agents:");
-    });
-
-    it("should show correct skill count", async () => {
-      const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react", "web-testing-vitest"],
-      });
-      tempDir = path.dirname(project.dir);
-      const projectDir = project.dir;
-
-      const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
-
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Skills:");
-      expect(stdout).toContain("2");
-    });
-
-    it("should show mode as Local for local installations", async () => {
-      const project = await ProjectBuilder.editable();
-      tempDir = path.dirname(project.dir);
-      const projectDir = project.dir;
-
-      const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
-
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Mode:");
-      expect(stdout).toContain("Eject");
-    });
-
-    it("should show config path in output", async () => {
-      const project = await ProjectBuilder.editable();
-      tempDir = path.dirname(project.dir);
-      const projectDir = project.dir;
-
-      const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
-
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Config:");
-      expect(stdout).toContain(FILES.CONFIG_TS);
-    });
-
-    it("should show agent count when agents exist", async () => {
-      const project = await ProjectBuilder.editable({
-        agents: [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
-      });
-      tempDir = path.dirname(project.dir);
-      const projectDir = project.dir;
-
-      // Create agent markdown files in the agents directory
       await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name);
       await writeAgentFile(projectDir, E2E_AGENT["api-developer"].name);
 
       const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Agents:");
-      expect(stdout).toContain("2");
+      expect(stdout).toContain("Installation:");
+      expect(stdout).toContain("Mode:");
+      expect(stdout).toContain("Eject");
+      expect(stdout).toContain("Config:");
+      expect(stdout).toContain(FILES.CONFIG_TS);
+
+      // Counts asserted as whole labelled rows against the fixture's own lists,
+      // anchored to the line so the value is the count and nothing else. A bare
+      // `toContain("2")` matches the version banner, a path segment, or any other
+      // digit in the report — and `Agents:` labels two different rows here, a
+      // count and a path.
+      expect(stdout).toMatch(new RegExp(`^\\s*Skills:\\s+${skills.length}$`, "m"));
+      expect(stdout).toMatch(new RegExp(`^\\s*Agents:\\s+${agents.length}$`, "m"));
     });
   });
 
@@ -215,16 +169,16 @@ describe("list command", () => {
       expect(stdout).toContain(STEP_TEXT.NO_INSTALLATION);
     });
 
-    it("should work with ls alias on a local installation", async () => {
+    it("should answer to the ls alias identically on a local installation", async () => {
       const project = await ProjectBuilder.editable();
       tempDir = path.dirname(project.dir);
-      const projectDir = project.dir;
 
-      const { exitCode, stdout } = await CLI.run(["ls"], { dir: projectDir });
+      const viaList = await CLI.run(["list"], { dir: project.dir });
+      const viaAlias = await CLI.run(["ls"], { dir: project.dir });
 
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Installation:");
-      expect(stdout).toContain("Eject");
+      expect(viaAlias.exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(viaAlias.stdout).toContain("Installation:");
+      expect(viaAlias.stdout).toBe(viaList.stdout);
     });
   });
 

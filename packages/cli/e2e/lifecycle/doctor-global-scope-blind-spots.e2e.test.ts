@@ -5,7 +5,9 @@ import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
+  cleanupFixture,
   cleanupTempDir,
+  configTsPath,
   createLocalSkill,
   createTempDir,
   ensureBinaryExists,
@@ -15,7 +17,6 @@ import {
   renderMetadataYaml,
   runCLI,
   skillsPath,
-  configTsPath,
   writeAgentFile,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -36,7 +37,7 @@ beforeAll(async () => {
 }, TIMEOUTS.SETUP);
 
 afterAll(async () => {
-  if (source) await cleanupTempDir(source.tempDir);
+  await cleanupFixture(source);
 });
 
 describe("doctor global-scope diagnostics", () => {
@@ -55,9 +56,10 @@ describe("doctor global-scope diagnostics", () => {
 
       await writeProjectConfig(fakeHome, {
         name: "global-install",
+        source: source.sourceDir,
         skills: [{ id: "web-framework-react", scope: "global", source: "eject" }],
         agents: [{ name: "web-developer", scope: "global" }],
-        domains: ["web"],
+        selectedDomains: ["web"],
         stack: {
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
@@ -69,17 +71,20 @@ describe("doctor global-scope diagnostics", () => {
           displayName: "web-framework-react",
           category: "web-framework",
           slug: "react",
+          domain: "web",
+          cliDescription: "React JavaScript framework",
+          usageGuidance: "Use React for building component-based UIs",
           contentHash: "b2c3d4e",
         }),
       });
-      await writeAgentFile(fakeHome, "web-developer");
+      await writeAgentFile(fakeHome, "web-developer", { frontmatter: true });
 
       const configBefore = await readTestFile(configTsPath(fakeHome));
       const agentsBefore = await listFiles(agentsPath(fakeHome));
       const skillsBefore = await listFiles(skillsPath(fakeHome));
 
       const { exitCode, stdout } = await runCLI(["doctor"], fakeHome, {
-        env: { HOME: fakeHome, CC_SOURCE: source.sourceDir },
+        env: { HOME: fakeHome },
       });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -112,18 +117,22 @@ describe("doctor global-scope diagnostics", () => {
 
       await writeProjectConfig(fakeHome, {
         name: "global-only-install",
+        source: source.sourceDir,
         skills: [
           { id: "web-framework-react", scope: "global", source: "eject" },
           { id: "web-testing-vitest", scope: "global", source: "eject" },
         ],
         agents: [{ name: "web-developer", scope: "global" }],
-        domains: ["web"],
+        selectedDomains: ["web"],
       });
       await createLocalSkill(fakeHome, "web-framework-react", {
         metadata: renderMetadataYaml({
           displayName: "web-framework-react",
           category: "web-framework",
           slug: "react",
+          domain: "web",
+          cliDescription: "React JavaScript framework",
+          usageGuidance: "Use React for building component-based UIs",
           contentHash: "b2c3d4e",
         }),
       });
@@ -132,10 +141,13 @@ describe("doctor global-scope diagnostics", () => {
           displayName: "web-testing-vitest",
           category: "web-testing",
           slug: "vitest",
+          domain: "web",
+          cliDescription: "Vitest test runner",
+          usageGuidance: "Use Vitest for fast unit and integration tests",
           contentHash: "c3d4e5f",
         }),
       });
-      await writeAgentFile(fakeHome, "web-developer");
+      await writeAgentFile(fakeHome, "web-developer", { frontmatter: true });
 
       const config = await loadConfigOrFail(fakeHome);
       expect(
@@ -147,7 +159,7 @@ describe("doctor global-scope diagnostics", () => {
       const skillsBefore = await listFiles(skillsPath(fakeHome));
 
       const { exitCode, stdout } = await runCLI(["doctor"], projectDir, {
-        env: { HOME: fakeHome, CC_SOURCE: source.sourceDir },
+        env: { HOME: fakeHome },
       });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);

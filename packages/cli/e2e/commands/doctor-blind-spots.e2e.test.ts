@@ -14,12 +14,15 @@ import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 import {
   agentsPath,
+  cleanupFixture,
   cleanupTempDir,
   configTsPath,
   ensureBinaryExists,
   readTestFile,
+  recordInstallSource,
   skillsPath,
 } from "../helpers/test-utils.js";
 
@@ -38,7 +41,7 @@ describe("doctor with uninstalled plugin skills", () => {
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
-    if (pluginSource) await cleanupTempDir(pluginSource.tempDir);
+    await cleanupFixture(pluginSource);
   });
 
   afterEach(async () => {
@@ -61,10 +64,14 @@ describe("doctor with uninstalled plugin skills", () => {
         },
       });
       tempDir = path.dirname(installed.project.dir);
-      const doctorEnv = { HOME: installed.home, CC_SOURCE: pluginSource.sourceDir };
+      // The install records its own source: no command below carries a flag or reads the
+      // environment for one — naming a source is `init`'s decision.
+      await recordInstallSource([installed.project.dir, installed.home], pluginSource.sourceDir);
+      const doctorEnv = { HOME: installed.home };
 
-      await expect(installed.project).toHavePlugin(installed.pluginKeys[0]);
-      await expect({ dir: installed.home }).toHavePluginInRegistry(installed.pluginKeys[0], "user");
+      const firstPluginKey = firstElement(installed.pluginKeys);
+      await expect(installed.project).toHavePlugin(firstPluginKey);
+      await expect({ dir: installed.home }).toHavePluginInRegistry(firstPluginKey, "user");
 
       // Proof the healthy state is genuinely live: the plugin skill is
       // discoverable, so the agent on disk is compiled from a real skill.
@@ -111,7 +118,7 @@ describe("doctor remediation advice for skills missing from disk", () => {
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (source) await cleanupTempDir(source.tempDir);
+    await cleanupFixture(source);
   });
 
   afterEach(async () => {
@@ -135,7 +142,8 @@ describe("doctor remediation advice for skills missing from disk", () => {
       tempDir = path.dirname(project.dir);
       const fakeHome = path.join(tempDir, "home");
       await mkdir(fakeHome, { recursive: true });
-      const commandEnv = { HOME: fakeHome, CC_SOURCE: source.sourceDir };
+      await recordInstallSource([project.dir, fakeHome], source.sourceDir);
+      const commandEnv = { HOME: fakeHome };
 
       const firstCompile = await CLI.run(["compile"], project, { env: commandEnv });
       expect(firstCompile.exitCode).toBe(EXIT_CODES.SUCCESS);

@@ -3,10 +3,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
-  configTsPath,
   directoryExists,
   ensureBinaryExists,
-  readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
@@ -146,17 +144,23 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
       const { fakeHome, projectDir } = env;
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
-      const projectConfigPath = configTsPath(projectDir);
       const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
       const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
 
       // Sanity check: the toggle produced the expected dual-scope config on disk.
-      // This state is already correct on `main` (config writer is D-221-clean).
-      const configAfterToggle = await readTestFile(projectConfigPath);
-      expect(configAfterToggle).toContain(`"id":"${E2E_SKILL.react.id}"`);
-      expect(configAfterToggle).toContain('"scope":"project"');
-      expect(configAfterToggle).toContain('"scope":"global"');
-      expect(configAfterToggle).toContain('"excluded":true');
+      // Read structurally and compared whole: the four substring checks this
+      // replaces could not say WHICH react entry carried the tombstone, so a
+      // config where the project half was excluded and the global half active
+      // satisfied all four.
+      const entriesAfterToggle = await readSkillEntries(projectDir, E2E_SKILL.react.id);
+      expect(
+        entriesAfterToggle
+          .map((entry) => ({ scope: entry.scope, excluded: entry.excluded === true }))
+          .sort((a, b) => a.scope.localeCompare(b.scope)),
+      ).toStrictEqual([
+        { scope: "global", excluded: true },
+        { scope: "project", excluded: false },
+      ]);
 
       // Phase 3: open the wizard and complete it with zero changes. On `main`
       // the hydrator drops the tombstone during this pass, so the re-saved

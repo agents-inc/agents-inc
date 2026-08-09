@@ -1,7 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { CLI } from "../fixtures/cli.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
 import {
   cleanupTempDir,
@@ -12,7 +11,7 @@ import {
   fileExists,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 
 /**
  * `eject` invents a `.claude-src/config.ts` when the directory has none. The
@@ -25,26 +24,17 @@ import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
  * becomes the global manifest every project's generated types import from — the
  * scope where a half-written pair does the most damage.
  *
- * CURRENTLY RED, deliberately: `ensureMinimalConfig` (eject.ts) writes
- * `config.ts` with a bare `writeFile` and no types sibling. Both the
- * `config-types.ts` existence assertion and the `tsc` verdict carry the red; the
- * tsc failure is `TS2307`, "cannot find module './config-types'".
+ * `agent-partials` rather than `skills`, and the eject type is not incidental: a
+ * directory with no config has no source either — `--source` and `CC_SOURCE` are
+ * `init`'s alone (CLI-466), so nothing can point this run at the E2E fixture — and
+ * `agent-partials` is the eject that reads no skills source at all. It writes the
+ * same invented pair through the same `ensureMinimalConfig`, offline, instead of
+ * ejecting the default public marketplace over the network.
  */
 describe("eject at the home directory writes a complete config pair", () => {
   let tempDir: string | undefined;
-  let sourceDir: string;
-  let sourceTempDir: string;
 
-  beforeAll(async () => {
-    await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
+  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -56,7 +46,7 @@ describe("eject at the home directory writes a complete config pair", () => {
     tempDir = fakeHome;
 
     const { exitCode, output } = await CLI.run(
-      ["eject", "skills", "--source", sourceDir],
+      ["eject", "agent-partials"],
       { dir: fakeHome },
       { env: { HOME: fakeHome } },
     );

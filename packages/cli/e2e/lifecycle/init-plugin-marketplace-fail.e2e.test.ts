@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupFixture, ensureBinaryExists } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
 
@@ -37,7 +37,7 @@ describe("init with unresolvable marketplace: filesystem integrity", () => {
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (localSource) await cleanupTempDir(localSource.tempDir);
+    await cleanupFixture(localSource);
   });
 
   afterEach(async () => {

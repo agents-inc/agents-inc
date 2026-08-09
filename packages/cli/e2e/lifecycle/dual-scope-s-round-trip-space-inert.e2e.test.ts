@@ -25,14 +25,19 @@ import {
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
- * D-260 — `s` is the SOLE dual-scope toggle; spacebar is inert on a `[P][G]` row.
+ * D-260 — `s` round-trips a `[P][G]` pair, and the two keys own different halves
+ * of it.
  *
  * Wanted binding, for a PERSISTED dual-scope pair (active project entry plus a
- * global excluded tombstone), symmetrical for skills and agents:
+ * global excluded tombstone):
  *
  *   - `s` round-trips BOTH ways: `[P][G]` --s--> `[G]` --s--> `[P][G]`.
- *   - SPACEBAR is a no-op that emits the same global-locked toast already shown
- *     for a global-only skill/agent, leaving badges and selection untouched.
+ *   - SKILLS: spacebar drops the half the PROJECT owns, collapsing the pair to
+ *     the inherited `[G]` it was masking. The global install underneath is
+ *     untouched — nothing project scope may not do.
+ *   - AGENTS: spacebar stays a no-op that emits the global-locked agent toast.
+ *     The agent-side pair is locked to `s` as a whole; only the skill guard was
+ *     narrowed to global-owned halves.
  *
  * Both suites run against a real `cc edit` session with `HOME` pointed at a fake
  * home distinct from the project dir, so the run exercises genuine PROJECT scope
@@ -43,7 +48,7 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
  * byte-identical and the compiled artefacts at both scopes must survive.
  */
 
-describe("dual-scope `s` round-trip with an inert spacebar", () => {
+describe("dual-scope `s` round-trip, and what spacebar owns beside it", () => {
   let sourceDir: string;
   let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
@@ -65,7 +70,7 @@ describe("dual-scope `s` round-trip with an inert spacebar", () => {
   });
 
   it(
-    "skill: `s` round-trips [P][G] both ways and spacebar is an inert global-locked no-op",
+    "skill: `s` round-trips [P][G] both ways and spacebar drops the project half",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
@@ -122,18 +127,17 @@ describe("dual-scope `s` round-trip with an inert spacebar", () => {
           "`s` must round-trip the collapsed row back to [P][G]",
         ).toStrictEqual(["G", "P"]);
 
-        // Spacebar on the restored pair is inert and emits the global-locked
-        // toast. The toast is awaited on the append-only raw surface anchored to
-        // a pre-press cursor: Ink rewrites the absolutely-positioned toast row in
-        // place, so xterm's processed buffer can lose it before the test reads it.
-        await wizard.build.toggleFocusedSkillAwaiting(STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
+        // Spacebar on the restored pair drops the project half — the project owns
+        // that entry — and the masked global install surfaces in its place, so the
+        // skill is still the one selected framework.
+        await wizard.build.toggleFocusedSkill();
         expect(
-          [...(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.display))].sort(),
-          "an inert spacebar must leave the dual-scope badges untouched",
-        ).toStrictEqual(["G", "P"]);
+          await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.display),
+          "spacebar must drop the project half and leave the inherited global badge",
+        ).toStrictEqual(["G"]);
         expect(
           await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
-          "an inert spacebar must leave the framework selection count unchanged",
+          "the skill stays selected after the project half goes — it is still active globally",
         ).toBe(1);
       } finally {
         await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);

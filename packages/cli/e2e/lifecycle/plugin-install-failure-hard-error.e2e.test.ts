@@ -9,7 +9,7 @@ import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
-  cleanupTempDir,
+  cleanupFixture,
   configTsPath,
   ensureBinaryExists,
   fileExists,
@@ -58,7 +58,7 @@ describe.skipIf(!claudeAvailable)(
     }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
-      if (fixture) await cleanupTempDir(fixture.tempDir);
+      await cleanupFixture(fixture);
     });
 
     afterEach(async () => {
@@ -135,7 +135,7 @@ describe.skipIf(!claudeAvailable)(
     }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
-      if (fixture) await cleanupTempDir(fixture.tempDir);
+      await cleanupFixture(fixture);
     });
 
     afterEach(async () => {
@@ -148,6 +148,7 @@ describe.skipIf(!claudeAvailable)(
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
+          source: fixture.sourceDir,
           skills: [E2E_SKILL.react.id],
           marketplace: fixture.marketplaceName,
           agents: ["web-developer"],

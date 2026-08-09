@@ -3,11 +3,11 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
-import { cleanupTempDir, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
+import { cleanupFixture, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
 
 /**
@@ -32,7 +32,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   afterEach(async () => {
@@ -70,21 +70,22 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
 
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
+        // The whole composed narration line, count included: the bare verb
+        // cannot tell a switch TO plugin from the switch BACK that the sibling
+        // block drives, and the count is what tells a per-skill switch from a
+        // bulk one.
         const rawOutput = result.rawOutput;
-        expect(rawOutput).toContain("Switching");
-        expect(rawOutput).toContain("to plugin");
+        expect(rawOutput).toContain(
+          `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.PLUGIN_NATIVE}`,
+        );
+        expect(rawOutput).not.toContain(STEP_TEXT.EJECT_LOCAL_COPY);
 
         await expect(result.project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           source: fixture.marketplaceName,
         });
 
-        // Agents should be compiled after migration.
-        // KNOWN GAP: Plugin fixture (createE2EPluginSource) does not include
-        // agent definition partials, so compilation cannot produce agent .md files.
-        // This assertion documents the gap — when the fixture is extended with
-        // agent partials, remove the .fails() wrapper.
-        // await expect(result.project).toHaveCompiledAgent("web-developer");
+        await expect(result.project).toHaveCompiledAgent("web-developer");
       },
     );
   });
@@ -120,8 +121,10 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
         const rawOutput = result.rawOutput;
-        expect(rawOutput).toContain("Switching");
-        expect(rawOutput).toContain("to eject");
+        expect(rawOutput).toContain(
+          `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.EJECT_LOCAL_COPY}`,
+        );
+        expect(rawOutput).not.toContain(STEP_TEXT.PLUGIN_NATIVE);
 
         await expect(result.project).toHaveSkillCopied(E2E_SKILL.react.id);
         await expect(result.project).toHaveConfig({

@@ -86,10 +86,11 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
         contains: ["name: api-developer"],
       });
 
-      // P1-G: No archive warnings or errors
-      const initOutput = initResult.output;
-      expect(initOutput).not.toContain("Failed to archive");
-      expect(initOutput).not.toContain("ENOENT");
+      // P1-G: the install announced completion. The generic absences that stood
+      // here ("Failed to archive", "ENOENT") could not tell a clean install from
+      // one that failed with different wording, and the exit code beside them
+      // already carries "did not crash".
+      expect(initResult.output).toContain(STEP_TEXT.INIT_SUCCESS);
 
       // Clean up session before non-interactive commands
       await initResult.destroy();
@@ -102,11 +103,13 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
         ["compile"],
         { dir: projectDir },
         {
-          env: { AGENTSINC_SOURCE: undefined },
+          env: { CC_SOURCE: undefined },
         },
       );
 
-      expect(compileResult.output).toMatch(/Recompiled [1-9]\d* global agents/);
+      // The install compiled these agents moments ago, so recompiling them is a
+      // no-op — and the summary has to say that rather than count the roster again.
+      expect(compileResult.output).toMatch(/0 global agents rewritten, [1-9]\d* unchanged/);
 
       // P2-A/B/C: Config preserved, agent still compiled with correct content
       await expectPhaseSuccess(
@@ -132,7 +135,7 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
         ["uninstall", "--yes"],
         { dir: projectDir },
         {
-          env: { AGENTSINC_SOURCE: undefined },
+          env: { CC_SOURCE: undefined },
         },
       );
 

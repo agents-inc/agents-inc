@@ -18,6 +18,7 @@ import type {
   StackAgentConfig,
 } from "../../src/cli/types/index.js";
 import { createMockSkillAssignment } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
+import { typedKeys, typedValues } from "../../src/cli/utils/typed-object.js";
 import {
   renderAgentYaml,
   renderConfigTs,
@@ -61,6 +62,7 @@ export const E2E_SKILL_TITLES = {
   "meta-reviewing-cli-reviewing": "CLI Reviewing",
   "web-framework-vue-composition-api": "Vue Composition Api",
   "web-state-pinia": "web-state-pinia",
+  "web-testing-visual-regression": "Visual Regression",
 } as const satisfies Partial<Record<SkillId, string>>;
 
 /**
@@ -144,6 +146,19 @@ const E2E_SKILLS: E2ESkill[] = [
     description: "Vue state management",
     domain: "web",
   },
+  // The SPARE: the only skill `E2E_STACK` assigns to no agent, in a category that is
+  // NOT exclusive. Every other skill a default install leaves behind — pinia,
+  // vue-composition-api — is the exclusive alternate of one the install DID take, so
+  // toggling it is a swap and toggling it back a no-op. That left "init installs a
+  // subset, edit adds one of the rest" undrivable, which is why init-then-edit-merge
+  // could not reach the merge it exists to test. Selecting this one genuinely adds.
+  {
+    category: "web-testing",
+    id: "web-testing-visual-regression",
+    slug: "visual-regression",
+    description: "Screenshot baselines and diff review",
+    domain: "web",
+  },
 ];
 
 // Preload shape matches real CLI stacks in src/cli/lib/configuration/default-stacks.ts:
@@ -198,6 +213,35 @@ const E2E_STACK: Stack = {
   },
 };
 
+/**
+ * The sub-agents `E2E_STACK` declares, read off the stack object rather than
+ * re-typed, and sorted the way the installed roster is.
+ *
+ * A stack's `agents` keys ARE the roster a selection installs, so a spec that
+ * spells the names out separately can agree with the code while both disagree
+ * with the stack. Deriving them here is what makes "installed === declared" a
+ * statement about the stack instead of about a second hand-written list.
+ */
+export const E2E_STACK_AGENTS: AgentName[] = typedKeys<AgentName>(E2E_STACK.agents).sort();
+
+/**
+ * Every skill `E2E_STACK` assigns to any of its agents, deduplicated and sorted
+ * the way an installed config's skill list is.
+ *
+ * Read off the stack object for the same reason as {@link E2E_STACK_AGENTS}: a
+ * stack's assignments ARE the statement of what selecting it installs, so a
+ * hand-written second list can agree with the installer while both disagree with
+ * the stack. The one skill deliberately left out is the SPARE
+ * (`web-testing-visual-regression`) — see its note in `E2E_SKILLS`.
+ */
+export const E2E_STACK_SKILL_IDS: SkillId[] = [
+  ...new Set(
+    typedValues(E2E_STACK.agents)
+      .flatMap((agentConfig) => typedValues(agentConfig))
+      .flatMap((assignments) => assignments.map((assignment) => assignment.id)),
+  ),
+].sort();
+
 // Minimal agent template for E2E tests. Diverges from src/agents/_templates/agent.liquid
 // (which ships partials + methodology sections); the frontmatter `skills:` block MUST
 // mirror production exactly — consumes top-level `preloadedSkillIds` (NOT `agent.preloadedSkills`,
@@ -222,8 +266,36 @@ model: {{ agent.model }}
 `;
 
 type E2ESourceOptions = {
-  /** Custom relationship rules to write to config/skill-rules.ts */
+  /**
+   * Custom relationship rules to write to `config/skill-rules.ts`.
+   *
+   * This is the ONLY way a source built here says anything about unresolved slugs.
+   * The CLI's built-in rules are narrowed to the slugs a source ships before they
+   * are applied (`relationshipsForSource` in `lib/loading/source-loader.ts`), so a
+   * plain `createE2ESource()` warns about nothing — it used to warn 2384 times, and
+   * the wizard's startup band painted three of them over every frame in this suite.
+   *
+   * A spec that needs an unresolved-slug warning therefore names its own dangling
+   * slug here, deliberately and in ones, rather than inheriting thousands.
+   */
   relationships?: Partial<RelationshipDefinitions>;
+  /**
+   * Skill ids to leave out of the written source — a marketplace as it stood
+   * BEFORE those skills were published.
+   *
+   * Pairs with a plain `createE2ESource()` to give two directories differing by
+   * exactly the named skills, which is how a spec models a source moving on
+   * without editing one in place.
+   */
+  withoutSkills?: readonly SkillId[];
+  /**
+   * Write no `config/stacks.ts` at all — a marketplace that ships no stacks.
+   *
+   * The CLI's built-in stacks stand in only for the default public marketplace,
+   * so a source created this way offers the wizard nothing to choose between on
+   * its stack step and the wizard skips that step entirely.
+   */
+  withoutStacks?: boolean;
 };
 
 /** A created E2E source: the source root plus the temp dir owning it. */
@@ -246,13 +318,25 @@ export type E2ESource = {
  * When `options.relationships` is provided, a `config/skill-rules.ts` file is
  * written to the source with those relationship rules. This enables E2E testing
  * of slug-based relationship resolution via `cc validate` and `cc info`.
+ *
+ * When `options.withoutStacks` is set, the stacks file is omitted — see the
+ * option's own note for what a stackless marketplace makes the wizard do.
+ *
+ * When `options.withoutSkills` names skills, they are not written at all — see
+ * that option's note for the pair of sources it exists to produce.
  */
 export async function createE2ESource(options?: E2ESourceOptions): Promise<E2ESource> {
   const tempDir = await createTempDir();
   const sourceDir = path.join(tempDir, "source");
 
-  await writeSkills(sourceDir, E2E_SKILLS);
-  await writeStacks(sourceDir);
+  const omitted = new Set<string>(options?.withoutSkills ?? []);
+  await writeSkills(
+    sourceDir,
+    E2E_SKILLS.filter((skill) => !omitted.has(skill.id)),
+  );
+  if (!options?.withoutStacks) {
+    await writeStacks(sourceDir);
+  }
   await writeAgents(sourceDir);
 
   if (options?.relationships) {
@@ -304,10 +388,8 @@ async function writeSkillRules(
   const fullRelationships: RelationshipDefinitions = {
     conflicts: relationships.conflicts ?? [],
     discourages: relationships.discourages ?? [],
-    recommends: relationships.recommends ?? [],
     requires: relationships.requires ?? [],
     alternatives: relationships.alternatives ?? [],
-    ...(relationships.compatibleWith ? { compatibleWith: relationships.compatibleWith } : {}),
   };
 
   await writeFile(

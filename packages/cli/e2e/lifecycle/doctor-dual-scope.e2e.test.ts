@@ -2,7 +2,7 @@ import { mkdir, rm, writeFile } from "fs/promises";
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { cleanupTempDir, ensureBinaryExists, runCLI } from "../helpers/test-utils.js";
 import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
 
@@ -47,10 +47,14 @@ describe("doctor dual-scope diagnostics", () => {
       });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).not.toContain("FAIL");
-      expect(stdout).not.toContain("ERROR");
-      expect(stdout).toContain("Config");
-      expect(stdout).toContain("Source");
+
+      // The summary counts, not a generic absence: `not.toContain("FAIL")` is
+      // tripped by any text carrying those letters, and `toContain("Config")`
+      // matches a pass row, a warn row and a path alike.
+      expect(stdout).toMatch(
+        new RegExp(`${STEP_TEXT.DOCTOR_SUMMARY}\\s+\\d+ passed, 0 warnings, 0 errors`),
+      );
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
     },
   );
 
@@ -72,9 +76,12 @@ describe("doctor dual-scope diagnostics", () => {
       // so doctor must still exit successfully.
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Doctor should warn about the missing agent file
-      const output = combined.toLowerCase();
-      expect(output).toMatch(/warn|recompilation/);
+      // Which of the two the report said, not either: an alternation cannot tell
+      // a warning apart from a recompilation notice, and telling them apart is
+      // this spec's whole subject.
+      expect(combined).toMatch(
+        new RegExp(`${STEP_TEXT.DOCTOR_SUMMARY}\\s+\\d+ passed, [1-9]\\d* warnings?, 0 errors`),
+      );
       expect(combined).toContain("api-developer");
     },
   );
@@ -94,12 +101,12 @@ describe("doctor dual-scope diagnostics", () => {
         env: { HOME: env.fakeHome },
       });
 
-      // Doctor checks for orphaned agent files (No Orphans check).
-      // Orphaned skill dirs may not be flagged as errors — the important
-      // thing is doctor runs without crashing on the extra directory.
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      const output = combined.toLowerCase();
-      expect(output).toMatch(/orphan|warn|summary/);
+      // The operational No Orphans check only looks at agent files, but the content
+      // layer walks every directory under .claude/skills/ regardless of config — a
+      // skill directory with no metadata.yaml is content Claude Code would load.
+      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      expect(combined).toContain("orphan-skill");
+      expect(combined).toContain(`Missing ${FILES.METADATA_YAML}`);
     },
   );
 });

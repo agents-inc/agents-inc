@@ -9,7 +9,12 @@ import {
 import "../matchers/setup.js";
 import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { cleanupTempDir, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
+import {
+  cleanupFixture,
+  cleanupTempDir,
+  ensureBinaryExists,
+  isClaudeCLIAvailable,
+} from "../helpers/test-utils.js";
 
 /**
  * D-182: Deselected global skills should NOT show as removed on the confirm
@@ -42,7 +47,7 @@ describe.skipIf(!claudeAvailable)("init global preselection confirm step", () =>
   });
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   it(

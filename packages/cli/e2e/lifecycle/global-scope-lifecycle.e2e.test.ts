@@ -1,3 +1,4 @@
+import path from "path";
 import { CLI } from "../fixtures/cli.js";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
@@ -5,13 +6,21 @@ import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir, configTypesTsPath, ensureBinaryExists } from "../helpers/test-utils.js";
 import {
   createDualScopeEnv,
   createTestEnvironment,
   type DualScopeEnv,
 } from "../fixtures/dual-scope-helpers.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import {
+  TS_NOT_ASSIGNABLE,
+  probeConfigTypesNarrowing,
+  typecheckGeneratedConfig,
+} from "../helpers/type-check-probe.js";
+
+/** The aliases a scope-split install fills in at each scope it writes. */
+const SPLIT_INSTALL_ALIASES = ["SkillId", "AgentName", "Category"] as const;
 
 /**
  * Global scope lifecycle E2E tests -- regression coverage for scope-blind bugs.
@@ -74,7 +83,7 @@ describe("global scope lifecycle -- doctor command", () => {
   }, TIMEOUTS.LIFECYCLE);
 
   afterAll(async () => {
-    await sharedEnv?.destroy();
+    await sharedEnv.destroy();
   });
 
   it("should not report false 'missing' for global-scoped agents", async () => {
@@ -83,12 +92,18 @@ describe("global scope lifecycle -- doctor command", () => {
     const { exitCode, stdout } = await CLI.run(
       ["doctor"],
       { dir: projectDir },
-      { env: { HOME: fakeHome, CC_SOURCE: sourceDir } },
+      { env: { HOME: fakeHome } },
     );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).not.toContain("web-developer (missing)");
-    expect(stdout).toContain("agents compiled");
+    // `toContain("agents compiled")` is a fragment the PASS row and the WARN row
+    // both carry ("N/N agents compiled" vs "N agents need recompilation" plus its
+    // detail lines), so only the negative above discriminated. The pass row names
+    // its own counts, and the tip fires only on the warn.
+    expect(stdout).toContain(``);
+    expect(stdout).toMatch(/(\d+)\/\1 agents compiled/);
+    expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_COMPILE_AGENTS);
   });
 
   it("should not report false 'missing' for global-scoped skills", async () => {
@@ -97,7 +112,7 @@ describe("global scope lifecycle -- doctor command", () => {
     const { exitCode, stdout } = await CLI.run(
       ["doctor"],
       { dir: projectDir },
-      { env: { HOME: fakeHome, CC_SOURCE: sourceDir } },
+      { env: { HOME: fakeHome } },
     );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -215,6 +230,27 @@ describe("global scope lifecycle -- init wizard with scope toggling", () => {
       await expect({ dir: fakeHome }).toHaveSkillCopied("web-testing-vitest");
       await expect({ dir: fakeHome }).not.toHaveSkillCopied("web-framework-react");
       await expect({ dir: projectDir }).not.toHaveSkillCopied("web-testing-vitest");
+
+      // --- Generated type surface, at both scopes ---
+      // A split install writes one config.ts per scope and one config-types.ts
+      // beside each. The project's aliases EXTEND the global ones, so a global
+      // union that degraded to `string` would absorb the project's literals and
+      // neither file would look wrong on its own — which is why both are probed
+      // rather than just the scope this flow's assertions above are about.
+      for (const scopeDir of [fakeHome, projectDir]) {
+        const claudeSrcDir = path.dirname(configTypesTsPath(scopeDir));
+        const typecheck = await typecheckGeneratedConfig(claudeSrcDir);
+        expect(
+          typecheck.exitCode,
+          `the config written at ${scopeDir} must type-check against its own types.\ntsc output:\n${typecheck.output}`,
+        ).toBe(EXIT_CODES.SUCCESS);
+        const probe = await probeConfigTypesNarrowing(claudeSrcDir, SPLIT_INSTALL_ALIASES);
+        expect(
+          probe.exitCode,
+          `a bogus literal must not type-check at ${scopeDir}.\ntsc output:\n${probe.output || "(no diagnostics — the unions accept everything)"}`,
+        ).not.toBe(EXIT_CODES.SUCCESS);
+        expect(probe.output).toContain(TS_NOT_ASSIGNABLE);
+      }
 
       await result.destroy();
     },

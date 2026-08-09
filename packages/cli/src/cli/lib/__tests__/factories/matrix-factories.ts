@@ -2,6 +2,7 @@ import { typedEntries } from "../../../utils/typed-object";
 import type {
   Category,
   CategoryDefinition,
+  CategoryMap,
   MergedSkillsMatrix,
   RelationshipDefinitions,
   ResolvedSkill,
@@ -71,7 +72,7 @@ export function createMockMatrix(
 
     // The last arg is overrides when it lacks the 'id' + 'slug' skill shape
     const hasOverrides = lastArg !== undefined && !("id" in lastArg && "slug" in lastArg);
-    overrides = hasOverrides ? (lastArg as Partial<MergedSkillsMatrix>) : undefined;
+    overrides = hasOverrides ? lastArg : undefined;
     const skills = (hasOverrides ? allArgs.slice(0, -1) : allArgs) as ResolvedSkill[];
     skillsRecord = Object.fromEntries(skills.map((skill) => [skill.id, skill]));
   } else {
@@ -80,7 +81,7 @@ export function createMockMatrix(
     overrides = rest[0] as Partial<MergedSkillsMatrix> | undefined;
   }
 
-  const skillsWithSlugs = Object.values(skillsRecord).filter((skill) => skill.slug);
+  const skillsWithSlugs = Object.values(skillsRecord);
   // Boundary casts: Object.fromEntries widens keys to string
   const autoSlugToId = Object.fromEntries(
     skillsWithSlugs.map((skill) => [skill.slug, skill.id]),
@@ -91,7 +92,7 @@ export function createMockMatrix(
 
   return {
     version: "1.0.0",
-    categories: {} as Record<Category, CategoryDefinition>,
+    categories: {},
     skills: skillsRecord,
     suggestedStacks: [],
     slugMap: { slugToId: autoSlugToId, idToSlug: autoIdToSlug },
@@ -103,7 +104,7 @@ export function createMockMatrix(
 /**
  * Builds a comprehensive test matrix with 8 skills across 7 categories,
  * 2 suggested stacks, display name mappings, and relationship data
- * (conflicts, recommends). Includes anti-over-engineering methodology skill.
+ * (conflicts). Includes anti-over-engineering methodology skill.
  * @returns A fully populated MergedSkillsMatrix with realistic test data
  */
 export function createComprehensiveMatrix(
@@ -126,7 +127,7 @@ export function createComprehensiveMatrix(
     "meta-reviewing-reviewing": SKILLS.antiOverEng,
   };
 
-  const categories = {
+  const categories: CategoryMap = {
     "web-framework": {
       ...TEST_CATEGORIES.framework,
       domain: "web",
@@ -136,7 +137,7 @@ export function createComprehensiveMatrix(
     "web-client-state": { ...TEST_CATEGORIES.clientState, domain: "web", order: 1 },
     "web-styling": { ...TEST_CATEGORIES.styling, domain: "web", order: 2 },
     "api-api": { ...TEST_CATEGORIES.api, domain: "api", exclusive: true, required: true },
-    "api-database": { ...TEST_CATEGORIES.database, domain: "api", order: 1 },
+    "api-orm": { ...TEST_CATEGORIES.database, domain: "api", order: 1 },
     "web-testing": {
       ...TEST_CATEGORIES.testing,
       domain: "shared",
@@ -150,7 +151,7 @@ export function createComprehensiveMatrix(
       required: false,
       order: 11,
     },
-  } as Record<Category, CategoryDefinition>;
+  };
 
   const suggestedStacks: ResolvedStack[] = [
     createMockResolvedStack("nextjs-fullstack", "Next.js Full-Stack", {
@@ -163,9 +164,9 @@ export function createComprehensiveMatrix(
         },
         "api-developer": {
           "api-api": ["api-framework-hono"],
-          "api-database": ["api-database-drizzle"],
+          "api-orm": ["api-database-drizzle"],
         },
-      } as ResolvedStack["skills"],
+      } satisfies ResolvedStack["skills"],
       allSkillIds: [
         "web-framework-react",
         "web-state-zustand",
@@ -181,14 +182,14 @@ export function createComprehensiveMatrix(
         "web-developer": {
           "web-framework": ["web-framework-vue-composition-api"],
         },
-      } as ResolvedStack["skills"],
+      } satisfies ResolvedStack["skills"],
       allSkillIds: ["web-framework-vue-composition-api"],
       philosophy: "Progressive framework approach",
     }),
   ];
 
   // Boundary cast: test matrix only contains a subset of all possible slugs
-  const slugToId = {
+  const slugToId: SkillSlugMap["slugToId"] = {
     react: "web-framework-react",
     "vue-composition-api": "web-framework-vue-composition-api",
     zustand: "web-state-zustand",
@@ -197,7 +198,7 @@ export function createComprehensiveMatrix(
     drizzle: "api-database-drizzle",
     vitest: "web-testing-vitest",
     reviewing: "meta-reviewing-reviewing",
-  } as Record<SkillSlug, SkillId>;
+  };
 
   // Boundary cast: Object.fromEntries returns { [k: string]: string }
   const idToSlug = Object.fromEntries(
@@ -265,7 +266,7 @@ export function createBasicMatrix(overrides?: Partial<MergedSkillsMatrix>): Merg
         exclusive: false,
         required: false,
       },
-    } as Record<Category, CategoryDefinition>,
+    } satisfies CategoryMap,
     ...overrides,
   });
 }
@@ -285,7 +286,6 @@ export function createMockMatrixConfig(
   const defaultRelationships: RelationshipDefinitions = {
     conflicts: [],
     discourages: [],
-    recommends: [],
     requires: [],
     alternatives: [],
   };

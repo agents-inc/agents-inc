@@ -20,7 +20,7 @@ import "../matchers/setup.js";
  * E2E tests for mixed scope config split verification (Gap 2).
  *
  * When some skills are project-scoped and others are global-scoped,
- * writeScopedConfigs() should produce TWO config files:
+ * writeScopedFromWizard() should produce TWO config files:
  *   - ~/.claude-src/config.ts (global-scoped items)
  *   - <projectDir>/.claude-src/config.ts (project-scoped items)
  */

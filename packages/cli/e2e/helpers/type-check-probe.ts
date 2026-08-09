@@ -44,13 +44,21 @@ export const TS_UNKNOWN_PROPERTY = "TS2353";
 const TSC_BIN = createRequire(import.meta.url).resolve("typescript/bin/tsc");
 
 /**
- * Mirrors the compiler options in the repo's tsconfig.json so the probe
- * type-checks a generated config under the same settings a real consumer would.
+ * The FLOOR a consumer's tsconfig is assumed to meet — deliberately not a mirror
+ * of this repo's. What the probe type-checks is a config the CLI wrote into
+ * somebody else's project, so the settings that matter are the weakest ones it
+ * still has to hold under, not whatever this repo happens to compile itself at.
+ * `--target ES2022` stays put for that reason even though `packages/cli` moved to
+ * ES2023 (via `@workspace/typescript-config/node.json`): a generated pair that
+ * narrows at ES2022 narrows at every later target too, and re-pinning this list
+ * to follow the repo would make an unrelated tsconfig bump able to move a test's
+ * verdict.
  *
  * `--ignoreConfig` is what makes tsc ignore any surrounding tsconfig.json, so the
- * probe's verdict cannot be perturbed by the temp directory's location. Passing
- * the files positionally used to imply that on its own; TypeScript 6 refuses the
- * combination with TS5112 instead, and requires the intent to be stated outright.
+ * probe's verdict cannot be perturbed by the temp directory's location — the same
+ * independence, stated as a flag. Passing the files positionally used to imply
+ * that on its own; TypeScript 6 refuses the combination with TS5112 instead, and
+ * requires the intent to be stated outright.
  */
 const TSC_FLAGS = [
   "--ignoreConfig",

@@ -71,7 +71,7 @@ export const MULTI_SOURCE_CATEGORIES = buildCategoryMap({
   "web-styling": { ...TEST_CATEGORIES.styling, order: 2 },
   "web-testing": { ...TEST_CATEGORIES.testing, exclusive: false, order: 3 },
   "api-api": { ...TEST_CATEGORIES.api, exclusive: true, order: 4 },
-  "api-database": { ...TEST_CATEGORIES.database, order: 5 },
+  "api-orm": { ...TEST_CATEGORIES.database, order: 5 },
   "shared-security": { ...TEST_CATEGORIES.security, order: 6 },
   "web-animation": { ...TEST_CATEGORIES.animation, order: 7 },
   "meta-reviewing": { ...TEST_CATEGORIES.methodology, order: 8 },

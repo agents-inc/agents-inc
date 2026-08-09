@@ -88,8 +88,7 @@ describe("edit removes the only project-scoped skill an agent references", () =>
         name: "project-scope-edit-test",
         skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", source: "eject" }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
-        domains: ["web"],
-        selectedAgents: [E2E_AGENT["web-developer"].name],
+        selectedDomains: ["web"],
         stack: singleSkillStack,
       });
       await writeProjectConfig(projectDir, config);

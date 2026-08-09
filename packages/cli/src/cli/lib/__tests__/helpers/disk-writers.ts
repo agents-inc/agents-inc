@@ -1,12 +1,7 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
-import {
-  PLUGIN_MANIFEST_DIR,
-  PLUGIN_MANIFEST_FILE,
-  STANDARD_DIRS,
-  STANDARD_FILES,
-} from "../../../consts";
+import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE, STANDARD_FILES } from "../../../consts";
 import { matrix } from "../../matrix/matrix-provider";
 import { getInstalledPluginsRegistryPath } from "../../plugins/plugin-settings";
 import { typedEntries } from "../../../utils/typed-object";
@@ -14,7 +9,6 @@ import { computeSkillFolderHash } from "../../versioning";
 import { renderSkillMd, renderAgentYaml } from "../content-generators";
 import type { SkillId } from "../../../types";
 import type { TestAgent, TestPluginManifest, TestSkill } from "../fixtures/create-test-source";
-import type { ImportSourceSkill } from "../mock-data/mock-skills";
 
 export async function writeTestSkill(
   skillsDir: string,
@@ -45,14 +39,18 @@ export async function writeTestSkill(
   );
 
   if (!options?.skipMetadata && skill) {
-    const { slug, category, author } = skill;
+    const { slug, category, author, displayName } = skill;
     const domain = category.split("-")[0];
 
     const contentHash = await computeSkillFolderHash(skillDir);
+    // displayName included with the rest: it is one of the four fields
+    // `localRawMetadataSchema` requires, so a file without it describes no skill
+    // and `compile` refuses it.
     const baseMetadata = {
       author,
       category,
       domain,
+      displayName,
       slug,
       contentHash,
     };
@@ -92,7 +90,7 @@ export async function writeSourceSkill(
     slug,
     category: config.category,
     domain,
-    author: config.author ?? "@test",
+    author: config.author,
   };
 
   await writeFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), stringifyYaml(metadata));
@@ -149,31 +147,6 @@ export async function writeSourceAgent(agentsDir: string, agent: TestAgent): Pro
   );
 
   return agentDir;
-}
-
-/**
- * Writes each skill of a local import source under `<projectDir>/<sourceName>/skills/`.
- * SKILL.md comes from `skill.content`; metadata.yaml is written only when present.
- */
-export async function createImportSource(
-  projectDir: string,
-  sourceName: string,
-  skills: ImportSourceSkill[],
-): Promise<void> {
-  const skillsDir = path.join(projectDir, sourceName, STANDARD_DIRS.SKILLS);
-
-  for (const skill of skills) {
-    const skillDir = path.join(skillsDir, skill.name);
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), skill.content);
-
-    if (skill.metadata) {
-      await writeFile(
-        path.join(skillDir, STANDARD_FILES.METADATA_YAML),
-        stringifyYaml(skill.metadata),
-      );
-    }
-  }
 }
 
 /**

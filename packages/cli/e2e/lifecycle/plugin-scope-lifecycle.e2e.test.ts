@@ -7,13 +7,14 @@ import {
 import "../matchers/setup.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
-  isClaudeCLIAvailable,
+  cleanupFixture,
   cleanupTempDir,
   createPermissionsFile,
   ensureBinaryExists,
+  isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 
 /**
@@ -47,9 +48,25 @@ describe.skipIf(!claudeAvailable)(
 
     afterAll(async () => {
       if (tempDir) await cleanupTempDir(tempDir);
-      if (fixture) await cleanupTempDir(fixture.tempDir);
+      await cleanupFixture(fixture);
     });
 
+    /**
+     * CURRENTLY RED, deliberately. The assertion that carries the red is the first
+     * config check in Phase 2:
+     *
+     *     await expect({ dir: fakeHome }).toHaveConfig({ agents: ["web-developer"] });
+     *
+     * which fails with `Expected config.ts to contain agent "web-developer" but it
+     * does not`. Toggling the sub-agent to global scope on the Agents step does not
+     * put it in the GLOBAL config: it stays in the project config alongside
+     * `api-developer`, so the scope split the wizard rendered is not the one it
+     * wrote. Everything before that point — including the init announcing
+     * `INIT_SUCCESS` — passes, so the red is about where the agent landed, not about
+     * the wizard failing to run.
+     *
+     * Verified 2026-08-08 by running this spec as `it` rather than `it.fails`.
+     */
     it.fails(
       "should init with mixed scopes, verify agent content, and verify preservation (expected fail -- scope routing bugs)",
       { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
@@ -96,15 +113,15 @@ describe.skipIf(!claudeAvailable)(
         const initResultObj = await confirm.confirm();
         const initExitCode = await initResultObj.exitCode;
 
-        const initOutput = initResultObj.output;
         const initRaw = initResultObj.rawOutput;
 
         // P1-A: Init exited successfully
         expect(initExitCode).toBe(EXIT_CODES.SUCCESS);
 
-        // P1-B: No errors in output
-        expect(initRaw).not.toContain("ENOENT");
-        expect(initOutput).not.toContain("Failed to");
+        // P1-B: the wizard announced the install. Two generic absences stood here
+        // ("ENOENT", "Failed to"); neither could tell a completed install from one
+        // that failed with different wording, and P1-A already carries "exited 0".
+        expect(initRaw).toContain(STEP_TEXT.INIT_SUCCESS);
 
         await initResultObj.destroy();
 
@@ -139,7 +156,7 @@ describe.skipIf(!claudeAvailable)(
         // ================================================================
 
         const compileResult = await CLI.run(
-          ["compile", "--source", fixture.sourceDir],
+          ["compile"],
           { dir: projectDir },
           { env: { HOME: fakeHome } },
         );

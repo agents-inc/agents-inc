@@ -7,13 +7,14 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import { TIMEOUTS, DIRS, FILES, SOURCE_PATHS } from "../pages/constants.js";
 import {
-  isClaudeCLIAvailable,
-  claudePluginMarketplaceAdd,
   claudePluginInstall,
-  ensureBinaryExists,
+  claudePluginMarketplaceAdd,
+  cleanupFixture,
   cleanupTempDir,
-  fileExists,
   createTempDir,
+  ensureBinaryExists,
+  fileExists,
+  isClaudeCLIAvailable,
   listFiles,
   readTestFile,
 } from "../helpers/test-utils.js";
@@ -60,7 +61,7 @@ describe.skipIf(!claudeAvailable)(
     }, TIMEOUTS.SETUP);
 
     afterAll(async () => {
-      if (fixture) await cleanupTempDir(fixture.tempDir);
+      await cleanupFixture(fixture);
       if (projectTempDir) await cleanupTempDir(projectTempDir);
     });
 

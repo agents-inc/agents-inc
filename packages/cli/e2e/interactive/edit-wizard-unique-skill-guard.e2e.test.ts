@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir, ensureBinaryExists, loadConfigOrFail } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
@@ -113,6 +113,13 @@ describe("unique skill in category guard", () => {
         agents: ["web-developer"],
         compiledAgents: ["web-developer"],
       });
+
+      // Which skills survive, read structurally. `expectPhaseSuccess` without
+      // `skillIds` asserted nothing about them, so the deselection this spec is
+      // named for was unobserved — and `toHaveConfig({ skillIds: [] })` cannot
+      // stand in for it, because an empty expectation list checks nothing.
+      const config = await loadConfigOrFail(result.project.dir);
+      expect(config.skills.map((skill) => skill.id)).toStrictEqual([]);
 
       await result.destroy();
     },

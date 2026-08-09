@@ -18,62 +18,42 @@ import {
 import {
   createTestEnvironment,
   finishWizard,
-  readSelectedAgents,
+  readActiveAgentNames,
 } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
 
 /**
- * D-222 — Global-agent propagation writes `selectedAgents` value but not its
- * type → type error in other registered projects.
+ * Global-agent propagation — the propagated config pair's value and type sides
+ * must stay in lockstep in every registered project.
  *
- * When a user promotes a new agent to GLOBAL scope from Project A, the global
- * config gains that agent in its `selectedAgents` field and the CLI
- * propagates the change to every other registered project. The value-side
- * writer (`generateProjectConfigWithInlinedGlobal`) merges global + project
- * `selectedAgents` into each downstream project's `config.ts`. The type-side
- * writer (`generateConfigTypesSource` via `writeStandaloneConfigTypes`) should
- * emit the matching `SelectedAgentName` union in `config-types.ts`.
- *
- * The bug in `propagateGlobalChangesToProjects`
- * (`src/cli/lib/installation/local-installer.ts`) is that `combinedConfig`
- * spreads `projectConfig` but forgets to merge the global + project
- * `selectedAgents` the way it merges `skills`, `agents`, and `domains`. So the
- * type-side writer sees the stale project-level `selectedAgents` array while
- * the value-side writer produces the merged list — leaving Project B with:
- *
- *   // config.ts
- *   const selectedAgents: SelectedAgentName[] = [
- *     "web-developer", "api-developer",  // value side correct
- *   ];
- *
- *   // config-types.ts
- *   export type SelectedAgentName = "web-developer";
- *   //                                           ^ api-developer is missing
- *
- * `tsc --noEmit` then errors on B because `"api-developer"` is not assignable
- * to `SelectedAgentName`.
+ * `ProjectConfig` persists no flat selected-agent list. The selected set is
+ * derived from the non-excluded `config.agents[]` rows via `activeAgentNames`
+ * (`src/cli/lib/configuration/scope-predicates.ts`), and the emitted
+ * `SelectedAgentName` union in `config-types.ts` is derived from those same
+ * rows (`config-types-writer.ts`, reached through `regenerateConfigTypes` in
+ * the gate's `writeProjectConfigPair`). Both halves of a project's pair are
+ * written from the same effective config in the same call, so after a global
+ * change fans out, a project's active agent rows and its `SelectedAgentName`
+ * union must name the same set — drift between them is the regression this
+ * spec pins.
  *
  * Setup (exercises the real CLI pipeline end-to-end):
- *   1. Global init at HOME with api-developer DESELECTED — global
- *      `selectedAgents` starts without api-developer.
- *   2. Register Project B via `cc edit` with a minimal agent-scope
- *      change (web-developer G→P). B's disk `config.ts::selectedAgents`
- *      is inlined from the narrow global — no api-developer. B's
- *      `config-types.ts::SelectedAgentName` is correspondingly narrow.
+ *   1. Global init at HOME with api-developer DESELECTED — the global agents
+ *      rows (and the union they seed) start without it.
+ *   2. Register Project B via `cc edit` with a minimal agent-scope change
+ *      (web-developer G→P). A pure passthrough edit does not create the
+ *      project config, so the toggle forces config generation and project
+ *      registration. B's rows inherit the narrow global set.
  *   3. Register Project A the same way.
- *   4. Run `cc edit` in Project A and toggle api-developer ON. Because
- *      A's project config has no project-scoped skills (the registration
- *      helper used an agent-scope toggle, not a skill-scope toggle),
- *      `reconcileNewAgentScopes` leaves api-developer at the wizard's
- *      default `scope: global`. `splitConfigByScope` routes it to the
- *      global partition, `mergeGlobalConfigs` detects a new global
- *      agent (`globalDataChanged=true`), and
- *      `propagateGlobalChangesToProjects` fires for Project B.
+ *   4. Run `cc edit` in Project A and toggle api-developer ON. The agent
+ *      lands at the wizard's default `scope: global`; `splitConfigByScope`
+ *      routes it to the global partition, `mergeGlobalConfigs` appends the
+ *      new global agent, and `propagateGlobalChangesToProjects` rewrites
+ *      Project B's config pair.
  *
- * Assertion: B's config.ts AND config-types.ts must both include
- * `api-developer` after propagation. This test is EXPECTED TO FAIL on
- * current `main` — the type-side assertion fails because propagation's
- * `combinedConfig` omits the merged `selectedAgents`.
+ * Assertion: after propagation, Project B's active agent rows (via
+ * `activeAgentNames` over its `config.ts`) and its `SelectedAgentName` union
+ * in `config-types.ts` must both include api-developer and must match as sets.
  */
 
 const WEB_DEVELOPER_AGENT = "web-developer";
@@ -94,22 +74,25 @@ function parseSelectedAgentNameUnion(configTypesContent: string): string[] {
     "Expected config-types.ts to declare `export type SelectedAgentName = ...;`",
   ).not.toBeNull();
 
-  const rhs = blockMatch![1];
-  return Array.from(rhs.matchAll(/"([^"]+)"/g)).map((m) => m[1]);
+  const [, rhs] = blockMatch ?? [];
+  if (rhs === undefined) return [];
+  return Array.from(rhs.matchAll(/"([^"]+)"/g)).flatMap(([, name]) =>
+    name === undefined ? [] : [name],
+  );
 }
 
 /**
  * Launch `cc init` at HOME and complete the wizard with api-developer
  * DESELECTED in the agents step. Sources set to local (eject mode).
  *
- * The E2E stack preselects the full DOMAIN_AGENTS set for `web` and
- * `api` (web-developer, web-reviewer, …, api-developer, api-reviewer,
- * …). Toggling api-developer off leaves the other web-/api-scope agents
- * intact. A fresh init with no pre-existing installedAgentConfigs
+ * Selecting the E2E stack preselects the roster that stack declares —
+ * web-developer and api-developer, and nothing the domains would have
+ * added. Toggling api-developer off leaves the rest of the declared
+ * roster intact. A fresh init with no pre-existing installedAgentConfigs
  * treats toggle-off as a CLEAN removal (no tombstone) — verified in
  * wizard-store.toggleAgent where `effectiveInstalledConfigs` is `null`
- * for fresh init — so api-developer is absent from both the written
- * `selectedAgents` array AND the global `agents` array.
+ * for fresh init — so api-developer gets no row in the global `agents`
+ * array at all, and therefore none in the union derived from it.
  */
 async function initGlobalWithoutApiDeveloper(
   sourceDir: string,
@@ -130,8 +113,8 @@ async function initGlobalWithoutApiDeveloper(
     await sources.setAllLocal();
     const agents = await sources.advance();
 
-    // Deselect api-developer. Fresh global init → no tombstone → name
-    // simply leaves selectedAgents.
+    // Deselect api-developer. Fresh global init → no tombstone → the row
+    // simply leaves `config.agents`.
     await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
     const confirm = await agents.advance("init");
     return finishWizard(await confirm.confirm());
@@ -148,12 +131,12 @@ async function initGlobalWithoutApiDeveloper(
  * the project config (see `edit-global-fallback.e2e.test.ts`), so we need
  * some state change to force config generation and project registration.
  *
- * We toggle an AGENT's scope (not a skill's) because
- * `reconcileNewAgentScopes` only demotes newly-added global agents when
- * the project has an active project-scoped SKILL. Using an agent-scope
- * toggle keeps every skill at global scope, which leaves Phase 4's
- * api-developer promotion at `scope: global` — the only code path that
- * triggers `propagateGlobalChangesToProjects`.
+ * We toggle an AGENT's scope (not a skill's) so the registration leaves every
+ * skill at global scope. Phase 4 then adds api-developer as the ONLY new
+ * global-scoped entry, which is what makes `classifyGlobalChange` report a
+ * change whose consequence tier propagates — a project-scoped skill added here
+ * would register the project just as well but would not isolate the promotion
+ * as the propagating change.
  */
 async function registerProjectViaAgentScopeChange(
   sourceDir: string,
@@ -175,8 +158,8 @@ async function registerProjectViaAgentScopeChange(
 
     // Toggle web-developer's scope G→P. Minimal project-level change
     // that creates a project-scoped agent without creating any
-    // project-scoped skills (preventing reconcileNewAgentScopes from
-    // interfering with Phase 4's promotion).
+    // project-scoped skills, so Phase 4's promotion is the only global
+    // change in play.
     await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["web-developer"]);
     await agents.toggleScopeOnFocusedAgent();
 
@@ -190,24 +173,22 @@ async function registerProjectViaAgentScopeChange(
 
 /**
  * Run `cc edit` in the given project (A) and toggle api-developer ON.
- * The toggle-on adds `{name: "api-developer", scope: "global"}` by
- * default (via `applyAgentToggle`).
+ * `applyAgentToggle` (`stores/wizard-store.ts`) appends every newly
+ * selected agent as `{ name, scope: "global" }`, so the promotion needs
+ * no further nudging.
  *
- * Because the registration helper above uses an agent-scope change (not
- * a skill-scope change), the project has no active project-scoped
- * skills — so `reconcileNewAgentScopes` skips the demotion path and
- * api-developer stays at global. `splitConfigByScope` routes it to the
- * global partition. `mergeGlobalConfigs` detects a new global agent →
- * `globalDataChanged=true`. `writeScopedConfigs`'s project-context
- * branch then calls `propagateGlobalChangesToProjects` for every other
- * registered project (Project B).
+ * `splitConfigByScope` routes that row to the global partition,
+ * `mergeGlobalConfigs` appends it as a new global agent, and
+ * `writeScopedFromWizard`'s project-context branch
+ * (`writeFromProjectContext` in `lib/config-gate/index.ts`) hands the
+ * classified change to `applyConsequences`, which calls
+ * `propagateGlobalChangesToProjects` for every OTHER registered project
+ * — Project B.
  *
- * Editing from HOME would be a simpler trigger, but the current
- * `mergeConfigs` does NOT preserve `projects` across edit-at-HOME
- * writes, so that path drops the project registry before propagation
- * could fire. Driving the promotion from a project context exercises
- * the production propagation call-site — the trigger D-222 actually
- * rides on.
+ * Driving the promotion from a project context rather than from HOME is
+ * the point: this spec is about a project edit fanning a new global
+ * agent out to a sibling project, which is the shape the value/type
+ * drift showed up in.
  */
 async function addApiDeveloperGloballyViaProjectEdit(
   sourceDir: string,
@@ -227,9 +208,8 @@ async function addApiDeveloperGloballyViaProjectEdit(
     await sources.waitForReady();
     const agents = await sources.advance();
 
-    // Toggle api-developer ON. Registration helper deliberately avoids
-    // project-scoped skills, so `reconcileNewAgentScopes` skips the
-    // demotion path and the agent stays at its default scope:global.
+    // Toggle api-developer ON. `applyAgentToggle` appends it at
+    // `scope: "global"`, which is what routes it to the global partition.
     await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
     const confirm = await agents.advance("edit");
     return finishWizard(await confirm.confirm());
@@ -262,13 +242,13 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
   });
 
   it(
-    "propagates a newly-globalized agent to both selectedAgents array AND SelectedAgentName type in registered projects",
+    "propagates a newly-globalized agent to both the agent rows AND the SelectedAgentName type of every registered project",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // ================================================================
       // Phase 1: Build global install with api-developer DESELECTED at
-      // the agents step, so global `selectedAgents` (and the
-      // `SelectedAgentName` union it seeds) starts without it.
+      // the agents step, so the global agent rows (and the
+      // `SelectedAgentName` union they seed) start without it.
       // ================================================================
       const env = await createTestEnvironment();
       tempDir = env.tempDir;
@@ -290,12 +270,11 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       expect(await fileExists(globalTypesPath)).toBe(true);
 
       // Sanity: global starts WITHOUT api-developer. The preselected set
-      // is derived from DOMAIN_AGENTS and includes web-developer plus
-      // several other web-/api-scope agents — what matters here is that
-      // api-developer is absent and that the value/type sides agree on
-      // the initial narrow set.
+      // is the stack's declared roster minus the one agent the helper
+      // toggled off — what matters here is that api-developer is absent
+      // and that the value/type sides agree on the initial narrow set.
       const globalTypesPhase1 = await readTestFile(globalTypesPath);
-      const globalSelectedPhase1 = await readSelectedAgents(fakeHome);
+      const globalSelectedPhase1 = await readActiveAgentNames(fakeHome);
       const globalTypeUnionPhase1 = parseSelectedAgentNameUnion(globalTypesPhase1);
       expect(globalSelectedPhase1).toContain(WEB_DEVELOPER_AGENT);
       expect(globalSelectedPhase1).not.toContain(API_DEVELOPER_AGENT);
@@ -308,8 +287,8 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       // make the minimal change that forces project config creation:
       // toggle web-developer G→P in the agents step. An agent-scope
       // change (not a skill-scope change) is intentional — see the
-      // helper's docstring for why. B's stored `selectedAgents` inherits
-      // from the narrow global verbatim.
+      // helper's docstring for why. B's stored agent rows inherit from
+      // the narrow global verbatim.
       // ================================================================
       const projectBRegistration = await registerProjectViaAgentScopeChange(
         sourceDir,
@@ -327,15 +306,15 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       expect(await fileExists(projectBTypesPath)).toBe(true);
 
       // Pre-condition: B starts without api-developer and the value/type
-      // sides agree. The exact contents depend on DOMAIN_AGENTS preselection
-      // (several web-/api-scope agents) — the invariant under test is
-      // symmetry and api-developer's absence, not the specific composition.
+      // sides agree. The exact contents follow the stack's declared roster —
+      // the invariant under test is symmetry and api-developer's absence,
+      // not the specific composition.
       const projectBTypesBefore = await readTestFile(projectBTypesPath);
-      const projectBSelectedBefore = await readSelectedAgents(projectBDir);
+      const projectBSelectedBefore = await readActiveAgentNames(projectBDir);
       const projectBTypeUnionBefore = parseSelectedAgentNameUnion(projectBTypesBefore);
       expect(
         projectBSelectedBefore,
-        "Project B selectedAgents must not contain api-developer before global promotion",
+        "Project B's active agent rows must not contain api-developer before global promotion",
       ).not.toContain(API_DEVELOPER_AGENT);
       expect(
         projectBTypeUnionBefore,
@@ -380,45 +359,39 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
 
       // Sanity: propagation must actually have rewritten B's config.ts
       // and the global config must actually have grown. Otherwise the
-      // downstream D-222 assertions would be meaningless vacuous passes.
+      // lockstep assertions below would be vacuous passes.
       const projectBContentAfter = await readTestFile(projectBConfigPath);
       expect(
         projectBContentAfter,
         "Pre-condition: propagation must rewrite Project B's config.ts after Phase 4",
       ).not.toStrictEqual(projectBContentBefore);
 
-      const globalSelectedAfter = await readSelectedAgents(fakeHome);
+      const globalSelectedAfter = await readActiveAgentNames(fakeHome);
       expect(
         globalSelectedAfter,
-        "Pre-condition: global selectedAgents must include api-developer after Phase 4",
+        "Pre-condition: the global config's active agent rows must include api-developer after Phase 4",
       ).toContain(API_DEVELOPER_AGENT);
 
       // ================================================================
-      // Phase 5: The assertion that defines D-222 — value AND type sides
-      // of Project B's config must both carry api-developer.
-      //
-      // On current `main` (bug unfixed): the value-side passes, the
-      // type-side fails. The test turns green only when
-      // `propagateGlobalChangesToProjects` merges `selectedAgents` into
-      // its `combinedConfig`.
+      // Phase 5: the assertion this spec exists for — the value AND type
+      // sides of Project B's config must both carry api-developer.
       // ================================================================
       const projectBTypesAfter = await readTestFile(projectBTypesPath);
 
-      const projectBSelectedAfter = await readSelectedAgents(projectBDir);
+      const projectBSelectedAfter = await readActiveAgentNames(projectBDir);
       const projectBTypeUnionAfter = parseSelectedAgentNameUnion(projectBTypesAfter);
 
-      // Value side: config.ts::selectedAgents MUST contain api-developer.
+      // Value side: the active rows of config.ts::agents MUST contain api-developer.
       expect(
         projectBSelectedAfter,
-        "Project B config.ts::selectedAgents must include api-developer after global promotion",
+        "Project B config.ts::agents must include an active api-developer row after global promotion",
       ).toContain(API_DEVELOPER_AGENT);
       expect(
         projectBSelectedAfter,
-        "Project B config.ts::selectedAgents must still include web-developer",
+        "Project B config.ts::agents must still include an active web-developer row",
       ).toContain(WEB_DEVELOPER_AGENT);
 
       // Type side: config-types.ts::SelectedAgentName MUST contain api-developer.
-      // THIS IS THE D-222 ASSERTION — expected to FAIL on current main.
       expect(
         projectBTypeUnionAfter,
         "Project B config-types.ts::SelectedAgentName must include api-developer after global promotion",
@@ -428,13 +401,12 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
         "Project B config-types.ts::SelectedAgentName must still include web-developer",
       ).toContain(WEB_DEVELOPER_AGENT);
 
-      // Symmetry invariant: every name in config.ts::selectedAgents must
+      // Symmetry invariant: every active name in config.ts::agents must
       // appear in config-types.ts::SelectedAgentName, and vice versa.
-      // This is the real D-222 invariant — the drift between the two
-      // writers is the bug.
+      // Drift between the two writers is what this spec pins.
       expect(
         [...projectBTypeUnionAfter].sort(),
-        `config.ts::selectedAgents and config-types.ts::SelectedAgentName must match.
+        `config.ts::agents (active) and config-types.ts::SelectedAgentName must match.
 config.ts:       ${JSON.stringify(projectBSelectedAfter.sort())}
 config-types.ts: ${JSON.stringify(projectBTypeUnionAfter.sort())}`,
       ).toStrictEqual([...projectBSelectedAfter].sort());

@@ -1,9 +1,10 @@
 import { TerminalSession } from "../../helpers/terminal-session.js";
 import { createE2ESource, type E2ESource } from "../../helpers/create-e2e-source.js";
-import { TIMEOUTS } from "../constants.js";
+import { STEP_TEXT, TIMEOUTS } from "../constants.js";
 import { DashboardSession } from "../dashboard-session.js";
 import { TerminalScreen } from "../terminal-screen.js";
 import { ConfirmStep } from "../steps/confirm-step.js";
+import { DomainStep } from "../steps/domain-step.js";
 import { StackStep } from "../steps/stack-step.js";
 import type { WizardResult } from "../wizard-result.js";
 import { allocateProjectGlobalHome } from "./global-home.js";
@@ -153,17 +154,17 @@ export class InitWizard {
     }
 
     const env: Record<string, string | undefined> = {
-      AGENTSINC_SOURCE: undefined,
+      CC_SOURCE: undefined,
       ...options?.env,
       ...(globalHome !== undefined ? { HOME: globalHome } : {}),
     };
 
     const session = new TerminalSession(args, projectDir, {
-      cols: options?.cols,
-      rows: options?.rows,
+      ...(options?.cols !== undefined && { cols: options.cols }),
+      ...(options?.rows !== undefined && { rows: options.rows }),
       env,
-      defaultTimeout: options?.defaultTimeout,
-      globalHome,
+      ...(options?.defaultTimeout !== undefined && { defaultTimeout: options.defaultTimeout }),
+      ...(globalHome !== undefined && { globalHome }),
     });
 
     return { session, projectDir, cleanupDirs, globalHome };
@@ -214,6 +215,35 @@ export class InitWizard {
    */
   static async launchInGlobal(options?: InitWizardOptions): Promise<InitWizard> {
     return InitWizard.launchWith(options, "global");
+  }
+
+  /**
+   * Launch `cc init` as a PROJECT install against a source that ships no stacks,
+   * and wait for the DOMAINS step — the first step such a session renders.
+   *
+   * The CLI's built-in stacks stand in only for the default public marketplace,
+   * so a custom marketplace shipping none leaves the stack step with nothing to
+   * offer and the wizard opens past it. Returns the domain step it opened on
+   * alongside the wizard, which owns teardown and exposes `globalHome` exactly
+   * as launchInProject() does. `wizard.stack` is NOT ready on this path —
+   * nothing waited for a step that never renders.
+   */
+  static async launchOnDomainsInProject(
+    options?: InitWizardOptions,
+  ): Promise<{ wizard: InitWizard; domain: DomainStep }> {
+    const { session, projectDir, cleanupDirs, globalHome } = await InitWizard.setupSession(
+      options,
+      "project",
+    );
+
+    const timeout = options?.loadTimeout ?? TIMEOUTS.WIZARD_LOAD;
+    const screen = new TerminalScreen(session);
+    await screen.waitForText(STEP_TEXT.DOMAINS, timeout);
+    await screen.waitForWizardFooter(timeout);
+
+    const stack = new StackStep(session, projectDir);
+    const wizard = new InitWizard(session, projectDir, stack, cleanupDirs, globalHome);
+    return { wizard, domain: new DomainStep(session, projectDir) };
   }
 
   /**
@@ -352,7 +382,7 @@ export class InitWizard {
     }
 
     const env: Record<string, string | undefined> = {
-      AGENTSINC_SOURCE: undefined,
+      CC_SOURCE: undefined,
       ...options.env,
     };
 

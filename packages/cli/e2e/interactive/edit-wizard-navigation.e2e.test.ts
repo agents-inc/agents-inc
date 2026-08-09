@@ -100,9 +100,23 @@ describe("edit wizard — navigation and hotkeys", () => {
       const output = wizard.build.getOutput();
       // The build step footer shows the Labels hotkey indicator.
       expect(output).toContain(STEP_TEXT.BUILD_FOOTER);
-      // The Filter-incompatible (F) hint is gated behind FEATURE_FLAGS.FILTER_INCOMPATIBLE
-      // (default off), so it must not render in the footer.
+      // Incompatible-skill filtering was withdrawn, so the hint it advertised is gone.
       expect(output).not.toContain("Filter incompatible");
+    });
+
+    it("should leave the build step untouched when the withdrawn F hotkey is pressed", async () => {
+      const project = await ProjectBuilder.editable({
+        skills: ["web-framework-react", "web-styling-tailwind"],
+        agents: ["web-developer"],
+        domains: ["web"],
+      });
+
+      wizard = await EditWizard.launch({ projectDir: project.dir, cols: 120, rows: 40 });
+
+      const before = wizard.build.getScreen();
+      await wizard.build.pressFilterIncompatibleHotkey();
+
+      expect(wizard.build.getScreen(), "nothing handles F, so the grid cannot move").toBe(before);
     });
 
     it("should toggle focused skill scope with S key", async () => {

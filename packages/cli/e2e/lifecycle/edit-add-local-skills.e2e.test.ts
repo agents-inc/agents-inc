@@ -8,13 +8,14 @@ import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
-  isClaudeCLIAvailable,
+  cleanupFixture,
   cleanupTempDir,
   configTsPath,
   createPermissionsFile,
   createTempDir,
   ensureBinaryExists,
   fileExists,
+  isClaudeCLIAvailable,
   readTestFile,
 } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -47,7 +48,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   afterEach(async () => {

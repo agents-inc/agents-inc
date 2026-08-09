@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import { ADDED_MARKER, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
@@ -19,6 +19,9 @@ import "../matchers/setup.js";
  * The overflow affordance is text-only ("N more below") — no scroll glyph — so
  * the assertion matches on the affordance wording the wizard actually paints.
  */
+/** A confirm-summary row that only a scrolled viewport paints at this height. */
+const REVEALED_AGENT_ROW = `${ADDED_MARKER} ${E2E_AGENT["web-developer"].name}`;
+
 describe("wizard overflow at a short terminal height", () => {
   let wizard: InitWizard | undefined;
   let tempDir: string | undefined;
@@ -78,15 +81,28 @@ describe("wizard overflow at a short terminal height", () => {
   }
 
   it(
-    "shows a scroll-down affordance when the confirm summary is taller than the viewport",
+    "reveals a summary row the scroll-down affordance said was below the fold",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const confirm = await driveToConfirmStep();
 
-      const screen = confirm.getScreen();
+      const before = confirm.getScreen();
+      expect(before).toContain(STEP_TEXT.READY_TO_INSTALL);
+      expect(before).toContain(STEP_TEXT.SCROLL_MORE_BELOW);
+      // Sound as an absence because the string was never drawn: `+ <agent>` is
+      // painted only by the confirm summary's added rows, and at offset 0 the
+      // viewport is filled by the panel's marketplace/stack header. The agents
+      // step renders the display title ("Web Developer"), not this name.
+      expect(before).not.toContain(REVEALED_AGENT_ROW);
 
-      expect(screen).toContain(STEP_TEXT.READY_TO_INSTALL);
-      expect(screen).toContain("more below");
+      // The affordance's counters are the panel's own bookkeeping and move
+      // whether or not the content does — pinning `more below` becoming `more
+      // above` stayed green with the scroll disabled outright. The revealed row
+      // is the content the counter was talking about.
+      await confirm.scrollSummaryToBottom();
+
+      const after = confirm.getScreen();
+      expect(after).toContain(REVEALED_AGENT_ROW);
     },
   );
 
@@ -110,7 +126,7 @@ describe("wizard overflow at a short terminal height", () => {
       // summary, so the negative assertion below is being made about a subject
       // that is on screen rather than about an empty viewport.
       expect(screen, "the scrolled confirm summary must paint an added row").toContain(
-        `+ ${E2E_AGENT["web-developer"].name}`,
+        REVEALED_AGENT_ROW,
       );
       // A horizontal border run is only ever drawn by a box edge, and "+ " only
       // ever by an added row of the summary. The two are adjacent on one line

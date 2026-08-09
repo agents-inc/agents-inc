@@ -18,6 +18,7 @@ import {
   type TestEnvironment,
 } from "../fixtures/dual-scope-helpers.js";
 import {
+  cleanupFixture,
   cleanupTempDir,
   createLocalSkill,
   createPermissionsFile,
@@ -85,7 +86,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
-    if (pluginSource) await cleanupTempDir(pluginSource.tempDir);
+    await cleanupFixture(pluginSource);
   });
 
   afterEach(async () => {
@@ -225,8 +226,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
         name: "dual-scope-global-plugin",
         skills: buildSkillConfigs([VITEST_ID], { scope: "global", source: marketplace }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-        domains: ["web"],
-        selectedAgents: [E2E_AGENT["web-developer"].name],
+        selectedDomains: ["web"],
         stack: globalStack,
         projects: [realpathSync(projectDir)],
       });
@@ -247,8 +247,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
           ...buildSkillConfigs([VITEST_ID], { scope: "project", source: marketplace }),
         ],
         agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
-        domains: ["web"],
-        selectedAgents: [E2E_AGENT["api-developer"].name],
+        selectedDomains: ["web"],
         stack: projectStack,
       });
       await writeProjectConfig(projectDir, projectConfig);
@@ -308,7 +307,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
       // Compiled project agent still references the project-scope vitest in
       // COLON form (source is the marketplace, not eject).
       const compile = await CLI.run(
-        ["compile", "--source", pluginSource.sourceDir],
+        ["compile"],
         { dir: projectDir },
         { env: { HOME: globalHome } },
       );

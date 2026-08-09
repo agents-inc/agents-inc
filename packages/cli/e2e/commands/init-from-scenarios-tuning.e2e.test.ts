@@ -1,16 +1,25 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
-import { cleanupTempDir, ensureBinaryExists, readAgentEntriesFor } from "../helpers/test-utils.js";
+import {
+  agentsPath,
+  cleanupTempDir,
+  configTsPath,
+  ensureBinaryExists,
+  listFiles,
+  readAgentEntriesFor,
+  readTestFile,
+} from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
+  flattenCliOutput,
   runInitFrom,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_BUILTIN_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -25,19 +34,34 @@ import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-
  * Every value of both enums is exercised, because a mapper that forwards a whitelist is
  * indistinguishable from one that forwards everything until the whole enum is tried.
  *
+ * Tuning is orthogonal to where a sub-agent is written, so no payload here names an agent scope:
+ * every sub-agent takes the shared selection default and its compiled `.md` lands in the user's own
+ * ~/.claude rather than in the project. That is why the front-matter assertions read `fakeHome`
+ * while the config entries are read back from the project's own `config.ts`, which inlines the
+ * global rows, and why the skills travel global too — see `skillFor`. The one exception is the
+ * last spec, which pins its sub-agent into the project and says why on the spot.
+ *
  * Covers Phase 5 scenarios 3, 4, 5, 12 and 13 of the tracker's `--from` matrix.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
 const WEB_TESTER = E2E_BUILTIN_AGENT["web-tester"].name;
-const WEB_REVIEWER = E2E_BUILTIN_AGENT["web-reviewer"].name;
+const REVIEWER = E2E_BUILTIN_AGENT["reviewer"].name;
 const CLI_DEV = E2E_BUILTIN_AGENT["cli-developer"].name;
 const API_TESTER = E2E_BUILTIN_AGENT["api-tester"].name;
 
-/** One skill, assigned lazily to every sub-agent the payload wants tuned. */
+/**
+ * One skill, assigned lazily to every sub-agent the payload wants tuned.
+ *
+ * Global-scoped, because the sub-agents here rest at the shared selection default: a
+ * project-scoped skill assigned to a sub-agent resting there is a pair the config model cannot
+ * express, and the decode refuses it rather than dropping the rows. A global skill reaches every
+ * sub-agent whatever scope it rests at, which keeps tuning the only subject of these specs.
+ */
 function skillFor(...agents: string[]) {
   return buildSeedSkill({
+    scope: "global",
     assignments: Object.fromEntries(agents.map((agent) => [agent, "lazy" as const])),
   });
 }
@@ -73,12 +97,12 @@ describe("init --from <id>: sub-agent model and effort", () => {
       "Models01",
       buildSeedPayload({
         skills: {
-          [E2E_SKILL.react.id]: skillFor(API_TESTER, WEB_TESTER, WEB_REVIEWER, CLI_DEV),
+          [E2E_SKILL.react.id]: skillFor(API_TESTER, WEB_TESTER, REVIEWER, CLI_DEV),
         },
         agents: {
           [API_TESTER]: { model: "opus" },
           [WEB_TESTER]: { model: "fable" },
-          [WEB_REVIEWER]: { model: "sonnet" },
+          [REVIEWER]: { model: "sonnet" },
           [CLI_DEV]: { model: "haiku" },
         },
       }),
@@ -92,25 +116,25 @@ describe("init --from <id>: sub-agent model and effort", () => {
     );
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(API_TESTER, { model: "opus" });
-    await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(WEB_TESTER, { model: "fable" });
-    await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(WEB_REVIEWER, {
+    await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(API_TESTER, { model: "opus" });
+    await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(WEB_TESTER, { model: "fable" });
+    await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(REVIEWER, {
       model: "sonnet",
     });
-    await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(CLI_DEV, { model: "haiku" });
+    await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(CLI_DEV, { model: "haiku" });
 
     // config.ts is what a later edit or recompile reads back, so it has to agree.
     expect(await readAgentEntriesFor(env.projectDir, API_TESTER)).toStrictEqual(
-      buildAgentConfigs([API_TESTER], { model: "opus" }),
+      buildAgentConfigs([API_TESTER], { scope: "global", model: "opus" }),
     );
     expect(await readAgentEntriesFor(env.projectDir, WEB_TESTER)).toStrictEqual(
-      buildAgentConfigs([WEB_TESTER], { model: "fable" }),
+      buildAgentConfigs([WEB_TESTER], { scope: "global", model: "fable" }),
     );
-    expect(await readAgentEntriesFor(env.projectDir, WEB_REVIEWER)).toStrictEqual(
-      buildAgentConfigs([WEB_REVIEWER], { model: "sonnet" }),
+    expect(await readAgentEntriesFor(env.projectDir, REVIEWER)).toStrictEqual(
+      buildAgentConfigs([REVIEWER], { scope: "global", model: "sonnet" }),
     );
     expect(await readAgentEntriesFor(env.projectDir, CLI_DEV)).toStrictEqual(
-      buildAgentConfigs([CLI_DEV], { model: "haiku" }),
+      buildAgentConfigs([CLI_DEV], { scope: "global", model: "haiku" }),
     );
   });
 
@@ -120,13 +144,13 @@ describe("init --from <id>: sub-agent model and effort", () => {
       "Efforts1",
       buildSeedPayload({
         skills: {
-          [E2E_SKILL.react.id]: skillFor(WEB_DEV, API_DEV, WEB_TESTER, WEB_REVIEWER, CLI_DEV),
+          [E2E_SKILL.react.id]: skillFor(WEB_DEV, API_DEV, WEB_TESTER, REVIEWER, CLI_DEV),
         },
         agents: {
           [WEB_DEV]: { effort: "low" },
           [API_DEV]: { effort: "medium" },
           [WEB_TESTER]: { effort: "high" },
-          [WEB_REVIEWER]: { effort: "xhigh" },
+          [REVIEWER]: { effort: "xhigh" },
           [CLI_DEV]: { effort: "max" },
         },
       }),
@@ -140,19 +164,19 @@ describe("init --from <id>: sub-agent model and effort", () => {
     );
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(WEB_DEV, { effort: "low" });
-    await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(API_DEV, { effort: "medium" });
-    await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(WEB_TESTER, { effort: "high" });
-    await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(WEB_REVIEWER, {
+    await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(WEB_DEV, { effort: "low" });
+    await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(API_DEV, { effort: "medium" });
+    await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(WEB_TESTER, { effort: "high" });
+    await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(REVIEWER, {
       effort: "xhigh",
     });
-    await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(CLI_DEV, { effort: "max" });
+    await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(CLI_DEV, { effort: "max" });
 
     expect(await readAgentEntriesFor(env.projectDir, WEB_DEV)).toStrictEqual(
-      buildAgentConfigs([WEB_DEV], { effort: "low" }),
+      buildAgentConfigs([WEB_DEV], { scope: "global", effort: "low" }),
     );
     expect(await readAgentEntriesFor(env.projectDir, CLI_DEV)).toStrictEqual(
-      buildAgentConfigs([CLI_DEV], { effort: "max" }),
+      buildAgentConfigs([CLI_DEV], { scope: "global", effort: "max" }),
     );
   });
 
@@ -175,21 +199,21 @@ describe("init --from <id>: sub-agent model and effort", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
     // Model only: effort has no default, so no line at all rather than an invented one.
-    await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(WEB_DEV, {
+    await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(WEB_DEV, {
       model: "haiku",
       noEffort: true,
     });
     // Effort only: the model stays whatever api-tester's own metadata declares.
-    await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(API_TESTER, {
+    await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(API_TESTER, {
       model: E2E_BUILTIN_AGENT["api-tester"].defaultModel,
       effort: "xhigh",
     });
 
     expect(await readAgentEntriesFor(env.projectDir, WEB_DEV)).toStrictEqual(
-      buildAgentConfigs([WEB_DEV], { model: "haiku" }),
+      buildAgentConfigs([WEB_DEV], { scope: "global", model: "haiku" }),
     );
     expect(await readAgentEntriesFor(env.projectDir, API_TESTER)).toStrictEqual(
-      buildAgentConfigs([API_TESTER], { effort: "xhigh" }),
+      buildAgentConfigs([API_TESTER], { scope: "global", effort: "xhigh" }),
     );
   });
 
@@ -209,52 +233,68 @@ describe("init --from <id>: sub-agent model and effort", () => {
     );
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(API_TESTER, {
+    await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(API_TESTER, {
       model: E2E_BUILTIN_AGENT["api-tester"].defaultModel,
       noEffort: true,
     });
-    // Nothing to override, so the config entry carries neither key.
+    // Nothing to override, so the config entry carries neither tuning key — and the scope it does
+    // carry is the shared selection default, which is what put the compiled file in HOME above.
     expect(await readAgentEntriesFor(env.projectDir, API_TESTER)).toStrictEqual(
-      buildAgentConfigs([API_TESTER]),
+      buildAgentConfigs([API_TESTER], { scope: "global" }),
     );
   });
 
-  it("replaces a sub-agent's tuning when a second id is installed over the first", async () => {
+  it("refuses a second id over an installed first, leaving the first id's tuning in place", async () => {
     env = await createTestEnvironment({ permissions: false });
     const project = { dir: env.projectDir, globalHome: env.fakeHome };
+    // Both payloads pin the sub-agent into the project, unlike every other spec in this file, so
+    // the tuning under test is written where these assertions read it.
+    const inProject = { scope: "project" } as const;
     store.publish(
       "Retune01",
       buildSeedPayload({
         skills: { [E2E_SKILL.react.id]: skillFor(WEB_DEV) },
-        agents: { [WEB_DEV]: { model: "sonnet", effort: "low" } },
+        agents: { [WEB_DEV]: { model: "sonnet", effort: "low", ...inProject } },
       }),
     );
     store.publish(
       "Retune02",
       buildSeedPayload({
         skills: { [E2E_SKILL.react.id]: skillFor(WEB_DEV) },
-        agents: { [WEB_DEV]: { model: "haiku", effort: "max" } },
+        agents: { [WEB_DEV]: { model: "haiku", effort: "max", ...inProject } },
       }),
     );
 
     const first = await runInitFrom(store, "Retune01", project, sourceDir);
-    expect(first.exitCode).toBe(EXIT_CODES.SUCCESS);
-    // Proof the second run had something to change: without this the final assertions could hold
+    expect(first.exitCode, `first install failed: ${first.output}`).toBe(EXIT_CODES.SUCCESS);
+    // Proof the second run had something to change: without this the assertions below could hold
     // on an install that never carried the first id's tuning at all.
     await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(WEB_DEV, {
       model: "sonnet",
       effort: "low",
     });
 
-    const second = await runInitFrom(store, "Retune02", project, sourceDir);
-    expect(second.exitCode).toBe(EXIT_CODES.SUCCESS);
+    const configBefore = await readTestFile(configTsPath(env.projectDir));
+    const agentsBefore = await listFiles(agentsPath(env.projectDir));
 
+    // `--from` is greenfield-only: a second id does not re-tune an installation, it refuses it.
+    // Re-tuning a shared configuration means uninstalling and installing the new one.
+    const second = await runInitFrom(store, "Retune02", project, sourceDir);
+
+    expect(second.exitCode).toBe(EXIT_CODES.ERROR);
+    const said = flattenCliOutput(second.output);
+    expect(said).toContain(STEP_TEXT.SHARED_CONFIG_EXISTING_INSTALL);
+    expect(said).toContain(STEP_TEXT.SHARED_CONFIG_UNINSTALL_HINT);
+
+    // The first install is byte-for-byte what it was, and still says what it said.
+    expect(await readTestFile(configTsPath(env.projectDir))).toBe(configBefore);
+    expect(await listFiles(agentsPath(env.projectDir))).toStrictEqual(agentsBefore);
     await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(WEB_DEV, {
-      model: "haiku",
-      effort: "max",
+      model: "sonnet",
+      effort: "low",
     });
     expect(await readAgentEntriesFor(env.projectDir, WEB_DEV)).toStrictEqual(
-      buildAgentConfigs([WEB_DEV], { model: "haiku", effort: "max" }),
+      buildAgentConfigs([WEB_DEV], { scope: "project", model: "sonnet", effort: "low" }),
     );
   });
 });

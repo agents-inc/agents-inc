@@ -2,6 +2,7 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
+  cleanupFixture,
   cleanupTempDir,
   ensureBinaryExists,
   fileExists,
@@ -21,18 +22,18 @@ import type { SourcesStep } from "../pages/steps/sources-step.js";
  * — at a short terminal height, with NO overflow affordance and no way to scroll
  * the clipped rows into view (D-271).
  *
- * Setup: an all-project install of seven skills (no stack, so nothing is
+ * Setup: an all-project install of eight skills (no stack, so nothing is
  * preloaded and the first-focused build-grid skill is a plain editable row).
  * `web-framework-react` is the first skill of the first domain, so a single
  * focused-skill toggle deselects it with no grid navigation — this is the only
  * reliable build-step edit at TERMINAL_SIZE.SHORT, where the build grid
  * overflows the viewport and cannot be read by name. Deselecting react drops
  * every config entry for it, so `buildSourceRows` appends its pending-removal
- * row last; with seven rows plus the grid chrome exceeding the 16-row viewport,
+ * row last; with eight rows plus the grid chrome exceeding the 16-row viewport,
  * that trailing row falls below the fold.
  *
  * Each test proves the deselection genuinely happened (react removed from
- * config.ts, its ejected skill dir deleted, the other six retained) so the RED
+ * config.ts, its ejected skill dir deleted, the other seven retained) so the RED
  * assertion pins the missing affordance / unreachable row — not a setup miss.
  *
  * RED today: the Sources grid renders NO "N more below" affordance while it
@@ -46,6 +47,7 @@ const OVERFLOW_SKILLS = [
   "web-framework-react",
   "web-state-zustand",
   "web-testing-vitest",
+  "web-testing-visual-regression",
   "api-framework-hono",
   "meta-methodology-research-methodology",
   "meta-reviewing-reviewing",
@@ -82,7 +84,7 @@ describe("Sources step overflow with a pending-removal row at a short terminal h
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (source) await cleanupTempDir(source.tempDir);
+    await cleanupFixture(source);
   });
 
   let testTempDir: string | undefined;
@@ -134,7 +136,7 @@ describe("Sources step overflow with a pending-removal row at a short terminal h
 
   /**
    * Complete the edit and assert the deselection landed: react is gone from
-   * config.ts and its ejected skill dir on disk, while the other six skills
+   * config.ts and its ejected skill dir on disk, while the other seven skills
    * survive. Proves the pending-removal row genuinely exists this session, so a
    * failing RED assertion is the clipping bug and not a no-op deselection.
    */
@@ -149,7 +151,10 @@ describe("Sources step overflow with a pending-removal row at a short terminal h
     expect(skillIdsAfter, "config.ts must drop the deselected react skill").not.toContain(
       E2E_SKILL.react.id,
     );
-    expect(skillIdsAfter.sort(), "the six untouched skills must remain in config.ts").toStrictEqual(
+    expect(
+      skillIdsAfter.sort(),
+      "the seven untouched skills must remain in config.ts",
+    ).toStrictEqual(
       OVERFLOW_SKILLS.filter((id) => id !== E2E_SKILL.react.id)
         .slice()
         .sort(),
@@ -201,8 +206,16 @@ describe("Sources step overflow with a pending-removal row at a short terminal h
         `the react pending-removal row must start clipped below the fold. Screen:\n${sources.getScreen()}`,
       ).not.toContain(REACT_REMOVAL_ROW);
 
-      // Attempt the scroll the grid offers: press down through the whole list.
-      for (let i = 0; i < SCROLL_ATTEMPTS; i++) {
+      // Attempt the scroll the grid offers: press down until the clipped row comes into view,
+      // or the budget runs out. Stopping on sight is what a user does, and it is the only
+      // phase-independent way to drive this: once nothing is left hidden below, the next press
+      // wraps focus back to the top and takes the viewport with it, so a fixed press count
+      // asserts whichever point of that cycle it happens to land on.
+      for (
+        let i = 0;
+        i < SCROLL_ATTEMPTS && !sources.getScreen().includes(REACT_REMOVAL_ROW);
+        i++
+      ) {
         await sources.navigateDown();
       }
       const frameAfterScroll = sources.getScreen();
@@ -242,7 +255,7 @@ describe("Sources step overflow when every remaining row is inert (zero focusabl
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (source) await cleanupTempDir(source.tempDir);
+    await cleanupFixture(source);
   });
 
   let testTempDir: string | undefined;

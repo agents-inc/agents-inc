@@ -17,7 +17,7 @@ function makeCapturingWrite(buf: string[]): typeof process.stdout.write {
       (cb as () => void)();
     }
     return true;
-  } as typeof process.stdout.write;
+  };
 }
 
 function makeCapturingConsoleMethod(buf: string[]): (...args: unknown[]) => void {
@@ -35,7 +35,12 @@ function makeCapturingConsoleMethod(buf: string[]): (...args: unknown[]) => void
  * to work correctly in both Node.js and bun environments.
  */
 export async function runCliCommand(args: string[]) {
+  // These two are saved to be assigned straight back onto the same object in
+  // the finally block below, so each is called with the receiver it came from.
+  // Binding here would restore a wrapper rather than the original method.
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- restored, not called
   const origStdoutWrite = process.stdout.write;
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- restored, not called
   const origStderrWrite = process.stderr.write;
   const origLog = console.log;
   const origWarn = console.warn;
@@ -58,8 +63,7 @@ export async function runCliCommand(args: string[]) {
     await run(args, { root: CLI_ROOT });
   } catch (e) {
     if (e instanceof Error) {
-      error = Object.assign(e, { message: ansis.strip(e.message) }) as Error &
-        Partial<Errors.CLIError>;
+      error = Object.assign(e, { message: ansis.strip(e.message) });
     }
   } finally {
     process.stdout.write = origStdoutWrite;

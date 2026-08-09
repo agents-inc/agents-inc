@@ -12,8 +12,13 @@ import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { CLI } from "../fixtures/cli.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
-import { CLI_INVOKE_COMMAND } from "../../src/cli/consts.js";
+import {
+  CLI_INVOKE_COMMAND,
+  EXIT_CODES,
+  STEP_TEXT,
+  TERMINAL_SIZE,
+  WIZARD_TAB_LABELS,
+} from "../pages/constants.js";
 import "../matchers/setup.js";
 import path from "path";
 
@@ -58,24 +63,24 @@ describe("edit wizard — launch and display", () => {
   });
 
   describe("wizard launch", () => {
-    it("should display startup messages for an existing installation", async () => {
+    it("should open on the build step with the full wizard chrome painted", async () => {
       const project = await ProjectBuilder.editable();
       tempDir = path.dirname(project.dir);
 
-      wizard = await EditWizard.launch({ projectDir: project.dir });
+      wizard = await EditWizard.launch({ projectDir: project.dir, rows: 40, cols: 120 });
 
       const output = wizard.build.getOutput();
       expect(output).toContain(STEP_TEXT.BUILD);
-    });
-
-    it("should show skills loaded status", async () => {
-      const project = await ProjectBuilder.editable();
-      tempDir = path.dirname(project.dir);
-
-      wizard = await EditWizard.launch({ projectDir: project.dir });
-
-      const output = wizard.build.getOutput();
       expect(output).toContain(STEP_TEXT.DOMAIN_WEB);
+      // The whole footer line rather than its three key captions: a step whose
+      // rows bleed over the footer leaves each word present and splices the
+      // overflow between them.
+      expect(output).toContain(STEP_TEXT.FOOTER_HOTKEY_ROW);
+      // Every tab, not the two this used to name — a tab bar missing the steps
+      // a spec never mentions is indistinguishable from a complete one.
+      for (const tabLabel of WIZARD_TAB_LABELS) {
+        expect(output).toContain(tabLabel);
+      }
     });
 
     it("should show pre-selected skills in the build step", async () => {
@@ -89,28 +94,19 @@ describe("edit wizard — launch and display", () => {
       wizard = await EditWizard.launch({ projectDir: project.dir, rows: 40, cols: 120 });
 
       const output = wizard.build.getOutput();
-      // Framework category should show the pre-selected skill count
-      expect(output).toMatch(/Framework.*\(1 of 1\)/);
       // The React skill tag should be visible
       expect(output).toContain("React");
-    });
-
-    it("should reach the build step wizard view", async () => {
-      const project = await ProjectBuilder.editable();
-      tempDir = path.dirname(project.dir);
-
-      wizard = await EditWizard.launch({ projectDir: project.dir, rows: 40, cols: 120 });
-
-      const output = wizard.build.getOutput();
-      // Should show the domain tab bar with Web selected
-      expect(output).toContain(STEP_TEXT.DOMAIN_WEB);
-      // Should show the build step navigation instructions
-      expect(output).toContain("SPACE");
-      expect(output).toContain("ENTER");
-      expect(output).toContain("ESC");
-      // Should show the wizard step indicators
-      expect(output).toContain("Skills");
-      expect(output).toContain("Confirm");
+      // Read the exclusive Framework category's own counter by name: the
+      // `/Framework.*\(1 of 1\)/` this replaces matched any "(1 of 1)" painted
+      // to the right of the header, including another category's on the same row.
+      expect(await wizard.build.getExclusiveCategorySelectedCount("Framework")).toBe(1);
+      // No scope-badge assertion here: this session runs against BUILT_IN_MATRIX
+      // (no --source), whose catalogue also holds "React Query" and "React
+      // Native". getScopeBadgesForSkill matches a cell by substring, so it
+      // resolves "React" to whichever of those the frame painted first and
+      // reads that cell's badges. The badge form is pinned by
+      // edit-wizard-detection.e2e.test.ts against the E2E source, where the
+      // labels are collision-free.
     });
   });
 
@@ -128,11 +124,14 @@ describe("edit wizard — launch and display", () => {
       const output = wizard.build.getOutput();
       // Framework category should show the pre-selected react skill
       expect(output).toMatch(/Framework.*\(1 of 1\)/);
-      // Testing category should be visible
-      expect(output).toContain("Testing");
-      // Both skill tags should be visible
       expect(output).toContain("React");
-      expect(output).toContain("Vitest");
+
+      // Testing sits below the fold of even the tall viewport, so scroll to it
+      // rather than widening the terminal — the grid grows with the catalogue.
+      await wizard.build.focusSkill("Vitest");
+      const testingInView = wizard.build.getOutput();
+      expect(testingInView).toContain("Testing");
+      expect(testingInView).toContain("Vitest");
     });
   });
 
@@ -189,8 +188,10 @@ describe("edit wizard — launch and display", () => {
       const output = wizard.build.getOutput();
       // The original pre-selected skill should still be visible
       expect(output).toContain("React");
-      // The newly added skill tag should be visible in the build step.
-      expect(output).toContain("Vitest");
+
+      // The newly added skill's category sits below the fold — scroll to it.
+      await wizard.build.focusSkill("Vitest");
+      expect(wizard.build.getOutput()).toContain("Vitest");
     });
   });
 
@@ -202,8 +203,13 @@ describe("edit wizard — launch and display", () => {
 
       expect(result.output).toContain("edit");
       expect(result.output).toContain("Edit skills");
-      expect(result.output).toContain("--source");
-      expect(result.output).toContain("--refresh");
+      expect(
+        result.output,
+        "naming a source is init's decision, so edit offers the catalogue config.ts names",
+      ).not.toContain("--source");
+      expect(result.output, "every load revalidates, so there is nothing to force").not.toContain(
+        "--refresh",
+      );
       expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
     });
   });

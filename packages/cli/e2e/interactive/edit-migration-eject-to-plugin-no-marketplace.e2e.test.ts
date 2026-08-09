@@ -5,7 +5,7 @@ import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
-  cleanupTempDir,
+  cleanupFixture,
   configTsPath,
   ensureBinaryExists,
   isClaudeCLIAvailable,
@@ -44,7 +44,7 @@ describe.skipIf(!claudeAvailable)("edit: eject -> plugin migration without a mar
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (localSource) await cleanupTempDir(localSource.tempDir);
+    await cleanupFixture(localSource);
   });
 
   afterEach(async () => {
@@ -58,6 +58,7 @@ describe.skipIf(!claudeAvailable)("edit: eject -> plugin migration without a mar
     async () => {
       // Eject-mode project with no `marketplace` field in config.ts.
       const project = await ProjectBuilder.editable({
+        source: localSource.sourceDir,
         skills: [E2E_SKILL.react.id],
         agents: [...E2E_AGENTS.WEB],
         domains: ["web"],

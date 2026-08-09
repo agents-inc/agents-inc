@@ -29,8 +29,8 @@ export const AGENT_DEFS = {
     description: "A testing agent",
     tools: ["Read", "Bash"],
   },
-  webReviewer: {
-    name: "web-reviewer",
+  reviewer: {
+    name: "reviewer",
     title: "Code Reviewer",
     description: "A code review agent",
     tools: ["Read", "Grep", "Glob"],
@@ -96,7 +96,7 @@ export const WEB_DEV_WITH_VITEST: Record<string, AgentConfig> = {
 
 export const TWO_AGENTS_SHARED_SKILL: Record<string, AgentConfig> = {
   "web-developer": createMockAgentConfig("web-developer", [REACT_SKILL_WITH_PATH]),
-  "web-reviewer": createMockAgentConfig("web-reviewer", [REACT_SKILL_WITH_PATH]),
+  reviewer: createMockAgentConfig("reviewer", [REACT_SKILL_WITH_PATH]),
 };
 
 // ---------------------------------------------------------------------------

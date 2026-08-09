@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
@@ -101,14 +102,18 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
         ...TERMINAL_SIZE.TALL,
       });
 
+      // The badge on the skill whose scope this phase pins, read off the live build
+      // grid. `rawOutput.toContain("[G]")` / `("[P]")` stood here — two-character
+      // substrings on a whole session's output, which cannot say which skill they
+      // belong to, in a file whose sibling assertions all use `toStrictEqual`.
+      expect(
+        await editWizard.build.getScopeBadgesForSkill(E2E_SKILL.react.display),
+        "react is global-only after the exclusion phase above",
+      ).toStrictEqual(["G"]);
+
       const editResult = await editWizard.passThrough();
       const editExitCode = await editResult.exitCode;
       expect(editExitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // Edit passthrough shows scope badges in the output
-      const rawOutput = editResult.rawOutput;
-      expect(rawOutput).toContain("[G]");
-      expect(rawOutput).toContain("[P]");
 
       await editResult.destroy();
 
@@ -131,14 +136,17 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
       const configAfterEdit = await readTestFile(configTsPath(projectDir));
       expect(configAfterEdit).toStrictEqual(configBeforeEdit);
 
-      // 8. api-developer agent at project scope contains all selected skills
+      // 8. api-developer agent at project scope carries its own domain's skill
+      // alone — relevance-scoped assignment keeps the web skill off it.
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-        contains: ["api-framework-hono", "web-framework-react"],
+        contains: ["api-framework-hono"],
+        notContains: ["web-framework-react"],
       });
 
-      // 8b. web-developer agent at global scope contains all selected skills
+      // 8b. web-developer agent at global scope carries the web skill alone.
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["web-framework-react", "api-framework-hono"],
+        contains: ["web-framework-react"],
+        notContains: ["api-framework-hono"],
       });
 
       // 9. No duplicate agent files in either scope directory

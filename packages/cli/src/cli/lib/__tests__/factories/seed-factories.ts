@@ -1,6 +1,6 @@
-import { SEED_VERSION } from "../../seed/seed-schema.js";
+import { SEED_VERSION } from "@workspace/matrix/seed";
 
-import type { SeedPayload, SeedSkill } from "../../seed/seed-schema.js";
+import type { SeedPayload, SeedSkill } from "@workspace/matrix/seed";
 
 /**
  * Diagnostics-only field on the wire — a payload carries the catalog version it was built

@@ -9,6 +9,7 @@ import type {
   SkillSlug,
 } from "../../../types";
 import type { TestSkill } from "../fixtures/create-test-source";
+import { LOCAL_PSEUDO_CATEGORY } from "../../../consts";
 import {
   createMockSkill,
   createMockSkillEntry,
@@ -96,7 +97,7 @@ export const DOCKER_TOOLING_SKILL: TestSkill = createTestSkill(
 
 export const CI_CD_SKILLS: TestSkill[] = [
   // Boundary cast: fictional skill ID for testing CI/CD skills
-  createTestSkill("infra-ci-cd-github-actions" as SkillId, "github-actions CI/CD pipeline", {
+  createTestSkill("infra-ci-cd-github-actions", "github-actions CI/CD pipeline", {
     slug: "github-actions",
     displayName: "GitHub Actions",
     category: "infra-ci-cd",
@@ -123,9 +124,9 @@ export const DATADOG_OBSERVABILITY_SKILL: TestSkill = createTestSkill(
 
 export const REQUIRES_RELATIONSHIP_SKILLS: TestSkill[] = [reactSkill, vitestSkill];
 
-// Source-switching TestSkill arrays (with rendered SKILL.md content)
+// Install-mode TestSkill arrays (with rendered SKILL.md content)
 
-/** Creates a TestSkill with rendered SKILL.md content for source-switching tests */
+/** Creates a TestSkill with rendered SKILL.md content for install-mode tests */
 function contentSkill(id: SkillId, description: string, body: string, author?: string): TestSkill {
   return createTestSkill(id, description, {
     ...(author ? { author } : {}),
@@ -133,7 +134,7 @@ function contentSkill(id: SkillId, description: string, body: string, author?: s
   });
 }
 
-export const SWITCHABLE_SKILLS: TestSkill[] = [
+export const INSTALL_MODE_SKILLS: TestSkill[] = [
   contentSkill(
     "web-framework-react",
     "React framework for building user interfaces",
@@ -210,21 +211,9 @@ export const INIT_TEST_SKILLS = DEFAULT_TEST_SKILLS.filter((s) =>
 // Health-check skill variants (matrix-health-check.test.ts)
 // ---------------------------------------------------------------------------
 
-export const HEALTH_ZUSTAND_RECOMMENDED = {
-  ...SKILLS.zustand,
-  isRecommended: true,
-  recommendedReason: "Works well with React",
-};
-
 export const HEALTH_ORPHAN_SKILL = {
   ...SKILLS.react,
   category: "nonexistent-category" as Category,
-};
-
-export const HEALTH_UNRESOLVED_COMPATIBLE_WITH_SKILL = {
-  ...SKILLS.zustand,
-  // Boundary cast: fake SkillId for unresolved-ref testing
-  compatibleWith: ["web-framework-nonexistent" as SkillId],
 };
 
 export const HEALTH_UNRESOLVED_CONFLICTS_WITH_SKILL = {
@@ -246,7 +235,13 @@ export const HEALTH_UNRESOLVED_REQUIRES_SKILL = createMockSkill("web-testing-cyp
 export const HEALTH_MULTIPLE_UNRESOLVED_REFS_SKILL = {
   ...SKILLS.zustand,
   // Boundary casts: fake SkillIds for unresolved-ref testing
-  compatibleWith: ["web-framework-missing" as SkillId],
+  requires: [
+    {
+      skillIds: ["web-framework-missing" as SkillId],
+      needsAny: false,
+      reason: "Needs a framework",
+    },
+  ],
   conflictsWith: [{ skillId: "web-state-ghost" as SkillId, reason: "Conflicts" }],
 };
 
@@ -270,6 +265,24 @@ export const HEALTH_PARTIAL_UNRESOLVED_REQUIRES_SKILL = createMockSkill("web-tes
       reason: "Needs one framework",
     },
   ],
+});
+
+// Audit cross-check fixtures. tailwind's manifest verdict is `universal`, so any matrix
+// that fences it contradicts the audit — the shape B2 pinned for zod-validation.
+
+export const HEALTH_AUDIT_UNIVERSAL_WITH_REQUIRES_SKILL = createMockSkill("web-styling-tailwind", {
+  requires: [
+    {
+      skillIds: ["web-framework-react"],
+      needsAny: false,
+      reason: "Fabricated binding on a universal-verdict skill",
+    },
+  ],
+});
+
+/** The applied state: sse left the exclusive `web-realtime` radio for the open `web-streaming`. */
+export const HEALTH_AUDIT_APPLIED_DISPOSITION_SKILL = createMockSkill("web-realtime-sse", {
+  category: "web-streaming",
 });
 
 // ---------------------------------------------------------------------------
@@ -297,14 +310,22 @@ export const CATEGORY_GRID_SKILLS: {
   { id: "web-state-mobx", displayName: "MobX", category: "web-client-state" },
   { id: "web-server-state-react-query", displayName: "React Query", category: "web-server-state" },
   { id: "web-data-fetching-swr", displayName: "SWR", category: "web-server-state" },
-  { id: "web-data-fetching-graphql-apollo", displayName: "Apollo", category: "web-server-state" },
+  {
+    id: "web-data-fetching-graphql-apollo",
+    displayName: "Apollo",
+    category: "web-graphql-client",
+  },
   { id: "api-analytics-posthog-analytics", displayName: "PostHog", category: "api-analytics" },
-  { id: "web-forms-react-hook-form", displayName: "React Hook Form", category: "web-forms" },
-  { id: "web-forms-vee-validate", displayName: "Vee Validate", category: "web-forms" },
+  {
+    id: "web-forms-react-hook-form",
+    displayName: "React Hook Form",
+    category: "web-form-library",
+  },
+  { id: "web-forms-vee-validate", displayName: "Vee Validate", category: "web-form-library" },
   { id: "web-forms-zod-validation", displayName: "Zod Validation", category: "web-forms" },
   { id: "web-testing-vitest", displayName: "Vitest", category: "web-testing" },
-  { id: "web-testing-playwright-e2e", displayName: "Playwright", category: "web-testing" },
-  { id: "web-testing-cypress-e2e", displayName: "Cypress", category: "web-testing" },
+  { id: "web-testing-playwright-e2e", displayName: "Playwright", category: "web-e2e" },
+  { id: "web-testing-cypress-e2e", displayName: "Cypress", category: "web-e2e" },
   { id: "web-mocks-msw", displayName: "MSW", category: "web-mocking" },
   {
     id: "web-testing-react-testing-library",
@@ -342,7 +363,7 @@ export const MULTI_SOURCE_PUBLIC_SKILLS: MultiSourceSkillEntry[] = [
 export const MULTI_SOURCE_ACME_SKILLS: MultiSourceSkillEntry[] = [
   { id: "web-framework-react", category: "web-framework", description: "React (acme custom fork)" },
   { id: "api-framework-hono", category: "api-api", description: "Hono web framework" },
-  { id: "api-database-drizzle", category: "api-database", description: "Drizzle ORM" },
+  { id: "api-database-drizzle", category: "api-orm", description: "Drizzle ORM" },
   { id: "api-security-auth-patterns", category: "shared-security", description: "Auth patterns" },
   { id: "web-testing-vitest", category: "web-testing", description: "Vitest (acme custom)" },
 ];
@@ -461,91 +482,6 @@ name: test
 );
 
 // ---------------------------------------------------------------------------
-// Import source skill constants (import-skill.integration.test.ts)
-// ---------------------------------------------------------------------------
-
-/**
- * Skills used by import:skill integration tests with richer content.
- * These use a plain object type (not TestSkill) because import sources use
- * simple directory names that don't follow the SkillId pattern.
- */
-export type ImportSourceSkill = {
-  name: string;
-  content: string;
-  metadata?: Record<string, unknown>;
-};
-
-/** React patterns skill with metadata for import integration tests */
-export const IMPORT_REACT_PATTERNS_SKILL: ImportSourceSkill = {
-  name: "react-patterns",
-  content: `---
-name: react-patterns
-description: React design patterns and best practices
----
-
-# React Patterns
-
-## Component Composition
-
-Use composition over inheritance for flexible component design.
-
-## Hooks Patterns
-
-- Custom hooks for shared logic
-- useReducer for complex state
-- useMemo for expensive computations
-`,
-  metadata: {
-    author: "@external-author",
-    category: "web-framework",
-  },
-};
-
-/** Testing utils skill with metadata for import integration tests */
-export const IMPORT_TESTING_UTILS_SKILL: ImportSourceSkill = {
-  name: "testing-utils",
-  content: `---
-name: testing-utils
-description: Testing utilities and best practices
----
-
-# Testing Utilities
-
-## Unit Testing
-
-Write focused tests that verify single behaviors.
-
-## Integration Testing
-
-Test component interactions and data flow.
-`,
-  metadata: {
-    author: "@external-author",
-    category: "web-testing",
-  },
-};
-
-/** API security skill without metadata for import integration tests */
-export const IMPORT_API_SECURITY_SKILL: ImportSourceSkill = {
-  name: "api-security",
-  content: `---
-name: api-security
-description: API security patterns and middleware
----
-
-# API Security
-
-## Authentication
-
-Implement JWT-based authentication with refresh tokens.
-
-## Rate Limiting
-
-Apply rate limiting to prevent abuse.
-`,
-};
-
-// ---------------------------------------------------------------------------
 // Build-step-logic test skill variants (build-step-logic.test.ts)
 // ---------------------------------------------------------------------------
 
@@ -574,21 +510,21 @@ export const REACT_REQUIRES_ZUSTAND = createMockSkill("web-framework-react", {
   requires: [{ skillIds: ["web-state-zustand"], needsAny: false, reason: "Needs Zustand" }],
 });
 
-/** React marked as recommended (for state preservation in exclusive categories) */
-export const REACT_RECOMMENDED = createMockSkill("web-framework-react", {
-  isRecommended: true,
-  recommendedReason: "Popular choice",
-});
-
 /** Vue that discourages SCSS Modules (for state preservation in exclusive categories) */
 export const VUE_DISCOURAGES_SCSS = createMockSkill("web-framework-vue-composition-api", {
   discourages: [{ skillId: "web-styling-scss-modules", reason: "Prefer other styling" }],
 });
 
-/** Zustand with empty compatibleWith — universally compatible with any framework */
-export const ZUSTAND_UNIVERSAL = createMockSkill("web-state-zustand", {
-  compatibleWith: [],
-});
-
 /** React with local: true — for local skill propagation tests */
 export const REACT_LOCAL = createMockSkill("web-framework-react", { local: true });
+
+// Boundary cast: a local skill's id is outside the generated union by definition —
+// it names a directory the user wrote, which no built-in relationship rule can reach.
+export const LOCAL_HOUSE_STYLE_ID = "local-house-style" as SkillId;
+
+/** A local skill the shipped catalogue has never heard of — merged in as source-loader does. */
+export const LOCAL_HOUSE_STYLE_SKILL = createMockSkill(LOCAL_HOUSE_STYLE_ID, {
+  category: LOCAL_PSEUDO_CATEGORY,
+  local: true,
+  custom: true,
+});

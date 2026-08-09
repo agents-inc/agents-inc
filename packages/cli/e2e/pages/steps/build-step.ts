@@ -16,10 +16,13 @@ const BOX_DRAWING_CHARS = ["│", "┌", "└", "┐", "┘", "─"];
 
 /**
  * Bound on the closed-loop Tab-walk in focusSkill. Tab wraps, so one full
- * cycle visits every category; 30 covers any realistic per-domain category
- * count (real-marketplace domains included) plus swallowed-keystroke retries.
+ * cycle visits every category, and the bound must clear the largest per-domain
+ * count with room for swallowed-keystroke retries on top. Web is the largest
+ * at 33 since the taxonomy split; the previous 30 stopped covering one cycle
+ * the moment it crossed that, and the walk failed on a category it had not
+ * reached yet rather than on one it could not find.
  */
-const MAX_FOCUS_ATTEMPTS = 30;
+const MAX_FOCUS_ATTEMPTS = 50;
 
 /** One visible category section parsed from the current viewport. */
 type VisibleCategory = {
@@ -32,13 +35,13 @@ type VisibleCategory = {
 /**
  * Trailing compatibility annotation SkillTag appends after the label
  * (category-grid.tsx getCompatibilityLabel): "(requires X and Y)",
- * "(required by X)", "(incompatible)", "(recommended)", "(discouraged)".
+ * "(required by X)", "(incompatible)", "(discouraged)".
  * Anchored to the end of the cell and greedy, so requirement names that
  * themselves contain parentheses stay inside the match. Real display names
  * ("Gel (EdgeDB)") keep their parentheses because they never open with one
  * of these annotation keywords.
  */
-const CELL_ANNOTATION = /\s*\((?:requires|required by|incompatible|recommended|discouraged)\b.*\)$/;
+const CELL_ANNOTATION = /\s*\((?:requires|required by|incompatible|discouraged)\b.*\)$/;
 
 /**
  * Leading markers a rendered cell can paint before the label: single-letter
@@ -137,13 +140,15 @@ export class BuildStep extends BaseStep {
 
     const visible = await this.waitForVisibleCategories();
     const screen = this.getScreen();
+    const [onlyCategory] = visible;
     const isSingleCategoryGrid =
+      onlyCategory !== undefined &&
       visible.length === 1 &&
       !screen.includes(STEP_TEXT.SCROLL_MORE_ABOVE) &&
       !screen.includes(STEP_TEXT.SCROLL_MORE_BELOW);
 
     if (isSingleCategoryGrid) {
-      await this.focusColumnInSingleCategory(visible[0], skillLabel);
+      await this.focusColumnInSingleCategory(onlyCategory, skillLabel);
       return;
     }
 
@@ -165,13 +170,13 @@ export class BuildStep extends BaseStep {
    */
   private parseVisibleCategories(): VisibleCategory[] {
     const lines = this.getScreen().split("\n");
-    const headerIdxs = lines
-      .map((line, i) => (isCategoryHeaderLine(line, lines[i + 1]) ? i : -1))
-      .filter((i) => i !== -1);
+    // Carry each header's own line with its index so the body slice never re-reads it.
+    const headers = [...lines.entries()].filter(([i, line]) =>
+      isCategoryHeaderLine(line, lines[i + 1]),
+    );
 
-    return headerIdxs.map((headerIdx, i) => {
-      const nextIdx = headerIdxs[i + 1] ?? lines.length;
-      const headerLine = lines[headerIdx];
+    return headers.map(([headerIdx, headerLine], i) => {
+      const nextIdx = headers[i + 1]?.[0] ?? lines.length;
       return {
         indent: headerLine.length - headerLine.trimStart().length,
         cells: lines
@@ -206,11 +211,15 @@ export class BuildStep extends BaseStep {
    * ambiguous (e.g. mid-repaint) so the caller can re-read.
    */
   private findFocusedCategory(categories: VisibleCategory[]): VisibleCategory | null {
-    if (categories.length === 0) return null;
-    if (categories.length === 1) return categories[0];
+    const [onlyVisible, ...restVisible] = categories;
+    if (!onlyVisible) return null;
+    if (restVisible.length === 0) return onlyVisible;
+
     const minIndent = Math.min(...categories.map((category) => category.indent));
-    const deeper = categories.filter((category) => category.indent === minIndent + 1);
-    return deeper.length === 1 ? deeper[0] : null;
+    const [onlyDeeper, ...restDeeper] = categories.filter(
+      (category) => category.indent === minIndent + 1,
+    );
+    return onlyDeeper && restDeeper.length === 0 ? onlyDeeper : null;
   }
 
   /**
@@ -300,9 +309,16 @@ export class BuildStep extends BaseStep {
    * emitted after the press.
    *
    * Use instead of `toggleFocusedSkill()` whenever the assertion is on a TOAST.
-   * See `toggleFilterIncompatibleAwaiting` for why the processed buffer is the
-   * wrong surface for a toast and why anchoring on a pre-press cursor is
-   * required rather than a bare raw match.
+   * Toasts render in an absolutely-positioned row that Ink rewrites in place, so
+   * xterm's processed buffer (`getOutput()` / `getScreen()`) has already lost the
+   * text by the time a test reads it — a `toContain` on that surface fails even
+   * though the process did write the toast. Raw output IS append-only, so the
+   * toast survives there.
+   *
+   * Anchoring on a pre-press cursor is required for two reasons: the footer
+   * sentinel is re-emitted on every frame (so `waitForWizardFooterAfter` can fire
+   * on a repaint that precedes the toast), and an earlier frame's residue would
+   * satisfy a non-anchored raw match.
    */
   async toggleFocusedSkillAwaiting(sentinel: string): Promise<void> {
     await this.waitForWizardFooter();
@@ -469,39 +485,19 @@ export class BuildStep extends BaseStep {
     return new SearchModal(this.session, this.projectDir);
   }
 
-  /** Toggle filter incompatible skills (press "f"). */
-  async toggleFilterIncompatible(): Promise<void> {
-    await this.waitForWizardFooter();
-    await this.pressKey("f");
-    await this.waitForWizardFooter();
-  }
-
   /**
-   * Press F and wait for `sentinel` in RAW PTY output emitted after the press.
-   *
-   * Use instead of `toggleFilterIncompatible()` whenever the assertion is on a
-   * TOAST. Toasts render in an absolutely-positioned row that Ink rewrites in
-   * place, so xterm's processed buffer (`getOutput()` / `getScreen()`) has
-   * already lost the text by the time a test reads it — a `toContain` on that
-   * surface fails even though the process did write the toast. Raw output IS
-   * append-only, so the toast survives there.
-   *
-   * Anchoring on a pre-press cursor is required for two reasons: the footer
-   * sentinel is re-emitted on every frame (so `waitForWizardFooterAfter` can
-   * fire on a repaint that precedes the toast), and an earlier frame's residue
-   * would satisfy a non-anchored raw match.
+   * Press "f", which the build step no longer binds to anything — incompatible-skill
+   * filtering was withdrawn. Kept so a spec can assert the key is inert rather than
+   * assume it.
    */
-  async toggleFilterIncompatibleAwaiting(sentinel: string): Promise<void> {
+  async pressFilterIncompatibleHotkey(): Promise<void> {
     await this.waitForWizardFooter();
-    const cursor = this.getRawCursor();
     await this.pressKey("f");
-    await this.screen.waitForTextAfter(sentinel, cursor, this.defaultTimeout);
+    await this.waitForWizardFooter();
   }
 
   /**
-   * Toggle the build-step info-panel overlay (press "i"). Gated by the
-   * `FEATURE_FLAGS.INFO_PANEL` runtime flag in the wizard; callers should
-   * only invoke this when the flag is on. When shown, the overlay replaces
+   * Toggle the build-step info-panel overlay (press "i"). The overlay replaces
    * the build-step body and renders a full SkillAgentSummary — callers can
    * then use `getSummaryDiffEntries()` to inspect the live diff.
    */
@@ -541,8 +537,7 @@ export class BuildStep extends BaseStep {
     const lines = output.split("\n");
     // Walk newest-to-oldest so re-opened wizards pick up the most recent
     // frame's badges instead of stale scrollback from a previous launch.
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i];
+    for (const line of [...lines].reverse()) {
       if (!line.includes(skillLabel) || !line.includes("│")) continue;
       const segments = line.split("│");
       for (const segment of segments) {
@@ -585,9 +580,9 @@ export class BuildStep extends BaseStep {
     const escaped = categoryDisplayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const pattern = new RegExp(`(?:^|\\s)${escaped}\\s*\\*?\\s*\\((\\d+) of (\\d+)\\)`);
     const lines = output.split("\n");
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const match = lines[i].match(pattern);
-      if (match) return Number(match[1]);
+    for (const line of [...lines].reverse()) {
+      const [, selectedCount] = line.match(pattern) ?? [];
+      if (selectedCount !== undefined) return Number(selectedCount);
     }
     throw new Error(
       `getExclusiveCategorySelectedCount: no "(N of M)" counter for category ` +

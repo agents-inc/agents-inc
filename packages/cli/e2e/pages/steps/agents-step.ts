@@ -76,8 +76,7 @@ export class AgentsStep extends BaseStep {
     await this.waitForWizardFooter();
     const output = this.getOutput();
     const lines = output.split("\n");
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i];
+    for (const line of [...lines].reverse()) {
       const nameIdx = line.indexOf(agentLabel);
       if (nameIdx === -1) continue;
       const prefix = line.slice(0, nameIdx);

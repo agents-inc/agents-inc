@@ -1,7 +1,6 @@
 import type {
   AgentName,
   AgentScopeConfig,
-  DomainSelections,
   MergedSkillsMatrix,
   ProjectConfig,
   SkillConfig,
@@ -15,7 +14,7 @@ import type { TestProjectConfig } from "../fixtures/create-test-source";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import { NO_CHANGES } from "../../config-gate/classify.js";
 import { NOTHING_RECOMPILED } from "../../config-gate/recompile.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { buildSkillConfigs, FACTORY_DEFAULT_SCOPE } from "../helpers/wizard-simulation.js";
 
 export function buildSourceConfig(
   overrides?: Partial<ResolvedConfig> & Record<string, unknown>,
@@ -30,7 +29,7 @@ export function buildSourceConfig(
 /**
  * The report a gated config write returns. Defaults to a write that changed the
  * global pair and reached nobody; pass `propagatedTo` for a fan-out, whose
- * projects are all reported as recompiled.
+ * projects are all reported as having had their agents rewritten.
  */
 export function buildGateReport(
   propagatedTo: string[] = [],
@@ -40,7 +39,7 @@ export function buildGateReport(
     globalWritten: true,
     changes: NO_CHANGES,
     propagated: { updated: propagatedTo, skipped: [] },
-    recompile: { ...NOTHING_RECOMPILED, recompiledCount: propagatedTo.length },
+    recompile: { ...NOTHING_RECOMPILED, rewrittenCount: propagatedTo.length },
     ...overrides,
   };
 }
@@ -48,7 +47,7 @@ export function buildGateReport(
 export function buildProjectConfig(overrides?: Partial<ProjectConfig>): ProjectConfig {
   return {
     name: "test-project",
-    agents: [{ name: "web-developer", scope: "project" }],
+    agents: buildAgentConfigs(["web-developer"]),
     skills: buildSkillConfigs(["web-framework-react"]),
     ...overrides,
   };
@@ -70,11 +69,11 @@ export function buildWizardResult(
     selectedAgents: [],
     agentConfigs: defaultAgentConfigs,
     selectedStackId: null,
-    domainSelections: {} as DomainSelections,
+    domainSelections: {},
     selectedDomains: [],
     unresolvableSkillIds: [],
     cancelled: false,
-    validation: { valid: true, errors: [], warnings: [] },
+    validation: { valid: true, errors: [] },
     ...overrides,
   };
 }
@@ -85,7 +84,7 @@ export function buildAgentConfigs(
 ): AgentScopeConfig[] {
   return agentNames.map((name) => ({
     name,
-    scope: overrides?.scope ?? "project",
+    scope: overrides?.scope ?? FACTORY_DEFAULT_SCOPE,
     ...(overrides?.excluded !== undefined && { excluded: overrides.excluded }),
     ...(overrides?.model !== undefined && { model: overrides.model }),
     ...(overrides?.effort !== undefined && { effort: overrides.effort }),

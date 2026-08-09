@@ -2,21 +2,21 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import {
+  agentsPath,
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
   ensureBinaryExists,
   listFiles,
-  readTestFile,
+  readCompiledAgents,
   renderMetadataYaml,
   renderSkillMd,
-  agentsPath,
   skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { MINIMAL_PROJECT_AGENT_NAMES, ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
-import { EXIT_CODES, FILES } from "../pages/constants.js";
+import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import type { SkillId, SkillAssignment } from "../../src/cli/types/index.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
@@ -34,13 +34,22 @@ describe("compile command edge cases", () => {
 
   describe("custom stack assignments in manually-edited config", () => {
     it("should compile agents with a custom category added to the stack", async () => {
-      const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
-        agents: [E2E_AGENT["web-developer"].name],
-        domains: ["web"],
+      // Built by hand rather than from `ProjectBuilder.editable()`: the builder's
+      // config was overwritten two statements later by the `writeProjectConfig`
+      // below — the hand-written config with a category outside the union IS this
+      // spec's subject — so the builder call read as setup while contributing only
+      // the react skill directory, which is one `createLocalSkill` here.
+      tempDir = await createTempDir();
+      const projectDir = path.join(tempDir, "project");
+
+      await createLocalSkill(projectDir, "web-framework-react", {
+        description: "Test skill for E2E",
+        metadata: renderMetadataYaml({
+          category: "web-framework",
+          slug: "react",
+          contentHash: "hash-react",
+        }),
       });
-      tempDir = path.dirname(project.dir);
-      const projectDir = project.dir;
 
       // Create a second local skill for a custom category
       await createLocalSkill(projectDir, "web-custom-e2e-tool" as SkillId, {
@@ -60,12 +69,17 @@ describe("compile command edge cases", () => {
           { id: "web-custom-e2e-tool" as SkillId, scope: "project", source: "eject" }, // fabricated E2E test ID
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
-        domains: ["web"],
+        selectedDomains: ["web"],
         stack: {
+          // `web-custom-tool` is fabricated on purpose — it is not in the Category
+          // union, and a config carrying such a key is what this spec drives the
+          // compiler with. `satisfies` cannot express a key outside a closed set,
+          // which is exactly the thing under test.
+          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- deliberately invalid error-path data
           [E2E_AGENT["web-developer"].name]: {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
             "web-custom-tool": [{ id: "web-custom-e2e-tool" as SkillId, preloaded: true }],
-          } as Record<string, SkillAssignment[]>, // fabricated category key
+          } as Record<string, SkillAssignment[]>,
         },
       });
 
@@ -144,7 +158,7 @@ This skill has invalid YAML frontmatter.
       );
     });
 
-    it("should skip skill with completely malformed metadata.yaml", async () => {
+    it("should hard-error naming the skill whose metadata.yaml cannot be read", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
       // Declare the agents so the project is a detected installation; the local
@@ -177,26 +191,33 @@ This skill has invalid YAML frontmatter.
         ),
       );
 
+      const badMetadataPath = path.join(badMetadataSkillDir, FILES.METADATA_YAML);
       // Write completely invalid YAML to metadata.yaml
-      await writeFile(
-        path.join(badMetadataSkillDir, FILES.METADATA_YAML),
-        `{{{ this is not: valid: yaml: "at all`,
-      );
+      await writeFile(badMetadataPath, `{{{ this is not: valid: yaml: "at all`);
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
-      // The broken-metadata skill should still be loaded via SKILL.md frontmatter
-      // (metadata.yaml is separate from skill loading in loadSkillsFromDir).
-      // The valid skill should compile regardless.
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toMatch(/Discovered \d+ local skills/);
-
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
-        E2E_AGENT["web-developer"].name,
-        {
-          contains: ["name: web-developer"],
-        },
+      // A metadata.yaml that cannot be read is a hard error: the same file is
+      // skipped when config-types.ts is regenerated, so loading the skill here
+      // would compile agents around a skill the generated types never carry.
+      expect(exitCode, `compile must refuse an unreadable metadata.yaml:\n${output}`).toBe(
+        EXIT_CODES.ERROR,
       );
+      expect(output, "the offending skill must be named").toContain("web-testing-e2e-bad-meta");
+      expect(output, "the offending file must be named").toContain(badMetadataPath);
+      expect(output, "the refusal must say what is wrong with the file").toContain(
+        STEP_TEXT.COMPILE_METADATA_UNUSABLE,
+      );
+      expect(output, "a refused compile must not claim completion").not.toContain(
+        STEP_TEXT.COMPILE_COMPLETE,
+      );
+
+      // The refusal precedes compilation: the valid sibling skill does not get
+      // agents written for it either.
+      expect(
+        await listFiles(agentsPath(projectDir)),
+        "a refused compile must write no agents at all",
+      ).toStrictEqual([]);
     });
   });
 
@@ -289,34 +310,25 @@ This skill has invalid YAML frontmatter.
       const project = await ProjectBuilder.minimal();
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
-      const agentsDir = agentsPath(project.dir);
-
-      const readAgentContents = async (): Promise<Record<string, string>> => {
-        const files = await listFiles(agentsDir);
-        return Object.fromEntries(
-          await Promise.all(
-            files.map(async (file) => [file, await readTestFile(path.join(agentsDir, file))]),
-          ),
-        );
-      };
 
       // First compile
       const firstResult = await CLI.run(["compile"], { dir: projectDir });
       expect(firstResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-      const firstContents = await readAgentContents();
+      const firstContents = await readCompiledAgents(projectDir);
 
       // Second compile
       const secondResult = await CLI.run(["compile"], { dir: projectDir });
       expect(secondResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-      const secondContents = await readAgentContents();
+      const secondContents = await readCompiledAgents(projectDir);
 
-      // Same set of files
-      expect(Object.keys(secondContents).sort()).toStrictEqual(Object.keys(firstContents).sort());
-
-      // Identical content for each file
-      for (const file of Object.keys(firstContents)) {
-        expect(secondContents[file]).toBe(firstContents[file]);
-      }
+      // The roster is asserted first, so a compile that wrote nothing at all
+      // cannot satisfy the byte comparison with two empty maps.
+      expect(Object.keys(firstContents).sort()).toStrictEqual(
+        MINIMAL_PROJECT_AGENT_NAMES.map((name) => `${name}.md`).sort(),
+      );
+      // One comparison over the whole map: roster AND bytes, so an agent that
+      // appeared, vanished or was rewritten all read as the same failure.
+      expect(secondContents).toStrictEqual(firstContents);
     });
   });
 });

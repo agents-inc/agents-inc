@@ -7,6 +7,7 @@ import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { createTestEnvironment, initGlobal } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
+  cleanupFixture,
   cleanupTempDir,
   ensureBinaryExists,
   isClaudeCLIAvailable,
@@ -51,7 +52,7 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   /**

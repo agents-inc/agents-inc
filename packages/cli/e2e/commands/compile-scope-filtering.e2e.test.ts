@@ -5,14 +5,13 @@ import {
   cleanupTempDir,
   createLocalSkill,
   ensureBinaryExists,
-  listFiles,
-  agentsPath,
+  readCompiledAgents,
   renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
-import { EXIT_CODES } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 
@@ -60,12 +59,21 @@ describe("compile scope filtering", () => {
       });
       tempDir = path.dirname(project.dir);
 
+      // Each scope is compiled by a run in that scope: a compile inside a project
+      // writes only that project, so the global agents are the home run's to write.
+      const globalRun = await CLI.run(
+        ["compile"],
+        { dir: globalHome.dir },
+        { env: { HOME: globalHome.dir } },
+      );
+      expect(globalRun.exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(globalRun.output).toContain("Compiling global agents");
+
       const { exitCode, output } = await CLI.run(["compile"], project, {
         env: { HOME: globalHome.dir },
       });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain("Compiling global agents");
       expect(output).toContain("Compiling project agents");
 
       // Global agent should exist and contain its skill (not be clobbered)
@@ -83,6 +91,17 @@ describe("compile scope filtering", () => {
 
       // Project dir should NOT have the global agent
       await expect(project).not.toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
+
+      // Ported from the deleted "should not produce duplicate agent files across
+      // scopes": the per-agent matchers above negate only the two names they are
+      // given, so the directory listing is what forbids a third file appearing in
+      // either scope.
+      expect(Object.keys(await readCompiledAgents(globalHome.dir))).toStrictEqual([
+        `${E2E_AGENT["web-developer"].name}.md`,
+      ]);
+      expect(Object.keys(await readCompiledAgents(project.dir))).toStrictEqual([
+        `${E2E_AGENT["api-developer"].name}.md`,
+      ]);
     });
 
     it("should compile global agent with skills even when project config has no stack entry for it", async () => {
@@ -101,7 +120,7 @@ describe("compile scope filtering", () => {
           { name: E2E_AGENT["web-developer"].name, scope: "global" },
           { name: E2E_AGENT["api-developer"].name, scope: "global" },
         ],
-        domains: ["web"],
+        selectedDomains: ["web"],
         stack: {
           [E2E_AGENT["web-developer"].name]: {
             "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
@@ -126,7 +145,7 @@ describe("compile scope filtering", () => {
         name: "project-test",
         skills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
         agents: [{ name: "cli-developer", scope: "project" }],
-        domains: ["web"],
+        selectedDomains: ["web"],
         stack: {
           "cli-developer": {
             "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
@@ -138,6 +157,13 @@ describe("compile scope filtering", () => {
         description: "Project skill",
         metadata: renderMetadataYaml({ contentHash: "hash-pC" }),
       });
+
+      const globalRun = await CLI.run(
+        ["compile"],
+        { dir: globalHome },
+        { env: { HOME: globalHome } },
+      );
+      expect(globalRun.exitCode).toBe(EXIT_CODES.SUCCESS);
 
       const { exitCode } = await CLI.run(
         ["compile"],
@@ -177,20 +203,20 @@ describe("compile scope filtering", () => {
   });
 
   describe("global skill discovery for project pass", () => {
-    it("should make global local skills available to project agents", async () => {
-      // Global installation: one global skill.
-      // Project installation: project agent references the GLOBAL skill via stack.
-      // Before the fix, the project pass only discovered project plugins,
-      // so it couldn't find globally-installed local skills.
+    // One spec, the harder of the two setups. A sibling used the same fixture with
+    // the global skill ALSO listed in the project config's `skills` array; that is
+    // strictly easier — if discovery works without the listing it works with it —
+    // and its unique claim (the project agent carries the project-local skill too)
+    // is ported here by naming both skills in the project stack.
+    it("should discover global local skills the project config does not list, alongside its own", async () => {
       const { project, globalHome } = await ProjectBuilder.dualScope({
         globalSkill: {
-          description: "Global local skill for discovery test",
-          metadata: renderMetadataYaml({ contentHash: "hash-gd" }),
+          description: "Global skill for project discovery",
+          metadata: renderMetadataYaml({ contentHash: "hash-gpd" }),
         },
-        projectSkills: [
-          { id: "web-testing-cypress-e2e", scope: "global", source: "eject" },
-          { id: "web-testing-playwright-e2e", scope: "project", source: "eject" },
-        ],
+        // Only the project-scoped skill is registered here — the global one is
+        // referenced by the stack below and by nothing else.
+        projectSkills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
         projectStack: {
           "web-testing": [
             { id: "web-testing-cypress-e2e", preloaded: true },
@@ -199,53 +225,17 @@ describe("compile scope filtering", () => {
         },
         projectSkill: {
           description: "Project-local skill for discovery test",
-          metadata: renderMetadataYaml({ contentHash: "hash-pd" }),
-        },
-      });
-      tempDir = path.dirname(project.dir);
-
-      const { exitCode } = await CLI.run(["compile", "--verbose"], project, {
-        env: { HOME: globalHome.dir },
-      });
-
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // Project agent should include both the project-local AND global-local skill
-      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
-        contains: ["name: api-developer", "web-testing-playwright-e2e", "web-testing-cypress-e2e"],
-      });
-
-      // Project dir should NOT have the global agent
-      await expect(project).not.toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
-
-      // Global agent should contain its own skill
-      await expect(globalHome).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
-        contains: ["name: web-developer", "web-testing-cypress-e2e"],
-      });
-
-      // Global dir should NOT have the project agent
-      await expect(globalHome).not.toHaveCompiledAgent(E2E_AGENT["api-developer"].name);
-    });
-
-    it("should discover global local skills even when project has no global-scoped skills in config", async () => {
-      // Global installation with a skill.
-      // Project installation: references the global skill in its stack
-      // but only has project-scoped skills in config.
-      const { project, globalHome } = await ProjectBuilder.dualScope({
-        globalSkill: {
-          description: "Global skill for project discovery",
-          metadata: renderMetadataYaml({ contentHash: "hash-gpd" }),
-        },
-        projectSkills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
-        projectStack: {
-          "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
-        },
-        projectSkill: {
-          description: "Project skill (not referenced in stack)",
           metadata: renderMetadataYaml({ contentHash: "hash-ppd" }),
         },
       });
       tempDir = path.dirname(project.dir);
+
+      const globalRun = await CLI.run(
+        ["compile"],
+        { dir: globalHome.dir },
+        { env: { HOME: globalHome.dir } },
+      );
+      expect(globalRun.exitCode).toBe(EXIT_CODES.SUCCESS);
 
       const { exitCode } = await CLI.run(["compile"], project, {
         env: { HOME: globalHome.dir },
@@ -253,10 +243,10 @@ describe("compile scope filtering", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // The project agent should include the global skill even though
-      // the project config only has project-scoped skills
+      // The project agent carries BOTH the project-local skill and the global one
+      // its config never names.
       await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
-        contains: ["name: api-developer", "web-testing-cypress-e2e"],
+        contains: ["name: api-developer", "web-testing-playwright-e2e", "web-testing-cypress-e2e"],
       });
 
       // Project dir should NOT have the global agent
@@ -273,93 +263,7 @@ describe("compile scope filtering", () => {
   });
 
   describe("project agents not clobbered by global pass", () => {
-    it("should compile project agents with their own skills, not zero-skill versions", async () => {
-      // Global installation: web-developer only.
-      // Project installation: api-developer with its own skill assignment.
-      const { project, globalHome } = await ProjectBuilder.dualScope({
-        globalSkill: {
-          description: "Global skill",
-          metadata: renderMetadataYaml({ contentHash: "hash-g13" }),
-        },
-        projectSkills: [
-          { id: "web-testing-playwright-e2e", scope: "project", source: "eject" },
-          { id: "web-testing-cypress-e2e", scope: "global", source: "eject" },
-        ],
-        projectStack: {
-          "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
-        },
-        projectSkill: {
-          description: "Project skill for non-clobber test",
-          metadata: renderMetadataYaml({ contentHash: "hash-p13" }),
-        },
-      });
-      tempDir = path.dirname(project.dir);
-
-      const { exitCode } = await CLI.run(["compile"], project, {
-        env: { HOME: globalHome.dir },
-      });
-
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // Project agent should have its skill, not be empty/zero-skill
-      await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
-        contains: ["name: api-developer", "web-testing-playwright-e2e"],
-      });
-
-      // Project dir should NOT have the global agent
-      await expect(project).not.toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
-
-      // Global agent should contain its own skill
-      await expect(globalHome).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
-        contains: ["name: web-developer", "web-testing-cypress-e2e"],
-      });
-
-      // Global dir should NOT have the project agent
-      await expect(globalHome).not.toHaveCompiledAgent(E2E_AGENT["api-developer"].name);
-    });
-
-    it("should not produce duplicate agent files across scopes", async () => {
-      // Global: web-developer. Project: api-developer.
-      const { project, globalHome } = await ProjectBuilder.dualScope({
-        globalSkill: {
-          description: "Global skill for dedup test",
-          metadata: renderMetadataYaml({ contentHash: "hash-gdd" }),
-        },
-        projectSkills: [
-          { id: "web-testing-playwright-e2e", scope: "project", source: "eject" },
-          { id: "web-testing-cypress-e2e", scope: "global", source: "eject" },
-        ],
-        projectStack: {
-          "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
-        },
-        projectSkill: {
-          description: "Project skill for dedup test",
-          metadata: renderMetadataYaml({ contentHash: "hash-pdd" }),
-        },
-      });
-      tempDir = path.dirname(project.dir);
-
-      const { exitCode } = await CLI.run(["compile"], project, {
-        env: { HOME: globalHome.dir },
-      });
-
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // web-developer should ONLY be in global dir, NOT in project dir
-      const globalAgents = await listFiles(agentsPath(globalHome.dir));
-      const projectAgents = await listFiles(agentsPath(project.dir));
-
-      const globalMdFiles = globalAgents.filter((f) => f.endsWith(".md"));
-      const projectMdFiles = projectAgents.filter((f) => f.endsWith(".md"));
-
-      expect(globalMdFiles).toContain("web-developer.md");
-      expect(globalMdFiles).not.toContain("api-developer.md");
-
-      expect(projectMdFiles).toContain("api-developer.md");
-      expect(projectMdFiles).not.toContain("web-developer.md");
-    });
-
-    it("should output correct pass labels in verbose mode", async () => {
+    it("should label each context's own pass in verbose mode", async () => {
       // Global: web-developer. Project: api-developer.
       const { project, globalHome } = await ProjectBuilder.dualScope({
         globalSkill: {
@@ -377,21 +281,39 @@ describe("compile scope filtering", () => {
       });
       tempDir = path.dirname(project.dir);
 
+      const globalRun = await CLI.run(
+        ["compile", "--verbose"],
+        { dir: globalHome.dir },
+        { env: { HOME: globalHome.dir } },
+      );
+
+      expect(globalRun.exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(globalRun.output).toContain("Compiling global agents");
+      expect(globalRun.output).toContain("Global compile complete");
+      expect(globalRun.output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
+      expect(globalRun.output).not.toContain("Compiling project agents");
+
       const { exitCode, output } = await CLI.run(["compile", "--verbose"], project, {
         env: { HOME: globalHome.dir },
       });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // Both passes should be labeled
-      expect(output).toContain("Compiling global agents");
       expect(output).toContain("Compiling project agents");
-      expect(output).toContain("Global compile complete");
       expect(output).toContain("Project compile complete");
+      expect(output).toMatch(/\d+ project agents rewritten, \d+ unchanged/);
+      expect(output, "a compile inside a project must not run the global pass").not.toContain(
+        "Compiling global agents",
+      );
 
-      // Each pass should report recompiled agents
-      expect(output).toMatch(/Recompiled \d+ global agents/);
-      expect(output).toMatch(/Recompiled \d+ project agents/);
+      // Ported from the deleted dual-scope "should name the one pass each context
+      // owns": not running the global PASS is not the same as not READING the
+      // global scope. A project agent may carry a global-scoped skill, so the
+      // project run still loads both scopes' skills — it is the writes that are
+      // contained, and without this the negative above would also pass on a run
+      // that had stopped reading ~/.claude/skills/ altogether.
+      expect(output).toContain(STEP_TEXT.LOADED_SKILL);
+      expect(output).toContain("web-testing-cypress-e2e");
+      expect(output).toContain("web-testing-playwright-e2e");
     });
   });
 });

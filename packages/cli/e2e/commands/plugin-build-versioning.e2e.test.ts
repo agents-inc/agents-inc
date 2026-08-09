@@ -60,6 +60,7 @@ const ALL_SKILLS_AT_INITIAL_VERSION: Record<string, string> = {
   [E2E_SKILL["vue-composition-api"].id]: INITIAL_VERSION,
   [E2E_SKILL.pinia.id]: INITIAL_VERSION,
   [E2E_SKILL.zustand.id]: INITIAL_VERSION,
+  [E2E_SKILL["visual-regression"].id]: INITIAL_VERSION,
   [E2E_SKILL.vitest.id]: INITIAL_VERSION,
 };
 
@@ -187,9 +188,15 @@ describe("build plugins version bumping", () => {
       result = await CLI.run(["build", "marketplace"], { dir: sourceDir });
     }, TIMEOUTS.SETUP);
 
-    it("succeeds", () => {
+    it("succeeds and reports every compiled plugin in its summary", () => {
       expect(result.exitCode, `build marketplace failed: ${result.output}`).toBe(
         EXIT_CODES.SUCCESS,
+      );
+      // Ported from the deleted plugin-build.e2e.test.ts, which matched
+      // `[1-9]\d* plugins!` — any non-zero count. The source's own skill count is
+      // known, so the exact number is what a dropped plugin has to redden.
+      expect(result.output).toContain(
+        `Marketplace generated with ${E2E_SKILL_IDS.length} plugins!`,
       );
     });
 

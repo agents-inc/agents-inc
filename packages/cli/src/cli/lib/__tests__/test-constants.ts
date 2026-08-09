@@ -25,3 +25,12 @@ export const delay = (ms: number): Promise<void> =>
 
 /** The canonical public source URL used across arrange-side test setup. */
 export const TEST_SOURCE_URL = "github:agents-inc/skills";
+
+/**
+ * A marketplace that is NOT the default public one.
+ *
+ * The identity every spec about scoping needs: the built-in catalogue stands in
+ * for `TEST_SOURCE_URL` alone, so a stack id that resolves there must not
+ * resolve here. One definition because several suites ask the same question.
+ */
+export const TEST_CUSTOM_SOURCE_URL = "github:acme/skills";

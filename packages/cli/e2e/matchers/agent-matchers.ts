@@ -81,7 +81,8 @@ export const agentMatchers = {
       };
     }
 
-    const fm = parseYamlFrontmatter(fmMatch[1]);
+    const frontmatterYaml = fmMatch[1] ?? "";
+    const fm = parseYamlFrontmatter(frontmatterYaml);
     if (!fm) {
       return {
         pass: false,
@@ -101,7 +102,7 @@ export const agentMatchers = {
         return {
           pass: false,
           message: () =>
-            `Expected agent frontmatter ${field} to be "${expected}" but got "${fm[field]}"`,
+            `Expected agent frontmatter ${field} to be "${expected}" but got "${String(fm[field])}"`,
         };
       }
     }
@@ -110,7 +111,7 @@ export const agentMatchers = {
       return {
         pass: false,
         message: () =>
-          `Expected agent "${agentName}" frontmatter to carry no effort but got "${fm.effort}"`,
+          `Expected agent "${agentName}" frontmatter to carry no effort but got "${String(fm.effort)}"`,
       };
     }
 

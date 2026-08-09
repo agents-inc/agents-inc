@@ -14,7 +14,7 @@ import {
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
-import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
 
@@ -29,29 +29,18 @@ describe("dual-scope compile", () => {
     }
   });
 
-  it("should compile agents to both global and project locations", async () => {
-    const { project, globalHome } = await ProjectBuilder.dualScope();
-    tempDir = path.dirname(project.dir);
-
-    const { exitCode } = await CLI.run(
-      ["compile"],
-      { dir: project.dir },
-      { env: { HOME: globalHome.dir } },
-    );
-
-    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-
-    await expect(globalHome).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
-    await expect(project).toHaveCompiledAgent(E2E_AGENT["api-developer"].name);
-
-    // Global scope should NOT have project agent
-    const globalAgents = await listFiles(agentsPath(globalHome.dir));
-    expect(globalAgents).not.toContain("api-developer.md");
-  });
-
   it("should compile global agents referencing only global skills", async () => {
     const { project, globalHome } = await ProjectBuilder.dualScope();
     tempDir = path.dirname(project.dir);
+
+    // The global agents belong to the home-context run; the project run below
+    // must leave them exactly as that one wrote them.
+    const global = await CLI.run(
+      ["compile"],
+      { dir: globalHome.dir },
+      { env: { HOME: globalHome.dir } },
+    );
+    expect(global.exitCode).toBe(EXIT_CODES.SUCCESS);
 
     const { exitCode } = await CLI.run(
       ["compile"],
@@ -112,7 +101,7 @@ describe("dual-scope compile", () => {
       name: "global-test",
       skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["web-developer"].name]: {
           "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
@@ -151,7 +140,7 @@ describe("dual-scope compile", () => {
       name: "project-test",
       skills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
       agents: [{ name: E2E_AGENT["api-developer"].name, scope: "project" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["api-developer"].name]: {
           "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
@@ -181,6 +170,10 @@ describe("dual-scope compile", () => {
     expect(globalMdFiles.length).toBe(0);
   });
 
+  // Kept rather than folded into `compile-scope-filtering`'s global-skill-discovery
+  // spec, which the audit named as covering it: that fixture gives the project its
+  // OWN local skills, so it never exercises a project whose skills directory is
+  // empty. Same claim, different path into the loader.
   it("should include global-only skills in project agent when project has no local skills", async () => {
     tempDir = await createTempDir();
 
@@ -192,7 +185,7 @@ describe("dual-scope compile", () => {
       name: "global-test",
       skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["web-developer"].name]: {
           "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
@@ -210,7 +203,7 @@ describe("dual-scope compile", () => {
       name: "project-test",
       skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
       agents: [{ name: E2E_AGENT["api-developer"].name, scope: "project" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["api-developer"].name]: {
           "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
@@ -231,23 +224,5 @@ describe("dual-scope compile", () => {
     await expect({ dir: projectDir }).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
       contains: ["web-testing-cypress-e2e"],
     });
-  });
-
-  it("should show both passes in verbose output", async () => {
-    const { project, globalHome } = await ProjectBuilder.dualScope();
-    tempDir = path.dirname(project.dir);
-
-    const { exitCode, output } = await CLI.run(
-      ["compile", "--verbose"],
-      { dir: project.dir },
-      { env: { HOME: globalHome.dir } },
-    );
-
-    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain("Compiling global agents");
-    expect(output).toContain("Compiling project agents");
-    expect(output).toContain(STEP_TEXT.LOADED_SKILL);
-    expect(output).toContain("web-testing-cypress-e2e");
-    expect(output).toContain("web-testing-playwright-e2e");
   });
 });

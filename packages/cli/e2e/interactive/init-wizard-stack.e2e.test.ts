@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
-import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_AGENTS, E2E_SKILL, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
@@ -12,10 +12,19 @@ import {
   completeWithLocalSources,
   ensureBinaryExists,
   isClaudeCLIAvailable,
+  readCompiledAgents,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 
 const claudeAvailable = await isClaudeCLIAvailable();
+
+/**
+ * The stack's whole sub-agent roster as compiled filenames, derived from the
+ * stack definition rather than retyped. Replaces the parameterless
+ * `toHaveCompiledAgents()`, which proved only that the agents directory held at
+ * least one `.md` — an install that compiled one of the two passed it.
+ */
+const COMPILED_AGENT_FILES = E2E_STACK_AGENTS.map((agent) => `${agent}.md`);
 
 describe("init wizard — stack flow", () => {
   let wizard: InitWizard | undefined;
@@ -116,7 +125,9 @@ describe("init wizard — stack flow", () => {
         expect(output).toContain(STEP_TEXT.CONFIGURATION_LABEL);
         await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
         const globalProject = { dir: wizard.globalHome };
-        await expect(globalProject).toHaveCompiledAgents();
+        expect(Object.keys(await readCompiledAgents(wizard.globalHome)).sort()).toStrictEqual(
+          COMPILED_AGENT_FILES,
+        );
         await expect(globalProject).toHaveCompiledAgentContent("web-developer", {
           contains: ["web-framework-react"],
         });
@@ -126,71 +137,39 @@ describe("init wizard — stack flow", () => {
 
   describe("local install verification", () => {
     it(
-      "should copy skills to .claude/skills/ directory",
+      "should eject the stack's skills, write them to config and report where they went",
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         wizard = await InitWizard.launchInProject();
         const result = await completeWithLocalSources(wizard);
 
         // Default-scope installs eject skills and compile agents into the
-        // wizard's global HOME, so installed-content assertions read there.
+        // wizard's global HOME, so installed-content assertions read there;
+        // config.ts stays under the project dir.
         const globalProject = { dir: wizard.globalHome };
         await expectPhaseSuccess(
           { project: globalProject, exitCode: result.exitCode },
           { copiedSkills: ["web-framework-react"] },
         );
-        await expect(globalProject).toHaveCompiledAgents();
-      },
-    );
-
-    it(
-      "should not produce archive warnings during first install",
-      { timeout: TIMEOUTS.INTERACTIVE },
-      async () => {
-        wizard = await InitWizard.launchInProject();
-        const result = await completeWithLocalSources(wizard);
-
-        await result.exitCode;
-
-        const output = result.output;
-        expect(output).not.toContain("Failed to archive");
-        expect(output).not.toContain("ENOENT");
-        await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
-      },
-    );
-
-    it(
-      "should produce SkillConfig[] with id, scope, and source in config",
-      { timeout: TIMEOUTS.INTERACTIVE },
-      async () => {
-        wizard = await InitWizard.launchInProject();
-        const result = await completeWithLocalSources(wizard);
-
-        await result.exitCode;
-
-        // config.ts stays under the project dir; compiled agents land in the
-        // wizard's global HOME.
         await expect(result.project).toHaveConfig({
           skillIds: ["web-framework-react"],
-          agents: ["web-developer"],
+          agents: E2E_AGENTS.WEB_AND_API,
           source: "eject",
         });
-        await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
+        expect(Object.keys(await readCompiledAgents(wizard.globalHome)).sort()).toStrictEqual(
+          COMPILED_AGENT_FILES,
+        );
+
+        const output = result.output;
+        expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
+        expect(output).toContain(STEP_TEXT.SKILLS_COPIED_TO);
+        expect(output).toContain(".claude/skills");
+        // A first install has nothing to archive, so the archive path must stay
+        // silent. Specific rather than generic: the id of any skill carrying
+        // "error" would trip a broader negative.
+        expect(output).not.toContain("Failed to archive");
       },
     );
-
-    it("should list copied skills in output", { timeout: TIMEOUTS.INTERACTIVE }, async () => {
-      wizard = await InitWizard.launchInProject();
-      const result = await completeWithLocalSources(wizard);
-
-      await result.exitCode;
-
-      const output = result.output;
-      expect(output).toContain(STEP_TEXT.SKILLS_COPIED_TO);
-      expect(output).toContain(".claude/skills");
-      await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
-      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
-    });
   });
 
   describe("stack customize flow", () => {

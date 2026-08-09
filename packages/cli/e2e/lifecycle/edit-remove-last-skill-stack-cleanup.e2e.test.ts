@@ -88,8 +88,7 @@ describe("edit removes the only skill an agent references", () => {
         name: "global-edit-test",
         skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-        domains: ["web"],
-        selectedAgents: [E2E_AGENT["web-developer"].name],
+        selectedDomains: ["web"],
         stack: singleSkillStack,
       });
       await writeProjectConfig(globalHome, config);

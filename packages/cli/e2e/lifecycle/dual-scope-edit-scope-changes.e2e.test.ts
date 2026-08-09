@@ -307,9 +307,11 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
         await fileExists(projectSkillMdPath),
         "SKILL.md must exist in project skills/web-framework-react/",
       ).toBe(true);
+      // The copied file is the skill it claims to be, named in its own frontmatter.
+      // `skillMdContent.length > 100` stood here — an unexplained threshold standing
+      // in for "the file has content", which any hundred bytes satisfy.
       const skillMdContent = await readTestFile(projectSkillMdPath);
-      expect(skillMdContent.length).toBeGreaterThan(100);
-      expect(skillMdContent).toContain(E2E_SKILL.react.id);
+      expect(skillMdContent.startsWith(`---\nname: ${E2E_SKILL.react.id}\n`)).toBe(true);
 
       // D-4: Global config STILL contains web-framework-react
       // D-5: Project config has web-framework-react with scope: "project"

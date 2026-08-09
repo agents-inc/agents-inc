@@ -5,17 +5,18 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
-  isClaudeCLIAvailable,
+  cleanupFixture,
   cleanupTempDir,
   completeWithLocalSources,
   configTsPath,
   ensureBinaryExists,
   fileExists,
   injectMarketplaceIntoConfig,
+  isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
@@ -44,7 +45,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   afterEach(async () => {
@@ -230,7 +231,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
 
         const rawOutput = editResult.rawOutput;
         expect(rawOutput).toContain("Switching");
-        expect(rawOutput).toContain("to plugin");
+        expect(rawOutput).toContain(`to ${STEP_TEXT.PLUGIN_NATIVE}`);
 
         // --- Assertions ---
         await expect({ dir: fakeHome }).not.toHaveSkillCopied(E2E_SKILL.react.id);

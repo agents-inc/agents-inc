@@ -9,18 +9,19 @@ import {
 import "../matchers/setup.js";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
 import {
-  isClaudeCLIAvailable,
-  claudePluginMarketplaceAdd,
-  claudePluginInstall,
-  createTempDir,
-  cleanupTempDir,
-  ensureBinaryExists,
-  directoryExists,
-  renderSkillMd,
-  writeProjectConfig,
-  writeAgentFile,
-  skillsPath,
   FORKED_FROM_METADATA,
+  claudePluginInstall,
+  claudePluginMarketplaceAdd,
+  cleanupFixture,
+  cleanupTempDir,
+  createTempDir,
+  directoryExists,
+  ensureBinaryExists,
+  isClaudeCLIAvailable,
+  renderSkillMd,
+  skillsPath,
+  writeAgentFile,
+  writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -75,7 +76,7 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
         },
       ],
       agents: [{ name: "web-developer", scope: "project" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
     });
 
     // Step 6: Create local skill with forkedFrom metadata (so skill uninstall works)
@@ -96,7 +97,7 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
   }, TIMEOUTS.INTERACTIVE);
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
     if (projectTempDir) await cleanupTempDir(projectTempDir);
   });
 

@@ -8,24 +8,23 @@ import {
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { readSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
-  isClaudeCLIAvailable,
+  cleanupFixture,
   cleanupTempDir,
   completeWithLocalSources,
-  configTsPath,
   createTempDir,
   ensureBinaryExists,
-  fileExists,
   injectMarketplaceIntoConfig,
-  readTestFile,
+  isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 
 /**
- * Source switching lifecycle E2E tests -- per-skill switching.
+ * Install-mode lifecycle E2E tests -- per-skill switching.
  *
- * Tests the full flow of switching ONE skill source mid-lifecycle:
+ * Tests the full flow of switching ONE skill's install mode mid-lifecycle:
  *   9c: Init local -> edit switch ONE skill to plugin -> verify mixed state
  *
  * These tests require the Claude CLI for plugin install/uninstall operations.
@@ -33,7 +32,7 @@ import {
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
-describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- per-skill switching", () => {
+describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- per-skill switching", () => {
   let fixture: E2EPluginSource;
 
   let tempDir: string | undefined;
@@ -44,7 +43,7 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- per-skill s
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   afterEach(async () => {
@@ -54,7 +53,7 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- per-skill s
     }
   });
 
-  describe("per-skill source switching -- mixed local and plugin", () => {
+  describe("per-skill install-mode switching -- mixed local and plugin", () => {
     let editWizard: EditWizard | undefined;
 
     afterEach(async () => {
@@ -65,13 +64,13 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- per-skill s
     });
 
     it(
-      "should support mixed source modes with per-skill switching via customize view",
+      "should support mixed install modes with per-skill switching in the grid",
       { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
       async () => {
         tempDir = await createTempDir();
         const projectDir = path.join(tempDir, "project");
 
-        // This test switches ONE skill's SOURCE (eject -> plugin) mid-edit.
+        // This test switches ONE skill's install MODE (eject -> plugin) mid-edit.
         // Default-scope skills are GLOBAL, and a project edit renders global
         // skills as locked (readOnly), refusing the toggle. Both phases
         // therefore model editing the GLOBAL install via launchInGlobal: HOME ==
@@ -105,9 +104,29 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- per-skill s
         const sources = await editWizard.build.passThroughAllDomains();
         await sources.waitForReady();
 
-        // Arrow right to marketplace source column for the first skill
+        // The row is a two-state control: Local or Plugin, captioned in the cells themselves.
+        // Asserted before the switch, so the move below is a move between exactly those two.
+        const controlFrame = sources.getScreen();
+        expect(
+          controlFrame,
+          `the Sources row must offer a Local cell. Screen:\n${controlFrame}`,
+        ).toContain(STEP_TEXT.INSTALL_MODE_LOCAL);
+        expect(
+          controlFrame,
+          `the Sources row must offer a Plugin cell. Screen:\n${controlFrame}`,
+        ).toContain(STEP_TEXT.INSTALL_MODE_PLUGIN);
+        expect(
+          controlFrame,
+          `the cells name the install MODE, not the source the mode installs from. Screen:\n${controlFrame}`,
+        ).not.toContain(STEP_TEXT.SOURCE_DISPLAY_EJECT);
+        expect(
+          controlFrame.indexOf(E2E_SKILL.react.display),
+          `the captions belong to the cells, so nothing captions them above the grid. Screen:\n${controlFrame}`,
+        ).toBeLessThan(controlFrame.indexOf(STEP_TEXT.INSTALL_MODE_LOCAL));
+
+        // Arrow right from Local to Plugin on the first skill's row
         await sources.moveSourceColumnRight();
-        // Space to select the marketplace source for this skill only
+        // Space to commit plugin mode for this skill only
         await sources.selectFocusedSourceCell();
 
         const agents = await sources.advance();
@@ -124,13 +143,22 @@ describe.skipIf(!claudeAvailable)("source switching mid-lifecycle -- per-skill s
 
         expect(await editResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
+        // Which direction the switch went, and how many skills it took. The
+        // alternation `/[Ss]witch|[Ii]nstall/` that stood here passed on either
+        // word, so it could not tell a switch to plugin mode from a switch back —
+        // nor a per-skill switch from the bulk one the sibling spec drives.
         const rawOutput = editResult.rawOutput;
-        expect(rawOutput).toMatch(/[Ss]witch|[Ii]nstall/);
+        expect(rawOutput).toContain(
+          `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.PLUGIN_NATIVE}`,
+        );
 
-        const configPath = configTsPath(projectDir);
-        expect(await fileExists(configPath)).toBe(true);
-        const configContent = await readTestFile(configPath);
-        expect(configContent).toContain(fixture.marketplaceName);
+        // Structural, not a substring of the whole config text: `toContain(name)`
+        // was satisfied by the `marketplace` field `injectMarketplaceIntoConfig`
+        // wrote during SETUP, whether or not any skill's `source` moved.
+        const switchedEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);
+        expect(switchedEntries.map((entry) => entry.source)).toStrictEqual([
+          fixture.marketplaceName,
+        ]);
 
         await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
       },

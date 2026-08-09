@@ -29,7 +29,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
 
   describe("conflict rules", () => {
     it(
-      "should detect unresolved conflict references via validate",
+      "should detect unresolved conflict references via doctor",
       { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
         // "angular-standalone" slug does not exist in the E2E source — should be flagged as unresolved
@@ -50,7 +50,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
         const result = await wizard.completeWithDefaults();
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-        const { output } = await CLI.run(["validate"], result.project);
+        const { output } = await CLI.run(["doctor"], result.project);
 
         // Slug resolution should detect that "angular-standalone" has no matching skill in the source
         expect(output).toContain("Unresolved slug");
@@ -61,7 +61,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
 
   describe("require rules", () => {
     it(
-      "should detect unresolved require references via validate",
+      "should detect unresolved require references via doctor",
       { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
         // "angular-standalone" is a valid SkillSlug but does not exist in the E2E source.
@@ -85,7 +85,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
         const result = await wizard.completeWithDefaults();
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-        const { output } = await CLI.run(["validate"], result.project);
+        const { output } = await CLI.run(["doctor"], result.project);
 
         expect(output).toContain("Unresolved slug");
         expect(output).toContain("angular-standalone");
@@ -113,12 +113,6 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
                 reason: "Zustand requires React",
               },
             ],
-            recommends: [
-              {
-                skill: E2E_SKILL.vitest.slug,
-                reason: "Vitest is recommended",
-              },
-            ],
           },
         });
 
@@ -128,7 +122,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
         const result = await wizard.completeWithDefaults();
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-        const { output } = await CLI.run(["validate"], result.project);
+        const { output } = await CLI.run(["doctor"], result.project);
 
         // Default rules may produce unresolved references for slugs not in E2E source
         // (e.g., "angular", "vue"), but E2E source slugs should all resolve cleanly.
@@ -140,7 +134,6 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
         // Message format: "Skill 'X' has unresolved reference 'Y' in 'field'"
         // The quoted reference position must never hold an E2E skill's resolved ID.
         expect(output).not.toContain(`unresolved reference '${E2E_SKILL.react.id}'`);
-        expect(output).not.toContain(`unresolved reference '${E2E_SKILL.vitest.id}'`);
         expect(output).not.toContain(`unresolved reference '${E2E_SKILL.zustand.id}'`);
         expect(output).not.toContain(`unresolved reference '${E2E_SKILL.hono.id}'`);
       },
@@ -149,7 +142,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
 
   describe("discourages rules", () => {
     it(
-      "should detect unresolved discourages references via validate",
+      "should detect unresolved discourages references via doctor",
       { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
         fixture = await createE2EPluginSource({
@@ -169,7 +162,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
         const result = await wizard.completeWithDefaults();
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-        const { output } = await CLI.run(["validate"], result.project);
+        const { output } = await CLI.run(["doctor"], result.project);
 
         // "angular-standalone" slug does not exist in the E2E source
         expect(output).toContain("Unresolved slug");

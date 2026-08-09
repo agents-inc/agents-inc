@@ -15,6 +15,7 @@ import {
   readAllSkillEntries,
 } from "../fixtures/dual-scope-helpers.js";
 import {
+  cleanupFixture,
   cleanupTempDir,
   directoryExists,
   ensureBinaryExists,
@@ -53,7 +54,7 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
-    if (pluginSource) await cleanupTempDir(pluginSource.tempDir);
+    await cleanupFixture(pluginSource);
   });
 
   afterEach(async () => {

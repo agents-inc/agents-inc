@@ -12,6 +12,13 @@ import {
 } from "../helpers/test-utils.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { flattenCliOutput } from "../fixtures/seed-config-store.js";
+
+/** The `source-fetcher` message for a source path that is not a directory. */
+const LOCAL_SOURCE_NOT_FOUND = "Local source not found:";
+/** The two paths these guards name, so the message is proved to be ABOUT them. */
+const MISSING_INIT_SOURCE_PATH = "/tmp/not-a-real-source-path-xyz";
+const MISSING_EDIT_SOURCE_PATH = "/nonexistent/path/xyz";
 
 /**
  * Error guard E2E tests for init, compile, and edit commands.
@@ -32,6 +39,12 @@ describe("init/edit error guards", () => {
     }
   });
 
+  /**
+   * The guard fires BEFORE the wizard mounts, which is the only reason this spec
+   * can assert it at all: `runCLI` has no PTY, so anything after the render dies
+   * on Ink's `Raw mode is not supported on the current process.stdin` and every
+   * message the run would have printed is lost behind that stack trace.
+   */
   it(
     "init with invalid source flag should error gracefully",
     { timeout: TIMEOUTS.INSTALL },
@@ -41,14 +54,16 @@ describe("init/edit error guards", () => {
       await mkdir(projectDir, { recursive: true });
 
       const { exitCode, combined } = await runCLI(
-        ["init", "--source", "/tmp/not-a-real-source-path-xyz"],
+        ["init", "--source", MISSING_INIT_SOURCE_PATH],
         projectDir,
         { env: { HOME: tempDir } },
       );
 
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
-      // The source loader should report an error about the nonexistent source
-      expect(combined.length).toBeGreaterThan(0);
+      // The loader names the path it could not find. `combined.length > 0` stood
+      // here and was satisfied by any output at all, including a different error.
+      expect(flattenCliOutput(combined)).toContain(LOCAL_SOURCE_NOT_FOUND);
+      expect(combined).toContain(MISSING_INIT_SOURCE_PATH);
     },
   );
 
@@ -102,8 +117,13 @@ describe("init/edit error guards", () => {
     },
   );
 
+  /**
+   * Same guard, same load path, reached through the command that CANNOT be pointed at a
+   * source: `edit` takes no `--source`, so the path it fails on is the one its own config
+   * records — the install whose marketplace has since been moved or deleted.
+   */
   it(
-    "edit with --source pointing to nonexistent path should error",
+    "edit whose stored source no longer exists should error",
     { timeout: TIMEOUTS.INSTALL },
     async () => {
       tempDir = await createTempDir();
@@ -112,6 +132,7 @@ describe("init/edit error guards", () => {
       // Create a minimal installation so detectProject() succeeds
       await writeProjectConfig(projectDir, {
         name: "test-edit-bad-source",
+        source: MISSING_EDIT_SOURCE_PATH,
         skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
@@ -121,15 +142,14 @@ describe("init/edit error guards", () => {
         metadata: renderMetadataYaml({ contentHash: "hash-edit-err" }),
       });
 
-      const { exitCode, combined } = await runCLI(
-        ["edit", "--source", "/nonexistent/path/xyz"],
-        projectDir,
-        { env: { HOME: tempDir } },
-      );
+      const { exitCode, combined } = await runCLI(["edit"], projectDir, {
+        env: { HOME: tempDir },
+      });
 
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
-      // The source loader should report an error about the nonexistent path
-      expect(combined.length).toBeGreaterThan(0);
+      // Same reasoning as the init guard above: name the failure, not its length.
+      expect(flattenCliOutput(combined)).toContain(LOCAL_SOURCE_NOT_FOUND);
+      expect(combined).toContain(MISSING_EDIT_SOURCE_PATH);
     },
   );
 });

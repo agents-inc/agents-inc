@@ -69,7 +69,7 @@ describe("edit recompile routes agents to correct scope directory", () => {
         name: "global",
         skills: [{ id: "web-framework-react", scope: "global", source: "eject" }],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
-        domains: ["web"],
+        selectedDomains: ["web"],
       });
 
       // Create global skill directory with SKILL.md and metadata.yaml
@@ -105,15 +105,17 @@ describe("edit recompile routes agents to correct scope directory", () => {
           { name: E2E_AGENT["web-developer"].name, scope: "global" },
           { name: E2E_AGENT["api-developer"].name, scope: "project" },
         ],
-        selectedAgents: [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
-        domains: ["web"],
+        selectedDomains: ["web"],
       });
 
-      // Create project skill directories
+      // Create project skill directories. web-styling-tailwind deliberately gets
+      // none: a skill the config claims and nothing installed is the one the
+      // wizard cannot resolve. Writing its files would make it resolvable — an
+      // installed local skill whose metadata.yaml describes it joins the matrix
+      // and is offered like any other, and then nothing would change.
       for (const skill of [
         { id: "web-framework-react", category: "web-framework", slug: "react" },
         { id: "web-testing-vitest", category: "web-testing", slug: "vitest" },
-        { id: "web-styling-tailwind", category: "web-styling", slug: "tailwind" },
       ] as const) {
         await createLocalSkill(projectDir, skill.id, {
           description: `${skill.id} skill`,

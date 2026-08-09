@@ -1,19 +1,19 @@
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupFixture, cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * Confirm-step source-change indicator (D-261).
+ * Confirm-step mode-change indicator (D-261).
  *
- * When a skill's SOURCE changes during edit (e.g. eject -> plugin), the confirm
+ * When a skill's install MODE changes during edit (eject -> plugin), the confirm
  * step must flag the row with the compact "~" change marker beside the skill
  * name and NOTHING else — the row already shows its current install mode, so
- * "~" alone signals that the source changed. Today `skill-agent-summary.tsx`
+ * "~" alone signals that the mode changed. Today `skill-agent-summary.tsx`
  * ALSO renders a verbose "<oldSource> -> <newSource>" transition (the only "->"
  * / U+2192 arrow painted in the confirm frame) which overflows / wraps the
  * layout. This test pins the compact form and the absence of the verbose arrow.
@@ -24,7 +24,7 @@ import { TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
  * them can observe the overflowing arrow.
  */
 
-describe("confirm step — source-change indicator", () => {
+describe("confirm step — mode-change indicator", () => {
   let source: E2ESource;
   let wizard: EditWizard | undefined;
   let tempDir: string | undefined;
@@ -35,7 +35,7 @@ describe("confirm step — source-change indicator", () => {
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (source) await cleanupTempDir(source.tempDir);
+    await cleanupFixture(source);
   });
 
   afterEach(async () => {
@@ -48,7 +48,7 @@ describe("confirm step — source-change indicator", () => {
   });
 
   it(
-    "flags a source-changed skill with the compact ~ marker and no verbose transition",
+    "flags a mode-changed skill with the compact ~ marker and no verbose transition",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       // Baseline: an eject-mode project — web-framework-react saved at
@@ -68,8 +68,8 @@ describe("confirm step — source-change indicator", () => {
       });
 
       // Switch the installed skill from eject to plugin on the sources step —
-      // its source flips eject -> plugin, a genuine source change the confirm
-      // step must render as a source-changed row.
+      // its recorded source flips eject -> the marketplace, a genuine install-mode
+      // change the confirm step must render as a mode-changed row.
       const sources = await wizard.build.advanceToSources();
       await sources.setAllPlugin();
       const agents = await sources.advance();
@@ -86,21 +86,21 @@ describe("confirm step — source-change indicator", () => {
       // skill-agent-summary.tsx renders it), so its absence is the contract.
       expect(
         confirmOutput,
-        `confirm step must not render the verbose source-transition arrow.\nScreen:\n${confirm.getScreen()}`,
+        `confirm step must not render the verbose mode-transition arrow.\nScreen:\n${confirm.getScreen()}`,
       ).not.toContain("→");
 
-      // The source-changed skill must be flagged with the compact "~" marker
+      // The mode-changed skill must be flagged with the compact "~" marker
       // directly beside its name — the row already shows its install mode, so
-      // "~" alone signals the source changed. Today the verbose transition wraps
+      // "~" alone signals the mode changed. Today the verbose transition wraps
       // the layout and splits "~" from the skill name, so this fails.
       expect(
         confirmOutput,
-        `confirm step must flag the source-changed skill with a compact "~ <name>" marker.\nScreen:\n${confirm.getScreen()}`,
+        `confirm step must flag the mode-changed skill with a compact "~ <name>" marker.\nScreen:\n${confirm.getScreen()}`,
       ).toContain(`~ ${E2E_SKILL.react.display}`);
 
       // Durable structural proof (green after the fix): with the verbose
       // transition gone, the scraped diff for react is exactly one project-scoped
-      // source-changed ("~") row. Uses the trusted page-object scraper — the
+      // mode-changed ("~") row. Uses the trusted page-object scraper — the
       // wrapping the bug introduces prevents its regex from matching today.
       const skillEntries = await confirm.getSummaryDiffEntries(E2E_SKILL.react.display);
       expect(

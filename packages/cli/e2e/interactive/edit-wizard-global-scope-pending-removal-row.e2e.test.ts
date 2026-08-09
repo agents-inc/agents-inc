@@ -86,8 +86,7 @@ describe("edit wizard — pending-removal row on the Sources tab in a global-sco
             source: "eject",
           }),
           agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-          domains: ["web"],
-          selectedAgents: [E2E_AGENT["web-developer"].name],
+          selectedDomains: ["web"],
         }),
       );
 

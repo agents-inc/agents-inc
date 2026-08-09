@@ -143,7 +143,9 @@ async function unregisterProjects(globalHome: string): Promise<void> {
     "the project install must have registered itself before this removes the registration",
   ).toBeGreaterThan(0);
 
-  await writeProjectConfig(globalHome, { ...globalConfig, projects: undefined });
+  // Deregistering removes the key entirely — an explicit `undefined` is not a config state.
+  const { projects: _projects, ...withoutProjects } = globalConfig;
+  await writeProjectConfig(globalHome, withoutProjects);
 }
 
 describe("a global-scope narrowing keeps an untouched project's config.ts type-checking", () => {

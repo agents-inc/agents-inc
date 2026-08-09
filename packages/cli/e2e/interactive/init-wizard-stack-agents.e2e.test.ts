@@ -33,7 +33,7 @@ describe.skipIf(!claudeAvailable)("init wizard — stack agent preselection", ()
     "should preselect agents from the selected stack",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
-      wizard = await InitWizard.launchInProject({ source });
+      wizard = await InitWizard.launchInProject({ ...(source !== undefined && { source }) });
 
       // Select the first stack (E2E Test Stack)
       const domain = await wizard.stack.selectFirstStack();

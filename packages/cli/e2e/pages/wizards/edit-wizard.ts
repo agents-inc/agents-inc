@@ -1,6 +1,10 @@
 import { TerminalSession } from "../../helpers/terminal-session.js";
 import type { E2ESource } from "../../helpers/create-e2e-source.js";
-import { cleanupTempDir, createPermissionsFile } from "../../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  createPermissionsFile,
+  recordInstallSource,
+} from "../../helpers/test-utils.js";
 import { allocateProjectGlobalHome } from "./global-home.js";
 import { STEP_TEXT, TIMEOUTS } from "../constants.js";
 import { TerminalScreen } from "../terminal-screen.js";
@@ -10,14 +14,21 @@ import type { WizardResult } from "../wizard-result.js";
 export type EditWizardOptions = {
   /** Project directory (required -- must have existing installation). */
   projectDir: string;
-  /** Source directory for skill resolution. */
+  /**
+   * The source this installation answers to.
+   *
+   * `edit` takes no `--source` and reads no `CC_SOURCE` — naming a source is `init`'s
+   * decision (CLI-466) — so this is RECORDED in the install's config.ts before the
+   * wizard launches, exactly as an `init --source` would have left it. Installs that
+   * already name their own source (anything a wizard produced) are untouched.
+   */
   source?: E2ESource;
   /** Terminal dimensions */
   cols?: number;
   rows?: number;
   /** Custom environment variables (merged with defaults). */
   env?: Record<string, string | undefined>;
-  /** Extra CLI flags to pass (e.g., ["--refresh"]). */
+  /** Extra CLI flags to pass (e.g., ["--project-setup"]). */
   extraArgs?: string[];
   /** Override the default timeout for the underlying TerminalSession. */
   defaultTimeout?: number;
@@ -77,28 +88,32 @@ export class EditWizard {
     awaitBuildCategory = true,
   ): Promise<{ session: TerminalSession; build: BuildStep }> {
     const args = ["edit"];
-    if (options.source) {
-      args.push("--source", options.source.sourceDir);
-    }
     if (options.extraArgs) {
       args.push(...options.extraArgs);
+    }
+
+    if (options.source) {
+      // In `resolveSource`'s own order: the project's config, then whichever HOME this
+      // session runs under — a global-only install keeps its config there and nowhere else.
+      const homes = [globalHome, options.env?.HOME].filter((dir) => dir !== undefined);
+      await recordInstallSource([options.projectDir, ...homes], options.source.sourceDir);
     }
 
     // Create permissions file to prevent blocking prompt after recompile
     await createPermissionsFile(options.projectDir);
 
     const env: Record<string, string | undefined> = {
-      AGENTSINC_SOURCE: undefined,
+      CC_SOURCE: undefined,
       ...options.env,
       ...(globalHome !== undefined ? { HOME: globalHome } : {}),
     };
 
     const session = new TerminalSession(args, options.projectDir, {
-      cols: options.cols,
-      rows: options.rows,
+      ...(options.cols !== undefined && { cols: options.cols }),
+      ...(options.rows !== undefined && { rows: options.rows }),
       env,
-      defaultTimeout: options.defaultTimeout,
-      globalHome,
+      ...(options.defaultTimeout !== undefined && { defaultTimeout: options.defaultTimeout }),
+      ...(globalHome !== undefined && { globalHome }),
     });
 
     // Edit wizard opens directly to the build step (no stack step in this path,

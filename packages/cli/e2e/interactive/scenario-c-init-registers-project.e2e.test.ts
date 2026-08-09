@@ -17,7 +17,7 @@ import {
 /**
  * `cc init` registers each project's realpath in the global config's `projects`
  * array via `registerProjectPath` (the project-context branch of
- * `writeScopedConfigs`). Because `detectInstallation` falls back to the global
+ * `writeScopedFromWizard`). Because `detectInstallation` falls back to the global
  * HOME install, once a global install exists every subsequent project init is
  * driven through the dashboard -> Edit path; both paths reach
  * `registerProjectPath`. Two projects under the same HOME must both be

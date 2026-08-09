@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import "../matchers/setup.js";
 import {
   agentsPath,
+  cleanupFixture,
   cleanupTempDir,
   ensureBinaryExists,
   fileExists,
@@ -46,6 +47,12 @@ import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.
  * project. Unknown ids are never fatal: payloads carry catalog slugs precisely so a configuration
  * shared before a rename still installs everything else.
  *
+ * Every payload here pins its sub-agent to `scope: "project"` in the `agents` map. A payload that
+ * names no agent scope takes the shared selection default and lands in the user's own ~/.claude,
+ * which would move the very directories and config halves these assertions read. Saying it on the
+ * wire is also what keeps the skill-scope subject discriminating: the agent's destination has to be
+ * fixed independently for "a global skill does not drag its agent with it" to mean anything.
+ *
  * Covers Phase 5 scenarios 8, 10 and 11 of the tracker's `--from` matrix.
  */
 
@@ -53,6 +60,9 @@ const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
 const UNKNOWN_SKILL_ID = "web-framework-not-in-this-catalog";
 const UNKNOWN_AGENT_NAME = "not-a-sub-agent-either";
+
+/** A sub-agent entry that keeps its agent in the project rather than at the default scope. */
+const PINNED_TO_PROJECT = { scope: "project" } as const;
 
 /**
  * The registry the Claude CLI keeps under the HOME it was run with, as a plain
@@ -136,6 +146,7 @@ describe("init --from <id>: install scopes and unknown ids", () => {
           }),
           [E2E_SKILL.vitest.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
         },
+        agents: { [WEB_DEV]: PINNED_TO_PROJECT },
       }),
     );
 
@@ -154,10 +165,10 @@ describe("init --from <id>: install scopes and unknown ids", () => {
       ...buildSkillConfigs([E2E_SKILL.react.id], { scope: "global" }),
       ...buildSkillConfigs([E2E_SKILL.vitest.id]),
     ]);
-    expect(projectConfig.agents).toStrictEqual(buildAgentConfigs([WEB_DEV]));
+    expect(projectConfig.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
 
-    // The global config owns the global entry, and nothing else: sub-agent front-matter is always
-    // written into the project regardless of any skill's scope.
+    // The global config owns the global entry, and nothing else: a skill's scope never moves the
+    // sub-agent that holds it, which the payload pinned into the project on its own authority.
     const globalConfig = await loadConfigOrFail(env.fakeHome);
     expect(globalConfig.skills).toStrictEqual(
       buildSkillConfigs([E2E_SKILL.react.id], { scope: "global" }),
@@ -183,6 +194,7 @@ describe("init --from <id>: install scopes and unknown ids", () => {
           }),
           [UNKNOWN_SKILL_ID]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
         },
+        agents: { [WEB_DEV]: PINNED_TO_PROJECT },
       }),
     );
 
@@ -201,7 +213,7 @@ describe("init --from <id>: install scopes and unknown ids", () => {
 
     const config = await loadConfigOrFail(env.projectDir);
     expect(config.skills).toStrictEqual(buildSkillConfigs([E2E_SKILL.react.id]));
-    expect(config.agents).toStrictEqual(buildAgentConfigs([WEB_DEV]));
+    expect(config.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
 
     expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([E2E_SKILL.react.id]);
     expect(await listFiles(agentsPath(env.projectDir))).toStrictEqual([`${WEB_DEV}.md`]);
@@ -219,7 +231,7 @@ describe("init --from <id>: install scopes and unknown ids", () => {
             assignments: { [WEB_DEV]: "lazy", [API_DEV]: "preloaded" },
           }),
         },
-        agents: { [API_DEV]: { on: false } },
+        agents: { [WEB_DEV]: PINNED_TO_PROJECT, [API_DEV]: { on: false } },
       }),
     );
 
@@ -232,8 +244,7 @@ describe("init --from <id>: install scopes and unknown ids", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
     const config = await loadConfigOrFail(env.projectDir);
-    expect(config.agents).toStrictEqual(buildAgentConfigs([WEB_DEV]));
-    expect(config.selectedAgents).toStrictEqual([WEB_DEV]);
+    expect(config.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
     // The switched-off sub-agent's assignment said `preloaded` — that must not leak onto the
     // sub-agent that IS installed, and must not mint a stack entry of its own.
     expect(config.stack).toStrictEqual({
@@ -263,7 +274,7 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
 
   afterAll(async () => {
     await store.close();
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   afterEach(async () => {
@@ -292,6 +303,7 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
               assignments: { [WEB_DEV]: "lazy" },
             }),
           },
+          agents: { [WEB_DEV]: PINNED_TO_PROJECT },
         }),
       );
 

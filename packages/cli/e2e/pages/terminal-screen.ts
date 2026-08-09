@@ -1,12 +1,49 @@
 import { pollUntil } from "../helpers/test-utils.js";
 import type { TerminalSession } from "../helpers/terminal-session.js";
 
+/**
+ * oclif's refusal for a flag the command does not declare. A session that printed it
+ * has already exited, so every wait below would burn its whole budget — 45s a piece —
+ * before reporting a timeout that says nothing about the cause. Seen once, the wait
+ * fails immediately and quotes the refusal instead.
+ */
+const PARSE_REFUSAL = "Nonexistent flag";
+
 export class TerminalScreen {
   constructor(private session: TerminalSession) {}
 
+  /**
+   * Polls like {@link pollUntil}, but abandons the wait the moment the session shows a
+   * parse refusal — a frame that will never paint is not worth waiting for.
+   */
+  private async waitUntil(
+    isSatisfied: () => boolean,
+    timeoutMs: number,
+    buildTimeoutError: () => Error,
+  ): Promise<void> {
+    await pollUntil(
+      () => {
+        this.refuseOnParseError();
+        return isSatisfied();
+      },
+      timeoutMs,
+      buildTimeoutError,
+    );
+  }
+
+  private refuseOnParseError(): void {
+    const output = this.session.getFullOutput();
+    if (!output.includes(PARSE_REFUSAL)) return;
+
+    throw new Error(
+      `TerminalScreen: the command was refused by the parser, so no frame will ever paint.\n` +
+        `Output:\n${output}`,
+    );
+  }
+
   /** Auto-retrying wait for text in the full output (xterm buffer). */
   async waitForText(text: string, timeoutMs: number): Promise<void> {
-    await pollUntil(
+    await this.waitUntil(
       () => this.session.getFullOutput().includes(text),
       timeoutMs,
       () =>
@@ -26,7 +63,7 @@ export class TerminalScreen {
    * assert on post-cursor raw output.
    */
   async waitForTextAfter(text: string, cursor: number, timeoutMs: number): Promise<void> {
-    await pollUntil(
+    await this.waitUntil(
       () => this.session.getRawOutput().slice(cursor).includes(text),
       timeoutMs,
       () =>
@@ -46,7 +83,7 @@ export class TerminalScreen {
 
   /** Auto-retrying wait for text in raw PTY output (no xterm processing). */
   async waitForRawText(text: string, timeoutMs: number): Promise<void> {
-    await pollUntil(
+    await this.waitUntil(
       () => this.session.getRawOutput().includes(text),
       timeoutMs,
       () =>
@@ -59,7 +96,7 @@ export class TerminalScreen {
 
   /** Auto-retrying wait for either of two texts in the full output. */
   async waitForEither(textA: string, textB: string, timeoutMs: number): Promise<void> {
-    await pollUntil(
+    await this.waitUntil(
       () =>
         this.session.getFullOutput().includes(textA) ||
         this.session.getFullOutput().includes(textB),

@@ -202,7 +202,7 @@ export abstract class BaseStep {
    * step and the build-step info-panel overlay — both render the same
    * component, so the scraped output shape is identical.
    *
-   * Each entry pairs the prefix token (`+` new, `-` removed, `~` source
+   * Each entry pairs the prefix token (`+` new, `-` removed, `~` install mode
    * changed, `•` unchanged) with the scope subsection (`Project` or `Global`)
    * the row appeared under. Callers assert on the (scope, prefix) pairs rather
    * than raw substrings so a P→G toggle can be verified as BOTH
@@ -240,9 +240,7 @@ export abstract class BaseStep {
     const scopeByColumn = new Map<number, "Project" | "Global">();
 
     for (const line of lines) {
-      const segments = line.split(/[│┃]/);
-      for (let colIdx = 0; colIdx < segments.length; colIdx++) {
-        const segment = segments[colIdx];
+      for (const [colIdx, segment] of line.split(/[│┃]/).entries()) {
         const trimmed = segment.trim();
         if (!trimmed) continue;
         const scopeMatch = trimmed.match(scopeLabelPattern);

@@ -27,9 +27,10 @@ import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
  *
  * Scenarios covered:
  *   A. Skill curation preserved across edits (removal from one agent's stack).
- *   B. Newly-added skill fans out to every existing agent (with preloaded: false)
- *      while existing preloaded: true entries retain their flag.
- *   C. New agent added this session seeds from ownership defaults while
+ *   B. Newly-added skill lands on its own domain's agents alone — the shared
+ *      resolver's relevance rule — loaded the way the preload mapping says,
+ *      while existing entries (cross-domain ones included) retain their flag.
+ *   C. New agent added this session seeds from the relevance rule while
  *      existing curated agents' stacks stay byte-identical.
  *
  * Every scenario asserts BOTH the parsed `config.ts` stack AND the compiled
@@ -111,7 +112,7 @@ describe("stack per-agent curation survives edit", () => {
     });
 
     it(
-      "preserves curated removal AND fans out newly-added skill across agents",
+      "preserves curated removal AND lands newly-added skill on its own domain alone",
       { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
         // ================================================================
@@ -192,19 +193,20 @@ describe("stack per-agent curation survives edit", () => {
           preloaded: true,
         });
 
-        // --- Scenario B: newly-added skill fans out with preloaded: false ---
-        // Newly-added entries default to preloaded: false, which the CLI compacts
-        // to a bare skill id; web-client-state is exclusive, so that id is the
-        // whole category value.
+        // --- Scenario B: newly-added skill lands per the relevance rule ---
+        // The pair is new, so there is no saved flag to keep: the web skill
+        // reaches its own domain's developer preloaded (client state is one of
+        // the things a developer works in) and never reaches the api agent at
+        // all. web-client-state is exclusive, so the entry is the whole value.
         expect(
           stackAfterEdit["web-developer"]?.["web-client-state"],
           "Newly-added web-state-zustand must appear on web-developer.web-client-state",
-        ).toStrictEqual("web-state-zustand");
+        ).toStrictEqual({ id: "web-state-zustand", preloaded: true });
 
         expect(
           stackAfterEdit["api-developer"]?.["web-client-state"],
-          "Newly-added web-state-zustand must fan out to api-developer.web-client-state",
-        ).toStrictEqual("web-state-zustand");
+          "Newly-added web-state-zustand must NOT cross domains to api-developer",
+        ).toBeUndefined();
 
         // --- Scenario B (continued): existing preloaded: true survives ---
         expect(stackAfterEdit["web-developer"]?.["web-framework"]).toStrictEqual({
@@ -233,18 +235,128 @@ describe("stack per-agent curation survives edit", () => {
           contains: ["api-framework-hono"],
         });
 
-        // The newly-added skill must land on every compiled agent (fanout).
+        // The newly-added web skill lands on its own domain's compiled agent
+        // and stays out of the other domain's.
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
           contains: ["web-state-zustand"],
         });
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-          contains: ["web-state-zustand"],
+          notContains: ["web-state-zustand"],
         });
       },
     );
   });
 
-  describe("new agent added this session seeds from ownership defaults", () => {
+  describe("a saved entry whose skill has since changed category", () => {
+    let tempDir: string | undefined;
+
+    afterEach(async () => {
+      if (tempDir) {
+        await cleanupTempDir(tempDir);
+        tempDir = undefined;
+      }
+    });
+
+    it(
+      "keeps the curated entry, re-keyed to the skill's live category",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        // ================================================================
+        // Phase 1: Seed a project saved before a category move. Every
+        // `web-developer` entry is the user's curation; the vitest one is
+        // stored under `web-tooling`, the category it sat in when the config
+        // was written, while the catalog now answers `web-testing`.
+        // ================================================================
+
+        const seededStack = {
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react", preloaded: true }],
+            "web-tooling": [{ id: "web-testing-vitest", preloaded: true }],
+          },
+          "api-developer": {
+            "api-api": [{ id: "api-framework-hono", preloaded: true }],
+          },
+        } satisfies Partial<Record<AgentName, StackAgentConfig>>;
+
+        const project = await ProjectBuilder.editable({
+          skills: ["web-framework-react", "web-testing-vitest", "api-framework-hono"],
+          agents: ["web-developer", "api-developer"],
+          domains: ["web", "api"],
+          stack: seededStack,
+        });
+        tempDir = path.dirname(project.dir);
+        const projectDir = project.dir;
+        await createPermissionsFile(projectDir);
+
+        const configPath = configTsPath(projectDir);
+
+        // ================================================================
+        // Phase 2: An ordinary `cc edit` that adds one unrelated skill —
+        // the save that used to discard the moved skill's placement.
+        // ================================================================
+
+        const wizard = await EditWizard.launch({
+          projectDir,
+          source: { sourceDir, tempDir: sourceTempDir },
+          ...TERMINAL_SIZE.TALL,
+        });
+
+        await wizard.build.selectSkill(E2E_SKILL.zustand.id);
+
+        const sources = await wizard.build.passThroughAllDomainsGeneric();
+        await sources.waitForReady();
+        await sources.setAllLocal();
+        const agents = await sources.advance();
+        const confirm = await agents.acceptDefaults("edit");
+        const result = await confirm.confirm();
+        expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+        await result.destroy();
+
+        // ================================================================
+        // Phase 3: The entry survives the save, under the live category, with
+        // the load the user curated.
+        // ================================================================
+
+        const configAfterEdit = await readTestFile(configPath);
+        const stackAfterEdit = extractStack(configAfterEdit);
+
+        expect(
+          stackAfterEdit["web-developer"]?.["web-testing"],
+          "a skill that changed category keeps its per-agent placement — the key moves, the curation does not",
+        ).toStrictEqual([{ id: "web-testing-vitest", preloaded: true }]);
+
+        expect(
+          stackAfterEdit["web-developer"]?.["web-tooling"],
+          "the stale key must not survive alongside the live one",
+        ).toBeUndefined();
+
+        // Untouched entries stay exactly as they were.
+        expect(stackAfterEdit["web-developer"]?.["web-framework"]).toStrictEqual({
+          id: "web-framework-react",
+          preloaded: true,
+        });
+        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual({
+          id: "api-framework-hono",
+          preloaded: true,
+        });
+
+        // ================================================================
+        // Phase 4: Filesystem assertions — the compiled agent still carries
+        // the skill whose category moved.
+        // ================================================================
+
+        await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
+          contains: ["web-testing-vitest", "web-framework-react"],
+        });
+        await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
+          contains: ["api-framework-hono"],
+          notContains: ["web-testing-vitest"],
+        });
+      },
+    );
+  });
+
+  describe("new agent added this session seeds from the relevance rule", () => {
     let tempDir: string | undefined;
     let globalHomeDir: string | undefined;
 
@@ -354,19 +466,27 @@ describe("stack per-agent curation survives edit", () => {
           "web-testing-vitest",
         ]);
 
-        // --- api-developer (newly selected) is seeded from ownership defaults ---
+        // --- api-developer (newly selected) is seeded from the relevance rule ---
         expect(
           stackAfterEdit["api-developer"],
           "api-developer stack must be seeded when the agent is newly selected this session",
         ).toBeDefined();
-        // api-api and web-framework are exclusive — one skill each, emitted bare.
-        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual("api-framework-hono");
-        expect(stackAfterEdit["api-developer"]?.["web-framework"]).toStrictEqual(
-          "web-framework-react",
-        );
-        expect(stackAfterEdit["api-developer"]?.["web-testing"]).toStrictEqual([
-          "web-testing-vitest",
-        ]);
+        // Every triple here is new, so the relevance rule decides who receives
+        // what: the api framework lands preloaded (api-api is exclusive, so
+        // the entry is the whole category value), and the two web skills never
+        // reach the api agent at all.
+        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual({
+          id: "api-framework-hono",
+          preloaded: true,
+        });
+        expect(
+          stackAfterEdit["api-developer"]?.["web-framework"],
+          "web-framework-react must NOT cross domains to the newly seeded api agent",
+        ).toBeUndefined();
+        expect(
+          stackAfterEdit["api-developer"]?.["web-testing"],
+          "web-testing-vitest must NOT cross domains to the newly seeded api agent",
+        ).toBeUndefined();
 
         // ================================================================
         // Phase 4: Filesystem assertions.
@@ -378,9 +498,11 @@ describe("stack per-agent curation survives edit", () => {
           notContains: ["api-framework-hono"],
         });
 
-        // api-developer (newly added) contains its seeded skills.
+        // api-developer (newly added) contains its own domain's seeded skill
+        // and none of the web ones.
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-          contains: ["api-framework-hono", "web-framework-react", "web-testing-vitest"],
+          contains: ["api-framework-hono"],
+          notContains: ["web-framework-react", "web-testing-vitest"],
         });
       },
     );

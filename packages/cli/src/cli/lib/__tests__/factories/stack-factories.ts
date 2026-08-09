@@ -30,8 +30,8 @@ export function createMockStack(
     name: config.name,
     description: config.description ?? "",
     // Boundary cast: test callers may pass arbitrary agent names (e.g., "nonexistent-agent")
-    agents: config.agents as Stack["agents"],
-    philosophy: config.philosophy,
+    agents: config.agents,
+    ...(config.philosophy !== undefined && { philosophy: config.philosophy }),
   };
 }
 
@@ -49,7 +49,7 @@ export function createMockRawStacksConfig() {
           },
           "api-developer": {
             "api-api": "api-framework-hono",
-            "api-database": "api-database-drizzle",
+            "api-orm": "api-database-drizzle",
           },
         },
       },
@@ -84,7 +84,7 @@ export function createMockRawStacksConfigWithArrays() {
               "meta-reviewing-cli-reviewing",
             ],
           },
-          "pattern-scout": {
+          "codex-keeper": {
             "meta-reviewing": ["meta-methodology-research-methodology"],
           },
         },

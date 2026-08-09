@@ -10,10 +10,11 @@ import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { CLI } from "../fixtures/cli.js";
 import {
-  isClaudeCLIAvailable,
-  createTempDir,
+  cleanupFixture,
   cleanupTempDir,
+  createTempDir,
   ensureBinaryExists,
+  isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 
 /**
@@ -44,7 +45,7 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   it(
@@ -88,7 +89,9 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
       // Settings file exists with permissions
       await expect({ dir: projectDir }).toHaveSettings({ hasKey: "permissions" });
 
-      expect(initOutput).not.toContain("Failed to");
+      // The positive sentinel rather than a generic absence: the plugin install
+      // announced completion, which "Failed to" is absent from either way.
+      expect(initOutput).toContain(STEP_TEXT.INIT_SUCCESS);
 
       await initResult.destroy();
 
@@ -100,7 +103,7 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
         ["uninstall", "--yes"],
         { dir: projectDir },
         {
-          env: { AGENTSINC_SOURCE: undefined },
+          env: { CC_SOURCE: undefined },
         },
       );
 

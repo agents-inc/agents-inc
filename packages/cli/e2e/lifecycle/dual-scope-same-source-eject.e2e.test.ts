@@ -203,8 +203,7 @@ describe("dual-scope same-source (both eject)", () => {
         name: "dual-scope-global-eject",
         skills: buildSkillConfigs([VITEST_ID], { scope: "global", source: "eject" }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-        domains: ["web"],
-        selectedAgents: [E2E_AGENT["web-developer"].name],
+        selectedDomains: ["web"],
         stack: globalStack,
         projects: [realpathSync(projectDir)],
       });
@@ -221,8 +220,7 @@ describe("dual-scope same-source (both eject)", () => {
           ...buildSkillConfigs([VITEST_ID], { scope: "project", source: "eject" }),
         ],
         agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
-        domains: ["web"],
-        selectedAgents: [E2E_AGENT["api-developer"].name],
+        selectedDomains: ["web"],
         stack: projectStack,
       });
       await writeProjectConfig(projectDir, projectConfig);
@@ -278,7 +276,7 @@ describe("dual-scope same-source (both eject)", () => {
 
       // Compiled project agent still references the project-scope vitest (bare).
       const compile = await CLI.run(
-        ["compile", "--source", sourceDir],
+        ["compile"],
         { dir: projectDir },
         {
           env: { HOME: globalHome },

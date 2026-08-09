@@ -69,7 +69,6 @@ function buildRegisteredProjectConfig(name: string): ProjectConfig {
     name,
     skills: buildSkillConfigs([REACT], { scope: "global", source: "eject" }),
     agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
-    selectedAgents: [E2E_AGENT["api-developer"].name],
     stack: projectStack,
   });
 }
@@ -104,8 +103,7 @@ describe("global-scope skill removal propagates to registered projects", () => {
       name: "propagation-global",
       skills: buildSkillConfigs([REACT], { scope: "global", source: "eject" }),
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
-      domains: ["web"],
-      selectedAgents: [E2E_AGENT["web-developer"].name],
+      selectedDomains: ["web"],
       stack: globalStack,
       projects: [realpathSync(projectA), realpathSync(projectB)],
     });

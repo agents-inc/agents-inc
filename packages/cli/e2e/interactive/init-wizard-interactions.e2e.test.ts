@@ -8,7 +8,12 @@ import {
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
-import { cleanupTempDir, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
+import {
+  cleanupFixture,
+  cleanupTempDir,
+  ensureBinaryExists,
+  isClaudeCLIAvailable,
+} from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 
 /**
@@ -35,7 +40,7 @@ describe.skipIf(!claudeAvailable)("init wizard — interactions", () => {
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (fixture) await cleanupTempDir(fixture.tempDir);
+    await cleanupFixture(fixture);
   });
 
   afterEach(async () => {

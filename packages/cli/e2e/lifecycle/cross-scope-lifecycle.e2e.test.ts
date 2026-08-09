@@ -9,10 +9,11 @@ import {
 import "../matchers/setup.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
-import { TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
+  cleanupFixture,
   cleanupTempDir,
   completeWithLocalSources,
   configTsPath,
@@ -62,7 +63,7 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
-    if (source) await cleanupTempDir(source.tempDir);
+    await cleanupFixture(source);
   });
 
   it(
@@ -102,9 +103,10 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
         contains: ["name: api-developer"],
       });
 
-      const initOutput = initResult.output;
-      expect(initOutput).not.toContain("Failed to");
-      expect(initOutput).not.toContain("ENOENT");
+      // The positive sentinel, not a generic absence: `not.toContain("Failed to")`
+      // cannot tell a clean install from one that failed with different wording,
+      // and the exit code beside it already carries "did not crash".
+      expect(initResult.output).toContain(STEP_TEXT.INIT_SUCCESS);
 
       await initResult.destroy();
 
@@ -157,8 +159,10 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
       // No project-scope skills or agents leaked
       await expectCleanUninstall(projectDir);
 
-      // No errors in Phase 2 output
-      expect(phase2Raw).not.toContain("ENOENT");
+      // The edit ran to completion AND reported that it changed nothing — which is
+      // this phase's whole subject. A generic `not.toContain("ENOENT")` stood here
+      // and could not tell a completed no-op edit from an edit that never ran.
+      expect(phase2Raw).toContain(STEP_TEXT.EDIT_UNCHANGED);
 
       await editResult.destroy();
     },
@@ -196,7 +200,7 @@ describe.skipIf(!claudeAvailable)(
 
     afterAll(async () => {
       if (tempDir) await cleanupTempDir(tempDir);
-      if (fixture) await cleanupTempDir(fixture.tempDir);
+      await cleanupFixture(fixture);
     });
 
     it(
@@ -244,9 +248,10 @@ describe.skipIf(!claudeAvailable)(
         const reactPluginKey = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
         await expect({ dir: fakeHome }).toHavePlugin(reactPluginKey);
 
-        const initOutput = initResult.output;
-        expect(initOutput).not.toContain("Failed to");
-        expect(initOutput).not.toContain("ENOENT");
+        // The positive sentinel, not a generic absence: `not.toContain("Failed to")`
+        // cannot tell a clean install from one that failed with different wording,
+        // and the exit code beside it already carries "did not crash".
+        expect(initResult.output).toContain(STEP_TEXT.INIT_SUCCESS);
 
         await initResult.destroy();
 
@@ -300,8 +305,10 @@ describe.skipIf(!claudeAvailable)(
         // No project-scope skills or agents leaked
         await expectCleanUninstall(projectDir);
 
-        // No errors in Phase 2 output
-        expect(phase2Raw).not.toContain("ENOENT");
+        // The edit ran to completion AND reported that it changed nothing — which is
+        // this phase's whole subject. A generic `not.toContain("ENOENT")` stood here
+        // and could not tell a completed no-op edit from an edit that never ran.
+        expect(phase2Raw).toContain(STEP_TEXT.EDIT_UNCHANGED);
 
         await editResult.destroy();
       },
@@ -338,7 +345,7 @@ describe.skipIf(!claudeAvailable)(
 
     afterAll(async () => {
       if (tempDir) await cleanupTempDir(tempDir);
-      if (fixture) await cleanupTempDir(fixture.tempDir);
+      await cleanupFixture(fixture);
     });
 
     it(
@@ -405,9 +412,10 @@ describe.skipIf(!claudeAvailable)(
         const vitestPluginKey = `${E2E_SKILL.vitest.id}@${fixture.marketplaceName}`;
         await expect({ dir: fakeHome }).toHavePlugin(vitestPluginKey);
 
-        const initOutput = initResult.output;
-        expect(initOutput).not.toContain("Failed to");
-        expect(initOutput).not.toContain("ENOENT");
+        // The positive sentinel, not a generic absence: `not.toContain("Failed to")`
+        // cannot tell a clean install from one that failed with different wording,
+        // and the exit code beside it already carries "did not crash".
+        expect(initResult.output).toContain(STEP_TEXT.INIT_SUCCESS);
 
         await initResult.destroy();
 
@@ -465,8 +473,10 @@ describe.skipIf(!claudeAvailable)(
         // No project-scope skills or agents leaked.
         await expectCleanUninstall(projectDir);
 
-        // No errors in Phase 2 output.
-        expect(phase2Raw).not.toContain("ENOENT");
+        // The edit ran to completion AND reported that it changed nothing — which is
+        // this phase's whole subject. A generic `not.toContain("ENOENT")` stood here
+        // and could not tell a completed no-op edit from an edit that never ran.
+        expect(phase2Raw).toContain(STEP_TEXT.EDIT_UNCHANGED);
 
         await editResult.destroy();
       },

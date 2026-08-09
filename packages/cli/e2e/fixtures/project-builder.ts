@@ -27,6 +27,17 @@ export type DualScopeHandle = {
 };
 
 export type EditableOptions = {
+  /**
+   * The skills source this install answers to, recorded in its config.
+   *
+   * Every command after `init` resolves the source out of the config — `--source` is
+   * `init`'s flag alone and `CC_SOURCE` is read at install time only — so a fixture that
+   * hand-writes an install has to write the source too, or the commands under test read
+   * the default public marketplace. Pass it HERE rather than to a wizard launcher whenever
+   * the spec snapshots config.ts: recorded at build time it is part of the fixture, and
+   * recorded later it is a change the snapshot sees.
+   */
+  source?: string;
   skills?: SkillId[];
   agents?: AgentName[];
   domains?: Domain[];
@@ -46,6 +57,17 @@ export type EditableOptions = {
    * inherited from the global install, not project-local files.
    */
   globalSkills?: SkillId[];
+  /**
+   * Skills recorded in the project config with NO files written for them. A skill
+   * the session's source does not carry AND the install has no copy of is one the
+   * wizard cannot resolve: it drops the skill from its roster, and the run reports
+   * a change.
+   *
+   * Writing the files instead does not produce that state — an installed local
+   * skill whose metadata.yaml describes it is merged into the matrix and offered
+   * like any other, so the wizard resolves it and nothing changes.
+   */
+  unresolvableSkills?: SkillId[];
 };
 
 /** Description and metadata.yaml body for one local skill written by a fixture. */
@@ -64,6 +86,8 @@ export type DualScopeOptions = {
 export type PluginProjectOptions = {
   skills: SkillId[];
   marketplace: string;
+  /** The skills source this install answers to — see {@link EditableOptions.source}. */
+  source?: string;
   agents?: AgentName[];
   domains?: Domain[];
   /**
@@ -74,6 +98,8 @@ export type PluginProjectOptions = {
    * feedback_no_plugin_to_eject_fallback.md).
    */
   omitMarketplaceField?: boolean;
+  /** Config entries with no files written for them — see {@link EditableOptions.unresolvableSkills}. */
+  unresolvableSkills?: SkillId[];
 };
 
 /**
@@ -86,7 +112,7 @@ export type PluginProjectOptions = {
  * belong to `web-client-state`, not to a `web-state` category.
  */
 const SKILL_CATEGORY_SLUGS: Partial<Record<SkillId, { category: string; slug: string }>> = {
-  "api-framework-hono": { category: "api-framework", slug: "hono" },
+  "api-framework-hono": { category: "api-api", slug: "hono" },
   "meta-methodology-research-methodology": {
     category: "meta-methodology",
     slug: "research-methodology",
@@ -96,6 +122,7 @@ const SKILL_CATEGORY_SLUGS: Partial<Record<SkillId, { category: string; slug: st
   "web-framework-react": { category: "web-framework", slug: "react" },
   "web-state-zustand": { category: "web-client-state", slug: "zustand" },
   "web-styling-tailwind": { category: "web-styling", slug: "tailwind" },
+  "web-testing-visual-regression": { category: "web-testing", slug: "visual-regression" },
   "web-testing-vitest": { category: "web-testing", slug: "vitest" },
 };
 
@@ -109,6 +136,25 @@ function categorySlugFor(skillId: SkillId): { category: string; slug: string } {
   }
   return entry;
 }
+
+/**
+ * What `ProjectBuilder.minimal()` puts in the project — the single local skill
+ * and the two agents its config declares. Exported so specs assert against the
+ * fixture's own definition rather than re-typing the names the command echoes
+ * back at them.
+ */
+export const MINIMAL_PROJECT_SKILL_ID = "web-testing-vitest" satisfies SkillId;
+export const MINIMAL_PROJECT_AGENT_NAMES = [
+  "web-developer",
+  "api-developer",
+] as const satisfies readonly AgentName[];
+
+/**
+ * The custom skill `ProjectBuilder.withCustomSkill()` installs and preloads.
+ * Deliberately outside the `SkillId` union — a custom skill is exactly a skill
+ * the marketplace does not know about.
+ */
+export const CUSTOM_PROJECT_SKILL_ID = "web-custom-e2e-widget";
 
 export class ProjectBuilder {
   /**
@@ -129,11 +175,11 @@ export class ProjectBuilder {
     const tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
 
-    await createLocalSkill(projectDir, "web-testing-vitest", {
+    await createLocalSkill(projectDir, MINIMAL_PROJECT_SKILL_ID, {
       description: "E2E test skill for compile verification",
       body: "# Test E2E Skill\n\nThis skill exists solely for E2E testing of the compile command.",
       metadata: renderMetadataYaml({
-        displayName: "web-testing-vitest",
+        displayName: MINIMAL_PROJECT_SKILL_ID,
         slug: "vitest",
         cliDescription: "E2E test skill",
         usageGuidance: "Use when testing E2E scenarios",
@@ -143,11 +189,8 @@ export class ProjectBuilder {
 
     const config: ProjectConfig = {
       name: "e2e-compile-test",
-      skills: [{ id: "web-testing-vitest", scope: "project", source: "eject" }],
-      agents: [
-        { name: "web-developer", scope: "project" },
-        { name: "api-developer", scope: "project" },
-      ],
+      skills: [{ id: MINIMAL_PROJECT_SKILL_ID, scope: "project", source: "eject" }],
+      agents: MINIMAL_PROJECT_AGENT_NAMES.map((name) => ({ name, scope: "project" })),
     };
 
     await writeProjectConfig(projectDir, config);
@@ -184,7 +227,8 @@ export class ProjectBuilder {
     await mkdir(agentsDir, { recursive: true });
 
     const globalSkills = options?.globalSkills ?? [];
-    const projectSkillConfigs = skills.map((id) => ({
+    const unresolvableSkills = options?.unresolvableSkills ?? [];
+    const projectSkillConfigs = [...skills, ...unresolvableSkills].map((id) => ({
       id,
       scope: "project" as const,
       source: "eject",
@@ -201,8 +245,8 @@ export class ProjectBuilder {
       name: "test-edit-project",
       skills: skillConfigs,
       agents: agentConfigs,
-      domains,
-      selectedAgents: agents,
+      selectedDomains: domains,
+      ...(options?.source !== undefined && { source: options.source }),
       ...(options?.stack && { stack: options.stack }),
     };
 
@@ -249,7 +293,7 @@ export class ProjectBuilder {
       name: "global-test",
       skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
       agents: [{ name: "web-developer", scope: "global" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
       stack: {
         "web-developer": {
           "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
@@ -278,7 +322,7 @@ export class ProjectBuilder {
         { id: "web-testing-cypress-e2e", scope: "global", source: "eject" },
       ],
       agents: [{ name: "api-developer", scope: "project" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
       stack: {
         "api-developer": options?.projectStack ?? {
           "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
@@ -334,7 +378,7 @@ export class ProjectBuilder {
       name: "global",
       skills: [{ id: "web-framework-react", scope: "global", source: "eject" }],
       agents: [{ name: "web-developer", scope: "global" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
       stack: {
         "web-developer": {
           "web-framework": [{ id: "web-framework-react", preloaded: true }],
@@ -372,8 +416,7 @@ export interface ProjectConfig {
   source?: string;
   marketplace?: string;
   agentsSource?: string;
-  domains?: Domain[];
-  selectedAgents?: AgentName[];
+  selectedDomains?: Domain[];
 }
 `;
     const globalConfigDir = path.join(globalHome, DIRS.CLAUDE_SRC);
@@ -441,12 +484,12 @@ export default {
    *           SKILL.md
    *           metadata.yaml  (custom: true, domain: custom-e2e, category: web-custom-e2e)
    */
-  static async withCustomSkill(): Promise<ProjectHandle> {
+  static async withCustomSkill(options?: { source?: string }): Promise<ProjectHandle> {
     const tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
 
     const configDir = path.join(projectDir, DIRS.CLAUDE_SRC);
-    const skillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, "web-custom-e2e-widget");
+    const skillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, CUSTOM_PROJECT_SKILL_ID);
 
     await mkdir(configDir, { recursive: true });
     await mkdir(skillDir, { recursive: true });
@@ -456,7 +499,7 @@ export default {
 
 export type SkillId =
   // Custom
-  | "web-custom-e2e-widget"
+  | "${CUSTOM_PROJECT_SKILL_ID}"
   // Marketplace
   | "web-framework-react";
 
@@ -492,25 +535,25 @@ export interface ProjectConfig {
   source?: string;
   marketplace?: string;
   agentsSource?: string;
-  domains?: Domain[];
-  selectedAgents?: AgentName[];
+  selectedDomains?: Domain[];
 }
 `;
 
     await writeFile(path.join(configDir, FILES.CONFIG_TYPES_TS), configTypesContent);
 
     // Config file that references custom skill and custom category
+    const sourceLine = options?.source === undefined ? "" : `\n  source: "${options.source}",`;
     const configContent = `import type { ProjectConfig } from "./config-types";
 
 export default {
-  name: "test-custom-skill-project",
+  name: "test-custom-skill-project",${sourceLine}
   agents: [{ name: "web-developer", scope: "project" }],
-  skills: [{ id: "web-custom-e2e-widget", scope: "project", source: "eject" }],
-  domains: ["web"],
+  skills: [{ id: "${CUSTOM_PROJECT_SKILL_ID}", scope: "project", source: "eject" }],
+  selectedDomains: ["web"],
   stack: {
     "web-developer": {
       "web-custom-e2e": {
-        id: "web-custom-e2e-widget",
+        id: "${CUSTOM_PROJECT_SKILL_ID}",
         preloaded: true,
       },
     },
@@ -525,7 +568,7 @@ export default {
     await writeFile(
       path.join(skillDir, FILES.SKILL_MD),
       renderSkillMd(
-        "web-custom-e2e-widget",
+        CUSTOM_PROJECT_SKILL_ID,
         "A custom test widget skill",
         "# Custom E2E Widget\n\nCustom skill for E2E testing of custom skill ID handling.",
       ),
@@ -561,15 +604,15 @@ export default {
 
     await writeProjectConfig(projectDir, {
       name: "plugin-edit-test",
+      ...(options.source !== undefined && { source: options.source }),
       ...(options.omitMarketplaceField ? {} : { marketplace: options.marketplace }),
-      skills: skills.map((id) => ({
+      skills: [...skills, ...(options.unresolvableSkills ?? [])].map((id) => ({
         id,
         scope: "project" as const,
         source: options.marketplace,
       })),
       agents: agents.map((name) => ({ name, scope: "project" as const })),
-      domains,
-      selectedAgents: agents,
+      selectedDomains: domains,
     });
 
     for (const skillId of skills) {
@@ -603,6 +646,7 @@ export default {
 
     await writeProjectConfig(projectDir, {
       name: "local-edit-test",
+      ...(options.source !== undefined && { source: options.source }),
       marketplace: options.marketplace,
       skills: skills.map((id) => ({
         id,
@@ -610,7 +654,7 @@ export default {
         source: "eject",
       })),
       agents: agents.map((name) => ({ name, scope: "project" as const })),
-      domains,
+      selectedDomains: domains,
     });
 
     for (const skillId of skills) {
@@ -651,7 +695,7 @@ export default {
       name: "global-test",
       skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
       agents: [{ name: "web-developer", scope: "project" }],
-      domains: ["web"],
+      selectedDomains: ["web"],
     });
 
     await createLocalSkill(tempDir, "web-framework-react", {
@@ -686,7 +730,7 @@ export default {
     await writeProjectConfig(dir, {
       name: "test",
       skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
-      domains: [],
+      selectedDomains: [],
     });
   }
 }

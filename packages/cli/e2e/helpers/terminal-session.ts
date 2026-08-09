@@ -119,7 +119,7 @@ export class TerminalSession {
 
     this.exitPromise = new Promise((resolve) => {
       this.ptyProcess.onExit(({ exitCode, signal }) => {
-        resolve({ exitCode, signal });
+        resolve({ exitCode, ...(signal !== undefined && { signal }) });
       });
     });
   }

@@ -85,10 +85,13 @@ describe("init --from <id>: sub-agent scope", () => {
       "Scoped01",
       seedPayload(
         { [E2E_SKILL.react.id]: skillEntry() },
-        // web-developer arrives through its assignment and names no scope, so it stays in the
-        // project. api-developer travels globally with no skills of its own: the `agents` map is
-        // the only place a configuration can say either thing.
-        { [API_DEV]: { on: true, scope: "global" } },
+        // web-developer arrives through its assignment and is PINNED into the project — the only
+        // way a sub-agent stays there. api-developer names no scope at all and travels with no
+        // skills of its own, so it takes the shared selection default and lands in the user's own
+        // ~/.claude. The `agents` map is the only place a configuration can say either thing, and
+        // the two entries are what make "explicit" and "defaulted" separable here: with the
+        // default itself global, an unpinned agent could not tell the two apart.
+        { [WEB_DEV]: { scope: "project" }, [API_DEV]: { on: true } },
       ),
     );
 
