@@ -1,0 +1,131 @@
+name: Build skill index
+
+# The federated skill index — the search surface behind the editor's add-skills
+# dialog — is built here and published to the worker's KV namespace. The worker
+# only reads it (`apps/server/src/skill-index.ts`); nothing at the edge crawls
+# anything.
+#
+# It is a workflow and not a Cloudflare cron trigger because of what a crawl
+# costs. A Worker may issue 50 subrequests while handling one request, and
+# reading every SKILL.md across the allowlist costs more than that — the
+# constraint recorded in
+# packages/cli/.ai-docs/agent-findings/2026-08-08-a-workers-request-may-issue-fifty-subrequests-and-nothing-local-enforces-it.md.
+# A runner has no such ceiling and, unlike a Worker, can hold a GitHub token, so
+# the crawl runs on 5000 requests an hour instead of 60. What used to fill in
+# over three requests now arrives complete in one pass.
+on:
+  # Daily. The thing being indexed is which skills three repositories hold,
+  # which changes on the order of days — and the worker calls the index stale
+  # after three of these have failed to land, so the schedule and that window
+  # are two halves of one decision (apps/server/src/skill-index.ts).
+  #
+  # Off the hour deliberately: everyone's cron says 0, GitHub queues scheduled
+  # runs under that load, and a job that starts twenty minutes late for no
+  # reason is a job whose lateness tells you nothing.
+  schedule:
+    - cron: "37 4 * * *"
+  # A scheduled workflow only ever runs the copy of this file on the DEFAULT
+  # BRANCH, so nothing here can be exercised from a pull request — it does not
+  # exist until it is merged. This is the only way to ask for a run on demand,
+  # and the way a first index is published before the first cron fires.
+  workflow_dispatch:
+
+# Read-only, and that covers both halves of what GITHUB_TOKEN does here: check
+# out this repository, and authenticate the crawl's reads of PUBLIC repositories
+# elsewhere. The token grants nothing in those repositories — it raises the rate
+# limit, it does not open a door. Nothing in this workflow writes to git.
+permissions:
+  contents: read
+
+# One publish at a time. A dispatch racing the nightly run would have two
+# `wrangler kv key put` calls landing in an order neither of them chose, and the
+# loser's index — possibly the older one — would be what the route serves.
+concurrency:
+  group: build-skill-index
+
+env:
+  # Kept in step with ci.yml by hand. Actions has no way to share a value across
+  # workflow files, so these drift silently if that one is bumped alone.
+  BUN_VERSION: 1.2.6
+  NODE_VERSION: 22
+  # RUNNER_TEMP rather than the workspace: this file is never committed, and
+  # putting it outside the checkout means it cannot be mistaken for something
+  # that should be.
+  INDEX_FILE: skill-index.json
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The same environment ci.yml's deploy job names, and for the same reason:
+    # it is the job that holds this account's Cloudflare credentials. Naming it
+    # is the safe choice whichever way the two secrets below were created — a
+    # repository secret reaches a job with an environment as readily as one
+    # without, while an ENVIRONMENT secret is invisible to a job that names no
+    # environment. Getting that wrong does not fail loudly: wrangler simply
+    # finds no credential and reports it as an authentication error.
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - run: bun install --frozen-lockfile
+
+      # Crawls every allowlisted repository, validates the result against the
+      # shared schema, and writes it out. It publishes nothing — a build that
+      # could not read a repository fails right here, and the index already in
+      # KV stays untouched, which is the whole of "last good forever".
+      #
+      # The step's `key` output is where the KV key comes from below. It is
+      # defined once, in apps/server/src/skill-index.ts, and travels from there
+      # rather than being spelled a second time in this file.
+      - name: Crawl the allowlisted repositories
+        id: crawl
+        working-directory: apps/server
+        env:
+          # The built-in token, not a PAT. It authenticates the crawl's API
+          # reads and nothing else; the script sends it only to api.github.com
+          # and never to raw.githubusercontent.com.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun run build:skill-index "$RUNNER_TEMP/$INDEX_FILE"
+
+      # No --ttl and no --expiration, deliberately. The value is meant to
+      # outlive every failure mode this workflow has: a GitHub outage, a
+      # revoked token, a workflow someone disabled. What ages is the `builtAt`
+      # inside it, which the worker reads to decide whether to call the index
+      # stale — an old index still serves, it just says so.
+      #
+      # --binding rather than --namespace-id, and --env production with it, so
+      # the namespace is resolved out of apps/server/wrangler.jsonc. The id
+      # lives in exactly one place and this file is not it.
+      #
+      # --remote because wrangler's kv commands otherwise write to the local
+      # simulated store, which here would mean a green run that published
+      # nothing at all.
+      - name: Publish the index to KV
+        working-directory: apps/server
+        env:
+          INDEX_KEY: ${{ steps.crawl.outputs.key }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          bunx wrangler kv key put "$INDEX_KEY" \
+            --path "$RUNNER_TEMP/$INDEX_FILE" \
+            --binding CONFIGS \
+            --env production \
+            --remote
+
+      - name: Say what was published
+        env:
+          INDEX_KEY: ${{ steps.crawl.outputs.key }}
+        run: |
+          {
+            echo "Published \`$INDEX_KEY\` — $(jq '.skills | length' "$RUNNER_TEMP/$INDEX_FILE") skills, built at $(jq -r '.builtAt' "$RUNNER_TEMP/$INDEX_FILE")."
+          } >> "$GITHUB_STEP_SUMMARY"

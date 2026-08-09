@@ -22,7 +22,11 @@ export function SkillIcon({
   className,
 }: {
   monogram: string
-  slug?: string
+  // `| undefined` rather than a conditional spread at the call site: a grid
+  // skill's slug is optional (added skills have none), and JSX has always read
+  // an undefined prop as an absent one — which is why @types/react writes every
+  // prop it owns the same way.
+  slug?: string | undefined
   selected?: boolean
   className?: string
 }) {

@@ -15,11 +15,10 @@ import { useEffect, useState, type ReactNode } from "react"
 
 import { track } from "@/lib/analytics/track"
 import {
-  abbreviateLanguage,
+  fetchSkillIndex,
   formatStars,
-  searchSkillRepos,
-  type SkillRepo,
-} from "@/lib/api/github-skills"
+  type IndexFreshness,
+} from "@/lib/api/skill-index"
 import {
   addedSkillId,
   categoriseRepo,
@@ -29,7 +28,12 @@ import {
 } from "@/stores/added-skills-store"
 import { useUiStore } from "@/stores/ui-store"
 
-const DEBOUNCE_MS = 350
+import type { SkillIndexEntry } from "@workspace/matrix/skill-index"
+
+// Filtering is instant — the whole index is in memory — so this delay is the
+// analytics' own rather than the search's: a funnel wants one event per
+// search, not one per keystroke.
+const SEARCH_SETTLE_MS = 350
 
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -56,20 +60,45 @@ function Highlight({ text, term }: { text: string; term: string }): ReactNode {
   )
 }
 
-const repoName = (fullName: string) => fullName.split("/").pop() ?? fullName
-
-const toAddedSkill = (repo: SkillRepo): AddedSkill => {
-  const name = repoName(repo.fullName)
-
-  return {
-    id: addedSkillId(repo.fullName),
-    displayName: name,
-    description: repo.description || "Added from GitHub",
-    monogram: monogramFor(name),
-    repo: repo.fullName,
-    ...categoriseRepo(repo.fullName),
-  }
+// The dialog's one status line, in the treatment the search already used for
+// "searching…". Loading, a failure, an index still filling and a filter that
+// matched nothing are all the same statement — why the list below is missing,
+// or shorter than it might be.
+function Note({
+  children,
+  alert = false,
+}: {
+  children: ReactNode
+  alert?: boolean
+}) {
+  return (
+    <p
+      className={`pt-3.5 font-mono text-10_5 ${
+        alert ? "text-brand-ink" : "text-muted-foreground"
+      }`}
+    >
+      {children}
+    </p>
+  )
 }
+
+// One repository holds many skills — the real index carries dozens across
+// three — so the repository alone would hand every skill in it the same id.
+// The directory within it is what tells two apart.
+const skillCoordinate = (entry: SkillIndexEntry) =>
+  `${entry.repo}/${entry.path}`
+
+const toAddedSkill = (entry: SkillIndexEntry): AddedSkill => ({
+  id: addedSkillId(skillCoordinate(entry)),
+  displayName: entry.name,
+  // The index serves an empty description where the SKILL.md offered neither
+  // frontmatter nor a heading — a thin result rather than an invalid one.
+  description: entry.description || "Added from GitHub",
+  monogram: monogramFor(entry.name),
+  repo: entry.repo,
+  path: entry.path,
+  ...categoriseRepo(entry.repo),
+})
 
 const categoryLabel = (skill: AddedSkill) => {
   if (!skill.categoryId) return "uncategorized"
@@ -78,6 +107,28 @@ const categoryLabel = (skill: AddedSkill) => {
   return `${skill.domainId} / ${category?.displayName.toLowerCase() ?? skill.categoryId}`
 }
 
+// Name and description — the same two fields the grid's own search reads. Not
+// the repository: this dialog searches skills rather than repositories, which
+// is the whole reason it stopped calling GitHub's repository search.
+const matchesTerm = (entry: SkillIndexEntry, needle: string) =>
+  entry.name.toLowerCase().includes(needle) ||
+  entry.description.toLowerCase().includes(needle)
+
+const filterIndex = (skills: SkillIndexEntry[], term: string) => {
+  const needle = term.toLowerCase()
+  if (!needle) return skills
+  return skills.filter((entry) => matchesTerm(entry, needle))
+}
+
+type IndexState =
+  | { status: "loading" }
+  | { status: "ready"; skills: SkillIndexEntry[]; freshness: IndexFreshness }
+  | { status: "failed"; error: string }
+
+// The whole external index arrives in one response and is filtered here, in
+// the browser — which is what removes the request per keystroke, the debounce
+// and the rate limit the old repository search had to design around.
+//
 // The destination category comes from the marketplace index and is not
 // editable. Added skills live for this session only.
 export function AddSkillDialog() {
@@ -87,57 +138,78 @@ export function AddSkillDialog() {
 
   const [query, setQuery] = useState("")
   const [staged, setStaged] = useState<AddedSkill[]>([])
-  // Results carry the query they answered, which removes the need for a
-  // `loading` flag and stops a slow response landing under a newer query.
-  const [results, setResults] = useState<{
-    query: string
-    repos: SkillRepo[]
-    error: string | null
-  }>({ query: "", repos: [], error: null })
+  const [index, setIndex] = useState<IndexState>({ status: "loading" })
 
   const open = dialog === "add"
   const trimmed = query.trim()
-  const settled = results.query === trimmed
-  const loading = trimmed !== "" && !settled
+  const results =
+    index.status === "ready" ? filterIndex(index.skills, trimmed) : []
+
+  // A fresh index is the current whole picture, so it is fetched once and
+  // reused for the rest of the session. A stale one explicitly is not — "this
+  // list is not everything, ask again later" is the header's whole meaning —
+  // so the next open asks again, as does an open after a failure. Nothing
+  // refetches while the dialog is open: the list would move under the pointer
+  // for no reason.
+  const settled = index.status === "ready" && index.freshness === "fresh"
 
   useEffect(() => {
-    if (!open || !trimmed) return
+    if (!open || settled) return
 
-    const controller = new AbortController()
+    // What is on screen stays on screen while this runs. A reopen that has to
+    // ask again already has a list to show, and blanking it to "loading" would
+    // be a flash rather than information.
+    let live = true
+
+    void fetchSkillIndex().then((result) => {
+      if (!live) return
+      setIndex(
+        result.ok
+          ? {
+              status: "ready",
+              skills: result.index.skills,
+              freshness: result.freshness,
+            }
+          : { status: "failed", error: result.error }
+      )
+    })
+
+    // The request is not aborted, only ignored: it is one small GET, and
+    // letting it finish warms the browser cache for the next open.
+    return () => {
+      live = false
+    }
+  }, [open, settled])
+
+  const resultCount = results.length
+
+  useEffect(() => {
+    if (!open || !trimmed || index.status !== "ready") return
+
     const timer = setTimeout(() => {
-      void searchSkillRepos(trimmed, controller.signal).then((result) => {
-        if (controller.signal.aborted) return
-        setResults(
-          result.ok
-            ? { query: trimmed, repos: result.repos, error: null }
-            : { query: trimmed, repos: [], error: result.error }
-        )
-
-        // The count, never the query. A search that returns nothing is
-        // someone asking the catalog for a skill it does not have, which is
-        // the closest thing here to a feature request — but the words they
-        // typed are theirs, and are the one free-text field in the app.
-        if (result.ok) {
-          track({ name: "skill_searched", resultCount: result.repos.length })
-        }
-      })
-    }, DEBOUNCE_MS)
+      // The count, never the query. A search that returns nothing is someone
+      // asking the catalog for a skill it does not have, which is the closest
+      // thing here to a feature request — but the words they typed are theirs,
+      // and are the one free-text field in the app.
+      track({ name: "skill_searched", resultCount })
+    }, SEARCH_SETTLE_MS)
 
     return () => {
       clearTimeout(timer)
-      controller.abort()
     }
-  }, [trimmed, open])
+  }, [open, trimmed, index.status, resultCount])
 
+  // The index is deliberately not cleared. It is the same list next time, and
+  // whether it is asked for again is decided by its freshness rather than by
+  // the dialog closing.
   const close = () => {
     setDialog("none")
     setQuery("")
     setStaged([])
-    setResults({ query: "", repos: [], error: null })
   }
 
-  const toggleStage = (repo: SkillRepo) => {
-    const skill = toAddedSkill(repo)
+  const toggleStage = (entry: SkillIndexEntry) => {
+    const skill = toAddedSkill(entry)
     setStaged((current) =>
       current.some((item) => item.id === skill.id)
         ? current.filter((item) => item.id !== skill.id)
@@ -203,75 +275,81 @@ export function AddSkillDialog() {
               variant="dialog"
               autoFocus
               value={query}
-              placeholder="search github"
-              aria-label="Search GitHub"
+              placeholder="search external skills"
+              aria-label="Search external skills"
               onChange={(event) => setQuery(event.target.value)}
             />
             <span aria-hidden className="h-[0.9375rem] w-px bg-brand" />
           </div>
 
-          {loading && (
-            <p className="pt-3.5 font-mono text-10_5 text-muted-foreground">
-              searching…
-            </p>
-          )}
+          {index.status === "loading" && <Note>loading skills…</Note>}
 
-          {settled && results.error && (
-            <p className="pt-3.5 font-mono text-10_5 text-brand-ink">
-              {results.error}
-            </p>
-          )}
+          {index.status === "failed" && <Note alert>{index.error}</Note>}
 
-          {settled && !results.error && results.repos.length > 0 && (
-            <LatticeRows className="mt-3.5">
-              {results.repos.map((repo) => {
-                const id = addedSkillId(repo.fullName)
-                const isStaged = staged.some((item) => item.id === id)
-                return (
-                  <LatticeRow
-                    key={repo.fullName}
-                    selected={isStaged}
-                    onClick={() => toggleStage(repo)}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-11_5 font-semibold text-ink">
-                        <Highlight text={repo.fullName} term={query} />
-                      </div>
-                      {repo.description && (
-                        <div className="pt-[0.1875rem] text-10_5 leading-[1.4] text-muted-foreground">
-                          {repo.description}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-none items-center gap-3 pt-0.5">
-                      <span className="font-mono text-9 font-medium whitespace-nowrap text-muted-foreground">
-                        {formatStars(repo.stars)} ★
-                      </span>
-                      {repo.language && (
-                        <span className="flex items-center gap-[0.3125rem] font-mono text-9 font-medium whitespace-nowrap text-muted-foreground">
-                          <span
-                            aria-hidden
-                            className="block size-[0.4375rem] bg-brand"
-                          />
-                          {abbreviateLanguage(repo.language)}
-                        </span>
-                      )}
-                      {/* Looks like a Chip but cannot be one — the whole row is
-                          already the click target, so this must not nest a
-                          button. The shared CVA keeps the two in step. */}
-                      <span
-                        className={chipVariants({
-                          size: "stage",
-                          active: isStaged,
-                        })}
+          {index.status === "ready" && (
+            <>
+              {index.freshness === "stale" && (
+                <Note>index still filling — more skills may appear</Note>
+              )}
+
+              {results.length === 0 ? (
+                <Note>no skills match</Note>
+              ) : (
+                <LatticeRows className="mt-3.5">
+                  {results.map((entry) => {
+                    const id = addedSkillId(skillCoordinate(entry))
+                    const isStaged = staged.some((item) => item.id === id)
+                    return (
+                      <LatticeRow
+                        key={id}
+                        selected={isStaged}
+                        onClick={() => toggleStage(entry)}
                       >
-                        {isStaged ? "staged" : "＋ stage"}
-                      </span>
-                    </div>
-                  </LatticeRow>
-                )
-              })}
-            </LatticeRows>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-11_5 font-semibold text-ink">
+                            <Highlight text={entry.name} term={query} />
+                          </div>
+                          {entry.description && (
+                            <div className="pt-[0.1875rem] text-10_5 leading-[1.4] text-muted-foreground">
+                              {entry.description}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-none items-center gap-3 pt-0.5">
+                          <span className="font-mono text-9 font-medium whitespace-nowrap text-muted-foreground">
+                            {formatStars(entry.stars)} ★
+                          </span>
+                          {/* Provenance: which repository this skill was
+                              crawled from, in the slot the language pip used to
+                              hold. GitHub's whole `owner/name` — the owner is
+                              the informative half for `anthropics/skills`, and
+                              it is who a reader is deciding whether to trust.
+                              At text-9 mono it fits the one-line row. */}
+                          <span className="flex items-center gap-[0.3125rem] font-mono text-9 font-medium whitespace-nowrap text-muted-foreground">
+                            <span
+                              aria-hidden
+                              className="block size-[0.4375rem] bg-brand"
+                            />
+                            {entry.repo}
+                          </span>
+                          {/* Looks like a Chip but cannot be one — the whole row is
+                              already the click target, so this must not nest a
+                              button. The shared CVA keeps the two in step. */}
+                          <span
+                            className={chipVariants({
+                              size: "stage",
+                              active: isStaged,
+                            })}
+                          >
+                            {isStaged ? "staged" : "＋ stage"}
+                          </span>
+                        </div>
+                      </LatticeRow>
+                    )
+                  })}
+                </LatticeRows>
+              )}
+            </>
           )}
         </DialogBody>
 

@@ -104,13 +104,17 @@ const autoMatch = (slug) => {
   return undefined
 }
 
-const skills = Object.values(CATALOG.skillsById).sort((a, b) => a.slug.localeCompare(b.slug))
+const skills = Object.values(CATALOG.skillsById).sort((a, b) =>
+  a.slug.localeCompare(b.slug)
+)
 
 const entries = []
 const invalid = []
 
 for (const skill of skills) {
-  const override = Object.hasOwn(OVERRIDES, skill.slug) ? OVERRIDES[skill.slug] : undefined
+  const override = Object.hasOwn(OVERRIDES, skill.slug)
+    ? OVERRIDES[skill.slug]
+    : undefined
   if (override === null) continue
 
   const iconSlug = override ?? autoMatch(skill.slug)
@@ -130,7 +134,10 @@ const unmatched = skills.length - entries.length
 // Named imports rather than inlined path data: the 113 distinct marks are ~125KB of raw SVG
 // path, so they need to stay a tree-shakeable, separately-chunkable import.
 const exportNameBySlug = new Map(
-  Object.entries(simpleIcons).map(([exportName, icon]) => [icon.slug, exportName]),
+  Object.entries(simpleIcons).map(([exportName, icon]) => [
+    icon.slug,
+    exportName,
+  ])
 )
 const imports = [...new Set(entries.map(([, icon]) => icon))]
   .map((icon) => exportNameBySlug.get(icon))
@@ -141,9 +148,9 @@ writeFileSync(
   `// AUTO-GENERATED — run \`bun scripts/generate-skill-icons.mjs\` to refresh.
 // Edit the OVERRIDES table in that script, not this file.
 //
-// ${entries.length} of ${skills.length} skills have a brand mark, drawn from ${imports.length} distinct icons.
-// The other ${unmatched} are concepts rather than products ("Caching", "Error Boundaries") or brands
-// simple-icons no longer ships, and render as an initials tile — the design's intended fallback.
+// Most skills have a brand mark. The rest are concepts rather than products ("Caching",
+// "Error Boundaries") or brands simple-icons no longer ships, and render as an initials
+// tile — the design's intended fallback.
 
 import {
 ${imports.map((name) => `  ${name},`).join("\n")}
@@ -153,9 +160,9 @@ ${imports.map((name) => `  ${name},`).join("\n")}
 export const SKILL_ICON_PATHS: Record<string, string> = {
 ${entries.map(([skill, icon]) => `  ${JSON.stringify(skill)}: ${exportNameBySlug.get(icon)}.path,`).join("\n")}
 }
-`,
+`
 )
 
 console.log(
-  `wrote ${entries.length} mappings over ${imports.length} icons, ${unmatched} fall back to initials`,
+  `wrote ${entries.length} mappings over ${imports.length} icons, ${unmatched} fall back to initials`
 )

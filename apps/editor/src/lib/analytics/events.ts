@@ -16,7 +16,7 @@ export type AnalyticsEvent =
     }
   // A click on a dimmed cell. The highest-value event here: it measures
   // whether the 40% dim reads as "unavailable" or as "broken", and it is the
-  // only direct evidence for the 123 skills that declare no relationships.
+  // only direct evidence for the skills that declare no relationships.
   | { name: "skill_blocked"; skillId: string; reason: string }
   | { name: "skill_configured"; skillId: string; field: string; value: string }
   | { name: "assignment_cycled"; skillId: string; agentId: string }

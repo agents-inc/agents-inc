@@ -1,6 +1,19 @@
-// The config-sharing API: stores seed payloads in KV under content-addressed
-// short ids. Local dev and tests simulate KV; only deploys touch the real
-// namespace.
+// The API: stores seed payloads in KV under content-addressed short ids, and
+// serves the federated skill index out of the same namespace from the single
+// key `skill-index:v1`. Local dev and tests simulate KV; only deploys touch the
+// real namespace.
+//
+// This worker never WRITES that key. `.github/workflows/build-skill-index.yml`
+// does, daily, with `wrangler kv key put --binding CONFIGS --env production` —
+// so the namespace id below is the one thing the workflow and this worker have
+// to agree about, and they agree by reading it from here. The value carries no
+// expiry on purpose: a build that stops running leaves the last good index in
+// place forever rather than emptying the route.
+//
+// One namespace and not two, deliberately. KV's quotas are per ACCOUNT, so a
+// second namespace would buy no isolation — and the two key spaces cannot
+// collide by construction: a config id is 8 base64url characters and the index
+// key contains a colon, which base64url has no room for.
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "agents-inc-api",
@@ -9,7 +22,7 @@
   "observability": { "enabled": true },
   "upload_source_maps": true,
   "kv_namespaces": [
-    { "binding": "CONFIGS", "id": "6a69c245741c40c9b6a1f3d22935b7d2" }
+    { "binding": "CONFIGS", "id": "6a69c245741c40c9b6a1f3d22935b7d2" },
   ],
   "vars": {
     // The one origin allowed to POST from a browser; the CLI's GET is not a
@@ -22,7 +35,7 @@
     // DSN — but kept as config so the open-relay guard has something to check
     // against rather than a literal in the handler.
     "SENTRY_INGEST_HOST": "o4509197991346176.ingest.de.sentry.io",
-    "SENTRY_PROJECT_ID": "4511832531796048"
+    "SENTRY_PROJECT_ID": "4511832531796048",
   },
   "env": {
     // Deploys always pass `--env production` (see package.json). Named
@@ -34,14 +47,15 @@
       "routes": [{ "pattern": "api.agentsinc.sh", "custom_domain": true }],
       "observability": { "enabled": true },
       "upload_source_maps": true,
+      // Holds both key spaces — see the note at the top of this file.
       "kv_namespaces": [
-        { "binding": "CONFIGS", "id": "6a69c245741c40c9b6a1f3d22935b7d2" }
+        { "binding": "CONFIGS", "id": "6a69c245741c40c9b6a1f3d22935b7d2" },
       ],
       "vars": {
         "WEB_ORIGIN": "https://agentsinc.sh",
         "SENTRY_INGEST_HOST": "o4509197991346176.ingest.de.sentry.io",
-        "SENTRY_PROJECT_ID": "4511832531796048"
-      }
-    }
-  }
+        "SENTRY_PROJECT_ID": "4511832531796048",
+      },
+    },
+  },
 }

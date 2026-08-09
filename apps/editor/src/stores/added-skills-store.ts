@@ -16,6 +16,10 @@ export type AddedSkill = {
   monogram: string
   // `owner/name`, kept for the install inventory.
   repo: string
+  // The skill's DIRECTORY within that repo — `skills/docx`, never the
+  // SKILL.md. With `repo` it is the skill's address, which is what the •••
+  // panel links out to.
+  path: string
   // Resolved from the catalog; `null` renders under Uncategorized.
   categoryId: Category | null
   domainId: Domain | null
