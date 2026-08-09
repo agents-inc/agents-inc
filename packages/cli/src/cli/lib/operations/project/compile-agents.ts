@@ -18,6 +18,12 @@ export type CompileAgentsOptions = {
 
 export type CompilationResult = {
   compiled: AgentName[];
+  /**
+   * The subset of `compiled` whose file this pass actually wrote. A pass whose
+   * `rewritten` is empty changed nothing on disk, which is exactly what the
+   * recompile summary reports and what the count it replaced could not say.
+   */
+  rewritten: AgentName[];
   failed: AgentName[];
   warnings: string[];
 };
@@ -40,8 +46,8 @@ export async function compileAgents(options: CompileAgentsOptions): Promise<Comp
       resolvedAgentScopeMap = buildAgentScopeMap(loadedConfig.config);
     }
 
-    const filteredAgents = loadedConfig?.config?.agents
-      ?.filter((a) => !a.excluded && a.scope === options.scopeFilter)
+    const filteredAgents = loadedConfig?.config.agents
+      .filter((a) => !a.excluded && a.scope === options.scopeFilter)
       .map((a) => a.name);
 
     if (resolvedAgents && filteredAgents) {
@@ -55,17 +61,18 @@ export async function compileAgents(options: CompileAgentsOptions): Promise<Comp
   const recompileResult = await recompileAgents({
     pluginDir: options.pluginDir ?? options.projectDir,
     sourcePath: options.sourcePath,
-    agents: resolvedAgents,
-    skills: options.skills,
+    ...(resolvedAgents !== undefined && { agents: resolvedAgents }),
+    ...(options.skills !== undefined && { skills: options.skills }),
     projectDir: options.projectDir,
-    outputDir: options.outputDir,
-    agentScopeMap: resolvedAgentScopeMap,
+    ...(options.outputDir !== undefined && { outputDir: options.outputDir }),
+    ...(resolvedAgentScopeMap !== undefined && { agentScopeMap: resolvedAgentScopeMap }),
   });
 
   await pruneStaleAgentsForPass(options, recompileResult);
 
   return {
     compiled: recompileResult.compiled,
+    rewritten: recompileResult.rewritten,
     failed: recompileResult.failed,
     warnings: recompileResult.warnings,
   };

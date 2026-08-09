@@ -72,7 +72,7 @@ async function writeIfChanged(filePath: string, source: string): Promise<boolean
 /** The union inputs the types writer derives its literals from. */
 function typesDataFor(
   matrix: MergedSkillsMatrix,
-  agents: Record<AgentName, AgentDefinition>,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
 ): ConfigTypesBackgroundData {
   const agentNames = typedKeys(agents);
   return {
@@ -90,7 +90,7 @@ function typesDataFor(
 function renderStandaloneTypes(
   config: ProjectConfig,
   matrix: MergedSkillsMatrix,
-  agents: Record<AgentName, AgentDefinition>,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
   extras?: ConfigTypesExtras,
 ): string {
   const data = typesDataFor(matrix, agents);
@@ -120,7 +120,7 @@ export async function writeGlobalTypesHalf(
   config: ProjectConfig,
   configPath: string,
   matrix: MergedSkillsMatrix,
-  agents: Record<AgentName, AgentDefinition>,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
   extras?: ConfigTypesExtras,
 ): Promise<boolean> {
   return writeIfChanged(
@@ -129,33 +129,12 @@ export async function writeGlobalTypesHalf(
   );
 }
 
-/**
- * Writes the types half beside `configPath` from union inputs a caller already
- * loaded in the background, rather than from a matrix plus agent definitions.
- *
- * `config` narrows the unions to what that config installs and is optional
- * because the caller reads it off disk, where it may be absent — a scaffolded
- * marketplace has no config until this run writes one. Absent, the unions cover
- * the whole matrix, which is what the raw writer has always fallen back to.
- */
-export async function writeGlobalTypesHalfFromData(
-  configPath: string,
-  data: ConfigTypesBackgroundData,
-  config: ProjectConfig | undefined,
-  extras?: ConfigTypesExtras,
-): Promise<boolean> {
-  return writeIfChanged(
-    typesPathFor(configPath),
-    generateConfigTypesSource(data.matrix, data.agentNames, data.customAgentNames, extras, config),
-  );
-}
-
 /** Writes both halves from one config, so they cannot disagree. */
 export async function writeGlobalPair(
   config: ProjectConfig,
   configPath: string,
   matrix: MergedSkillsMatrix,
-  agents: Record<AgentName, AgentDefinition>,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
 ): Promise<boolean> {
   const configWritten = await writeIfChanged(configPath, generateConfigSource(config));
   const typesWritten = await writeIfChanged(

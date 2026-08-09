@@ -1,8 +1,8 @@
 import os from "os";
 import path from "path";
 import type { ProjectConfig, SkillId } from "../../types";
-import type { SkillConfig, SourceEntry } from "../../types/config";
-import { CLAUDE_SRC_DIR, CLI_INVOKE_COMMAND, STANDARD_FILES } from "../../consts";
+import type { SkillConfig } from "../../types/config";
+import { CLAUDE_SRC_DIR, CLI_INVOKE_COMMAND } from "../../consts";
 import { ensureDir, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { isHomeDirectory } from "../installation/is-home-directory";
@@ -14,7 +14,6 @@ import { splitConfigByScope } from "../configuration/config-generator";
 import { generateConfigSource } from "../configuration/config-writer";
 import {
   regenerateConfigTypes,
-  type ConfigTypesBackgroundData,
   type ConfigTypesExtras,
 } from "../configuration/config-types-writer";
 import {
@@ -32,7 +31,6 @@ import {
   writeGlobalConfigHalf,
   writeGlobalPair,
   writeGlobalTypesHalf,
-  writeGlobalTypesHalfFromData,
 } from "./pair-writer.js";
 import {
   buildConfigTypesBackgroundData,
@@ -92,11 +90,10 @@ export type GateReport = {
  * project pairs — the rule is "a gate entry holds the privilege for its flow",
  * not "the ones whose current implementation happens to need it".
  *
- * The two exceptions are `writeProjectPartial` and
- * `writeMarketplaceScaffoldConfig`. Both refuse the home directory as their first
- * act and then write a PROJECT's or a MARKETPLACE's own config, which the
- * tripwire never guards; handing them the global-pair privilege would only blunt
- * the refusal they exist to make.
+ * The one exception is `writeProjectPartial`. It refuses the home directory as its
+ * first act and then writes a PROJECT's own config, which the tripwire never
+ * guards; handing it the global-pair privilege would only blunt the refusal it
+ * exists to make.
  */
 
 /** A write whose classification obliged nothing beyond the global pair. */
@@ -366,40 +363,6 @@ export async function reconcileTypesFromDisk(
 }
 
 /**
- * Regenerates a scope's `config-types.ts` after `new skill` / `new agent` /
- * `new marketplace` scaffolded an entity whose literal the unions must carry.
- *
- * Fronts the raw types writer because the home directory is reachable at those
- * call sites — all three run at `process.cwd()` — and the raw writer refuses it.
- * Here the write goes through the pair writer holding the gate token instead.
- *
- * No fan-out: a scaffolded entity widens the types unions only. The global
- * `config.ts` is untouched, so no registered project's inlined copy of it went
- * stale and there is nothing to propagate.
- */
-export async function writeScaffoldedEntityTypes(
-  projectDir: string,
-  backgroundData: Promise<ConfigTypesBackgroundData>,
-  extras?: ConfigTypesExtras,
-): Promise<void> {
-  await withGateToken(async () => {
-    if (!isHomeDirectory(projectDir)) {
-      await regenerateConfigTypes(projectDir, backgroundData, extras);
-      return;
-    }
-
-    const data = await backgroundData;
-    const loaded = await loadProjectConfigFromDir(projectDir);
-    await writeGlobalTypesHalfFromData(
-      getProjectConfigPath(projectDir),
-      data,
-      loaded?.config,
-      extras,
-    );
-  });
-}
-
-/**
  * The transforms the gate will apply to the global config on a caller's behalf.
  *
  * A closed union rather than a caller-supplied function: every variant is
@@ -409,9 +372,7 @@ export async function writeScaffoldedEntityTypes(
 export type GlobalMutation =
   | { kind: "migrate-skill-sources"; sources: ReadonlyMap<SkillId, string> }
   | { kind: "deregister-project"; projectDir: string }
-  | { kind: "set-source"; source: string; fallbackName: string }
-  | { kind: "add-source"; entry: SourceEntry }
-  | { kind: "remove-source"; name: string };
+  | { kind: "set-source"; source: string; fallbackName: string };
 
 /** The migrated `source` for an active-global entry, or the entry unchanged. */
 function withMigratedSource(
@@ -477,20 +438,6 @@ function applyMutation(
     }
     case "set-source":
       return { ...current, source: mutation.source };
-    case "add-source": {
-      const sources = current.sources ?? [];
-      if (sources.some((s) => s.name === mutation.entry.name)) {
-        throw new Error(`Source "${mutation.entry.name}" already exists`);
-      }
-      return { ...current, sources: [...sources, mutation.entry] };
-    }
-    case "remove-source": {
-      const sources = current.sources ?? [];
-      const filtered = sources.filter((s) => s.name !== mutation.name);
-      if (filtered.length === sources.length)
-        throw new Error(`Source "${mutation.name}" not found`);
-      return { ...current, sources: filtered };
-    }
     default: {
       const _exhaustive: never = mutation;
       return _exhaustive;
@@ -561,7 +508,6 @@ export async function propagateGlobalRemoval(
       ...preRemovalGlobalConfig,
       skills: [],
       agents: [],
-      selectedAgents: [],
     });
 
     const propagated = await pruneGlobalEntriesFromRegisteredProjects(
@@ -629,28 +575,6 @@ export async function writeProjectPartial(
   await writeFile(
     configPath,
     generateConfigSource(fillRequiredFields(withNormalizedStack(partial), options.fallbackName)),
-  );
-}
-
-/**
- * Writes a scaffolded marketplace's `config.ts`, optionally preceded by a
- * comment. Renders the source here rather than taking rendered text so the
- * config generator stays inside the gate's reach; refuses the home directory,
- * where scaffolding a marketplace would replace the pair's config half with a
- * config that declares one dummy skill.
- */
-export async function writeMarketplaceScaffoldConfig(
-  marketplaceDir: string,
-  config: ProjectConfig,
-  leadingComment = "",
-): Promise<void> {
-  if (isHomeDirectory(marketplaceDir)) {
-    throw new GlobalPairWriteViolation(getProjectConfigPath(marketplaceDir));
-  }
-
-  await writeFile(
-    path.join(marketplaceDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-    leadingComment + generateConfigSource(config),
   );
 }
 

@@ -58,10 +58,10 @@ describe("loadAgentDefs", () => {
   it("should return merged agents from loadMergedAgents(sourcePath)", async () => {
     const mergedAgents: Partial<Record<AgentName, AgentDefinition>> = {
       "web-developer": SOURCE_AGENT,
-      "api-reviewer": CLI_ONLY_AGENT,
+      reviewer: CLI_ONLY_AGENT,
     };
 
-    mockLoadMergedAgents.mockResolvedValue(mergedAgents as Record<AgentName, AgentDefinition>);
+    mockLoadMergedAgents.mockResolvedValue(mergedAgents);
 
     const result = await loadAgentDefs();
 
@@ -71,16 +71,16 @@ describe("loadAgentDefs", () => {
     // Source overrides CLI for "web-developer"
     expect(result.agents["web-developer"]).toStrictEqual(SOURCE_AGENT);
     // CLI-only agent preserved
-    expect(result.agents["api-reviewer"]).toStrictEqual(CLI_ONLY_AGENT);
+    expect(result.agents["reviewer"]).toStrictEqual(CLI_ONLY_AGENT);
     // Full merged result
     expect(result.agents).toStrictEqual({
       "web-developer": SOURCE_AGENT,
-      "api-reviewer": CLI_ONLY_AGENT,
+      reviewer: CLI_ONLY_AGENT,
     });
   });
 
   it("should return sourcePath from agentSourcePaths", async () => {
-    mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
+    mockLoadMergedAgents.mockResolvedValue({});
 
     const result = await loadAgentDefs();
 
@@ -88,7 +88,7 @@ describe("loadAgentDefs", () => {
   });
 
   it("should return complete agentSourcePaths", async () => {
-    mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
+    mockLoadMergedAgents.mockResolvedValue({});
 
     const result = await loadAgentDefs();
 

@@ -39,8 +39,7 @@ export type GlobalChangeSet = {
     changed: AgentName[];
   };
   stackChanged: boolean;
-  domainsChanged: boolean;
-  selectedAgentsChanged: boolean;
+  selectedDomainsChanged: boolean;
   /** Names of the inlined scalar fields that moved, in config key order. */
   scalarsChanged: string[];
   projectsChanged: boolean;
@@ -51,14 +50,13 @@ export const NO_CHANGES: GlobalChangeSet = {
   skills: { added: [], removed: [], sourceChanged: [], otherChanged: [] },
   agents: { added: [], removed: [], changed: [] },
   stackChanged: false,
-  domainsChanged: false,
-  selectedAgentsChanged: false,
+  selectedDomainsChanged: false,
   scalarsChanged: [],
   projectsChanged: false,
 };
 
-/** The five fields the config writer extracts into typed named variables. */
-const EXTRACTED_FIELDS = new Set(["skills", "agents", "stack", "domains", "selectedAgents"]);
+/** The four fields the config writer extracts into typed named variables. */
+const EXTRACTED_FIELDS = new Set(["skills", "agents", "stack", "selectedDomains"]);
 
 /** The registration list — bookkeeping, never emitted into a project config. */
 const REGISTRATION_FIELD = "projects";
@@ -70,7 +68,10 @@ const REGISTRATION_FIELD = "projects";
  * phantom diffs.
  */
 function normalize(config: ProjectConfig): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(config));
+  // Boundary cast: `JSON.parse` is typed `any`, and round-tripping an object
+  // always yields one — the whole point of the call is that the result is the
+  // same record with its undefined-valued keys gone.
+  return JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
 }
 
 /** Field value as the writer would emit it, or undefined when absent. */
@@ -154,10 +155,9 @@ export function classifyGlobalChange(
     skills: diffSkills(before, after),
     agents: diffAgents(before, after),
     stackChanged: !isDeepEqual(field(before, "stack"), field(after, "stack")),
-    domainsChanged: !isDeepEqual(field(before, "domains"), field(after, "domains")),
-    selectedAgentsChanged: !isDeepEqual(
-      field(before, "selectedAgents"),
-      field(after, "selectedAgents"),
+    selectedDomainsChanged: !isDeepEqual(
+      field(before, "selectedDomains"),
+      field(after, "selectedDomains"),
     ),
     scalarsChanged: scalarKeys(before, after).filter(
       (key) => !isDeepEqual(field(before, key), field(after, key)),
@@ -181,8 +181,7 @@ function movesTypesOrCompiledAgents(changes: GlobalChangeSet): boolean {
     agents.removed.length > 0 ||
     agents.changed.length > 0 ||
     changes.stackChanged ||
-    changes.domainsChanged ||
-    changes.selectedAgentsChanged
+    changes.selectedDomainsChanged
   );
 }
 

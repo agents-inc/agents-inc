@@ -32,6 +32,7 @@ describe("compile-agents", () => {
 
     mockRecompileAgents.mockResolvedValue({
       compiled: ["web-developer"],
+      rewritten: ["web-developer"],
       failed: [],
       warnings: [],
     });
@@ -96,6 +97,7 @@ describe("compile-agents", () => {
 
     mockRecompileAgents.mockResolvedValue({
       compiled: ["web-developer"],
+      rewritten: ["web-developer"],
       failed: [],
       warnings: [],
     });
@@ -125,14 +127,14 @@ describe("compile-agents", () => {
       name: "test",
       agents: [
         ...buildAgentConfigs(["web-developer", "api-developer"]),
-        ...buildAgentConfigs(["web-pm"], { scope: "global" }),
+        ...buildAgentConfigs(["pm"], { scope: "global" }),
       ],
       skills: [],
     };
     const scopeMap = new Map<AgentName, SkillScope>([
       ["web-developer", "project"],
       ["api-developer", "project"],
-      ["web-pm", "global"],
+      ["pm", "global"],
     ]);
 
     mockLoadProjectConfigFromDir.mockResolvedValue({
@@ -144,7 +146,7 @@ describe("compile-agents", () => {
     await compileAgents({
       projectDir,
       sourcePath,
-      agents: ["web-developer", "web-pm"],
+      agents: ["web-developer", "pm"],
       scopeFilter: "project",
     });
 
@@ -196,11 +198,15 @@ describe("compile-agents", () => {
     });
   });
 
+  // `rewritten` is a strict subset of `compiled` here on purpose: the two lists carry
+  // different facts, so a pass-through that filled `rewritten` from `compiled` would
+  // read as correct against equal lists and is caught by unequal ones.
   it("should return compilation result from recompileAgents", async () => {
     mockRecompileAgents.mockResolvedValue({
       compiled: ["web-developer", "api-developer"],
-      failed: ["web-pm"],
-      warnings: ["Agent web-pm had issues"],
+      rewritten: ["web-developer"],
+      failed: ["pm"],
+      warnings: ["Agent pm had issues"],
     });
 
     const result = await compileAgents({
@@ -210,8 +216,9 @@ describe("compile-agents", () => {
 
     expect(result).toStrictEqual({
       compiled: ["web-developer", "api-developer"],
-      failed: ["web-pm"],
-      warnings: ["Agent web-pm had issues"],
+      rewritten: ["web-developer"],
+      failed: ["pm"],
+      warnings: ["Agent pm had issues"],
     });
   });
 });

@@ -42,8 +42,7 @@ const BASELINE: ProjectConfig = buildProjectConfig({
   name: "global",
   skills: buildSkillConfigs(["web-framework-react"], { scope: "global", source: MARKETPLACE }),
   agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
-  domains: ["web"],
-  selectedAgents: ["web-developer"],
+  selectedDomains: ["web"],
   stack: { "web-developer": { "web-framework": [{ id: "web-framework-react", preloaded: true }] } },
   source: "github:test-org/skills",
   projects: ["/tmp/registered-project"],
@@ -122,20 +121,10 @@ describe("classify", () => {
       expect(tierOf(next)).toBe("T1");
     });
 
-    it("classifies a domains change as T1 (types + propagate + recompile)", () => {
-      const next: ProjectConfig = { ...BASELINE, domains: ["web", "api"] };
+    it("classifies a selected-domains change as T1 (types + propagate + recompile)", () => {
+      const next: ProjectConfig = { ...BASELINE, selectedDomains: ["web", "api"] };
 
-      expect(classifyGlobalChange(BASELINE, next).domainsChanged).toBe(true);
-      expect(tierOf(next)).toBe("T1");
-    });
-
-    it("classifies a selectedAgents change as T1 (types + propagate + recompile)", () => {
-      const next: ProjectConfig = {
-        ...BASELINE,
-        selectedAgents: ["web-developer", "api-developer"],
-      };
-
-      expect(classifyGlobalChange(BASELINE, next).selectedAgentsChanged).toBe(true);
+      expect(classifyGlobalChange(BASELINE, next).selectedDomainsChanged).toBe(true);
       expect(tierOf(next)).toBe("T1");
     });
   });
@@ -152,16 +141,6 @@ describe("classify", () => {
       const next: ProjectConfig = { ...BASELINE, marketplace: MARKETPLACE };
 
       expect(classifyGlobalChange(BASELINE, next).scalarsChanged).toStrictEqual(["marketplace"]);
-      expect(tierOf(next)).toBe("T2");
-    });
-
-    it("classifies a sources-scalar-only change as T2 (propagate config, no types, no recompile)", () => {
-      const next: ProjectConfig = {
-        ...BASELINE,
-        sources: [{ name: MARKETPLACE, url: "github:test-org/skills" }],
-      };
-
-      expect(classifyGlobalChange(BASELINE, next).scalarsChanged).toStrictEqual(["sources"]);
       expect(tierOf(next)).toBe("T2");
     });
 

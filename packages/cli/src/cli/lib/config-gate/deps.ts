@@ -4,7 +4,7 @@ import { tierNeedsDeps, tierRegeneratesTypes, type ConsequenceTier } from "./cla
 /** The matrix and agent definitions propagation and type generation read. */
 export type LoadedGateDeps = {
   matrix: MergedSkillsMatrix;
-  agents: Record<AgentName, AgentDefinition>;
+  agents: Partial<Record<AgentName, AgentDefinition>>;
 };
 
 /**
@@ -19,7 +19,7 @@ export type GateDeps =
   | LoadedGateDeps
   | {
       loadMatrix: () => Promise<MergedSkillsMatrix>;
-      loadAgents: () => Promise<Record<AgentName, AgentDefinition>>;
+      loadAgents: () => Promise<Partial<Record<AgentName, AgentDefinition>>>;
     };
 
 function isLoaded(deps: GateDeps): deps is LoadedGateDeps {
@@ -47,4 +47,4 @@ export async function resolveGateDeps(
 }
 
 /** Agent definitions a tier that regenerates no types never reads. */
-const NO_AGENTS = Promise.resolve({} as Record<AgentName, AgentDefinition>);
+const NO_AGENTS: Promise<Partial<Record<AgentName, AgentDefinition>>> = Promise.resolve({});

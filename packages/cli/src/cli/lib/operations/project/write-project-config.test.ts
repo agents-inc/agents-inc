@@ -93,7 +93,7 @@ describe("write-project-config", () => {
       merged: false,
     });
 
-    mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
+    mockLoadMergedAgents.mockResolvedValue({});
     mockEnsureBlankPair.mockResolvedValue(false);
     mockWriteScopedFromWizard.mockResolvedValue(buildGateReport());
     mockEnsureDir.mockResolvedValue(undefined);
@@ -103,7 +103,7 @@ describe("write-project-config", () => {
   });
 
   it("should build, merge, and write config in project context", async () => {
-    mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
+    mockLoadMergedAgents.mockResolvedValue({});
 
     const result = await writeProjectConfig({
       wizardResult,
@@ -133,7 +133,6 @@ describe("write-project-config", () => {
       config: finalConfig,
       configPath,
       wasMerged: false,
-      existingConfigPath: undefined,
       filesWritten: 4,
       propagation: buildGateReport(),
     });
@@ -141,7 +140,7 @@ describe("write-project-config", () => {
 
   it("should skip ensureBlankPair when installing from homedir", async () => {
     const homeDir = "/home/user";
-    mockLoadMergedAgents.mockResolvedValue({} as Record<AgentName, AgentDefinition>);
+    mockLoadMergedAgents.mockResolvedValue({});
 
     // Both resolve to the same path -> not a project context
     mockRealpathSync.mockReturnValue(homeDir);
@@ -165,16 +164,15 @@ describe("write-project-config", () => {
       config: finalConfig,
       configPath,
       wasMerged: false,
-      existingConfigPath: undefined,
       filesWritten: 2,
       propagation: buildGateReport(),
     });
   });
 
   it("should use pre-loaded agents when provided", async () => {
-    const preloadedAgents = {
+    const preloadedAgents: Partial<Record<AgentName, AgentDefinition>> = {
       "web-developer": createMockAgent("web-developer"),
-    } as Record<AgentName, AgentDefinition>;
+    };
 
     await writeProjectConfig({
       wizardResult,
@@ -195,10 +193,10 @@ describe("write-project-config", () => {
   });
 
   it("should load merged agents when not provided", async () => {
-    const mergedAgents = {
+    const mergedAgents: Partial<Record<AgentName, AgentDefinition>> = {
       "web-developer": createMockAgent("web-developer"),
       "api-developer": createMockAgent("api-developer"),
-    } as Record<AgentName, AgentDefinition>;
+    };
 
     mockLoadMergedAgents.mockResolvedValue(mergedAgents);
 

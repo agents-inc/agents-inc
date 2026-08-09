@@ -51,6 +51,7 @@ export async function compileAgentsAllScopes(
 function mergeCompilationResults(...results: CompilationResult[]): CompilationResult {
   return {
     compiled: results.flatMap((r) => r.compiled),
+    rewritten: results.flatMap((r) => r.rewritten),
     failed: results.flatMap((r) => r.failed),
     warnings: results.flatMap((r) => r.warnings),
   };

@@ -21,7 +21,7 @@ export type ConfigWriteOptions = {
   projectDir: string;
   sourceFlag?: string;
   /** Pre-loaded agent definitions. If omitted, loads from CLI + source. */
-  agents?: Record<AgentName, AgentDefinition>;
+  agents?: Partial<Record<AgentName, AgentDefinition>>;
   /**
    * Authority of `cc edit`'s newConfig over absent entries (D-233 Scenario C):
    * `"all"` (global edit) drops any deselected entry, `"owned"` (project edit) drops deselected
@@ -60,7 +60,7 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
 
   await ensureDir(path.dirname(projectPaths.configPath));
 
-  let agents: Record<AgentName, AgentDefinition>;
+  let agents: Partial<Record<AgentName, AgentDefinition>>;
   if (options.agents) {
     agents = options.agents;
   } else {
@@ -95,7 +95,9 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
     config: finalConfig,
     configPath: projectPaths.configPath,
     wasMerged: mergeResult.merged,
-    existingConfigPath: mergeResult.existingConfigPath,
+    ...(mergeResult.existingConfigPath !== undefined && {
+      existingConfigPath: mergeResult.existingConfigPath,
+    }),
     filesWritten: isProjectContext ? 4 : 2,
     propagation,
   };

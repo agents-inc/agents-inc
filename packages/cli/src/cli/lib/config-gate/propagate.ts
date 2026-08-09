@@ -63,6 +63,7 @@ function additiveMergeStack(
   for (const [agentName, incomingAgentStack] of typedEntries<AgentName, StackAgentConfig>(
     incoming,
   )) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
     if (!incomingAgentStack) continue;
 
     const existingAgentStack = merged[agentName];
@@ -94,6 +95,7 @@ function mergeAgentCategories(
   for (const [category, incomingAssignments] of typedEntries<Category, SkillAssignment[]>(
     incomingAgentStack,
   )) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
     if (!incomingAssignments) continue;
 
     const existingAssignments = existingAgentStack[category];
@@ -153,10 +155,9 @@ export function mergeGlobalConfigs(
     incoming.stack,
   );
 
-  // Merge domains and selectedAgents (union, no duplicates)
-  const mergedDomains = [...new Set([...(existing.domains ?? []), ...(incoming.domains ?? [])])];
-  const mergedSelectedAgents = [
-    ...new Set([...(existing.selectedAgents ?? []), ...(incoming.selectedAgents ?? [])]),
+  // Merge selected domains (union, no duplicates)
+  const mergedSelectedDomains = [
+    ...new Set([...(existing.selectedDomains ?? []), ...(incoming.selectedDomains ?? [])]),
   ];
 
   // Source identity (`marketplace`, `source`) travels on the global partition of
@@ -185,8 +186,7 @@ export function mergeGlobalConfigs(
     newSkills.length > 0 ||
     newAgents.length > 0 ||
     stackChanged ||
-    !isDeepEqual(existing.domains ?? [], mergedDomains) ||
-    !isDeepEqual(existing.selectedAgents ?? [], mergedSelectedAgents) ||
+    !isDeepEqual(existing.selectedDomains ?? [], mergedSelectedDomains) ||
     mergedMarketplace !== existing.marketplace ||
     mergedSource !== existing.source;
 
@@ -196,10 +196,9 @@ export function mergeGlobalConfigs(
       skills: mergedSkills,
       agents: mergedAgents,
       stack: mergedStack,
-      domains: mergedDomains,
-      selectedAgents: mergedSelectedAgents,
-      marketplace: mergedMarketplace,
-      source: mergedSource,
+      selectedDomains: mergedSelectedDomains,
+      ...(mergedMarketplace !== undefined && { marketplace: mergedMarketplace }),
+      ...(mergedSource !== undefined && { source: mergedSource }),
     },
     changed,
   };
@@ -269,7 +268,7 @@ async function registerProjectPath(
 export async function deregisterProjectPath(projectDir: string): Promise<void> {
   const homeDir = os.homedir();
   const existingGlobal = await loadProjectConfigFromDir(homeDir);
-  if (!existingGlobal?.config?.projects?.length) return;
+  if (!existingGlobal?.config.projects?.length) return;
 
   const normalizedPath = normalizeProjectPath(projectDir);
   const filtered = existingGlobal.config.projects.filter((p) => p !== normalizedPath);
@@ -508,7 +507,7 @@ function maskCollidingGlobalAgents(
  *
  * Applied at BOTH sites that write a project `config.ts` with `globalConfig` inlined:
  * `propagateGlobalChangesToProjects` (a global change fanning out to registered
- * projects) and the project-scope save branch of `writeScopedConfigs` (an ordinary
+ * projects) and the project-scope save branch of `writeScopedFromWizard` (an ordinary
  * project `init`/`edit` performed while the colliding skill is already active
  * globally). Either site alone can produce the malformed shape, so both must run it.
  *
@@ -532,33 +531,6 @@ export function reconcileProjectSplitAgainstGlobal(
     skills: [...healedSkills, ...maskCollidingGlobalSkills(healedSkills, globalConfig, matrix)],
     agents: [...healedAgents, ...maskCollidingGlobalAgents(healedAgents, globalConfig)],
   };
-}
-
-/**
- * Prunes a project's inlined `selectedAgents[]` symmetrically with `retainProjectOwnedAgents`.
- *
- * A registered project's stored `selectedAgents` is a flat name union that legitimately
- * contains global agent names — the inlined writer emits `union(global, project)`. Carried
- * forward verbatim, a global agent removed at global scope survives the writer's next union
- * and lingers in `selectedAgents[]` while being absent from `agents[]` — an internal drift
- * that never self-heals across propagation cycles. A name is retained only when it is backed
- * by a real active agent: either a project-scoped agent the project owns, or an agent still
- * active in the current global config. Project ownership is read from the already-reconciled
- * `agents[]` (project-scoped entries are always retained), so a name the project owns at
- * project scope survives even when a same-named global agent is removed.
- */
-function retainReconciledSelectedAgents(
-  selectedAgents: AgentName[] | undefined,
-  reconciledAgents: AgentScopeConfig[],
-  globalConfig: ProjectConfig,
-): AgentName[] | undefined {
-  if (!selectedAgents) return selectedAgents;
-  const projectOwnedNames = new Set(
-    reconciledAgents.filter((a) => isActiveAt(a, "project")).map((a) => a.name),
-  );
-  return selectedAgents.filter(
-    (name) => projectOwnedNames.has(name) || globalHasActiveAgent(globalConfig, name),
-  );
 }
 
 /**
@@ -616,6 +588,7 @@ function retainReconciledStack(
   for (const [agent, agentStack] of Object.entries(stack)) {
     const reconciledAgentStack: StackAgentConfig = {};
     for (const [category, assignments] of typedEntries<Category, SkillAssignment[]>(agentStack)) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
       if (!assignments) continue;
       const kept = assignments.filter((assignment) => !removedGlobalSkillIds.has(assignment.id));
       if (kept.length > 0) reconciledAgentStack[category] = kept;
@@ -658,7 +631,7 @@ export async function writeProjectConfigPair(
   reconciledSplit: ProjectConfig,
   effectiveGlobal: ProjectConfig,
   matrix: MergedSkillsMatrix,
-  agents: Record<AgentName, AgentDefinition>,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
   options: PropagationOptions = {},
 ): Promise<void> {
   // Reconcile-before-both-writes: the two halves are derived from the same
@@ -698,7 +671,10 @@ function inlinedProjectView(
     ...reconciledSplit,
     skills: [...effectiveGlobal.skills, ...reconciledSplit.skills],
     agents: [...effectiveGlobal.agents, ...reconciledSplit.agents],
-    domains: unique([...(effectiveGlobal.domains ?? []), ...(reconciledSplit.domains ?? [])]),
+    selectedDomains: unique([
+      ...(effectiveGlobal.selectedDomains ?? []),
+      ...(reconciledSplit.selectedDomains ?? []),
+    ]),
     stack: { ...(effectiveGlobal.stack ?? {}), ...(reconciledSplit.stack ?? {}) },
   };
 }
@@ -711,7 +687,7 @@ function inlinedProjectView(
 export async function propagateGlobalChangesToProjects(
   globalConfig: ProjectConfig,
   matrix: MergedSkillsMatrix,
-  agents: Record<AgentName, AgentDefinition>,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
   currentProjectDir?: string,
   options: PropagationOptions = {},
 ): Promise<PropagationResult> {
@@ -754,18 +730,14 @@ export async function propagateGlobalChangesToProjects(
         projectConfig.skills,
         globalConfig,
       );
-      const retainedAgents = retainProjectOwnedAgents(projectConfig.agents, globalConfig);
+      const retained = retainReconciledStack(projectConfig.stack, removedGlobalSkillIds);
+      const reconciledStack = retained === undefined ? {} : { stack: retained };
       const projectSplit = reconcileProjectSplitAgainstGlobal(
         {
           ...projectConfig,
           skills: retainProjectOwnedSkills(projectConfig.skills, globalConfig),
-          agents: retainedAgents,
-          stack: retainReconciledStack(projectConfig.stack, removedGlobalSkillIds),
-          selectedAgents: retainReconciledSelectedAgents(
-            projectConfig.selectedAgents,
-            retainedAgents,
-            globalConfig,
-          ),
+          agents: retainProjectOwnedAgents(projectConfig.agents, globalConfig),
+          ...reconciledStack,
         },
         globalConfig,
         matrix,
@@ -791,11 +763,8 @@ export async function propagateGlobalChangesToProjects(
  * GLOBAL uninstall. Reuses {@link propagateGlobalChangesToProjects} with an
  * emptied global config so every global skill/agent reads as removed: project-
  * scoped entries are retained verbatim, inlined global rows and tombstones are
- * dropped, `selectedAgents` and per-agent stack refs lose their global-only
- * names/ids, and each project's config-types.ts is regenerated. `selectedAgents`
- * is emptied alongside `skills`/`agents` because the project config writer
- * re-unions the global `selectedAgents` into the project's — carrying it forward
- * would resurrect the names the reconciliation just pruned.
+ * dropped, per-agent stack refs lose their global-only ids, and each project's
+ * config-types.ts is regenerated.
  *
  * Call AFTER the global .claude-src manifest has been removed so the regenerated
  * project types fall back to the standalone form instead of importing from the
@@ -805,13 +774,12 @@ export async function propagateGlobalChangesToProjects(
 export async function pruneGlobalEntriesFromRegisteredProjects(
   globalConfig: ProjectConfig,
   matrix: MergedSkillsMatrix,
-  agents: Record<AgentName, AgentDefinition>,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
 ): Promise<{ updated: string[]; skipped: string[] }> {
   const emptiedGlobal: ProjectConfig = {
     ...globalConfig,
     skills: [],
     agents: [],
-    selectedAgents: [],
   };
   return propagateGlobalChangesToProjects(emptiedGlobal, matrix, agents);
 }
@@ -848,7 +816,7 @@ export async function resolveEffectiveGlobalConfig(
 
 export function buildConfigTypesBackgroundData(
   matrix: MergedSkillsMatrix,
-  agents: Record<AgentName, AgentDefinition>,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
 ): ConfigTypesBackgroundData {
   const agentNames = typedKeys(agents);
   const customAgentNames = agentNames.filter((name) => agents[name]?.custom === true);
@@ -857,6 +825,7 @@ export function buildConfigTypesBackgroundData(
 
 /** Category keys the emitted stack holds, across every agent it configures. */
 function stackCategories(stack: ProjectConfig["stack"]): Category[] {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
   return Object.values(stack ?? {}).flatMap((agentStack) => typedKeys<Category>(agentStack ?? {}));
 }
 
@@ -873,8 +842,8 @@ function stackCategories(stack: ProjectConfig["stack"]): Category[] {
  * stack's category key).
  *
  * Domains and stack categories are read off the config's own arrays as well as derived from its
- * skill rows: `domains` is a wizard preference no skill row has to back, and neither it nor a
- * stack entry is pruned when the last skill that would derive it leaves.
+ * skill rows: `selectedDomains` is a wizard preference no skill row has to back, and neither it
+ * nor a stack entry is pruned when the last skill that would derive it leaves.
  */
 export function buildProjectTypesExtras(
   finalConfig: ProjectConfig,
@@ -892,7 +861,7 @@ export function buildProjectTypesExtras(
   ]);
   const extraDomains = unique([
     ...deriveDomains(extraCategories, matrix),
-    ...(finalConfig.domains ?? []),
+    ...(finalConfig.selectedDomains ?? []),
   ]);
 
   return { extraSkillIds, extraAgentNames, extraDomains, extraCategories };

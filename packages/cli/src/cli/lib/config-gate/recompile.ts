@@ -2,7 +2,8 @@ import type { PropagatedRecompileSummary } from "../operations/project/recompile
 
 /** The summary of a fan-out that recompiled nothing, so callers render one shape. */
 export const NOTHING_RECOMPILED: PropagatedRecompileSummary = {
-  recompiledCount: 0,
+  rewrittenCount: 0,
+  unchangedCount: 0,
   failedCount: 0,
   warnings: [],
 };

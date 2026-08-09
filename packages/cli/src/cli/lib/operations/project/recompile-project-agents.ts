@@ -42,7 +42,14 @@ export async function recompileRegisteredProjectAgents(
 }
 
 export type PropagatedRecompileSummary = {
-  recompiledCount: number;
+  /** Projects where at least one compiled agent's content actually moved. */
+  rewrittenCount: number;
+  /**
+   * Projects the fan-out reached whose agents all came back byte-identical. They
+   * were visited and left alone, which is a different fact from being recompiled
+   * and the one the old single count could not tell apart.
+   */
+  unchangedCount: number;
   failedCount: number;
   /** Per-project warnings in processing order — the caller surfaces them via warn(). */
   warnings: string[];
@@ -58,7 +65,8 @@ export type PropagatedRecompileSummary = {
 export async function recompilePropagatedProjectAgents(
   projectDirs: string[],
 ): Promise<PropagatedRecompileSummary> {
-  let recompiledCount = 0;
+  let rewrittenCount = 0;
+  let unchangedCount = 0;
   let failedCount = 0;
   const warnings: string[] = [];
 
@@ -70,12 +78,13 @@ export async function recompilePropagatedProjectAgents(
         warnings.push(...result.warnings);
         continue;
       }
-      recompiledCount++;
+      if (result.rewritten.length > 0) rewrittenCount++;
+      else unchangedCount++;
     } catch (error) {
       failedCount++;
       warnings.push(`Could not recompile agents in ${dir}: ${getErrorMessage(error)}`);
     }
   }
 
-  return { recompiledCount, failedCount, warnings };
+  return { rewrittenCount, unchangedCount, failedCount, warnings };
 }
