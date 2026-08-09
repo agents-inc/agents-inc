@@ -13,6 +13,7 @@ import { isLocalSource } from "../configuration";
 import { CACHE_HASH_LENGTH, CACHE_READABLE_PREFIX_LENGTH, PLUGIN_MANIFEST_DIR } from "../../consts";
 import type { Marketplace } from "../../types";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
+import { elementAt } from "../__tests__/helpers/element-at.js";
 
 describe("source-fetcher", () => {
   let tempDir: string;
@@ -122,7 +123,7 @@ describe("source-fetcher", () => {
     it("should include a hex hash suffix", () => {
       const result = sanitizeSourceForCache("github:org/repo");
       const parts = result.split("-");
-      const hashPart = parts[parts.length - 1];
+      const hashPart = elementAt(parts, parts.length - 1);
       expect(hashPart).toMatch(/^[0-9a-f]+$/);
       expect(hashPart.length).toBe(CACHE_HASH_LENGTH);
     });
