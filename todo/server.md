@@ -2,8 +2,9 @@
 
 Outstanding work on `apps/server`, the Hono API worker, and on the typed client layer in front of it.
 Its sibling trackers: the configurator is [`editor.md`](./editor.md), the site is
-[`www.md`](./www.md), the CLI is [`cli.md`](./cli.md), and everything about deployment, naming and
-publishing the repository is [`repo.md`](./repo.md).
+[`www.md`](./www.md), the CLI is [`cli.md`](./cli.md), the skills marketplace is
+[`skills.md`](./skills.md), and everything about deployment, naming and publishing the repository
+is [`repo.md`](./repo.md).
 
 **An item is deleted when it lands rather than ticked off**, so everything below is still open.
 There is no done column and nothing is struck through. Landed items get one line each in
@@ -16,11 +17,10 @@ carries the identifier the item had before this folder existed.
 tunnel, and `api.agentsinc.sh/configs/:id` has been live since 0.149.0. The app is not the work;
 the three items below are.
 
-| ID                                                    | Task                                                                                                     | Status        | Type    | Complexity |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------- | ------- | ---------- |
-| SERVER-01 (was editor-todo item 3)                    | GitHub search proxy behind the existing `lib/api/github-skills.ts` seam                                  | Ready for Dev | feature | complex    |
-| SERVER-02 (was editor-todo "Phase 7")                 | `packages/api` + `packages/api-mocks` — a typed client and MSW handlers                                  | Investigate   | feature | complex    |
-| SERVER-03 (was cli-integration "Phase 3 attribution") | Count `GET /configs/:id` split by caller; the CLI already sends its user-agent, the route is not written | Ready for Dev | feature | easy       |
+| ID                                                    | Task                                                                                                                                                                                                       | Status                       | Type    | Complexity |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------- | ---------- |
+| SERVER-01 (was editor-todo item 3)                    | v1 LANDED 2026-08-08 (index over 3 popular repos + dialog swap). Remaining: registry adapters (skills.sh etc.) — deferred; each lands only with hand-verification against the live registry (owner ruling) | Deferred                     | feature | complex    |
+| SERVER-03 (was cli-integration "Phase 3 attribution") | Count `GET /configs/:id` split by caller; the CLI already sends its user-agent, the route is not written. Owner 2026-08-09: nice idea, DO IT — in a separate session.                                      | Ready for Dev — next session | feature | easy       |
 
 ---
 

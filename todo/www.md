@@ -3,8 +3,8 @@
 Outstanding work on `apps/www`, the Astro build that serves the landing page at `/` and the
 Starlight documentation at `/docs`. Its sibling trackers: the configurator is
 [`editor.md`](./editor.md), the API worker is [`server.md`](./server.md), the CLI is
-[`cli.md`](./cli.md), and everything about deploying this site, naming it and publishing the
-repository is [`repo.md`](./repo.md).
+[`cli.md`](./cli.md), the skills marketplace is [`skills.md`](./skills.md), and everything about
+deploying this site, naming it and publishing the repository is [`repo.md`](./repo.md).
 
 **An item is deleted when it lands rather than ticked off**, so everything below is still open.
 There is no done column and nothing is struck through. Landed items get one line each in
@@ -21,16 +21,16 @@ pieces of the docs-site item** that are distinct enough to be picked up on their
 **The site builds cleanly with no warnings and every navigation link resolves.** Nothing below
 blocks a commit. What blocks a _deploy_ is in [`repo.md`](./repo.md), not here.
 
-| ID                               | Task                                                                                       | Status           | Type     | Complexity |
-| -------------------------------- | ------------------------------------------------------------------------------------------ | ---------------- | -------- | ---------- |
-| WWW-01 (was editor-todo item 8)  | Docs site: 5 of 10 sidebar sections, reference is per-group, config fields undocumented    | Ready for Dev    | feature  | complex    |
-| WWW-02 (was editor-todo item 9)  | Landing page: 5 of 12 blocks, and the catalogue teaser centrepiece is not one of them      | Ready for Dev    | feature  | complex    |
-| WWW-03 (was editor-todo item 10) | Apex path split — vite `base`, router `basepath`, SPA fallback, dead routes            | Ready for Dev    | feature  | complex    |
-| WWW-04 (was editor-todo item 12) | Three pages tell readers to run `new skill` / `new agent` / `new marketplace`, all off     | Ready for Dev    | bug      | easy       |
-| WWW-05 (was editor-todo item 12) | `reference/commands.md` is wrong twice — the wizard's steps, and `init --from` is missing  | Ready for Dev    | bug      | easy       |
-| WWW-06 (was editor-todo item 14) | Two video slots are empty and a third is missing; you supply the recordings                | Needs Assistance | feature  | easy       |
-| WWW-07 (was editor-todo item 8)  | The two halves do not read as one product — type scale above all                           | Ready for Dev    | bug      | complex    |
-| WWW-08 (was editor-todo item 8)  | The shared header was never extracted, so the two halves show different logos              | Ready for Dev    | refactor | complex    |
+| ID                               | Task                                                                                          | Status           | Type     | Complexity |
+| -------------------------------- | --------------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
+| WWW-01 (was editor-todo item 8)  | Docs site: 5 of 10 sidebar sections, reference is per-group, config fields undocumented       | Ready for Dev    | feature  | complex    |
+| WWW-02 (was editor-todo item 9)  | Landing page: 5 of 12 blocks, and the catalogue teaser centrepiece is not one of them         | Ready for Dev    | feature  | complex    |
+| WWW-03 (was editor-todo item 10) | Apex path split — vite `base`, router `basepath`, SPA fallback, dead routes                   | Ready for Dev    | feature  | complex    |
+| WWW-04 (was editor-todo item 12) | Three pages tell readers to run `new skill` / `new agent` / `new marketplace`, all off        | Ready for Dev    | bug      | easy       |
+| WWW-06 (was editor-todo item 14) | Two video slots are empty and a third is missing; you supply the recordings                   | Needs Assistance | feature  | easy       |
+| WWW-07 (was editor-todo item 8)  | The two halves do not read as one product — type scale above all                              | Ready for Dev    | bug      | complex    |
+| WWW-08 (was editor-todo item 8)  | The shared header was never extracted, so the two halves show different logos                 | Ready for Dev    | refactor | complex    |
+| WWW-10 (new, 2026-08-06)         | Docs prose claims 7 domains (there are 9 — `desktop`, `cli` missing); `ls` alias undocumented | Ready for Dev    | bug      | easy       |
 
 ---
 
@@ -74,6 +74,12 @@ page broke when the originals were deleted; the next publish heals them.
 
 These are the decisions taken while the site was built. Each one cost more than it looks like it
 should have, and each is easy to reverse by accident.
+
+- **WCAG AA color contrast is deliberately not met, and stays that way (owner ruling, 2026-08-07).**
+  The amber accent pair measures 3.97:1 and the dimmed incompatible cell 2.4:1; both are the design
+  as intended for this personal project. axe's `color-contrast` rule is permanently held out of the
+  packages/ui story gate (`packages/ui/.storybook/preview.ts`) — every structural a11y check still
+  gates. Do not "fix" the palette for contrast.
 
 - **One theme, light. The theme toggle was removed.** The design system declares a dark variant but
   ships no dark colours for it, so a toggle would have switched into Starlight's own blue-grey theme
@@ -280,6 +286,32 @@ requests stay free.
 **Write the pattern as `agentsinc.sh/editor*`, not `/editor/*`.** Cloudflare's own Known Issues page
 documents that `/editor/*` does not match `/editor` itself. Cheap to get wrong, expensive to find.
 
+### Status: nothing started. The repository is untouched.
+
+Confirmed 2026-08-06 — `apps/editor/wrangler.jsonc` still holds `agentsinc.sh` as a Custom Domain,
+`vite.config.ts` has no `base`, the router has no `basepath`, and the site is reachable only at
+`agents-inc-www.<account>.workers.dev`, which nothing links to. A partial landing is worse than
+none: **CI deploys on every push to main**, so a half-applied cutover ships itself.
+
+**The order that works, and why.** The dashboard move and the repository change are not independent.
+Deploying the editor with a Route but no Custom Domain, while the site has not claimed the apex,
+leaves `agentsinc.sh` bound to nothing. Claiming the apex for the site while the editor still serves
+from the origin root breaks every editor asset. So:
+
+1. **Repository first, in one commit, unpushed** — the five build tasks below plus both wrangler
+   configs (editor: Route `agentsinc.sh/editor*`; site: Custom Domain `agentsinc.sh`).
+2. **Then the dashboard**, moving the Custom Domain from the editor's Worker to the site's. Adding a
+   Custom Domain already attached elsewhere offers to move it, which is the atomic step — this was
+   not verified, so check what the dashboard actually says before accepting.
+3. **Then push**, so both Workers deploy against a domain already pointing the right way.
+
+Whether step 2 can instead ride on the deploy in step 3 is untested. Do not find out on production:
+`wrangler deploy` is non-interactive in CI, and a Custom Domain claim that needs confirmation fails
+there.
+
+**Write `agentsinc.sh/editor*`, not `/editor/*`.** Cloudflare's Known Issues page documents that
+`/editor/*` does not match `/editor` itself, so the bare path falls through to the site and 404s.
+
 ### The build tasks, which are the actual work
 
 Assets served under a prefix do not get the prefix stripped — from Cloudflare's "Serving a
@@ -311,7 +343,12 @@ stylesheet, script and internal link resolves against `/` and 404s.
   Cloudflare Single Redirect or a few lines of landing-page JavaScript) is moot. **This removes the
   one piece of the cutover that had to be got right in the same instant**, which is what made the
   split feel like a coordinated migration rather than a config change.
-- **Delete the editor's own docs route.** Docs cannot live _inside_ `apps/editor`: `RootLayout` is a
+- **Delete the editor's own docs route.** Verified 2026-08-06: `src/routes/router.tsx` defines
+  `docsRoute` at `/docs` and `src/components/nav-rail.tsx` links to it. Once the app lives under a
+  prefix that route's own path becomes `/editor/docs`, while the real documentation is at
+  `agentsinc.sh/docs` on a different Worker — so the nav entry has to become an ordinary link out of
+  the app rather than a router `Link`, which crosses a Worker boundary.
+- **(original note)** Docs cannot live _inside_ `apps/editor`: `RootLayout` is a
   desktop-only grid with `min-w-[85.25rem]`, and docs must be readable on a phone. So
   `apps/editor/src/components/nav-rail.tsx`'s `/docs` link leaves the SPA, and `docsRoute` +
   `DocsScreen` are deleted from `routes/router.tsx` and `routes/route-components.tsx`. Both still
@@ -355,18 +392,6 @@ improved". Three pages tell readers to run them anyway:
 
 The site's own `reference/commands.md` correctly marks all three as disabled, **so the site
 contradicts itself — and the pages a reader actually follows are the wrong half.**
-
----
-
-#### WWW-05: `reference/commands.md` is wrong in two rows
-
-Two separate accuracy defects in the same file.
-
-- **The wizard's steps.** `quickstart.md` and `reference/commands.md` disagree about them. The code
-  is authoritative — `WIZARD_STEP_ORDER` in `wizard-store.ts` — and it matches Quickstart, so the
-  reference row is the wrong one.
-- **`init --from <id>` is missing from the `init` row**, although it is real, it is built, it shipped
-  in 0.149.0, and both the landing page and `cli-or-web.md` tell readers to use it.
 
 ---
 
@@ -436,3 +461,16 @@ The complexity is not the size. It is that the extracted component has to serve 
 editor's TanStack Router build, the Astro landing page and Starlight's own title slot — across a
 repository that deliberately runs two React majors side by side, and `apps/www` has no React at all
 by decision (WWW-01).
+
+---
+
+#### WWW-10: Docs prose undercounts the domains and omits the `ls` alias
+
+Found by the WWW-09 execution pass, 2026-08-06 — distinct defects from the counts:
+
+- `concepts/skills.mdx:28` and `resources/index.mdx:10` list **seven** domains; the generated
+  `DOMAINS` union has **nine** (`desktop` and `cli` are the missing two). Same fix family as
+  WWW-09: derive the domain list (or at least its count) from `@workspace/matrix` rather than
+  re-prosing it.
+- `reference/commands.md` documents `list` but not its `ls` alias (verified in the command
+  source during the WWW-05 rewrite; left out of that fix to keep it scoped).

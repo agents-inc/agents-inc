@@ -35,52 +35,49 @@ and three unreferenced `agent-findings`.
 
 ## Bugs
 
-| ID      | Task                                                                                                                                                                 | Status        | Type | Complexity |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ---- | ---------- |
-| D-310   | A global install holds only global-scoped skills — unenforced at the install boundary (`--from`, `$HOME`). [Plan](./plans/D-310-from-global-scope-project-skills.md) | Ready for Dev | bug  | complex    |
-| D-307   | Wizard root `useInput` steals `s` from the add-source text input — overlay gated off behind a flag.                                                                  | Ready for Dev | bug  | easy       |
-| D-266   | Shared scroll gates disable clipping below `MIN_VIEWPORT_ROWS`, so steps bleed at short terminal heights.                                                            | Ready for Dev | bug  | complex    |
-| D-214   | Matrix composition hardening — prereq to re-enabling `new marketplace`.                                                                                              | Ready for Dev | bug  | complex    |
-| D-212   | Custom skill lifecycle — install pipeline bug + UX gaps around `custom: true`.                                                                                       | Ready for Dev | bug  | complex    |
-| CLI-331 | (was Bug 4) `edit` warns but keeps recompiling when the config write fails — silent three-way drift.                                                                 | Ready for Dev | bug  | complex    |
-| CLI-359 | `agent.liquid` reads `permission_mode`/`disallowed_tools`; `AgentConfig` carries camelCase — never emits.                                                            | Ready for Dev | bug  | easy       |
-| CLI-362 | (was 2026-04-20 finding) Newly-toggled agents hard-code global scope, starving a project-scoped stack.                                                               | Ready for Dev | bug  | complex    |
-| CLI-363 | (was 2026-04-22 finding) Edit-mode scope awareness — `cwd` and the detected install diverge across layers.                                                           | Investigate   | bug  | complex    |
-| CLI-364 | (was 2026-07-29 QA sweep) Residuals from the v0.144 live-CLI sweep that were deliberately untouched.                                                                 | Investigate   | bug  | complex    |
-| CLI-367 | `validateBuildStep` has no production caller — required categories never block wizard advancement.                                                                   | Investigate   | bug  | easy       |
+| ID      | Task                                                                                                                                                                 | Status        | Type     | Complexity |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
+| D-310   | A global install holds only global-scoped skills — unenforced at the install boundary (`--from`, `$HOME`). [Plan](./plans/D-310-from-global-scope-project-skills.md) | Ready for Dev | bug      | complex    |
+| D-307   | Wizard root `useInput` steals `s` from the add-source text input — overlay gated off behind a flag.                                                                  | Ready for Dev | bug      | easy       |
+| D-266   | Shared scroll gates disable clipping below `MIN_VIEWPORT_ROWS`, so steps bleed at short terminal heights.                                                            | Ready for Dev | bug      | complex    |
+| D-214   | Matrix composition hardening — prereq to re-enabling `new marketplace`.                                                                                              | Ready for Dev | bug      | complex    |
+| D-212   | Custom skill lifecycle — install pipeline bug + UX gaps around `custom: true`.                                                                                       | Ready for Dev | bug      | complex    |
+| CLI-331 | (was Bug 4) `edit` warns but keeps recompiling when the config write fails — silent three-way drift.                                                                 | Ready for Dev | bug      | complex    |
+| CLI-359 | `agent.liquid` reads `permission_mode`/`disallowed_tools`; `AgentConfig` carries camelCase — never emits.                                                            | Ready for Dev | bug      | easy       |
+| CLI-362 | (was 2026-04-20 finding) Newly-toggled agents hard-code global scope, starving a project-scoped stack.                                                               | Ready for Dev | bug      | complex    |
+| CLI-363 | (was 2026-04-22 finding) Edit-mode scope awareness — `cwd` and the detected install diverge across layers.                                                           | Investigate   | bug      | complex    |
+| CLI-367 | `validateBuildStep` has no production caller — required categories never block wizard advancement.                                                                   | Investigate   | bug      | easy       |
+| CLI-385 | (was briefly CLI-368) The 2026-08-05 agent restructure sits uncommitted — all work done and green; land as one commit.                                               | Ready for Dev | refactor | easy       |
 
 ## Wizard & CLI UX
 
-| ID      | Task                                                                                                           | Status           | Type     | Complexity |
-| ------- | -------------------------------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
-| D-276   | Exclusive category: allow selecting a skill that conflicts with a global one, defaulting it to project scope.  | Ready for Dev    | feature  | complex    |
-| D-280   | Prune built-in stacks: ~2 Next.js, ~2 React, one each Solid/Svelte/Astro; fate of the rest TBD.                | Ready for Dev    | refactor | easy       |
-| D-211   | Reorder stack-selection render: scratch → React → other frameworks → CLI.                                      | Ready for Dev    | feature  | complex    |
-| D-181   | Add YOLO mode toggle to build step. [Plan](./plans/D-181-yolo-mode-toggle.md)                                  | Ready for Dev    | feature  | complex    |
-| CLI-311 | (was UX-04) Interactive skill search polish — manual testing plus tests for the search component.              | Needs Assistance | feature  | complex    |
-| CLI-312 | (was UX-05) Refine step — surface skills.sh community alternatives.                                            | Needs Assistance | feature  | complex    |
-| CLI-313 | (was UX-06) Search with colour highlighting — needs more UX thought.                                           | Needs Assistance | feature  | easy       |
-| CLI-314 | (was UX-07) Incompatibility tooltips — show the reason when a disabled option is focused.                      | Needs Assistance | feature  | easy       |
-| CLI-315 | (was UX-08) Keyboard shortcuts help overlay — in-wizard help for keybindings.                                  | Needs Assistance | feature  | easy       |
-| CLI-316 | (was UX-09) Animations / transitions — polish pass for step transitions.                                       | Needs Assistance | feature  | easy       |
-| CLI-329 | (was expressive-ts decision 7) Glyph and label inconsistencies across steps, doctor and the source vocabulary. | Investigate      | refactor | easy       |
+| ID      | Task                                                                                                                    | Status           | Type     | Complexity |
+| ------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
+| D-276   | Exclusive category: allow selecting a skill that conflicts with a global one, defaulting it to project scope.           | Ready for Dev    | feature  | complex    |
+| D-280   | Prune built-in stacks — DEFERRED (owner 2026-08-07: will decide later; simpler now that stacks carry no preload flags). | Deferred         | refactor | easy       |
+| D-211   | Reorder stack-selection render: scratch → React → other frameworks → CLI.                                               | Ready for Dev    | feature  | complex    |
+| D-181   | Add YOLO mode toggle to build step. [Plan](./plans/D-181-yolo-mode-toggle.md)                                           | Ready for Dev    | feature  | complex    |
+| CLI-311 | (was UX-04) Interactive skill search polish — manual testing plus tests for the search component.                       | Needs Assistance | feature  | complex    |
+| CLI-312 | (was UX-05) Refine step — surface skills.sh community alternatives.                                                     | Needs Assistance | feature  | complex    |
+| CLI-313 | (was UX-06) Search with colour highlighting — needs more UX thought.                                                    | Needs Assistance | feature  | easy       |
+| CLI-314 | (was UX-07) Incompatibility tooltips — show the reason when a disabled option is focused.                               | Needs Assistance | feature  | easy       |
+| CLI-315 | (was UX-08) Keyboard shortcuts help overlay — in-wizard help for keybindings.                                           | Needs Assistance | feature  | easy       |
+| CLI-316 | (was UX-09) Animations / transitions — polish pass for step transitions.                                                | Needs Assistance | feature  | easy       |
+| CLI-329 | (was expressive-ts decision 7) Glyph and label inconsistencies across steps, doctor and the source vocabulary.          | Investigate      | refactor | easy       |
 
 ## Matrix, config & scope
 
-| ID      | Task                                                                                                           | Status        | Type     | Complexity |
-| ------- | -------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
-| D-306   | Deeper incompatibility rules — richer semantics beyond conflicts/requires; scope TBD with Vincent.             | Investigate   | feature  | complex    |
-| D-215   | Config shape simplification — singular-for-exclusive, drop redundant fields.                                   | Ready for Dev | refactor | complex    |
-| D-118   | Investigate renaming "project/global" scope to "project/user".                                                 | Investigate   | refactor | complex    |
-| D-69    | Config migration strategy for outdated config shapes.                                                          | Investigate   | feature  | complex    |
-| CLI-324 | (was expressive-ts decision 2) Config-load leniency vs what `ProjectConfig` promises about agents and domains. | Investigate   | refactor | complex    |
+| ID      | Task                                                                                                                                                   | Status      | Type     | Complexity |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- | -------- | ---------- |
+| D-306   | Deeper incompatibility rules — richer semantics beyond conflicts/requires; scope TBD with Vincent.                                                     | Investigate | feature  | complex    |
+| D-118   | Rename project/global scope to project/user — DEFERRED to the very end with CLI-425 (owner 2026-08-07: easy, but last, after everything is committed). | Deferred    | refactor | complex    |
+| CLI-324 | (was expressive-ts decision 2) Config-load leniency vs what `ProjectConfig` promises about agents and domains.                                         | Investigate | refactor | complex    |
 
 ## Commands & lifecycle
 
 | ID      | Task                                                                                              | Status                  | Type     | Complexity |
 | ------- | ------------------------------------------------------------------------------------------------- | ----------------------- | -------- | ---------- |
 | D-213   | Custom agent lifecycle — `new agent` depends on agent-summoner + wiring gaps.                     | Ready for Dev           | feature  | complex    |
-| D-210   | Merge `validate` into `doctor` — single command, layered output.                                  | Investigate             | refactor | complex    |
 | D-179   | Extract shared post-wizard pipeline into a ProjectLifecycle orchestrator.                         | Investigate             | refactor | complex    |
 | D-26    | Marketplace-specific uninstall. [Plan](./plans/D-26-marketplace-uninstall.md)                     | Ready for Dev           | feature  | complex    |
 | D-25    | Auto-version check + source staleness. [Plan](./plans/D-25-auto-version-check.md)                 | Ready for Dev           | feature  | complex    |
@@ -95,55 +92,55 @@ and three unreferenced `agent-findings`.
 
 ## Web ↔ CLI integration
 
-| ID      | Task                                                                                                                         | Status      | Type     | Complexity |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------- | -------- | ---------- |
-| D-239   | Publish the matrix as data — `export:matrix` plus `AGENT_DEFINITIONS`. [Plan](./plans/D-239-web-ui-shared-matrix-package.md) | Investigate | feature  | complex    |
-| CLI-352 | Drift guard on the vendored seed contract — nothing checks the CLI copy still matches `packages/matrix`.                     | Done        | refactor | easy       |
-| CLI-353 | Decide what `init --from <id>` means when it overrides an existing install.                                                  | Investigate | feature  | complex    |
-| CLI-354 | `agents-inc share` — map an installed `ProjectConfig` to a `SeedPayload` and POST it.                                        | Investigate | feature  | complex    |
+| ID      | Task                                                                                                                                                                                                                                               | Status        | Type     | Complexity |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
+| CLI-352 | Drift guard on the vendored seed contract — nothing checks the CLI copy still matches `packages/matrix`.                                                                                                                                           | Done          | refactor | easy       |
+| CLI-354 | `agents-inc share` — map an installed `ProjectConfig` to a `SeedPayload` and POST it.                                                                                                                                                              | Investigate   | feature  | complex    |
+| CLI-388 | Machine-readable product data: `search --json` / `catalog --json` — now also the stacks and the preload mapping, so stack-detect's intent mode and load deference can read them (SKILLS-10 found no run-time route exists).                        | Ready for Dev | feature  | complex    |
+| CLI-405 | Derive `requires`/`needsAny` from framework-support surfaces — CONDITIONAL derivation only (B11 proved the mechanical rule breaks on setup-env: adapters of a self-sufficient neutral core must not derive a fence). Blocked on SKILLS-01 phase 2. | Ready for Dev | feature  | complex    |
+| CLI-407 | `tagPrimarySourceSkills` marks the marketplace primary on custom/local skills — the real root of D-212's default-source bug. [Investigation](./plans/custom-skills-2026-08-06-investigation.md)                                                    | Deferred      | bug      | complex    |
+| CLI-408 | `custom: true` honoured: local skills are eject-only (hard error, no marketplace backs them); marketplace-backed skills keep the plugin/eject choice.                                                                                              | Deferred      | bug      | complex    |
+| CLI-409 | A `local`-categorised skill is silently dropped from every agent stack — custom skills reach no sub-agent.                                                                                                                                         | Deferred      | bug      | complex    |
+| CLI-410 | `cc import skill` writes no `slug`/`domain`/`custom` — every imported skill is silently undiscoverable.                                                                                                                                            | Deferred      | bug      | easy       |
+| CLI-411 | Replace `LOCAL_DEFAULTS`' `dummy-category`/`dummy` scaffold placeholders — fabricated domain, no agents, no union membership.                                                                                                                      | Deferred      | bug      | easy       |
+| CLI-412 | No custom category (owner ruling): custom skills are assigned a REAL domain+category — AI suggests, user confirms — and typing tightens accordingly.                                                                                               | Deferred      | feature  | complex    |
+| CLI-413 | `custom: true` never reaches `config.ts` — config-only consumers cannot tell custom from marketplace skills.                                                                                                                                       | Investigate   | bug      | easy       |
 
 ## Testing & E2E coverage
 
-| ID      | Task                                                                                                                                         | Status        | Type     | Complexity |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
-| D-235   | E2E gap: `buildProjectTypesExtras` new-domain/category path is uncovered.                                                                    | Ready for Dev | refactor | easy       |
-| D-234   | E2E config inspection via `loadProjectConfig` instead of regex-on-`config.ts`.                                                               | Done          | refactor | complex    |
-| D-219   | E2E fixture-default ergonomics. [Plan](./plans/D-219-wizard-launcher-default-fixture.md)                                                     | Ready for Dev | refactor | complex    |
-| D-168   | Audit E2E tests — replace manual file construction with CLI commands.                                                                        | Ready for Dev | refactor | complex    |
-| D-111   | Replace E2E text anchors with stable test identifiers.                                                                                       | Investigate   | refactor | complex    |
-| D-64    | Create CLI E2E testing skill + update `cli-framework-oclif-ink`.                                                                             | Ready for Dev | feature  | complex    |
-| CLI-321 | (was P4-18) Test multiple skill/agent creation — depends on CLI-320.                                                                         | Deferred      | refactor | complex    |
-| CLI-328 | (was expressive-ts decision 6) `e2e/pages/constants.ts` re-declares production constants inconsistently.                                     | Investigate   | refactor | easy       |
-| CLI-332 | `e2e/commands/new-skill.e2e.test.ts` — 14 tests skipped at file level. Blocked on D-212 or CLI-323.                                          | Ready for Dev | refactor | easy       |
-| CLI-333 | `e2e/commands/new-agent.e2e.test.ts` — 15 tests skipped at file level. Blocked on D-213 or CLI-323.                                          | Ready for Dev | refactor | easy       |
-| CLI-334 | `e2e/commands/new-marketplace.e2e.test.ts` — 14 tests skipped at file level. Blocked on D-214 or CLI-323.                                    | Ready for Dev | refactor | easy       |
-| CLI-335 | `e2e/interactive/init-wizard-filter-incompatible.e2e.test.ts` — 1 test, gated on `FILTER_INCOMPATIBLE`.                                      | Ready for Dev | refactor | easy       |
-| CLI-336 | `e2e/lifecycle/global-skill-filter-incompatible-guard.e2e.test.ts` — 1 test, same flag.                                                      | Ready for Dev | refactor | easy       |
-| CLI-337 | `e2e/interactive/init-wizard-sources-cancel-persists.e2e.test.ts` — 1 test, gated on the settings overlay.                                   | Ready for Dev | refactor | easy       |
-| CLI-338 | E2E: `build plugins` on the E2E source → initial compile produces `plugin.json` at version `1.0.0`.                                          | Done          | refactor | easy       |
-| CLI-339 | E2E: `build plugins` after editing a skill's SKILL.md → version bumps to `2.0.0` for that skill only.                                        | Done          | refactor | easy       |
-| CLI-340 | E2E: `build plugins` with no change → version stays at `2.0.0` (idempotent).                                                                 | Done          | refactor | easy       |
-| CLI-341 | E2E: `build plugins` with multiple skills → only the modified skill's version increments.                                                    | Done          | refactor | easy       |
-| CLI-342 | E2E: `build plugins` then `build marketplace` → `marketplace.json` lists all skills at correct versions.                                     | Done          | refactor | easy       |
-| CLI-343 | E2E: `build marketplace` after a bump → `marketplace.json` reflects the updated version.                                                     | Done          | refactor | easy       |
-| CLI-344 | E2E: `build marketplace` output structure — each entry has `name`, `version`, `source`, `category`.                                          | Done          | refactor | easy       |
-| CLI-345 | E2E: full build → install → modify → rebuild → detect → update chain. Stale — `outdated` no longer exists.                                   | Investigate   | refactor | complex    |
-| CLI-367 | `category` never reaches `marketplace.json` — every marketplace prints `uncategorized: <all>`. Found by CLI-344; an `it.fails` spec pins it. | Ready for Dev | bug      | easy       |
-| CLI-346 | E2E: `update` distinguishes globally-scoped skills from project-scoped ones — `globalResults` is never asserted.                             | Done          | refactor | complex    |
-| CLI-347 | Decide whether to delete `integration/init-end-to-end.integration.test.ts` — covered by init wizard E2E.                                     | Investigate   | refactor | easy       |
-| CLI-348 | Decide whether to delete `integration/init-flow.integration.test.ts` — covered by init wizard E2E.                                           | Investigate   | refactor | easy       |
-| CLI-349 | Decide whether to delete `user-journeys/compile-flow.test.ts` — covered by `compile.e2e.test.ts`.                                            | Investigate   | refactor | easy       |
-| CLI-350 | Decide whether to delete `user-journeys/user-journeys.integration.test.ts` — covered by init/edit E2E.                                       | Investigate   | refactor | easy       |
+| ID      | Task                                                                                                                                              | Status        | Type     | Complexity |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
+| D-235   | E2E gap: `buildProjectTypesExtras` new-domain/category path is uncovered.                                                                         | Ready for Dev | refactor | easy       |
+| D-234   | E2E config inspection via `loadProjectConfig` instead of regex-on-`config.ts`.                                                                    | Done          | refactor | complex    |
+| D-219   | E2E fixture-default ergonomics. [Plan](./plans/D-219-wizard-launcher-default-fixture.md)                                                          | Ready for Dev | refactor | complex    |
+| D-168   | Audit E2E tests — replace manual file construction with CLI commands.                                                                             | Ready for Dev | refactor | complex    |
+| D-111   | Replace E2E text anchors with stable test identifiers.                                                                                            | Investigate   | refactor | complex    |
+| D-64    | Create CLI E2E testing skill + update `cli-framework-oclif-ink`.                                                                                  | Ready for Dev | feature  | complex    |
+| CLI-321 | (was P4-18) Test multiple skill/agent creation — depends on CLI-320.                                                                              | Deferred      | refactor | complex    |
+| CLI-328 | (was expressive-ts decision 6) `e2e/pages/constants.ts` re-declares production constants inconsistently.                                          | Investigate   | refactor | easy       |
+| CLI-335 | `e2e/interactive/init-wizard-filter-incompatible.e2e.test.ts` — 1 test, gated on `FILTER_INCOMPATIBLE`.                                           | Ready for Dev | refactor | easy       |
+| CLI-336 | `e2e/lifecycle/global-skill-filter-incompatible-guard.e2e.test.ts` — 1 test, same flag.                                                           | Ready for Dev | refactor | easy       |
+| CLI-337 | `e2e/interactive/init-wizard-sources-cancel-persists.e2e.test.ts` — 1 test, gated on the settings overlay.                                        | Ready for Dev | refactor | easy       |
+| CLI-338 | E2E: `build plugins` on the E2E source → initial compile produces `plugin.json` at version `1.0.0`.                                               | Done          | refactor | easy       |
+| CLI-339 | E2E: `build plugins` after editing a skill's SKILL.md → version bumps to `2.0.0` for that skill only.                                             | Done          | refactor | easy       |
+| CLI-340 | E2E: `build plugins` with no change → version stays at `2.0.0` (idempotent).                                                                      | Done          | refactor | easy       |
+| CLI-341 | E2E: `build plugins` with multiple skills → only the modified skill's version increments.                                                         | Done          | refactor | easy       |
+| CLI-342 | E2E: `build plugins` then `build marketplace` → `marketplace.json` lists all skills at correct versions.                                          | Done          | refactor | easy       |
+| CLI-343 | E2E: `build marketplace` after a bump → `marketplace.json` reflects the updated version.                                                          | Done          | refactor | easy       |
+| CLI-344 | E2E: `build marketplace` output structure — each entry has `name`, `version`, `source`, `category`.                                               | Done          | refactor | easy       |
+| CLI-386 | (was CLI-367, renumbered — ID collided with the `validateBuildStep` row) `category` never reaches `marketplace.json`; an `it.fails` spec pins it. | Ready for Dev | bug      | easy       |
+| CLI-346 | E2E: `update` distinguishes globally-scoped skills from project-scoped ones — `globalResults` is never asserted.                                  | Done          | refactor | complex    |
 
 ## Tooling, gates & code generation
 
-| ID      | Task                                                                                          | Status           | Type     | Complexity |
-| ------- | --------------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
-| CLI-355 | Enable ESLint `reportUnusedDisableDirectives` — unblocked now the baseline is zero.           | Done             | refactor | easy       |
-| CLI-356 | Adopt `eslint-plugin-react-hooks` for the CLI — an Ink codebase with no hooks linting at all. | Done             | refactor | easy       |
-| CLI-357 | Add a lint guard against task IDs in test names.                                              | Done             | refactor | easy       |
-| CLI-358 | Neither code generator runs in any gate, and `typecheck:scripts` is in no composite gate.     | Done             | refactor | complex    |
-| D-11    | Development hooks for type checking.                                                          | Needs Assistance | feature  | complex    |
+| ID      | Task                                                                                                                                                        | Status           | Type     | Complexity |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
+| CLI-355 | Enable ESLint `reportUnusedDisableDirectives` — unblocked now the baseline is zero.                                                                         | Done             | refactor | easy       |
+| CLI-403 | Pre-commit routes matrix-only commits to the web side, so the CLI suite (which bundles matrix) never runs for them. Hook fix landed on owner go 2026-08-06. | Done             | bug      | easy       |
+| CLI-356 | Adopt `eslint-plugin-react-hooks` for the CLI — an Ink codebase with no hooks linting at all.                                                               | Done             | refactor | easy       |
+| CLI-357 | Add a lint guard against task IDs in test names.                                                                                                            | Done             | refactor | easy       |
+| CLI-358 | Neither code generator runs in any gate, and `typecheck:scripts` is in no composite gate.                                                                   | Done             | refactor | complex    |
+| D-11    | Development hooks for type checking.                                                                                                                        | Needs Assistance | feature  | complex    |
 
 ## Types & code quality
 
@@ -165,23 +162,38 @@ and three unreferenced `agent-findings`.
 
 ## Docs, agents & skills
 
-| ID      | Task                                                                                                      | Status           | Type     | Complexity |
-| ------- | --------------------------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
-| D-237   | Create a GIF demo for the README.                                                                         | Ready for Dev    | feature  | complex    |
-| D-180   | Write a "Bring your own skills" guide.                                                                    | Investigate      | feature  | easy       |
-| D-162   | Skill Olympics — benchmark the expressive-typescript skill.                                               | Investigate      | refactor | complex    |
-| D-138   | Iterate on sub-agents — review and improve all agent definitions.                                         | Ready for Dev    | refactor | complex    |
-| D-66    | AI-assisted PR review: categorize diffs by type.                                                          | Investigate      | feature  | complex    |
-| D-62    | Review default stacks: add reviewing / research / methodology skills.                                     | Ready for Dev    | feature  | complex    |
-| D-52    | Expand the `new agent` command. [Plan](./plans/D-52-expand-new-agent.md)                                  | Ready for Dev    | feature  | complex    |
-| D-41    | Create the `agents-inc` configuration skill. [Plan](./plans/D-41-config-sub-agent.md)                     | Ready for Dev    | feature  | complex    |
-| D-01    | Update skill documentation conventions — folder structure instead of `examples-*.md`.                     | Needs Assistance | refactor | complex    |
-| CLI-317 | (was UX-13) Add readable schemas on sub-agents and skills.                                                | Needs Assistance | feature  | complex    |
-| CLI-319 | (was #19) Sub-agent learning capture system.                                                              | Needs Assistance | feature  | complex    |
-| CLI-351 | Unify the sub-agents across domains, with Meta as the exception — six to add, four to retire.             | Ready for Dev    | refactor | complex    |
-| CLI-360 | Document `lib/skills/source-switcher.ts` and `generators.ts` — the two undocumented `lib/skills` modules. | Ready for Dev    | refactor | easy       |
-| CLI-361 | `scripts/generate-json-schemas.ts` cannot be tested — `generate()` runs at module scope.                  | Ready for Dev    | refactor | easy       |
-| CLI-366 | Snapshot discipline — rule 6.17a's two required snapshots were regenerated to agree with a wrong change.  | Investigate      | refactor | easy       |
+| ID      | Task                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Status                         | Type     | Complexity |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | -------- | ---------- |
+| D-237   | Create a GIF demo for the README.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Ready for Dev                  | feature  | complex    |
+| CLI-462 | DEFERRED — the UI round-trip's CLI half: `edit --ui` serializes the effective install (both scopes, modes, assignments, stack, local skills inline, `source`) into a seed payload, POSTs to the existing configs endpoint, opens the editor URL; `edit --from <id>` applies the returned payload as an ordinary edit through the existing merge/scope/propagation machinery (init --from stays greenfield per CLI-401). Fidelity rule: carry everything or refuse loudly. Editor half is EDITOR-31                                                                                                                                                                                                                                                                                                                                                          | Deferred                       | feature  | complex    |
+| CLI-463 | PARKED to end-game with D-118/CLI-425 (owner direction 2026-08-09): rename `source` → `marketplace` on the user-facing surface (`--source` flag, env var, help, messages). Design decision included: project config already carries a `marketplace` (name) field beside `source` (ref) — reconcile; the skill-level `source` field ("eject" \| name) is provenance, not a marketplace — different name or no rename. Internals follow the surface.                                                                                                                                                                                                                                                                                                                                                                                                          | Parked — end-game rename       | refactor | complex    |
+| CLI-470 | Uninstall honesty + agent provenance (design settled 2026-08-09, owner: hold): (1) the configless removal plan says compiled agents are KEPT and why; (2) the compiler stamps every agent with a BODY-COMMENT marker on the first line after the frontmatter (`<!-- Generated by agents-inc vX — do not edit; compile rewrites this file -->`) — deliberately NOT a frontmatter field: unknown-key tolerance is undocumented (the 16 supported fields are known; a stricter release would break every install), while the body is free-form by contract, greppable, versioned, and doubles as the do-not-edit notice; (3) uninstall's configless path sweeps by marker — provably ours deleted, unmarked kept, both stated. One-time rewrite ripple on next compile acknowledged. Plus the false os.homedir() comment fix. NOT QUEUED — owner will call it. | Ready for Dev — on hold        | bug      | medium     |
+| CLI-472 | Resolves on the owner's next marketplace publish: the missing `meta-reviewing-infra-reviewing` ships and the catalog↔marketplace drift closes. RESIDUAL RULED 2026-08-09: eject KEEPS dying on an unreachable/missing catalog skill — no skip-with-warning; the hard failure is the intended behavior. Remaining action: verify `eject skills` succeeds after the publish, then close.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Waiting on marketplace publish | bug      | easy       |
+| CLI-473 | The init hook resolves a source for a reader that does not exist: `BaseCommand.sourceConfig` has no readers anywhere (finding 2026-08-09). Delete the stash + the hook's dead half, caller-checked. Owner 2026-08-09: DO IT, in a separate session.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Ready for Dev — next session   | refactor | easy       |
+| CLI-474 | The PUBLISHED marketplace ships 17 skills whose `category` the CLI's enum rejects (`api-database` ×16 incl. drizzle/prisma — pulled in by the first two default stacks — and `api-framework` ×1), so a default install's doctor exits 1 (fourth pass, causal control proven). Almost certainly the taxonomy split awaiting the owner's publish — verify green after publishing, else reconcile.                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Waiting on marketplace publish | bug      | medium     |
+| CLI-475 | One unknown category silences EVERY operational check: the content-errors-first skip is unconditional, so rows that read no category (No Orphans, Config Valid, Source Reachable) are suppressed by an unrelated content error — a config-deleted default-stack install never prints its orphan row (fourth pass). Scope the skip to the checks the error can actually cascade into.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Ready for Dev                  | bug      | medium     |
+| CLI-476 | A project-scope edit switching a skill to plugin mode writes `"marketplace"` into the GLOBAL config.ts and does not remove it on the reverse switch (fourth-pass observation) — a project action mutating global state, the CLI-438 containment class one field wide.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Ready for Dev                  | bug      | easy       |
+| CLI-477 | Nothing enforces that every slug in `defaultRules` exists in the default catalog (built-in-catalogue.md invariant 4) — the old warning spam was never a staleness signal, and after CLI-471's narrowing a stale built-in slug vanishes silently for custom sources. One cheap test: every defaultRules slug ∈ the vendored catalog's slugs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Ready for Dev                  | test     | easy       |
+| CLI-467 | DEFERRED (owner 2026-08-09: "we will get to knip later") — the knip deletion rounds: rule the baseline's categories (197 barrel lines, 53 export keywords, 35 zero-ref symbols, 11 devDeps, 3 duplicates, remaining unlisted deps incl. test-side ansis) and execute per class. Baseline: todo/plans/CLI-464-dead-code-baseline-2026-08-09.md. chalk fixed separately 2026-08-09.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Deferred                       | refactor | medium     |
+| CLI-453 | DEFERRED — re-add `new skill`, NOT part of the go-live home stretch (owner 2026-08-09: go live without it, consider later). When built, it mimics the editor's intake flow — which is why it waits for that flow to settle, not the other way round.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Deferred                       | feature  | medium     |
+| CLI-454 | DEFERRED — re-add `new marketplace`: creates the files a directory needs to be registered as a marketplace (metadata layout, marketplace.json, skills/ shape per the validator). `new agent` is NOT returning (owner ruling 2026-08-09).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Deferred                       | feature  | medium     |
+| D-180   | Write a "Bring your own skills" guide.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Investigate                    | feature  | easy       |
+| D-162   | Skill Olympics — benchmark the expressive-typescript skill.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Investigate                    | refactor | complex    |
+| D-138   | Iterate on sub-agents — review and improve all agent definitions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Ready for Dev                  | refactor | complex    |
+| D-66    | AI-assisted PR review: categorize diffs by type.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Investigate                    | feature  | complex    |
+| D-62    | Review default stacks: add reviewing / research / methodology skills.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Ready for Dev                  | feature  | complex    |
+| D-41    | Create the `agents-inc` configuration skill. [Plan](./plans/D-41-config-sub-agent.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Ready for Dev                  | feature  | complex    |
+| D-01    | Update skill documentation conventions — folder structure instead of `examples-*.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Needs Assistance               | refactor | complex    |
+| CLI-317 | (was UX-13) Add readable schemas on sub-agents and skills.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Needs Assistance               | feature  | complex    |
+| CLI-319 | (was #19) Sub-agent learning capture system.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Needs Assistance               | feature  | complex    |
+| CLI-380 | Complete the infra domain roster (developer, pm, researcher, tester) — deferred at CLI-351's landing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Deferred                       | feature  | complex    |
+| CLI-382 | Bind wizard roster constants and test expected-values to `AGENT_NAMES` — additions caught by nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Investigate                    | refactor | easy       |
+| CLI-383 | No stack assigns any ai-domain agent — curate AI stacks now five ai agents exist.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Needs Assistance               | feature  | complex    |
+| CLI-384 | Six shipped agents bake repo-internal paths (`.ai-docs/…`, CLAUDE.md) into product prompts — decide.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Investigate                    | refactor | easy       |
+| CLI-360 | Document `lib/skills/source-switcher.ts` and `generators.ts` — the two undocumented `lib/skills` modules.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Ready for Dev                  | refactor | easy       |
+| CLI-425 | Invariant (owner 2026-08-07): a skill id always includes its category. 33 violations audited; ALL renames parked until the very end. [List](./plans/CLI-425-id-category-violations.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Deferred                       | refactor | complex    |
+| CLI-361 | `scripts/generate-json-schemas.ts` cannot be tested — `generate()` runs at module scope.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Ready for Dev                  | refactor | easy       |
+| CLI-366 | Snapshot discipline — rule 6.17a's two required snapshots were regenerated to agree with a wrong change.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Investigate                    | refactor | easy       |
 
 ---
 
@@ -416,7 +428,7 @@ only valid source is local/eject. The install pipeline then honours the user's s
   `compileAgents`) or an `--install` flag doing the same non-interactively.
 - **`cc list` does not show scaffolded-but-unconfigured skills.** Consider a "Scaffolded (not
   configured)" section reading from `discoverLocalSkills()` minus the ones already in `config.skills`.
-- **`config-types.ts` regresses to a flat listing after a custom-skill install.** Before installing, the
+- **[FIXED by D-228, v0.141.0 — verified 2026-08-06; kept for context only]** **`config-types.ts` regresses to a flat listing after a custom-skill install.** Before installing, the
   project's `config-types.ts` uses the extend-global shape:
 
   ```ts
@@ -553,9 +565,8 @@ Most of what it found was fixed in two same-day rounds (`list` "vplugin" header,
 
 **What was deliberately left open and still is:**
 
-- Two pre-existing `exclusive: true` entries look wrong and need a user call: `shared-monorepo`
-  (turborepo composes on top of pnpm-workspaces, so a radio forbids the canonical combination) and
-  `api-email` (setup-resend + resend-react-email are a setup+usage pair, not alternatives).
+- ~~Two wrong `exclusive: true` entries~~ — resolved 2026-08-06 under CLI-389 decision 3 (owner
+  ruling): `shared-monorepo` and `api-email` are non-exclusive; tests-first, all gates green.
 - Duplicate header: `api-api` and `api-framework` both render "API Framework" in the API grid — Elysia
   sits alone in `api-framework` while its siblings are in `api-api`. Predates the 38 additions.
 - The requires-enforcement model is advisory-only by design; the choice between strict-block,
@@ -732,76 +743,21 @@ directions to discuss before any code: authored cross-category conflicts, condit
 only under a co-selection), machine-readable reasons carried in the data rather than derived, and
 severity tiers (block vs discourage vs warn).
 
----
-
-#### D-215: Config shape simplification — singular-for-exclusive, drop redundant fields
-
-Tighten the emitted `.claude-src/config.ts` so the common case is terse. The loader schema already
-accepts all target shapes (`z.union([element, z.array(element)])` +
-`skillAssignmentElementSchema = z.union([z.string(), skillAssignmentSchema])`) so this is a writer-side +
-type-generator change. No runtime fallback or dual-format shim needed — `edit` rewrites the full config
-on every run, so existing configs auto-upgrade implicitly.
-
-Investigated via a 10-agent parallel sweep. Dropping the domain prefix from category keys was
-**rejected** (5-way collision on `framework`; `tooling` collides under `web-developer`, which references
-both `web-tooling` and `shared-tooling`; `populateFromStack` does a direct `matrix.categories[key]`
-lookup and would silently skip entries).
-
-##### Emission rules
-
-For each category assignment under an agent:
-
-| Category kind  | No flags (`preloaded` falsy, no `local`/`path`) | Any flag set                                      |
-| -------------- | ----------------------------------------------- | ------------------------------------------------- |
-| Exclusive (15) | `"web-framework": "web-framework-react"`        | `"web-framework": { id: "...", preloaded: true }` |
-| Multi (33)     | `"web-styling": ["web-styling-tailwind"]`       | `"web-styling": [{ id: "...", preloaded: true }]` |
-
-Per-category exclusivity is already available via matrix metadata — it drives the writer branch.
-
-##### Field cleanup
-
-- **Drop `ProjectConfig.selectedAgents: AgentName[]`.** Redundant with `agents: AgentScopeConfig[]`,
-  which already carries `{ name, scope, excluded? }`. Hydrate the wizard's in-memory `selectedAgents`
-  from `agents.map(a => a.name)` at load time. The in-memory store split (for tombstone behaviour on
-  globally-installed agents) stays unchanged.
-- **Rename `ProjectConfig.domains` → `selectedDomains`** to match the wizard store field name. Pure rename.
-- **Drop `preloaded: false` emission.** It is the default — `{ id }` round-trips identically. When
-  collapsed with the rules above, most exclusive entries become bare strings and most multi entries
-  become bare-string arrays.
-
-##### Consumers to update
-
-- `config-types-writer.ts` — per-category branch: emit `SkillAssignment<...> | SkillId` for exclusive,
-  `(SkillAssignment<...> | SkillId)[]` for multi. Category exclusivity pulled from matrix metadata.
-- `config-generator.ts` — emit the new shape; collapse bare-string defaults.
-- `config-writer.ts` / `generateConfigSource` — pretty-print the mixed shape cleanly.
-- `default-stacks.ts` — hand-rewrite to the new shape (single source, readable diff).
-- Hydration — `edit.tsx` and `init.tsx` pass `agents.map(a => a.name)` as `initialAgents` instead of
-  `selectedAgents`.
-- `ProjectConfig` in `types/config.ts` and `projectSourceConfigSchema` in `schemas.ts` — remove
-  `selectedAgents`, rename `domains`.
-
-##### Tests to update
-
-Writer-layer assertions that spell literal config shape: `config-round-trip.test.ts` (stack-shape tests),
-`config-generator.test.ts` (several `toStrictEqual` on full stack objects), `define-config.test.ts`,
-`user-journeys.integration.test.ts` (a few inner category-key literals), `config-types-writer.test.ts`.
-
-Reader-layer is shape-tolerant (the schema union is already there and every consumer iterates
-`Object.values` and reads `SkillAssignment.id`), so no read-path tests break.
-
-##### Non-goals
-
-Dropping the domain prefix from category keys (rejected); skill slugs instead of IDs (rejected — slugs
-are not structurally unique); dual-format support / migration shim (unnecessary).
+**Inherited residue (2026-08-07, from CLI-389's completion):** the accumulated `deferredToD306`
+lines in `skill-audit.ts` (30 rows), and the one semantic the surviving vocabulary cannot
+express — **"needs its host CHOSEN, not merely available"** (presence vs possibility), recorded
+in `skills-and-matrix.md` and the finding
+`2026-08-07-requires-closure-cannot-carry-the-whitelist-verdicts.md`. Any future re-add of
+positive-guidance or presence semantics starts from those records.
 
 ---
 
 #### CLI-324 (was expressive-ts decision 2): config-load leniency vs what the types promise
 
-`projectConfigLoaderSchema` parses `agents` / `selectedAgents` / `domains` as plain strings — correct,
+`projectConfigLoaderSchema` parses `agents[].name` and `selectedDomains` as plain strings — correct,
 because custom agents and domains are legal at runtime — then casts to `ProjectConfig`, which promises
-`AgentName[]` / `Domain[]`. So the types claim a narrowness the loader never checks.
+`AgentName` / `Domain[]`. So the types claim a narrowness the loader never checks. (The list shrank
+with D-215: the flat `selectedAgents` field no longer exists.)
 
 _Options:_ (i) honest unions on the config types (`AgentName | (string & {})`); (ii) validate built-ins
 via the currently-dead bridge schemas, with an explicit branch for custom values.
@@ -853,38 +809,6 @@ will not help, because compile only rebuilds against `config.agents`.
 
 **Re-enabling:** once gaps 1–5 are resolved, flip `FEATURE_FLAGS.NEW_AGENT_COMMAND` to `true` and
 un-skip the tests (CLI-333).
-
----
-
-#### D-210: Merge `validate` into `doctor` — single command, layered output
-
-`validate` and `doctor` answer the same question from different layers: "is everything OK?" Content bugs
-`validate` catches (schema errors in installed `metadata.yaml`, broken frontmatter) cascade directly into
-operational failures `doctor` surfaces (unresolved skills, agents not compiled). Two commands for one
-question — users guess which to run.
-
-**Proposed shape:** drop `validate`, extend `doctor` with validate's six sub-passes. One command,
-layered output:
-
-1. **Content validation first**: schema errors with `file:line`. If any fail, print these and skip the
-   operational layer — operational errors are downstream cascades, reporting them adds noise.
-2. **Operational checks second** (only if content is clean): source reachable, agents compiled, orphans,
-   config parse. Tips via `formatTips()` keyed to `CheckKind`.
-3. **One aggregated exit code.** Non-zero on any failure; warnings non-fatal.
-
-**Marketplace-author UX:** running `doctor` from a source-repo dir sees only the content-validation
-section (operational checks no-op because there is no installed state). Same command, different
-contexts — one cognitive slot.
-
-**Migration:** fold `validateSource` and the installed-skills / installed-agents / plugins passes into
-`doctor` as additional `CheckKind` variants; delete `src/cli/commands/validate.ts` and its two test
-files; preserve `validateSource`, `validatePlugin`, `validateAllPlugins` as library functions that
-`doctor` calls; update the README and `docs/reference/commands.md`.
-
-**Open questions:** keep the name `doctor` or rename to something more neutral like `check`? Is there a
-real need for a CI-focused strict-schema-only fast path, and if so is it a subcommand (`doctor schemas`)
-or implicit? Should `validate`'s table-style output be preserved, or fully switched to doctor's
-tip-driven style? Authors may prefer structured output for CI parsing.
 
 ---
 
@@ -1025,21 +949,6 @@ If another flag-gated command is added before D-212 resolves, bump to blocker.
 
 ### Web ↔ CLI integration
 
-#### D-239: Publish the matrix as data
-
-An `export:matrix` script emitting `matrix.json` plus an `AGENT_DEFINITIONS` export. This is the reverse
-direction to CLI-352 and CLI-353: here the CLI is the source of truth and the editor consumes.
-
-Worth being clear about what this does and does not buy. Catalog sync is no longer the reason:
-`packages/matrix` regenerates straight from `packages/cli` and CI fails on a diff, so nothing is waiting
-on a published artifact. What it would buy is ending `generate-from-cli.mjs`'s reach into the CLI's
-TypeScript sources — the vendoring itself, and the requires-bun-not-node constraint that comes with
-importing them. Tidier, and eventually a real package boundary; never the thing that made sync possible.
-
-Full plan: [./plans/D-239-web-ui-shared-matrix-package.md](./plans/D-239-web-ui-shared-matrix-package.md)
-
----
-
 #### CLI-352: A drift guard on the vendored seed contract
 
 `packages/cli/src/cli/lib/seed/seed-schema.ts` is a hand-kept copy of `packages/matrix/src/seed.ts` and
@@ -1079,9 +988,11 @@ Map an installed `ProjectConfig` to a `SeedPayload` and POST it to `api.agentsin
 CLI can mint ids too. Until then only the web creates them — an accepted pre-release limitation; the
 endpoint itself is client-agnostic.
 
-Related but not this item: seeding the web UI from an existing project (`edit --ui` round trip). The
-install dialog's footer already advertises `npx agents-inc edit --ui`; removing that line is tracked on
-the editor side, building the round trip is a separate piece of work that nobody has scheduled.
+The `edit --ui` round trip (seeding the web UI from an existing project) is no longer separate work —
+everything else it needs already exists. The editor consumes shared ids, and the CLI's `lib/seed/`
+already fetches, validates and maps them for `init --from`. Once this item lands, `edit --ui` is a flag
+that composes it: map, POST, open the browser on the returned id. The install dialog no longer
+advertises the flag — EDITOR-04 removed the premature line (landed 2026-08-06, see `archive.md`).
 
 ---
 
@@ -1222,7 +1133,7 @@ Nothing here is a writing task; each is blocked on a flag or a harness gap.
 
 ---
 
-#### CLI-338 to CLI-345: build pipeline — no E2E coverage of version bumping
+#### CLI-338 to CLI-344: build pipeline — no E2E coverage of version bumping
 
 `e2e/commands/plugin-build.e2e.test.ts` runs `build plugins` then `build marketplace` and asserts a
 manifest exists with a `version` of type string. It never asserts a version _value_ or that a version
@@ -1245,13 +1156,6 @@ have unit coverage in `src/cli/lib/versioning.test.ts` and
 - **CLI-344** `build marketplace` output structure → each plugin entry has `name`, `version`, `source`,
   `category`
 
-**CLI-345 — full build pipeline chain (single connected test):** create E2E source → `build plugins` →
-`build marketplace` → install from source → modify skill → `build plugins` → detect the version mismatch
-→ `update --yes` → confirm all current. **Stale as written:** the `outdated` command no longer exists, so
-the detection half of this chain has to be restated against `update` before the test can be written.
-
----
-
 #### CLI-346: `update` — global vs project scope is never asserted
 
 `update.tsx` builds a separate `comparison.globalResults` keyed to `homeDir`, and `globalResults` appears
@@ -1263,24 +1167,6 @@ Carried over from `todo/D-136-test-coverage-gaps.md` (deleted 2026-08-04; this w
 38 that survived the audit).
 
 ---
-
-#### CLI-347 to CLI-350: integration tests awaiting a deletion decision
-
-Reviewed and found redundant with E2E, but deletion was deferred until the E2E suite had proven stable
-across CI runs. CI now runs `bun run test:e2e --filter=@agents-inc/cli` (`.github/workflows/ci.yml`), so
-the precondition is finally measurable. Decide after the suite has a run history.
-
-- **CLI-347** `src/cli/lib/__tests__/integration/init-end-to-end.integration.test.ts` — covered by the
-  init wizard E2E specs
-- **CLI-348** `src/cli/lib/__tests__/integration/init-flow.integration.test.ts` — covered by the init
-  wizard E2E specs
-- **CLI-349** `src/cli/lib/__tests__/user-journeys/compile-flow.test.ts` — covered by
-  `e2e/commands/compile.e2e.test.ts`
-- **CLI-350** `src/cli/lib/__tests__/user-journeys/user-journeys.integration.test.ts` — covered by the
-  init and edit wizard E2E specs
-
-(The fifth file on the original list, `integration/wizard-init-compile-pipeline.test.ts`, has already
-been deleted.)
 
 **Decisions record — integration tests deliberately kept.** Not a task list; do not re-litigate without
 new evidence.
@@ -1465,15 +1351,14 @@ All agent definitions in `src/agents/` should be reviewed and improved using the
 Mode. Each agent was written at a point in time and may not reflect current project conventions,
 CLAUDE.md rules, or lessons learned from the convention-keeper's findings.
 
-| Category  | Agents                                                          |
-| --------- | --------------------------------------------------------------- |
-| Meta      | agent-summoner, skill-summoner, codex-keeper, convention-keeper |
-| Reviewer  | cli-reviewer, web-reviewer, api-reviewer                        |
-| Developer | cli-developer, web-developer                                    |
-| Tester    | cli-tester, web-tester                                          |
-| Pattern   | web-pattern-critique, pattern-scout                             |
-| Planning  | web-pm                                                          |
-| Research  | web-researcher                                                  |
+| Category  | Agents                                                                |
+| --------- | --------------------------------------------------------------------- |
+| Meta      | agent-summoner, skill-summoner, codex-keeper, convention-keeper       |
+| Reviewer  | web-reviewer, api-reviewer, ai-reviewer, cli-reviewer, infra-reviewer |
+| Developer | web-developer, api-developer, ai-developer, cli-developer             |
+| Tester    | web-tester, api-tester, ai-tester, cli-tester                         |
+| Planning  | web-pm, api-pm, ai-pm, cli-pm                                         |
+| Research  | web-researcher, api-researcher, ai-researcher, cli-researcher         |
 
 **For each agent:** read the current source files (`metadata.yaml`, `intro.md`, `workflow.md`,
 `critical-requirements.md`, `output-format.md`, `critical-reminders.md`, `examples.md`); cross-reference
@@ -1488,7 +1373,11 @@ triggers, output format gaps, missing domain knowledge that would prevent common
 
 **Approach:** 2-3 agents per session. Start with the most-used (cli-developer, cli-tester, cli-reviewer).
 
-Note the overlap with CLI-351, which changes the agent roster itself.
+The roster was unified 2026-08-05 (CLI-351 in `archive.md`): 25 agents, five roles ×
+web/api/ai/cli, plus Meta and `infra-reviewer`. The five agents created that day already reflect
+current conventions, as do the same-day fixes to `api-researcher` (handoffs,
+`<post_action_reflection>`) and `skill-summoner` (double-wrap, misplaced self-correction block) —
+this item now covers the systematic pass over the older definitions.
 
 ---
 
@@ -1555,32 +1444,49 @@ example `examples/core.md`, `patterns/testing.md`). Update Section 8 of
 
 ---
 
-#### CLI-351: Unify the sub-agents across domains, with Meta as the exception
+#### CLI-380: Complete the infra domain roster
 
-The design already draws the finished state. `screens/04-skill-panel.png` is a full
-`developer · pm · reviewer · tester` × `web · api · ai · cli · infra` field with every cell present, and
-Meta held out beneath it behind its own `＋` fold because its five agents are not role-shaped. Against
-that target, today's 23 agents are ragged in two directions:
+Deferred when the roster was unified (2026-08-05 — CLI-351 in [`archive.md`](./archive.md)): the
+five-role grid is uniform across web/api/ai/cli; infra kept only `infra-reviewer`. Completing it
+means `infra-developer`, `infra-pm`, `infra-researcher`, `infra-tester` via the same process
+(agent-summoner Create Mode + current platform docs + prompt-bible + role siblings as models),
+plus the same wiring surfaces: union regen, a `DOMAIN_AGENTS` `infra` key, a grid group, stack
+curation, docs.
 
-| Domain  | Has                                                             | Missing                     |
-| ------- | --------------------------------------------------------------- | --------------------------- |
-| `web`   | all four, plus `architecture`, `pattern-critique`, `researcher` | —                           |
-| `api`   | all four, plus `researcher`                                     | —                           |
-| `ai`    | `developer`, `reviewer`                                         | `pm`, `tester`              |
-| `cli`   | `developer`, `reviewer`, `tester`                               | `pm`                        |
-| `infra` | `reviewer`                                                      | `developer`, `pm`, `tester` |
-| `meta`  | five non-role agents — the exception, unchanged                 | —                           |
+---
 
-So: **six agents to add** (`ai-pm`, `ai-tester`, `cli-pm`, `infra-developer`, `infra-pm`, `infra-tester`)
-and **four extras to retire or fold into a role** (`web-architecture`, `web-pattern-critique`,
-`web-researcher`, `api-researcher`).
+#### CLI-382: Bind the roster surfaces to `AGENT_NAMES`
 
-The editor is already built against the target, so landing it is mostly a data change here: the `⋮` panel
-renders the whole 5 × 4 grid today, so the six new agents just make their currently-inert cells live with
-no UI change; `default-assignments.ts` already targets the four core roles, so selecting an AI or Infra
-skill starts reaching four agents instead of two and one; the roster's `x of y` badges move, and the two
-§8 adaptation rows in the editor spec covering the ragged agents and the inert gap cells can both be
-deleted.
+Findings `2026-08-05-builtin-agent-rosters-unbound-to-generated-agent-names.md` and
+`2026-08-05-roster-expectations-pinned-by-count-not-by-name.md`. Four surfaces must agree — the
+generated union, `DOMAIN_AGENTS`, `BUILT_IN_AGENT_GROUPS`, and the shared test expected-values —
+but only deletions self-check via `tsc`; **additions are caught by nothing**, which is how four
+valid agents (`ai-developer`, `ai-reviewer`, `api-pm`, `api-tester`) shipped unreachable in the
+wizard until 2026-08-05. The two wizard constants are file-local, so no test can bind them today;
+exporting them collides with the no-export-without-a-second-caller rule unless the identity-key
+exception is read to cover roster constants two surfaces must agree on. That reading is the
+decision.
+
+---
+
+#### CLI-383: No stack assigns any ai-domain agent
+
+Observed during the roster wiring: `ai-developer` and `ai-reviewer` appear in zero stacks — even
+`nextjs-ai-saas` routes its AI skills through `api-developer`/`api-researcher` — and the three new
+ai agents inherited that emptiness. Selecting the AI domain therefore preselects five agents that
+no stack seeds with skills. Needs owner curation (which stacks, which of the 20+ `ai-*` marketplace
+skills, per role). Related: D-62 (meta skills in stacks), D-280 (stack pruning).
+
+---
+
+#### CLI-384: Repo-internal paths in shipped agent prompts
+
+Finding `2026-08-05-built-in-agent-partials-instruct-users-to-write-into-repo-internal-paths.md`:
+eleven partials across six pre-existing shipped agents instruct compiled agents to write to
+`.ai-docs/agent-findings/` or cite CLAUDE.md — paths that do not exist in an installing project.
+The five agents created 2026-08-05 deliberately omit them, so the roster is split on policy;
+`/specs/_active/current.md` was judged a product convention and kept everywhere. Decide: strip the
+references from the six older agents, or make the paths a real, documented product convention.
 
 ---
 
@@ -1621,9 +1527,10 @@ a review rule against bare `-u` runs, a CI check, or snapshot files that are har
 - Source marketplace: `/home/vince/dev/skills`
 - CLI under test: `packages/cli`
 
-#### CLI-367: `category` is dropped on the way into `marketplace.json`
+#### CLI-386: `category` is dropped on the way into `marketplace.json`
 
-Found while writing CLI-344's spec. The skill's own `metadata.yaml` carries a category, but
+(Was CLI-367; renumbered 2026-08-05 — that ID was accidentally assigned twice and the
+`validateBuildStep` row keeps it.) Found while writing CLI-344's spec. The skill's own `metadata.yaml` carries a category, but
 `compileSkillPlugin` reads that file only for `author`, `PluginManifest` has no category field, and
 `convertManifestToMarketplacePlugin` (`src/cli/lib/marketplace-generator.ts`) never sets one. The
 command's own summary shows the consequence: `getMarketplaceStats` groups by `p.category ??
@@ -1632,3 +1539,166 @@ An `it.fails` spec in `e2e/commands/plugin-build-versioning.e2e.test.ts` pins th
 green the moment a category reaches the entry.
 
 ---
+
+#### CLI-385: Commit the agent restructure
+
+(Was briefly filed as CLI-368; renumbered — that ID landed the same day and is in `archive.md`.)
+
+The 2026-08-05 roster unification (CLI-351, CLI-368…373 in [`archive.md`](./archive.md)) is
+**complete in the working tree and green, but none of it is committed.** The snapshot this item
+originally recorded is resolved: `packages/matrix` is regenerated at 25 definitions (so
+`check-web`'s catalog diff is clean), the removed agents are purged from every prompt and every
+test (`config-generator.test.ts` included), the editor's stale comment is fixed, and the gates
+pass — `tsc` clean on all three configs, 4854 unit tests, targeted e2e green.
+
+**What remains is exactly one thing: land it as one commit**, including the untracked
+`agent-findings` files created alongside the work. The five new agents are unpublished until a
+release carries them — `src/agents/` ships in the package, so this is user-visible, not internal.
+
+---
+
+### Rulings and audits, 2026-08-06
+
+#### CLI-392 to CLI-396: TypeScript-strictness audit findings
+
+From the 2026-08-06 repo-wide audit (zero `any` in production — the looseness is structural).
+Full detail in the session transcript; headlines:
+
+- **CLI-392** — sparse maps declared total: `loadAgentsFromDir`, `resolveAgents`,
+  `write-compiled-agents`, `config-gate/deps.ts` (`NO_AGENTS = Promise.resolve({} as Record<…>)`,
+  a verbatim CLAUDE.md NEVER violation) and ~16 more declare `Record<AgentName, …>` for maps
+  built from directory scans and subsets. The code already guards for absent keys the type says
+  cannot exist. Fix: `Partial<Record<…>>` per typescript-types-bible §4.
+- **CLI-393** — enable `tseslint.configs.recommendedTypeChecked` (start with packages/cli, which
+  already configures `projectService`). Known catch: `apps/server` serves
+  `c.json(JSON.parse(stored))` on a route whose OpenAPI contract declares `seedPayloadSchema` —
+  unvalidated `any` to a typed response. Needs owner decision on rollout order.
+- **CLI-394** — `packages/cli/tsconfig.json` is the only workspace not extending
+  `@workspace/typescript-config`; with no `lib` set, DOM globals (`name`, `status`, `open`…) are
+  in scope in a Node CLI. `node.json` exists and is the right base. No recorded reason (checked
+  the moving commits).
+- **CLI-395** — `packages/matrix/src/schema.ts` types every id as `z.string()`; thirteen
+  uncommented casts in the read models restore the unions. The generated `SKILL_IDS` /
+  `CATEGORIES` / `AGENT_NAMES` tuples exist for exactly this (`z.enum` needs readonly tuples) and
+  are vendored into the package unused. Includes the `STACK_PRELOADS` type-laundering round trip
+  in `expandStack`.
+- **CLI-396** — the standards prescribed `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`
+  until a docs-consolidation commit deleted the file carrying them; no decision recorded.
+  Evidence the codebase expects the former: `step-agents.tsx` writes `focusableIds[0]!`
+  (currently a no-op), and eight editor call sites `?.`-guard lookups whose types claim they
+  cannot miss. Needs owner decision — enabling repo-wide is a large mechanical diff.
+
+Smaller siblings recorded in the audit for whoever picks these up: `SubAgent` re-widens
+`model`/`flavor` to `string` (matrix read-model); `Catalog.skillsById` should be
+`Partial<Record<SkillId, …>>`; three hand-maintained copies of the model union (CLI, editor,
+seed schema) with no cross-check; two production `as unknown as` in `base-command.ts`/`hooks/init.ts`
+fixable as single assertions; the editor types agent ids as `string` in ~20 signatures though the
+roster is closed and `AgentName` is importable.
+
+#### CLI-397 / CLI-398 / CLI-399: the reviewer/PM audit outcomes
+
+From the 2026-08-06 reviewer audit (full report in the session transcript). CLI-397 repairs the
+over-engineering pressure in place: an APPROVE-with-zero-issues worked example, a cost gate before
+"Should Fix", the inverse failure named in critical-reminders ("a speculative refactor suggestion
+is as much a review failure as a missed bug"), cli-reviewer's "Don't Mention" / "APPROVE when"
+blocks ported to all five, the React.memo and "not in spec, but recommended" exemplars deleted,
+and a cost gate added to `meta-reviewing-reviewing` itself. Applies whether or not CLI-398 lands.
+
+CLI-398 (LANDED 2026-08-06 — see archive) consolidated the five domain reviewers into one
+`reviewer` agent.
+**Loading design (owner discussion, 2026-08-06):** the process skill
+(`meta-reviewing-reviewing`) stays PRELOADED on the reviewer; the domain skills
+(`meta-reviewing-web/api/ai/infra` — to be written from the current checklists; the cli one
+exists) are LAZY, listed in the activation protocol and loaded per-diff by what the change
+touches. Context stays base + relevant domains regardless of the project's domain count, and no
+irrelevant checklist is resident — the audit's over-engineering fuel. The sparse preload mapping
+already expresses this per-skill; no new machinery. Consolidation touches the roster surfaces
+enumerated in the audit (AGENT_NAMES regeneration, DOMAIN_AGENTS, BUILT_IN_AGENT_GROUPS,
+`domainOf()` placement for a prefixless name, default-stacks merge, editor coreAgentIds, test
+expected-values); PRELOAD_DEFAULTS needs no change (flavor-keyed).
+
+CLI-399 (deferred) stages the same question for the four PMs after CLI-398 proves the pattern —
+their domain playbooks are genuine content (a migration into `meta-planning-*` skills, not a
+deletion); their bloat mandates ("comprehensive and thorough", "at least 3 similar
+implementations", fixed 28KB templates) get softened under CLI-397's repair pass meanwhile.
+
+#### CLI-403: the pre-commit dependency hole (corrected 2026-08-06)
+
+The original row text was wrong: all three vitest projects (unit, integration, commands) run in
+every gate — pre-commit, CI and prepublish all execute unfiltered `vitest run` (142 files,
+verified green). The 5 invisible-red integration specs were a delegation-brief artifact, not a
+repo-gate gap.
+
+The REAL hole: `.husky/pre-commit` classifies staged paths at package granularity — only
+`^packages/cli/` sets `run_cli=yes`, and everything else under `packages/` runs as
+`--filter='!agents-inc'`, which excludes the CLI. But `packages/cli` devDepends on
+`@workspace/matrix` and tsup bundles it, so a matrix-only commit (exactly the preload-mapping
+case) changes the CLI without ever running its suite. CI does not share the hole. Fix drafted
+(additive, never narrows): matrix-staged paths also set `run_cli=yes`, with a comment naming the
+bundling dependency. The hook is owner-curated, so the edit waits for an explicit go.
+
+Also done under this row: the stale "CURRENTLY RED, deliberately" JSDoc in
+`init-end-to-end.integration.test.ts` rewritten to describe today's behavior (propagation +
+recompile now happen inside the gated write; `propagatedProjects` no longer exists).
+
+#### CLI-412: no custom category — real taxonomy membership (owner ruling, 2026-08-06)
+
+**Parked by the owner the same day: "I will tackle this another time as it needs good testing."
+CLI-407 to CLI-413 are all Deferred; the design below is settled and waiting.**
+
+The fork is closed by rejecting both branches: **there is no `custom` category.** "These are the
+reasons the feature was parked — if you're going to do this you should do it right."
+
+The design:
+
+- **Adding a skill ends with a category assignment.** After scaffolding (`new skill`) or import,
+  the flow asks for the skill's domain and category. AI may SUGGEST both (from the skill's
+  name/body); the user must CONFIRM. The skill then appears alongside its related skills in the
+  ordinary grid — no orphan section, no pseudo-category, no `dummy-*` placeholder ever written.
+- **Typing tightens, not loosens.** Because every custom skill carries a real `Domain` and
+  `Category`, the `validateCategoryField` leniency for `custom: true` (any kebab-case string) is
+  DELETED — category validates against the union for custom skills exactly as for built-ins.
+  Category auto-synthesis for custom skills dies with it (supersedes the D-214 item-8 scoping:
+  instead of scoping synthesis TO custom skills, there is nothing left to synthesize).
+- **Provenance is a filter, not a place:** `custom: true` powers a "custom skills only" filter in
+  the editor (deferred row EDITOR-22) and can drive a badge — it never affects placement.
+- **Install mode:** eject is the default and the only option for LOCAL custom skills (nothing
+  backs them — the CLI-408 hard error). But a custom skill that a registered marketplace actually
+  backs keeps the ordinary plugin/eject choice — the restriction follows from what exists, not
+  from the `custom` flag itself. (Third-party marketplace import is D-14's territory; this rule
+  is what it plugs into.)
+- The `local` pseudo-category remains what it is today (a trapdoor for uncategorized discoveries)
+  but custom skills never land there — CLI-409's fix makes the scaffold/import flows incapable of
+  producing a `local`-categorized custom skill.
+
+#### CLI-399 / CLI-416 / CLI-417: state at the 2026-08-06 API-limit interruption
+
+The CLI-399 agent reported its implementation complete (four `meta-planning-*` skills authored in
+the skills repo, PM playbooks slimmed to process + JIT loading, mapping/category regeneration)
+and was cut mid-verification by the weekly API limit. Outstanding when it died: the final full
+e2e re-run, the real-binary scratch-HOME check (a web+cli project compiles web-pm/cli-pm with
+their planning skills lazy in the activation protocol), and the planning-column thinning
+PROPOSAL table — now delivered at
+[`plans/CLI-399-planning-thinning-proposal.md`](./plans/CLI-399-planning-thinning-proposal.md)
+(keep 35 breadth rows, demote 72 depth rows; owner reviews before any demotion executes).
+Post-interruption verification by the orchestrator: full CLI vitest 6330 green, matrix 179,
+editor 193, tsc ×3 + eslint clean; the one e2e failure traced to the stack additions referencing
+UNPUBLISHED skills (the default-source flow plugin-installs from the published marketplace) —
+stack membership for `meta-planning-*` reverts until the skills repo publishes them; the lazy
+reach rule already delivers them to PMs. Rule recorded: built-in stacks may only reference
+published marketplace skills.
+
+Open rulings gathered in one place:
+
+- **CLI-416** — meta-design reach: for meta-domain skills a mapping row is both eagerness AND
+  targeting, so the thinning pass didn't just make `meta-design-expressive-typescript` /
+  `meta-design-composable-components` lazy for the reviewer — the reviewer no longer receives
+  them at all. Finding:
+  `2026-08-06-demoting-a-meta-rows-reviewer-flavor-removes-its-reach-not-just-its-eagerness.md`.
+- **CLI-417** — sources-step wording ("Use all recommended skills (verified)") survived CLI-404
+  as a separate feature; rename needs a ruling.
+- Still pending from earlier today, listed here for one-stop review: CLI-400 (stack preload flags
+  migrate into the mapping or stay the override tier), CLI-413 (custom flag never reaches
+  config.ts — investigate), EDITOR-03's three-way fork and the deferred custom-skill stages
+  (CLI-407..413, EDITOR-15..22), EDITOR-11's exclusive-downgrade narrowing (the incompatibility
+  half), and the CLI-389 fan-out's owner checkpoints.

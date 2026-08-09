@@ -250,16 +250,18 @@ Source: `src/cli/lib/schemas.ts` line 50 (`DOMAIN_VALUES`)
 web, api, cli, mobile, shared
 ```
 
-### 5.3 Valid Agent Names (18 values)
+### 5.3 Valid Agent Names (25 values)
 
-Source: `src/cli/lib/schemas.ts` lines 114-133
+Source: `AGENT_NAMES` in `src/cli/types/generated/source-types.ts` (regenerate with
+`npm run generate:types`; roster unified 2026-08-05)
 
 ```
-web-developer, api-developer, cli-developer, web-architecture,
-agent-summoner, codex-keeper, convention-keeper, skill-summoner, cli-migrator,
-pattern-scout, web-pattern-critique, web-pm, api-researcher,
-web-researcher, api-reviewer, cli-reviewer, web-reviewer,
-cli-tester, web-tester
+web-developer, api-developer, ai-developer, cli-developer,
+web-pm, api-pm, ai-pm, cli-pm,
+web-researcher, api-researcher, ai-researcher, cli-researcher,
+web-reviewer, api-reviewer, ai-reviewer, cli-reviewer, infra-reviewer,
+web-tester, api-tester, ai-tester, cli-tester,
+agent-summoner, skill-summoner, codex-keeper, convention-keeper
 ```
 
 ### 5.4 SkillId Format

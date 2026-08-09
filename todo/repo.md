@@ -3,7 +3,8 @@
 Outstanding work on the repository itself: getting CI green again, deploying, tool versions,
 external service names, and what this repository publishes. Its sibling trackers: the
 configurator is [`editor.md`](./editor.md), the site is [`www.md`](./www.md), the API worker is
-[`server.md`](./server.md), and the CLI is [`cli.md`](./cli.md).
+[`server.md`](./server.md), the CLI is [`cli.md`](./cli.md), and the skills marketplace is
+[`skills.md`](./skills.md).
 
 **An item is deleted when it lands rather than ticked off**, so everything below is still open.
 There is no done column and nothing is struck through. Landed items get one line each in
@@ -18,11 +19,12 @@ workarounds Ink used to force, the safety-net gaps, the shipped test files and t
 all landed 2026-08-05; see `archive.md`. What remains is the apex path split (WWW-03 in `www.md`) and items
 awaiting a decision. Nothing here depends on order.
 
-| ID                                                                   | Task                                                                             | Status           | Type     | Complexity |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
-| REPO-24 (new, 2026-08-04)                                            | Drop the `@agents-inc/cli/config` jiti alias once nobody is on the old package   | Investigate      | refactor | easy       |
-| REPO-07 (was monorepo-merge "Delete ~/dev/agents-inc-web-monorepo")  | Delete the old web monorepo once this repository is trusted                      | Needs Assistance | refactor | easy       |
-| REPO-09 (was monorepo-merge "Decide what a local `.env` should say") | A local `.env` can ship a live site whose every request goes to your own machine | Parked           | bug      | easy       |
+| ID                                                                   | Task                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Status           | Type     | Complexity |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
+| REPO-24 (new, 2026-08-04)                                            | Drop the `@agents-inc/cli/config` jiti alias once nobody is on the old package                                                                                                                                                                                                                                                                                                                                                                                              | Investigate      | refactor | easy       |
+| REPO-37 (new, 2026-08-09)                                            | DEFERRED (owner: a refactor investigation that would throw the roadmap out for no obvious benefit now) — wire dependency-cruiser: `deps:graph` script emitting Mermaid + JSON of real module edges, rules encoding the documented boundaries, drift-check against dependency-graph.md/boundary-map.md, then ONE assessment round producing a findings-only architecture report (cycles, layering violations, fan-in hotspots) for owner rulings. Pairs with CLI-464 (knip). | Deferred         | feature  | medium     |
+| REPO-07 (was monorepo-merge "Delete ~/dev/agents-inc-web-monorepo")  | Delete the old web monorepo once this repository is trusted                                                                                                                                                                                                                                                                                                                                                                                                                 | Needs Assistance | refactor | easy       |
+| REPO-09 (was monorepo-merge "Decide what a local `.env` should say") | A local `.env` can ship a live site whose every request goes to your own machine                                                                                                                                                                                                                                                                                                                                                                                            | Parked           | bug      | easy       |
 
 ---
 
