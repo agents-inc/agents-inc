@@ -19,7 +19,7 @@ All 9 static factories:
 | Method                                                | Returns                  | Use When                                                                                                                                                                      |
 | ----------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ProjectBuilder.minimal()`                            | `ProjectHandle`          | Compile tests. Creates config + 1 skill (`web-testing-vitest`).                                                                                                               |
-| `ProjectBuilder.editable(options?)`                   | `ProjectHandle`          | Edit wizard tests. Creates config + skills + agents dir. `EditableOptions`: `skills`, `agents`, `domains`, `stack`, `forkedFrom`, `globalSkills`.                             |
+| `ProjectBuilder.editable(options?)`                   | `ProjectHandle`          | Edit wizard tests. Creates config + skills + agents dir. `EditableOptions`: `skills`, `agents`, `domains`, `stack`, `forkedFrom`, `globalSkills`, `unresolvableSkills`.       |
 | `ProjectBuilder.dualScope(options?)`                  | `DualScopeHandle`        | Dual-scope non-interactive tests. Creates `globalHome` + `project` with separate configs. `DualScopeOptions`: `globalSkill`, `projectSkills`, `projectStack`, `projectSkill`. |
 | `ProjectBuilder.dualScopeWithImport()`                | `DualScopeHandle`        | Dual-scope state for import/migration flows — the worked example of encapsulating complex setup in a factory rather than inlining it.                                         |
 | `ProjectBuilder.withCustomSkill()`                    | `ProjectHandle`          | Custom skill validation. Creates config + config-types.ts + custom skill with `custom: true`.                                                                                 |
@@ -34,9 +34,21 @@ All 9 static factories:
 
 **`editable({ forkedFrom: true })`** writes `FORKED_FROM_METADATA` as each skill's `metadata.yaml`, marking them CLI-managed so `uninstall` removes them instead of skipping them as user-created.
 
+**`editable({ unresolvableSkills })` / `pluginProject({ unresolvableSkills })` record config entries with NO files on disk.** That is how a project genuinely reaches "the wizard cannot resolve this skill": the session's source does not carry it and the install has no copy. Installing it with a deliberately broken `metadata.yaml` does NOT produce that state and must not be used to fake it — a local skill whose `metadata.yaml` describes it is merged into the matrix and offered like any other, and `compile` hard-errors on one whose `metadata.yaml` does not.
+
 **When 3+ tests share a setup pattern not covered by these methods, add a new `ProjectBuilder` method rather than duplicating setup logic across test files.**
 
 ---
+
+## A Fixture Writes Content the Product Could Have Written
+
+A fixture that writes a file no product path produces cannot fail for a reason the product has — and it will pass or fail for reasons the product does not have, which is worse. `renderMetadataYaml` therefore fills the four fields `localRawMetadataSchema` requires (`displayName`, `slug`, `category`, `domain`) whenever the caller does not name them; a `metadata.yaml` without them describes no skill, and `compile` refuses the run over one.
+
+- **Never write an incomplete `metadata.yaml` by omission.** `renderIncompleteMetadataYaml(fields, ["category"])` is the only way to produce one, and it exists so an error-path fixture has to ask for the breakage by name.
+- **Never fake an error state with unrealistic content when a realistic setup produces the same state.** 82 of 100 `renderMetadataYaml` call sites once wrote metadata no product path produces; six specs across four files turned out to depend on that, having made a skill "unresolvable" by installing it with metadata the loader could not use.
+- **A fixture writer that already holds a field must write it.** Two writers dropped `category`, `slug` and `displayName` that their own `TestSkill` carried.
+
+See `.ai-docs/agent-findings/2026-08-08-parseable-but-incomplete-skill-metadata-still-splits-the-two-compile-passes.md`.
 
 ## DRY for Setup
 
@@ -56,17 +68,17 @@ Signs you need a fixture helper (not `ProjectBuilder`):
 
 ## Source Fixtures
 
-The E2E source is an expensive fixture (creates 9 skills, 2 agents, 1 stack, templates on disk). Create it once per `describe` block and share across tests.
+The E2E source is an expensive fixture (creates 10 skills, 2 agents, 1 stack, templates on disk). Create it once per `describe` block and share across tests.
 
 **`createE2ESource(options?)`** -- Creates a full skills source with:
 
-| Content   | Details                                                                                                                                                                             |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 9 skills  | `web-framework-react`, `web-testing-vitest`, `web-state-zustand`, `web-framework-vue-composition-api`, `web-state-pinia`, `api-framework-hono`, 3x `meta-{methodology,reviewing}-*` |
-| 3 domains | web, api, meta                                                                                                                                                                      |
-| 2 agents  | web-developer, api-developer                                                                                                                                                        |
-| 1 stack   | "E2E Test Stack"                                                                                                                                                                    |
-| Templates | `agent.liquid` template                                                                                                                                                             |
+| Content   | Details                                                                                                                                                                                                              |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 10 skills | `web-framework-react`, `web-testing-vitest`, `web-state-zustand`, `web-framework-vue-composition-api`, `web-state-pinia`, `web-testing-visual-regression`, `api-framework-hono`, 3x `meta-{methodology,reviewing}-*` |
+| 3 domains | web, api, meta                                                                                                                                                                                                       |
+| 2 agents  | web-developer, api-developer                                                                                                                                                                                         |
+| 1 stack   | "E2E Test Stack"                                                                                                                                                                                                     |
+| Templates | `agent.liquid` template                                                                                                                                                                                              |
 
 Returns `{ sourceDir, tempDir }`. The `tempDir` is the parent -- clean it up in `afterAll`.
 
@@ -74,7 +86,7 @@ Returns `{ sourceDir, tempDir }`. The `tempDir` is the parent -- clean it up in 
 
 ### The fixture's cardinality is smaller than production's, and that changes bug signatures
 
-**One stack and nine skills, against a real marketplace carrying a dozen stacks and many more skills.** For most specs this is irrelevant. For any spec about **overflow, clipping, scrolling, or column geometry** it is the central fact, because how far a size-dependent defect reaches scales with list length — and it is currently discoverable only by reading `e2e/helpers/create-e2e-source.ts`.
+**One stack and ten skills, against a real marketplace carrying a dozen stacks and many more skills.** For most specs this is irrelevant. For any spec about **overflow, clipping, scrolling, or column geometry** it is the central fact, because how far a size-dependent defect reaches scales with list length — and it is currently discoverable only by reading `e2e/helpers/create-e2e-source.ts`.
 
 Worked example. The stack step bled at the advertised minimum height: the six-row ASCII logo starved the list's viewport below `SCROLL_VIEWPORT.MIN_VIEWPORT_ROWS`, the shared scroll gate stopped clipping, and rows painted over whatever was below. Against the real marketplace at 100x20 the overpaint reaches the footer:
 
@@ -92,9 +104,26 @@ Consequences for spec authors:
 
 See `.ai-docs/agent-findings/2026-07-31-e2e-fixture-smaller-than-production-changes-the-bug-signature.md`.
 
+### What a default install takes, and what is left to add
+
+A default install (`completeWithDefaults` / `completeWithLocalSources`) takes the stack's roster —
+**seven** of the ten skills: react, vitest, zustand, hono, research-methodology, reviewing,
+cli-reviewing. Three are left, and only one of them can be ADDED by a later edit:
+
+| Left behind                         | Addable by an edit?                                                           |
+| ----------------------------------- | ----------------------------------------------------------------------------- |
+| `web-testing-visual-regression`     | **Yes** — `web-testing` is not exclusive, and no agent's stack claims it      |
+| `web-state-pinia`                   | No — exclusive alternate of `web-state-zustand`; Space swaps, it does not add |
+| `web-framework-vue-composition-api` | No — exclusive alternate of `web-framework-react`; same                       |
+
+A spec whose subject is "an edit adds a skill" must use the spare. Pressing Space on an exclusive
+alternate is a swap whose net effect on a count is zero, which is how `init-then-edit-merge` spent
+its whole life passing over an edit that did nothing — see
+`.ai-docs/agent-findings/2026-08-08-init-then-edit-merge-cannot-add-a-skill.md`.
+
 ### Before Extending Fixtures
 
-Before adding a new skill, agent, stack, or mapping to `createE2ESource` / `createE2EPluginSource`, grep the fixture for the entity you're being asked to add. The canonical inventory (9 skills, 2 agents, 1 stack -- see the table above) is defined in `e2e/helpers/create-e2e-source.ts` and already covers most mixed-domain and multi-skill-per-agent scenarios.
+Before adding a new skill, agent, stack, or mapping to `createE2ESource` / `createE2EPluginSource`, grep the fixture for the entity you're being asked to add. The canonical inventory (10 skills, 2 agents, 1 stack -- see the table above) is defined in `e2e/helpers/create-e2e-source.ts` and already covers most mixed-domain and multi-skill-per-agent scenarios.
 
 - Grep/read the fixture first. If the entity (skill ID, agent name, skill-to-agent mapping) is already present, skip the extension and note it in the report.
 - Only extend when genuinely absent. Redundant fixture data obscures the fixture's actual contract and confuses later readers.
@@ -230,41 +259,41 @@ await CLI.run(["compile"], project);
 
 These are still exported and used in some tests. Matchers are preferred for assertions, but these exist for edge cases where no matcher covers the need:
 
-| Export                                                                                          | Purpose                                                                                                                                                              |
-| ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FORKED_FROM_METADATA`                                                                          | Standard `forkedFrom` metadata block for plugin/uninstall tests                                                                                                      |
-| `listFiles(dirPath)`                                                                            | `readdir` wrapper, returns `[]` on error instead of throwing                                                                                                         |
-| `readTestFile(filePath)`                                                                        | `readFile(path, "utf-8")` wrapper                                                                                                                                    |
-| `readMarketplaceJson(outputPath)`                                                               | Parse a generated `marketplace.json` into `Marketplace` (for `build marketplace` / `new marketplace` tests)                                                          |
-| `agentsPath(dir)`                                                                               | Path to `.claude/agents/` in a project                                                                                                                               |
-| `skillsPath(dir)`                                                                               | Path to `.claude/skills/` in a project                                                                                                                               |
-| `configTsPath(dir)` / `configTypesTsPath(dir)`                                                  | Paths to `.claude-src/config.ts` and `config-types.ts` (project OR global scope dir)                                                                                 |
-| `getEjectedTemplatePath(dir)`                                                                   | Path to the ejected `agent.liquid` template                                                                                                                          |
-| `stripAnsi(text)`                                                                               | Strips ANSI escape sequences (rarely needed -- CLI.run pre-strips)                                                                                                   |
-| `createLocalSkill(dir, id, opts?)`                                                              | Creates a skill directory with SKILL.md + optional metadata.yaml                                                                                                     |
-| `writeProjectConfig(dir, config)`                                                               | Writes `.claude-src/config.ts` (used internally by ProjectBuilder). Emits ONLY config.ts.                                                                            |
-| `writeConfigTypes(dir)`                                                                         | Writes a minimal `config-types.ts` stub — pair with `writeProjectConfig` when the test asserts on the companion file (e.g. uninstall manifest removal)               |
-| `writeAgentFile(dir, name, opts?)`                                                              | Writes `<dir>/.claude/agents/<name>.md`. Bare `# <name>` heading by default; `opts.frontmatter` prefixes a `name:` block.                                            |
-| `writeAgentStubs(dir, agents)`                                                                  | Writes minimal compiled-agent stubs, as a prior `compile` would leave behind                                                                                         |
-| `createPermissionsFile(dir)`                                                                    | Ensures `.claude/settings.json` grants `Read(*)`. **MERGES, never overwrites** — preserves `enabledPlugins` / `extraKnownMarketplaces`; hard-errors on invalid JSON. |
-| `seedDefaultSourceCache(homeDir, sourceDir)`                                                    | Copies a source into the CLI cache for `DEFAULT_SOURCE` under `homeDir`, so the public-marketplace fallback resolves from disk instead of the network                |
-| `addForkedFromMetadata(dir)`                                                                    | Writes forkedFrom metadata to the default web-framework-react skill                                                                                                  |
-| `injectMarketplaceIntoConfig(dir, name)`                                                        | Patches a marketplace field into an existing config.ts                                                                                                               |
-| `loadConfigOrFail(dir)`                                                                         | Structurally loads a scope's `config.ts`; throws when absent or unparseable (no silent empty-config fallback)                                                        |
-| `readAgentEntriesFor(dir, agentName)`                                                           | Loads a scope's config and returns every `AgentScopeConfig` with that name                                                                                           |
-| `completeWithLocalSources(wizard)`                                                              | Drives init end-to-end with every source switched to local (`l` on the Sources step). Required by tests asserting on `.claude/skills/` contents.                     |
-| `delay(ms)`                                                                                     | Framework-internal wait utility (not for use in test `it()` blocks)                                                                                                  |
-| `pollUntil(isSatisfied, timeoutMs, buildError)`                                                 | Framework-internal poll skeleton behind every `TerminalScreen` wait (predicate evaluated before the first delay)                                                     |
-| `ensureBinaryExists()`                                                                          | Verifies `bin/run.js` exists, throws if not                                                                                                                          |
-| `BIN_RUN` / `CLI_ROOT`                                                                          | Absolute paths to the built binary and the repository root                                                                                                           |
-| `createE2ESource` / `E2E_SKILL_TITLES` / `E2E_AGENT_TITLES` / type `E2ESource`                  | Re-exports from create-e2e-source.ts. The `*_TITLES` maps ARE the text the wizard renders — key label assertions off them.                                           |
-| `renderSkillMd` / `renderConfigTs` / `renderAgentYaml` / `renderAgentMd` / `renderMetadataYaml` | Re-exports from `content-generators.ts`. **Always use these** instead of inlining fixtures.                                                                          |
-| `normalizeGlobalConfig` / `writeTestPackageJson`                                                | Re-exports from the unit-test helper tree (`helpers/config-comparison.ts`, `helpers/config-io.ts`)                                                                   |
-| `fileExists(path)` / `directoryExists(path)` / `cleanupTempDir(dir)`                            | Re-exports from `test-fs-utils.ts`                                                                                                                                   |
-| `isClaudeCLIAvailable()`                                                                        | Re-export from exec.ts -- checks if the Claude CLI binary is available                                                                                               |
-| `claudePluginInstall(...)` / `claudePluginUninstall(...)`                                       | Re-exports from exec.ts                                                                                                                                              |
-| `claudePluginMarketplaceAdd(...)` / `claudePluginMarketplaceList(...)`                          | Re-exports from exec.ts                                                                                                                                              |
-| `execCommand(cmd)`                                                                              | Re-export from exec.ts -- general command execution                                                                                                                  |
+| Export                                                                                                                           | Purpose                                                                                                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FORKED_FROM_METADATA`                                                                                                           | Standard `forkedFrom` metadata block for plugin/uninstall tests                                                                                                      |
+| `listFiles(dirPath)`                                                                                                             | `readdir` wrapper, returns `[]` on error instead of throwing                                                                                                         |
+| `readTestFile(filePath)`                                                                                                         | `readFile(path, "utf-8")` wrapper                                                                                                                                    |
+| `readMarketplaceJson(outputPath)`                                                                                                | Parse a generated `marketplace.json` into `Marketplace` (for `build marketplace` tests)                                                                              |
+| `agentsPath(dir)`                                                                                                                | Path to `.claude/agents/` in a project                                                                                                                               |
+| `skillsPath(dir)`                                                                                                                | Path to `.claude/skills/` in a project                                                                                                                               |
+| `configTsPath(dir)` / `configTypesTsPath(dir)`                                                                                   | Paths to `.claude-src/config.ts` and `config-types.ts` (project OR global scope dir)                                                                                 |
+| `getEjectedTemplatePath(dir)`                                                                                                    | Path to the ejected `agent.liquid` template                                                                                                                          |
+| `stripAnsi(text)`                                                                                                                | Strips ANSI escape sequences (rarely needed -- CLI.run pre-strips)                                                                                                   |
+| `createLocalSkill(dir, id, opts?)`                                                                                               | Creates a skill directory with SKILL.md + optional metadata.yaml                                                                                                     |
+| `writeProjectConfig(dir, config)`                                                                                                | Writes `.claude-src/config.ts` (used internally by ProjectBuilder). Emits ONLY config.ts.                                                                            |
+| `writeConfigTypes(dir)`                                                                                                          | Writes a minimal `config-types.ts` stub — pair with `writeProjectConfig` when the test asserts on the companion file (e.g. uninstall manifest removal)               |
+| `writeAgentFile(dir, name, opts?)`                                                                                               | Writes `<dir>/.claude/agents/<name>.md`. Bare `# <name>` heading by default; `opts.frontmatter` prefixes a `name:` block.                                            |
+| `writeAgentStubs(dir, agents)`                                                                                                   | Writes minimal compiled-agent stubs, as a prior `compile` would leave behind                                                                                         |
+| `createPermissionsFile(dir)`                                                                                                     | Ensures `.claude/settings.json` grants `Read(*)`. **MERGES, never overwrites** — preserves `enabledPlugins` / `extraKnownMarketplaces`; hard-errors on invalid JSON. |
+| `seedDefaultSourceCache(homeDir, sourceDir)`                                                                                     | Copies a source into the CLI cache for `DEFAULT_SOURCE` under `homeDir`, so the public-marketplace fallback resolves from disk instead of the network                |
+| `addForkedFromMetadata(dir)`                                                                                                     | Writes forkedFrom metadata to the default web-framework-react skill                                                                                                  |
+| `injectMarketplaceIntoConfig(dir, name)`                                                                                         | Patches a marketplace field into an existing config.ts                                                                                                               |
+| `loadConfigOrFail(dir)`                                                                                                          | Structurally loads a scope's `config.ts`; throws when absent or unparseable (no silent empty-config fallback)                                                        |
+| `readAgentEntriesFor(dir, agentName)`                                                                                            | Loads a scope's config and returns every `AgentScopeConfig` with that name                                                                                           |
+| `completeWithLocalSources(wizard)`                                                                                               | Drives init end-to-end with every source switched to local (`l` on the Sources step). Required by tests asserting on `.claude/skills/` contents.                     |
+| `delay(ms)`                                                                                                                      | Framework-internal wait utility (not for use in test `it()` blocks)                                                                                                  |
+| `pollUntil(isSatisfied, timeoutMs, buildError)`                                                                                  | Framework-internal poll skeleton behind every `TerminalScreen` wait (predicate evaluated before the first delay)                                                     |
+| `ensureBinaryExists()`                                                                                                           | Verifies `bin/run.js` exists, throws if not                                                                                                                          |
+| `BIN_RUN` / `CLI_ROOT`                                                                                                           | Absolute paths to the built binary and the repository root                                                                                                           |
+| `createE2ESource` / `E2E_SKILL_TITLES` / `E2E_AGENT_TITLES` / type `E2ESource`                                                   | Re-exports from create-e2e-source.ts. The `*_TITLES` maps ARE the text the wizard renders — key label assertions off them.                                           |
+| `renderSkillMd` / `renderConfigTs` / `renderAgentYaml` / `renderAgentMd` / `renderMetadataYaml` / `renderIncompleteMetadataYaml` | Re-exports from `content-generators.ts`. **Always use these** instead of inlining fixtures.                                                                          |
+| `normalizeGlobalConfig` / `writeTestPackageJson`                                                                                 | Re-exports from the unit-test helper tree (`helpers/config-comparison.ts`, `helpers/config-io.ts`)                                                                   |
+| `fileExists(path)` / `directoryExists(path)` / `cleanupTempDir(dir)`                                                             | Re-exports from `test-fs-utils.ts`                                                                                                                                   |
+| `isClaudeCLIAvailable()`                                                                                                         | Re-export from exec.ts -- checks if the Claude CLI binary is available                                                                                               |
+| `claudePluginInstall(...)` / `claudePluginUninstall(...)`                                                                        | Re-exports from exec.ts                                                                                                                                              |
+| `claudePluginMarketplaceAdd(...)` / `claudePluginMarketplaceList(...)`                                                           | Re-exports from exec.ts                                                                                                                                              |
+| `execCommand(cmd)`                                                                                                               | Re-export from exec.ts -- general command execution                                                                                                                  |
 
 ---
 

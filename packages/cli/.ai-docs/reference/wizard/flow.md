@@ -1,18 +1,7 @@
 ---
 scope: reference
 area: wizard
-keywords:
-  [
-    wizard,
-    steps,
-    components,
-    hooks,
-    feature-flags,
-    edit-mode,
-    keyboard-navigation,
-    framework-filtering,
-    hotkeys,
-  ]
+keywords: [wizard, steps, components, hooks, edit-mode, keyboard-navigation, hotkeys]
 related:
   - reference/wizard/state-transitions.md
   - reference/wizard/store-map.md

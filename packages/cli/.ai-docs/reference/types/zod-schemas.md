@@ -6,7 +6,7 @@ related:
   - reference/types/core-types.md
   - reference/architecture/overview.md
   - reference/config/configuration.md
-last_validated: 2026-08-01
+last_validated: 2026-08-09
 ---
 
 # Zod Schema Reference
@@ -15,21 +15,26 @@ last_validated: 2026-08-01
 
 ## Zod Schemas
 
-All schemas in `src/cli/lib/schemas.ts`. Zod major version **4** (`"zod": "^4.3.6"` in `package.json`) — `.passthrough()` and `.strict()` are still the idioms in use; the file does not use `z.looseObject` / `z.strictObject`.
+All schemas in `src/cli/lib/schemas.ts`. Zod major version **4** (`"zod": "^4.4.3"` in `package.json`) — `.passthrough()` and `.strict()` are still the idioms in use; the file does not use `z.looseObject` / `z.strictObject`.
 
-**36 exported schemas total**, verified by counting `export const *Schema` declarations in source. Breakdown, which sums to the total:
+**34 exported schemas**, re-derived 2026-08-09 by counting `export const *Schema` declarations in
+source (`grep -cE "^export const [a-zA-Z]+Schema" src/cli/lib/schemas.ts`). **The breakdown below
+does not sum to it** — it totals 36 and predates this re-derivation; the drift is older than the
+`sourceRevalidationSchema` row added for CLI-465, which is the only membership change made here.
+Whoever next validates this doc owns re-deriving the four sub-counts and their membership together,
+in one pass; correcting the total alone is what produced this state.
 
 | Table                                                                        | Count  |
 | ---------------------------------------------------------------------------- | ------ |
 | [Bridge](#bridge-schemas-union-type-validation)                              | 5      |
 | [Loader](#loader-schemas-lenient-passthrough)                                | 8      |
-| [Structural](#structural-schemas-data-shapes)                                | 16     |
+| [Structural](#structural-schemas-data-shapes)                                | 15     |
 | [Strict validation](#strict-validation-schemas-strict-reject-unknown-fields) | 7      |
-| **Total**                                                                    | **36** |
+| **Total (as last counted, stale)**                                           | **35** |
 
-> **This doc's scope is `src/cli/lib/schemas.ts` only** (see the first line of this section), so the count above is narrower than "every Zod schema in the CLI". `src/cli/lib/seed/seed-schema.ts` is a Zod schema **outside** this doc's scope — see [features/seed-contract.md](../features/seed-contract.md). Ten of the schemas below are additionally emitted as JSON Schema by `scripts/generate-json-schemas.ts`, and the JSON-Schema-visible shape differs from the Zod shape in specific ways (`superRefine` invisible, `as z.ZodType<T>` casts invisible, plain `z.object` closing to `additionalProperties: false`) — see [features/code-generation.md](../features/code-generation.md).
+> **This doc's scope is `src/cli/lib/schemas.ts` only** (see the first line of this section), so the count above is narrower than "every Zod schema in the CLI". The seed wire contract is a Zod schema **outside** this doc's scope, and outside this package: it lives in `packages/matrix/src/seed.ts`, imported as `@workspace/matrix/seed` — see [features/seed-contract.md](../features/seed-contract.md). Ten of the schemas below are additionally emitted as JSON Schema by `scripts/generate-json-schemas.ts`, and the JSON-Schema-visible shape differs from the Zod shape in specific ways (`superRefine` invisible, `as z.ZodType<T>` casts invisible, plain `z.object` closing to `additionalProperties: false`) — see [features/code-generation.md](../features/code-generation.md).
 
-`schemas.ts` also exports one type (`ImportedSkillMetadata`), one type (`MetadataIssueSplit`), and five functions — see [Utility Functions](#utility-functions).
+`schemas.ts` also exports one type (`MetadataIssueSplit`) and seven functions (`formatZodIssues`, `validateSkillMetadata`, `describeMetadataSchemaFailure`, `splitMetadataValidationIssues`, `validateNestingDepth`, `isCustomMetadata`, `warnUnknownFields`) — see [Utility Functions](#utility-functions).
 
 ### Bridge Schemas (union type validation)
 
@@ -66,7 +71,7 @@ The rationale is written inline in source at `skillFrontmatterLoaderSchema`:
 // Lenient: accepts any string for `name` since local/custom skills may not follow strict SkillId pattern
 ```
 
-**`SKILL_IDS` is not imported.** It was an unused import removed's dead-code pass; its removal is a no-op for validation, not a loosening — nothing had ever enum-checked a skill ID. Do not "restore" it: adding `z.enum(SKILL_IDS)` to any of the four schemas above would reject every local and custom skill at its parse boundary.
+**`SKILL_IDS` is not imported.** `schemas.ts` imports `SKILL_SLUGS` and `CATEGORIES` and nothing else from `../types/generated/source-types`. Its absence is not a loosening — nothing here has ever enum-checked a skill ID. Do not "restore" it: adding `z.enum(SKILL_IDS)` to any of the four schemas above would reject every local and custom skill at its parse boundary.
 
 ### Loader Schemas (lenient, `.passthrough()`)
 
@@ -79,7 +84,8 @@ The rationale is written inline in source at `skillFrontmatterLoaderSchema`:
 | `localRawMetadataSchema`       | Local skill metadata.yaml | `.passthrough()` + superRefine        |
 | `localSkillMetadataSchema`     | Local skill forkedFrom    | `.passthrough()`                      |
 | `settingsFileSchema`           | settings.yaml             | `.passthrough()`                      |
-| `importedSkillMetadataSchema`  | Imported skill metadata   | `.passthrough()`                      |
+
+`localRawMetadataSchema` is the schema behind the **single judgment of whether a `metadata.yaml` describes its skill**: `readSkillMetadata` (`lib/loading/loader.ts`) runs it after the YAML parse, and `compile`, the `config-types.ts` regeneration pass and `doctor` all take their verdict from that one call. `doctor` layers `validateSkillMetadata`'s stricter published-skill checks on the fields it returns, never beside them.
 
 The `superRefine` on `skillMetadataLoaderSchema` and `localRawMetadataSchema` is the module-internal `validateCategoryField`: it delegates to `categoryPathSchema` by default, and requires only kebab-case when the record carries `custom: true`. `matrixRawMetadataSchema` (Structural table) deliberately does **not** run it — see its doc comment in source.
 
@@ -87,24 +93,23 @@ The `superRefine` on `skillMetadataLoaderSchema` and `localRawMetadataSchema` is
 
 ### Structural Schemas (data shapes)
 
-| Schema                      | Validates                         | Pattern                                     |
-| --------------------------- | --------------------------------- | ------------------------------------------- |
-| `matrixRawMetadataSchema`   | Raw metadata.yaml (matrix loader) | `z.object()` (no passthrough / superRefine) |
-| `skillCategoriesFileSchema` | skill-categories.ts               | `z.object()`                                |
-| `skillRulesFileSchema`      | skill-rules.ts                    | `z.object()`                                |
-| `stacksConfigSchema`        | stacks.ts                         | `z.object()`                                |
-| `marketplaceSchema`         | marketplace.json                  | Bridge pattern                              |
-| `pluginManifestSchema`      | plugin.json                       | Bridge pattern                              |
-| `agentYamlConfigSchema`     | agent metadata.yaml               | Bridge pattern                              |
-| `boundSkillSchema`          | BoundSkill                        | Bridge pattern                              |
-| `skillAssignmentSchema`     | SkillAssignment                   | Bridge pattern                              |
-| `stackAgentConfigSchema`    | Stack agent config record         | `z.record()` + union                        |
-| `pluginAuthorSchema`        | PluginAuthor                      | Bridge pattern                              |
-| `compatibilityGroupSchema`  | CompatibilityGroup                | Bridge pattern                              |
-| `agentHookActionSchema`     | AgentHookAction                   | Bridge pattern                              |
-| `agentHookDefinitionSchema` | AgentHookDefinition               | Bridge pattern                              |
-| `hooksRecordSchema`         | Hooks record (lenient)            | `z.record()` + array                        |
-| `strictHooksRecordSchema`   | Hooks record (strict)             | `z.record()` + min(1)                       |
+| Schema                      | Validates                           | Pattern                                     |
+| --------------------------- | ----------------------------------- | ------------------------------------------- |
+| `matrixRawMetadataSchema`   | Raw metadata.yaml (matrix loader)   | `z.object()` (no passthrough / superRefine) |
+| `skillCategoriesFileSchema` | skill-categories.ts                 | `z.object()`                                |
+| `skillRulesFileSchema`      | skill-rules.ts                      | `z.object()`                                |
+| `stacksConfigSchema`        | stacks.ts                           | `z.object()`                                |
+| `marketplaceSchema`         | marketplace.json                    | Bridge pattern                              |
+| `pluginManifestSchema`      | plugin.json                         | Bridge pattern                              |
+| `agentYamlConfigSchema`     | agent metadata.yaml                 | Bridge pattern                              |
+| `skillAssignmentSchema`     | SkillAssignment                     | Bridge pattern                              |
+| `stackAgentConfigSchema`    | Stack agent config record           | `z.record()` + union                        |
+| `pluginAuthorSchema`        | PluginAuthor                        | Bridge pattern                              |
+| `agentHookActionSchema`     | AgentHookAction                     | Bridge pattern                              |
+| `agentHookDefinitionSchema` | AgentHookDefinition                 | Bridge pattern                              |
+| `hooksRecordSchema`         | Hooks record (lenient)              | `z.record()` + array                        |
+| `strictHooksRecordSchema`   | Hooks record (strict)               | `z.record()` + min(1)                       |
+| `sourceRevalidationSchema`  | `<cacheDir>.etag.json` fetch record | `z.object()`                                |
 
 ### Strict Validation Schemas (`.strict()`, reject unknown fields)
 
@@ -126,47 +131,46 @@ Schema bridge pattern: `z.enum(GENERATED_ARRAY) as z.ZodType<UnionType>` ensures
 
 Enumerated exhaustively — a schema absent from both this list and the four tables above does not exist in `schemas.ts`.
 
-| Schema                            | Used by                                                                                         |
-| --------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `strictAgentHookDefinitionSchema` | `strictHooksRecordSchema`                                                                       |
-| `pluginManifestObjectSchema`      | `pluginManifestSchema` (lenient) + `pluginManifestValidationSchema` (`.strict()`)               |
-| `skillAssignmentElementSchema`    | `stackAgentConfigSchema` (bare-string-or-object union)                                          |
-| `categoryDefinitionSchema`        | `skillCategoriesFileSchema`                                                                     |
-| `skillRefInRules`                 | Alias of `skillSlugSchema` used inside the rule schemas                                         |
-| `skillGroupRuleSchema`            | Backs `conflictRuleSchema`, `discourageRuleSchema`, and the exported `compatibilityGroupSchema` |
-| `conflictRuleSchema`              | `relationshipDefinitionsSchema`                                                                 |
-| `discourageRuleSchema`            | `relationshipDefinitionsSchema`                                                                 |
-| `recommendationSchema`            | `relationshipDefinitionsSchema`                                                                 |
-| `requireRuleSchema`               | `relationshipDefinitionsSchema`                                                                 |
-| `alternativeGroupSchema`          | `relationshipDefinitionsSchema`                                                                 |
-| `relationshipDefinitionsSchema`   | `skillRulesFileSchema`                                                                          |
-| `stackSchema`                     | `stacksConfigSchema`                                                                            |
-| `marketplaceRemoteSourceSchema`   | `marketplacePluginSchema`                                                                       |
-| `marketplacePluginSchema`         | `marketplaceSchema`                                                                             |
-| `marketplaceOwnerSchema`          | Alias of `pluginAuthorSchema`; `marketplaceSchema`                                              |
-| `marketplaceMetadataSchema`       | `marketplaceSchema`                                                                             |
-| `permissionConfigSchema`          | `settingsFileSchema`                                                                            |
-| `brandingConfigSchema`            | `projectSourceConfigSchema`                                                                     |
-| `forkedFromSchema`                | `skillMetadataBaseSchema`                                                                       |
-| `skillMetadataBaseSchema`         | `metadataValidationSchema` + `customMetadataValidationSchema`                                   |
-| `stackSkillAssignmentSchema`      | `stackConfigValidationSchema`                                                                   |
+| Schema                            | Used by                                                                           |
+| --------------------------------- | --------------------------------------------------------------------------------- |
+| `strictAgentHookDefinitionSchema` | `strictHooksRecordSchema`                                                         |
+| `pluginManifestObjectSchema`      | `pluginManifestSchema` (lenient) + `pluginManifestValidationSchema` (`.strict()`) |
+| `skillAssignmentElementSchema`    | `stackAgentConfigSchema` (bare-string-or-object union)                            |
+| `categoryDefinitionSchema`        | `skillCategoriesFileSchema`                                                       |
+| `skillRefInRules`                 | Alias of `skillSlugSchema` used inside the rule schemas                           |
+| `skillGroupRuleSchema`            | Backs `conflictRuleSchema` and `discourageRuleSchema`                             |
+| `conflictRuleSchema`              | `relationshipDefinitionsSchema`                                                   |
+| `discourageRuleSchema`            | `relationshipDefinitionsSchema`                                                   |
+| `requireRuleSchema`               | `relationshipDefinitionsSchema`                                                   |
+| `alternativeGroupSchema`          | `relationshipDefinitionsSchema`                                                   |
+| `relationshipDefinitionsSchema`   | `skillRulesFileSchema`                                                            |
+| `stackSchema`                     | `stacksConfigSchema`                                                              |
+| `marketplaceRemoteSourceSchema`   | `marketplacePluginSchema`                                                         |
+| `marketplacePluginSchema`         | `marketplaceSchema`                                                               |
+| `marketplaceOwnerSchema`          | Alias of `pluginAuthorSchema`; `marketplaceSchema`                                |
+| `marketplaceMetadataSchema`       | `marketplaceSchema`                                                               |
+| `permissionConfigSchema`          | `settingsFileSchema`                                                              |
+| `brandingConfigSchema`            | `projectSourceConfigSchema`                                                       |
+| `forkedFromSchema`                | `skillMetadataBaseSchema`                                                         |
+| `skillMetadataBaseSchema`         | `metadataValidationSchema` + `customMetadataValidationSchema`                     |
+| `stackSkillAssignmentSchema`      | `stackConfigValidationSchema`                                                     |
 
 ### Utility Functions
 
 All exported from `src/cli/lib/schemas.ts`.
 
-| Function                        | Signature                                                         | Purpose                                                                                             |
-| ------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `formatZodIssues`               | `(issues: z.ZodIssue[]) => string`                                | Joins issues into `path: message; path: message`. Delegates per-issue to internal `formatZodIssue`. |
-| `validateSkillMetadata`         | `(rawMetadata: unknown) => SafeParseReturn`                       | Picks `customMetadataValidationSchema` vs `metadataValidationSchema` via `isCustomMetadata()`.      |
-| `splitMetadataValidationIssues` | `(error: z.ZodError, rawMetadata: unknown) => MetadataIssueSplit` | Splits a strict-metadata failure into hard `errors` and advisory `warnings` (see below).            |
-| `validateNestingDepth`          | `(value: unknown, maxDepth: number) => boolean`                   | Guards untrusted JSON/YAML nesting at security-critical boundaries (marketplace, settings).         |
-| `isCustomMetadata`              | `(raw: unknown) => boolean`                                       | True when the record declares `custom: true`.                                                       |
-| `warnUnknownFields`             | see source                                                        | Logs unknown keys surviving a `.passthrough()` parse.                                               |
+| Function                        | Signature                                                                | Purpose                                                                                                                                                                                                                            |
+| ------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `formatZodIssues`               | `(issues: z.ZodIssue[]) => string`                                       | Joins issues into `path: message; path: message`. Delegates per-issue to internal `formatZodIssue`.                                                                                                                                |
+| `describeMetadataSchemaFailure` | `(issues: z.ZodIssue[], rawMetadata: Record<string, unknown>) => string` | Names a `metadata.yaml` failure in plain words: absent required fields as `missing required fields: a, b`, everything else per field. Absence is read off `rawMetadata`, not off Zod's message — a v4 issue carries no `received`. |
+| `validateSkillMetadata`         | `(rawMetadata: unknown) => SafeParseReturn`                              | Picks `customMetadataValidationSchema` vs `metadataValidationSchema` via `isCustomMetadata()`.                                                                                                                                     |
+| `splitMetadataValidationIssues` | `(error: z.ZodError, rawMetadata: unknown) => MetadataIssueSplit`        | Splits a strict-metadata failure into hard `errors` and advisory `warnings` (see below).                                                                                                                                           |
+| `validateNestingDepth`          | `(value: unknown, maxDepth: number) => boolean`                          | Guards untrusted JSON/YAML nesting at security-critical boundaries (marketplace, settings).                                                                                                                                        |
+| `isCustomMetadata`              | `(raw: unknown) => boolean`                                              | True when the record declares `custom: true`.                                                                                                                                                                                      |
+| `warnUnknownFields`             | see source                                                               | Logs unknown keys surviving a `.passthrough()` parse.                                                                                                                                                                              |
 
 **Exported types:**
 
-- `ImportedSkillMetadata` — parse-result shape of `importedSkillMetadataSchema` (`forkedFrom?` plus arbitrary passthrough keys).
 - `MetadataIssueSplit` — `{ errors: string[]; warnings: string[] }`, the return of `splitMetadataValidationIssues`.
 
 ### `cliDescription` — Advisory Over-Length
@@ -176,4 +180,4 @@ All exported from `src/cli/lib/schemas.ts`.
 - `splitMetadataValidationIssues` partitions the `ZodError` with the internal predicate `isOverLengthCliDescription` (`issue.code === "too_big"` at path `["cliDescription"]`) and routes only that issue into `warnings`, carrying the value's actual length in the message.
 - `min(1)` (empty or missing) and every other issue stay hard `errors`.
 
-Rationale: the runtime loader schemas accept any length and the value only feeds wizard description text, so a long description must not fail a healthy install. Consumers: `src/cli/commands/validate.ts` and `src/cli/lib/source-validator.ts` — both destructure `{ errors, warnings }` from it.
+Rationale: the runtime loader schemas accept any length and the value only feeds wizard description text, so a long description must not fail a healthy install. Consumers: `src/cli/lib/content-validator.ts` (the skills row of `doctor`'s content layer) and `src/cli/lib/source-validator.ts` — both destructure `{ errors, warnings }` from it.

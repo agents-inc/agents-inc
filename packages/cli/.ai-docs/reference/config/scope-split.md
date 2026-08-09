@@ -32,12 +32,12 @@ last_validated: 2026-07-30
 
 ## The Two Split Surfaces
 
-| Function | File | Purpose |
-| ------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `splitConfigByScope` | `src/cli/lib/configuration/config-generator.ts` | Partitions a merged `ProjectConfig` into `{ global, project }` halves on `scope` + `excluded`. |
-| `scopeEligibilityKey` | `src/cli/lib/configuration/config-generator.ts` | Encodes `(agent, skillId)` as `"${agent}                                                                               | ${skillId}"` for set-membership lookups in the stack builder. |
-| `computeNewlyAddedSkillIds` | `src/cli/lib/installation/local-installer.ts` (private) | Diff: skill ids active in current config but not in prior. Feeds `generateProjectConfigFromSkills.newlyAddedSkillIds`. |
-| `computeScopeEligibilityGained` | `src/cli/lib/installation/local-installer.ts` (private) | Diff: `(agent, skill)` pairs whose scope-compatibility flipped from incompatible to compatible this session. |
+| Function                        | File                                                    | Purpose                                                                                                                |
+| ------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `splitConfigByScope`            | `src/cli/lib/configuration/config-generator.ts`         | Partitions a merged `ProjectConfig` into `{ global, project }` halves on `scope` + `excluded`.                         |
+| `scopeEligibilityKey`           | `src/cli/lib/configuration/config-generator.ts`         | Encodes `(agent, skillId)` as `"${agent}\|${skillId}"` for set-membership lookups in the stack builder.                |
+| `computeNewlyAddedSkillIds`     | `src/cli/lib/installation/local-installer.ts` (private) | Diff: skill ids active in current config but not in prior. Feeds `generateProjectConfigFromSkills.newlyAddedSkillIds`. |
+| `computeScopeEligibilityGained` | `src/cli/lib/installation/local-installer.ts` (private) | Diff: `(agent, skill)` pairs whose scope-compatibility flipped from incompatible to compatible this session.           |
 
 The delta helpers do not partition the config — they compute the sets that `shouldIncludeTriple` inside the stack builder consults. They live alongside `splitConfigByScope` in this doc because both are project-context pipeline plumbing between merger output and writer input.
 
@@ -75,14 +75,24 @@ An agent is omitted from its partition's stack when no category slot survives (l
 
 `globalSkillIds` is derived from the post-partition global `skills` array — it contains ONLY active globals, so a tombstone for a global skill does not count as "global" when filtering stack entries. A global agent that referenced a now-tombstoned global skill will see that reference drop out of the global stack and reappear in the project stack (carrying the reference to the project side where the tombstone lives).
 
+**Invariant — a row in `projectStack` under a GLOBAL agent does not survive the write.** The split is not the last word on `projectStack`. `partitionInlinedConfigEntries` in `src/cli/lib/configuration/config-writer.ts` re-filters it to **project-scoped agents only** (its `filteredStack` step, keyed on the active project agents' names), because a global agent's stack entries belong in the global config. The two filters are keyed differently and the gap between them is silent:
+
+| Row `splitAgentStack` put in `projectStack` | Agent's partition | Survives `filteredStack`? |
+| ------------------------------------------- | ----------------- | ------------------------- |
+| Project agent's entries (all skill scopes)  | project           | Yes                       |
+| Global agent's non-global skill references  | global            | **No — dropped**          |
+
+The second row is reachable: a `(project skill, global sub-agent)` assignment is what produces it. It is not in the global half either, since `splitAgentStack` keeps only assignments whose skill id is in `globalSkillIds` on that side — so the curation is in neither file and nothing reports the loss. The config model forbids that pair (`isScopePairCompatible` in `config-generator.ts`, "project skills never reach global agents") and `buildAgentStack` filters it out before it can land, so the ownership-derived path never reaches this. The path that did was `init --from`, whose payload replaced the derived stack wholesale; it now throws at decode naming both halves of every unwritable pair rather than splitting and dropping. See [features/seed-contract.md](../features/seed-contract.md) → "An unwritable `(skill, sub-agent)` pair throws". **Reading the split alone tells you those rows survive; they do not.**
+
 ### Scalar / Array Fields
 
-| Field            | Global split                                                                           | Project split                                                                   |
-| ---------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `name`           | `"global"` (literal)                                                                   | `config.name` (preserved)                                                       |
-| `domains`        | `config.domains` (copied)                                                              | `undefined` (project inherits at runtime)                                       |
-| `selectedAgents` | names in the global agent partition, or `undefined` when that side is empty            | names NOT in the global agent partition, or `undefined` when that side is empty |
-| everything else  | `...config` spread (descriptions, author, source, marketplace, agentsSource, projects) | `...config` spread                                                              |
+| Field             | Global split                                                                           | Project split                             |
+| ----------------- | -------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `name`            | `"global"` (literal)                                                                   | `config.name` (preserved)                 |
+| `selectedDomains` | `config.selectedDomains` (copied)                                                      | `undefined` (project inherits at runtime) |
+| everything else   | `...config` spread (descriptions, author, source, marketplace, agentsSource, projects) | `...config` spread                        |
+
+There is no per-split selected-agent list: `ProjectConfig` carries no flat agent-name field, and each half's selected set is derived from its own non-excluded `agents` rows via `activeAgentNames` in `src/cli/lib/configuration/scope-predicates.ts`.
 
 The `...config` spread copies every remaining scalar/array to BOTH splits — including `projects`. The authoritative copy is in whichever split the caller writes. In practice the project branch of `writeScopedFromWizard` overwrites `effectiveGlobalConfig` from an `existing`-spread path, so the duplicated `projects` in `globalConfig` never reaches disk.
 
@@ -102,7 +112,7 @@ The tombstone routing is also what keeps one failure mode tractable: the symptom
 Order in the `cc edit` project-context pipeline:
 
 1. Wizard emits `newConfig` with dual-scope pairs when scope toggles produce tombstones.
-2. `mergeConfigs(newConfig, existingProjectConfig, { authoritativeScope: "owned", unresolvableSkillIds })` reconciles via compound keys. `newConfig` is authoritative for every referenced name/id; under `"owned"` authority a project-owned entry that is absent from `newConfig` was deselected and is dropped (unresolvable skills exempt — see [config-merger.md](./config-merger.md)). Output: `finalConfig` carrying both active and tombstone rows where applicable.
+2. `mergeConfigs(newConfig, existingProjectConfig, { authoritativeScope: "owned" })` reconciles via compound keys. `newConfig` is authoritative for every referenced name/id; under `"owned"` authority a project-owned entry that is absent from `newConfig` was deselected and is dropped (unresolvable skills exempt — see [config-merger.md](./config-merger.md)). Output: `finalConfig` carrying both active and tombstone rows where applicable.
 3. `splitConfigByScope(finalConfig)` → `{ globalSplit, projectSplit }`. Active globals and active global agents to `globalSplit`; everything else (project, tombstones) to `projectSplit`.
 4. `mergeGlobalConfigs(existingGlobalConfig, globalSplit)` is **additive** — existing wins, incoming only appends. `globalSplit` carries only actives, so no tombstones reach this call (which is why `mergeGlobalConfigs` does not need tombstone-handling logic).
 5. The merger's output `effectiveGlobalConfig` is written to `~/.claude-src/config.ts`.
@@ -160,7 +170,7 @@ The OMIT branch is the load-bearing D-220 semantic: a user who previously remove
 - `splitConfigByScope`, `scopeEligibilityKey`, `SplitConfigResult`, `generateProjectConfigFromSkills`, `buildStackForSelection`, `buildAgentStack`, `shouldIncludeTriple`, `splitAgentStack` (private), `isScopePairCompatible` (exported) / `isScopeCompatible` (private), `getScopeOrThrow`, `extractCategoryFromPath`, `buildSkillScopeMap` — `src/cli/lib/configuration/config-generator.ts`.
 - `computeNewlyAddedSkillIds`, `computeScopeEligibilityGained` — `src/cli/lib/installation/local-installer.ts`.
 - `isActiveAt`, `activeAgentScopeMap`, `activeSkillScopeMap`, `effectivelyExcludedSkillIds` — `src/cli/lib/configuration/scope-predicates.ts` (shared predicates consumed by the generator and the delta helpers).
-- Post-split reconciliation applied to the project half before every write: `reconcileProjectSplitAgainstGlobal` — `src/cli/lib/installation/local-installer.ts`.
+- Post-split reconciliation applied to the project half before every write: `reconcileProjectSplitAgainstGlobal` — `src/cli/lib/config-gate/propagate.ts`.
 - Call site threading split into writes: `writeScopedFromWizard`'s project branch in `config-gate/index.ts`. Note `splitConfigByScope` is NOT called by `propagateGlobalChangesToProjects` — that path derives its project half from the loaded on-disk config via `retainProjectOwnedSkills` / `retainProjectOwnedAgents` instead.
 - `splitConfigByScope` is not re-exported by `src/cli/lib/configuration/index.ts`; import it from `./config-generator`.
 - Unit tests: `config-generator.test.ts` (generator + split), `local-installer.test.ts` (delta helpers + scope-split behaviour, driven through the gate).

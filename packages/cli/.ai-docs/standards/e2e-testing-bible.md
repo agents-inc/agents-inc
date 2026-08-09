@@ -280,10 +280,10 @@ afterAll(async () => {
 
 **5.6 Source fixtures for wizard tests:**
 
-| Factory                        | Creates                                                                                           | Use When                |
-| ------------------------------ | ------------------------------------------------------------------------------------------------- | ----------------------- |
-| `createE2ESource(opts?)`       | 9 skills, 2 agents, 1 stack, templates. Optional `relationships` for slug-based resolution tests. | Eject-mode wizard tests |
-| `createE2EPluginSource(opts?)` | Above + built plugins + marketplace.json. Optional `marketplaceName`, `relationships`.            | Plugin-mode tests       |
+| Factory                        | Creates                                                                                            | Use When                |
+| ------------------------------ | -------------------------------------------------------------------------------------------------- | ----------------------- |
+| `createE2ESource(opts?)`       | 10 skills, 2 agents, 1 stack, templates. Optional `relationships` for slug-based resolution tests. | Eject-mode wizard tests |
+| `createE2EPluginSource(opts?)` | Above + built plugins + marketplace.json. Optional `marketplaceName`, `relationships`.             | Plugin-mode tests       |
 
 Create sources in `beforeAll` (expensive). Share across tests in a file. Each test creates its own `tempDir` with its own project for isolation.
 
@@ -407,13 +407,13 @@ expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
 ## 8. Source & Marketplace Setup
 
-**8.1 The E2E source contains exactly 9 skills across 3 domains:**
+**8.1 The E2E source contains exactly 10 skills across 3 domains:**
 
-| Domain | Skills                                                                                                                   |
-| ------ | ------------------------------------------------------------------------------------------------------------------------ |
-| web    | `web-framework-react`, `web-testing-vitest`, `web-state-zustand`, `web-framework-vue-composition-api`, `web-state-pinia` |
-| api    | `api-framework-hono`                                                                                                     |
-| meta   | `meta-methodology-research-methodology`, `meta-reviewing-reviewing`, `meta-reviewing-cli-reviewing`                      |
+| Domain | Skills                                                                                                                                                    |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| web    | `web-framework-react`, `web-testing-vitest`, `web-state-zustand`, `web-framework-vue-composition-api`, `web-state-pinia`, `web-testing-visual-regression` |
+| api    | `api-framework-hono`                                                                                                                                      |
+| meta   | `meta-methodology-research-methodology`, `meta-reviewing-reviewing`, `meta-reviewing-cli-reviewing`                                                       |
 
 **8.2 The E2E source defines 1 stack** ("E2E Test Stack") mapping skills to 2 agents (`web-developer`, `api-developer`).
 
@@ -521,7 +521,7 @@ Navigation MUST be closed-loop at CATEGORY granularity: verify the focused categ
 
 **10.19 Never assert a rendering invariant at a geometry where the subject does not render, and never let a counter stand in for its content.** A `not.toContain("<bug shape>")` on a clipped viewport passes for free when the captured frame paints none of the rows the shape is made of. **Clearing the minimum-size gate is not evidence the content is visible**: at `TERMINAL_SIZE.SHORT` the confirm step's summary viewport is five rows and all five are consumed by the `Marketplace` / `Stack` header — the first summary row appears six presses into a twelve-press scroll range. Scroll the subject on screen (`ConfirmStep.scrollSummaryToBottom()`, closed-loop) and pair every negative with a **positive guard** asserting the subject IS in the very frame you captured. Separately, **a counter is not its content**: asserting a scroll affordance's `N more above / below` numbers moved does not establish that anything scrolled — disabling the scroll outright left both counter assertions green while the frame showed the unscrolled header. Assert a row the movement revealed. See `2026-07-31-negative-render-assertion-needs-a-positive-subject-guard.md`.
 
-**10.20 Never call a spec a regression guard until you have watched it go red.** Green after a fix is not evidence the spec can detect the bug — including for a repaired assertion, where a "fixed" vacuous assertion nobody has watched fail is exactly the vacuum it replaced. Revert the fix in `src/`, `npm run build`, run the spec, confirm it is red **and red for the reason the test name claims**, then restore. The trap that is invisible by reading: **the fixture is smaller than production, so a size-dependent defect's blast radius differs.** `createE2ESource()` writes one stack and nine skills against a real marketplace carrying a dozen stacks. The stack-step bleed reached the footer against the real binary but stopped two rows short against the fixture — so the footer assertion, the one matching the reported symptom and reading as the sharpest signature, was **green on the unfixed binary**; the assertion that went red was an unrelated-looking `toContain(E2E_STACK_NAME)`. Keep both when both are genuine and record inline which one carries the red under this fixture. See `2026-07-31-e2e-fixture-smaller-than-production-changes-the-bug-signature.md`.
+**10.20 Never call a spec a regression guard until you have watched it go red.** Green after a fix is not evidence the spec can detect the bug — including for a repaired assertion, where a "fixed" vacuous assertion nobody has watched fail is exactly the vacuum it replaced. Revert the fix in `src/`, `npm run build`, run the spec, confirm it is red **and red for the reason the test name claims**, then restore. The trap that is invisible by reading: **the fixture is smaller than production, so a size-dependent defect's blast radius differs.** `createE2ESource()` writes one stack and ten skills against a real marketplace carrying a dozen stacks. The stack-step bleed reached the footer against the real binary but stopped two rows short against the fixture — so the footer assertion, the one matching the reported symptom and reading as the sharpest signature, was **green on the unfixed binary**; the assertion that went red was an unrelated-looking `toContain(E2E_STACK_NAME)`. Keep both when both are genuine and record inline which one carries the red under this fixture. See `2026-07-31-e2e-fixture-smaller-than-production-changes-the-bug-signature.md`.
 
 **10.21 Never take a "before" snapshot you do not compare against, and never leave an assertion helper imported but uncalled.** A `const configBefore = await readTestFile(...)` is a promise that an `expect(configAfter)` follows; if a spec snapshots two files it must assert on two — the one that should have changed (`.not.toBe(before)`, the proof the keystroke landed) and the one that should not (`.toBe(before)`). `toContain("<name>")` on the after-state is never a substitute: in a dual-scope fixture the name is usually present in both configs _before_ the wizard runs, so the assertion is true of the pre-state and the spec passes with the interaction silently swallowed — a documented failure mode of this harness. `scope-toggle-config-snapshot.e2e.test.ts` shipped exactly that shape, snapshotting both configs under a comment reading `// BEFORE: Snapshot both configs` and comparing neither. Equally, an unused import from `e2e/assertions/` (`expectCleanUninstall`, `expectFullInstallation`, `expectDualScopeInstallation`, `expectPhaseSuccess`) means the spec verifies less than its name claims — call it or justify the narrower check in the file JSDoc. See `2026-08-01-e2e-specs-captured-exit-codes-and-config-snapshots-then-asserted-nothing.md`.
 

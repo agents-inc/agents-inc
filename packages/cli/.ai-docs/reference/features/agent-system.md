@@ -31,7 +31,7 @@ last_validated: 2026-07-30
 
 **Purpose:** Agent template system that defines AI agent roles, compiles partial markdown files into full prompt documents via LiquidJS, and maps agents to wizard domains.
 **Entry Point:** `src/agents/` (agent source files), `src/cli/lib/compiler.ts` (compilation)
-**Key Files:** 23 agents across 7 categories, 1 main template, 6 methodology partials, 1 JSON schema
+**Key Files:** 18 agents across 6 role directories, 1 main template, 6 methodology partials, 1 JSON schema
 
 ## File Structure
 
@@ -50,29 +50,23 @@ src/agents/
     ai-developer/                             # AI feature implementation
     api-developer/                            # Backend feature implementation
     cli-developer/                            # CLI feature implementation
-    web-architecture/                         # App scaffolding in monorepo
     web-developer/                            # Frontend feature implementation
   meta/
     agent-summoner/                           # Creates/improves agents and skills
     codex-keeper/                             # AI-focused reference documentation
     convention-keeper/                        # Code quality standards
     skill-summoner/                           # Creates technology-specific skills
-  pattern/
-    pattern-scout/                            # Extracts codebase patterns
-    web-pattern-critique/                     # Reviews patterns in UI code
   planning/
-    api-pm/                                   # Backend implementation specs
-    web-pm/                                   # Frontend implementation specs
+    pm/                                       # Writes specs in any domain; domain frameworks arrive via meta-planning-* skills
   researcher/
+    ai-researcher/                            # Read-only AI research
     api-researcher/                           # Read-only backend research
+    cli-researcher/                           # Read-only CLI research
     web-researcher/                           # Read-only frontend research
   reviewer/
-    ai-reviewer/                              # Reviews AI integration code
-    api-reviewer/                             # Reviews backend code
-    cli-reviewer/                             # Reviews CLI code
-    infra-reviewer/                           # Reviews infrastructure code
-    web-reviewer/                             # Reviews UI component code
+    reviewer/                                 # Reviews any diff; domain checklists arrive via meta-reviewing-* skills
   tester/
+    ai-tester/                                # Tests AI features
     api-tester/                               # Tests backend features
     cli-tester/                               # Tests CLI features
     web-tester/                               # Tests frontend features
@@ -93,15 +87,14 @@ Constants defined in `src/cli/consts.ts` (`STANDARD_FILES`).
 
 ## Agent Inventory
 
-### developer/ (5 agents)
+### developer/ (4 agents)
 
-| Agent              | Model | Tools                               | Description                                                     |
-| ------------------ | ----- | ----------------------------------- | --------------------------------------------------------------- |
-| `ai-developer`     | opus  | Read, Write, Edit, Grep, Glob, Bash | AI features: RAG, agent loops, tool calling, prompt engineering |
-| `api-developer`    | opus  | Read, Write, Edit, Grep, Glob, Bash | Backend: API routes, DB operations, auth, middleware            |
-| `cli-developer`    | opus  | Read, Write, Edit, Grep, Glob, Bash | CLI: commands, interactive prompts, config hierarchies          |
-| `web-architecture` | opus  | Read, Write, Edit, Grep, Glob, Bash | Scaffolds new apps with foundational patterns                   |
-| `web-developer`    | opus  | Read, Write, Edit, Grep, Glob, Bash | Frontend: UI components, TypeScript, styling, client state      |
+| Agent           | Model | Tools                               | Description                                                     |
+| --------------- | ----- | ----------------------------------- | --------------------------------------------------------------- |
+| `ai-developer`  | opus  | Read, Write, Edit, Grep, Glob, Bash | AI features: RAG, agent loops, tool calling, prompt engineering |
+| `api-developer` | opus  | Read, Write, Edit, Grep, Glob, Bash | Backend: API routes, DB operations, auth, middleware            |
+| `cli-developer` | opus  | Read, Write, Edit, Grep, Glob, Bash | CLI: commands, interactive prompts, config hierarchies          |
+| `web-developer` | opus  | Read, Write, Edit, Grep, Glob, Bash | Frontend: UI components, TypeScript, styling, client state      |
 
 ### meta/ (4 agents)
 
@@ -112,46 +105,45 @@ Constants defined in `src/cli/consts.ts` (`STANDARD_FILES`).
 | `convention-keeper` | sonnet | Read, Write, Edit, Grep, Glob, Bash                | Code quality and testing standards                  |
 | `skill-summoner`    | opus   | Read, Write, Edit, Grep, Glob, WebSearch, WebFetch | Creates technology-specific skills via web research |
 
-### pattern/ (2 agents)
+### planning/ (1 agent)
 
-| Agent                  | Model | Tools                               | Description                                          |
-| ---------------------- | ----- | ----------------------------------- | ---------------------------------------------------- |
-| `pattern-scout`        | opus  | Read, Grep, Glob, Bash              | Extracts all patterns from monorepo (15+ categories) |
-| `web-pattern-critique` | opus  | Read, Write, Edit, Grep, Glob, Bash | Reviews UI code patterns                             |
+| Agent | Model | Tools                               | Description                                                                         |
+| ----- | ----- | ----------------------------------- | ----------------------------------------------------------------------------------- |
+| `pm`  | opus  | Read, Write, Edit, Grep, Glob, Bash | Specs for any feature; domain planning frameworks arrive via meta-planning-* skills |
 
-### planning/ (2 agents)
+### researcher/ (4 agents)
 
-| Agent    | Model | Tools                               | Description                                               |
-| -------- | ----- | ----------------------------------- | --------------------------------------------------------- |
-| `api-pm` | opus  | Read, Write, Edit, Grep, Glob, Bash | Backend implementation specs: API contracts, DB schema    |
-| `web-pm` | opus  | Read, Write, Edit, Grep, Glob, Bash | Frontend implementation specs: architecture, requirements |
+| Agent            | Model | Tools                  | Description                                                                     |
+| ---------------- | ----- | ---------------------- | ------------------------------------------------------------------------------- |
+| `ai-researcher`  | opus  | Read, Grep, Glob, Bash | Read-only AI research: prompt assembly, model SDKs, RAG pipelines, tool schemas |
+| `api-researcher` | opus  | Read, Grep, Glob, Bash | Read-only backend research: API routes, DB schemas, auth                        |
+| `cli-researcher` | opus  | Read, Grep, Glob, Bash | Read-only CLI research: command registration, flag parsing, exit codes          |
+| `web-researcher` | opus  | Read, Grep, Glob, Bash | Read-only frontend research: UI patterns, design systems                        |
 
-### researcher/ (2 agents)
+### reviewer/ (1 agent)
 
-| Agent            | Model | Tools                  | Description                                              |
-| ---------------- | ----- | ---------------------- | -------------------------------------------------------- |
-| `api-researcher` | opus  | Read, Grep, Glob, Bash | Read-only backend research: API routes, DB schemas, auth |
-| `web-researcher` | opus  | Read, Grep, Glob, Bash | Read-only frontend research: UI patterns, design systems |
+| Agent      | Model | Tools                               | Description                                                                                              |
+| ---------- | ----- | ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `reviewer` | opus  | Read, Write, Edit, Grep, Glob, Bash | Reviews any diff — one severity-disciplined gate; domain knowledge arrives via `meta-reviewing-*` skills |
 
-### reviewer/ (5 agents)
+`reviewer` is the only reviewing agent. No per-domain reviewer name (`web-reviewer`, `api-reviewer`,
+`cli-reviewer`, `ai-reviewer`, `infra-reviewer`) exists in `AGENT_NAMES`, under `src/agents/`, or as
+a target a roster or a prompt can delegate to — a document or stack naming one names nothing. The
+prompt carries the review PROCESS — severity discipline, the cost gate, a worked zero-issue APPROVE
+— and the domain checklists live in the `meta-reviewing-*` skills, loaded per diff through the
+activation protocol. `pm` stands the same way for planning, with the frameworks in
+`meta-planning-*`.
 
-| Agent            | Model  | Tools                               | Description                                            |
-| ---------------- | ------ | ----------------------------------- | ------------------------------------------------------ |
-| `ai-reviewer`    | opus   | Read, Grep, Glob, Bash              | AI integration: prompt safety, injection risks, tokens |
-| `api-reviewer`   | opus   | Read, Write, Edit, Grep, Glob, Bash | Backend code review                                    |
-| `cli-reviewer`   | opus   | Read, Write, Edit, Grep, Glob, Bash | CLI code review                                        |
-| `infra-reviewer` | sonnet | Read, Grep, Glob, Bash              | Infrastructure: Dockerfiles, CI/CD, deployment, IaC    |
-| `web-reviewer`   | opus   | Read, Write, Edit, Grep, Glob, Bash | UI components: hooks, props, state, a11y               |
-
-### tester/ (3 agents)
+### tester/ (4 agents)
 
 | Agent        | Model  | Tools                               | Description                                              |
 | ------------ | ------ | ----------------------------------- | -------------------------------------------------------- |
+| `ai-tester`  | opus   | Read, Write, Edit, Grep, Glob, Bash | AI tests: LLM mocking, prompt regression, eval harnesses |
 | `api-tester` | sonnet | Read, Write, Edit, Grep, Glob, Bash | Backend tests: API endpoints, DB operations, auth flows  |
 | `cli-tester` | opus   | Read, Write, Edit, Grep, Glob, Bash | CLI tests: wizard flows, commands, keyboard interactions |
 | `web-tester` | opus   | Read, Write, Edit, Grep, Glob, Bash | Frontend tests: component behavior, user flows           |
 
-**Model distribution:** 20 agents use `opus`, 3 agents use `sonnet` (`convention-keeper`, `infra-reviewer`, `api-tester`).
+**Model distribution:** 16 agents use `opus`, 2 use `sonnet` (`convention-keeper`, `api-tester`). Every bundled `metadata.yaml` declares a `model`.
 
 **Tool patterns:**
 
@@ -203,7 +195,7 @@ Each agent directory contains markdown partials read by `readAgentFiles()` in `s
 | `critical-requirements.md` | `readFileOptional()` | Empty string               | `{{ criticalRequirementsTop }}` |
 | `critical-reminders.md`    | `readFileOptional()` | Empty string               | `{{ criticalReminders }}`       |
 
-**Output fallback:** If an agent's own `output.md` is missing, the compiler looks for `output.md` in the parent category directory (e.g., `src/agents/developer/output.md`). Currently all 23 agents have their own `output.md`, so no fallback is used.
+**Output fallback:** If an agent's own `output.md` is missing, the compiler looks for `output.md` in the parent category directory (e.g., `src/agents/developer/output.md`). Currently all 18 agents have their own `output.md`, so no fallback is used.
 
 ### What Goes in Each Partial
 
@@ -305,7 +297,7 @@ The template assembles a compiled agent prompt in this order:
 
 **Two compilation entry points coexist, both in `src/cli/lib/compiler.ts`:**
 
-- `compileAgentForPlugin()` -- **the authoritative production path.** Attaches a per-skill `pluginRef` via `buildAgentTemplateContext`'s `mapSkill` transform, then sanitizes and renders. Called by `writeCompiledAgentsByScope()` (in `src/cli/lib/agents/write-compiled-agents.ts`), which `recompileAgents` and the install path (`compileAndWriteAgents`) both drive. It is also called directly by the stack→plugin compiler `compileStackPlugin()` (in `src/cli/lib/stacks/stack-plugin-compiler.ts`, reached via `stack-installer.ts`) when materializing a stack into an installable plugin.
+- `compileAgentForPlugin()` -- **the authoritative production path.** Attaches a per-skill `pluginRef` via `buildAgentTemplateContext`'s `mapSkill` transform, then sanitizes and renders. Called by `writeCompiledAgentsByScope()` (in `src/cli/lib/agents/write-compiled-agents.ts`), which `recompileAgents` and the install path (`compileAndWriteAgents`) both drive — the only two drivers. The stack→plugin compiler used to call it directly as well; that compiler was deleted in CLI-459.
 - `compileAgent()` / `compileAllAgents()` -- legacy paths. They call `buildAgentTemplateContext` **without** the `mapSkill` transform, so skills always render as bare `id` (no `pluginRef`). `compileAllAgents` also runs `validateCompiledAgent()` on each output. Neither has a production caller: `compileAllAgents` is exported and driven only by `compiler.test.ts`, and `compileAgent` is **file-local** (not exported) and reached only from inside `compileAllAgents`.
 
 **Per-agent compilation (`compileAgentForPlugin`):**
@@ -328,12 +320,29 @@ The template assembles a compiled agent prompt in this order:
 ```
 for each (name, agent) in resolvedAgents:
   1. compileAgentForPlugin(name, agent, sourcePath, engine) -> output string
-  2. scope = agentScopeMap.get(name) ?? "project"  (see "Agent Scope Routing")
-  3. writeFile to global agents dir (scope "global") or projectAgentsDir (scope "project")
-  4. record an AgentWriteOutcome ({ name, ok: true, scope, targetDir } | { name, ok: false, error })
+  2. scope = agentScopeMap.get(name) ?? UNROUTED_AGENT_SCOPE ("project")
+  3. rewritten = !holdsExactly(targetPath, output)   -- read-compare before writing
+  4. if rewritten: writeFile to the global agents dir (scope "global") or projectAgentsDir
+  5. record an AgentWriteOutcome
+       ({ name, ok: true, scope, targetDir, rewritten } | { name, ok: false, error })
 ```
 
 Per-agent failures are collected as `AgentWriteOutcome[]`; callers own the policy (recompile reports and continues; the install path hard-errors). Structural validation (`validateCompiledAgent`) runs only on the legacy `compileAllAgents` path, **not** in `writeCompiledAgentsByScope`.
+
+**Writes are skipped when the bytes already match, and the summaries say so.** `holdsExactly(filePath, content)` (file-local) is `fileExists && readFile === content`. Skipping the write is what gives "unchanged" a checkable meaning: an agent reported unchanged keeps its mtime, and an mtime is the only trace a rewrite with identical bytes leaves anywhere. The flag propagates outward unchanged in name:
+
+| Carrier                         | Field                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------ |
+| `AgentWriteOutcome` (ok branch) | `rewritten: boolean`                                                           |
+| `RecompileAgentsResult`         | `rewritten: AgentName[]` — `compiled` minus `rewritten` is the unchanged count |
+| `CompilationResult`             | `rewritten: AgentName[]` — an empty `rewritten` changed nothing on disk        |
+| `PropagatedRecompileSummary`    | `rewrittenCount`, `unchangedCount`, `failedCount`                              |
+
+Two summary builders read them, both in `src/cli/utils/messages.ts`. `recompileSummary(rewritten, unchanged, subject)` emits `N <subject> rewritten, M unchanged` — `subject` is the caller's noun, because `compile` reports per scope pass ("global agents") and `edit` reports the whole run's ("agents"). `propagatedRecompileSummary(rewritten, unchanged, failed)` emits `Recompiled agents in N registered projects, M unchanged` plus a ` (K failed)` suffix when any failed. The count these replaced was the roster the pass walked, so a run that rewrote nothing and a run that rewrote everything printed the same sentence.
+
+`recompileAgents` also logs one per-agent line, `  Rewrote: <name> (<scope> -> <dir>)` or `  Unchanged: <name> (...)`.
+
+**`UNROUTED_AGENT_SCOPE` is a routing answer, not a selection default.** `"project"` here means "the directory the caller named in `projectAgentsDir`" — the only defensible target for a write with no `agentScopeMap` entry (no map passed at all, or a hand-authored agent under `.claude/agents/` with no config row). It is deliberately **not** `DEFAULT_SELECTION_OPTIONS.scope` from `@workspace/matrix`, which says what an untouched _pick_ installs as; adopting that here would relocate the agents of every caller that never asked for global routing into `~/.claude/agents`.
 
 ### Per-Skill Plugin Reference Format
 
@@ -393,33 +402,29 @@ All methodology partials are rendered via `{% render %}` tags in `agent.liquid` 
 export const AGENT_NAMES = [
   "agent-summoner",
   "ai-developer",
-  "ai-reviewer",
+  "ai-researcher",
+  "ai-tester",
   "api-developer",
-  "api-pm",
   "api-researcher",
-  "api-reviewer",
   "api-tester",
   "cli-developer",
-  "cli-reviewer",
+  "cli-researcher",
   "cli-tester",
   "codex-keeper",
   "convention-keeper",
-  "infra-reviewer",
-  "pattern-scout",
+  "pm",
+  "reviewer",
   "skill-summoner",
-  "web-architecture",
   "web-developer",
-  "web-pattern-critique",
-  "web-pm",
   "web-researcher",
-  "web-reviewer",
   "web-tester",
 ] as const;
 
 export type AgentName = (typeof AGENT_NAMES)[number];
 ```
 
-**Count:** 23 entries in the generated union. All 23 agents in `src/agents/` are represented.
+Every agent directory under `src/agents/` is represented; the union size is owned by
+[type-system.md](../type-system.md) ("Counts").
 
 ### Re-export Chain
 
@@ -437,45 +442,47 @@ src/cli/types/generated/source-types.ts  -- defines AGENT_NAMES and AgentName
 
 ```typescript
 const DOMAIN_AGENTS: Partial<Record<Domain, AgentName[]>> = {
-  web: [
-    "web-developer",
-    "web-reviewer",
-    "web-researcher",
-    "web-tester",
-    "web-pm",
-    "web-architecture",
-  ],
-  api: ["api-developer", "api-reviewer", "api-researcher"],
-  cli: ["cli-developer", "cli-tester", "cli-reviewer"],
+  web: ["web-developer", "web-researcher", "web-tester", "pm", "reviewer"],
+  api: ["api-developer", "api-researcher", "api-tester", "pm", "reviewer"],
+  cli: ["cli-developer", "cli-tester", "cli-researcher", "pm", "reviewer"],
+  ai: ["ai-developer", "ai-researcher", "ai-tester", "pm", "reviewer"],
 };
 ```
 
-Agents NOT in any domain mapping (11 of 23):
+Four of the nine `Domain` members are keyed, each with the three agents sharing its `<domain>-` name
+prefix plus the cross-domain `pm` and `reviewer` — every domain rosters both, and
+`preselectAgentsFromDomains` dedupes the union when several selected domains bring them. The five
+remaining domains (`desktop`, `infra`, `meta`, `mobile`, `shared`) have no entry, so selecting them
+preselects nothing.
+
+Agents NOT in any domain mapping:
 
 - **meta:** agent-summoner, codex-keeper, convention-keeper, skill-summoner
-- **pattern:** pattern-scout, web-pattern-critique
-- **planning:** api-pm (not in api domain mapping)
-- **reviewer:** ai-reviewer, infra-reviewer
-- **tester:** api-tester (not in api domain mapping)
-- **developer:** ai-developer (not in any domain mapping)
 
-(`web-tester` IS in the web domain mapping despite being in the tester/ category.)
+These agents are not auto-preselected by `preselectAgentsFromDomains()`. Whether they are manually selectable is governed separately by the wizard selection grid (`BUILT_IN_AGENT_GROUPS`, below) -- `agent-summoner`, `skill-summoner` and `codex-keeper` have grid rows; `convention-keeper` is absent from BOTH the grid and `DOMAIN_AGENTS`, so it is not surfaced in the built-in wizard at all.
 
-These agents are not auto-preselected by `preselectAgentsFromDomains()`. Whether they are manually selectable is governed separately by the wizard selection grid (`BUILT_IN_AGENT_GROUPS`, below) -- the Meta group and `web-pattern-critique` are grid-selectable; the six agents absent from BOTH the grid and `DOMAIN_AGENTS` are not surfaced in the built-in wizard.
+A stack can name any of them, and naming one installs it: domain derivation runs only on the from-scratch path, so a chosen stack's `agents` keys are the roster the install gets and `DOMAIN_AGENTS` is not consulted — `preselectAgentsFromDomains` is a no-op once a stack is chosen. The three with grid rows are how the user then adds or drops one.
 
 ### Wizard Selection Grid (`BUILT_IN_AGENT_GROUPS`)
 
 **File:** `src/cli/components/wizard/step-agents.tsx`
 **Constant:** `BUILT_IN_AGENT_GROUPS` -- the fixed inventory of built-in agents rendered as the checkbox grid in `StepAgents` (the wizard's agent-selection step). Distinct from `DOMAIN_AGENTS` (`wizard-store.ts`): `DOMAIN_AGENTS` drives auto-preselection from chosen domains, while `BUILT_IN_AGENT_GROUPS` is the ordered set of rows the user can navigate and toggle with SPACE.
 
-| Group label | Agent ids (grid order)                                                                                                |
-| ----------- | --------------------------------------------------------------------------------------------------------------------- |
-| `Web`       | `web-developer`, `web-reviewer`, `web-researcher`, `web-tester`, `web-pm`, `web-architecture`, `web-pattern-critique` |
-| `API`       | `api-developer`, `api-reviewer`, `api-researcher`                                                                     |
-| `CLI`       | `cli-developer`, `cli-tester`, `cli-reviewer`                                                                         |
-| `Meta`      | `pattern-scout`, `agent-summoner`, `skill-summoner`, `codex-keeper`                                                   |
+| Group label | Agent ids (grid order)                                               |
+| ----------- | -------------------------------------------------------------------- |
+| `Web`       | `web-developer`, `web-researcher`, `web-tester`                      |
+| `API`       | `api-developer`, `api-researcher`, `api-tester`                      |
+| `AI`        | `ai-developer`, `ai-researcher`, `ai-tester`                         |
+| `CLI`       | `cli-developer`, `cli-tester`, `cli-researcher`                      |
+| `Meta`      | `pm`, `reviewer`, `agent-summoner`, `skill-summoner`, `codex-keeper` |
 
-**17 of the 23 built-in agents appear in the grid.** The six built-in agents with NO grid row are `ai-developer`, `ai-reviewer`, `api-pm`, `api-tester`, `convention-keeper`, `infra-reviewer` -- these also have no `DOMAIN_AGENTS` entry, so they are neither manually selectable nor auto-preselected through the built-in wizard.
+**17 grid rows.** The four domain groups each list the same three implementation agents as that
+domain's `DOMAIN_AGENTS` entry (orderings differ in places); the cross-domain `pm` and `reviewer` —
+which every `DOMAIN_AGENTS` entry also names — have their single grid rows at the head of the
+`Meta` group.
+`convention-keeper` is the only `AgentName` member with NO grid row -- it also has no
+`DOMAIN_AGENTS` entry, so it is neither manually selectable nor auto-preselected through the
+built-in wizard.
 
 **Custom-agent groups (`buildAgentGroups(matrix)`):** Beyond the fixed inventory, `buildAgentGroups` appends groups for custom agents. It collects `unique(matrix.suggestedStacks.flatMap((stack) => typedKeys(stack.skills)))`, filters to ids absent from `BUILT_IN_AGENT_IDS` (a `Set` of every `BUILT_IN_AGENT_GROUPS` item id), and groups each by its explicit `matrix.agentDefinedDomains?.[id]` (from `metadata.yaml`, when the id is in the `AgentName` union) or a kebab-prefix fallback (`id.split("-")[0]`), labelled via `getDomainDisplayName()` (`src/cli/components/wizard/utils.ts`). When no custom agents exist, `buildAgentGroups` returns `BUILT_IN_AGENT_GROUPS` unchanged.
 
@@ -498,8 +505,8 @@ These agents are not auto-preselected by `preselectAgentsFromDomains()`. Whether
 
 | Function                             | File                                                  | Signature                                                                                                                                                           |
 | ------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `loadAllAgents()`                    | `lib/loading/loader.ts`                               | `(projectRoot: string) => Promise<Record<AgentName, AgentDefinition>>`                                                                                              |
-| `loadProjectAgents()`                | `lib/loading/loader.ts`                               | `(projectDir) => Promise<Record<AgentName, AgentDefinition>>`                                                                                                       |
+| `loadAllAgents()`                    | `lib/loading/loader.ts`                               | `(projectRoot: string) => Promise<Partial<Record<AgentName, AgentDefinition>>>`                                                                                     |
+| `loadProjectAgents()`                | `lib/loading/loader.ts`                               | `(projectDir) => Promise<Partial<Record<AgentName, AgentDefinition>>>`                                                                                              |
 | `readAgentFiles()`                   | `lib/compiler.ts` (file-local)                        | `(name, agent, projectRoot) => Promise<AgentFiles>`                                                                                                                 |
 | `buildAgentTemplateContext()`        | `lib/compiler.ts`                                     | `(name, agent, files, mapSkill?) => CompiledAgentData`                                                                                                              |
 | `sanitizeCompiledAgentData()`        | `lib/compiler.ts`                                     | `(data: CompiledAgentData) => CompiledAgentData`                                                                                                                    |
@@ -509,7 +516,7 @@ These agents are not auto-preselected by `preselectAgentsFromDomains()`. Whether
 | `derivePluginRef()`                  | `lib/compiler.ts` (file-local)                        | `(skill: Skill) => PluginSkillRef \| undefined`                                                                                                                     |
 | `writeCompiledAgentsByScope()`       | `lib/agents/write-compiled-agents.ts`                 | `(params) => Promise<AgentWriteOutcome[]>` (per-scope compile + write loop)                                                                                         |
 | `listCompiledAgentNames()`           | `lib/agents/list-compiled-agents.ts`                  | `(agentsDir: string) => Promise<AgentName[]>` (compiled `.md` filenames minus extension; backs `resolveAgentNames` priority 4)                                      |
-| `listAgentMdFiles()`                 | `lib/agents/list-compiled-agents.ts`                  | `(agentsDir: string) => Promise<string[]>` (`*.md` glob; also used by `doctor`, `validate`, `uninstall`, `agent-plugin-compiler`)                                   |
+| `listAgentMdFiles()`                 | `lib/agents/list-compiled-agents.ts`                  | `(agentsDir: string) => Promise<string[]>` (`*.md` glob; also used by `doctor`, `content-validator`, `uninstall`, `agent-plugin-compiler`)                          |
 | `pruneStaleCompiledAgents()`         | `lib/agents/list-compiled-agents.ts`                  | `(agentsDir: string, keep: ReadonlySet<AgentName>) => Promise<void>` (stale-agent prune)                                                                            |
 | `compileAgents()`                    | `lib/operations/project/compile-agents.ts`            | `(options: CompileAgentsOptions) => Promise<CompilationResult>` (recompile wrapper + prune)                                                                         |
 | `compileAgentsAllScopes()`           | `lib/operations/project/compile-agents-all-scopes.ts` | `(options: CompileAllScopesOptions) => Promise<CompilationResult>` (multi-pass driver)                                                                              |
@@ -523,12 +530,12 @@ These agents are not auto-preselected by `preselectAgentsFromDomains()`. Whether
 | `buildAgentStack()`                  | `lib/configuration/config-generator.ts`               | `(agent, inputs) => StackAgentConfig \| undefined` (file-local)                                                                                                     |
 | `scopeEligibilityKey()`              | `lib/configuration/config-generator.ts`               | `(agent, skillId) => string` (D-220 key builder)                                                                                                                    |
 | `isScopeCompatible()`                | `lib/configuration/config-generator.ts`               | `(skillId, agent, skillScope, agentScope) => boolean` (file-local)                                                                                                  |
-| `propagateGlobalChangesToProjects()` | `lib/installation/local-installer.ts`                 | `(globalConfig, matrix, agents, currentProjectDir?) => Promise<{updated, skipped}>`                                                                                 |
-| `mergeGlobalConfigs()`               | `lib/installation/local-installer.ts`                 | `(existing, incoming) => {config, changed}` (dedup-merge)                                                                                                           |
+| `propagateGlobalChangesToProjects()` | `lib/config-gate/propagate.ts`                        | `(globalConfig, matrix, agents, currentProjectDir?) => Promise<{updated, skipped}>`                                                                                 |
+| `mergeGlobalConfigs()`               | `lib/config-gate/propagate.ts`                        | `(existing, incoming) => {config, changed}` (dedup-merge)                                                                                                           |
 | `createLiquidEngine()`               | `lib/compiler.ts`                                     | `(projectDir?) => Promise<Liquid>`                                                                                                                                  |
 | `sanitizeLiquidSyntax()`             | `lib/compiler.ts`                                     | `(value, fieldName) => sanitized string`                                                                                                                            |
 | `getAgentDefinitions()`              | `lib/agents/agent-fetcher.ts`                         | `(remoteSource?, options?) => Promise<AgentSourcePaths>` — options type, the remote branch and its production-unreachability: [leaf-exports.md](../leaf-exports.md) |
-| `loadAgentDefs()`                    | `lib/operations/project/load-agent-defs.ts`           | `(options?: { projectDir?; forceRefresh? }) => Promise<AgentDefs>`                                                                                                  |
+| `loadAgentDefs()`                    | `lib/operations/project/load-agent-defs.ts`           | `(options?: { projectDir? }) => Promise<AgentDefs>`                                                                                                                 |
 
 ## Recompile Flow
 
@@ -543,7 +550,7 @@ Recompile is the primary agent-refresh path invoked after any config mutation (`
 3. All available agents from source when `outputDir` is set -- reached only on a config-LESS load
 4. Directory scan of existing `{pluginDir}/agents/*.md` files -- `getExistingAgentNames()` calls `listCompiledAgentNames(getPluginAgentsDir(pluginDir))` (`src/cli/lib/agents/list-compiled-agents.ts`), which globs `*.md` via `listAgentMdFiles()` and strips the extension so each compiled filename becomes an `AgentName` (boundary cast -- custom marketplace agents may fall outside the union)
 
-**Corrupt-config behaviour:** `loadProjectConfig()` returns `null` only for a MISSING config. A config file that exists but cannot be evaluated, has no valid default export, or fails the loader schema throws `ConfigLoadError` (`src/cli/lib/configuration/project-config.ts`) carrying `configPath` and `reason`. That error propagates out of `recompileAgents` rather than degrading to the config-less priority-3 branch, which is what previously resurrected all 23 built-in agents.
+**Corrupt-config behaviour:** `loadProjectConfig()` returns `null` only for a MISSING config. A config file that exists but cannot be evaluated, has no valid default export, or fails the loader schema throws `ConfigLoadError` (`src/cli/lib/configuration/project-config.ts`) carrying `configPath` and `reason`. That error propagates out of `recompileAgents` rather than degrading to the config-less priority-3 branch, which is what previously resurrected every built-in agent.
 
 **Agent-set merge:** `allAgents = { ...builtinAgents, ...projectAgents }` -- project agents (loaded from `.claude-src/agents/` via `loadProjectAgents`) override built-ins with the same ID.
 
@@ -564,9 +571,8 @@ Compiled-agent writes are purely additive: `writeCompiledAgentsByScope` writes t
 | `compileAgentsAllScopes` home branch                  | set         | none             | yes     |
 | `compileAgentsAllScopes` project branch (both passes) | set         | global / project | no      |
 | `recompileRegisteredProjectAgents`                    | set         | project          | no      |
-| `update`                                              | **omitted** | none             | no      |
 
-A scope-FILTERED pass sees only one scope's roster, so deleting from its `outputDir` could remove another scope's files. `update` omits `outputDir` entirely, so `recompileAgents` falls back to `getPluginAgentsDir(pluginDir)` internally and `pruneStaleAgentsForPass` has no directory to claim authority over — it returns early.
+A scope-FILTERED pass sees only one scope's roster, so deleting from its `outputDir` could remove another scope's files, which is why such a pass never prunes.
 
 **Keep set:** `compiled ∪ failed` for that pass. A failed agent is retained deliberately — a render failure must not also delete the previously good artifact.
 
@@ -628,18 +634,17 @@ Otherwise the triple is **omitted**, respecting the user's prior per-agent curat
 
 **Related finding:** `agent-findings/2026-04-22-excluded-agent-tombstone-vs-selected-agents-mismatch.md` -- the `selectedAgents` vs `agentConfigs` invariant that `getScopeOrThrow` enforces.
 
-## selectedAgents Propagation
+## Global-Agent Propagation
 
-**Function:** `mergeGlobalConfigs(existing, incoming)` in `src/cli/lib/installation/local-installer.ts`
+**Function:** `mergeGlobalConfigs(existing, incoming)` in `src/cli/lib/config-gate/propagate.ts`
 
-`selectedAgents` and `domains` are both merged as deduplicated unions across the existing global config and the incoming one:
+A project-context edit that promotes an agent to global persists it as a new global `agents` row — `mergeGlobalConfigs` appends active incoming agents whose `name` is not already in the existing global config. There is no flat selected-agent list to merge: `ProjectConfig` carries none, and the selected-agent set is derived from the non-excluded `agents` rows via `activeAgentNames` in `src/cli/lib/configuration/scope-predicates.ts`. The one selection list the merge does union is `selectedDomains`:
 
 ```
-mergedSelectedAgents = [...new Set([...(existing.selectedAgents ?? []), ...(incoming.selectedAgents ?? [])])]
-mergedDomains        = [...new Set([...(existing.domains ?? []),        ...(incoming.domains ?? [])])]
+mergedSelectedDomains = [...new Set([...(existing.selectedDomains ?? []), ...(incoming.selectedDomains ?? [])])]
 ```
 
-The `changed` flag flips when either merged list differs from the existing list via `isDeepEqual`. This ensures a project-context edit that adds a new selected agent (e.g. promoting a meta-agent to global) persists into the cross-project global config rather than being overwritten.
+The `changed` flag flips when the merged list differs from the existing list via `isDeepEqual` (among the other terms — see [config-merger.md](../config/config-merger.md)).
 
 **Downstream propagation:** `propagateGlobalChangesToProjects(globalConfig, matrix, agents, currentProjectDir?)` iterates `globalConfig.projects` (registered project paths), skips the currently-installing project, and for each remaining project:
 
@@ -647,7 +652,6 @@ The `changed` flag flips when either merged list differs from the existing list 
 2. Reconciles the project's own entries against the now-current global data into a `projectSplit`:
    - `retainProjectOwnedSkills` / `retainProjectOwnedAgents` keep project-scoped entries and keep a global tombstone (`scope === "global" && excluded`) only while the masked global entry is still active — stale tombstones for a since-removed global item are dropped (Scenario C).
    - `retainReconciledStack` prunes stack assignments that reference a global skill removed at global scope (ids from `computeRemovedGlobalSkillIds`).
-   - `retainReconciledSelectedAgents` drops `selectedAgents[]` names no longer backed by an active project- or global-scoped agent.
    - `reconcileProjectSplitAgainstGlobal` then self-heals and re-masks on BOTH axes. `dropOrphanedDerivedAgentMasks` (the agent mirror of `dropOrphanedDerivedMasks`) runs FIRST and drops a global agent tombstone that no longer has an active project-scoped agent of the same name to justify it, so the global agent becomes visible again instead of staying masked forever. `maskCollidingGlobalAgents` then re-derives a mask for every live global agent the project DOES own at project scope, producing the `[P][G]` pair. Self-heal before mask means a cleared collision is removed rather than immediately re-derived, and the producer's `alreadyTombstoned` guard only sees warranted tombstones. Agents have no categories, so identity is the only collision kind (skills additionally collide on exclusive categories).
 3. Rewrites BOTH halves of the project's pair in one call — `writeProjectConfigPair(projectPath, projectSplit, globalConfig, matrix, agents)` — which emits `config.ts` with re-inlined global data and then `config-types.ts` via `regenerateConfigTypes()` with `buildConfigTypesBackgroundData(matrix, agents)` and `buildProjectTypesExtras(inlinedProjectView(projectSplit, globalConfig), matrix)`, so the types name every literal the sibling config holds. The import-from-global form is emitted, not the standalone-inlined one.
 4. Records the path in `updated[]`; an unreachable or failing project goes to `skipped[]` and never aborts the loop.

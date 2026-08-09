@@ -29,20 +29,23 @@ last_validated: 2026-07-30
 
 ## Flags
 
-`static flags` extends `BaseCommand.baseFlags` (which supplies `--source`).
+`static flags` declares one flag, and it is hidden.
 
 | Flag            | Type    | Hidden | Description                                                                                                                                                                                      |
 | --------------- | ------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| --source (-s)   | string  | no     | Skills source path or URL (from `baseFlags`)                                                                                                                                                     |
-| --refresh       | boolean | no     | Force refresh from remote sources                                                                                                                                                                |
 | --project-setup | boolean | yes    | Internal: this run continues an `init` project setup (materialise + register even on no-change). Key = `EDIT_PROJECT_SETUP_FLAG` (`"project-setup"`); set only by `init`'s dashboard delegation. |
 
-There is no `--agent-source` flag.
+There is no `--agent-source` flag, and **no `--source`**: naming a source is `init`'s decision
+(owner ruling 2026-08-09), so `edit` opens the wizard on the catalogue its config.ts names —
+project config → global config → default. `CC_SOURCE` does not point it anywhere either; the
+environment names a source at install time only. Passing either spelling of the flag is refused by
+the parser (`Nonexistent flag: --source`, exit 2).
 
 ## Flow
 
 The `run()` method in `edit.tsx` orchestrates private methods in this order:
 
+0. `this.ensureConfigReadable(cwd)` (`BaseCommand`) -- hard-errors with `configUnreadableError(...)` when a config file exists but throws `ConfigLoadError`, checking the project's own config and, from a project, the global one every project write inlines. It runs before the spinner renders, so the refusal never sits under a mounted Ink tree, and before any wizard work, so a `ConfigLoadError` cannot surface after skills have been copied and plugins installed. A MISSING config passes through and still reaches `ERROR_MESSAGES.NO_INSTALLATION` below. Full contract: [commands/index.md](./index.md) -> "Unreadable configs are recreated, not edited".
 1. Render a loading `<Spinner>`, then `loadContext(flags)` -- **Operation: `detectProject()`** + **Operation: `loadSource()`** + `discoverAllPluginSkills()`. Merges plugin-discovered skill ids with project config skills (excluded entries filtered out), returns `EditContext`. Clears/unmounts the spinner.
 2. `runEditWizard(context, cwd)` -- calls `runWizardSession()`, hydrating the wizard store (`initialStep: "build"`, `installedSkillIds`, `installedSkillConfigs`, `installedAgentConfigs`, `isEditingFromGlobalScope: isHomeDirectory(cwd)`, `initialDomains`, `initialAgents`). Returns `WizardResultV2 | null`; `null` exits with `EXIT_CODES.CANCELLED`.
 3. `reportValidationErrors(result)` -- emits `this.warn(...)` for each `result.validation.errors` entry.
@@ -73,10 +76,10 @@ private reportPropagatedRecompile(propagation: GateReport): void;
 
 - Returns immediately (nothing logged) when `propagation.propagated.updated` is empty.
 - Otherwise re-emits each `propagation.recompile.warnings` entry via `this.warn()`. Those warnings originate in **Operation: `recompilePropagatedProjectAgents(projectDirs)`** (`src/cli/lib/operations/project/recompile-project-agents.ts`), which the gate calls through `config-gate/recompile.ts` and which runs `recompileRegisteredProjectAgents` per directory with **per-project failure isolation**.
-- The summary line is `Recompiled agents in N registered project(s)` in `CLI_COLORS.NEUTRAL`, with a ` (N failed)` suffix in `CLI_COLORS.WARNING` when `failedCount > 0`.
+- The summary line is `propagatedRecompileSummary(rewrittenCount, unchangedCount, failedCount)` from `src/cli/utils/messages.ts` — `Recompiled agents in N registered projects, M unchanged`, with a ` (K failed)` suffix when `failedCount > 0`.
 - It is called from **two** places: the tail of `writeConfigAndCompile` (step 17) and `recordGlobalSourceMigrations` (step 10), which fires a T1 change of its own.
 
-`init` and `compile` perform the same rendering; only the wording differs — they print `registered projects`, this command prints `registered project(s)`. Both forms are asserted by `e2e/pages/constants.ts`, so do not unify them.
+**One sentence, four commands.** `reportPropagatedRecompile` is `protected` on `BaseCommand` (`src/cli/base-command.ts`) and `init`, `edit`, `compile` and `uninstall` all call that one method — there is no per-command wording to preserve. E2E anchors on the command-agnostic `STEP_TEXT.PROPAGATED_RECOMPILE` prefix for assertions that must hold across commands.
 
 ### Writer Selection Inside `writeProjectConfig`
 
@@ -87,7 +90,7 @@ private reportPropagatedRecompile(propagation: GateReport): void;
 
 `writeScopedFromWizard` returns a `GateReport`, which `writeProjectConfig` surfaces as `ConfigWriteResult.propagation` for step 17.
 
-**The fan-out trigger is classification, not a merge flag.** `classifyGlobalChange` diffs the config on disk against the one being written and assigns a tier: T1 (skills / agents / stack / domains / selectedAgents, including a per-skill `source` change) propagates the pair and recompiles; T2 (an inlined scalar only) propagates the config half without regenerating types or recompiling; T3 (`projects[]` only) does neither; T4 writes nothing. This is a strict superset of the old `globalDataChanged` gate, which was blind to a `source` change on an entry that already existed.
+**The fan-out trigger is classification, not a merge flag.** `classifyGlobalChange` diffs the config on disk against the one being written and assigns a tier: T1 (skills / agents / stack / selectedDomains, including a per-skill `source` change) propagates the pair and recompiles; T2 (an inlined scalar only) propagates the config half without regenerating types or recompiling; T3 (`projects[]` only) does neither; T4 writes nothing. This is a strict superset of the old `globalDataChanged` gate, which was blind to a `source` change on an entry that already existed.
 
 **Cross-scope reconciliation before the project write.** In the project branch, `reconcileProjectSplitAgainstGlobal(projectSplitConfig, effectiveGlobalConfig, matrix)` runs **immediately before** `writeProjectConfigPair` -- the raw split handed straight to the inlining writer would let a project-owned skill and a colliding live global install both land as active entries in the same project config. The same step also runs inside `propagateGlobalChangesToProjects`; both write sites can produce the malformed shape, so both must run it. Masking is project-local (a tombstone is never written into `~/.claude-src/config.ts`), covers identity collisions for skills and agents plus exclusive-category collisions for skills only, and self-heals derived masks whose collision has cleared before re-deriving. The project's own skill wins locally.
 
@@ -95,7 +98,7 @@ See `reference/config/config-writer.md` for the full writer-selection matrix and
 
 ## Invariants
 
-- **No orphan config entries on plugin failure.** `applyPluginChanges` hard-errors via `this.error(..., { exit: EXIT_CODES.ERROR })` when `installPluginSkills` reports any failures. This fires before `copyNewLocalSkills` and `writeConfigAndCompile`, so `config.ts` is never written claiming a skill was installed that did not install. Error message instructs: verify skill id matches marketplace, re-run with `--refresh`, or switch affected skills to eject mode.
+- **No orphan config entries on plugin failure.** `applyPluginChanges` hard-errors via `this.error(..., { exit: EXIT_CODES.ERROR })` when `installPluginSkills` reports any failures. This fires before `copyNewLocalSkills` and `writeConfigAndCompile`, so `config.ts` is never written claiming a skill was installed that did not install. Error message instructs: verify skill id matches marketplace, run `update` to refresh the marketplace, or switch affected skills to eject mode.
 - **Plugin install intent is inviolable.** There is no silent fallback from plugin to eject. Marketplace resolution failure in `requireMarketplaceOrExit()` (BaseCommand, wrapping the `requireMarketplace` operation) also hard-errors.
 - **No-change flows skip all writes -- except an init-originated project setup.** When `hasAnyChanges(changes)` is false, `run()` logs `"No changes made."` and returns without config write, recompile, or agent cleanup -- UNLESS `isProjectSetup` (`flags[EDIT_PROJECT_SETUP_FLAG] && !isHomeDirectory(cwd)`) is true, in which case it still runs `writeConfigAndCompile()` to materialise `<project>/.claude-src/config.ts` + `config-types.ts` and register the project in the global `projects[]`. This intent is passed explicitly by `init`'s dashboard delegation (`dashboardCommandArgv()` appends `--project-setup` only for an `init`-originated Edit); it is NOT re-derived from `cwd`/config state. A bare `cc edit` (and a bare-`cc` `"standalone"` dashboard Edit) carries no flag, so a no-change pass stays a read-only inspection. See `.ai-docs/agent-findings/2026-07-20-command-delegation-must-carry-caller-intent.md` and `2026-07-20-edit-hasanychanges-gate-blocks-project-materialisation.md`.
 - **Excluded entries are filtered once.** The `activeNewSkills` / `activeOldSkills` split happens once in `run()`; every downstream private method receives only non-excluded entries. Excluded skills remain in the raw `result` / `projectConfig` for persistence by `writeProjectConfig` so tombstones survive.

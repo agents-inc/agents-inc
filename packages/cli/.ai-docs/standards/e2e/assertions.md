@@ -259,7 +259,7 @@ Available constants:
 - `E2E_AGENTS.WEB` — web-scope agent names
 - `E2E_AGENTS.API` — api-scope agent names
 - `E2E_AGENTS.WEB_AND_API` — both scopes combined (computed getter)
-- `E2E_SKILL_IDS` — all 9 skill IDs from the E2E source, as a tuple
+- `E2E_SKILL_IDS` — all 10 skill IDs from the E2E source, as a tuple
 - `E2E_SKILL` — per-skill `id` <-> `slug` <-> `display` map
 - `E2E_AGENT` — per-agent `name` <-> `display` map
 - `E2E_AGENT_DISPLAY` — re-export of `E2E_AGENT_TITLES` from `create-e2e-source.ts`
@@ -383,7 +383,7 @@ Three output surfaces exist, and they do not hold the same thing.
 
 **`getScreen()` is not viewport-only, so NO surface here is safe for an absence assertion.** It reads absolute buffer lines `0 .. viewportY + rows` — scrollback plus viewport. Its doc comment says "viewport only, no scrollback" and is wrong; the comment is left in place deliberately because every page object depends on the method, so correcting it needs its own audit pass. Until then, [reference/testing/e2e-infrastructure.md § `getScreen()` is not viewport-only](../../reference/testing/e2e-infrastructure.md) is the authority. Consequence: see [§ Negative Assertions](#negative-assertions) below — none of the three surfaces can carry a `not.toContain` about text the session once legitimately drew.
 
-**Toasts are always a raw-output assertion.** They render in an absolutely-positioned row Ink rewrites in place. Use the `*Awaiting` step methods (`toggleFocusedSkillAwaiting`, `selectSkillAwaiting`, `toggleFilterIncompatibleAwaiting`, `toggleFocusedAgentAwaiting`, `confirmAwaiting`), which snapshot a raw cursor before the press and wait on raw output after it. A non-anchored raw match would be satisfied by an earlier frame's residue.
+**Toasts are always a raw-output assertion.** They render in an absolutely-positioned row Ink rewrites in place. Use the `*Awaiting` step methods (`toggleFocusedSkillAwaiting`, `selectSkillAwaiting`, `toggleFocusedAgentAwaiting`, `confirmAwaiting`), which snapshot a raw cursor before the press and wait on raw output after it. A non-anchored raw match would be satisfied by an earlier frame's residue.
 
 **Colour is never assertable in E2E.** The harness runs with `NO_COLOR`, so every E2E spec asserts the marker (`+`, `-`, `~`, `•`), not the colour. In-grid selected state is likewise colour-only in the build grid — read it via `getExclusiveCategorySelectedCount(category)`, the sole text-observable signal. A "these two surfaces use the same colour" contract needs a component test with a forced chalk level; see [reference/testing/infrastructure.md § Asserting Colour in Ink Component Tests](../../reference/testing/infrastructure.md).
 

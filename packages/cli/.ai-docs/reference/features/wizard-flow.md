@@ -38,10 +38,10 @@ last_validated: 2026-07-30
 stack -> domains -> build -> sources -> agents -> confirm
 ```
 
-- `stack`: Select a pre-built stack OR choose "Start from scratch"
+- `stack`: Select a pre-built stack OR choose "Start from scratch". **Rendered only when the loaded source offers stacks** — an empty `matrix.suggestedStacks` opens the wizard on `domains` instead, prepared as the scratch row prepares it (`hydrateForInit`). A custom marketplace shipping no stacks gets no built-in stand-in, so this is its normal opening; see [built-in-catalogue.md](./built-in-catalogue.md)
 - `domains`: Select which domains to configure (checkboxes)
 - `build`: Per-domain skill selection (CategoryGrid with category sections)
-- `sources`: Choose which source provides each skill (recommended vs custom)
+- `sources`: Choose how each skill is installed — the project's own copy (`Local`) or the one marketplace plugin (`Plugin`). Two cells, not a list of sources
 - `agents`: Select which agents to compile
 - `confirm`: Review selections and confirm
 
@@ -51,7 +51,7 @@ stack -> domains -> build -> sources -> agents -> confirm
 type WizardStep = "stack" | "domains" | "build" | "sources" | "agents" | "confirm";
 ```
 
-The canonical ordered sequence is the `WIZARD_STEP_ORDER` constant in `src/cli/stores/wizard-store.ts` (`["stack", "domains", "build", "sources", "agents", "confirm"] as const satisfies readonly WizardStep[]`). The settings screen is **not** a `WizardStep` — it renders as an overlay on the `showSettings` store flag (see Settings Overlay below), so it never appears in `WIZARD_STEP_ORDER` or the `history` stack.
+The canonical ordered sequence is the `WIZARD_STEP_ORDER` constant in `src/cli/stores/wizard-store.ts` (`["stack", "domains", "build", "sources", "agents", "confirm"] as const satisfies readonly WizardStep[]`) — every step the wizard HAS. The steps a given run has are `getActiveStepFlow()` from the same module, which drops `"stack"` when `matrix.suggestedStacks` is empty; the tab bar and `getStepProgress` both read that, never the constant, so the tabs cannot advertise a step the run does not have. The only overlay is the `I` info panel, which `wizard-layout.tsx` paints over whatever step is rendered; the marketplace-sources settings screen that used to sit here was withdrawn with the marketplace axis.
 
 **Shortcut:** If stack selected with `stackAction: "defaults"`, jumps directly to confirm (skips build/sources/agents). Both stack and scratch flows go through `domains` step.
 
@@ -62,7 +62,7 @@ Wizard (src/cli/components/wizard/wizard.tsx)
   |-> WizardLayout (wizard-layout.tsx)
   |     |-> [terminal-size guard] - REPLACES everything below when the terminal drops under MIN_TERMINAL_SIZE
   |     |-> WizardTabs (wizard-tabs.tsx) - Step progress indicators
-  |     |-> SummaryPanel (summary-panel.tsx) - the "I" overlay: skill/agent scope summary (gated by isInfoPanelAvailable(step): FEATURE_FLAGS.INFO_PANEL and step !== "confirm")
+  |     |-> SummaryPanel (summary-panel.tsx) - the "I" overlay: skill/agent scope summary (gated by isInfoPanelAvailable(step): step !== "confirm")
   |     |     |-> SkillAgentSummary (skill-agent-summary.tsx)
   |     |     |-> ScrollAffordance (scroll-affordance.tsx) - "N more above / below" hint
   |     |-> WizardFooter (inline in wizard-layout.tsx) - SPACE/ENTER/ESC key hints
@@ -75,41 +75,20 @@ Wizard (src/cli/components/wizard/wizard.tsx)
   |     |     |-> CheckboxGrid (checkbox-grid.tsx) - Generic checkbox list
   |     |-> StepBuild (step-build.tsx) - Technology selection
   |     |     |-> CategoryGrid (category-grid.tsx) - Category sections; renders internal CategorySection + SkillTag
-  |     |-> StepSources (step-sources.tsx) - Source selection
-  |     |     |-> SelectionCard (selection-card.tsx) - Choice card (feature-flagged: SOURCE_CHOICE)
-  |     |     |-> SourceGrid (source-grid.tsx) - Per-skill source picker
-  |     |     |     |-> SearchModal (search-modal.tsx) - Bound skill search (feature-flagged: SOURCE_SEARCH)
+  |     |-> StepSources (step-sources.tsx) - Install-mode selection
+  |     |     |-> SourceGrid (source-grid.tsx) - Per-skill two-state control: Local | Plugin
   |     |     |     |-> ScrollAffordance (scroll-affordance.tsx) - overflow hint, sibling of the clipped viewport
   |     |-> StepAgents (step-agents.tsx) - Agent selection
   |     |-> StepConfirm (step-confirm.tsx) - Confirmation; owns Enter/Esc only
   |     |     |-> SummaryPanel (summary-panel.tsx) - THE SAME component the "I" overlay renders
   |     |     |     |-> SkillAgentSummary (skill-agent-summary.tsx) - 2-box skill/agent listing
   |     |     |     |-> ScrollAffordance (scroll-affordance.tsx) - overflow hint
-  |
-  |-> Overlays:
-        |-> StepSettings (step-settings.tsx) - Source management (WITHDRAWN: the S hotkey that opens it is gated on WIZARD_SETTINGS_OVERLAY, default false; footer label separately gated by SOURCE_SEARCH)
 ```
 
 Additional wizard components (not in the step render tree):
 
 - `run-wizard-session.tsx` - `runWizardSession(options: WizardSessionOptions): Promise<WizardResultV2 | null>`: the single shared command-side entry point that hydrates the store, renders `<Wizard>`, awaits exit, clears the terminal (Ink `clear()` then the command-owned `clearTerminal`), and returns the result — `null` both when the render produced no result and when the result carries `cancelled: true` (used by `init.tsx` and `edit.tsx` only). It captures `onComplete` internally into a closure variable and forwards `options.onCancel`; callers supply everything else via `WizardSessionOptions = { hydrate: HydrateOptions; props: Omit<WizardProps, "onComplete" | "onCancel">; onCancel: () => void; clearTerminal: () => void }`. `list.tsx` does NOT use it — it renders a read-only `ListView` (via `SkillAgentSummary`) and calls `hydrateWizardStore()` directly to seed the diff baseline, without rendering the wizard.
 - `toast.tsx` - Toast notification component (styled text block with padding), rendered by `wizard-layout.tsx`
-
-## Feature Flags
-
-Feature flags live in `FEATURE_FLAGS` (`src/cli/lib/feature-flags.ts`). The wizard-relevant flags:
-
-| Flag                      | Default | Controls                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SOURCE_SEARCH`           | `false` | Search pill in source grid; also gates the `Settings` footer label                                                                                                                                                                                                                                                                                         |
-| `WIZARD_SETTINGS_OVERLAY` | `false` | `S` opens the marketplace-sources overlay on the sources step (D-307). Gates BOTH sites in `wizard.tsx`: the hotkey on the sources step and the `store.showSettings` early-return in the root input handler. `StepSettings` and `toggleSettings` stay intact for a one-flag re-enable — but the input capture must be fixed first (see the flag's comment) |
-| `SOURCE_CHOICE`           | `false` | Intermediate "recommended vs customize" screen in sources step                                                                                                                                                                                                                                                                                             |
-| `INFO_PANEL`              | `true`  | `I` opens the `SummaryPanel` overlay in `wizard-layout.tsx`, and guards the overlay's own render branch there. Necessary but not sufficient for the key: the step gate lives with it inside `isInfoPanelAvailable(step)`, which also excludes `confirm`                                                                                                    |
-| `FILTER_INCOMPATIBLE`     | `false` | `F` key filters incompatible skills in the build step. Gates BOTH the keypress in `use-category-grid-input.ts` and the footer hint in `wizard-layout.tsx`; `toggleFilterIncompatible` stays intact and dormant for a one-flag re-enable.                                                                                                                   |
-
-The same object also holds three command-gating flags outside the wizard: `NEW_SKILL_COMMAND`, `NEW_AGENT_COMMAND`, `NEW_MARKETPLACE_COMMAND` (all `false`) — see `commands.md`.
-
-**Every default above is overridable at runtime.** Each entry is `envFlag(name, default)`: `AGENTSINC_FLAG_<NAME>` set to `1` / `true` forces the flag on, `0` / `false` forces it off, anything else (including unset) falls back to the default. So a dormant wizard surface — the `S` settings overlay, the `F` incompatible filter, the search pill — can be reached without a rebuild, and a test can drive it. The read happens at module load, deliberately: `tsup` inlines a plain boolean literal into the compiled bundle, so gated code was unreachable from a compiled command until the flags became `process.env` lookups. Semantics are pinned by `feature-flags.test.ts`.
 
 ## Wizard Props (from commands)
 
@@ -119,11 +98,10 @@ export type WizardProps = {
   onComplete: (result: WizardResultV2) => void; // Called on confirm
   onCancel: () => void; // Called on cancel paths (each step handles its own ESC)
   version: string; // CLI version for display (required)
-  logo?: string; // ASCII logo for header
-  projectDir?: string;
-  startupMessages?: StartupMessage[]; // Messages to display on startup
-  initialAgents?: AgentName[]; // Used by StepSources onContinue to gate preselectAgentsFromDomains
-  installedSkillIds?: SkillId[]; // Used by useBuildStepProps for install-state markers
+  logo?: string | undefined; // ASCII logo for header
+  startupMessages?: StartupMessage[] | undefined; // What the load said before Ink took the terminal; painted as a band by WizardLayout
+  initialAgents?: AgentName[] | undefined; // Used by StepSources onContinue to gate preselectAgentsFromDomains
+  installedSkillIds?: SkillId[] | undefined; // Used by useBuildStepProps for install-state markers
 };
 ```
 
@@ -165,7 +143,7 @@ export type WizardResultV2 = {
   selectedStackId: string | null;
   domainSelections: DomainSelections;
   selectedDomains: Domain[];
-  unresolvableSkillIds: SkillId[]; // Saved skill ids the loaded matrix could not resolve (Scenario C data-loss guard)
+  unresolvableSkillIds: SkillId[]; // Saved skill ids the loaded matrix could not resolve — removed from config, named with their reason by `edit`
   cancelled: boolean;
   validation: SelectionValidation; // { valid; errors: ValidationError[]; warnings: ValidationWarning[] } from types/matrix.ts
 };
@@ -175,22 +153,18 @@ export type WizardResultV2 = {
 
 ## Wizard Hooks
 
-| Hook                       | File                                                       | Purpose                                                                             |
-| -------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `useBuildStepProps`        | `src/cli/components/hooks/use-build-step-props.ts`         | Compute build step derived data                                                     |
-| `useCategoryGridInput`     | `src/cli/components/hooks/use-category-grid-input.ts`      | Keyboard navigation for grid                                                        |
-| `useKeyboardNavigation`    | `src/cli/components/hooks/use-keyboard-navigation.ts`      | Arrow key + Enter handling                                                          |
-| `useFocusedListItem`       | `src/cli/components/hooks/use-focused-list-item.ts`        | Focus tracking for lists                                                            |
-| `useFrameworkFiltering`    | `src/cli/components/hooks/use-framework-filtering.ts`      | Framework-first skill filtering                                                     |
-| `useMeasuredHeight`        | `src/cli/components/hooks/use-measured-height.ts`          | Component height measurement                                                        |
-| `useModalState`            | `src/cli/components/hooks/use-modal-state.ts`              | Modal open/close state                                                              |
-| `usePanelScroll`           | `src/cli/components/hooks/use-panel-scroll.ts`             | Line scroll for one clipped viewport driven by `↑`/`↓`; used by `summary-panel.tsx` |
-| `useRowScroll`             | `src/cli/components/hooks/use-row-scroll.ts`               | Row-based scroll position                                                           |
-| `useSectionScroll`         | `src/cli/components/hooks/use-section-scroll.ts`           | Section-based scroll position                                                       |
-| `useSourceGridSearchModal` | `src/cli/components/hooks/use-source-grid-search-modal.ts` | Search modal for sources                                                            |
-| `useSourceOperations`      | `src/cli/components/hooks/use-source-operations.ts`        | Source add/remove operations                                                        |
-| `useTerminalDimensions`    | `src/cli/components/hooks/use-terminal-dimensions.ts`      | Terminal width/height tracking                                                      |
-| `useTextInput`             | `src/cli/components/hooks/use-text-input.ts`               | Text input handling                                                                 |
+| Hook                    | File                                                  | Purpose                                                                             |
+| ----------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `useBuildStepProps`     | `src/cli/components/hooks/use-build-step-props.ts`    | Compute build step derived data                                                     |
+| `useCategoryGridInput`  | `src/cli/components/hooks/use-category-grid-input.ts` | Keyboard navigation for grid                                                        |
+| `useKeyboardNavigation` | `src/cli/components/hooks/use-keyboard-navigation.ts` | Arrow key + Enter handling                                                          |
+| `useFocusedListItem`    | `src/cli/components/hooks/use-focused-list-item.ts`   | Focus tracking for lists                                                            |
+| `useCategoryRows`       | `src/cli/components/hooks/use-category-rows.ts`       | Memoised build-step grid rows for the active domain                                 |
+| `useMeasuredHeight`     | `src/cli/components/hooks/use-measured-height.ts`     | Component height measurement                                                        |
+| `usePanelScroll`        | `src/cli/components/hooks/use-panel-scroll.ts`        | Line scroll for one clipped viewport driven by `↑`/`↓`; used by `summary-panel.tsx` |
+| `useRowScroll`          | `src/cli/components/hooks/use-row-scroll.ts`          | Row-based scroll position                                                           |
+| `useSectionScroll`      | `src/cli/components/hooks/use-section-scroll.ts`      | Section-based scroll position                                                       |
+| `useTerminalDimensions` | `src/cli/components/hooks/use-terminal-dimensions.ts` | Terminal width/height tracking                                                      |
 
 ## Build Step Logic
 
@@ -199,9 +173,7 @@ export type WizardResultV2 = {
 Contains non-UI logic extracted from the build step for testability:
 
 - `validateBuildStep()` - Validate build step selections (required categories). **Cannot return `valid: false`, and has no production caller** — see [leaf-exports.md](../leaf-exports.md) § `BuildStepValidation`
-- `isCompatibleWithSelectedFrameworks()` - Check if a skill is compatible with selected framework skills
 - `buildCategoriesForDomain()` - Build category row data for a domain
-- `FRAMEWORK_CATEGORY_ID` - the `"web-framework"` category id the framework-first filter pivots on
 
 **Grid order is deterministic.** `buildCategoriesForDomain()` orders the two axes independently: category ROWS by `cat.order ?? 0`, and each row's OPTIONS by `displayName` lowercased, both with remeda's `sortBy`. **Both sorts are load-bearing.** Without the option sort, order follows matrix and `readdir` insertion order, so the grid reshuffles between runs and between source types, and a positional walk over it meant nothing. Lowercasing keeps the comparison locale-independent. Rows whose options list is empty are dropped from the result.
 
@@ -228,13 +200,13 @@ Computes the per-scope diff rows and scope badges that the confirm-step summary 
 | Type             | Shape                                                                                                                                                                                       |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ScopeDiffInput` | `{ currentSkills: SkillConfig[]; currentAgents: AgentScopeConfig[]; installedSkillConfigs: SkillConfig[] \| null; installedAgentConfigs: AgentScopeConfig[] \| null; isInitMode: boolean }` |
-| `DiffRowStatus`  | `"added" \| "source-changed" \| "removed" \| "unchanged"`                                                                                                                                   |
+| `DiffRowStatus`  | `"added" \| "mode-changed" \| "removed" \| "unchanged"`                                                                                                                                     |
 | `SkillDiffRow`   | `{ id: SkillId; source: string; status: DiffRowStatus }` — **no `prevSource`**: the compact `~` marker replaces the verbose transition label                                                |
-| `AgentDiffRow`   | `{ name: AgentName; status: Exclude<DiffRowStatus, "source-changed"> }`                                                                                                                     |
+| `AgentDiffRow`   | `{ name: AgentName; status: Exclude<DiffRowStatus, "mode-changed"> }`                                                                                                                       |
 | `ScopeDiff`      | `{ projectSkillRows: SkillDiffRow[]; globalSkillRows: SkillDiffRow[]; projectAgentRows: AgentDiffRow[]; globalAgentRows: AgentDiffRow[]; hasContent: boolean }`                             |
 | `ScopeBadges`    | `{ scope: SkillScope \| undefined; secondaryScope: SkillScope \| undefined }`                                                                                                               |
 
-**Internal helpers** (module scope, NOT exported): `classifyDiffRow(skill, prevKeySet, prevSourceMap)` classifies an active skill entry against the baseline (`added` / `source-changed` / `unchanged`) — it compares against the previous source but does not carry it onto the row; `classifyAgentDiffRow(agent, prevKeySet)` classifies an active agent (`added` / `unchanged`); `toRemovedSkillRow` / `toRemovedAgentRow` build `removed` rows from baseline entries absent in current state. `computeScopeDiff` suppresses removed-global rows when `isInitMode` is true. Both sides key through a shared helper: skills through `skillSlotKey`, agents through `agentSlotKey`. The agent helper has no second consumer yet — it exists so that one cannot arrive and build its own key, which is the precondition that produced D-278 on the skill side.
+**Internal helpers** (module scope, NOT exported): `classifyDiffRow(skill, prevKeySet, prevSourceMap)` classifies an active skill entry against the baseline (`added` / `mode-changed` / `unchanged`) — it compares against the previous `source`, which is where a skill's install mode is recorded, but does not carry it onto the row; `classifyAgentDiffRow(agent, prevKeySet)` classifies an active agent (`added` / `unchanged`); `toRemovedSkillRow` / `toRemovedAgentRow` build `removed` rows from baseline entries absent in current state. `computeScopeDiff` suppresses removed-global rows when `isInitMode` is true. Both sides key through a shared helper: skills through `skillSlotKey`, agents through `agentSlotKey`. The agent helper has no second consumer yet — it exists so that one cannot arrive and build its own key, which is the precondition that produced D-278 on the skill side.
 
 ### Known Limitations (`computeScopeDiff`, both OPEN)
 
@@ -278,12 +250,10 @@ Hotkeys are centralized in `src/cli/components/wizard/hotkeys.ts`.
 
 ### Global hotkeys (handled in `wizard.tsx`)
 
-- `I`: Toggle info panel (`HOTKEY_INFO`). Gated by `isInfoPanelAvailable(step)` from `hotkeys.ts` — `FEATURE_FLAGS.INFO_PANEL && step !== "confirm"`, NOT the flag alone. The **close** path is deliberately ungated: `wizard.tsx` handles `store.showInfo` in an earlier branch, so `I` or `Escape` always closes an open panel. See "Info Panel — the `I` overlay" below.
+- `I`: Toggle info panel (`HOTKEY_INFO`). Gated by `isInfoPanelAvailable(step)` from `hotkeys.ts` — `step !== "confirm"`. The **close** path is deliberately ungated: `wizard.tsx` handles `store.showInfo` in an earlier branch, so `I` or `Escape` always closes an open panel. See "Info Panel — the `I` overlay" below.
 - `A` (build step with stack selected): Accept stack defaults, set `stackAction = "defaults"`, jump to `confirm` (`HOTKEY_ACCEPT_DEFAULTS`).
 - `S` (build step): Toggle focused skill scope (project/global) via `toggleSkillScope`; suppressed with toast when `isEditingFromGlobalScope` (`HOTKEY_SCOPE`).
 - `S` (agents step): Toggle focused agent scope via `toggleAgentScope`; suppressed with toast when `isEditingFromGlobalScope` (`HOTKEY_SCOPE`).
-- `S` (sources step): Toggle settings overlay via `toggleSettings` (`HOTKEY_SETTINGS`). **Gated on `FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY` (default false), so it is inert today** — the press falls through and the user stays on the sources grid. The footer label is separately gated by `SOURCE_SEARCH`, so no key is advertised either.
-- `S` (settings overlay): Closes the overlay (same `HOTKEY_SETTINGS`). The `store.showSettings` branch that handles it — an early return that swallows every other key while the overlay is up — carries the SAME flag gate, so nothing can be stranded behind a stale flag while the overlay is withdrawn.
 - `Escape` (in wizard.tsx): Explicit no-op. Each step owns ESC handling (see Cancellation below).
 
 ### Cancellation semantics
@@ -297,37 +267,28 @@ Hotkeys are centralized in `src/cli/components/wizard/hotkeys.ts`.
 Build step (in `hotkeys.ts`):
 
 - `D`: Toggle labels display (`HOTKEY_TOGGLE_LABELS`)
-- `F`: Toggle incompatible skill filtering (`HOTKEY_FILTER_INCOMPATIBLE`). **Currently a no-op** — gated behind `FEATURE_FLAGS.FILTER_INCOMPATIBLE`(default `false`) in both `use-category-grid-input.ts` (the keypress) and `wizard-layout.tsx` (the footer hint), because of a dual-scope collapse bug. When re-enabled: turning the filter on removes incompatible web skills; if any of those removals would uninstall a globally-installed skill during a project-scope edit, `toggleFilterIncompatible` in `wizard-store.ts` refuses the entire toggle (filter included) with the `GLOBAL_SKILLS_LOCKED` toast — the same lock `toggleTechnology` applies to spacebar (bypassed only when `isEditingFromGlobalScope` is true; there is no init-mode bypass).
 - Arrow keys **and vim keys** (`h`/`j`/`k`/`l`) move focus; `Tab` jumps to the next category section (wrapping) and `Shift+Tab` toggles labels. All registered through one stable `useInput` handler held in a ref, so a domain remount cannot drop the first keypress into a stale closure.
 
-Sources step (customize view, handled in `step-sources.tsx`):
+Sources step (handled in `step-sources.tsx`):
 
-- `L`: Set all sources to local/eject (`HOTKEY_SET_ALL_LOCAL`)
-- `P`: Set all sources to plugin/marketplace (`HOTKEY_SET_ALL_PLUGIN`)
-- `ENTER`: Continue to agents step (or in choice view, proceed with selected card)
-- `ESC`: Back. If `FEATURE_FLAGS.SOURCE_CHOICE` is on, ESC from customize view returns to the choice view; otherwise ESC calls `onBack` (which calls `store.goBack`).
-- All hotkeys are suppressed while the search modal is open (`isGridSearching` guard).
+- `L`: Set every skill to install locally (`HOTKEY_SET_ALL_LOCAL`)
+- `P`: Set every skill to install as a marketplace plugin (`HOTKEY_SET_ALL_PLUGIN`)
+- `ENTER`: Continue to agents step
+- `ESC`: Back — calls `onBack`, which calls `store.goBack`.
 
 Sources step (source-grid in `source-grid.tsx`):
 
-- Arrow keys only — **no vim keys here** (unlike the build step). `←`/`→` move between source option columns, `↑`/`↓` between skill rows, with wrapping.
-- `SPACE`: select the focused source for the focused skill, OR trigger the search modal when focused on the search pill. It returns immediately on an inert row (`isRowInert` = `readOnly || disabled`), so a locked or pending-removal row can never be acted on.
+- Arrow keys only — **no vim keys here** (unlike the build step). `←`/`→` move between the row's two install-mode cells, `↑`/`↓` between skill rows, with wrapping.
+- `SPACE`: commit the focused cell as the focused skill's install mode. It returns immediately on an inert row (`isRowInert` = `readOnly || disabled`), so a locked or pending-removal row can never be acted on.
 - **Overscroll to reach trailing inert rows.** Focus skips inert rows, so a trailing locked or pending-removal row is unreachable by focus alone. When focus already sits on the last focusable row (`lastFocusableRowIndex`) — or when no row is focusable at all — `↓` calls `useSectionScroll`'s `scrollBy(1)` to travel the viewport past focus instead of wrapping; `↑` does the same with `scrollBy(-1)` in the no-focusable-row case. Both are gated on `scrollEnabled` and a non-zero `hiddenBelow`/`hiddenAbove`.
-- Search pill only rendered when `FEATURE_FLAGS.SOURCE_SEARCH` is on (onSearch prop is provided). While the search modal is open the grid's `useInput` is deactivated entirely (`isActive: !searchModal.isOpen`).
 - Rows are grouped into `Global` / `Project` sections only when both scopes are present (`groupRowsByScope`); otherwise the grid renders flat with no scope column.
-
-Settings step (`step-settings.tsx`):
-
-- `A`: Add source (`HOTKEY_ADD_SOURCE`)
-- `DEL`/`Backspace`: Remove focused source
-- `ESC` or `S`: Close settings (ESC handled by step-settings' own `useKeyboardNavigation` hook; `S` handled by wizard.tsx)
 
 ### Hotkey helpers
 
 `hotkeys.ts` exports exactly two:
 
 - `isHotkey(input, hotkey)` - Case-insensitive character comparison.
-- `isInfoPanelAvailable(step)` - `FEATURE_FLAGS.INFO_PANEL && step !== "confirm"`. Read by BOTH the `I` branch in `wizard.tsx` and the `Info` footer hint's `isVisible` in `wizard-layout.tsx`, so the wizard cannot advertise a key it ignores. The two call sites must never diverge.
+- `isInfoPanelAvailable(step)` - `step !== "confirm"`. Read by BOTH the `I` branch in `wizard.tsx` and the `Info` footer hint's `isVisible` in `wizard-layout.tsx`, so the wizard cannot advertise a key it ignores. The two call sites must never diverge.
 
 Common key labels exported from `hotkeys.ts`:
 
@@ -340,17 +301,17 @@ Common key labels exported from `hotkeys.ts`:
 
 ## Build Step Domain Order
 
-From `src/cli/consts.ts`:
+From `@workspace/matrix` (`packages/matrix/src/read-model/domains.ts`) — the shared surface both the editor and the CLI read:
 
 ```typescript
-BUILT_IN_DOMAIN_ORDER = ["web", "api", "ai", "mobile", "desktop", "cli", "infra", "meta", "shared"];
+DOMAIN_ORDER = ["web", "api", "ai", "mobile", "desktop", "cli", "infra", "meta", "shared"];
 ```
 
 Custom domains appear before built-in domains, alphabetically (see `orderDomains()` in `src/cli/lib/wizard/domain-order.ts`).
 
 Default scratch domains: `DEFAULT_SCRATCH_DOMAINS = ["web", "api", "mobile"]` in `src/cli/consts.ts`.
 
-Domain descriptions defined as `BUILT_IN_DOMAIN_DESCRIPTIONS` in `src/cli/components/wizard/utils.ts` (consumed by `domain-selection.tsx`):
+Domain descriptions are `DOMAIN_DESCRIPTIONS` from `@workspace/matrix` (consumed by `domain-selection.tsx`):
 
 | Domain    | Description                                            |
 | --------- | ------------------------------------------------------ |
@@ -364,22 +325,9 @@ Domain descriptions defined as `BUILT_IN_DOMAIN_DESCRIPTIONS` in `src/cli/compon
 | `meta`    | Design patterns, code review, and research methodology |
 | `shared`  | Shared utilities and methodology                       |
 
-## Framework-First Filtering
-
-In the build step, skills have a `compatibleWith` field (resolved from `skill-rules.ts` compatibility groups) listing framework skill IDs they work with.
-
-When a framework is selected (e.g., `web-framework-react`), only skills compatible with that framework (or with an empty `compatibleWith`) are shown. This filtering only applies to the `web` domain and only when `filterIncompatible` is true (toggled with `F` key).
-
-Implemented in:
-
-- `src/cli/components/hooks/use-framework-filtering.ts` (hook)
-- `src/cli/lib/wizard/build-step-logic.ts` (`isCompatibleWithSelectedFrameworks()`, `buildCategoriesForDomain()`)
-
 ## Info Panel — the `I` overlay
 
 `src/cli/components/wizard/summary-panel.tsx` (there is no `info-panel.tsx`; it was deleted once it reduced to `() => <SummaryPanel />`).
-
-Gated by `FEATURE_FLAGS.INFO_PANEL` (currently `true`).
 
 Pressing `I` opens a panel in `wizard-layout.tsx` that replaces the step content. Shows:
 
@@ -391,32 +339,6 @@ Pressing `I` opens a panel in `wizard-layout.tsx` that replaces the step content
 **There is no longer any difference from StepConfirm — it is the same component.** Both halves of the old claim are false: `SummaryPanel` reads `skillConfigs` / `agentConfigs` from the store on both surfaces, and `StepConfirm` no longer receives them as props (`wizard.tsx` had been passing exactly what the panel now selects for itself). `StepConfirm` adds only a `useInput` of its own for `Enter` (complete) and `Esc` (back), on keys disjoint from the panel's `↑`/`↓`.
 
 **`I` is not offered on the confirm step.** `isInfoPanelAvailable(step)` in `hotkeys.ts` gates both the toggle in `wizard.tsx` and the `Info` footer hint in `wizard-layout.tsx` — once the confirm step IS the panel, the hotkey has nothing left to reveal. The CLOSE path is deliberately ungated: gating it would strand an overlay opened on a step that later became disallowed.
-
-## Settings Overlay
-
-`src/cli/components/wizard/step-settings.tsx`
-
-**WITHDRAWN behind `FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY` (default false, D-307).** No keypress reaches this overlay today: the `S` binding on the sources step is flag-gated, so `showSettings` never becomes true and the render branch below is unreachable. The component, its store field and its action all stay in the tree, and its component specs (`step-settings.test.tsx`) keep running against it directly; the E2E specs that drive it THROUGH the wizard skip on the same flag. Re-enabling is one flag flip plus the input fix named in the flag's comment.
-
-**Not a `WizardStep`.** `StepSettings` is an overlay, not a member of `WIZARD_STEP_ORDER`. `wizard.tsx` renders it in place of the step content when the `showSettings` store flag is true (toggled by the `toggleSettings` action, bound — when the flag is on — to the `S` hotkey on the sources step). It is a sibling of the `I` summary overlay, not part of the step render tree or the `history` stack.
-
-**Props:**
-
-```typescript
-// src/cli/components/wizard/step-settings.tsx
-export type StepSettingsProps = {
-  projectDir: string;
-  onClose: () => void; // wizard.tsx passes () => store.toggleSettings()
-};
-```
-
-**Behavior:**
-
-- Loads a `SourceSummary` via `getSourceSummary(projectDir)` from `src/cli/lib/configuration/source-manager.ts`; on failure falls back to a single default `PUBLIC_SOURCE_NAME` source. Renders configured marketplaces, local skill count (`.claude/skills/`), and plugin skill count.
-- Adds/removes sources through `useSourceOperations(projectDir, loadSummary)`; a successful `handleRemove` reloads the summary and moves focus up one row.
-- Add-source uses an in-place text-input modal (`useModalState` + `useTextInput`), NOT `SearchModal`.
-- The default public source (`PUBLIC_SOURCE_NAME`) cannot be removed — DEL/Backspace on it is a no-op.
-- Hotkeys (`A` add, `DEL`/`Backspace` remove, `ESC`/`S` close): see the Settings step subsection under Keyboard Navigation.
 
 ## Global-Item Guards
 
@@ -451,7 +373,7 @@ The sources step is not only a source picker — it is a second view of "what th
 - **A skill added this session carries a green `+`.** `collectInstalledSkillSlots` + `addedSlotFlag` decide the flag per `(id, scope)` slot, and every row shape in `classifySkillSourceRows` is fed it. An added row stays fully selectable and editable — unlike `disabled`/`readOnly`, `added` is not an inertness flag.
 - **Both are keyed on the slot, exactly as the confirm step is (D-278).** Both surfaces call `skillSlotKey` from `scope-diff.ts`. The consequences: a removal shows at global scope too (the old `isEditingFromGlobalScope` gate on the removal collector is gone; the confirm step never had one); adopting a globally-installed skill at project scope shows `+` on the new project row while the global row stays a plain lock; and a collapsed dual-scope pair renders **two** rows — the surviving locked global row plus a red inert pending-removal row for the emptied project slot — which is exactly what the confirm step already reported (`-` at Project, `•` at Global). `isSlotAlreadyRendered` prevents a removal row being stacked on a slot an emitted row already renders, so an inherited global install never reads as both locked and removed.
 
-**Source selection is scope-threaded.** `handleGridSelect` in `step-sources.tsx` looks up the skill's single non-inert row and passes its `scope` to `store.setSourceSelection(skillId, sourceId, scope)`, which rewrites only the active entry at that slot. A dual-scope skill renders only its project row as editable, so the masked global tombstone keeps its own source.
+**Install-mode selection is scope-threaded.** `handleGridSelect` in `step-sources.tsx` looks up the skill's single non-inert row and passes its `scope` to `store.setInstallMode(skillId, mode, scope)`, which resolves the mode to a `source` value and rewrites only the active entry at that slot. A dual-scope skill renders only its project row as editable, so the masked global tombstone keeps its own source.
 
 Full mechanics: `store-map.md`, "Sources-tab session diff" and "Source-row builders". Rendering contract: `component-patterns.md`, "SourceGrid Row States".
 
@@ -467,11 +389,11 @@ Long content used to bleed outside its border at short terminal heights. Two rul
 
 **Decoration yields before content does.** The stack step is the only step that paints the ASCII banner, and its six rows were enough to starve that step's own list viewport below `MIN_VIEWPORT_ROWS` — where `useRowScroll` stops clipping — so the stack rows painted over the scratch row at 20 and through the footer at 24. `WizardLayout` now renders the banner only at or above `LOGO_MIN_TERMINAL_ROWS` (26, measured against the binary; the table is in its JSDoc). That constant is deliberately NOT part of `MIN_TERMINAL_SIZE`: the size gate decides whether a command runs at all, this decides whether one decorative element renders inside a terminal that already cleared it, and folding 26 into the gate would refuse to run in a 24-row terminal. It fixes the stack-step instance only — the bail-instead-of-clip behaviour itself is untouched and D-266 stays open.
 
-The Sources column header is pinned OUTSIDE the clipping viewport so it cannot scroll away, but it costs a row just as the affordance does; below `SOURCE_GRID_HEADER_MIN_HEIGHT = 4` the column labels yield to content (`showPinnedHeader`). See `component-patterns.md`, "Scrolling", for the measurement and overscroll model.
+The Sources grid pins nothing above its viewport. It used to carry a column header captioning the marketplace columns, at the cost of a row; with two fixed cells the captions moved onto the cells themselves (`INSTALL_MODE_CELL_LABELS`), and a header would have printed `Local` and `Plugin` directly above the words `Local` and `Plugin`. See `component-patterns.md`, "Scrolling", for the measurement and overscroll model.
 
-## Source Change Marker(compacted)
+## Mode Change Marker (compacted)
 
-`SkillAgentSummary` in `skill-agent-summary.tsx` shows a `~` prefix (instead of `+` or bullet) when a skill's source has changed from the installed version. The `"source-changed"` status is computed by `computeScopeDiff()`/`classifyDiffRow()` in `src/cli/lib/wizard/scope-diff.ts` (condition: `!isNew && prevSource != null && prevSource !== skill.source`, where `prevSource` comes from the active-baseline `prevSourceMap`).
+`SkillAgentSummary` in `skill-agent-summary.tsx` shows a `~` prefix (instead of `+` or bullet) when a skill's install mode has changed from the installed version. The `"mode-changed"` status is computed by `computeScopeDiff()`/`classifyDiffRow()` in `src/cli/lib/wizard/scope-diff.ts` (condition: `!isNew && prevSource != null && prevSource !== skill.source`, where `prevSource` comes from the active-baseline `prevSourceMap`). The comparison is still on `source` because that field IS where the mode is recorded — `eject` for the project's own copy, the marketplace name for a plugin — and with one marketplace there is nothing else a changed `source` could mean.
 
 **The transition label is gone.** `SkillRow` used to append a dim `(OldSource → NewSource)` — e.g. `agents-inc → eject` — which wrapped out of its row at realistic widths. It now renders only `DIFF_PREFIX[status]` + `getSkillDisplayName(row.id)`, plus an `EjectIcon` when `row.source === EJECT_SOURCE`. The compact `~` marker the row already carried is the whole signal, and `SkillDiffRow` no longer carries a `prevSource` field. Consequently `skill-agent-summary.tsx` no longer imports `formatSourceDisplayName`; `summary-panel.tsx` still does, for its marketplace header.
 

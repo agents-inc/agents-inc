@@ -67,7 +67,7 @@ Union types for Domain, Category, AgentName, SkillId, and SkillSlug are **auto-g
 export const SKILL_MAP = {
   "angular-standalone": "web-framework-angular-standalone",
   "ant-design": "web-ui-ant-design",
-  // ... 222 entries total
+  // ... one entry per skill
 } as const;
 
 export type SkillSlug = keyof typeof SKILL_MAP;
@@ -76,7 +76,7 @@ export type SkillId = (typeof SKILL_MAP)[SkillSlug];
 
 - Derived from `SKILL_MAP` constant (slug-to-ID mapping), not a template literal
 - No dedicated `skillIdSchema` exists. At parse boundaries `SkillId` is validated with a lenient `z.string() as z.ZodType<SkillId>` cast (see `skillFrontmatterLoaderSchema`, `boundSkillSchema` in `src/cli/lib/schemas.ts`) — intentionally permissive because local/custom skills carry non-builtin IDs
-- 222 skill IDs, 222 skill slugs
+- One `SkillId` and one `SkillSlug` per `SKILL_MAP` entry; the union sizes are owned by [`type-system.md`](../type-system.md) ("Counts")
 - Re-exported from `src/cli/types/skills.ts`
 - Examples: `"web-framework-react"`, `"meta-methodology-research-methodology"`, `"api-database-drizzle"`, `"ai-provider-anthropic-sdk"`, `"desktop-framework-electron"`
 
@@ -86,8 +86,8 @@ export type SkillId = (typeof SKILL_MAP)[SkillSlug];
 type SkillSlug = keyof typeof SKILL_MAP;
 ```
 
-- 222 members (one per skill): `"react"`, `"zustand"`, `"vitest"`, `"drizzle"`, `"anthropic-sdk"`, `"electron"`, `"tauri"`, etc.
-- Used in relationship rules (conflicts, recommends, requires) instead of full SkillId
+- One member per skill: `"react"`, `"zustand"`, `"vitest"`, `"drizzle"`, `"anthropic-sdk"`, `"electron"`, `"tauri"`, etc. Count owned by [`type-system.md`](../type-system.md)
+- Used in relationship rules (conflicts, requires, alternatives) instead of full SkillId
 - Re-exported from `src/cli/types/skills.ts`
 
 ### AgentName (`src/cli/types/generated/source-types.ts`)
@@ -96,33 +96,29 @@ type SkillSlug = keyof typeof SKILL_MAP;
 export const AGENT_NAMES = [
   "agent-summoner",
   "ai-developer",
-  "ai-reviewer",
+  "ai-researcher",
+  "ai-tester",
   "api-developer",
-  "api-pm",
   "api-researcher",
-  "api-reviewer",
   "api-tester",
   "cli-developer",
-  "cli-reviewer",
+  "cli-researcher",
   "cli-tester",
   "codex-keeper",
   "convention-keeper",
-  "infra-reviewer",
-  "pattern-scout",
+  "pm",
+  "reviewer",
   "skill-summoner",
-  "web-architecture",
   "web-developer",
-  "web-pattern-critique",
-  "web-pm",
   "web-researcher",
-  "web-reviewer",
   "web-tester",
 ] as const;
 
 export type AgentName = (typeof AGENT_NAMES)[number];
 ```
 
-23 members total. Re-exported from `src/cli/types/agents.ts`.
+Re-exported from `src/cli/types/agents.ts`. Member count is owned by
+[type-system.md](../type-system.md) ("Counts").
 
 ### Domain (`src/cli/types/generated/source-types.ts`)
 
@@ -145,21 +141,23 @@ export type Domain = (typeof DOMAINS)[number];
 
 ### Category (`src/cli/types/generated/source-types.ts`)
 
-89 values covering all skill categories across domains:
+Every skill category across the domains. The union size is owned by [`type-system.md`](../type-system.md) ("Counts"); the per-domain membership is:
 
 - ai-\*: infrastructure, observability, orchestration, patterns, provider (5)
-- api-\*: analytics, api, auth, baas, caching, cms, commerce, database, email, framework, graphql, messaging, observability, performance, queue, search, specs, vector-db (18)
+- api-\*: analytics, api, auth, baas, caching, cms, commerce, db-host, document, email, graphql, kv, messaging, observability, orm, performance, queue, search, specs, sql-engine, vector-db (21)
 - cli-\*: framework, prompts (2)
 - desktop-\*: backend, framework, ipc, mobile, multiwindow, packaging, plugins, security, storage, testing, ui, updates (12)
 - infra-\*: ci-cd, config, containers, iac, platform (5)
-- meta-\*: design, methodology, reviewing (3)
+- meta-\*: design, methodology, planning, reviewing (4)
 - mobile-\*: animation, background, camera, deep-linking, deployment, framework, hardware, navigation, notifications, performance, security, storage, styling, testing, ui-components (15)
-- shared-\*: monorepo, security, tooling (3)
-- web-\*: 3d, accessibility, animation, client-state, dataviz, dnd, editor, error-handling, file-upload, files, forms, framework, i18n, maps, meta-framework, mocking, performance, pwa, realtime, routing, server-state, styling, testing, tooling, ui-components, utilities (26)
+- shared-\*: lint, monorepo, security, task-runner, tooling (5)
+- web-\*: 3d, accessibility, animation, client-state, dataviz, dnd, docs, e2e, editor, error-handling, file-upload, files, form-library, forms, framework, graphql-client, i18n, maps, meta-framework, mocking, performance, pwa, realtime, routing, rpc, server-state, streaming, styling, testing, tooling, ui-components, ui-kit, utilities (33)
+
+There is no `api-framework` category — the API domain spells its framework axis `api-api`. A suffix rule written against `-framework` misses it.
 
 Re-exported from `src/cli/types/matrix.ts`.
 
-**`defaultCategories` now defines all 89.** `defaultCategories` in `src/cli/lib/configuration/default-categories.ts` previously defined 51 of the 89 union members, so `tsc --noEmit` failed with TS1360 and each of the 38 undefined categories was auto-synthesized at load time with a humanized display name ("Api Graphql"), `order: 999` and `exclusive: false` — which is what the wizard rendered. All 89 are now declared, of which **27 carry `exclusive: true`** and **6 carry `required: true`**. `src/cli/lib/configuration/__tests__/default-categories.test.ts` pins the key set against the generated `CATEGORIES` array so the two cannot drift again.
+**`defaultCategories` defines every union member.** `defaultCategories` in `src/cli/lib/configuration/default-categories.ts` must declare one entry per `Category`; any member it omits is auto-synthesized at load time with a humanized display name ("Api Graphql"), `order: 999` and `exclusive: false` — which is what the wizard would render. `src/cli/lib/configuration/__tests__/default-categories.test.ts` pins the key set against the generated `CATEGORIES` array so the two cannot drift. Its size and the exclusive/required split are owned by [`features/skills-and-matrix.md`](../features/skills-and-matrix.md) ("Current Counts").
 
 The `exclusive` flag is load-bearing beyond the wizard grid: cross-scope conflict masking reads it from the **merged matrix** (not from `defaultCategories`, so a source repo's overrides win) to decide whether a globally installed skill collides with a project-owned one. See [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md).
 
@@ -258,7 +256,7 @@ export type DiscourageRule = SkillGroupRule; // selecting one warns for ALL othe
 export type CompatibilityGroup = SkillGroupRule; // all skills in the group work together
 ```
 
-The three aliases are distinct names for the identical shape — they carry intent, not structure. `RequireRule`, `Recommendation`, and `AlternativeGroup` are **not** aliases of it (different shapes; see source).
+The three aliases are distinct names for the identical shape — they carry intent, not structure. `RequireRule` and `AlternativeGroup` are **not** aliases of it (different shapes; see source).
 
 ## Core Data Structures
 
@@ -267,8 +265,7 @@ The three aliases are distinct names for the identical shape — they carry inte
 The primary skill representation after matrix merge. Defined as `SkillCore & { … }`:
 
 - Everything in [`SkillCore`](#skillcore-srcclitypesmatrixts): `id`, `slug`, `displayName`, `description`, `usageGuidance`, `category`, `author`, `path`, `local`, `localPath`, `custom`
-- Relationships: `conflictsWith`, `requires`, `alternatives`, `discourages`, `compatibleWith`
-- Recommendation: `isRecommended`, `recommendedReason`
+- Relationships: `conflictsWith`, `requires`, `alternatives`, `discourages`
 - Sources: `availableSources`, `activeSource`
 
 ### MergedSkillsMatrix (`src/cli/types/matrix.ts`)
@@ -292,9 +289,8 @@ Unified project configuration stored at `.claude-src/config.ts`. No `version` fi
 - `skills: SkillConfig[]` - Per-skill scope+source config (`{ id, scope, source, excluded? }`)
 - `stack?: Record<string, StackAgentConfig>`
 - `source?`, `marketplace?`, `agentsSource?`
-- `domains?: Domain[]`, `selectedAgents?: AgentName[]`
+- `selectedDomains?: Domain[]` - Selected wizard domains, omitted when empty (sparse output). There is no `selectedAgents` field — the selected-agent set is derived from non-excluded `agents` rows via `activeAgentNames` in `src/cli/lib/configuration/scope-predicates.ts`
 - `sources?: SourceEntry[]` - Additional skill sources
-- `boundSkills?: BoundSkill[]` - Skills bound via search
 - `branding?: BrandingConfig` - White-label overrides
 - Directory overrides: `skillsDir?`, `agentsDir?`, `stacksFile?`, `categoriesFile?`, `rulesFile?`
 - `projects?: string[]` - Tracked project installation paths (global config only)
@@ -385,11 +381,11 @@ Compile configuration derived from stack:
 
 - `name`, `description`
 - `stack?: string`
-- `agents: Record<string, CompileAgentConfig>`
+- `agents: Partial<Record<AgentName, CompileAgentConfig>>`
 
 ### CompileAgentConfig (`src/cli/types/config.ts`)
 
-Per-agent skills mapping — the value type of `CompileConfig.agents` and of the `Record<string, CompileAgentConfig>` maps assembled in `src/cli/lib/agents/agent-recompiler.ts` and `src/cli/lib/resolver.ts`:
+Per-agent skills mapping — the value type of `CompileConfig.agents` and of the `Partial<Record<AgentName, CompileAgentConfig>>` maps assembled in `src/cli/lib/agents/agent-recompiler.ts` and `src/cli/lib/resolver.ts`:
 
 ```typescript
 export type CompileAgentConfig = {
@@ -434,7 +430,7 @@ Skill metadata extracted from SKILL.md frontmatter + metadata.yaml **before** ma
 - `directoryPath: string` — filesystem path for access, e.g. `"web/framework/react"`
 - `domain: Domain`
 
-Relationship fields (`compatibleWith`, `conflictsWith`, `requires`, …) are **absent** here: they are resolved from the centralized group declarations in `skill-rules.ts` during the merge, not from per-skill metadata. That is the whole structural difference between `ExtractedSkillMetadata` and `ResolvedSkill`.
+Relationship fields (`conflictsWith`, `requires`, …) are **absent** here: they are resolved from the centralized group declarations in `skill-rules.ts` during the merge, not from per-skill metadata. That is the whole structural difference between `ExtractedSkillMetadata` and `ResolvedSkill`.
 
 ### InstallMode (`src/cli/types/matrix.ts`)
 
@@ -486,7 +482,7 @@ export class ConfigLoadError extends Error {
 }
 ```
 
-**Three-way outcome of `loadProjectConfigFromDir(projectDir)`.** **Do not collapse the first two into a single `null`:** a corrupt `.claude-src/config.ts` is then detected as a phantom eject installation and `compile` rebuilds all 23 built-in agents:
+**Three-way outcome of `loadProjectConfigFromDir(projectDir)`.** **Do not collapse the first two into a single `null`:** a corrupt `.claude-src/config.ts` is then detected as a phantom eject installation and `compile` rebuilds every built-in agent:
 
 | On disk                                                                                     | Result                        | Meaning                                            |
 | ------------------------------------------------------------------------------------------- | ----------------------------- | -------------------------------------------------- |
@@ -513,15 +509,12 @@ Exported from `src/cli/lib/configuration/index.ts`.
 
 | Type                  | Purpose                                                                                               |
 | --------------------- | ----------------------------------------------------------------------------------------------------- |
-| `OptionState`         | Discriminated union for skill advisory state (normal/recommended/discouraged/incompatible)            |
+| `OptionState`         | Discriminated union for skill advisory state (normal/discouraged/incompatible)                        |
 | `SkillOption`         | Skill as displayed in wizard (advisoryState/selected/unmetRequirements state)                         |
 | `SelectionValidation` | Result of validating skill selections                                                                 |
 | `ValidationError`     | Advisory validation error (non-blocking); `type: conflict \| missingRequirement \| categoryExclusive` |
-| `ValidationWarning`   | Non-blocking validation warning; `type: missing_recommendation`                                       |
 | `SkillSource`         | Source from which a skill can be obtained                                                             |
 | `SkillSourceType`     | `"public" \| "private" \| "local"`                                                                    |
-| `BoundSkill`          | Foreign skill bound to category via search                                                            |
-| `BoundSkillCandidate` | Search result candidate before binding                                                                |
 | `ResolvedStack`       | Stack with resolved skill IDs; `group?: string` for UI grouping                                       |
 
 ### SourceRowContext (`src/cli/stores/wizard-store.ts`)

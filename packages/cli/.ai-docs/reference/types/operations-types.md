@@ -51,17 +51,13 @@ The operations layer defines focused option/result types per operation:
 
 ### Skill Operations
 
-| Type                     | File                                             | Purpose                                                                  |
-| ------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------ |
-| `DiscoveredSkills`       | `operations/skills/discover-skills.ts`           | Result of skill discovery (local + marketplace)                          |
-| `ScopedSkillDir`         | `operations/skills/collect-scoped-skill-dirs.ts` | Single scoped skill directory entry                                      |
-| `ScopedSkillDirsResult`  | `operations/skills/collect-scoped-skill-dirs.ts` | Collected scoped dirs with counts                                        |
-| `CopyLocalSkillsOptions` | `operations/skills/copy-local-skills.ts`         | Options for copying local skills (module path only — see Export Surface) |
-| `SkillCopyResult`        | `operations/skills/copy-local-skills.ts`         | Result of copying local skills                                           |
-| `SkillComparisonResults` | `operations/skills/compare-skills.ts`            | Comparison results (added/removed/changed)                               |
-| `SkillMatchResult`       | `operations/skills/find-skill-match.ts`          | Result of matching a skill to a source                                   |
-| `PluginInstallResult`    | `operations/skills/install-plugin-skills.ts`     | Result of plugin skill installation                                      |
-| `PluginUninstallResult`  | `operations/skills/uninstall-plugin-skills.ts`   | Result of plugin skill uninstallation                                    |
+| Type                     | File                                           | Purpose                                                                  |
+| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| `DiscoveredSkills`       | `operations/skills/discover-skills.ts`         | Result of skill discovery (local + marketplace)                          |
+| `CopyLocalSkillsOptions` | `operations/skills/copy-local-skills.ts`       | Options for copying local skills (module path only — see Export Surface) |
+| `SkillCopyResult`        | `operations/skills/copy-local-skills.ts`       | Result of copying local skills                                           |
+| `PluginInstallResult`    | `operations/skills/install-plugin-skills.ts`   | Result of plugin skill installation                                      |
+| `PluginUninstallResult`  | `operations/skills/uninstall-plugin-skills.ts` | Result of plugin skill uninstallation                                    |
 
 ### Project Operations
 
@@ -206,7 +202,6 @@ type LoadedSource = {
 type LoadSourceOptions = {
   sourceFlag?: string;
   projectDir: string;
-  forceRefresh?: boolean;
   captureStartupMessages?: boolean; // wraps load in buffer mode for Wizard <Static>
 };
 ```
@@ -221,7 +216,7 @@ type ConfigWriteOptions = {
   sourceResult: SourceLoadResult;
   projectDir: string;
   sourceFlag?: string;
-  agents?: Record<AgentName, AgentDefinition>; // pre-loaded; loads from CLI + source when omitted
+  agents?: Partial<Record<AgentName, AgentDefinition>>; // pre-loaded; loads from CLI + source when omitted
   authoritativeScope?: AuthoritativeScope; // Scenario C
 };
 ```
@@ -302,7 +297,7 @@ Unlike `detectProject`, this operation **lets `ConfigLoadError` propagate**. Its
 
 ```typescript
 type AgentDefs = {
-  agents: Record<AgentName, AgentDefinition>; // CLI defaults + source overrides (source wins)
+  agents: Partial<Record<AgentName, AgentDefinition>>; // CLI defaults + source overrides (source wins)
   sourcePath: string;
   agentSourcePaths: AgentSourcePaths; // { agentsDir, templatesDir, sourcePath }
 };
@@ -329,47 +324,6 @@ type SkillCopyResult = {
   totalCopied: number;
 };
 ```
-
-### `ScopedSkillDir` / `ScopedSkillDirsResult`
-
-```typescript
-type ScopedSkillDir = {
-  dirName: string;
-  localSkillsPath: string;
-  scope: "project" | "global";
-};
-
-type ScopedSkillDirsResult = {
-  dirs: ScopedSkillDir[];
-  hasProject: boolean;
-  hasGlobal: boolean;
-  projectLocalPath: string;
-  globalLocalPath: string;
-};
-```
-
-Project scope takes precedence on `dirName` conflict. `hasGlobal` is always `false` when `projectDir === homeDir`.
-
-### `SkillComparisonResults`
-
-```typescript
-type SkillComparisonResults = {
-  projectResults: SkillComparisonResult[];
-  globalResults: SkillComparisonResult[];
-  merged: SkillComparisonResult[]; // project takes precedence on id conflict
-};
-```
-
-### `SkillMatchResult`
-
-```typescript
-type SkillMatchResult = {
-  match: SkillComparisonResult | null;
-  similar: string[]; // top-3 fuzzy suggestions when match is null
-};
-```
-
-Match order: exact id → partial-name (strips `(@author)` suffix) → `dirName`.
 
 ## Edit Command Types (`src/cli/commands/edit.tsx`)
 

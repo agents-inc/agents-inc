@@ -10,8 +10,6 @@ keywords:
     AgentDefinitionOptions,
     fetchAgentDefinitionsFromRemote,
     AgentPluginOptions,
-    StackInstallOptions,
-    StackInstallResult,
     PROJECT_CONFIG_TYPES_BEFORE,
     PROJECT_CONFIG_INTERFACE_AFTER,
     ProjectConfigTypesOptions,
@@ -40,8 +38,8 @@ last_validated: 2026-08-02
 
 ## What this file is
 
-**Fourteen named exports** across seven sections, each sitting inside an area whose doc is otherwise
-thorough. Twelve appear nowhere else under `.ai-docs/reference/`; the remaining two
+**Twelve named exports** across seven sections, each sitting inside an area whose doc is otherwise
+thorough. Ten appear nowhere else under `.ai-docs/reference/`; the remaining two
 (`fetchAgentDefinitionsFromRemote`, `PROJECT_CONFIG_TYPES_BEFORE`) are partially covered elsewhere
 and this file carries only the remainder, saying so in place. Individually none justifies a file.
 
@@ -60,8 +58,8 @@ Those are the entries worth reading. The rest are shape tables.
 | `PROJECT_CONFIG_TYPES_BEFORE` (model/effort only) | [features/model-and-effort.md](./features/model-and-effort.md)                                                           | The blast radius: a project's file rejects a new member until it regenerates                                                  |
 | `ProjectAgentName`                                | not an export at all — see §6                                                                                            | —                                                                                                                             |
 
-`fetchAgentDefinitionsFromRemote` (§4) and `StackInstallOptions` / `StackInstallResult` (§5) are
-partially covered; this file carries only the remainder, and says so in place.
+`fetchAgentDefinitionsFromRemote` (§4) is partially covered; this file carries only the remainder,
+and says so in place.
 
 **Enumerate the corpus with `find` before claiming an export is undocumented anywhere.** An absence
 claim is only as good as the file set it was run against, and a total copied from
@@ -82,7 +80,6 @@ its owning doc was out of scope for whoever found it.
 | 3   | `MarketplaceRemoteSource`                                                                    | `types/plugins.ts`                         | [types/core-types.md](./types/core-types.md)                                            |
 | 4   | `AgentDefinitionOptions`, `fetchAgentDefinitionsFromRemote`                                  | `lib/agents/agent-fetcher.ts`              | [features/agent-system.md](./features/agent-system.md)                                  |
 | 5   | `AgentPluginOptions`                                                                         | `lib/agents/agent-plugin-compiler.ts`      | [features/compilation-pipeline.md](./features/compilation-pipeline.md)                  |
-| 5   | `StackInstallOptions`, `StackInstallResult`                                                  | `lib/stacks/stack-installer.ts`            | [features/plugin-system.md](./features/plugin-system.md) — its `:248` Consumers note    |
 | 6   | `PROJECT_CONFIG_TYPES_BEFORE`, `PROJECT_CONFIG_INTERFACE_AFTER`, `ProjectConfigTypesOptions` | `lib/configuration/config-types-writer.ts` | [config/config-writer.md](./config/config-writer.md)                                    |
 | 7   | `ValidationPartial`                                                                          | `lib/matrix/matrix-resolver.ts`            | [features/skills-and-matrix.md](./features/skills-and-matrix.md) — Selection Validation |
 | 7   | `BuildStepValidation`                                                                        | `lib/wizard/build-step-logic.ts`           | [component-patterns.md](./component-patterns.md)                                        |
@@ -136,18 +133,16 @@ Raw-literal hits for each key across `src/cli/**`, excluding `metadata-keys.ts` 
 | ---------------- | -------------------- | ------------------------------------------------------------------------- |
 | `displayName`    | 6                    | schemas, test fixtures                                                    |
 | `cliDescription` | 6                    | `isOverLengthCliDescription` in `lib/schemas.ts`, validator/command tests |
-| `forkedFrom`     | 2                    | `skill-metadata.test.ts`, `init-flow.integration.test.ts`                 |
+| `forkedFrom`     | 1                    | `skill-metadata.test.ts`                                                  |
 | `usageGuidance`  | 1                    | the `TestSkill` `Pick` in `lib/__tests__/fixtures/create-test-source.ts`  |
 | `contentHash`    | 0                    | — reached only through typed objects, never by string key                 |
 
 **Adjacent exports in the same module are documented elsewhere — do not re-document them here.**
 `SKILL_CONTENT_FILES` and `SKILL_CONTENT_DIRS` are cited by
 [features/skills-and-matrix.md](./features/skills-and-matrix.md) under `computeSkillFolderHash`;
-`LOCAL_DEFAULTS` by [dependency-graph.md](./dependency-graph.md) as a `new marketplace`
-edge and by [skills/skill-primitives.md](./skills/skill-primitives.md); `IMPORT_DEFAULTS` by
-[architecture-overview.md](./architecture-overview.md). Both defaults objects carry a deliberate
-boundary cast to `CategoryPath` (`"imported"`, `"dummy-category"`) — placeholders that sit
-**outside** the generated `Category` union on purpose, each annotated in place.
+`LOCAL_DEFAULTS` by [skills/skill-primitives.md](./skills/skill-primitives.md). It carries a
+deliberate boundary cast to `CategoryPath` (`"dummy-category"`) — a placeholder that sits
+**outside** the generated `Category` union on purpose, annotated in place.
 
 **No test file references `METADATA_KEYS`.** Its behaviour is covered only transitively, through
 `matrix-loader`'s error-path specs.
@@ -172,7 +167,7 @@ types (`ConflictRule`, `RequireRule`, all slug-keyed) are the pre-resolution inp
 **Do not document the resolution mechanism here.**
 [features/built-in-catalogue.md](./features/built-in-catalogue.md) owns it and covers more than this
 pass derived: `collectSymmetricGroupMembers`' `uniqueBy` dedupe and whose annotation survives it
-(`:273`), `compatibleWith`'s authored-but-discarded `reason` (`:233-237`), the AND-vs-OR default and
+(`:273`), the AND-vs-OR default and
 its distribution across the built-in rules (`:238-241`), and the two slug-resolution failure modes —
 a filtered-out member vs. a whole rule dropped on `resolvedNeeds.length === 0` (`:432-433`).
 `SkillAlternative`'s shape and the `AlternativeGroup` asymmetry are at `:230-232` of the same file.
@@ -245,7 +240,7 @@ and all three functions from `./agent-fetcher`.
 export table (`:531`) with the signature `(remoteSource?, options?) => Promise<AgentSourcePaths>`.
 [features/source-fetch-and-cache.md](./features/source-fetch-and-cache.md) records the one row this
 module contributes to the `fetchFromSource` call-site table in its § "Call sites" (options
-`{ forceRefresh, subdir: "" }`), and notes under that table that `fetchAgentDefinitionsFromRemote`'s
+`{ subdir: "" }`), and notes under that table that `fetchAgentDefinitionsFromRemote`'s
 parameter type is **the only place `FetchOptions` is extended rather than constructed**. Neither
 describes the options type, the branch asymmetries, or the reachability. That is this section.
 
@@ -255,15 +250,14 @@ export type AgentDefinitionOptions = FetchOptions & {
 };
 ```
 
-`FetchOptions` is `{ forceRefresh?: boolean; subdir?: string }` (declared in
-`lib/loading/source-fetcher.ts`), so the full field set is `{ forceRefresh?, subdir?, projectDir? }`. **Every field is inert on at
+`FetchOptions` is `{ subdir?: string }` (declared in
+`lib/loading/source-fetcher.ts`), so the full field set is `{ subdir?, projectDir? }`. **Every field is inert on at
 least one branch:**
 
-| Field          | Local branch (`getLocalAgentDefinitions`)                                                  | Remote branch (`fetchAgentDefinitionsFromRemote`)                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `projectDir`   | **Read** via `localTemplatesDir` — selects `<projectDir>/.claude/templates` when it exists | **Never read.** Not in the parameter type at all                                                                        |
-| `forceRefresh` | Ignored — nothing is fetched                                                               | **Read**, forwarded to `fetchFromSource`                                                                                |
-| `subdir`       | Ignored                                                                                    | Overridden with `""` in the `fetchFromSource` call — see source-fetch-and-cache.md on why `""` is intent, not behaviour |
+| Field        | Local branch (`getLocalAgentDefinitions`)                                                  | Remote branch (`fetchAgentDefinitionsFromRemote`)                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `projectDir` | **Read** via `localTemplatesDir` — selects `<projectDir>/.claude/templates` when it exists | **Never read.** Not in the parameter type at all                                                                        |
+| `subdir`     | Ignored                                                                                    | Overridden with `""` in the `fetchFromSource` call — see source-fetch-and-cache.md on why `""` is intent, not behaviour |
 
 **Invariant — `fetchAgentDefinitionsFromRemote` does not take `AgentDefinitionOptions`.** Its own
 parameter type is `FetchOptions & { agentsDir?: string }`, a _different_ intersection.
@@ -300,13 +294,13 @@ what actually fails.
 
 ### The remote branch is production-unreachable today
 
-| Caller                                                                                     | `remoteSource` passed                     |
-| ------------------------------------------------------------------------------------------ | ----------------------------------------- |
-| `loadAgentDefs` (`lib/operations/project/load-agent-defs.ts`)                              | hardcoded `undefined` — always local      |
-| `loadMetaAgent` (`commands/new/agent.tsx`) — `getAgentDefinitions(source, { projectDir })` | the only site that can be non-`undefined` |
+| Caller                                                        | `remoteSource` passed                |
+| ------------------------------------------------------------- | ------------------------------------ |
+| `loadAgentDefs` (`lib/operations/project/load-agent-defs.ts`) | hardcoded `undefined` — always local |
 
-`new agent` is gated in `NewAgent.run()` (`agent.tsx`) on `FEATURE_FLAGS.NEW_AGENT_COMMAND`, which
-is `false` in `lib/feature-flags.ts`. **No shipped code path reaches `fetchAgentDefinitionsFromRemote`.** Its
+`loadAgentDefs` is now the only caller, and it never passes a remote source — the one site that
+could went with the `new agent` command when that command was deleted.
+**No shipped code path reaches `fetchAgentDefinitionsFromRemote`.** Its
 behaviour is held up entirely by `agent-fetcher.test.ts` (**22 specs**, verified by running the
 file; a `fetchAgentDefinitionsFromRemote` describe block plus blocks for the local resolver and the
 dispatcher). Treat it as tested-but-dormant: changing it will not break a user today, and no E2E
@@ -314,25 +308,20 @@ will catch it either.
 
 ---
 
-## 5. Options and result shapes for the compilers and the stack installer
+## 5. `AgentPluginOptions` — the agent compiler's options shape
 
-The **functions** are documented. `compileAgentPlugin()` and `compileAllAgentPlugins()` are in
-[features/compilation-pipeline.md](./features/compilation-pipeline.md) `:319-320`, `:326`;
-`compileStackToTemp()` / `installStackAsPlugin()` behaviour is in
-[features/plugin-system.md](./features/plugin-system.md) `:248`, and their dormancy is already
-recorded at compilation-pipeline.md `:332` ("Exported from `lib/stacks` but has no wired command
-caller"). `SkillPluginOptions` is fully covered by
+The **function** is documented: `compileAgentPlugin()` and `compileAllAgentPlugins()` are in
+[features/compilation-pipeline.md](./features/compilation-pipeline.md) `:319-320`, `:326`.
+`SkillPluginOptions` is fully covered by
 [skills/skill-primitives.md](./skills/skill-primitives.md) and is **not** repeated here.
 
-The three shapes below are what remains:
+The shape is what remains:
 
-| Type                  | File                                  | Shape                                                                                                     |
-| --------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `AgentPluginOptions`  | `lib/agents/agent-plugin-compiler.ts` | `{ agentPath: string; outputDir: string }`                                                                |
-| `StackInstallOptions` | `lib/stacks/stack-installer.ts`       | `{ stackId; projectDir; sourcePath; agentSourcePath; marketplace? }` — all `string`                       |
-| `StackInstallResult`  | `lib/stacks/stack-installer.ts`       | `{ pluginName; stackName; agents: AgentName[]; skills: SkillId[]; pluginPath; fromMarketplace: boolean }` |
+| Type                 | File                                  | Shape                                      |
+| -------------------- | ------------------------------------- | ------------------------------------------ |
+| `AgentPluginOptions` | `lib/agents/agent-plugin-compiler.ts` | `{ agentPath: string; outputDir: string }` |
 
-Barrels: `lib/agents/index.ts`, `lib/stacks/index.ts`.
+Barrel: `lib/agents/index.ts`.
 
 **`AgentPluginOptions` has one construction site and it is internal.** `compileAgentPlugin` is
 called only from `compileAllAgentPlugins` in the same file, which always sets both fields. The
@@ -340,30 +329,11 @@ command layer (`compileAgents` in `commands/build/plugins.ts`) reaches the batch
 wrapper, never the singular. Public surface, no external caller — the same posture
 skill-primitives.md records for `SkillPluginOptions`.
 
-**`StackInstallResult` is not uniform across the two branches, and reading it as if it were is the
-trap.** Both are `StackInstallResult`; only one of them describes an install:
-
-| Field             | Marketplace branch (`installStackAsPlugin`, the `if (marketplace)` arm) | Local-compile branch (same function, after that arm) |
-| ----------------- | ----------------------------------------------------------------------- | ---------------------------------------------------- |
-| `pluginName`      | `stackId` — **unprefixed**                                              | `` `stack-${stackId}` `` — prefixed                  |
-| `stackName`       | `stackId`                                                               | `result.stackName` from the compiler                 |
-| `agents`          | **`[]`**                                                                | `result.agents`                                      |
-| `skills`          | **`[]`**                                                                | `result.skillPlugins`                                |
-| `pluginPath`      | the marketplace ref, not a filesystem path                              | the compiled temp dir                                |
-| `fromMarketplace` | `true`                                                                  | `false`                                              |
-
-The empty arrays are not a bug to fix: nothing was compiled locally, so there is nothing to
-enumerate. **A caller must not read `result.skills` as "what got installed"** — branch on
-`fromMarketplace` first. `pluginPath` changes kind across the branches for the same reason.
-
-Two behaviours worth knowing before wiring this up: `installStackAsPlugin` hard-fails on
-`isClaudeCLIAvailable()` before anything else, and the local branch's temp dir is removed in a
-`finally` that calls the `cleanup()` returned by `compileStackToTemp`, so a throwing
-`claudePluginInstall` still cleans up.
-
-`stack-installer.test.ts` is **13 specs** (verified by running the file) covering both branches. The
-module is exercised and unused — the tests are green, coverage looks healthy, and no user reaches
-any of it.
+**The stack installer's shapes used to sit here and no longer exist.** `StackInstallOptions` /
+`StackInstallResult`, and the whole `installStackAsPlugin` → `compileStackToTemp` →
+`compileStackPlugin` chain beneath them, were deleted in CLI-459 — dormant surface with green specs
+and no user-reachable caller. See [features/plugin-system.md](./features/plugin-system.md)
+§ "Stack Plugin Compilation — removed".
 
 ---
 
@@ -410,21 +380,23 @@ emitted `SkillAssignment` is generic; the runtime type of the same name is not.
 `assembleConfigTypesSource` (`export type ProjectAgentName = ${parts.projectAgentName};`) and
 consumed by `PROJECT_CONFIG_INTERFACE_AFTER`
 (`stack?: Partial<Record<ProjectAgentName, StackAgentConfig>>`). `SelectedAgentName` is the same
-kind of thing — declared alongside it and consumed by that interface's
-`selectedAgents?: SelectedAgentName[]`. Neither can be imported from the module; both are only
-strings until a generated file is written. A grep for either name in `src/` finds the template, not a
-declaration — which is how each gets mistaken for an export.
+kind of thing — declared alongside it and consumed only as `ProjectAgentName`'s fallback value
+(the emitted `ProjectConfig` interface has no property typed with it — it carries
+`selectedDomains?: Domain[]` and no selected-agent field). Neither can be imported from the
+module; both are only strings until a generated file is written. A grep for either name in `src/`
+finds the template, not a declaration — which is how each gets mistaken for an export.
 
-Their values come from the same two-step narrowing in both generators, and the fallback is a _type
+Their values come from the same two-step narrowing in both generators — each derived from the
+config's `agents[]` rows via the `scope-predicates.ts` helpers — and the fallback is a _type
 name_, not a literal union:
 
-| Alias               | Value when the config supplies names                                                                                                                                         | Fallback              |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| `SelectedAgentName` | `formatUnion(config.selectedAgents)` — `selectedAgentNameLine` in `generateConfigTypesSource`, `selectedAgentNameUnion` in `generateProjectConfigTypesSource`                | `"AgentName"`         |
-| `ProjectAgentName`  | `formatUnion(activeProjectAgentNames(config.agents))` — `projectAgentNameLine` in `generateConfigTypesSource`, `projectAgentNameUnion` in `generateProjectConfigTypesSource` | `"SelectedAgentName"` |
+| Alias               | Value when the config supplies names                                                                                                                                                                                        | Fallback              |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `SelectedAgentName` | `formatUnion(activeAgentNames(config.agents))` — `selectedAgentNameLine` in `generateConfigTypesSource`; `selectedAgentNameUnion` in `generateProjectConfigTypesSource` (fed via the `selectedAgentNames` option)           | `"AgentName"`         |
+| `ProjectAgentName`  | `formatUnion(activeProjectAgentNames(config.agents))` — `projectAgentNameLine` in `generateConfigTypesSource`; `projectAgentNameUnion` in `generateProjectConfigTypesSource` (fed via the `projectScopedAgentNames` option) | `"SelectedAgentName"` |
 
 So the emitted chain widens gracefully: with no project-scoped agents, `ProjectAgentName` **is**
-`SelectedAgentName`, which with no `selectedAgents` **is** `AgentName`.
+`SelectedAgentName`, which with no active agent rows **is** `AgentName`.
 
 **Why the emitted `ProjectConfig` deliberately diverges from `types/config.ts`.** Recorded in
 `assembleConfigTypesSource`'s JSDoc: the emitted interface uses the narrowed generated aliases so a
@@ -472,43 +444,37 @@ unions are emitted at statement level, not inside a property — the exact disti
 
 ## 7. The two validation return shapes
 
-### `ValidationPartial` (`lib/matrix/matrix-resolver.ts`)
+### The selection validation passes (`lib/matrix/matrix-resolver.ts`)
 
-```typescript
-export type ValidationPartial = Pick<SelectionValidation, "errors" | "warnings">;
-```
-
-The return type of the four validation passes that
+The three validation passes that
 [features/skills-and-matrix.md](./features/skills-and-matrix.md) → "Selection Validation" tabulates
-by name: `validateConflicts`, `validateRequirements`, `validateExclusivity`,
-`validateRecommendations`. Defined as a `Pick` of `SelectionValidation` (`types/matrix.ts`) minus
-`valid`, precisely because a single pass has no standing to judge the whole selection.
+by name — `validateConflicts`, `validateRequirements`, `validateExclusivity` — each return a bare
+`ValidationError[]`, precisely because a single pass has no standing to judge the whole selection.
 
 **Not in the barrel.** `lib/matrix/index.ts`'s `./matrix-resolver` block re-exports
-`validateSelection` only — none of the
-four partials, and not the type. Import it from `./matrix-resolver` directly.
+`validateSelection` only — none of the three passes. Import them from `./matrix-resolver` directly.
 
-**Zero production consumers of the four partials outside `validateSelection` itself.** The only
-other importer is `matrix-resolver.test.ts` (**127 specs**, verified by running the file), which has
-a dedicated describe block per pass. They are exported for testability.
+**Zero production consumers of the three passes outside `validateSelection` itself.** The only
+other importer is `matrix-resolver.test.ts`, which has a dedicated describe block per pass. They
+are exported for testability.
 
-**Invariant — `valid` is a constant `true` and the computed value is thrown away in
-`validateSelection`.**
+**`valid` is derived from `errors`, and is still not a gate.**
 
 ```typescript
-const { errors, warnings } = mergeValidationResults([...four passes...]);
-return { valid: true, errors, warnings };
+const errors = [...three passes, spread...];
+return { valid: errors.length === 0, errors };
 ```
 
-`mergeValidationResults` (`lib/validation-result.ts`) **does** compute
-`valid: errors.length === 0` — `validateSelection`'s destructure simply does not take it, and its
-return literal hardcodes `true`. So `SelectionValidation.valid` from `validateSelection` is `true`
-even when `errors` is non-empty. This is intentional: the whole matrix validation surface is **advisory** (the
-wizard shows conflicts and unmet requirements without blocking), and every `ValidationError` in
-`types/matrix.ts` is annotated "Advisory validation error (non-blocking)". **Do not read
-`valid` as a gate.** Branch on `errors.length` if you need one — and note that the generic
-`mergeValidationResults` also serves the string-based `ValidationResult` used by
-`output-validator.ts` and `plugins/plugin-validator.ts`, where `valid` _is_ meaningful.
+`SelectionValidation.valid` from `validateSelection` was a hardcoded `true` — non-empty `errors`
+and `valid: true` on the same object, which reads as a contradiction to anyone who has not been
+told. It is derived now, so the two fields agree. What did **not** change is what either field
+means: the whole matrix validation surface is **advisory** (the wizard shows conflicts and unmet
+requirements without blocking, and `reportValidationErrors` on `BaseCommand` warns and returns),
+and every `ValidationError` in `types/matrix.ts` is annotated "Advisory validation error
+(non-blocking)". **A `false` here does not stop anything** — nothing branches on it. Note that the
+generic
+`mergeValidationResults` (`lib/validation-result.ts`) serves the string-based `ValidationResult`
+used by `output-validator.ts` and `plugins/plugin-validator.ts`, where `valid` _is_ meaningful.
 
 ### `BuildStepValidation` (`lib/wizard/build-step-logic.ts`)
 
@@ -569,7 +535,6 @@ wrong.
 | File                                                              | Specs | Covers                                                                                        |
 | ----------------------------------------------------------------- | ----- | --------------------------------------------------------------------------------------------- |
 | `src/cli/lib/agents/agent-fetcher.test.ts`                        | 22    | `getLocalAgentDefinitions`, `fetchAgentDefinitionsFromRemote`, `getAgentDefinitions` dispatch |
-| `src/cli/lib/stacks/stack-installer.test.ts`                      | 13    | `compileStackToTemp`, `installStackAsPlugin` (both branches)                                  |
 | `src/cli/lib/wizard/build-step-logic.test.ts`                     | 50    | `validateBuildStep`, `buildCategoriesForDomain`                                               |
 | `src/cli/lib/configuration/__tests__/config-types-writer.test.ts` | 62    | emitted source of both generators                                                             |
 | `src/cli/lib/matrix/matrix-resolver.test.ts`                      | 127   | the four `ValidationPartial` passes plus the rest of the resolver                             |
@@ -591,11 +556,10 @@ Those three are covered only transitively.
 | 5   | `projectDir` is silently dropped whenever `getAgentDefinitions` takes a `remoteSource`                            | `getAgentDefinitions` vs `fetchAgentDefinitionsFromRemote` (`agent-fetcher.ts`)                  |
 | 6   | `agentsDir` cannot be set through `getAgentDefinitions`, and setting it also suppresses the source-config lookup  | the `sourceProjectConfig` binding in `fetchAgentDefinitionsFromRemote`                           |
 | 7   | `templatesDir` is an independent constant locally but re-nested under `agentsDir` remotely                        | the `templatesDir` binding in `getLocalAgentDefinitions` vs in `fetchAgentDefinitionsFromRemote` |
-| 8   | `StackInstallResult` is branch-dependent: marketplace returns `agents: []` / `skills: []` and an unprefixed name  | the marketplace arm of `installStackAsPlugin`                                                    |
-| 9   | `ProjectAgentName` / `SelectedAgentName` are emitted strings, not importable types                                | `assembleConfigTypesSource` (`config-types-writer.ts`)                                           |
-| 10  | The `projectCategories` ternary is redundant, and the `categoryImport` comment describes a condition that is gone | `categoryUnion` and `categoryImport` in `generateProjectConfigTypesSource`                       |
-| 11  | `validateSelection` returns `valid: true` with a non-empty `errors` array — never branch on it                    | `validateSelection` (`matrix-resolver.ts`)                                                       |
-| 12  | `validateBuildStep` cannot return `valid: false`, has no production caller, and its `message` is never rendered   | `validateBuildStep` (`build-step-logic.ts`)                                                      |
+| 8   | `ProjectAgentName` / `SelectedAgentName` are emitted strings, not importable types                                | `assembleConfigTypesSource` (`config-types-writer.ts`)                                           |
+| 9   | The `projectCategories` ternary is redundant, and the `categoryImport` comment describes a condition that is gone | `categoryUnion` and `categoryImport` in `generateProjectConfigTypesSource`                       |
+| 10  | `validateSelection` returns `valid: true` with a non-empty `errors` array — never branch on it                    | `validateSelection` (`matrix-resolver.ts`)                                                       |
+| 11  | `validateBuildStep` cannot return `valid: false`, has no production caller, and its `message` is never rendered   | `validateBuildStep` (`build-step-logic.ts`)                                                      |
 
 ---
 
@@ -604,7 +568,7 @@ Those three are covered only transitively.
 - **A name-absence census is not a description-absence census.** Entries here were selected by "this
   identifier appears in no reference doc". An export named somewhere but never _described_ is not
   selected — that is a different sweep, and this file does not stand in for it.
-- **No count here is owned by this file** except the five spec counts in the test-surface table.
+- **No count here is owned by this file** except the four spec counts in the test-surface table.
   Every other figure is a re-derivable grep or `find` result stated inline with its method. Nothing
   here belongs in the count-ownership registry.
 - **`step-build.test.tsx`'s file total is deliberately absent.** Only its `validateBuildStep`

@@ -110,6 +110,32 @@ The annotation form is preferred because the literal `{}` never masquerades as a
 
 ---
 
+## 4a. Absent vs Explicitly `undefined`
+
+§4 is the rule for a missing map ENTRY. This is the same question one level down — a missing PROPERTY — and `exactOptionalPropertyTypes` (on repo-wide in `@workspace/typescript-config/base.json`) makes the codebase answer it on every optional field. There are exactly two shapes:
+
+```typescript
+// (a) keep absence real — the default
+...(stack.group !== undefined && { group: stack.group }),
+
+// (b) say the property honestly holds undefined — the exception
+slug?: string | undefined;
+```
+
+**Decision rule, in order:**
+
+1. **You build the object and the field is genuinely sometimes absent → spread-conditional (a).** `CatalogStack.group`, `SubAgent.model`, `SkillCellView.incompatibleReason`. Absence stays absence, so `?` keeps meaning what it says.
+2. **You hand a maybe-value to a type you do not own → spread-conditional (a), always.** Widening is not on offer, and `?? null` / `?? {}` invents a value their API never asked for. `RequestInit.signal`, Sentry's `extra`, Playwright's `workers`.
+3. **It is a React prop whose body already treats absent and `undefined` identically → `?: T | undefined` (b).** JSX has always read an undefined prop as an absent one, which is why `@types/react` writes every prop it owns that way, and why `title={view.incompatibleReason}` never errored while a hand-written sibling prop did. A conditional spread in JSX buys nothing and costs a reader.
+
+**Never `?? fallback` to dodge the flag.** Inventing `null`, `""` or `{}` where the caller had nothing is the silent-fallback failure `packages/cli/CLAUDE.md` already bans under Data Integrity, and this flag makes it newly tempting.
+
+**Never delete the `?`.** Making a property required to satisfy the compiler moves the lie rather than fixing it.
+
+Applying (b) by reflex is the failure mode to watch for: a type that admits `undefined` everywhere is an optional property that no longer means anything, which is the exact thing the flag exists to prevent.
+
+---
+
 ## 5. Pre-Resolution vs Post-Resolution Types
 
 Data that passes through a resolution/normalization step should have different types before and after:
@@ -118,13 +144,13 @@ Data that passes through a resolution/normalization step should have different t
 // Pre-resolution: user input can be alias OR canonical ID
 type ExtractedSkillMetadata = {
   requires: (SkillAlias | SkillId)[]; // "react" or "web-framework-react"
-  compatibleWith: (SkillAlias | SkillId)[];
+  conflictsWith: (SkillAlias | SkillId)[];
 };
 
 // Post-resolution: always canonical IDs
 type ResolvedSkill = {
   requires: SkillId[]; // always "web-framework-react"
-  compatibleWith: SkillId[];
+  conflictsWith: SkillId[];
 };
 ```
 
@@ -300,10 +326,36 @@ custom_agents: Record<string, CustomAgentConfig>;
 agent_skills: Record<string, AgentSkillConfig>;
 
 // CAN narrow — only built-in agents in this context
-agents: Record<AgentName, StackAgentConfig>; // stacks only reference built-ins
+agents: Partial<Record<AgentName, StackAgentConfig>>; // stacks only reference built-ins
 ```
 
 **Decision rule:** If users can add arbitrary keys, keep `string`. If the keys come from your codebase only, use the union.
+
+Note the `Partial` in the narrowed example: this section is about narrowing the KEY TYPE, and it must not be read as licensing a total map. No stack fills every `AgentName` — the real `Stack.agents` in `src/cli/types/stacks.ts` is `Partial<Record<AgentName, StackAgentConfig>>` — so §4 applies to the value side exactly as it always does. The two questions are independent: §12 decides `AgentName` vs `string`, §4 decides `Record` vs `Partial<Record>`.
+
+---
+
+## 12a. Closed Keys, Open Questions
+
+§12 decides who may ADD a key. This section decides who may ASK about one, and the answers differ.
+
+A map whose keys come from a generated union but which is _asked about_ ids from outside it — ids a user minted this session, ids a saved configuration recorded before a later catalogue dropped them — keeps `Partial<Record<Union, V>>` and gains a lookup function taking `string`:
+
+```typescript
+const CATALOGUED_IDS = new Set<string>(SKILL_IDS);
+const isSkillId = (skillId: string): skillId is SkillId => CATALOGUED_IDS.has(skillId);
+
+export const skillById = (skillId: string): CatalogSkill | undefined =>
+  isSkillId(skillId) ? CATALOG.skillsById[skillId] : undefined;
+```
+
+**Do not widen the declared key back to `string`** — §12's "keep `string`" answer is about who can add keys, and reading it as an answer here throws away the union the narrowing existed to recover. **Do not cast at the call sites** either: `skillsById[id as SkillId]` repeated eleven times is one wrong type laundered eleven ways.
+
+The lookup is one narrowing in one place. Call sites change by a single token (`CATALOG.skillsById[id]?.displayName` → `skillById(id)?.displayName`), they keep the `?.` guards they already had, and those guards start doing real work — the old total type is what made them look redundant.
+
+**Build the guard's membership set from the generated tuple**, never from `Object.keys` of the map and never as a bare `key in map`. An object index inherits `Object.prototype`, so `"toString" in map` is `true` and a lookup built on it hands back `Function.prototype.toString` typed as your value type.
+
+**A factual note that belongs with §4, because assuming otherwise is what makes this migration look expensive:** `Object.values` and `Object.entries` over a `Partial<Record<K, V>>` infer `V[]` and `[string, V][]` — the optional `undefined` is dropped from the implicit index signature. Only _indexed_ reads become `V | undefined`. Verified with `tsc` against this repo's config; five iteration sites across three workspaces needed no change at all when `Catalog.skillsById` was narrowed.
 
 ---
 

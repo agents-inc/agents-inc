@@ -95,6 +95,17 @@ Binding rules:
    Do not re-stamp a pointer you did not open, and do not churn one to the current date.
 5. **If you leave a named area of a document knowingly unverified and it matters, file it in
    `agent-findings/`.** That is the home for dated point-in-time evidence; a document is not.
+6. **Every count the document owns must have been re-derived from source in that same pass.**
+   This is the one mechanical, checkable half of rule 1, and it is where the date is most often
+   advanced falsely: a pass that moved three figures and stamped the date reports the other four as
+   checked. Counts are the cheapest claims in any document to re-derive — read the tuple, run the
+   test file, evaluate the module — so there is no version of "I re-derived this document" that
+   skips them. If you touched some counts and not others, correct what you found and **leave the
+   date**; the document is then honestly stale rather than falsely fresh. See
+   [A Count Lives in Exactly One Document](#a-count-lives-in-exactly-one-document) for which counts
+   a document owns. Source: `agent-findings/2026-08-07-built-in-catalogue-relationship-counts-drifted-under-a-fresh-last-validated.md`,
+   where `built-in-catalogue.md` carried `conflicts: 28` against 12 and `requires: 50` against 98
+   under a `last_validated` stamped that same day.
 
 Thresholds — how long a date may age before the document is due for a whole-file pass:
 
@@ -250,7 +261,7 @@ produces no hook, and a change there ships undocumented no matter how diligent t
 | Command or its public signature added / deleted / renamed (`src/cli/commands/**`) — includes `static flags`, `static baseFlags`, `static args`, `static aliases` | `commands/index.md`, `dependency-graph.md`, `boundary-map.md`                                                       |
 | Component added / deleted / renamed (`src/cli/components/**`, `src/cli/hooks/**`)                                                                                | `component-patterns.md`, `dependency-graph.md`                                                                      |
 | New trust-boundary op (read/write/exec), or a change to an existing one                                                                                          | `boundary-map.md`                                                                                                   |
-| Change to `config-types-writer.ts` or `stack-plugin-compiler.ts`                                                                                                 | `boundary-map.md`, `dependency-graph.md`                                                                            |
+| Change to `config-types-writer.ts`                                                                                                                               | `boundary-map.md`, `dependency-graph.md`                                                                            |
 | Any change under `src/cli/stores/**`, or a store refactor (prop-driven <-> hydration-before-render)                                                              | `store-map.md`, `wizard/state-transitions.md`, `features/wizard-flow.md`                                            |
 | Mock-data constants added / removed                                                                                                                              | `testing/mock-data.md`                                                                                              |
 | Any change under `src/cli/lib/installation/**`                                                                                                                   | `features/plugin-system.md`, `concepts/scope-system.md`, `concepts/tombstone-pattern.md`, `config/config-writer.md` |
@@ -264,7 +275,7 @@ produces no hook, and a change there ships undocumented no matter how diligent t
 | Any change under `src/cli/lib/seed/**`                                                                                                                           | `features/seed-contract.md`                                                                                         |
 | Any change under `src/cli/lib/config-gate/**`                                                                                                                    | `boundary-map.md`, `config/config-writer.md`                                                                        |
 | Any change to `lib/schemas.ts` or `lib/schema-validator.ts`                                                                                                      | `types/zod-schemas.md` (owns the schema count), `boundary-map.md`                                                   |
-| Any change under `src/cli/utils/**`, or to `consts.ts` / `lib/exit-codes.ts` / `lib/feature-flags.ts`                                                            | `utilities.md`                                                                                                      |
+| Any change under `src/cli/utils/**`, or to `consts.ts` / `lib/exit-codes.ts`                                                                                     | `utilities.md`                                                                                                      |
 | Any change under `src/cli/types/**`                                                                                                                              | `type-system.md`, `types/core-types.md`, `types/operations-types.md`                                                |
 | Test-infrastructure change (`__tests__/factories/`, `__tests__/helpers/`, `e2e/pages/`, `e2e/helpers/`)                                                          | `testing/factories.md`, `testing/e2e-infrastructure.md`, `standards/e2e/*`                                          |
 | `scripts/**` generators, `tsup.config.ts`, `package.json` scripts                                                                                                | `features/code-generation.md`, `build-and-packaging.md`, `monorepo-layout.md`                                       |
@@ -282,12 +293,10 @@ row describes which document owns the code that produced it. The two do not over
    the command has no flags of that kind.
 2. **Glob `src/cli/commands/**/*.{ts,tsx}` and diff against the index table.** Flag any row whose
    file does not exist, and any command file with no row.
-3. **Any command whose `run()` begins with `if (!FEATURE_FLAGS.X)` MUST carry a `Feature flag:`
-   line**, cross-referencing `src/cli/lib/feature-flags.ts`.
-4. **Diff every documented flag/arg row against `static flags` / `static baseFlags` /
+3. **Diff every documented flag/arg row against `static flags` / `static baseFlags` /
    `static args`.** A documented flag that no longer parses is a **hard error, not staleness** — an
    agent following the doc emits an invocation oclif rejects.
-5. **A removed flag leaves an explicit callout naming the removal and the replacement behaviour**,
+4. **A removed flag leaves an explicit callout naming the removal and the replacement behaviour**,
    not just a deleted row. This is the one place a superseded value earns its keep: everyone who
    already knows the old flag needs the signal.
 
@@ -489,17 +498,26 @@ scope-discipline-deferred`). When an authentic root cause does not fit, widen th
    outstanding and invents work that was already done.
 4. **Cross-link** via `supersedes:` / `superseded_by:` when a discovery finding is replaced by a
    fix finding over the same files and root cause.
+5. **Quote every multi-sentence value, or write it as a `>-` block scalar.** A plain YAML scalar
+   cannot contain a bare `: `, and prose is where a colon turns up — so the fields carrying prose
+   are exactly the fields that break, which is to say `resolved_by:` and `partial_note:`, the two
+   this standard makes conditionally REQUIRED. Ten findings were unparseable this way, and every
+   scan in the table below was silently skipping all ten while reporting a count over the rest.
+   `TEMPLATE.md` -> schema rule 5 has the authoring guidance.
 
-Six defect classes a pre-processing pass scans for:
+Seven defect classes a pre-processing pass scans for. **Class `g` runs first**: every other row is
+defined over parsed frontmatter, so a scan that reports a count without first proving the directory
+parses is a count over the files it could read, which is not the same claim.
 
-| #   | Defect                                                        | Detection                                                                          |
-| --- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| a   | File without frontmatter                                      | No leading `---` block                                                             |
-| b   | `root_cause:` outside the enum                                | `grep -h '^root_cause:'` vs the enum in `TEMPLATE.md`                              |
-| c   | Duplicate `affected_files + root_cause + date` tuple          | Compare tuples across files                                                        |
-| d   | `type:` outside the `TEMPLATE.md` enum                        | `grep -h '^type:'`; note `enforcement-gap` is a `root_cause` value, never a `type` |
-| e   | `superseded_by:` / `supersedes:` without `status: superseded` | Cross-check the pair on each file                                                  |
-| f   | Missing `status:`                                             | `grep -L '^status:'`                                                               |
+| #   | Defect                                                        | Detection                                                                           |
+| --- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| g   | Frontmatter no YAML parser can read                           | `scripts/check-findings-frontmatter.ts` — parses every file, fails on any it cannot |
+| a   | File without frontmatter                                      | No leading `---` block                                                              |
+| b   | `root_cause:` outside the enum                                | `grep -h '^root_cause:'` vs the enum in `TEMPLATE.md`                               |
+| c   | Duplicate `affected_files + root_cause + date` tuple          | Compare tuples across files                                                         |
+| d   | `type:` outside the `TEMPLATE.md` enum                        | `grep -h '^type:'`; note `enforcement-gap` is a `root_cause` value, never a `type`  |
+| e   | `superseded_by:` / `supersedes:` without `status: superseded` | Cross-check the pair on each file                                                   |
+| f   | Missing `status:`                                             | `grep -L '^status:'`                                                                |
 
 Any rollup quoting a status distribution MUST state how many files had no `status:` and were
 inferred.

@@ -100,17 +100,16 @@ only records that the pre-wizard window is the reason the rule bites earlier tha
 
 ### 1.4 A source's `config/stacks.ts` REPLACES the built-in stacks — it does not merge
 
-`loadSkillsMatrixFromSource` in `src/cli/lib/loading/source-loader.ts`:
-
-```ts
-const sourceStacks = await loadStacks(basePath, stacksRelFile);
-const stacks = sourceStacks.length > 0 ? sourceStacks : defaultStacks;
-```
+`resolveOfferedStacks` in `src/cli/lib/loading/source-loader.ts` returns the source's own stacks
+when it ships any; when it ships none, the built-in catalogue stands in **only for the default
+public marketplace**, and any other source offers `[]`.
 
 Either/or, decided by whether the source shipped any. This is what lets `createE2ESource()` control
 the stack step completely: it writes one stack (`E2E_STACK_NAME`, `E2E_STACK_ID`), so the wizard
-offers one instead of the real catalogue's dozen — faster and deterministic. The precedence table
-for every other kind of source override is
+offers one instead of the real catalogue's dozen — faster and deterministic. Its
+`withoutStacks: true` option writes no stacks file at all, and a `--source` fixture built that way
+gets no stack step: the wizard opens on DOMAINS, which is why `InitWizard.launchOnDomainsInProject`
+exists. The precedence table for every other kind of source override is
 [`features/built-in-catalogue.md`](../features/built-in-catalogue.md)'s.
 
 **The corollary is a fixture constraint:** a source's stack may only name skills that exist in that
@@ -120,36 +119,26 @@ as a non-zero exit from the whole run rather than as anything that names the sta
 ### 1.5 Zero-state is a clean exit, not an error, for the directory-scanning commands
 
 `build plugins`, `build marketplace` and `update` all operate on whatever is present and report
-nothing found rather than failing. `build` reports `0`; `update` warns `No local skills found` and
-stops before source resolution. Both are worth a spec of their own, and neither needs setup.
+nothing found rather than failing. `build` reports `0`; `update` warns `No installation found` and
+returns. Both are worth a spec of their own, and neither needs setup.
 
 ### 1.6 `search` is a zero-flag command
 
-`static flags = {}` **and** `static baseFlags = {}` — it deliberately drops the inherited `--source`.
-A test cannot select a source with a flag; it uses `CC_SOURCE` (`SOURCE_ENV_VAR` in
-`lib/configuration/config.ts`) or a project config. The flag inventory is
+`static flags = {}`, and there is no inherited flag left to drop: `--source` is `init`'s alone.
+A test cannot select a source for `search` with a flag OR with `CC_SOURCE` (`SOURCE_ENV_VAR` in
+`lib/configuration/config.ts`, read for `init` only) — it records the source in the install's
+config, which is what `recordInstallSource()` in `e2e/helpers/test-utils.ts` is for. The flag inventory is
 [`commands/index.md`](../commands/index.md)'s and the resolution order is
 [`features/configuration.md`](../features/configuration.md)'s.
 
-### 1.7 Commands that delegate to the Claude CLI are only partly reachable
-
-`new agent` generates its output by invoking a compiled meta-agent through the `claude` binary, so
-end-to-end coverage stops at argument validation and the initial logging phase. `new marketplace`
-runs `build plugins` then `build marketplace` as part of its scaffold, so one invocation produces
-both the directory structure and a `marketplace.json`.
-
-Both sit behind default-off feature flags, so their spec files do not run today. The behaviour
-described is what the code does with the flag on. Flag names and current values:
-[`commands/index.md`](../commands/index.md).
-
-### 1.8 Ctrl+C through the PTY is reliable
+### 1.7 Ctrl+C through the PTY is reliable
 
 `TerminalSession.ctrlC()` writes `\x03`; the PTY delivers SIGINT to the process group and the
 process dies with a non-zero code. Nothing special is needed. Because `init` and `edit` write
 files only after the wizard completes, a cancelled run leaves the filesystem untouched — which makes
 "abort, then assert nothing changed" a sound pair rather than a race.
 
-### 1.9 The harness passes `CI` and `GITHUB_ACTIONS` through, on purpose
+### 1.8 The harness passes `CI` and `GITHUB_ACTIONS` through, on purpose
 
 `terminal-session.ts` builds the child's environment as `{ ...process.env, ...options.env, … }` and
 does **not** strip either variable. That is the reverse of what it used to do, and reversing it back
@@ -178,11 +167,11 @@ green at `0`. [`e2e-infrastructure.md`](./e2e-infrastructure.md) owns that value
 Recorded rather than dropped, because each was believed for long enough to be designed around, and
 two of them describe a gate an agent would otherwise write tests to satisfy.
 
-| Retired claim                                                                         | Current source                                                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "Required categories block wizard advancement; select a Framework skill before Enter" | **False.** `StepBuild`'s `useInput` calls `onContinue()` unconditionally, and `useBuildStepProps`'s `onContinue` is `if (!store.nextDomain()) store.setStep("sources")`. There is no validation on the path                                   |
-| "A styling skill must be pre-selected or the edit wizard cannot advance past build"   | **False**, same mechanism                                                                                                                                                                                                                     |
-| "The `search` interactive path ignores `--source`, so use `CC_SOURCE`"                | Half true, for a different reason. `search` is no longer interactive and has **no flags at all**, so `--source` is not ignored — it is rejected. `CC_SOURCE` is still the env override, and `search-static.e2e.test.ts` uses a project config |
+| Retired claim                                                                         | Current source                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Required categories block wizard advancement; select a Framework skill before Enter" | **False.** `StepBuild`'s `useInput` calls `onContinue()` unconditionally, and `useBuildStepProps`'s `onContinue` is `if (!store.nextDomain()) store.setStep("sources")`. There is no validation on the path                                                                                                    |
+| "A styling skill must be pre-selected or the edit wizard cannot advance past build"   | **False**, same mechanism                                                                                                                                                                                                                                                                                      |
+| "The `search` interactive path ignores `--source`, so use `CC_SOURCE`"                | **False twice over.** `search` is no longer interactive and has no flags at all, so `--source` is rejected rather than ignored; and `CC_SOURCE` is read for `init` alone since CLI-466, so it steers nothing here either. A spec records the source in the install's config — `search-static.e2e.test.ts` does |
 
 `validateBuildStep` (`lib/wizard/build-step-logic.ts`) does compute the required-category message,
 and its behaviour is tested — but **it has no production caller**, so nothing renders or enforces it.

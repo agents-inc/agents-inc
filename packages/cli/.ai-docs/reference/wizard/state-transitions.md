@@ -50,7 +50,7 @@ last_validated: 2026-07-30
 type WizardStep = "stack" | "domains" | "build" | "sources" | "agents" | "confirm";
 ```
 
-**Canonical order** (source of truth: `WIZARD_STEP_ORDER` in `src/cli/stores/wizard-store.ts`; `WIZARD_STEPS` in `src/cli/components/wizard/wizard-tabs.tsx` is derived from it via `.map()`):
+**Canonical order** (source of truth: `WIZARD_STEP_ORDER` in `src/cli/stores/wizard-store.ts`. The tab bar is drawn from `getActiveStepFlow()` — the steps THIS run has — mapped to labels by `wizardTabsFor()` in `src/cli/components/wizard/wizard-tabs.tsx`; a source that ships no stacks drops `"stack"` from the flow, so no Stack tab is painted at all):
 
 | Index | Step        | Label   | Purpose                                           |
 | ----- | ----------- | ------- | ------------------------------------------------- |
@@ -65,8 +65,8 @@ type WizardStep = "stack" | "domains" | "build" | "sources" | "agents" | "confir
 
 ```
                                 +-----------+
-                                |   stack   |  (initial step)
-                                +-----+-----+
+                                |   stack   |  (initial step — skipped entirely
+                                +-----+-----+   when the source offers no stacks)
                                       |
                       +----- ENTER ----+---- ENTER ------+
                       |  ("scratch")   |  (stack item)   |
@@ -119,7 +119,9 @@ type WizardStep = "stack" | "domains" | "build" | "sources" | "agents" | "confir
                                          skips build/sources/agents)
 ```
 
-**Stack-item population detail** (in `stack-selection.tsx` `handleSelect`): after `selectStack(id)` + `setStackAction("customize")`, agents are derived via `preselectAgentsFromStack(typedKeys(stack.skills))` and skills via `populateFromSkillIds(mergedIds, globalPreselections)` (the removed `populateFromStack` no longer exists). The scratch path restores `globalAgentPreselections` and merges `globalPreselections` before toggling `DEFAULT_SCRATCH_DOMAINS`.
+**Stack-item population detail** (in `stack-selection.tsx` `handleSelect`): after `selectStack(id)` + `setStackAction("customize")`, agents are derived via `preselectAgentsFromStack(typedKeys(stack.skills))` and skills via `populateFromSkillIds(mergedIds, globalPreselections)` (the removed `populateFromStack` no longer exists). The scratch row calls the `startFromScratch()` STORE action — restore `globalAgentPreselections`, merge `globalPreselections`, toggle `DEFAULT_SCRATCH_DOMAINS` — then `setStep("domains")` itself. The action lives in the store because `hydrateForInit` performs the same preparation when the source offers no stacks and the step never renders.
+
+**The `stack` step is conditional.** It opens the init flow only when `matrix.suggestedStacks` is non-empty. A source that ships no stacks gets no built-in stand-in unless it IS the default public marketplace ([`features/built-in-catalogue.md`](../features/built-in-catalogue.md)), so for a custom stackless marketplace the wizard opens on `domains` with `history: []` — see [Hydration](#hydration-edit-and-init-entry-points).
 
 **Backward navigation:** Every step uses `goBack()` (ESC key), which pops from `history[]` to return to the previous step.
 
@@ -138,15 +140,14 @@ type WizardStep = "stack" | "domains" | "build" | "sources" | "agents" | "confir
 
 ## Backward Navigation Transitions
 
-| From      | To (via `goBack()`) | Trigger                                                  | Additional Side Effects                                    |
-| --------- | ------------------- | -------------------------------------------------------- | ---------------------------------------------------------- |
-| `domains` | `stack`             | ESC                                                      | `setApproach(null)`, `selectStack(null)` before `goBack()` |
-| `build`   | `build`             | ESC when `prevDomain()` returns true                     | Decrements `currentDomainIndex`                            |
-| `build`   | `domains`           | ESC when `prevDomain()` returns false                    | Pops from `history`                                        |
-| `sources` | `build`             | ESC (in choice view or non-choice mode)                  | Pops from `history`                                        |
-| `sources` | `sources`           | ESC in customize view (if `FEATURE_FLAGS.SOURCE_CHOICE`) | Returns to choice view, no step change                     |
-| `agents`  | `sources`           | ESC                                                      | Pops from `history`                                        |
-| `confirm` | `agents`            | ESC                                                      | Pops from `history`                                        |
+| From      | To (via `goBack()`) | Trigger                                 | Additional Side Effects                                                                                                                                                                                                            |
+| --------- | ------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domains` | `stack`             | ESC, when `history` is non-empty        | `setApproach(null)`, `selectStack(null)` before `goBack()`. Inert on an empty `history` — the stackless-source entry point opens HERE, so there is no stack choice to clear and clearing anyway would wipe the selections in place |
+| `build`   | `build`             | ESC when `prevDomain()` returns true    | Decrements `currentDomainIndex`                                                                                                                                                                                                    |
+| `build`   | `domains`           | ESC when `prevDomain()` returns false   | Pops from `history`                                                                                                                                                                                                                |
+| `sources` | `build`             | ESC (in choice view or non-choice mode) | Pops from `history`                                                                                                                                                                                                                |
+| `agents`  | `sources`           | ESC                                     | Pops from `history`                                                                                                                                                                                                                |
+| `confirm` | `agents`            | ESC                                     | Pops from `history`                                                                                                                                                                                                                |
 
 **`goBack()` implementation** in `wizard-store.ts`: Pops from `history[]`, sets `step` to the popped value. Returns unchanged (no-op) when `history` is empty — it does NOT fall back to `"stack"` (the edit flow enters mid-wizard with an empty `history`, so `goBack` intentionally does nothing there).
 
@@ -187,10 +188,11 @@ Hydration MUST run synchronously **before** `render(<Wizard />)` so React's firs
 2. `setState({ isInitMode: true })`
 3. **Does NOT call `populateFromSkillIds`** -- stack-selection runs first; user chooses stack or scratch
 4. If `installedSkillConfigs`: stashes into `globalPreselections` (merged by `stack-selection.tsx` after stack/scratch choice)
-5. If `initialAgents` or `installedAgentConfigs`: stashes into `globalAgentPreselections.agents`/`.configs` (restored via `preselectAgentsFromStack` / the scratch path after `selectStack()` wipes agents)
-6. `seedFocusedSkillForActiveDomain()` -- runs at the end of init hydration too (seeds `null` when no domains are selected yet)
+5. If `initialAgents` or `installedAgentConfigs`: stashes into `globalAgentPreselections.agents`/`.configs` (restored via `preselectAgentsFromStack` / `startFromScratch()` after `selectStack()` wipes agents)
+6. If `matrix.suggestedStacks` is empty: `startFromScratch()` then `setState({ step: "domains", history: [] })` -- the stack step would hold nothing but its own scratch row, so the wizard opens where that row leads, prepared the same way, with nothing behind it. Steps 4 and 5 are consumed here rather than by `stack-selection.tsx`
+7. `seedFocusedSkillForActiveDomain()` -- runs at the end of init hydration too (seeds `null` when no domains are selected yet, and the active domain's first option when step 6 selected the scratch domains)
 
-> **Note:** Older versions of this doc referenced `src/cli/components/hooks/use-wizard-initialization.ts`. That hook has been removed -- hydration lives in the store itself.
+> **There is no hydration hook.** Hydration is the imperative `hydrateWizardStore(options)` batch in `src/cli/stores/wizard-store.ts`, called before `render(<Wizard />)`. No file under `src/cli/components/hooks/` performs it, and adding one would reintroduce the one-frame flash of the default `"stack"` step that running hydration in a render-phase hook produces.
 
 > **The DOMAINS step is init-only and unreachable from `cc edit`.** Edit hydrates at `initialStep: "build"` with `history: []`, so the build step's ESC handler (`use-build-step-props.ts` `onBack` → `prevDomain()` → `goBack()`) no-ops on empty history and cannot walk backwards into DOMAINS. `cc init` cannot supply the surface either: `showDashboardIfInitialized` → `detectInstallation` falls back to `detectGlobalInstallation`, so any run with a global install present routes to the dashboard → `edit` → build. Consequence for planning and testing: `toggleDomain` (and anything else reachable only from the `domains` / `stack` steps) cannot be exercised by an edit-flow E2E — cover it at unit level instead. See `.ai-docs/agent-findings/2026-07-30-domain-deselect-has-no-reachable-ui-surface-in-edit.md`.
 
@@ -220,11 +222,11 @@ The wizard store is module-level singleton state, so a fresh `hydrateWizardStore
 
 ### Approach/Stack Actions
 
-| Action                   | State Modified                                                                                                                                                                           | Side Effects                                                                                                                                                                                                                               |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `setApproach(approach)`  | `approach`                                                                                                                                                                               | None                                                                                                                                                                                                                                       |
-| `selectStack(stackId)`   | `selectedStackId`, `domainSelections`, `_stackDomainSelections`, `selectedDomains`, `skillConfigs`, `selectedAgents`, `agentConfigs`, `boundSkills`, `currentDomainIndex`, `stackAction` | **Full reset** -- see Reset Matrix. Note: `selectedAgents` and `agentConfigs` are cleared here but repopulated by `preselectAgentsFromStack()` (derives agents from the stack's agent keys) after `stack-selection.tsx` selects the stack. |
-| `setStackAction(action)` | `stackAction`                                                                                                                                                                            | None                                                                                                                                                                                                                                       |
+| Action                   | State Modified                                                                                                                                                            | Side Effects                                                                                                                                                                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `setApproach(approach)`  | `approach`                                                                                                                                                                | None                                                                                                                                                                                                                                       |
+| `selectStack(stackId)`   | `selectedStackId`, `domainSelections`, `_stackDomainSelections`, `selectedDomains`, `skillConfigs`, `selectedAgents`, `agentConfigs`, `currentDomainIndex`, `stackAction` | **Full reset** -- see Reset Matrix. Note: `selectedAgents` and `agentConfigs` are cleared here but repopulated by `preselectAgentsFromStack()` (derives agents from the stack's agent keys) after `stack-selection.tsx` selects the stack. |
+| `setStackAction(action)` | `stackAction`                                                                                                                                                             | None                                                                                                                                                                                                                                       |
 
 ### Selection Actions
 
@@ -249,22 +251,18 @@ The wizard store is module-level singleton state, so a fresh `hydrateWizardStore
 
 ### Source Management Actions
 
-| Action                                    | State Modified     | Side Effects                                                                                                                                                                                                                                                                                                                                                                                               |
-| ----------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setSourceSelection(skillId, src, scope)` | `skillConfigs`     | **Scope-keyed**: rewrites `source` on the ACTIVE entry at `(skillId, scope)` only, via `withActiveEntrySource`. A dual-scope skill's excluded global tombstone keeps its own source, so a project-side change cannot leak across scopes. No-op with warning if `skillId` or `src` is empty. The acting scope is supplied by `step-sources.tsx`'s `handleGridSelect` from the skill's single non-inert row. |
-| `setCustomizeSources(customize)`          | `customizeSources` | None                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `setAllSourcesEject()`                    | `skillConfigs`     | Sets `source: "eject"` on every **active** skill config. Excluded tombstones are skipped.                                                                                                                                                                                                                                                                                                                  |
-| `setAllSourcesPlugin()`                   | `skillConfigs`     | Sets `source` to the first `availableSources` entry whose `type` is not `"local"`, on every **active** skill config; an entry with no marketplace source keeps its current one. Excluded tombstones are skipped.                                                                                                                                                                                           |
-| `bindSkill(skill)`                        | `boundSkills`      | Appends to array. Silently skips (with warning) if same `id + sourceUrl` already exists.                                                                                                                                                                                                                                                                                                                   |
+| Action                                 | State Modified | Side Effects                                                                                                                                                                                                                                                                 |
+| -------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setInstallMode(skillId, mode, scope)` | `skillConfigs` | **Scope-keyed**: resolves the mode to a `source` value and rewrites it on the ACTIVE entry at `(skillId, scope)` only, via `withActiveEntrySource`. A dual-scope skill's excluded global tombstone keeps its own source, so a project-side change cannot leak across scopes. |
+| `setAllSourcesEject()`                 | `skillConfigs` | Sets `source: "eject"` on every **active** skill config. Excluded tombstones are skipped.                                                                                                                                                                                    |
+| `setAllSourcesPlugin()`                | `skillConfigs` | Sets `source` to the one marketplace (`marketplaceSourceName`) on every **active** skill config. Excluded tombstones are skipped.                                                                                                                                            |
 
 ### UI Toggle Actions
 
-| Action                       | State Modified                                                           | Side Effects                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ---------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `toggleShowLabels()`         | `showLabels`                                                             | Boolean toggle                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `toggleFilterIncompatible()` | `filterIncompatible`, `domainSelections`, `skillConfigs`, `toastMessage` | When enabling: finds framework-incompatible web skills (`findIncompatibleWebSkills`, which skips already-excluded entries) and removes them from selections and skill configs via `applySkillRemoval`. **Guard:** if any targeted removal is a globally-installed skill and not `isEditingFromGlobalScope`, the entire operation — filter included — is refused with `GLOBAL_SKILLS_LOCKED`, never partially applied. When disabling: just sets flag to false. **Dormant:** the `F` hotkey is gated behind `FEATURE_FLAGS.FILTER_INCOMPATIBLE`(default `false`), so no UI path reaches this action today. |
-| `toggleSettings()`           | `showSettings`                                                           | Boolean toggle (source management overlay)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `toggleInfo()`               | `showInfo`                                                               | Boolean toggle (selected skills/agents overlay)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Action               | State Modified | Side Effects                                    |
+| -------------------- | -------------- | ----------------------------------------------- |
+| `toggleShowLabels()` | `showLabels`   | Boolean toggle                                  |
+| `toggleInfo()`       | `showInfo`     | Boolean toggle (selected skills/agents overlay) |
 
 ### Population Actions
 
@@ -285,17 +283,16 @@ The wizard store is module-level singleton state, so a fresh `hydrateWizardStore
 
 Which actions trigger which resets:
 
-| Action                         | `domainSelections` | `_stackDomainSelections` | `selectedDomains` | `skillConfigs` | `selectedAgents` | `agentConfigs` | `boundSkills` | `currentDomainIndex` | `stackAction` |
-| ------------------------------ | :----------------: | :----------------------: | :---------------: | :------------: | :--------------: | :------------: | :-----------: | :------------------: | :-----------: |
-| `selectStack(stackId)`         |       RESET        |          RESET           |       RESET       |     RESET      |      RESET       |     RESET      |     RESET     |        RESET         |     RESET     |
-| `reset()`                      |       RESET        |          RESET           |       RESET       |     RESET      |      RESET       |     RESET      |     RESET     |        RESET         |     RESET     |
-| `toggleDomain(off)`            |      partial       |            --            |      partial      |    partial     |        --        |       --       |      --       |          --          |      --       |
-| `toggleDomain(on)`             |      partial       |            --            |      partial      |    partial     |        --        |       --       |      --       |          --          |      --       |
-| `toggleTechnology()`           |      partial       |            --            |        --         |    partial     |        --        |       --       |      --       |          --          |      --       |
-| `toggleFilterIncompatible()`   |      partial       |            --            |        --         |    partial     |        --        |       --       |      --       |          --          |      --       |
-| `preselectAgentsFromStack()`   |         --         |            --            |        --         |       --       |       SET        |      SET       |      --       |          --          |      --       |
-| `populateFromSkillIds()`       |        SET         |           SET            |        SET        |      SET       |        --        |       --       |      --       |          --          |      --       |
-| `preselectAgentsFromDomains()` |         --         |            --            |        --         |       --       |       SET        |      SET       |      --       |          --          |      --       |
+| Action                         | `domainSelections` | `_stackDomainSelections` | `selectedDomains` | `skillConfigs` | `selectedAgents` | `agentConfigs` | `currentDomainIndex` | `stackAction` |
+| ------------------------------ | :----------------: | :----------------------: | :---------------: | :------------: | :--------------: | :------------: | :------------------: | :-----------: |
+| `selectStack(stackId)`         |       RESET        |          RESET           |       RESET       |     RESET      |      RESET       |     RESET      |        RESET         |     RESET     |
+| `reset()`                      |       RESET        |          RESET           |       RESET       |     RESET      |      RESET       |     RESET      |        RESET         |     RESET     |
+| `toggleDomain(off)`            |      partial       |            --            |      partial      |    partial     |        --        |       --       |          --          |      --       |
+| `toggleDomain(on)`             |      partial       |            --            |      partial      |    partial     |        --        |       --       |          --          |      --       |
+| `toggleTechnology()`           |      partial       |            --            |        --         |    partial     |        --        |       --       |          --          |      --       |
+| `preselectAgentsFromStack()`   |         --         |            --            |        --         |       --       |       SET        |      SET       |          --          |      --       |
+| `populateFromSkillIds()`       |        SET         |           SET            |        SET        |      SET       |        --        |       --       |          --          |      --       |
+| `preselectAgentsFromDomains()` |         --         |            --            |        --         |       --       |       SET        |      SET       |          --          |      --       |
 
 **Legend:** RESET = cleared to initial value. SET = replaced with new computed value. partial = specific entries updated (not full clear). `--` = not modified.
 
@@ -313,7 +310,6 @@ selectedDomains = []
 skillConfigs = []
 selectedAgents = []
 agentConfigs = []
-boundSkills = []
 currentDomainIndex = 0
 stackAction = null
 ```
@@ -340,17 +336,17 @@ This is the most aggressive reset in the store -- it clears all downstream selec
 
 ## Derived State (Computed Selectors)
 
-| Selector                             | Computes From                                                                                  | Returns                                                                                        |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `getAllSelectedTechnologies()`       | `domainSelections` (all domains, all categories)                                               | `SkillId[]` -- flat array of all selected skill IDs                                            |
-| `getSelectedTechnologiesPerDomain()` | `domainSelections`                                                                             | `Partial<Record<Domain, SkillId[]>>`                                                           |
-| `getCurrentDomain()`                 | `selectedDomains`, `currentDomainIndex`                                                        | `Domain \| null`                                                                               |
-| `getTechnologyCount()`               | Calls `getAllSelectedTechnologies().length`                                                    | `number`                                                                                       |
-| `getStepProgress()`                  | `step`, `approach`, `selectedStackId`, `stackAction`                                           | `{ completedSteps: WizardStep[], skippedSteps: WizardStep[] }`                                 |
-| `canGoToNextDomain()`                | `currentDomainIndex`, `selectedDomains.length`                                                 | `boolean`                                                                                      |
-| `canGoToPreviousDomain()`            | `currentDomainIndex`                                                                           | `boolean`                                                                                      |
-| `deriveInstallMode()`                | `skillConfigs` (source values)                                                                 | `InstallMode` (`"eject" \| "plugin" \| "mixed"`)                                               |
-| `buildSourceRows()`                  | `getAllSelectedTechnologies()`, `skillConfigs`, `boundSkills`, `installedSkillConfigs`, matrix | `SourceRow[]` = `{ skillId, options: SourceOption[], scope?, readOnly?, disabled?, added? }[]` |
+| Selector                             | Computes From                                                                   | Returns                                                                                        |
+| ------------------------------------ | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `getAllSelectedTechnologies()`       | `domainSelections` (all domains, all categories)                                | `SkillId[]` -- flat array of all selected skill IDs                                            |
+| `getSelectedTechnologiesPerDomain()` | `domainSelections`                                                              | `Partial<Record<Domain, SkillId[]>>`                                                           |
+| `getCurrentDomain()`                 | `selectedDomains`, `currentDomainIndex`                                         | `Domain \| null`                                                                               |
+| `getTechnologyCount()`               | Calls `getAllSelectedTechnologies().length`                                     | `number`                                                                                       |
+| `getStepProgress()`                  | `step`, `approach`, `selectedStackId`, `stackAction`                            | `{ completedSteps: WizardStep[], skippedSteps: WizardStep[] }`                                 |
+| `canGoToNextDomain()`                | `currentDomainIndex`, `selectedDomains.length`                                  | `boolean`                                                                                      |
+| `canGoToPreviousDomain()`            | `currentDomainIndex`                                                            | `boolean`                                                                                      |
+| `deriveInstallMode()`                | `skillConfigs` (source values)                                                  | `InstallMode` (`"eject" \| "plugin" \| "mixed"`)                                               |
+| `buildSourceRows()`                  | `getAllSelectedTechnologies()`, `skillConfigs`, `installedSkillConfigs`, matrix | `SourceRow[]` = `{ skillId, options: SourceOption[], scope?, readOnly?, disabled?, added? }[]` |
 
 ### getStepProgress() Logic
 
@@ -372,26 +368,22 @@ The "defaults" shortcut case: `approach === "stack" && selectedStackId && stackA
 
 ## Hotkey -> Action Mapping
 
-**Hotkey registry:** `src/cli/components/wizard/hotkeys.ts`. Exactly nine `HOTKEY_*` constants exist there -- `HOTKEY_INFO`, `HOTKEY_ACCEPT_DEFAULTS`, `HOTKEY_SCOPE`, `HOTKEY_SETTINGS` (the last two deliberately share the `s` key -- context-gated so both are never active at once), `HOTKEY_TOGGLE_LABELS`, `HOTKEY_FILTER_INCOMPATIBLE`, `HOTKEY_SET_ALL_LOCAL`, `HOTKEY_SET_ALL_PLUGIN`, and `HOTKEY_ADD_SOURCE` -- all enumerated in the tables below. No other `HOTKEY_*` constants exist.
+**Hotkey registry:** `src/cli/components/wizard/hotkeys.ts`. Exactly eight `HOTKEY_*` constants exist there -- `HOTKEY_INFO`, `HOTKEY_ACCEPT_DEFAULTS`, `HOTKEY_SCOPE`, `HOTKEY_SETTINGS` (the last two deliberately share the `s` key -- context-gated so both are never active at once), `HOTKEY_TOGGLE_LABELS`, `HOTKEY_SET_ALL_LOCAL`, `HOTKEY_SET_ALL_PLUGIN`, and `HOTKEY_ADD_SOURCE` -- all enumerated in the tables below. No other `HOTKEY_*` constants exist.
 
 ### Global Hotkeys (wizard.tsx)
 
-| Hotkey | Key | Active When                                                                                         | Action                           | Store Method                                           |
-| ------ | --- | --------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------ |
-| `A`    | `a` | `step === "build"` + stack selected                                                                 | Accept defaults, jump to confirm | `setStackAction("defaults")` then `setStep("confirm")` |
-| `S`    | `s` | `step === "build"`                                                                                  | Toggle focused skill scope       | `toggleSkillScope(focusedSkillId)`                     |
-| `S`    | `s` | `step === "agents"`                                                                                 | Toggle focused agent scope       | `toggleAgentScope(focusedAgentId)`                     |
-| `S`    | `s` | `step === "sources"` **and** `FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY` (`false` — inert today, D-307) | Toggle settings overlay          | `toggleSettings()`                                     |
-| `I`    | `i` | `isInfoPanelAvailable(step)` — i.e. `FEATURE_FLAGS.INFO_PANEL` **and** `step !== "confirm"`         | Open info overlay                | `toggleInfo()`                                         |
+| Hotkey | Key | Active When                                              | Action                           | Store Method                                           |
+| ------ | --- | -------------------------------------------------------- | -------------------------------- | ------------------------------------------------------ |
+| `A`    | `a` | `step === "build"` + stack selected                      | Accept defaults, jump to confirm | `setStackAction("defaults")` then `setStep("confirm")` |
+| `S`    | `s` | `step === "build"`                                       | Toggle focused skill scope       | `toggleSkillScope(focusedSkillId)`                     |
+| `S`    | `s` | `step === "agents"`                                      | Toggle focused agent scope       | `toggleAgentScope(focusedAgentId)`                     |
+| `I`    | `i` | `isInfoPanelAvailable(step)` — i.e. `step !== "confirm"` | Open info overlay                | `toggleInfo()`                                         |
 
 ### Build Step Hotkeys (use-category-grid-input.ts)
 
-| Hotkey | Key | Action                                                   | Store Method                 |
-| ------ | --- | -------------------------------------------------------- | ---------------------------- |
-| `D`    | `d` | Toggle compatibility labels on skill tags                | `toggleShowLabels()`         |
-| `F`    | `f` | Filter incompatible skills — **gated, no-op by default** | `toggleFilterIncompatible()` |
-
-**`F` is behind a feature flag.** `FEATURE_FLAGS.FILTER_INCOMPATIBLE` defaults to `false`, and the gate is applied in two coupled places: the keypress arm in `use-category-grid-input.ts` and the footer hint's `isVisible` in `wizard-layout.tsx`. Both must flip together. The store action is left intact and dormant so re-enabling is a one-flag change (it was disabled over a dual-scope collapse bug, not deleted).
+| Hotkey | Key | Action                                    | Store Method         |
+| ------ | --- | ----------------------------------------- | -------------------- |
+| `D`    | `d` | Toggle compatibility labels on skill tags | `toggleShowLabels()` |
 
 ### Sources Step Hotkeys (step-sources.tsx, customize view)
 
@@ -400,15 +392,9 @@ The "defaults" shortcut case: `approach === "stack" && selectedStackId && stackA
 | `L`    | `l` | Set all skill sources to "eject"     | `setAllSourcesEject()`  |
 | `P`    | `p` | Set all skill sources to marketplace | `setAllSourcesPlugin()` |
 
-### Settings Step Hotkey (step-settings.tsx)
-
-| Hotkey | Key | Action           | Store Method                |
-| ------ | --- | ---------------- | --------------------------- |
-| `A`    | `a` | Add a new source | (settings-specific handler) |
-
 ### Overlay Blocking
 
-When `showSettings === true`, all input is blocked except `S` (to close settings) — but that whole branch is gated on `FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY` alongside the hotkey that opens it (D-307), so with the flag off it never runs and `showSettings` never becomes true. When `showInfo === true`, all input is blocked except `ESC` and `I` (to close info).
+When `showInfo === true`, all input is blocked except `ESC` and `I` (to close info).
 
 **Opening is step-gated; closing is not.** `wizard.tsx` tests `store.showInfo` in a branch that runs BEFORE the `isInfoPanelAvailable(store.step)` check, so an already-open panel always closes on `I`/`ESC` regardless of step. Gating the close would strand an overlay opened on a step that later became disallowed. The confirm step is excluded from OPENING because it already renders the same `SummaryPanel`, and the overlay replaces the step rather than covering it — opening it there unmounted `StepConfirm` along with the only `Enter` handler, leaving no way to complete the wizard.
 
@@ -429,17 +415,13 @@ When `showSettings === true`, all input is blocked except `S` (to close settings
 | `domainSelections`         | `{}`          |
 | `_stackDomainSelections`   | `null`        |
 | `showLabels`               | `false`       |
-| `filterIncompatible`       | `false`       |
 | `skillConfigs`             | `[]`          |
 | `focusedSkillId`           | `null`        |
 | `unresolvableSkillIds`     | `[]`          |
-| `customizeSources`         | `false`       |
-| `showSettings`             | `false`       |
 | `showInfo`                 | `false`       |
 | `selectedAgents`           | `[]`          |
 | `agentConfigs`             | `[]`          |
 | `focusedAgentId`           | `null`        |
-| `boundSkills`              | `[]`          |
 | `installedSkillConfigs`    | `null`        |
 | `installedAgentConfigs`    | `null`        |
 | `isInitMode`               | `false`       |
@@ -455,13 +437,15 @@ When `showSettings === true`, all input is blocked except `S` (to close settings
 
 **File:** `wizard-store.ts`
 
-| Domain | Preselected Agents                                                                            |
-| ------ | --------------------------------------------------------------------------------------------- |
-| `web`  | `web-developer`, `web-reviewer`, `web-researcher`, `web-tester`, `web-pm`, `web-architecture` |
-| `api`  | `api-developer`, `api-reviewer`, `api-researcher`                                             |
-| `cli`  | `cli-developer`, `cli-tester`, `cli-reviewer`                                                 |
+| Domain | Preselected Agents                                                |
+| ------ | ----------------------------------------------------------------- |
+| `web`  | `web-developer`, `web-researcher`, `web-tester`, `pm`, `reviewer` |
+| `api`  | `api-developer`, `api-researcher`, `api-tester`, `pm`, `reviewer` |
+| `cli`  | `cli-developer`, `cli-tester`, `cli-researcher`, `pm`, `reviewer` |
+| `ai`   | `ai-developer`, `ai-researcher`, `ai-tester`, `pm`, `reviewer`    |
 
-Other domains (mobile, shared, ai, infra, meta) have no preselected agents.
+Every domain rosters the cross-domain `reviewer`; the preselection union dedupes it. Other domains
+(desktop, infra, meta, mobile, shared) have no preselected agents.
 
 ## Scratch Mode Default Domains
 
@@ -492,17 +476,16 @@ Between them, the store's focused skill always matches what is drawn, and `s` wo
 
 Direction convention below: **G→P** means the active entry moves from global to project scope; **P→G** is the reverse. `s` (`toggleSkillScope`) is the only key that does either.
 
-| From state                                              | Trigger                                            | To state               | Mechanism                                                                                                                                                                                                                                 |
-| ------------------------------------------------------- | -------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| active-global (was installed globally)                  | `toggleSkillScope` G→P                             | dual-scope             | Entry flips to `{scope: "project"}` AND a `{scope: "global", excluded: true}` tombstone is appended, gated on `wasInstalledGlobally` — which counts an existing global tombstone as installed, so a collapse→`s` restores a genuine pair  |
-| active-global (NOT installed globally)                  | `toggleSkillScope` G→P                             | active-project         | Flips `scope` on the single entry; **no** tombstone — a fresh init toggle must not mint one                                                                                                                                               |
-| dual-scope                                              | `toggleSkillScope` P→G (the `s` collapse)          | active-global          | Entry flips back to `{scope: "global"}` and any global tombstone for the id is dropped **unconditionally**, upholding "no active + tombstone at the same `(id, scope)`" and healing the case `wasInstalledGlobally` cannot see            |
-| active-global (inherited)                               | `toggleTechnology` deselect (spacebar)             | — **refused** —        | `isGloballyLockedSkill` returns `GLOBAL_SKILLS_LOCKED` and no state changes. A project edit may not uninstall a global install, in any flow, init included                                                                                |
-| dual-scope                                              | `toggleTechnology` deselect (spacebar)             | — **refused** —        | Spacebar is inert on a live `[P][G]` row (`GLOBAL_SKILLS_LOCKED`); only `s` collapses a pair                                                                                                                                              |
-| dual-scope                                              | `toggleDomain` off / `toggleFilterIncompatible` on | active-global          | `applySkillRemoval` drops BOTH halves and re-surfaces one inherited `{scope: "global"}` **active** entry so the `[G]` badge keeps rendering (Scenario B). It never stamps `excluded` — this path collapses a pair, it does not create one |
-| inherited-global (snapshot tombstone, no project entry) | `toggleTechnology` reselect                        | dual-scope             | `reconcileSkillConfigs`'s restore branch rebuilds BOTH `{scope: "project"}` and `{scope: "global", excluded: true}`, taking the source from the snapshot's global entry                                                                   |
-| tombstoned (live excluded entry)                        | `toggleTechnology` reselect                        | active                 | `reconcileSkillConfigs` clears `excluded` on the existing entry (no duplicate row)                                                                                                                                                        |
-| any                                                     | `toggleFilterIncompatible()` ON                    | unchanged for excluded | `findIncompatibleWebSkills` skips `excluded: true` entries (protects tombstones)                                                                                                                                                          |
+| From state                                              | Trigger                                   | To state        | Mechanism                                                                                                                                                                                                                                 |
+| ------------------------------------------------------- | ----------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| active-global (was installed globally)                  | `toggleSkillScope` G→P                    | dual-scope      | Entry flips to `{scope: "project"}` AND a `{scope: "global", excluded: true}` tombstone is appended, gated on `wasInstalledGlobally` — which counts an existing global tombstone as installed, so a collapse→`s` restores a genuine pair  |
+| active-global (NOT installed globally)                  | `toggleSkillScope` G→P                    | active-project  | Flips `scope` on the single entry; **no** tombstone — a fresh init toggle must not mint one                                                                                                                                               |
+| dual-scope                                              | `toggleSkillScope` P→G (the `s` collapse) | active-global   | Entry flips back to `{scope: "global"}` and any global tombstone for the id is dropped **unconditionally**, upholding "no active + tombstone at the same `(id, scope)`" and healing the case `wasInstalledGlobally` cannot see            |
+| active-global (inherited)                               | `toggleTechnology` deselect (spacebar)    | — **refused** — | `isGloballyLockedSkill` returns `GLOBAL_SKILLS_LOCKED` and no state changes. A project edit may not uninstall a global install, in any flow, init included                                                                                |
+| dual-scope                                              | `toggleTechnology` deselect (spacebar)    | — **refused** — | Spacebar is inert on a live `[P][G]` row (`GLOBAL_SKILLS_LOCKED`); only `s` collapses a pair                                                                                                                                              |
+| dual-scope                                              | `toggleDomain` off                        | active-global   | `applySkillRemoval` drops BOTH halves and re-surfaces one inherited `{scope: "global"}` **active** entry so the `[G]` badge keeps rendering (Scenario B). It never stamps `excluded` — this path collapses a pair, it does not create one |
+| inherited-global (snapshot tombstone, no project entry) | `toggleTechnology` reselect               | dual-scope      | `reconcileSkillConfigs`'s restore branch rebuilds BOTH `{scope: "project"}` and `{scope: "global", excluded: true}`, taking the source from the snapshot's global entry                                                                   |
+| tombstoned (live excluded entry)                        | `toggleTechnology` reselect               | active          | `reconcileSkillConfigs` clears `excluded` on the existing entry (no duplicate row)                                                                                                                                                        |
 
 **No store path mints a tombstone from a plain deselect any more.** `applySkillRemoval` removes only what the project OWNS and never stamps `excluded`; every deselect that could have produced one is refused upstream by the guards above. Tombstones now originate from exactly two places: `toggleSkillScope`'s G→P arm and `reconcileSkillConfigs`'s dual-scope restore (plus `toggleAgentScope` / `restoreDualScopeAgent` on the agent side).
 
@@ -512,7 +495,7 @@ Agent tombstones follow the same shape via `toggleAgentScope()`, which mirrors `
 
 **Not a store transition -- a read-only projection.** `SkillAgentSummary` (rendered by `components/wizard/summary-panel.tsx` — which is what BOTH the `I` overlay in `wizard-layout.tsx` and `components/wizard/step-confirm.tsx` render — and by the dashboard `commands/list.tsx`) compares the live `skillConfigs` / `agentConfigs` arrays against the `installedSkillConfigs` / `installedAgentConfigs` snapshots captured at hydration time. The former `components/wizard/info-panel.tsx` is gone; the two wizard surfaces are now literally the same component, so they cannot project differently.
 
-The snapshot is the **pre-filter baseline** (includes excluded tombstones) so the diff can render removals, source changes, and scope changes correctly. The projection code is `computeScopeDiff()` in `src/cli/lib/wizard/scope-diff.ts` (four `DiffRowStatus` classes: `added`/`removed`/`source-changed`/`unchanged`), which `SkillAgentSummary` calls. See `../concepts/tombstone-pattern.md` "Role in the Info-Panel Diff" for the baseline-drift failure mode.
+The snapshot is the **pre-filter baseline** (includes excluded tombstones) so the diff can render removals, install-mode changes, and scope changes correctly. The projection code is `computeScopeDiff()` in `src/cli/lib/wizard/scope-diff.ts` (four `DiffRowStatus` classes: `added`/`removed`/`source-changed`/`unchanged`), which `SkillAgentSummary` calls. See `../concepts/tombstone-pattern.md` "Role in the Info-Panel Diff" for the baseline-drift failure mode.
 
 Because the snapshot is captured once in `hydrateWizardStore`, the diff remains stable across all subsequent store transitions -- it reflects "changes since entry," not "changes since last keystroke."
 
@@ -534,10 +517,9 @@ Guards prevent project-scope edits from modifying globally-installed skills/agen
 
 **Actions with global-installed guards:**
 
-| Action                       | Guard Behavior                                                                                                                                                                                                                                              |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `toggleTechnology()`         | `GLOBAL_SKILLS_LOCKED` toast if skill is installed globally, or if spacebar hits a live dual-scope `[P][G]` row (inert — only `s` changes it). Also toasts if an exclusive swap would deselect a globally-installed skill or collapse a live `[P][G]` pair. |
-| `toggleFilterIncompatible()` | `GLOBAL_SKILLS_LOCKED` toast (whole op refused) if any incompatible skill to remove is globally installed; also skips `excluded` entries when finding incompatible web skills (protects tombstoned globals).                                                |
-| `toggleSkillScope()`         | No-op if `isEditingFromGlobalScope`. Sole dual-scope toggle — `s` round-trips `[P][G]` → `[G]` → `[P][G]`. `ALREADY_EJECTED_AT_GLOBAL` toast if project eject → global and a global eject is already installed (no tombstone).                              |
-| `toggleAgent()`              | `GLOBAL_AGENTS_LOCKED` toast if agent is installed globally, or if spacebar hits a live dual-scope `[P][G]` row (inert — only `s` changes it); both gated on not-editing-from-global-scope alone.                                                           |
-| `toggleAgentScope()`         | No-op if `isEditingFromGlobalScope`. Sole dual-scope toggle — `s` round-trips `[P][G]` → `[G]` → `[P][G]`.                                                                                                                                                  |
+| Action               | Guard Behavior                                                                                                                                                                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toggleTechnology()` | `GLOBAL_SKILLS_LOCKED` toast if skill is installed globally, or if spacebar hits a live dual-scope `[P][G]` row (inert — only `s` changes it). Also toasts if an exclusive swap would deselect a globally-installed skill or collapse a live `[P][G]` pair. |
+| `toggleSkillScope()` | No-op if `isEditingFromGlobalScope`. Sole dual-scope toggle — `s` round-trips `[P][G]` → `[G]` → `[P][G]`. `ALREADY_EJECTED_AT_GLOBAL` toast if project eject → global and a global eject is already installed (no tombstone).                              |
+| `toggleAgent()`      | `GLOBAL_AGENTS_LOCKED` toast if agent is installed globally, or if spacebar hits a live dual-scope `[P][G]` row (inert — only `s` changes it); both gated on not-editing-from-global-scope alone.                                                           |
+| `toggleAgentScope()` | No-op if `isEditingFromGlobalScope`. Sole dual-scope toggle — `s` round-trips `[P][G]` → `[G]` → `[P][G]`.                                                                                                                                                  |

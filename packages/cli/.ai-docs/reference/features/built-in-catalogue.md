@@ -18,7 +18,6 @@ keywords:
     RequireRule,
     AlternativeGroup,
     CompatibilityGroup,
-    Recommendation,
     mergeRelationships,
     convertStackToResolvedStack,
     resolveStack,
@@ -39,7 +38,7 @@ related:
   - reference/features/agent-system.md
   - reference/features/wizard-flow.md
   - reference/types/core-types.md
-last_validated: 2026-08-02
+last_validated: 2026-08-09
 ---
 
 # Built-in Catalogue — `defaultStacks` and `defaultRules`
@@ -67,13 +66,14 @@ source's** base path. Naming that distinction is this document's main job:
 - Docs that say stacks "are defined in `config/stacks.ts`" ([skills-and-matrix.md](./skills-and-matrix.md),
   [boundary-map.md](../boundary-map.md)) are describing the **source-repo** file. In this repo the
   data an agent is looking for is in `default-stacks.ts` / `default-rules.ts`.
-- `package.json`'s `files` array still lists `"config/"`. There is no such directory; the entry
-  publishes nothing. Do not read it as evidence the path exists here.
-- The error thrown when a stack lookup fails says `Stack '<id>' not found in config/stacks.ts` and
-  (in `local-installer.ts`) adds _"Available stacks are defined in the CLI's config/stacks.ts
-  file."_ **That sentence is wrong**, and it is the single most likely reason an agent lands in the
-  wrong file. The lookup that produced it searched `defaultStacks` too — see
-  [Two stack lookups, two fallback rules](#two-stack-lookups-two-fallback-rules).
+- `package.json`'s `files` array no longer lists `"config/"` — it publishes `dist/`, `assets/`,
+  `src/agents/`, `src/schemas/` and the three top-level files. Nothing in this package's manifest
+  implies a `config/` directory any more.
+- The error thrown when a stack lookup fails no longer names `config/stacks.ts` at all. Both
+  callers throw `stackNotOfferedMessage(stackId, source)` — _"Stack '\<id\>' is not a stack the
+  source '\<source\>' offers"_ — which names the id asked for and the source asked, and says the
+  built-ins belong to the default public marketplace alone. See
+  [Two stack lookups, one fallback rule](#two-stack-lookups-one-fallback-rule).
 
 **This document owns the built-in catalogue's quantities** (stack count, per-relationship-kind rule
 counts, assignment totals) per the count-ownership rule in `standards/documentation-bible.md`. No
@@ -131,7 +131,7 @@ Listed rather than counted, so the claim self-checks against `grep '^    id: "'`
 | 2   | `nextjs-t3-stack`            |                                              |
 | 3   | `nextjs-supabase-fullstack`  |                                              |
 | 4   | `nextjs-turborepo-fullstack` |                                              |
-| 5   | `react-old-school`           | Smallest web stack (10 agents)               |
+| 5   | `react-old-school`           | Smallest stack in the catalogue (8 agents)   |
 | 6   | `react-hono-fullstack`       |                                              |
 | 7   | `remix-fullstack`            |                                              |
 | 8   | `sveltekit-fullstack`        |                                              |
@@ -143,7 +143,7 @@ Listed rather than counted, so the claim self-checks against `grep '^    id: "'`
 | 14  | `nextjs-ai-saas`             |                                              |
 | 15  | `nextjs-saas-starter`        |                                              |
 | 16  | `expo-mobile-fullstack`      |                                              |
-| 17  | `cli-ink-oclif`              | Only CLI-shaped stack; 8 agents              |
+| 17  | `cli-ink-oclif`              | Only CLI-shaped stack; 10 agents             |
 
 **17 stacks.** `default-stacks.test.ts` pins that number in `EXPECTED_STACK_COUNT`, so adding or
 removing a stack fails the unit suite (and therefore the `pre-commit` hook, which runs
@@ -158,29 +158,43 @@ Stated as facts, each verified by evaluating the module:
    takes its `sortedLabels.length === 0` branch and renders one flat, header-less list in
    `defaultStacks` order. A new stack cannot be grouped without changing `Stack`, `ResolvedStack`'s
    producers, or both.
-2. **Every assignment is already in normalized form.** All 1997 `SkillAssignment` entries are
-   objects with an **explicit** `preloaded` key (163 of them `true`). This is what the header
-   comment means by _"All values are already in normalized form (`SkillAssignment[]` with
-   `{ id, preloaded }`)"_, and it is why `defaultStacks` **bypasses normalization entirely**: the
+2. **Every assignment is already in normalized form, and none of them states a load.** All 1542
+   `SkillAssignment` entries are objects, and not one carries a
+   `preloaded` key: a built-in stack declares WHICH skills a sub-agent gets, and `PRELOAD_DEFAULTS`
+   in `@workspace/matrix` answers how each `(skill, agent)` pair loads. `buildStackProperty`
+   resolves the unflagged entries against it when a stack is applied, so the flag survives only
+   where it is somebody's word — a user's saved config, or a third-party source's own stacks file.
+   Being objects is what the header comment means by _"All values are already in normalized
+   form (`SkillAssignment[]`)"_, and it is why `defaultStacks` **bypasses normalization entirely**: the
    `normalizeAgentConfig` / `normalizeStackRecord` pass in `stacks-loader.ts` — which widens bare
    strings to `{ id, preloaded: false }` and wraps single values in arrays — runs only on a
    Zod-parsed `config/stacks.ts` inside `loadStacks`, and on a loaded project config. Nothing calls
    it on `defaultStacks`. **Authoring a bare string or a non-array value here compiles under
    neither the type nor the tests, and no runtime pass will fix it up.**
-3. **`SHARED_TOOLING` is one array, aliased 46 times.** The module hoists
-   `const SHARED_TOOLING: SkillAssignment[]` (eslint-prettier, typescript-config, git-hooks) and
-   references it from 46 agent slots across the catalogue. Those slots hold the **same array
+3. **Two hoisted arrays, each aliased 47 times.** The module hoists
+   `const SHARED_TOOLING: SkillAssignment[]` (typescript-config, git-hooks) and
+   `const SHARED_LINT: SkillAssignment[]` (eslint-prettier), and references each from 47 agent
+   slots across the catalogue — `SHARED_TOOLING` under the `shared-tooling` category,
+   `SHARED_LINT` under `shared-lint`. Those slots hold the **same array
    object**, verified by identity: the `shared-tooling` value on `nextjs-fullstack`'s
-   `web-developer` and the one on `cli-ink-oclif`'s `cli-developer` are `===`. Two consequences:
-   editing the constant edits every stack that uses it, and **no code may mutate a
+   `web-developer` and the one on `cli-ink-oclif`'s `cli-developer` are `===`, and so are the two
+   `shared-lint` values. Two consequences:
+   editing either constant edits every stack that uses it, and **no code may mutate a
    `StackAgentConfig` array in place.** Nothing
    does today (`resolveStackAgentSkills` and `resolveStack` both build new arrays with
    `filter`/`map`), and the aliasing is why nothing may start.
-4. **17 distinct agent names, 31 distinct categories, 53 distinct skill ids.** Five agents
-   (`web-researcher`, `web-pm`, `skill-summoner`, `codex-keeper`, `agent-summoner`) appear in all 17
-   stacks; the `cli-*` trio appears in 8. Per-stack agent counts run 8, 10, 14 or 17. Every agent
-   name is a built-in, so `step-agents.tsx`'s `buildAgentGroups` finds no custom agent ids in
-   `suggestedStacks` and returns `BUILT_IN_AGENT_GROUPS` unchanged.
+4. **13 distinct agent names, 35 distinct categories, 53 distinct skill ids.** Six agents
+   (`web-researcher`, `pm`, `reviewer`, `skill-summoner`, `codex-keeper`, `agent-summoner`)
+   appear in all 17 stacks — `reviewer` and `pm` are single consolidated role agents holding each
+   stack's whole reviewing and planning block, and no per-domain reviewer or PM name exists in
+   `AGENT_NAMES` to assign; `web-developer` and `web-tester` appear
+   in 16, `api-developer` and `api-researcher` in 15, `cli-developer` and `cli-tester` in the same
+   8; `cli-researcher` appears only in `cli-ink-oclif`. Per-stack agent counts run 8, 9, 10 or 12.
+   Five of the 18 `AGENT_NAMES` are on no stack at all: the three `ai-*` agents, `api-tester` and
+   `convention-keeper` — so an AI-domain agent selected in the wizard starts with an empty
+   stack. Every agent name used is a built-in, so `step-agents.tsx`'s
+   `buildAgentGroups`
+   finds no custom agent ids in `suggestedStacks` and returns `BUILT_IN_AGENT_GROUPS` unchanged.
 
 ## `defaultRules`
 
@@ -191,24 +205,21 @@ both declared in `src/cli/types/matrix.ts`. **Every rule references skills by `S
 (`"react"`, `"zustand"`), never by `SkillId`.** Slugs are resolved to canonical ids during the merge
 step via `slugMap.slugToId`.
 
-The six relationship kinds, their effects and their enforcement are tabulated in
+The four relationship kinds, their effects and their enforcement are tabulated in
 [skills-and-matrix.md → Relationship System](./skills-and-matrix.md#relationship-system) — not
 repeated here. What this document adds is **where the built-in instances live and what shape they
 take**:
 
-| Kind             | Entry type                              | Entry shape                                        | Built-in entries |
-| ---------------- | --------------------------------------- | -------------------------------------------------- | ---------------- |
-| `conflicts`      | `ConflictRule` = `SkillGroupRule`       | `{ skills: SkillSlug[]; reason: string }`          | 28               |
-| `discourages`    | `DiscourageRule` = `SkillGroupRule`     | `{ skills; reason }`                               | **0**            |
-| `compatibleWith` | `CompatibilityGroup` = `SkillGroupRule` | `{ skills; reason }`                               | 39               |
-| `recommends`     | `Recommendation`                        | `{ skill: SkillSlug; reason: string }`             | 26               |
-| `requires`       | `RequireRule`                           | `{ skill; needs: SkillSlug[]; needsAny?; reason }` | 50               |
-| `alternatives`   | `AlternativeGroup`                      | `{ purpose: string; skills: SkillSlug[] }`         | 42               |
+| Kind           | Entry type                          | Entry shape                                        | Built-in entries |
+| -------------- | ----------------------------------- | -------------------------------------------------- | ---------------- |
+| `conflicts`    | `ConflictRule` = `SkillGroupRule`   | `{ skills: SkillSlug[]; reason: string }`          | 12               |
+| `discourages`  | `DiscourageRule` = `SkillGroupRule` | `{ skills; reason }`                               | **0**            |
+| `requires`     | `RequireRule`                       | `{ skill; needs: SkillSlug[]; needsAny?; reason }` | 98               |
+| `alternatives` | `AlternativeGroup`                  | `{ purpose: string; skills: SkillSlug[] }`         | 42               |
 
-Declaration order in the object literal is `conflicts`, `discourages`, `compatibleWith`,
-`recommends`, `requires`, `alternatives` — it does **not** match the field order in
-`RelationshipDefinitions`. `compatibleWith` is the only optional field on that type; `defaultRules`
-supplies it.
+Declaration order in the object literal is `conflicts`, `discourages`, `requires`,
+`alternatives` — it does **not** match the field order in `RelationshipDefinitions`. Every field on
+that type is required, and `defaultRules` supplies all four.
 
 ### Invariants and dead fields
 
@@ -218,17 +229,12 @@ supplies it.
 2. **`alternatives` groups carry no `reason`.** `AlternativeGroup` is `{ purpose, skills }` — it is
    the one kind that is not a `SkillGroupRule`. `purpose` is what surfaces
    (`SkillAlternative = { skillId, purpose }`).
-3. **`compatibleWith`'s `reason` is authored but discarded.** `collectSymmetricGroupMembers` lifts
-   the rule alongside each member for every symmetric kind, but the `compatibleWith` mapping keeps
-   `memberId` only, and `ResolvedSkill.compatibleWith` is a bare `SkillId[]`. The 39 reason strings
-   are documentation for the next editor of this file and reach no UI. Do not delete them as dead
-   weight; do not expect them to render either.
-4. **34 of the 50 `requires` rules set `needsAny: true`** (OR semantics — "any one of `needs`").
+3. **61 of the 98 `requires` rules set `needsAny: true`** (OR semantics — "any one of `needs`").
    The default is AND. The canonical example — pinned field-for-field by the test — is the
    `zustand` rule, whose `needs` lists `react`, `nextjs`, `remix` and `react-native` with
    `needsAny: true`.
-5. **Every slug the built-in rules name currently resolves.** The rules reference 129 distinct
-   slugs, and all 129 are present in `BUILT_IN_MATRIX.slugMap.slugToId`. This is a currently-true
+4. **Every slug the built-in rules name currently resolves.** The rules reference 176 distinct
+   slugs, and all 176 are present in `BUILT_IN_MATRIX.slugMap.slugToId`. This is a currently-true
    property, **not an enforced one** — see
    [Trap 3](#trap-3--nothing-fails-when-the-catalogue-goes-stale).
 
@@ -238,47 +244,101 @@ The three built-in datasets have **three different precedence rules**. This is t
 error-prone area of the module, because "the source wins" is true of all three in different senses.
 All three decisions are made in `loadAndMergeFromBasePath` (`src/cli/lib/loading/source-loader.ts`):
 
-| Dataset             | Source file                  | Rule                                                                          | Can the source REMOVE a built-in? |
-| ------------------- | ---------------------------- | ----------------------------------------------------------------------------- | --------------------------------- |
-| `defaultCategories` | `config/skill-categories.ts` | `{ ...defaultCategories, ...sourceCategories }` — per-key override            | Only by redefining the key        |
-| `defaultRules`      | `config/skill-rules.ts`      | `mergeRelationships(source, defaults)` — **concatenation**, source first      | **No**                            |
-| `defaultStacks`     | `config/stacks.ts`           | `sourceStacks.length > 0 ? sourceStacks : defaultStacks` — **all-or-nothing** | **Yes — all of them, at once**    |
+| Dataset             | Source file                  | Rule                                                                              | Can the source REMOVE a built-in? |
+| ------------------- | ---------------------------- | --------------------------------------------------------------------------------- | --------------------------------- |
+| `defaultCategories` | `config/skill-categories.ts` | `{ ...defaultCategories, ...sourceCategories }` — per-key override                | Only by redefining the key        |
+| `defaultRules`      | `config/skill-rules.ts`      | `mergeRelationships(source, narrowed defaults)` — **concatenation**, source first | **No**                            |
+| `defaultStacks`     | `config/stacks.ts`           | `resolveOfferedStacks` — **all-or-nothing, and only for the default source**      | **Yes — all of them, at once**    |
+
+### The built-in rules are narrowed to the slugs the source ships
+
+`relationshipsForSource` (`source-loader.ts`) filters `defaultRules.relationships` against the
+slugs of the skills the source actually extracted, BEFORE any merge: group rules
+(`conflicts`, `discourages`, `alternatives`) keep only present members and are dropped below two of
+them, and a `requires` rule survives only if its `skill` is present and at least one of its `needs`
+is. **The source's own rules are never narrowed.**
+
+This changes no resolved matrix. `resolveSlugsOrSkip` already dropped a member that resolves to no
+skill, so narrowing removes exactly what resolution discarded — verified identical, per-skill
+relation for relation, on both the ten-skill E2E fixture and the full public catalogue (where it is
+a no-op, all 176 slugs being present).
+
+What it removes is **noise**: the rules name 176 slugs, and the E2E fixture's ten skills carry six
+of them, leaving 170 dangling — `resolveToCanonicalId` warns once per dangling reference **per
+skill**, which is 2384 lines. Invisible until the startup band began painting buffered warnings
+above the wizard's step, at which point three of them plus `... and 2383 more` took four rows off
+every frame in the suite, and any warning raised after them was counted rather than read. A user
+could act on none of them: the rules are the CLI's, not the source's.
+
+The inverse case is why the narrowing stops at the built-ins. A slug a source AUTHOR typed into
+`config/skill-rules.ts` that the source's own skills do not carry is that source's defect, and the
+unresolved-slug warning is the only place it is ever reported — `doctor` surfaces it through the
+same load. Both halves are pinned in `source-loader.test.ts` → _"source-loader relationship rules"_.
 
 ### `mergeRelationships` is additive, and "source first" means less than it sounds
 
-`mergeRelationships` concatenates each of the six lists with the source's entries in front. It
+`mergeRelationships` concatenates each of the four lists with the source's entries in front. It
 performs no dedupe, no keying, and no removal. **A source repo cannot suppress a built-in rule** —
 it can only add rules that also apply. A source shipping a `skill-rules.ts` gets its own rules
-_plus_ all of `defaultRules`.
+_plus_ every built-in rule its own skills can express (the narrowing above removes only the rest,
+which never reached the resolved matrix anyway).
 
 The helper's own comment says source rules "win first-match lookups". That is exactly true for one
 kind and approximately true for the rest — worth recording because the difference decides whether a
 source repo can actually change behaviour:
 
-| Kind                                                         | Resolution                                               | What "source first" buys                                                                                                 |
-| ------------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `recommends`                                                 | `.find(r => r.skill === slug)` — genuine first match     | The source's `reason` wins outright; the built-in entry is never read                                                    |
-| `conflicts`, `discourages`, `compatibleWith`, `alternatives` | `flatMap` over **all** groups, then `uniqueBy(memberId)` | Every group still contributes members; source-first only decides whose `reason`/`purpose` annotation survives the dedupe |
-| `requires`                                                   | loop pushing **every** matching rule; no dedupe          | Nothing — both the source's and the built-in's requirement apply                                                         |
+| Kind                                       | Resolution                                               | What "source first" buys                                                                                                 |
+| ------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `conflicts`, `discourages`, `alternatives` | `flatMap` over **all** groups, then `uniqueBy(memberId)` | Every group still contributes members; source-first only decides whose `reason`/`purpose` annotation survives the dedupe |
+| `requires`                                 | loop pushing **every** matching rule; no dedupe          | Nothing — both the source's and the built-in's requirement apply                                                         |
 
-**So: a source repo can restate a recommendation, and can re-annotate a conflict, but cannot relax
-one.** Adding a conflicting source rule makes the union stricter, never looser.
+**So: a source repo can re-annotate a conflict, but cannot relax one.** Adding a conflicting
+source rule makes the union stricter, never looser.
 
-### Two stack lookups, two fallback rules
+### Which source the stand-in is for
 
-`defaultStacks` is consulted from two places with **different** semantics, and they disagree:
+`resolveOfferedStacks` (`source-loader.ts`) answers "what stacks does this source offer the
+wizard", and the built-in catalogue stands in for **the default public marketplace only**:
 
-| Entry point                                              | Rule                                                                        | Effect                                                                                        |
-| -------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `loadAndMergeFromBasePath` (`source-loader.ts`)          | `sourceStacks.length > 0 ? sourceStacks : defaultStacks`                    | **Whole-catalogue swap.** One stack in the source hides all 17 built-ins from the wizard      |
-| `loadStackById(stackId, configDir)` (`stacks-loader.ts`) | source `loadStacks` first, then `defaultStacks.find(s => s.id === stackId)` | **Per-id fallback.** A built-in stack stays resolvable by id even when the source has its own |
+| Source                                                | Ships `config/stacks.ts` | What the wizard is offered                                                  |
+| ----------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------- |
+| Default public marketplace                            | —                        | Its own stacks, else all 17 built-ins                                       |
+| Custom (`init --source`, `CC_SOURCE` at init, config) | Yes                      | Its own stacks, and only those                                              |
+| Custom                                                | No                       | **Nothing** — `suggestedStacks` is `[]` and the wizard skips its stack step |
 
-Consequence: with a source that ships stacks, `matrix.suggestedStacks` contains only that source's
-stacks (so the wizard cannot offer `nextjs-fullstack`), yet `loadStackById("nextjs-fullstack", …)`
-still returns it. The eject path (`local-installer.ts`) and the stack→plugin compiler
-(`stack-plugin-compiler.ts`) use the per-id form; the wizard uses the swapped array. **When the
-lookup does fail, both throw a message naming only `config/stacks.ts`** — the file that was searched
-first, not the fallback that was searched second.
+The identity is `isDefaultSource(source)` in `lib/configuration/config.ts` — one exported predicate
+over `DEFAULT_SOURCE`, shared with `multi-source-loader.ts`'s public/private marketplace labelling
+so the two surfaces cannot disagree. It is a question about the source STRING: a local checkout of
+the public marketplace passed as `--source /path/to/skills` is a custom source, because nothing in a
+path says which repository it holds. Both install-time spellings belong to `init` alone
+(`--source` is its flag, `CC_SOURCE` is read only for `caller: "init"`); a later command reads the
+source the install recorded, so the row above is the same row for it.
+
+`hydrateForInit` in `stores/wizard-store.ts` is what "skips its stack step" means: an empty
+`matrix.suggestedStacks` opens the wizard on `domains`, prepared exactly as the stack step's own
+"Start from scratch" row prepares it (shared `startFromScratch` store action), with an empty
+`history` so there is no step behind it to walk back into.
+
+### Two stack lookups, one fallback rule
+
+`defaultStacks` is consulted from two places, and since CLI-455 both scope the stand-in the same
+way — to the default public marketplace:
+
+| Entry point                                                      | Rule                                                                                      | Effect                                                                                      |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `loadAndMergeFromBasePath` (`source-loader.ts`)                  | `resolveOfferedStacks` — default source only                                              | **Whole-catalogue swap.** One stack in the source hides all 17 built-ins from the wizard    |
+| `loadStackById(stackId, configDir, source)` (`stacks-loader.ts`) | source `loadStacks` first, then `defaultStacks` — but only when `isDefaultSource(source)` | **Per-id fallback, same scope.** A built-in id resolves under the default marketplace alone |
+
+Under any other source a built-in id resolves to `null`, whoever named it — an installed config or
+an `init --from` payload included. That is the honest answer: the wizard could not have offered
+`nextjs-fullstack` there (`matrix.suggestedStacks` holds only the source's own stacks), so
+installing it would mean expanding a stack written against a different catalogue of skills.
+
+The one caller turns the `null` into a failure that names the id AND the source it asked, through
+the one message `stackNotOfferedMessage(stackId, source)` exports beside the loader. The eject path
+(`local-installer.ts`) takes the source identity as an argument, read off
+`sourceResult.sourceConfig.source`. A second caller, the stack→plugin compiler, was threaded the
+same identity by CLI-455 and then deleted whole by CLI-459 — it had no user-reachable caller.
 
 ## Data flow — two paths, and the one users actually take
 
@@ -295,10 +355,12 @@ scripts/generate-source-types.ts
 Run by `npm run generate:types` (`bun scripts/generate-source-types.ts`).
 
 `source-loader.ts::resolveBaseResult` short-circuits to `BUILT_IN_MATRIX` whenever
-`source === DEFAULT_SOURCE && !devMode`. **`devMode` has no production writer** — grep finds it only
-inside `source-loader.ts` itself and in one unit spec, and it defaults to `false`. So for the
+`isDefaultSource(source) && !devMode`. **`devMode` has no production writer** — grep finds it only
+inside `source-loader.ts` itself and in two unit specs, and it defaults to `false`. So for the
 default marketplace, which is the overwhelmingly common case, the user gets the **baked** matrix and
-`defaultStacks` / `defaultRules` are never executed at runtime at all.
+`defaultStacks` / `defaultRules` are never executed at runtime at all. Dev mode is consequently the
+one runtime path on which the built-in stand-in itself is observable, which is where
+`source-loader.test.ts` pins it.
 
 > **This is the most important operational fact in this document.** Editing `default-stacks.ts` or
 > `default-rules.ts` has **no effect on a default-source user** until `generate:types` is re-run and
@@ -310,19 +372,21 @@ default marketplace, which is the overwhelmingly common case, the user gets the 
 Reached for a local source, an explicitly non-default remote source, or the (unused) dev mode:
 
 ```
-loadAndMergeFromBasePath(basePath)
+loadAndMergeFromBasePath(basePath, source)
   categories     = { ...defaultCategories, ...sourceCategories }
-  relationships  = sourceRules ? mergeRelationships(source, defaultRules.relationships) : defaultRules.relationships
+  skills         = extractAllSkills(skillsDir)                 -- read BEFORE the rules are decided
+  builtIn        = narrowToShippedSlugs(defaultRules.relationships, slugs of skills)
+  relationships  = sourceRules ? mergeRelationships(source, builtIn) : builtIn
   mergeMatrixWithSkills(categories, relationships, skills)     -- rules DISSOLVE here
-  stacks         = sourceStacks.length > 0 ? sourceStacks : defaultStacks
+  stacks         = resolveOfferedStacks(basePath, stacksFile, source)
+                     source's own stacks, else defaultStacks for the DEFAULT source, else []
   matrix.suggestedStacks = stacks.map(convertStackToResolvedStack)
 ```
 
 **`defaultRules` has no read model.** `MergedSkillsMatrix` carries no `relationships` field: the
 rules are consumed exactly once, by `mergeMatrixWithSkills`, and dissolved into per-skill
-`conflictsWith` / `discourages` / `compatibleWith` / `requires` / `alternatives` / `isRecommended` /
-`recommendedReason` on each `ResolvedSkill`. Nothing downstream can ask "what rules were loaded?" —
-which is also why `BUILT_IN_MATRIX` bakes the **resolved relations**, not the rules.
+`conflictsWith` / `discourages` / `requires` / `alternatives` on each `ResolvedSkill`. Nothing downstream can ask "what rules were loaded?" — which is also why
+`BUILT_IN_MATRIX` bakes the **resolved relations**, not the rules.
 
 ### `resolveStack` vs `convertStackToResolvedStack` — not equivalent
 
@@ -345,38 +409,37 @@ for the stack-defaults branch. On the generated path the two fields agree by con
 
 ## Consumers
 
-| Consumer                                                 | Reads               | Purpose                                                               |
-| -------------------------------------------------------- | ------------------- | --------------------------------------------------------------------- |
-| `scripts/generate-source-types.ts`                       | both                | Bakes `BUILT_IN_MATRIX` (relations + `suggestedStacks`)               |
-| `lib/loading/source-loader.ts`                           | both                | Runtime merge for non-default sources                                 |
-| `lib/stacks/stacks-loader.ts::loadStackById`             | `defaultStacks`     | Per-id fallback after the source's `config/stacks.ts`                 |
-| `lib/configuration/index.ts` barrel, `config-exports.ts` | both                | Internal and public re-export                                         |
-| `components/wizard/stack-selection.tsx`                  | via matrix          | Renders `matrix.suggestedStacks`; seeds selections from `allSkillIds` |
-| `components/wizard/wizard.tsx`                           | via matrix          | `resolveSelectedSkillIds` under stack-defaults                        |
-| `components/wizard/step-agents.tsx`                      | via matrix          | Derives custom-agent ids from `stack.skills` keys                     |
-| `lib/matrix/matrix-provider.ts::findStack`               | via matrix          | `suggestedStacks.find(s => s.id === stackId)`                         |
-| `lib/installation/local-installer.ts`                    | via `loadStackById` | Eject-config build; throws the misleading `config/stacks.ts` message  |
-| `lib/stacks/stack-plugin-compiler.ts`                    | via `loadStackById` | Stack→plugin compilation                                              |
+| Consumer                                                 | Reads               | Purpose                                                                    |
+| -------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------- |
+| `scripts/generate-source-types.ts`                       | both                | Bakes `BUILT_IN_MATRIX` (relations + `suggestedStacks`)                    |
+| `lib/loading/source-loader.ts`                           | both                | Runtime merge for sources read from disk (stacks: dev mode only)           |
+| `lib/stacks/stacks-loader.ts::loadStackById`             | `defaultStacks`     | Per-id fallback after the source's `config/stacks.ts`, default source only |
+| `lib/configuration/index.ts` barrel, `config-exports.ts` | both                | Internal and public re-export                                              |
+| `components/wizard/stack-selection.tsx`                  | via matrix          | Renders `matrix.suggestedStacks`; seeds selections from `allSkillIds`      |
+| `components/wizard/wizard.tsx`                           | via matrix          | `resolveSelectedSkillIds` under stack-defaults                             |
+| `components/wizard/step-agents.tsx`                      | via matrix          | Derives custom-agent ids from `stack.skills` keys                          |
+| `lib/matrix/matrix-provider.ts::findStack`               | via matrix          | `suggestedStacks.find(s => s.id === stackId)`                              |
+| `lib/installation/local-installer.ts`                    | via `loadStackById` | Eject-config build; throws `stackNotOfferedMessage(id, source)`            |
 
 ## Test surface
 
-| File                                                             | Pins                                                                                                                                                                                                                                             |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/cli/lib/configuration/__tests__/default-stacks.test.ts`     | `EXPECTED_STACK_COUNT`; three stacks by name/description/philosophy; `it.each` over every stack for non-empty required fields; `it.each` over every (stack, agent, category) triple asserting `SkillAssignment[]` shape; one preloaded assertion |
-| `src/cli/lib/configuration/__tests__/default-rules.test.ts`      | `version`; the exact sorted key set of `relationships`; a length for `conflicts` / `recommends` / `requires` / `alternatives`; one representative entry per kind; `discourages` empty                                                            |
-| `src/cli/lib/configuration/__tests__/default-categories.test.ts` | Sibling. Pins the count **and** asserts key-for-key equality with the generated `CATEGORIES` union                                                                                                                                               |
+| File                                                             | Pins                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/cli/lib/configuration/__tests__/default-stacks.test.ts`     | `EXPECTED_STACK_COUNT`; three stacks by name/description/philosophy; `it.each` over every stack for non-empty required fields; `it.each` over every (stack, agent, category) triple asserting `SkillAssignment[]` shape; `it.each` over the same triples asserting no assignment carries a `preloaded` key; one stack entry by value |
+| `src/cli/lib/configuration/__tests__/default-rules.test.ts`      | `version`; the exact sorted key set of `relationships`; a length for `conflicts` / `requires` / `alternatives`; one representative entry per kind; `discourages` empty                                                                                                                                                               |
+| `src/cli/lib/configuration/__tests__/default-categories.test.ts` | Sibling. Pins the count **and** asserts key-for-key equality with the generated `CATEGORIES` union                                                                                                                                                                                                                                   |
 
-The stack file's two `it.each` blocks expand to roughly 1.9k specs — nearly the whole cost of the
-two files. Both run in the unit suite, which the `pre-commit` hook executes.
+The stack file's two triple-level `it.each` blocks expand to 2960 specs — the 1480
+`(stack, agent, category)` triples, twice over — and are nearly the whole cost of the two files,
+which run 2986 and 13 specs respectively. Both run in the unit suite, which the `pre-commit` hook
+executes.
 
-**Two gaps, both closeable and both currently passing if closed:**
+**One gap, closeable and currently passing if closed:**
 
 1. **Nothing cross-checks either file against the generated matrix.** `default-categories.test.ts`
    has exactly that assertion (`keys` vs `CATEGORIES`); its two siblings do not. No test asserts
    that every `defaultStacks` skill id exists in `BUILT_IN_MATRIX.skills`, or that every rule slug
    resolves through `BUILT_IN_MATRIX.slugMap`. Both hold, so the assertions pass on the day they are written.
-2. **`compatibleWith` is the one relationship kind with no length assertion**, while the other five
-   are pinned. Adding or dropping a compatibility group is currently silent.
 
 ## Traps
 
@@ -411,28 +474,38 @@ edit that skips this changes nothing for default-source users while passing ever
 
 Neither a stale stack skill id nor a stale rule slug produces an error:
 
-| Staleness                                           | What happens                                                                                                                                       |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Stack names a skill not in the matrix               | Generation: silent drop. Runtime: dropped from `skills`, kept in `allSkillIds`, one `warn` from `resolveAgentConfigToSkills` (suppressed in tests) |
-| Rule names an unresolvable slug                     | `resolveToCanonicalId` logs `Unresolved slug '<slug>' … — skipping` and returns `null`; `resolveSlugsOrSkip` filters it out                        |
-| A `requires` rule whose `needs` all fail to resolve | The whole rule is dropped (`resolvedNeeds.length === 0` → `continue`)                                                                              |
+| Staleness                                           | What happens                                                                                                                                                                                                                                  |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stack names a skill not in the matrix               | Generation: silent drop. Runtime: dropped from `skills`, kept in `allSkillIds`, one `warn` from `resolveAgentConfigToSkills` (suppressed in tests)                                                                                            |
+| Rule names an unresolvable slug                     | `resolveToCanonicalId` logs `Unresolved slug '<slug>' … — skipping` and returns `null`; `resolveSlugsOrSkip` filters it out. Only a SOURCE's rules reach it — a stale BUILT-IN slug is narrowed out before resolution and says nothing at all |
+| A `requires` rule whose `needs` all fail to resolve | The whole rule is dropped (`resolvedNeeds.length === 0` → `continue`)                                                                                                                                                                         |
 
-`checkMatrixHealth` does **not** close this. It inspects only `compatibleWith`, `conflictsWith` and
-`requires` on already-**resolved** skills — references that survived resolution by definition — and
-it never looks at `suggestedStacks` at all. Slug resolution failures are gone before the health
-check runs.
+The narrowing described under [Precedence](#the-built-in-rules-are-narrowed-to-the-slugs-the-source-ships)
+takes the middle row's warning away from the built-ins on purpose, and costs nothing here: the
+warning was already not a staleness signal. It fired for every slug a small source did not ship,
+which is the normal case, so a genuinely stale built-in slug was one line among thousands that read
+exactly the same. Invariant 4 above — every built-in slug resolves against `BUILT_IN_MATRIX` — is
+the property that would catch it, and it is still checked by nothing.
+
+`checkMatrixHealth` does **not** close this. It runs five checks — category domains, skill
+categories, relation refs, audit-verdict contradictions, unaudited skills — and the only one that
+could bear on staleness, `checkSkillRelationRefs`, reads `conflictsWith` and `requires` on
+already-**resolved** skills, i.e. references that survived resolution by definition. It never looks
+at `suggestedStacks` at all (the field does not appear in `matrix-health-check.ts`). Slug
+resolution failures are gone before the health check runs.
 
 ### Trap 4 — do not restate `preloaded` semantics here
 
 `preloaded: true` embeds a skill's content in the compiled agent prompt; `false` loads it via the
 Skill tool at runtime. That split, and the `pluginRef` form each takes, are owned by
 [compilation-pipeline.md](./compilation-pipeline.md) (per-skill `pluginRef`) and
-[agent-system.md](./agent-system.md) (`buildAgentTemplateContext`, `preloadedSkillIds`). This
-document records only the shape (`preloaded` is explicit on every built-in assignment) and the
-distribution (163 of 1997 true).
+[agent-system.md](./agent-system.md) (`buildAgentTemplateContext`, `preloadedSkillIds`). Which
+pairs preload by default is owned by `packages/matrix/src/read-model/preload-defaults.ts`. This
+document records only the shape: no built-in assignment carries `preloaded` at all, so all 1542 of
+them take the mapping's verdict.
 
-### Trap 5 — editing `SHARED_TOOLING` edits 46 slots
+### Trap 5 — editing `SHARED_TOOLING` or `SHARED_LINT` edits 47 slots each
 
-It is one shared array reference, not 46 copies. Adding an entry adds it to every stack that names
+Each is one shared array reference, not 47 copies. Adding an entry adds it to every stack that names
 the constant. If a stack needs different tooling, give it its own literal rather than mutating or
 slicing the shared one — see [invariant 3](#structural-invariants).

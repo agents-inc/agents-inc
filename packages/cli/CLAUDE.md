@@ -7,7 +7,7 @@
 
 4. ALWAYS read [.ai-docs/DOCUMENTATION_MAP.md](./.ai-docs/DOCUMENTATION_MAP.md) before working on any area of the codebase. It indexes verified documentation for every major system.
 
-5. NEVER run ANY git commands that modify the staging area or working tree — no `git add`, `git reset`, `git stash`, `git checkout`, `git restore`, `git clean`. The user curates their staging area intentionally. This applies to sub-agents too — explicitly forbid git commands when delegating.
+5. NEVER run ANY git command that WRITES — no `git add`, `commit`, `reset`, `stash` (push/pop/drop), `checkout`, `restore`, `clean`, `push`, `rebase`, `merge`, amend. READ-ONLY git is allowed (owner clarification 2026-08-09): `git status`, `log`, `show`, `diff`, `blame`, `stash list` — use it to check history and verify changes. The user curates their staging area intentionally. This applies to sub-agents too — state both halves when delegating.
 </critical-requirement>
 
 # Project Memory for Claude
@@ -16,27 +16,30 @@ This file provides behavioral rules and conventions. For codebase reference docu
 
 ## Workspace Directories
 
-| Directory                          | Purpose                                               |
-| ---------------------------------- | ----------------------------------------------------- |
-| `/home/vince/dev/cli`              | CLI tool (this repo) - entry point for all operations |
-| `/home/vince/dev/skills`           | Plugin marketplace - skills, agents, stacks           |
-| `/home/vince/dev/cv-launch`        | Test project - install targets for testing            |
+| Directory                   | Purpose                                               |
+| --------------------------- | ----------------------------------------------------- |
+| `/home/vince/dev/cli`       | CLI tool (this repo) - entry point for all operations |
+| `/home/vince/dev/skills`    | Plugin marketplace - skills, agents, stacks           |
+| `/home/vince/dev/cv-launch` | Test project - install targets for testing            |
 
 ## NEVER do this
 
 ### Git & Workflow
-- NEVER run ANY git command that modifies the staging area or working tree (`git add`, `git reset`, `git stash`, `git checkout`, `git restore`, `git clean`) — the user curates their staging area intentionally; if you think you need to discard working tree changes, ask the user how to proceed
+
+- NEVER run ANY git command that WRITES (`git add`, `commit`, `reset`, `stash` push/pop/drop, `checkout`, `restore`, `clean`, `push`, `rebase`, `merge`) — the user curates their staging area intentionally; if you think you need to discard working tree changes, ask the user how to proceed. Read-only git (`status`, `log`, `show`, `diff`, `blame`, `stash list`) is allowed — use it to verify rather than guess
 - NEVER use git worktrees (`isolation: "worktree"`)
 - NEVER introduce new workflow patterns (tools, flags, strategies) that the user hasn't explicitly requested
 - NEVER put machine-specific absolute paths in any file tracked by git
 
 ### Type Safety & Casts
+
 - NEVER use `as SkillId` or `as SkillSlug` casts on valid union members — the literal string IS the type. Only cast at parse boundaries (YAML, JSON, CLI args) or for deliberately invalid error-path test data (testing that bad IDs produce errors). Fabricated test IDs that aren't in the union should use `string` type, not casts.
 - NEVER use `as unknown as T` double casts — fix the upstream type instead
 - NEVER use `{} as Record<K, V>` — use `const x: Partial<Record<K, V>> = {}` with a type annotation
 - NEVER use `matrix.skills[id]!` non-null assertions — use `getSkillById(id)` from `matrix/matrix-provider.ts`
 
 ### Data Integrity
+
 - NEVER use optional chaining (`?.`) or null coalescing (`?? ""`, `|| []`) on data that must exist — use asserting lookups. Silent fallbacks hide bugs.
 - NEVER build multi-tier resolution fallbacks (try exact → try alias → try directory name). Data matches on the first lookup or it's an error.
 - NEVER fall back to `path.basename(dir)` as a skill ID — use `frontmatter.name` from `parseFrontmatter()`
@@ -45,6 +48,7 @@ This file provides behavioral rules and conventions. For codebase reference docu
 - NEVER let plugin install per-skill failures silently produce orphan config entries. If `installPluginSkills` returns non-empty `failed`, hard-error (`this.error(..., { exit: EXIT_CODES.ERROR })`) BEFORE `writeConfigAndCompile` runs. Warnings for user context are fine; persisting `config.ts` entries claiming `source: "<marketplace>"` for skills that never installed is not. Uninstall failures are diagnostic-only.
 
 ### Scope Awareness (project vs global)
+
 - NEVER hardcode `projectDir` for skill/agent paths when a skill has a `scope` field — use `os.homedir()` for `"global"` scope, `projectDir` for `"project"` scope
 - NEVER use `path.join(projectDir, LOCAL_SKILLS_PATH)` without checking scope — global-scoped local skills live at `~/.claude/skills/`, not `<project>/.claude/skills/`
 - NEVER load global local skills as a fallback only when project has none — always merge both project and global local skills (project takes precedence on conflict)
@@ -53,12 +57,14 @@ This file provides behavioral rules and conventions. For codebase reference docu
 - NEVER use conditional fallbacks like `if (x.length === 0) { use fallback }` when both primary and fallback data should always be merged
 
 ### Test Assertions
+
 - NEVER define local parser/extractor helpers inside a test file (loops, regex scans, state machines that pick data out of rendered output or config text). If the helper has non-trivial logic it would need its OWN tests to be trusted. Instead: assert directly on the raw output with `toContain`, `toMatchInlineSnapshot`, or a structural load (e.g., `loadProjectConfig` for config.ts). If a helper is genuinely reusable across tests, live it in `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested.
 - NEVER split/loop/regex-scan `lastFrame()` output in component tests — use `toContain("+ React")` or snapshot the frame. The rendered frame is the contract; that's what you assert.
 - NEVER broaden an assertion to make a failing test pass — investigate why it fails. If it's a fixture limitation, keep the strict assertion as a commented-out `// KNOWN GAP:` with an explanation. If it's a product bug, mark the test `it.fails`.
 - NEVER add a key-press method to an E2E step page object without calling `waitForWizardFooter()` first — React effects may not have fired yet, causing handlers to silently no-op. NEVER call it on a screen that is not rendered by `WizardLayout` — it is a one-string match on the wizard footer text `"select"`, so on the dashboard (or any other footer-less screen) it hangs for the full 15s timeout instead of settling. The rule covers `BaseStep` subclasses only; non-wizard page objects need their own screen-specific sentinel.
 
 ### Test Data
+
 - NEVER construct test data inline — use factories from `__tests__/factories/` and `__tests__/helpers/` and fixtures from `__tests__/fixtures/create-test-source.ts`. If a factory doesn't exist, create one.
 - NEVER create custom mock skills when a canonical `SKILLS.*` entry from `test-fixtures.ts` would work
 - NEVER call `createMockMatrix(SKILLS.react)` inline when a pre-built constant exists in `mock-matrices.ts`
@@ -71,6 +77,7 @@ This file provides behavioral rules and conventions. For codebase reference docu
 - NEVER write a helper function in an E2E test file without first grepping `e2e/helpers/test-utils.ts` and `e2e/fixtures/` for an existing one
 
 ### Code Style
+
 - NEVER create redundant type aliases — use `Pick<>`, `Partial<>`, or `&`. Check `types/` first.
 - NEVER add unnecessary comments — only when unintuitive, complex, or for edge cases
 - NEVER reassign constants to other constants — use the original directly
@@ -80,6 +87,7 @@ This file provides behavioral rules and conventions. For codebase reference docu
 ## ALWAYS do this
 
 ### Delegation & Process
+
 - ALWAYS delegate implementation and test code to sub-agents. Tell them to read CLAUDE.md. Tell them: "Do NOT run any git commands."
 - ALWAYS trace ALL scenarios through the code after any fix
 - ALWAYS grep for the old value when changing test data or renaming anything
@@ -89,15 +97,18 @@ This file provides behavioral rules and conventions. For codebase reference docu
 - ALWAYS tell sub-agents: "If you fix an anti-pattern or discover a missing standard, write a finding to `.ai-docs/agent-findings/` using the template in `.ai-docs/agent-findings/TEMPLATE.md`"
 
 ### Releasing
+
 - ALWAYS follow the release checklist in `.ai-docs/standards/commit-protocol.md`. This package publishes as `agents-inc` — one package, one version, one `npm publish`. There is no second package to bump; the `agents-inc` alias that used to shadow it was folded into this one in 0.150.0.
 
 ### Scope Awareness
+
 - ALWAYS use `resolveInstallPaths(projectDir, scope)` with the explicit scope parameter when resolving skill/agent directories
 - ALWAYS split skill lists by scope (`filter(s => s.scope === "global")` / `filter(s => s.scope !== "global")`) before any path-dependent operation (copy, delete, install, uninstall)
 - ALWAYS load both project AND global local skills and merge them — see `src/cli/lib/loading/source-loader.ts` and `src/cli/commands/compile.ts` for the correct pattern
 - ALWAYS preserve saved `source` from config over computed `primarySource` when restoring wizard state — `saved?.source ?? primarySource ?? DEFAULT_PUBLIC_SOURCE_NAME`
 
 ### Type Safety
+
 - ALWAYS use type guards (`isCategory()`, `isDomain()`, `isAgentName()` from `utils/type-guards.ts`) instead of `as` casts for runtime narrowing
 - ALWAYS use `getSkillById(id)` or `getSkillBySlug(slug)` from `matrix/matrix-provider.ts` for skill lookups where the skill must exist. Only use `matrix.skills[id]` when genuinely optional.
 - ALWAYS use `parseFrontmatter()` from `lib/loading/loader.ts` for SKILL.md parsing
@@ -105,6 +116,7 @@ This file provides behavioral rules and conventions. For codebase reference docu
 - ALWAYS use `typedEntries()` / `typedKeys()` from `utils/typed-object.ts` (not raw `Object.entries()`)
 
 ### Test Data
+
 - ALWAYS prefer `SKILLS.*` from `test-fixtures.ts` over `createMockSkill()` for standard domain skills
 - ALWAYS use `createMockMatrix` spread syntax: `createMockMatrix(SKILLS.react, SKILLS.hono)`
 - ALWAYS use spread isolation `{ ...SKILLS.react }` when passing to functions that mutate objects in-place
@@ -151,7 +163,7 @@ Is it a complete skill/agent/category object?
 
 Items not already covered by NEVER/ALWAYS rules above:
 
-- [ ] Tests written and passing (`npm test`)
+- [ ] Tests written and passing (`npm test`, which builds first — a bare `vitest run` refuses a stale `dist/`)
 - [ ] Type check passes (`tsc --noEmit`)
 - [ ] No ESLint errors
 - [ ] No `console.log` left in code
@@ -171,5 +183,5 @@ Items not already covered by NEVER/ALWAYS rules above:
 <critical-reminder>
 1. You do NOT write code. Delegate to sub-agents. Tell them to read CLAUDE.md.
 2. Trace ALL scenarios after any fix.
-3. NEVER run ANY git commands that modify the staging area or working tree. The user curates their staging area intentionally.
+3. NEVER run ANY git command that writes (add, commit, reset, stash, checkout, restore, clean, push). Read-only git is allowed. The user curates their staging area intentionally.
 </critical-reminder>

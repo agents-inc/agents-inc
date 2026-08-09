@@ -67,32 +67,33 @@ npx agents-inc init
 
 ## Skills
 
-222 skills across 9 domains:
+Over 200 skills across 9 domains:
 
-| Domain | Skills                                                                                                                                                                     |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Web    | React, Vue, Angular, Svelte, SolidJS, Next.js, Remix, Nuxt, SvelteKit, Astro, Qwik, Tailwind, SCSS Modules, Zustand, Redux, Pinia, Vitest, Playwright, Storybook, and more |
-| API    | Hono, Express, Fastify, NestJS, Elysia, Drizzle, Prisma, PostgreSQL, MongoDB, Redis, Stripe, and more                                                                      |
-| AI     | Anthropic SDK, OpenAI SDK, Vercel AI SDK, LangChain, LlamaIndex, Pinecone, ChromaDB, and more                                                                              |
-| Mobile | React Native, Expo                                                                                                                                                         |
-| Infra  | Docker, GitHub Actions, Cloudflare Workers                                                                                                                                 |
-| Shared | Turborepo, ESLint + Prettier, Code Reviewing, Auth Security                                                                                                                |
-| Meta   | Research Methodology, CLI Reviewing                                                                                                                                        |
+| Domain  | Skills                                                                                                                                                                     |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Web     | React, Vue, Angular, Svelte, SolidJS, Next.js, Remix, Nuxt, SvelteKit, Astro, Qwik, Tailwind, SCSS Modules, Zustand, Redux, Pinia, Vitest, Playwright, Storybook, and more |
+| API     | Hono, Express, Fastify, NestJS, Elysia, Drizzle, Prisma, PostgreSQL, MongoDB, Redis, Stripe, and more                                                                      |
+| AI      | Anthropic SDK, OpenAI SDK, Vercel AI SDK, LangChain, LlamaIndex, Pinecone, ChromaDB, and more                                                                              |
+| Mobile  | React Native, Expo                                                                                                                                                         |
+| Desktop | Tauri, Electron, Electron Forge, electron-updater                                                                                                                          |
+| CLI     | oclif + Ink, Commander, Clack                                                                                                                                              |
+| Infra   | Docker, GitHub Actions, Cloudflare Workers                                                                                                                                 |
+| Shared  | Turborepo, ESLint + Prettier, Code Reviewing, Auth Security                                                                                                                |
+| Meta    | Research Methodology, CLI Reviewing                                                                                                                                        |
 
 Browse the full catalog on the [Plugin Marketplace](https://github.com/agents-inc/skills).
 
 ## Subagents
 
-| Category         | Subagents                                                                         |
-| ---------------- | --------------------------------------------------------------------------------- |
-| Developers       | `web-developer` `api-developer` `cli-developer` `ai-developer` `web-architecture` |
-| Reviewers        | `web-reviewer` `api-reviewer` `cli-reviewer` `ai-reviewer` `infra-reviewer`       |
-| Testers          | `web-tester` `cli-tester` `api-tester`                                            |
-| Researchers      | `web-researcher` `api-researcher`                                                 |
-| Planning         | `web-pm` `api-pm`                                                                 |
-| Pattern Analysis | `pattern-scout` `web-pattern-critique`                                            |
-| Documentation    | `codex-keeper`                                                                    |
-| Meta             | `skill-summoner` `agent-summoner` `convention-keeper`                             |
+| Category      | Subagents                                                                               |
+| ------------- | --------------------------------------------------------------------------------------- |
+| Developers    | `web-developer` `api-developer` `cli-developer` `ai-developer`                          |
+| Reviewer      | `reviewer` — one cross-domain reviewer; domain checklists via `meta-reviewing-*` skills |
+| Testers       | `web-tester` `api-tester` `cli-tester` `ai-tester`                                      |
+| Researchers   | `web-researcher` `api-researcher` `cli-researcher` `ai-researcher`                      |
+| Planning      | `pm` — one cross-domain planner; domain frameworks via `meta-planning-*` skills         |
+| Documentation | `codex-keeper`                                                                          |
+| Meta          | `skill-summoner` `agent-summoner` `convention-keeper`                                   |
 
 Each subagent is composed from modular partials (role, workflow, output format) plus its assigned skills. Everything is ejectable.
 
@@ -105,18 +106,14 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 | `init`    | Interactive setup wizard: pick a stack, customize skills, compile subagents |
 | `edit`    | Modify skill selection via the interactive wizard                           |
 | `compile` | Recompile subagents after changes                                           |
-| `update`  | Pull latest skills from source                                              |
+| `update`  | Refresh the marketplaces this installation uses (ejected skills are yours)  |
 | `search`  | Search skills across all sources                                            |
 
 ### Customization
 
-| Command           | Description                                                               |
-| ----------------- | ------------------------------------------------------------------------- |
-| `eject <type>`    | Export for customization (`agent-partials`, `templates`, `skills`, `all`) |
-| `import skill`    | Import a skill from an external GitHub repository                         |
-| `new skill`       | (IN PROGRESS) Scaffold a new local skill                                  |
-| `new agent`       | (IN PROGRESS) Scaffold a new custom subagent                              |
-| `new marketplace` | (IN PROGRESS) Scaffold a new marketplace project                          |
+| Command        | Description                                                               |
+| -------------- | ------------------------------------------------------------------------- |
+| `eject <type>` | Export for customization (`agent-partials`, `templates`, `skills`, `all`) |
 
 ### Build
 
@@ -127,12 +124,11 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 
 ### Diagnostics
 
-| Command     | Description                         |
-| ----------- | ----------------------------------- |
-| `doctor`    | Diagnose setup issues               |
-| `list`      | Show installed skills and agents    |
-| `validate`  | Validate config and skill structure |
-| `uninstall` | Remove Agents Inc from your project |
+| Command     | Description                                                   |
+| ----------- | ------------------------------------------------------------- |
+| `doctor`    | Validate installed content, then diagnose the install's state |
+| `list`      | Show installed skills and agents                              |
+| `uninstall` | Remove Agents Inc from your project                           |
 
 Run `agents-inc --help` for full usage, or see the [full commands reference](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/reference/commands.md).
 

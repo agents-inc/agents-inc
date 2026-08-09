@@ -38,16 +38,21 @@ last_validated: 2026-07-30
 
 | Union       | Members | Backing declaration                      |
 | ----------- | ------- | ---------------------------------------- |
-| `SkillId`   | 222     | values of `SKILL_MAP` (also `SKILL_IDS`) |
-| `SkillSlug` | 222     | keys of `SKILL_MAP` (also `SKILL_SLUGS`) |
-| `Category`  | 89      | `CATEGORIES`                             |
+| `SkillId`   | 237     | values of `SKILL_MAP` (also `SKILL_IDS`) |
+| `SkillSlug` | 237     | keys of `SKILL_MAP` (also `SKILL_SLUGS`) |
+| `Category`  | 102     | `CATEGORIES`                             |
 | `Domain`    | 9       | `DOMAINS`                                |
-| `AgentName` | 23      | `AGENT_NAMES`                            |
+| `AgentName` | 18      | `AGENT_NAMES`                            |
+
+`AGENT_NAMES` in full: `agent-summoner`, `ai-developer`, `ai-researcher`, `ai-tester`,
+`api-developer`, `api-researcher`, `api-tester`, `cli-developer`, `cli-researcher`, `cli-tester`,
+`codex-keeper`, `convention-keeper`, `pm`, `reviewer`, `skill-summoner`, `web-developer`,
+`web-researcher`, `web-tester`. There is **one** `reviewer` and **one** `pm` — no per-domain
+reviewer or PM name exists in the union, so a roster naming `web-reviewer` or `api-pm` names
+nothing.
 
 Authoritative source: `src/cli/types/generated/source-types.ts`. Regenerate with `bun run generate:types` — pipeline, phase ordering and traps: [features/code-generation.md](./features/code-generation.md).
 
-**Category definitions (separate file, separate count).** `defaultCategories` in `src/cli/lib/configuration/default-categories.ts` defines **all 89** members. Any member it omits is auto-synthesized at load time with a humanized name, `order: 999` and `exclusive: false` — which is why the file must stay exhaustive. Of the 89: **27 are `exclusive: true`**, **6 are `required: true`**. Pinned against the generated union by `src/cli/lib/configuration/__tests__/default-categories.test.ts`.
+**Category definitions (separate file, separate count).** `defaultCategories` in `src/cli/lib/configuration/default-categories.ts` must define a member for every `Category`. Any member it omits is auto-synthesized at load time with a humanized name, `order: 999` and `exclusive: false` — which is why the file must stay exhaustive. Pinned against the generated union by `src/cli/lib/configuration/__tests__/default-categories.test.ts`. Its size and the exclusive/required split are owned by [`features/skills-and-matrix.md`](./features/skills-and-matrix.md) ("Current Counts").
 
-**Zod schemas:** 35 exported (4 bridge / 8 loader / 16 structural / 7 strict). See `types/zod-schemas.md`.
-
-> **This line is a pointer, not a second copy.** `types/zod-schemas.md` owns the schema count per the count-ownership registry in `standards/documentation-bible.md`; no index or tree annotation anywhere may carry the number.
+**Zod schemas:** four families — bridge, loader, structural, strict. `types/zod-schemas.md` owns the count per the count-ownership registry in `standards/documentation-bible.md`; no index, tree annotation or cross-reference anywhere else may carry the number.

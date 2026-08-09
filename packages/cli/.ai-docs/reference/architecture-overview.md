@@ -77,7 +77,7 @@ src/cli/
     list.tsx                # Show installation information (Ink component)
     search.ts               # Search for skills across sources (plain ts, no Ink)
     uninstall.tsx           # Uninstall project or global install (manifest removal unconditional; no `--all`)
-    update.tsx              # Update skills
+    update.ts               # Refresh the configured marketplaces
     validate.ts             # Validate installation
   components/               # Ink React components
     render.ts               # THE ONLY caller of ink's render(). Every Ink render in the CLI goes
@@ -103,13 +103,13 @@ src/cli/
       list-compiled-agents.ts # listAgentMdFiles() — on-disk compiled-agent enumeration
     config-gate/            # The ONLY code allowed to write ~/.claude-src/{config,config-types}.ts (index.ts is its whole public surface)
       index.ts              # writeScopedFromWizard(), writeScopeConfigTypes(), reconcileTypesFromDisk(),
-                            #   writeScaffoldedEntityTypes(), mutateGlobal(), propagateGlobalRemoval(), ensureBlankPair()
-                            #   — the SEVEN entries that mint the gate token, each around its whole flow.
-                            #   writeProjectPartial() + writeMarketplaceScaffoldConfig() mint nothing and refuse $HOME instead.
+                            #   mutateGlobal(), propagateGlobalRemoval(), ensureBlankPair()
+                            #   — the SIX entries that mint the gate token, each around its whole flow.
+                            #   writeProjectPartial() mints nothing and refuses $HOME instead.
                             #   Also lazyGateDeps(), applyMigratedGlobalSources(), and the re-exports mergeGlobalConfigs +
                             #   normalizeProjectPath (a pure matcher — writes nothing)
       pair-writer.ts        # writeGlobalPair(), writeGlobalConfigHalf(), writeGlobalTypesHalf(),
-                            #   writeGlobalTypesHalfFromData(), ensureBlankPair() — write-if-changed.
+                            #   ensureBlankPair() — write-if-changed.
                             #   REQUIRES the gate token (asserted in writeIfChanged); mints none
       classify.ts           # classifyGlobalChange() -> GlobalChangeSet; consequenceTier() -> T1..T4
       propagate.ts          # propagateGlobalChangesToProjects(), writeProjectConfigPair(), pruneGlobalEntriesFromRegisteredProjects(),
@@ -118,11 +118,11 @@ src/cli/
       recompile.ts          # recompilePropagated() — lazy import of operations/project/recompile-project-agents
       gate-token.ts         # AsyncLocalStorage write privilege + GlobalPairWriteViolation
       deps.ts               # GateDeps — loaded matrix/agents, or loaders a no-consequence tier never calls
-    configuration/          # Config loader/merger/writer/generator/source-manager/config-types-writer/project-config/default-*
+    configuration/          # Config loader/merger/writer/generator/config-types-writer/project-config/default-*
       project-config.ts     # loadProjectConfigFromDir(), loadProjectConfig(), validateProjectConfig(), ConfigLoadError
       scope-predicates.ts   # isActiveAt(), isGlobalTombstone(), isProjectOwned(), activeAgentScopeMap()
       define-config.ts      # defineConfig() helper re-exported through agents-inc/config
-      default-categories.ts # defaultCategories — 89 category definitions, pinned 1:1 against the generated `Category` union
+      default-categories.ts # defaultCategories — category definitions, pinned 1:1 against the generated `Category` union
     installation/           # Install mode detection, local installer, mode migrator
       installation.ts       # detectInstallation(), detectProjectInstallation(), detectGlobalInstallation(), getInstallationOrThrow(), deriveInstallMode()
       install-base-dir.ts   # resolveInstallPaths(projectDir, scope), installBaseDir() — scope-aware base dir
@@ -131,24 +131,24 @@ src/cli/
                             #   buildAgentScopeMap() — every config-pair writer lives in config-gate/
       mode-migrator.ts      # detectMigrations(), executeMigration() — install-mode migration
     loading/                # YAML/frontmatter loading, source fetching, multi-source
-      source-loader.ts      # loadSkillsMatrixFromSource() — SourceLoadOptions: skipExtraSources, matrixOnly, forceRefresh, devMode
+      source-loader.ts      # loadSkillsMatrixFromSource() — SourceLoadOptions: skipExtraSources, matrixOnly, devMode
     matrix/                 # Skills matrix loading, resolving, health checks
       matrix-provider.ts    # getSkillById(), getSkillBySlug() asserting lookups
       skill-resolution.ts   # synthesizeCategory(), mergeMatrixWithSkills() — resolveRelationships is internal
     operations/             # Composable building blocks for CLI commands
       source/               # loadSource(), ensureMarketplace(), requireMarketplace()
-      skills/               # discoverInstalledSkills(), copyLocalSkills(), installPluginSkills(), uninstallPluginSkills(), pluginInstallFailureError(), compareSkillsWithSource(), collectScopedSkillDirs(), findSkillMatch()
+      skills/               # discoverInstalledSkills(), copyLocalSkills(), installPluginSkills(), uninstallPluginSkills(), pluginInstallFailureError()
       project/              # detectProject(), detectBothInstallations(), writeProjectConfig(), compileAgents(), compileAgentsAllScopes(), loadAgentDefs()
         recompile-project-agents.ts # recompileRegisteredProjectAgents(), recompilePropagatedProjectAgents()
     plugins/                # Plugin discovery, validation, manifest, settings
       plugin-settings.ts    # getEnabledPluginKeys(), getInstalledPluginsRegistryPath(), listRegisteredPluginInstalls(), resolvePluginInstallPaths(), getVerifiedPluginInstallPaths()
     skills/                 # Skill fetching, copying, metadata, source switching, local loader, plugin compiler
     stacks/                 # Stack loading, installing, plugin compilation
-    wizard/                 # Build step logic + session diff (pure functions): validateBuildStep(), computeScopeDiff(), skillSlotKey(), agentSlotKey(), deriveScopeBadges(), formatScopeTag(), orderDomains(), buildCategoriesForDomain(), isCompatibleWithSelectedFrameworks()
-    assert-dir-overwritable.ts # Guards fresh-write dirs (assertDirOverwritable)
+    testing/                # Support for the test infrastructure itself, not for any command
+      dist-staleness.ts     # assertDistIsFresh() — the vitest.global-setup.ts guard's whole body
+    wizard/                 # Build step logic + session diff (pure functions): validateBuildStep(), computeScopeDiff(), skillSlotKey(), agentSlotKey(), deriveScopeBadges(), formatScopeTag(), orderDomains(), buildCategoriesForDomain()
     compiler.ts             # Liquid template engine, agent/skill compilation
     exit-codes.ts           # Named EXIT_CODES constants
-    feature-flags.ts        # Runtime feature flags (SOURCE_SEARCH, SOURCE_CHOICE, INFO_PANEL, FILTER_INCOMPATIBLE, NEW_SKILL_COMMAND, NEW_AGENT_COMMAND, NEW_MARKETPLACE_COMMAND) + featureDisabledError()
     marketplace-generator.ts # Marketplace.json generation
     metadata-keys.ts        # Metadata key constants
     output-validator.ts     # Compiled agent output validation
@@ -203,17 +203,15 @@ oclif init hook (hooks/init.ts)
 Command.run() (commands/init.tsx)
   -> loadSource() operation (wraps loadSkillsMatrixFromSource()) -> SourceLoadResult (matrix + sourceConfig)
   -> runWizardSession({ hydrate, props }) (components/wizard/run-wizard-session.tsx)
-       -> render(<Wizard version logo projectDir installedSkillIds initialAgents startupMessages />)
+       -> render(<Wizard version logo installedSkillIds initialAgents startupMessages />)
   |
   v
 Wizard (Ink/React UI)
   -> Imports matrix from matrix-provider.ts (not via props)
   -> Zustand store (useWizardStore) manages step-by-step state
   -> Steps: stack -> domains -> build -> sources -> agents -> confirm (WizardStep / WIZARD_STEP_ORDER in wizard-store.ts)
-  -> Settings is an overlay, NOT a linear step: renders StepSettings (components/wizard/step-settings.tsx)
-     while store.showSettings is true (store.toggleSettings()). WITHDRAWN today (D-307): both the
-     HOTKEY_SETTINGS binding on the sources step and the showSettings input branch are gated on
-     FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY (default false), so no keypress reaches it. See features/wizard-flow.md
+  -> The info panel (I) is the only overlay; the marketplace-sources settings screen was withdrawn
+     with the marketplace axis. See features/wizard-flow.md
   -> Returns WizardResultV2
   |
   v
@@ -246,7 +244,8 @@ Every command extends `BaseCommand` in `src/cli/base-command.ts`.
 
 ```
 BaseCommand provides:
-  - baseFlags: --source (doctor, search, validate override baseFlags to `{}`)
+  - no flags: it declares no baseFlags. --source belongs to `init` alone
+    (owner ruling 2026-08-09) and is declared in commands/init.tsx
   - init() lifecycle -> super.init() + ensureTerminalSize()
       (blocks until the terminal meets MIN_TERMINAL_SIZE, 80x20 in consts.ts.
        This is the STARTUP gate, not the only one -- WizardLayout enforces the
@@ -255,7 +254,6 @@ BaseCommand provides:
   - sourceConfig getter (from init hook)
   - handleError() -> this.error() with EXIT_CODES.ERROR
   - requireMarketplaceOrExit() -> requireMarketplace() (operations/source/require-marketplace.ts)
-  - ensureDirOverwritable() -> assertDirOverwritable() (lib/assert-dir-overwritable.ts)
   - logSuccess(), logWarning(), logInfo()
 ```
 
@@ -265,12 +263,16 @@ Commands are discovered via oclif pattern strategy from `dist/commands/`.
 
 File: `src/cli/hooks/init.ts`
 
-Runs before every command. Extracts `--source` / `-s` from raw argv (before oclif parses), calls `resolveSource()`, attaches `ResolvedConfig` to oclif config object.
+Runs before every command. For `init` alone it extracts `--source` / `-s` from raw argv (before oclif parses); it then calls `resolveSource()` with the caller identity (`"init"` for the init command, `"stored"` for every other) and attaches `ResolvedConfig` to the oclif config object.
 
 ### 3. Source Resolution Precedence
 
 ```
 --source flag > CC_SOURCE env var > .claude-src/config.ts (project) > ~/.claude-src/config.ts (global) > default (github:agents-inc/skills)
+      \________________________/
+        init only — the flag is declared by `init` and nothing else, and the env
+        var is read only for `caller: "init"`. Every later command starts at the
+        project config.
 ```
 
 Implemented in: `src/cli/lib/configuration/config.ts` (`resolveSource()`)
@@ -342,12 +344,12 @@ Key function: `generateConfigSource(config, options?)`. When `options.isProjectC
 
 **Config-types writer selection rule:** There are two writers for `config-types.ts`:
 
-- `pair-writer.ts`'s `writeGlobalTypesHalf()` / `writeGlobalTypesHalfFromData()` (over `generateConfigTypesSource()`) — standalone unions, narrowed to the config being written. ONLY for the GLOBAL `~/.claude-src/config-types.ts`, and reachable only from inside `config-gate/`.
+- `pair-writer.ts`'s `writeGlobalTypesHalf()` (over `generateConfigTypesSource()`) — standalone unions, narrowed to the config being written. ONLY for the GLOBAL `~/.claude-src/config-types.ts`, and reachable only from inside `config-gate/`.
 - `regenerateConfigTypes()` in `config-types-writer.ts` — emits the global-aware branch (imports `GlobalSkillId`/`GlobalAgentName`/`GlobalDomain`/`GlobalCategory` from the global types, extends them with every literal the sibling `config.ts` holds — see `buildProjectTypesExtras`). ALWAYS use this for any PROJECT `<projectDir>/.claude-src/config-types.ts`.
 
 The rule is now structural rather than advisory: `regenerateConfigTypes` throws `GlobalPairWriteViolation` if handed the home directory, and the standalone renderer is private to `pair-writer.ts`. The former `writeStandaloneConfigTypes` export no longer exists.
 
-**Scope-dispatching entry points:** `config-gate::reconcileTypesFromDisk(projectDir, config, deps, opts?)` applies the rule from one place — the standalone half at `$HOME`, `regenerateConfigTypes()` otherwise. `commands/compile.ts` calls it once per compile pass (including the early-return pass where the scope has no installed skills, since the config — not the discovered skills — drives the unions) so the documented "hand-edit `config.ts`, then run `compile`" workflow refreshes the type unions instead of stranding them. A failed refresh downgrades to a warning (`configTypesRefreshFailed()` in `utils/messages.ts`); the compiled agents are already written. At `$HOME` it ALSO fans the config out to every registered project and recompiles their agents — a hand edit leaves no prior state to classify against, so the only safe assumption is that every inlined copy is stale. `config-gate::writeScaffoldedEntityTypes` is the same dispatch for `new skill` / `new agent` / `new marketplace`, which widen the unions without touching `config.ts`.
+**Scope-dispatching entry points:** `config-gate::reconcileTypesFromDisk(projectDir, config, deps, opts?)` applies the rule from one place — the standalone half at `$HOME`, `regenerateConfigTypes()` otherwise. `commands/compile.ts` calls it once per compile pass (including the early-return pass where the scope has no installed skills, since the config — not the discovered skills — drives the unions) so the documented "hand-edit `config.ts`, then run `compile`" workflow refreshes the type unions instead of stranding them. A failed refresh downgrades to a warning (`configTypesRefreshFailed()` in `utils/messages.ts`); the compiled agents are already written. At `$HOME` it ALSO fans the config out to every registered project and recompiles their agents — a hand edit leaves no prior state to classify against, so the only safe assumption is that every inlined copy is stale.
 
 ### 11. Scope System (Project vs Global)
 
@@ -378,12 +380,12 @@ When a project needs to override (disable) a globally-installed skill or agent w
 
 **How tombstones are created:**
 
-| Producer                                                              | File                              | When                                                                                                                                                                                           |
-| --------------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `toggleSkillScope()` (G→P)                                            | `stores/wizard-store.ts`          | Moving a globally-installed skill to project scope adds `{ id, scope: "global", excluded: true, source }`, gated on `wasInstalledGlobally` so a fresh init toggle mints no spurious tombstone. |
-| `toggleAgentScope()` (G→P)                                            | `stores/wizard-store.ts`          | Agent mirror of the above.                                                                                                                                                                     |
-| dual-scope restore (`reconcileSkillConfigs`, `restoreDualScopeAgent`) | `stores/wizard-store.ts`          | Re-selecting an inherited-global row whose snapshot holds a tombstone re-creates BOTH the project entry and the global tombstone, so the row renders `[P][G]` again (Scenario B).              |
-| `maskCollidingGlobalSkills()` / `maskCollidingGlobalAgents()`         | `installation/local-installer.ts` | System-derived masks written at project-config write time (see section 16).                                                                                                                    |
+| Producer                                                              | File                       | When                                                                                                                                                                                           |
+| --------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toggleSkillScope()` (G→P)                                            | `stores/wizard-store.ts`   | Moving a globally-installed skill to project scope adds `{ id, scope: "global", excluded: true, source }`, gated on `wasInstalledGlobally` so a fresh init toggle mints no spurious tombstone. |
+| `toggleAgentScope()` (G→P)                                            | `stores/wizard-store.ts`   | Agent mirror of the above.                                                                                                                                                                     |
+| dual-scope restore (`reconcileSkillConfigs`, `restoreDualScopeAgent`) | `stores/wizard-store.ts`   | Re-selecting an inherited-global row whose snapshot holds a tombstone re-creates BOTH the project entry and the global tombstone, so the row renders `[P][G]` again (Scenario B).              |
+| `maskCollidingGlobalSkills()` / `maskCollidingGlobalAgents()`         | `config-gate/propagate.ts` | System-derived masks written at project-config write time (see section 16).                                                                                                                    |
 
 **What no longer creates a tombstone:**
 
@@ -418,7 +420,7 @@ The authoritative plugin-reference format is **per-skill**, not per-agent.
 - Only meaningful in the GLOBAL config (`~/.claude-src/config.ts`). Project configs never carry `projects`.
 - A project init appends the project directory (`registerProjectPath()`, internal to `config-gate/propagate.ts`); a project uninstall always removes it (`config-gate::mutateGlobal({ kind: "deregister-project" })`, called unconditionally by `commands/uninstall.tsx` — a failure warns, never aborts).
 - `propagateGlobalChangesToProjects()` in `config-gate/propagate.ts` iterates `projects` to rewrite each registered project's pair through the shared `writeProjectConfigPair()` (`writeConfigFile` + `regenerateConfigTypes`, per the writer-selection rule above) when the global unions change.
-- `pruneGlobalEntriesFromRegisteredProjects()` in `config-gate/propagate.ts` is the GLOBAL-uninstall path: it re-enters `propagateGlobalChangesToProjects()` with an emptied global config (`skills: []`, `agents: []`, `selectedAgents: []`) so every inlined global row, tombstone, `selectedAgents` name and per-agent stack ref is pruned from each registered project, and each project's `config-types.ts` is regenerated. It must run AFTER the global `.claude-src` manifest is removed so the regenerated project types fall back to the standalone form instead of importing from a deleted global `config-types.ts`. Unreachable projects come back in `skipped`, never thrown.
+- `pruneGlobalEntriesFromRegisteredProjects()` in `config-gate/propagate.ts` is the GLOBAL-uninstall path: it re-enters `propagateGlobalChangesToProjects()` with an emptied global config (`skills: []`, `agents: []`) so every inlined global row, tombstone and per-agent stack ref is pruned from each registered project, and each project's `config-types.ts` is regenerated. It must run AFTER the global `.claude-src` manifest is removed so the regenerated project types fall back to the standalone form instead of importing from a deleted global `config-types.ts`. Unreachable projects come back in `skipped`, never thrown.
 
 **A write that propagates recompiles the propagated projects itself**, inside `config-gate`, and returns a `GateReport` whose `recompile` field the command renders. Callers cannot forget it, because there is nothing left for them to do — a config-only propagation would leave each registered project's compiled `.claude/agents/<name>.md` referencing a removed or re-scoped global skill.
 
@@ -443,7 +445,7 @@ Stacks can be organized into visual groups in the stack selection screen.
 
 Two production call sites write a project `config.ts` with the global config inlined (`writeConfigFile(..., { isProjectConfig: true, globalConfig })`). Both now run ONE shared reconciliation step immediately before the write, so config semantics are enforced at the write boundary rather than only in wizard keypress handlers.
 
-**Entry point:** `reconcileProjectSplitAgainstGlobal(projectSplit, globalConfig, matrix)` — module-private in `src/cli/lib/installation/local-installer.ts`.
+**Entry point:** `reconcileProjectSplitAgainstGlobal(projectSplit, globalConfig, matrix)` in `src/cli/lib/config-gate/propagate.ts` — exported only far enough for `config-gate/index.ts` to call it, and not re-exported from the gate's barrel.
 
 **Applied at:**
 
@@ -472,7 +474,7 @@ Two production call sites write a project `config.ts` with the global config inl
 - Idempotent: a skill the project already tombstones is skipped.
 - The project's own skill **wins locally**. This is deliberately asymmetric with the guard that refuses a user-initiated exclusive swap over a globally-locked skill: there the user is displacing a shared install, whereas here a global install has landed on top of existing project state, and letting global win would silently uninstall the user's own skill.
 
-Supporting reconcilers in the same module: `retainProjectOwnedSkills()` / `retainProjectOwnedAgents()` (drop tombstones whose global entry is gone), `retainReconciledSelectedAgents()` (prune a flat `selectedAgents[]` name no longer backed by an active agent), `computeRemovedGlobalSkillIds()` + `retainReconciledStack()` (drop stack refs to global skills removed at global scope).
+Supporting reconcilers in the same module: `retainProjectOwnedSkills()` / `retainProjectOwnedAgents()` (drop tombstones whose global entry is gone), `computeRemovedGlobalSkillIds()` + `retainReconciledStack()` (drop stack refs to global skills removed at global scope).
 
 ### 17. Config Load Failure Is an Error, Not `null`
 

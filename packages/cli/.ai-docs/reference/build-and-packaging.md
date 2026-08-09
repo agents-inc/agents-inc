@@ -17,6 +17,8 @@ keywords:
     sourcemap,
     dts,
     clean,
+    noExternal,
+    workspace-matrix,
     files,
     exports,
     bin,
@@ -37,8 +39,10 @@ related:
   - reference/commands/index.md
   - reference/features/agent-system.md
   - reference/features/configuration.md
+  - reference/features/code-generation.md
+  - reference/features/seed-contract.md
   - reference/testing/e2e-infrastructure.md
-last_validated: 2026-08-02
+last_validated: 2026-08-09
 ---
 
 # Build, Packaging and Distribution
@@ -93,18 +97,36 @@ negation is anchored at the package root precisely so it cannot reach them. The 
 declares `test` and `test:e2e` as `dependsOn: ["build"]` — deliberately without the caret, because
 both suites resolve oclif commands out of this package's own `dist/` (§8, §9).
 
+**`packages/matrix` is in this hash, and nothing in `inputs` names it.** tsup inlines that package
+into the bundle (`noExternal`, §7), so its source is build input — and it has no `build` script, so
+there appears to be nothing for the root task's `^build` to hang on. It is hashed regardless: turbo
+puts a task node in the graph for a dependency that does not implement the task.
+`turbo run build --dry=json --filter=agents-inc` shows `@workspace/matrix#build` carrying
+`"command": "<NONEXISTENT>"`, all 35 of its files hashed, listed among `agents-inc#build`'s
+`dependencies` — and that node's hash feeds the CLI's. Measured on turbo 2.10.8 (CLI-458 was filed
+on the opposite assumption): appending one comment line to
+`packages/matrix/src/read-model/domains.ts` turns a `>>> FULL TURBO` replay of `agents-inc#build`
+into a re-run and moves `agents-inc#test`'s hash with it, while the same edit to a package the CLI
+does **not** depend on (`packages/ui`) leaves both hashes byte-identical — so it is the dependency
+edge doing this, not the global hash. `"../matrix/src/**"` in `inputs` is accepted by turbo and does
+hash the 23 files it matches, but it would hash them a second time under a second name and would
+need another line for every workspace dependency this package gains, so it is deliberately absent.
+What turbo covers here, the `globalSetup` guard covers for the invocations turbo never sees —
+`vitest.global-setup.ts` calls `assertDistIsFresh` in `src/cli/lib/testing/dist-staleness.ts`, which
+scans `packages/matrix/src` as its own build-input tree ([testing/infrastructure.md](./testing/infrastructure.md#the-commands-project-executes-dist-not-src)).
+
 There is **no CI publish workflow.** `.github/workflows/` holds exactly one file, `ci.yml`, and none
 of its three jobs touches npm: `check-cli` runs this package's typecheck, lint, unit and E2E suites,
-`check-web` does the same for the rest of the monorepo (and fails if `packages/matrix`'s vendored
-catalog is stale), and `deploy` ships the web app to Cloudflare. Publication is a manual
-`npm publish`, and `prepublishOnly` is the only gate between the working tree and the registry.
+`check-web` does the same for the rest of the monorepo (and first runs `generate:matrix:check` **from
+this package** — see [`features/code-generation.md`](./features/code-generation.md)), and `deploy`
+ships the web app to Cloudflare. Publication is a manual `npm publish`, and `prepublishOnly` is the
+only gate between the working tree and the registry.
 
-> **`prepublishOnly`'s first step passes.** `prettier --check .` exits `0` over the whole package,
-> verified by running `bun run format:check` ("All matched files use Prettier code
-> style!"). The single offender this document once recorded, `src/cli/lib/seed/fetch-seed.ts`, was
-> reformatted during the monorepo move; `.ai-docs/**/*.md` is clean as well. `DOCUMENTATION_MAP.md`'s
-> "Known Tooling Gaps" agrees — its prettier entry was corrected on the same day and is kept there as
-> lineage only.
+> **`prepublishOnly`'s first step is `format:check`, and it covers markdown.** `prettier --check .`
+> runs over the whole package, `.ai-docs/**/*.md` included — the package's `.prettierignore` names
+> `CLAUDE.md`, `V2.md` and `todo/*` and nothing else. So an unformatted reference doc fails the
+> publish gate at step one and hides every failure behind it (§10 trap 11). Run
+> `bun run format` after editing anything under `.ai-docs/`.
 
 ---
 
@@ -160,17 +182,18 @@ match, and the negations do not, becomes its own output file under `dist/`, mirr
 
 ## 3. Build options
 
-| Option      | Value                 | What it buys                                                                                                                                       |
-| ----------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `format`    | `["esm"]`             | Single format. Matches `"type": "module"`; there is no CJS build and no dual-package hazard                                                        |
-| `platform`  | `node`                | Node built-ins stay external; `fs`, `path`, `os` are not polyfilled                                                                                |
-| `target`    | `node22`              | Downlevels syntax newer than Node 22. One of **three separate declarations of the runtime floor**, which agree today — see below                   |
-| `clean`     | `true`                | `dist/` is wiped before every build, so a deleted command's artefact disappears on the next build rather than lingering and staying discoverable   |
-| `sourcemap` | `true`                | One `.js.map` per emitted `.js`. These are published (§6) and are the single largest group in the tarball                                          |
-| `shims`     | `true`                | Injects tsup's `esm_shims` module so bundled code may reference the CJS globals `__dirname` / `__filename`. Inert in the current build — see below |
-| `dts`       | `false`               | **No `.d.ts` is emitted anywhere.** See §7 for why that is tolerable and where it is not                                                           |
-| `outDir`    | `dist`                | Hard-coded; `onSuccess` also hard-codes the literal string `"dist"`, so overriding `--out-dir` on the CLI would split the two halves apart         |
-| `banner.js` | `#!/usr/bin/env node` | See below                                                                                                                                          |
+| Option       | Value                   | What it buys                                                                                                                                       |
+| ------------ | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `format`     | `["esm"]`               | Single format. Matches `"type": "module"`; there is no CJS build and no dual-package hazard                                                        |
+| `platform`   | `node`                  | Node built-ins stay external; `fs`, `path`, `os` are not polyfilled                                                                                |
+| `noExternal` | `["@workspace/matrix"]` | Forces the private workspace package into the bundle. Load-bearing — see below                                                                     |
+| `target`     | `node22`                | Downlevels syntax newer than Node 22. One of **three separate declarations of the runtime floor**, which agree today — see below                   |
+| `clean`      | `true`                  | `dist/` is wiped before every build, so a deleted command's artefact disappears on the next build rather than lingering and staying discoverable   |
+| `sourcemap`  | `true`                  | One `.js.map` per emitted `.js`. These are published (§6) and are the single largest group in the tarball                                          |
+| `shims`      | `true`                  | Injects tsup's `esm_shims` module so bundled code may reference the CJS globals `__dirname` / `__filename`. Inert in the current build — see below |
+| `dts`        | `false`                 | **No `.d.ts` is emitted anywhere.** See §7 for why that is tolerable and where it is not                                                           |
+| `outDir`     | `dist`                  | Hard-coded; `onSuccess` also hard-codes the literal string `"dist"`, so overriding `--out-dir` on the CLI would split the two halves apart         |
+| `banner.js`  | `#!/usr/bin/env node`   | See below                                                                                                                                          |
 
 ### The runtime floor is declared in three places, and they must be changed together
 
@@ -215,6 +238,28 @@ and never exercised.
 > `package-lock.json` — the exact shape where that step fails looking for a file that is not there.
 > v4 predates the behaviour and does only one thing. If this is ever moved forward, `v7` needs
 > `package-manager-cache: false` alongside it.
+
+### `@workspace/matrix` is bundled, and the two settings that do it are a pair
+
+The seed wire contract lives in `packages/matrix/src/seed.ts` and is imported as
+`@workspace/matrix/seed` by `src/cli/lib/seed/fetch-seed.ts` and `seed-to-wizard.ts`. That package is
+**private, unpublished and ships TypeScript**, so nothing it exports can be resolved at runtime from
+an installed tarball. Two declarations make that safe:
+
+| Declaration                                                  | File             | Effect                                           |
+| ------------------------------------------------------------ | ---------------- | ------------------------------------------------ |
+| `"@workspace/matrix": "workspace:*"` under `devDependencies` | `package.json`   | Never installed alongside the published package  |
+| `noExternal: ["@workspace/matrix"]`                          | `tsup.config.ts` | Inlines its source instead of emitting an import |
+
+Verified against a built tree: the schema's Zod calls appear inline in `dist/chunk-*.js`, that
+chunk's sourcemap names `../../matrix/src/seed.ts` among its `sources`, and **no emitted `.js`
+contains the specifier `@workspace/matrix`**.
+
+**tsup bundles `devDependencies` by default and leaves `dependencies` external**, so `noExternal` is
+belt-and-braces — but the belt is what matters here: promoting the package to `dependencies` would
+silently externalise it, and `init --from` would fail at import time in the published CLI while every
+local gate stayed green (locally the workspace symlink resolves). `tsup.config.ts` carries the same
+warning inline. Contract detail: [`features/seed-contract.md`](./features/seed-contract.md).
 
 ### `shims: true` is currently insurance, not load-bearing
 
@@ -263,7 +308,7 @@ breaks the `config-loader` arithmetic in §7 — same cause, opposite outcome.
 
 **`await import(...)` produces a named chunk, not an entry.** The lazy imports that exist to break
 `lib -> operations -> lib` load-time cycles (`recompile-project-agents`, `copy-local-skills`,
-`load-agent-defs`, `source-loader`, `source-manager`) each surface as
+`load-agent-defs`, `source-loader`) each surface as
 `dist/<module-name>-<HASH>.js`. They are output files with stable-looking names and are **not**
 addressable entry points — nothing may import them by path.
 
@@ -271,12 +316,32 @@ addressable entry points — nothing may import them by path.
 
 ## 5. `onSuccess` — the two asset copies
 
-`tsup.config.ts` -> `onSuccess` performs two `fs.copy` calls, each guarded by `fs.pathExists`:
+`tsup.config.ts` -> `onSuccess` performs two `fs.copy` calls, each guarded by `fs.pathExists` and
+each preceded by an `fs.remove` of its destination:
 
 | Source        | Destination        | Reason recorded in the config                                              | Status today          |
 | ------------- | ------------------ | -------------------------------------------------------------------------- | --------------------- |
 | `config/`     | `dist/config/`     | _"so it's available regardless of how PROJECT_ROOT resolves at runtime"_   | **No-op — see below** |
-| `src/agents/` | `dist/src/agents/` | _"so eject command can find them regardless of how PROJECT_ROOT resolves"_ | Copies 145 files      |
+| `src/agents/` | `dist/src/agents/` | _"so eject command can find them regardless of how PROJECT_ROOT resolves"_ | Copies 115 files      |
+
+### The `fs.remove` before each copy is load-bearing
+
+`fs.copy` **merges**: it writes what the source has and removes nothing the source has dropped. And
+`clean: true` does not reach either destination — it clears only tsup's own outputs. So until the
+`fs.remove` calls were added, a deleted agent survived every incremental build. That is not a
+tidiness problem: `prepublishOnly` runs a plain `build` with no preceding `rm -rf dist`, `dist/`
+publishes wholesale, and `loadAllAgents()` discovers agents by globbing `**/metadata.yaml` under the
+resolved agents dir — so a retired agent sat on a path the loader really does read, carrying an id
+no longer in the `AgentName` union. It was observed twice: four retired PM directories after the PM
+consolidation, and five retired reviewer directories after the reviewer one.
+
+**No other gate could see it.** E2E builds the dist it then runs against, so the stale directory was
+invisible to the suite that would otherwise have caught it, and a hand verification of the built
+binary read the stale copies as shipped. `packaging.test.ts` is the tripwire: it asserts that the
+entry set under `dist/src/agents/` **equals** the set under `src/agents/`. Set equality, not a
+subset — a subset assertion passes on precisely this failure mode.
+
+Anyone adding a third `onSuccess` copy inherits the same default. Mirror, do not merge.
 
 ### What "regardless of how PROJECT_ROOT resolves" means
 
@@ -297,7 +362,7 @@ root resolution order documented in [features/agent-system.md](./features/agent-
 to the `src/agents/` tree that `files` publishes. **The `dist/src/agents/` copy is therefore a hedge,
 not a requirement:** it is the fallback for the case where `CLI_ROOT` resolves to `<pkg>/dist`
 instead of `<pkg>`, which happens the moment `consts.ts` is inlined into a nested entry rather than
-split into a flat chunk. The hedge is cheap in code and costs 145 duplicated files and ~0.66 MB in
+split into a flat chunk. The hedge is cheap in code and costs 115 duplicated files and ~0.60 MB in
 every published tarball (§6). Delete it only alongside a check that the constant is still reached
 through a root-level chunk.
 
@@ -317,8 +382,7 @@ saying whose repository they belong to:
 **Those are SOURCE-REPO paths, not paths in this repository.** `SKILL_CATEGORIES_PATH`,
 `SKILL_RULES_PATH` and `STACKS_FILE_PATH` in `src/cli/consts.ts` are relative strings joined against
 a _marketplace / skills-source_ checkout — `src/cli/lib/source-validator.ts` joins them onto the
-resolved source path, and `src/cli/commands/new/marketplace.ts` scaffolds them into a newly created
-marketplace. The CLI's own defaults are `src/cli/lib/configuration/default-categories.ts`,
+resolved source path. The CLI's own defaults are `src/cli/lib/configuration/default-categories.ts`,
 `src/cli/lib/configuration/default-rules.ts` and `src/cli/lib/configuration/default-stacks.ts`. An
 agent that goes looking for `config/stacks.ts` in this repo will not find it and must not create it.
 
@@ -335,18 +399,18 @@ quoting them. The `--ignore-scripts` is load-bearing: `prepare` runs husky, whic
 
 | Entry          | Files | Unpacked                                                          | Contents                                                                            |
 | -------------- | ----- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `dist/`        | 353   | 4.46 MB                                                           | 104 code files, 104 sourcemaps, plus the 145-file `dist/src/agents/` copy           |
-| `assets/`      | 3     | 2.37 MB                                                           | `demo.gif`, `demo.tape`, `logo.svg`                                                 |
+| `dist/`        | 321   | 5.67 MB                                                           | 103 code files, 103 sourcemaps, plus the 115-file `dist/src/agents/` copy           |
+| `assets/`      | 3     | 2.48 MB                                                           | `demo.gif`, `demo.tape`, `logo.svg`                                                 |
 | `config/`      | **0** | —                                                                 | Directory absent (§5)                                                               |
-| `src/agents/`  | 145   | 0.66 MB                                                           | Agent partials and `_templates/` Liquid sources                                     |
+| `src/agents/`  | 115   | 0.60 MB                                                           | Agent partials and `_templates/` Liquid sources                                     |
 | `src/schemas/` | 12    | 0.04 MB                                                           | Generated JSON Schemas                                                              |
-| root files     | 4     | 0.11 MB                                                           | `LICENSE`, `README.md`, `CHANGELOG.md`, and `package.json` (npm always includes it) |
-| **Total**      | 517   | 8,000,236 B (7.63 MB) unpacked / 3,560,823 B (3.40 MB) compressed |                                                                                     |
+| root files     | 4     | 0.12 MB                                                           | `LICENSE`, `README.md`, `CHANGELOG.md`, and `package.json` (npm always includes it) |
+| **Total**      | 455   | 8,906,835 B (8.91 MB) unpacked / 3,713,566 B (3.71 MB) compressed |                                                                                     |
 
 Two things the tarball carries that nobody chose deliberately, and one that was fixed:
 
-- **Sourcemaps are the single largest code group** — 104 files, 2.52 MB unpacked, roughly twice the
-  1.28 MB of code they map. `sourcemap: true` is a debugging convenience with a publication cost.
+- **Sourcemaps are the single largest code group** — 103 files, 3.35 MB unpacked, roughly twice the
+  1.73 MB of code they map. `sourcemap: true` is a debugging convenience with a publication cost.
 - **`src/agents/` is published twice** — once directly, once inside `dist/src/agents/` (§5).
 - **No compiled test file ships.** The entry negations in §2 keep sixteen of them out and
   `packaging.test.ts` pins their absence.
@@ -514,13 +578,14 @@ in `agent-findings/2026-07-30-no-default-exports-rule-collides-with-oclif.md`. D
 
 ## 9. Test surface
 
-**One spec asserts on the package: `src/cli/lib/__tests__/packaging.test.ts`.** It pins two things
+**One spec asserts on the package: `src/cli/lib/__tests__/packaging.test.ts`.** It pins three things
 and no more:
 
-| Assertion                                                      | Guards                                                                       |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `dist/` holds no `*.test.js`, `*.test.js.map` or `*.test.d.ts` | The three entry negations in §2 — deleting one ships compiled specs again    |
-| Every string in `package.json` -> `files` exists on disk       | A `files` entry renamed or removed in source and left behind in the manifest |
+| Assertion (spec name)                                                                                                                     | Guards                                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| _compiles no test files into dist_ — no `*.test.js`, `*.test.js.map` or `*.test.d.ts` under `dist/`                                       | The three entry negations in §2 — deleting one ships compiled specs again                                                             |
+| _mirrors src/agents into dist instead of merging into it_ — the entry set under `dist/src/agents/` **equals** the set under `src/agents/` | The `fs.remove` before the `onSuccess` copy (§5). Set equality, not subset — a subset assertion passes on precisely this failure mode |
+| _names only paths that exist in the files field_                                                                                          | A `files` entry renamed or removed in source and left behind in the manifest                                                          |
 
 It is wrapped in `describe.skipIf(!existsSync(DIST_DIR))`, which is deliberate rather than lax:
 `packages/cli/turbo.json` declares `test` -> `dependsOn: ["build"]`, so in any turbo-driven run
@@ -534,10 +599,10 @@ section.
 
 What also exists is _coupling_ to the build, in two places:
 
-| Layer                     | Coupling                                                                                                                                                                                                                                                                                                  |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit (`commands` project) | `cli-runner.ts` -> `run(args, { root: CLI_ROOT })` resolves commands from `dist/commands` (§8). No `pretest` hook builds first — `packages/cli/turbo.json`'s `test` -> `dependsOn: ["build"]` is what supplies `dist/`, and on a clean checkout without it 205 tests across 17 files failed with exit 127 |
-| E2E                       | `pretest:e2e` runs `bun run build`; specs spawn `node <repo>/bin/run.js`, whose `execute({ dir })` resolves the same `dist/commands`                                                                                                                                                                      |
+| Layer                     | Coupling                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit (`commands` project) | `cli-runner.ts` -> `run(args, { root: CLI_ROOT })` resolves commands from `dist/commands` (§8). Three things supply or police `dist/` here, and none is redundant: `packages/cli/turbo.json`'s `test` -> `dependsOn: ["build"]` (without it, 205 tests across 17 files failed with exit 127 on a clean checkout), a `pretest` hook mirroring `pretest:e2e` for `bun run test`/`npm test`, and `vitest.config.ts`'s `globalSetup` -> `vitest.global-setup.ts` -> `assertDistIsFresh` in `src/cli/lib/testing/dist-staleness.ts` (the hook is a three-line caller; the logic sits under `src/` so `tsc` and `eslint` reach it — CLI-460), which refuses any run — `npx vitest run <file>` included — whose `dist/` predates a tree compiled into it (`packages/cli/src` **or** `packages/matrix/src`, which tsup inlines — see §2). The guard exists because the first two are both bypassable and the failure they miss is a **false green**: see clean-code-standards 6.19 |
+| E2E                       | `pretest:e2e` runs `bun run build`; specs spawn `node <repo>/bin/run.js`, whose `execute({ dir })` resolves the same `dist/commands`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 `dist/` is not a test-discovery hazard, for two independent reasons: the `unit` project's include
 patterns are rooted at `src/**` and `scripts/**`, and since the §2 negations `dist/` contains no
@@ -579,10 +644,13 @@ patterns are rooted at `src/**` and `scripts/**`, and since the §2 negations `d
    nothing checks that they agree.** They agree today, by hand, and drifted once already. Change all
    three together. `tsconfig`'s `target` is a different question and stays out of it; CI's
    `NODE_VERSION` is a fourth place the same number lives (§3).
-10. **`prepublishOnly` stops at its first failing step, and `format:check` is that first step.** A
+10. **`@workspace/matrix` must stay a `devDependency`.** Promoting it to `dependencies` externalises
+    the import tsup currently inlines, and the published CLI's `init --from` fails at import time
+    with every local gate green (§3).
+11. **`prepublishOnly` stops at its first failing step, and `format:check` is that first step.** A
     formatting regression alone blocks lint, typecheck, build and test from ever running, so it
-    hides every other failure behind it. The gate is clean today — `prettier --check .` exits `0`
-    (§1).
+    hides every other failure behind it. It covers markdown, so an unformatted `.ai-docs/` file
+    blocks a publish exactly as a source file would (§1).
 
 ---
 
@@ -595,4 +663,6 @@ patterns are rooted at `src/**` and `scripts/**`, and since the §2 negations `d
 | Template root resolution order (where `src/agents/` is read)  | [features/agent-system.md](./features/agent-system.md)           |
 | Config loading, `defineConfig`, generated `config-types.ts`   | [features/configuration.md](./features/configuration.md)         |
 | Config rendering and the config-gate write path               | [config/config-writer.md](./config/config-writer.md)             |
+| The generators, their outputs and the checks that guard them  | [features/code-generation.md](./features/code-generation.md)     |
+| The bundled `@workspace/matrix/seed` contract                 | [features/seed-contract.md](./features/seed-contract.md)         |
 | E2E harness, `TerminalSession`, spawn model                   | [testing/e2e-infrastructure.md](./testing/e2e-infrastructure.md) |

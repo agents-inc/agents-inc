@@ -92,7 +92,7 @@ Pre-built test data constants extracted from individual test files. Use these in
 - `CATEGORY_GRID_MATRIX`, `REACT_HONO_FRAMEWORK_API_MATRIX`, `REACT_HONO_WEB_API_DOMAINS_MATRIX` - Specialized matrix fixtures
 - `CATEGORY_EXCLUSIVITY_MATRIX` - The only fixture whose categories carry REAL `exclusive` / `required` flags. `createMockMatrix`'s default categories map is empty, so every category reads as "undefined flags" and exclusivity rules can never fire — use this whenever the flags must be live. Shape: two frameworks in an exclusive **and required** category (`web-framework`: react, vue), two client-state skills in an exclusive but **optional** one (`web-client-state`: zustand, pinia), two styling skills in a non-exclusive one (`web-styling`: scss, tailwind), plus a non-exclusive `web-testing` (vitest). The exclusive+optional category is the one shape that separates "exclusive" from "exclusive AND required" rules.
 - `BUILD_STEP_*_MATRIX` - Build step logic test matrices (17 constants: WEB, REQUIRES, EMPTY_FRAMEWORK, FRAMEWORK_NON_EXCLUSIVE, FRAMEWORK_NO_FLAGS, FRAMEWORK_API, FRAMEWORK_ONLY, API_DB, UNIVERSAL_COMPAT, LOCAL_SKILL, NON_LOCAL, DISPLAY_NAME, SORTING, UNDEFINED_ORDER, CONFLICTS_EXCLUSIVE, CONFLICTS_NON_EXCLUSIVE, ADVISORY_STATES)
-- `WEB_AND_API_COMPILE_CONFIG`, `WEB_ONLY_COMPILE_CONFIG` - CompileConfig fixtures
+- `WEB_AND_API_SKILLS_COMPILE_CONFIG`, `WEB_SKILLS_API_NONE_COMPILE_CONFIG`, `WEB_ONLY_COMPILE_CONFIG` - CompileConfig fixtures
 - `TOOLING_AND_FRAMEWORK_CONFIG`, `CI_CD_CONFIG`, `FRAMEWORK_AND_STYLING_CONFIG`, `OBSERVABILITY_CONFIG`, `FRAMEWORK_AND_TESTING_CONFIG`, `EMPTY_MATRIX_CONFIG`, `UNRESOLVED_CONFLICT_MATRIX` - MatrixConfig fixtures
 
 ### mock-skills.ts
@@ -100,8 +100,8 @@ Pre-built test data constants extracted from individual test files. Use these in
 - `REACT_SKILL`, `REACT_SKILL_PRELOADED`, `VITEST_SKILL`, `VITEST_SINGLE_FILE_SKILL` - Skill entry constants
 - `DEFAULT_TEST_SKILLS`, `EXTRA_DOMAIN_TEST_SKILLS`, `ALL_TEST_SKILLS` - TestSkill arrays
 - `INIT_SKILL_IDS`, `INIT_TEST_SKILLS` - Filtered skills for init tests
-- `SWITCHABLE_SKILLS`, `LOCAL_SKILL_VARIANTS` - Source-switching test skills
-- `HEALTH_*_SKILL` - Health-check skill variants (8 constants: ZUSTAND_RECOMMENDED, ORPHAN_SKILL, UNRESOLVED_COMPATIBLE_WITH_SKILL, UNRESOLVED_CONFLICTS_WITH_SKILL, UNRESOLVED_REQUIRES_SKILL, MULTIPLE_UNRESOLVED_REFS_SKILL, ALL_REFS_RESOLVED_SKILL, PARTIAL_UNRESOLVED_REQUIRES_SKILL)
+- `INSTALL_MODE_SKILLS`, `LOCAL_SKILL_VARIANTS` - Install-mode test skills (marketplace content vs a local customization of the same skill)
+- `HEALTH_*_SKILL` - Health-check skill variants (7 constants: ORPHAN_SKILL, UNRESOLVED_COMPATIBLE_WITH_SKILL, UNRESOLVED_CONFLICTS_WITH_SKILL, UNRESOLVED_REQUIRES_SKILL, MULTIPLE_UNRESOLVED_REFS_SKILL, ALL_REFS_RESOLVED_SKILL, PARTIAL_UNRESOLVED_REQUIRES_SKILL)
 - `CATEGORY_GRID_SKILLS` - 30-entry array for category grid tests
 - `IMPORT_*_SKILL` - Import source skill constants (REACT_PATTERNS, TESTING_UTILS, API_SECURITY) + `ImportSourceSkill` type
 - `MULTI_SOURCE_*_SKILLS` - Multi-source skill entries (PUBLIC, ACME, INTERNAL) + `MultiSourceSkillEntry` type
@@ -110,7 +110,7 @@ Pre-built test data constants extracted from individual test files. Use these in
 - `VALID_LOCAL_SKILL`, `SKILL_WITHOUT_METADATA`, `SKILL_WITHOUT_METADATA_CUSTOM` - Edge case test skills
 - `LOCAL_SKILL_BASIC`, `LOCAL_SKILL_FORKED`, `LOCAL_SKILL_FORKED_MINIMAL` - Local skill test variants
 - `REACT_CONFLICTS_VUE`, `VUE_CONFLICTS_REACT`, `ZUSTAND_CONFLICTS_PINIA`, `PINIA_CONFLICTS_ZUSTAND` - Conflict relationship skills
-- `REACT_REQUIRES_ZUSTAND`, `REACT_RECOMMENDED`, `VUE_DISCOURAGES_SCSS`, `ZUSTAND_UNIVERSAL`, `REACT_LOCAL` - Relationship and scope variant skills
+- `REACT_REQUIRES_ZUSTAND`, `VUE_DISCOURAGES_SCSS`, `ZUSTAND_UNIVERSAL`, `REACT_LOCAL` - Relationship and scope variant skills
 
 ### mock-sources.ts
 
@@ -118,7 +118,7 @@ Pre-built test data constants extracted from individual test files. Use these in
 
 ### mock-stacks.ts
 
-- `FULLSTACK_STACK`, `WEB_REACT_AND_SCSS_STACK`, `WEB_REACT_ONLY_STACK`, `WEB_SCSS_ONLY_STACK`, `API_HONO_ONLY_STACK`, `WEB_EMPTY_AGENT_STACK`, `EMPTY_AGENTS_STACK`, `SHARED_CATEGORY_STACK`, `STACK_WITH_EMPTY_AGENTS`, `MULTI_METHODOLOGY_STACK`, `STACK_WITH_EMPTY_CATEGORY`, `MANY_CATEGORIES_STACK`, `LOCAL_SKILL_STACK`, `COMPILATION_TEST_STACK` - Stack objects
+- `FULLSTACK_STACK`, `WEB_REACT_AND_SCSS_STACK`, `EMPTY_AGENTS_STACK`, `SHARED_CATEGORY_STACK`, `STACK_WITH_EMPTY_AGENTS`, `MULTI_METHODOLOGY_STACK`, `STACK_WITH_EMPTY_CATEGORY`, `MANY_CATEGORIES_STACK`, `LOCAL_SKILL_STACK`, `COMPILATION_TEST_STACK` - Stack objects
 - `CUSTOM_TEST_STACKS`, `PHILOSOPHY_TEST_STACKS`, `OVERRIDING_TEST_STACKS`, `MARKETPLACE_TEST_STACKS`, `MARKETPLACE_FULLSTACK_TEST_STACKS`, `PIPELINE_TEST_STACKS`, `MULTI_TEST_STACKS` - TestStack arrays for `createTestSource()`
 
 ### mock-source-files.ts

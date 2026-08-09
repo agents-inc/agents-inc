@@ -5,7 +5,8 @@ keywords:
   [
     seed,
     seed-contract,
-    seed-schema,
+    workspace-matrix-seed,
+    noExternal,
     seedPayloadSchema,
     seedSkillSchema,
     seedAgentSchema,
@@ -26,6 +27,7 @@ keywords:
     seedToWizardResult,
     SeedMapping,
     agentScopeConfig,
+    DEFAULT_SELECTION_OPTIONS,
     assignedStack,
     readAgentMap,
     skippedSkillIds,
@@ -33,12 +35,12 @@ keywords:
     init-from,
     selectionFromSharedConfig,
     share-link,
-    vendored-schema,
+    single-home-schema,
     discard-dont-migrate,
-    D-239,
   ]
 related:
   - reference/commands/index.md
+  - reference/build-and-packaging.md
   - reference/features/wizard-flow.md
   - reference/features/plugin-system.md
   - reference/features/operations-layer.md
@@ -56,115 +58,117 @@ last_validated: 2026-08-02
 > version policy, the payload -> `WizardResultV2` mapping, and the `init --from <id>` consumer path.
 > It is the only doc that describes `src/cli/lib/seed/`.
 >
-> **What it deliberately does not own.** `reference/types/zod-schemas.md` scopes itself to
-> `src/cli/lib/schemas.ts` by its own first line, so its schema count is narrower than "every Zod
-> schema in the CLI" and correctly excludes `seed-schema.ts`. Do not fold this contract into it, and
-> do not read its count as covering this file. The union sizes (`AgentName` and friends) are owned by
-> `reference/type-system.md`; the install pipeline this path feeds is
-> `reference/features/operations-layer.md` and `reference/config/config-writer.md`.
+> **What it deliberately does not own.** The schema module itself lives in another workspace —
+> `packages/matrix/src/seed.ts`, imported as `@workspace/matrix/seed` — and this doc describes the
+> contract it declares, not that package's other exports. `reference/types/zod-schemas.md` scopes
+> itself to `src/cli/lib/schemas.ts` by its own first line, so its schema count covers neither this
+> contract nor that package; do not fold this contract into it. The union sizes (`AgentName` and
+> friends) are owned by `reference/type-system.md`; the install pipeline this path feeds is
+> `reference/features/operations-layer.md` and `reference/config/config-writer.md`; how the package
+> reaches `dist/` is `reference/build-and-packaging.md`.
 
 ## Module Map
 
-**Directory:** `src/cli/lib/seed/` — three source files, no barrel. Consumers import the leaf modules
-directly.
+**Directory:** `src/cli/lib/seed/` — two source files, no barrel. Consumers import the leaf modules
+directly. **The schema is not one of them:** it is imported from `@workspace/matrix/seed`, and this
+package holds no copy of it.
 
-| File                | Exports                                                                                                                                                     | Role                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `seed-schema.ts`    | `SEED_VERSION`, `seedPayloadSchema`, `seedSkillSchema`, `seedAgentSchema`, `seedModelSchema`, `seedEffortSchema`, `seedLoadStateSchema`, + 6 inferred types | The vendored wire contract. Zod only; imports nothing from the CLI |
-| `fetch-seed.ts`     | `SEED_API_URL`, `SEED_USER_AGENT`, `fetchSeedConfig`, `FetchSeedResult`                                                                                     | Network boundary: fetch, decode, and turn every failure into text  |
-| `seed-to-wizard.ts` | `seedToWizardResult`, `SeedMapping`                                                                                                                         | Maps a decoded payload onto the shape the install pipeline eats    |
+| Module                                                   | Exports                                                                                                                                                                                                                                           | Role                                                              |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `@workspace/matrix/seed` (`packages/matrix/src/seed.ts`) | `SEED_VERSION`, `seedPayloadSchema`, `seedSkillSchema`, `seedAgentSchema`, `seedModelSchema`, `seedEffortSchema`, `seedLoadStateSchema`, + 6 inferred types (`SeedModel`, `SeedEffort`, `SeedLoadState`, `SeedSkill`, `SeedAgent`, `SeedPayload`) | The wire contract, in the single package every side of it reads   |
+| `src/cli/lib/seed/fetch-seed.ts`                         | `SEED_API_URL`, `SEED_USER_AGENT`, `fetchSeedConfig`, `FetchSeedResult`                                                                                                                                                                           | Network boundary: fetch, decode, and turn every failure into text |
+| `src/cli/lib/seed/seed-to-wizard.ts`                     | `seedToWizardResult`, `SeedMapping`                                                                                                                                                                                                               | Maps a decoded payload onto the shape the install pipeline eats   |
 
 **`commands/init.tsx` is the sole consumer.** Verified by grep over `src/` and `e2e/`: the only
-non-test importers of `lib/seed/` are `init.tsx` (both entry points) and `fetch-seed.ts` itself
-(importing the schema). `dependency-graph.md` note 14b records the same edge.
+importers of `lib/seed/` outside that directory are `init.tsx`'s two entry points.
+`dependency-graph.md` note 14b records the same edge.
 
 ```mermaid
 graph TD
-  Web["web monorepo<br/>packages/matrix/src/seed.ts<br/>(SOURCE OF TRUTH)"] -.->|hand-copied| Schema
   Worker["api.agentsinc.sh<br/>GET /configs/:id"] --> Fetch
   Init["commands/init.tsx<br/>selectionFromSharedConfig"] --> Fetch["fetch-seed.ts<br/>fetchSeedConfig"]
-  Fetch --> Schema["seed-schema.ts<br/>seedPayloadSchema"]
+  Fetch --> Schema["@workspace/matrix/seed<br/>seedPayloadSchema"]
+  Worker -.->|"same module, same repo"| Schema
   Init --> Map["seed-to-wizard.ts<br/>seedToWizardResult"]
   Map --> Schema
   Map --> Matrix["lib/matrix/matrix-provider<br/>getCategoryDomain"]
   Map --> Order["lib/wizard/domain-order<br/>orderDomains"]
   Map --> Agents["types/agents<br/>AGENT_NAMES"]
+  Map --> Scope["lib/configuration/config-generator<br/>isScopePairCompatible"]
+  Init --> Detect["lib/installation<br/>detectProjectInstallation<br/>detectGlobalInstallation"]
   Init --> Spine["handleInstallation<br/>(shared with the wizard)"]
 ```
 
-## The Vendoring Rule
+## One Schema, One Home
 
-**`seed-schema.ts` is a hand-maintained copy. The original lives in the web monorepo at
-`packages/matrix/src/seed.ts` and is the source of truth** — that file says so outright, and the CLI
-copy's header names it. The two agree field for field, enum member for enum
-member, on `SEED_VERSION = 3`.
+**`packages/matrix/src/seed.ts` is the only copy of this contract in the repository.** Every side of
+the wire imports that one module:
 
-**Why copied rather than depended on:** a published package spanning two repos means versioning and a
-release step for forty lines of Zod that no consumer had exercised. The canonical home becomes a
-shared package once the contract stops moving (**D-239**, `todo/D-239-web-ui-shared-matrix-package.md`).
+| Importer                                            | Imports                                                 | Why it is on this list                                                   |
+| --------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `src/cli/lib/seed/fetch-seed.ts`                    | `seedPayloadSchema`, `SeedPayload`                      | Decodes the fetched body                                                 |
+| `src/cli/lib/seed/seed-to-wizard.ts`                | `SeedAgent`, `SeedLoadState`, `SeedPayload` (type-only) | Maps the decoded payload                                                 |
+| `src/cli/lib/seed/seed-schema.test.ts`              | `seedPayloadSchema`                                     | The CLI's contract test — see Test Surface                               |
+| `src/cli/lib/__tests__/factories/seed-factories.ts` | `SEED_VERSION`, `SeedPayload`, `SeedSkill`              | Builds payloads from the same constant the schema pins                   |
+| `apps/server/src/index.ts`                          | `seedPayloadSchema`                                     | The worker validates on the way **in**, before content-addressing the id |
 
-> **THE LOCKSTEP RULE — every shape change bumps `SEED_VERSION` in BOTH copies, in the same change.**
+`packages/matrix` is chosen over the CLI because its consumers — `apps/editor` and `apps/server` —
+run in a browser and a Worker, and cannot depend on a package that drags oclif, Ink and `node:fs`.
+The dependency direction only goes one way: the CLI reaches into the matrix package, never the
+reverse.
+
+> **Trap: `packages/matrix/src/seed.ts`'s own header comment still describes the CLI as vendoring
+> it** and names a future shared package as the eventual home. It is that home. Read the imports,
+> not the comment.
+
+### How the schema reaches a published CLI
+
+`@workspace/matrix` is **private, unpublished and ships TypeScript**, so nothing it exports can be
+resolved at runtime from an installed tarball. Two settings make that safe, and they are a pair:
+
+| Setting                                                   | Where                       | Effect                                                       |
+| --------------------------------------------------------- | --------------------------- | ------------------------------------------------------------ |
+| `"@workspace/matrix": "workspace:*"` in `devDependencies` | `packages/cli/package.json` | Never installed alongside the published package              |
+| `noExternal: ["@workspace/matrix"]`                       | `tsup.config.ts`            | Bundles its source into `dist/` instead of leaving an import |
+
+Verified against a built tree: `dist/chunk-*.js` carries the schema's Zod calls inline, its
+sourcemap names `../../matrix/src/seed.ts` among its sources, and **no emitted `.js` contains the
+specifier `@workspace/matrix`**.
+
+**Promoting it to `dependencies` silently externalises it** — tsup bundles devDependencies by default
+and leaves `dependencies` alone — and `init --from` then fails at import time in the published CLI
+while every local gate stays green. `tsup.config.ts` carries the same warning inline. Packaging
+detail: [`reference/build-and-packaging.md`](../build-and-packaging.md).
+
+### The version rule, and what enforces it
+
+> **Every shape change bumps `SEED_VERSION`.**
 >
-> The reason is not ceremony: `z.object` **strips what it does not declare**, and both sides parse
-> through it.
+> With one copy there is no second file to strip a field the first declares, but the two ends of the
+> wire still run different builds: a published CLI carries the schema **inlined at build time**, so
+> a field added to the package reaches an installed CLI only when a new version is published. In the
+> meantime `z.object` strips what that build does not declare. A field surviving a round trip is
+> therefore still not evidence the two ends agree — only the version literal is.
 >
-> | Direction                              | What strips the field                                                                            | Symptom                                                                        |
-> | -------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-> | Web adds a field, CLI copy not updated | The CLI's `seedPayloadSchema.safeParse` drops it during decode                                   | The id installs "successfully" with the new field silently absent              |
-> | Web copy behind, CLI ahead             | The worker re-serializes the **validated** payload before hashing, so the field never reaches KV | The id is minted without the field; the CLI cannot recover what was never sent |
->
-> A field that survives a round trip is therefore not evidence the contract is in sync — only the
-> version literal is. That is why v3 exists at all: `seedAgentSchema.scope` is additive-optional and
-> would not normally need a version, but the version is what tells a sharing app the field survives
-> the trip.
->
-> **A test now enforces the shape, though not the version bump.** See below.
+> That is why v3 exists at all: `seedAgentSchema.scope` is additive-optional and would not normally
+> need a version, but the version is what tells a sharing app the field survives the trip.
 
-### `seed-schema-drift.test.ts` compares the two copies by JSON-Schema projection
+**What enforces it, and what does not.** `seed-schema.test.ts` hardcodes `v: 3` in its payload and
+asserts `v: 2` is refused, so **changing `SEED_VERSION` without editing that spec fails the suite** —
+the bump cannot happen silently. A shape change _without_ a bump still passes; nothing detects that,
+and it is listed under Known Limitations.
 
-`src/cli/lib/seed/seed-schema-drift.test.ts` loads the canonical
-`packages/matrix/src/seed.ts` alongside the vendored `seed-schema.ts` and asserts:
-
-- `SEED_VERSION` is identical, and
-- `z.toJSONSchema()` of each copy is `toStrictEqual` for all six schemas — `seedModelSchema`,
-  `seedEffortSchema`, `seedLoadStateSchema`, `seedSkillSchema`, `seedAgentSchema`,
-  `seedPayloadSchema`.
-
-**Comparing projections, not text, is the point.** The two files are allowed to differ as text —
-comments, formatting, import order. What must be identical is the wire contract, and a JSON Schema
-projection is exactly that and nothing else. Before this test, drift surfaced at decode time on a
-user's machine, as a shared config that would not load. The test was proven able to fail by planting
-drift.
-
-**The canonical file is loaded through a computed dynamic import**, and that is not stylistic:
-
-```ts
-const CANONICAL_SEED = pathToFileURL(
-  path.resolve(import.meta.dirname, "../../../../../matrix/src/seed.ts"),
-).href;
-const canonical = (await import(CANONICAL_SEED)) as typeof vendored;
-```
-
-A static relative import would drag the sibling package into `tsc`'s program, where it fails the
-`rootDir` check; and this package must not depend on the private `@workspace/matrix`, because it
-ships to npm. A computed specifier is invisible to `tsc` and resolved by vitest. **The path IS the
-statement of which file `seed-schema.ts` is a copy of** — do not "tidy" it into a package import.
-
-**What is still unenforced:** the `SEED_VERSION` **bump**. The test asserts the two copies agree on
-the version, not that a shape change came with a new one. Two copies changed together and both left
-at `v3` pass. The lockstep rule above remains a convention for that half.
-
-`seed-schema.ts` imports only `zod` — no CLI type, constant or util. Keep it that way: it is a
-transcription of a foreign file, and every import added to it is one more thing to reconcile by hand.
+`packages/matrix/src/seed.ts` imports only `zod`. Keep it that way: the browser and Worker builds
+that read it can carry no CLI runtime.
 
 ## Version Policy: Discard, Do Not Migrate
 
-| Rule                                                                                                | Where it lives                                    |
-| --------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `v` is `z.literal(SEED_VERSION)` — **exactly one** accepted version, never a range                  | `seed-schema.ts`                                  |
-| A stale id fails to decode **loudly**; there is no migration path, and none is wanted pre-1.0       | `seed-schema.ts` header, mirrored in the web copy |
-| A rejected version surfaces as the same message as a malformed body                                 | `fetch-seed.ts`                                   |
-| The policy is pinned by a spec that refuses `v: 2` and asserts `["v"]` is the **only** failing path | `seed-schema.test.ts`                             |
+| Rule                                                                                                | Where it lives                         |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `v` is `z.literal(SEED_VERSION)` — **exactly one** accepted version, never a range                  | `packages/matrix/src/seed.ts`          |
+| A stale id fails to decode **loudly**; there is no migration path, and none is wanted pre-1.0       | `packages/matrix/src/seed.ts` header   |
+| A rejected version surfaces as the same message as a malformed body                                 | `src/cli/lib/seed/fetch-seed.ts`       |
+| The policy is pinned by a spec that refuses `v: 2` and asserts `["v"]` is the **only** failing path | `src/cli/lib/seed/seed-schema.test.ts` |
 
 **Why one version is safe here, and why it would not be elsewhere.** The worker content-addresses an
 id (SHA-256 of the re-serialized validated body, base64url, truncated) and serves it
@@ -172,7 +176,7 @@ id (SHA-256 of the re-serialized validated body, base64url, truncated) and serve
 "re-share it" is always a complete remedy, and there is no half-migrated state a guess would have to
 resolve.
 
-**Version history, from the web copy's own comments** (the CLI copy records only v3):
+**Version history, from the schema's own comments:**
 
 | Version | Change                                                                                                                         |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -210,7 +214,7 @@ configuration can speak about an agent that no skill mentions.
 | `on`     | `boolean`                                         | "whatever the assignments imply". `true` is the **only** way a skill-less agent travels; `false` removes the agent _and_ the assignment rows naming it |
 | `model`  | `"opus" \| "fable" \| "sonnet" \| "haiku"`        | "keep whatever the agent's own metadata says"                                                                                                          |
 | `effort` | `"low" \| "medium" \| "high" \| "xhigh" \| "max"` | Same                                                                                                                                                   |
-| `scope`  | `"project" \| "global"`                           | `project` — the CLI's own default, so a resting choice never has to travel                                                                             |
+| `scope`  | `"project" \| "global"`                           | The shared selection default — `DEFAULT_SELECTION_OPTIONS.scope` in `@workspace/matrix`, currently `global` — so a resting choice never has to travel  |
 
 **An entry naming only a model does NOT switch the agent on.** `readAgentMap` files such an entry
 under `known`, and the bare-agent loop admits only `entry.on === true`. Pinned by
@@ -226,8 +230,9 @@ assignment-only agent bare").
 | `seedLoadStateSchema` | `SkillAssignment.preloaded` (`types/skills.ts`)   | `"preloaded"` -> `true`, `"lazy"` -> `false`. The wire spells as an enum what the stack spells as a boolean                                                 |
 
 Because the model enum is a strict subset, `SeedAgent.model` assigns to `AgentScopeConfig.model`
-without a cast. **Adding a member to `MODEL_NAMES` does not widen the wire** — the web copy has to
-add it too, under a version bump.
+without a cast. **Adding a member to `MODEL_NAMES` does not widen the wire** — the enums in
+`packages/matrix/src/seed.ts` are hand-written literals, not derived from the CLI's arrays, so they
+have to be widened there too, under a version bump.
 
 ## `fetch-seed.ts` — the network boundary
 
@@ -260,8 +265,8 @@ Two facts worth keeping straight, both verified against source:
 - The CLI **always** sends it; `e2e/commands/init-from-shared-config.e2e.test.ts` pins the exact
   string and the exact path (`/configs/UAcheck1`) against the stub store, which records
   `{ url, userAgent }` per request.
-- The worker's `getConfigRoute` handler (`apps/server/src/index.ts` in the web monorepo) **does not
-  read it** as of this reading. The header is available to Cloudflare's request logging; nothing in
+- The worker's `getConfigRoute` handler (`apps/server/src/index.ts`, the sibling workspace) **does
+  not read it**. The header is available to Cloudflare's request logging; nothing in
   the handler computes a metric from it. Do not describe the signal as "measured" — describe it as
   "emitted, and available".
 
@@ -299,21 +304,21 @@ second install path that can drift.
 
 ### Payload field -> `WizardResultV2` field
 
-| `WizardResultV2` field | Derived from                                                                   | Rule                                                                                                                                                                                                                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skills`               | `payload.skills` (surviving entries)                                           | `{ id, scope: entry.scope, source }`. `source` = `"eject"` when `install === "eject"`, else the skill's **primary** `availableSources` entry, else `DEFAULT_PUBLIC_SOURCE_NAME` (`sourceForSkill`, mirroring the wizard's own resolution)                                           |
-| `selectedAgents`       | assignment names on surviving skills **∪** map entries with `on === true`      | De-duplicated via a `Set`; order is insertion order (assignment order first, then bare agents). **Order is not part of the contract** — the specs that care sort                                                                                                                    |
-| `agentConfigs`         | `selectedAgents.map(name => agentScopeConfig(name, agentMap.known.get(name)))` | One row per selected agent. `scope` defaults to `"project"`; `model` / `effort` are spread in **only when defined**, so an absent key never becomes an explicit `undefined`                                                                                                         |
-| `assignedStack`        | `entry.assignments` per surviving skill                                        | `Partial<Record<AgentName, StackAgentConfig>>`, category-keyed, appended in payload order. `"preloaded"` -> `{ preloaded: true }`. See [assignedStack](#why-assignedstack-exists)                                                                                                   |
-| `selectedStackId`      | `payload.stackId`                                                              | Passed through verbatim, including `null`                                                                                                                                                                                                                                           |
-| `domainSelections`     | surviving skills, grouped `domain -> category -> SkillId[]`                    | Domain resolved by `getCategoryDomain(skill.category)`; duplicates suppressed by an `includes` check                                                                                                                                                                                |
-| `selectedDomains`      | `orderDomains(Object.keys(domainSelections))`                                  | Canonical display order (custom domains alphabetically, then `BUILT_IN_DOMAIN_ORDER`) — the same helper the wizard uses                                                                                                                                                             |
-| `unresolvableSkillIds` | — always `[]`                                                                  | **Deliberate.** That field is the Scenario C guard protecting entries in a _saved config_ the wizard could not represent. Nothing here came from a saved config; the skipped ids came off the wire and are reported to the user directly, so there is no existing entry to preserve |
-| `cancelled`            | — always `false`                                                               | There is no interactive step to cancel                                                                                                                                                                                                                                              |
-| `validation`           | — always `{ valid: true, errors: [], warnings: [] }`                           | **Deliberate.** The sharing app already validated the selection, and this path has no interactive step in which a warning could be acted on                                                                                                                                         |
-| `matrixVersion`        | — **not mapped**                                                               | Decoded and discarded. No reader anywhere in `src/`                                                                                                                                                                                                                                 |
+| `WizardResultV2` field | Derived from                                                                   | Rule                                                                                                                                                                                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills`               | `payload.skills` (surviving entries)                                           | `{ id, scope: entry.scope, source }`. `source` = `"eject"` when `install === "eject"`, else the skill's **primary** `availableSources` entry, else `DEFAULT_PUBLIC_SOURCE_NAME` (`sourceForSkill`, mirroring the wizard's own resolution)                              |
+| `selectedAgents`       | assignment names on surviving skills **∪** map entries with `on === true`      | De-duplicated via a `Set`; order is insertion order (assignment order first, then bare agents). **Order is not part of the contract** — the specs that care sort                                                                                                       |
+| `agentConfigs`         | `selectedAgents.map(name => agentScopeConfig(name, agentMap.known.get(name)))` | One row per selected agent. `scope` defaults to `DEFAULT_SELECTION_OPTIONS.scope`; `model` / `effort` are spread in **only when defined**, so an absent key never becomes an explicit `undefined`                                                                      |
+| `assignedStack`        | `entry.assignments` per surviving skill                                        | `Partial<Record<AgentName, StackAgentConfig>>`, category-keyed, appended in payload order. `"preloaded"` -> `{ preloaded: true }`. See [assignedStack](#why-assignedstack-exists)                                                                                      |
+| `selectedStackId`      | `payload.stackId`                                                              | Passed through verbatim, including `null`                                                                                                                                                                                                                              |
+| `domainSelections`     | surviving skills, grouped `domain -> category -> SkillId[]`                    | Domain resolved by `getCategoryDomain(skill.category)`; duplicates suppressed by an `includes` check                                                                                                                                                                   |
+| `selectedDomains`      | `orderDomains(Object.keys(domainSelections))`                                  | Canonical display order (custom domains alphabetically, then `@workspace/matrix`'s `DOMAIN_ORDER`) — the same helper the wizard uses                                                                                                                                   |
+| `unresolvableSkillIds` | — always `[]`                                                                  | **Deliberate.** That field carries the ids of entries in a _saved config_ the wizard could not represent, so `edit` can name them as it removes them. Nothing here came from a saved config — the skipped ids came off the wire and are reported to the user directly. |
+| `cancelled`            | — always `false`                                                               | There is no interactive step to cancel                                                                                                                                                                                                                                 |
+| `validation`           | — always `{ valid: true, errors: [], warnings: [] }`                           | **Deliberate.** The sharing app already validated the selection, and this path has no interactive step in which a warning could be acted on                                                                                                                            |
+| `matrixVersion`        | — **not mapped**                                                               | Decoded and discarded. No reader anywhere in `src/`                                                                                                                                                                                                                    |
 
-### Skip, do not fail
+### Skip, do not fail — and the one thing that does fail
 
 **Invariant: an id the catalog does not know is skipped and reported; it never fails the decode.**
 Payloads carry catalog slugs precisely so they survive catalog churn — a config shared before a skill
@@ -340,17 +345,43 @@ by it.
 > `types/generated/source-types.ts` — a **build-time** generated union (`bun run generate:types`).
 > A custom agent that exists only in a runtime source is therefore not "known" to this mapper.
 
-#### Stack ids are the one fatal unknown
+#### An unwritable `(skill, sub-agent)` pair throws
+
+**`seedToWizardResult` throws when a surviving assignment pairs a project-scoped skill with a
+sub-agent that rests at global scope** — explicitly global, or global by taking the shared selection
+default. The message names **every** such pair as `<skillId> -> <agentName>`, not just the first.
+
+The rule is the config model's own, read from its single definition: `isScopePairCompatible` in
+`lib/configuration/config-generator.ts` — _"Project skills never reach global agents; global skills
+reach any agent."_ The scope a bare sub-agent rests at comes from `seedAgentScope`, the same helper
+`agentScopeConfig` uses, so the pair is judged against the scope that will actually be written.
+
+**Why this one fails when unknown ids skip.** They are opposite failures. An unknown id is content
+this catalog does not have — skipping it costs the user nothing they could have had. An unwritable
+pair is content the catalog _has_ and cannot place, and because `assignedStack`
+[replaces the derived stack wholesale](#why-assignedstack-exists), **no scope filter runs on those
+rows anywhere downstream.** `splitConfigByScope` routes a global agent's non-global assignments to
+`projectStack`; the project writer's `filteredStack` step then drops them because the agent is not
+project-scoped; and the global half never had them because their skill ids are not in
+`globalSkillIds`. The user was told nothing, exit 0, `stack` key simply absent.
+
+Rows the decode was going to ignore anyway cannot trip it: the switched-off and unknown-agent guards
+run first, so an `on: false` agent's assignment and an assignment naming an agent this CLI does not
+know are gone before a pair exists. Pinned by `seed-to-wizard.test.ts`, "does not refuse over
+assignment rows it was going to ignore anyway".
+
+#### Stack ids are the other fatal unknown
 
 `selectedStackId` is passed through untouched, and downstream `buildEjectConfig`
 (`lib/installation/local-installer.ts`) resolves it with `loadStackById`, which falls back to the
-CLI's built-in defaults and returns `null` when neither has it — at which point **`buildEjectConfig`
-throws** `Stack '<id>' not found in config/stacks.ts`.
+CLI's built-in defaults **only under the default public marketplace** (CLI-455) and returns `null`
+otherwise — at which point **`buildEjectConfig` throws** `stackNotOfferedMessage(stackId, source)`,
+naming the id the payload asked for and the source it was asked of.
 
-**So an unresolvable `stackId` is fatal, while an unresolvable skill id or agent name is not.** This
-is the single exception to the skip-don't-fail policy, it lives outside `lib/seed/`, and **no spec in
-the seed family covers it** (the curation E2E publishes a `stackId` the E2E source does have). Treat
-it as a known gap, not as designed behaviour.
+**So an unresolvable `stackId` is fatal, while an unresolvable skill id or agent name is not.**
+Unlike the unwritable-pair refusal above, this one is not designed: it lives outside `lib/seed/`, it
+throws from a different module for a different reason, and **no spec in the seed family covers it**
+(the curation E2E publishes a `stackId` the E2E source does have). Treat it as a known gap.
 
 What a resolvable stack id actually does is narrow: it supplies `description` to the written config
 and overlays the stack YAML's `preloaded` flags as `existingStack` — and its own expansion is then
@@ -359,18 +390,24 @@ the payload's assignments deliberately left out. The curation E2E asserts the wr
 in full for exactly this reason, and its inline comment warns against simplifying the spec down to
 the frontmatter half — the frontmatter assertions pass even when every sub-agent holds every skill.
 
-### `agentScopeConfig` — the project default
+### `agentScopeConfig` — the shared selection default
 
 ```typescript
 function agentScopeConfig(name: AgentName, entry: SeedAgent | undefined): AgentScopeConfig {
   return {
     name,
-    scope: entry?.scope ?? "project",
+    scope: entry?.scope ?? DEFAULT_SELECTION_OPTIONS.scope,
     ...(entry?.model !== undefined && { model: entry.model }),
     ...(entry?.effort !== undefined && { effort: entry.effort }),
   };
 }
 ```
+
+**The default is not this module's to name.** `DEFAULT_SELECTION_OPTIONS`
+(`packages/matrix/src/read-model/selection-defaults.ts`, `{ install: "plugin", scope: "global" }`) is
+the one spelling of what an untouched pick does, and the editor's fresh skill entry and resting agent
+scope read the same object. A decode that spelled a word of its own could disagree with the app that
+built the payload, which is exactly what it used to do.
 
 Three properties, all pinned by `seed-to-wizard.test.ts` ("scopes each sub-agent by its own entry"):
 
@@ -378,10 +415,16 @@ Three properties, all pinned by `seed-to-wizard.test.ts` ("scopes each sub-agent
    any skill's scope.** A globally-scoped agent moves the agent, never the skills around it — the
    agent-scope E2E asserts the global config holds the agent and `skills: []`.
 2. **"Has an entry" is not what decides the scope — naming one is.** An entry carrying only
-   `{ model: "haiku" }` still resolves to `scope: "project"`.
+   `{ model: "haiku" }` still resolves to the shared default, not to whatever the model implies.
 3. **An absent optional key is omitted, not set to `undefined`.** The conditional spread is what makes
    `toStrictEqual` against a factory-built `AgentScopeConfig` meaningful; a `{ model: undefined }` row
    would compare unequal and, worse, would write an explicit override into the config.
+
+> **A payload that wants a sub-agent in the project has to say so.** With the default global, an
+> `agents` map entry is the only thing that can keep a sub-agent's compiled `.md` — and the stack
+> rows that ride with it — inside the project. The scenario E2Es pin `scope: "project"` on the wire
+> for exactly this reason, and `init-from-agent-scope.e2e.test.ts` is where the explicit and the
+> defaulted case are held apart.
 
 ### Why assignedStack exists
 
@@ -397,8 +440,9 @@ things the wizard cannot express separately:
 
 Without it, the install pipeline's ownership rules would broadcast **every scope-compatible skill to
 every selected agent** — handing a bare sub-agent someone else's skills and destroying exactly the
-curation a shared configuration exists to carry. Ownership rules also inherit `preloaded` from a
-prior or stack-YAML entry, which is silent about what the sharer chose.
+curation a shared configuration exists to carry. Ownership rules also take `preloaded` from a prior
+or stack-YAML entry, else the shared preload mapping's default — either way silent about what the
+sharer chose.
 
 **Consumption point:** `resolveStackProperty(generated, assigned)` in
 `lib/installation/local-installer.ts` — `generated && assigned ? assigned : generated`. The assigned
@@ -413,29 +457,63 @@ despite the name), so plugin, eject and mixed payloads all route through `resolv
 
 **Flag:** `--from <id>` on `init` (`src/cli/commands/init.tsx`), described as
 _"Install a configuration shared from agentsinc.sh by its id, without the wizard"_, `helpValue: "<id>"`.
-`--source` and `--refresh` still apply — the producer takes the same `SourceRefreshFlags`.
-
-> **This flag is currently absent from `reference/commands/index.md`'s `init` flag table.** That table
-> lists only `--refresh` and `--source`. Reported, not fixed here — see [Cross-Surface Defects](#cross-surface-defects-reported-not-fixed).
+`--source` still applies — `init` is the one command that carries it, and both of its producers
+take the same `SourceFlags` (declared in `init.tsx` beside the flag).
 
 ### One spine, two producers
 
 `Init.run` chooses a producer and then runs a single shared install sequence. The two producers
 differ only in _where the selection comes from_.
 
-| Step                     | `selectionFromWizard`                                           | `selectionFromSharedConfig`                                                                                                                          |
-| ------------------------ | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dashboard diversion      | Applies                                                         | **Bypassed** — `if (!flags.from && ...)`. An id is an explicit instruction to install _that_ configuration, so it overrides an existing installation |
-| Order of operations      | source load ∥ global config load, then wizard                   | **fetch first**, then `loadSourceOrFail`                                                                                                             |
-| Return type              | `Promise<Selection \| null>` (`null` -> `EXIT_CODES.CANCELLED`) | `Promise<Selection>` — there is nothing to cancel; a fetch failure exits `EXIT_CODES.ERROR` at the point of failure                                  |
-| `Selection.interactive`  | `true`                                                          | `false`                                                                                                                                              |
-| `Selection.emptyMessage` | `"No skills selected"`                                          | `` `Configuration '${id}' contains no skills this catalog can install.` ``                                                                           |
+| Step                     | `selectionFromWizard`                                           | `selectionFromSharedConfig`                                                                                                                                                                     |
+| ------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard diversion      | Applies                                                         | **Bypassed** — `if (!flags.from && ...)`. An id is an explicit instruction, not a request to be shown around; an existing installation gets the greenfield refusal below instead of a dashboard |
+| Existing installation    | Diverted to the dashboard                                       | **Refused** — see [Greenfield only](#greenfield-only)                                                                                                                                           |
+| Order of operations      | source load ∥ global config load, then wizard                   | **project refusal first**, then fetch, then `loadSourceOrFail`, then decode, then the global refusal                                                                                            |
+| Return type              | `Promise<Selection \| null>` (`null` -> `EXIT_CODES.CANCELLED`) | `Promise<Selection>` — there is nothing to cancel; a fetch failure exits `EXIT_CODES.ERROR` at the point of failure                                                                             |
+| `Selection.interactive`  | `true`                                                          | `false`                                                                                                                                                                                         |
+| `Selection.emptyMessage` | `"No skills selected"`                                          | `` `Configuration '${id}' contains no skills this catalog can install.` ``                                                                                                                      |
 
 **The fetch precedes the source load on purpose.** An unknown id must fail before anything is loaded
 or written; the E2E asserts `.claude-src` does not exist after a 404.
 
 `Selection` carries `interactive` and `emptyMessage` as **values rather than a downstream flag
 branch** — that is what stops the two paths growing separate copies of the install sequence.
+
+### Greenfield only
+
+**`init --from` installs into a clean setup or it does not install.** A shared configuration is
+installed WHOLE — its `assignments` map replaces the ownership-derived stack rather than merging
+with it — so there is no coherent answer to what should happen when it meets a setup that is already
+there. The command refuses and names `uninstall`, which is the whole of the way through.
+
+Two refusals, both `EXIT_CODES.ERROR`, both worded by `utils/messages.ts`:
+
+| Refusal                     | Condition                                                                                                                                 | Where                                               | Message builder               |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ----------------------------- |
+| This project is installed   | `detectProjectInstallation(projectDir)` returns an installation                                                                           | `refuseInstalledProject`, **before the fetch**      | `sharedConfigExistingInstall` |
+| A global install is blocked | The decoded selection has a global-scoped skill **or** sub-agent (`writesGlobalContent`) **and** `detectGlobalInstallation()` returns one | `refuseBlockingGlobalInstall`, **after the decode** | `sharedConfigGlobalInstall`   |
+
+**The project check is deliberately `detectProjectInstallation`, not `detectInstallation`.** The
+latter falls back to global, which would refuse every clean project on a machine that has a global
+install — including for a payload that never goes near it. Whether a global install is in the way is
+a question about the PAYLOAD, and that is the second refusal's job. Getting this wrong makes the
+second refusal unreachable, which is the tell that the two rules have collapsed into one.
+
+**The project check runs before the fetch**, so a directory that is already spoken for costs no
+network round-trip; its output carries no `Fetching configuration` line at all. The global check
+cannot run that early — it needs the decoded payload to know whether anything global is in it.
+
+**Nothing is written by either refusal**, and nothing is written by the decode's own
+[unwritable-pair throw](#an-unwritable-skill-sub-agent-pair-throws) either: all three fire before
+`handleInstallation`, so no skill is copied, no plugin is registered and no `config.ts` is emitted.
+`init-from-greenfield.e2e.test.ts` asserts the blocked install is byte-identical afterwards, on both
+the config and the filesystem.
+
+**What replaces the old merge behaviour.** Re-tuning or re-sharing over an install is now
+`uninstall` then `init --from`. `mergeGlobalConfigs`' additive, never-overwrite behaviour is
+unchanged and still correct for the edit and propagation paths that keep using it — it is simply no
+longer reachable from this one.
 
 ### What the shared spine does with `interactive: false`
 
@@ -446,14 +524,21 @@ pipe and in CI; awaiting that notice would hang it.**
 
 ### Reporting
 
-| Condition                      | Output                                                                     |
-| ------------------------------ | -------------------------------------------------------------------------- |
-| Always, first                  | `Fetching configuration ${id}...` (`this.log`)                             |
-| `skippedSkillIds.length > 0`   | `this.warn`: `Skipped N skill(s) this catalog does not know: <ids joined>` |
-| `skippedAgentNames.length > 0` | `this.warn`: `Skipped N unknown sub-agent(s): <names joined>`              |
-| `result.skills.length > 0`     | `Installing N skill(s) across M sub-agent(s)`                              |
-| Fetch failed                   | `this.error(fetched.error, { exit: EXIT_CODES.ERROR })`                    |
-| Nothing installable            | `this.error(selection.emptyMessage, { exit: EXIT_CODES.ERROR })`           |
+| Condition                      | Output                                                                                                                                  |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Project already installed      | `this.error(sharedConfigExistingInstall(configPath), { exit: EXIT_CODES.ERROR })` — before the fetch, so no `Fetching` line precedes it |
+| Always, first (past that)      | `Fetching configuration ${id}...` (`this.log`)                                                                                          |
+| Unwritable `(skill, agent)`    | `this.handleError` on the decode's throw -> `EXIT_CODES.ERROR`, naming every pair                                                       |
+| Global install in the way      | `this.error(sharedConfigGlobalInstall(configPath), { exit: EXIT_CODES.ERROR })`                                                         |
+| `skippedSkillIds.length > 0`   | `this.warn`: `Skipped N skill(s) this catalog does not know: <ids joined>`                                                              |
+| `skippedAgentNames.length > 0` | `this.warn`: `Skipped N unknown sub-agent(s): <names joined>`                                                                           |
+| `result.skills.length > 0`     | `Installing N skill(s) across M sub-agent(s)`                                                                                           |
+| Fetch failed                   | `this.error(fetched.error, { exit: EXIT_CODES.ERROR })`                                                                                 |
+| Nothing installable            | `this.error(selection.emptyMessage, { exit: EXIT_CODES.ERROR })`                                                                        |
+
+**The refusals precede the reporting on purpose.** A run that is about to be refused must not first
+warn about skipped ids or announce `Installing N skill(s)` — an install line followed by an error is
+a message about work that never started.
 
 **Skips are named, not counted.** "3 skills were skipped" cannot be acted on; the ids can, and this
 is the one moment the user can tell whether what they shared is what they are getting. The E2E
@@ -463,25 +548,38 @@ prefix — asserting on a short fragment instead would pass on a truncated messa
 
 **The empty guard is `skills.length === 0 && selectedAgents.length === 0`.** A sub-agent is
 installable on its own — it has front-matter, a prompt and a compiled file without owning a single
-skill — so only a selection with neither is nothing to install. (`reference/commands/index.md` still
-documents the older skills-only guard; see [Cross-Surface Defects](#cross-surface-defects-reported-not-fixed).)
+skill — so only a selection with neither is nothing to install.
 
 ## Test Surface
 
 ### Unit / command tests
 
 Verified by running them: `vitest run src/cli/lib/seed/ src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts`
--> **20 passed**, 4 files. **This document owns these numbers.** (Was 13 across 3 files before
-`seed-schema-drift.test.ts` is included.)
+-> **18 passed**, 3 files. **This document owns these numbers.**
 
-| Spec file                                                         | Specs | Covers                                                                                                                                 |
-| ----------------------------------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/cli/lib/seed/seed-schema.test.ts`                            | 4     | The wire contract, pinned against **literals** rather than the factories                                                               |
-| `src/cli/lib/seed/seed-to-wizard.test.ts`                         | 6     | The four ways an agent reaches (or fails to reach) the result: named by the map, named only by an assignment, switched off, not real   |
-| `src/cli/lib/seed/seed-schema-drift.test.ts`                      | 7     | The vendored copy against `packages/matrix/src/seed.ts`: `SEED_VERSION` plus six `it.each` schema projections (see The Vendoring Rule) |
-| `src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts` | 3     | The shared install spine: ref + scope per plugin skill, and install-before-config-write ordering                                       |
+| Spec file                                                         | Specs | Covers                                                                                                                                                                                                    |
+| ----------------------------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/cli/lib/seed/seed-schema.test.ts`                            | 4     | The wire contract as the CLI imports it, pinned against **literals** rather than the factories                                                                                                            |
+| `src/cli/lib/seed/seed-to-wizard.test.ts`                         | 11    | The four ways an agent reaches (or fails to reach) the result — named by the map, named only by an assignment, switched off, not real — plus the unwritable-pair refusal and the rows it must not trip on |
+| `src/cli/lib/__tests__/commands/init-from-plugin-install.test.ts` | 3     | The shared install spine: ref + scope per plugin skill, and install-before-config-write ordering                                                                                                          |
 
-> **`seed-schema.test.ts` pins literals on purpose.** A version test that builds its payload from
+> **Every payload in `seed-to-wizard.test.ts` whose sub-agents rest at the shared selection default
+> carries its skills at `scope: "global"`.** That is not incidental: a project-scoped skill on a
+> resting sub-agent is now the refusal's own subject, so a spec about model, effort or roster
+> membership that left the skill at the factory default would be testing the refusal instead of
+> itself. `init-from-plugin-install.test.ts` takes the other route and pins its sub-agent to the
+> project, because the scope its two skills carry _is_ that spec's subject.
+>
+> **That spec also stubs `HOME`**, because the greenfield check reads `os.homedir()`. Without it,
+> the global-scoped skill in its payload would consult the developer's own `~/.claude-src` and the
+> spec would pass or fail by what happens to be installed on the machine running it.
+
+> **`seed-schema.test.ts` is the CLI's stake in a contract it does not own the source of.** It
+> imports `seedPayloadSchema` from `@workspace/matrix/seed` and asserts on that object directly, so
+> it fails here if the package changes the shape `init --from` decodes. There is no second copy to
+> compare against and no comparison test; this spec is the whole of the CLI-side guard.
+>
+> **It pins literals on purpose.** A version test that builds its payload from
 > `SEED_VERSION` follows the constant wherever it goes and **can never fail** — the canonical shape of
 > findings Pattern V (the artefact that looks like verification and cannot fail). The same reasoning
 > is why `init-from-shared-config.e2e.test.ts` hardcodes `v: 3` in its own `seedPayload` helper while
@@ -512,15 +610,16 @@ specs exist to cover the whole path; a mocked fetch would skip the two seams mos
 the flag reaching the command, and the payload surviving the wire. `runInitFrom(store, id, project, sourceDir)`
 is the runner; it injects `AGENTS_INC_API_URL` into the spawned process's environment.
 
-| Spec file (`e2e/commands/`)                | Specs | Covers                                                                                                                                                                                                                                                                                              |
-| ------------------------------------------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init-from-shared-config.e2e.test.ts`      | 11    | **Wire contract and command plumbing.** Install without the wizard; the user-agent + exact request path; skip-by-name; 404 with nothing written; malformed body; v1 refusal; model/effort onto compiled agent _and_ config; a bare switched-on agent; nothing-installable error; dashboard override |
-| `init-from-scenarios-install.e2e.test.ts`  | 5     | Per-skill scope routing, skipped skills **and** agents together, `on: false` dropping its assignment rows, mixed plugin+eject from one payload, a global plugin skill at `user` scope when run in `$HOME`                                                                                           |
-| `init-from-scenarios-curation.e2e.test.ts` | 5     | Per-sub-agent curation: stack payload as its own expansion, per-agent assignment + load state, a switched-on agent holding nothing, a skills-free payload, exclusive vs non-exclusive category emission                                                                                             |
-| `init-from-scenarios-tuning.e2e.test.ts`   | 5     | Every model the contract allows, every effort, an unnamed field left alone, no-entry defaults, and re-tuning when a second id installs over the first                                                                                                                                               |
-| `init-from-agent-scope.e2e.test.ts`        | 1     | A globally-scoped sub-agent compiles into `$HOME` and a project-scoped one into the project; **exhaustive** directory listings, not `contains`                                                                                                                                                      |
+| Spec file (`e2e/commands/`)                | Specs | Covers                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init-from-shared-config.e2e.test.ts`      | 11    | **Wire contract and command plumbing.** Install without the wizard; the user-agent + exact request path; skip-by-name; 404 with nothing written; malformed body; v1 refusal; model/effort onto compiled agent _and_ config; a bare switched-on agent; nothing-installable error; refusal rather than dashboard over an existing install |
+| `init-from-scenarios-install.e2e.test.ts`  | 5     | Per-skill scope routing, skipped skills **and** agents together, `on: false` dropping its assignment rows, mixed plugin+eject from one payload, a global plugin skill at `user` scope when run in `$HOME`                                                                                                                               |
+| `init-from-scenarios-curation.e2e.test.ts` | 5     | Per-sub-agent curation: stack payload as its own expansion, per-agent assignment + load state, a switched-on agent holding nothing, a skills-free payload, exclusive vs non-exclusive category emission                                                                                                                                 |
+| `init-from-scenarios-tuning.e2e.test.ts`   | 5     | Every model the contract allows, every effort, an unnamed field left alone, no-entry defaults, and the refusal a second id gets over an installed first                                                                                                                                                                                 |
+| `init-from-agent-scope.e2e.test.ts`        | 1     | A globally-scoped sub-agent compiles into `$HOME` and a project-scoped one into the project; **exhaustive** directory listings, not `contains`                                                                                                                                                                                          |
+| `init-from-greenfield.e2e.test.ts`         | 3     | The greenfield rule: a global install blocking a global payload from a clean project, a project-only payload installing past that same global install, and the unwritable-pair refusal naming both halves                                                                                                                               |
 
-**27 executable specs across the 5 files. This document owns that number and the per-file column.**
+**30 executable specs across the 6 files. This document owns that number and the per-file column.**
 Counting by `it(` is safe _here_ specifically because grep confirms **no `it.each` or `describe.each`
 anywhere in the family** — the trap that made the config-gate guard-test count wrong does not apply.
 The `e2e/commands/` directory **file** count is owned by `reference/testing/e2e-infrastructure.md`;
@@ -528,8 +627,16 @@ do not restate it here.
 
 **The division of labour between these files is deliberate and stated in the shared-config spec's own
 header:** wire contract and command plumbing live in `init-from-shared-config`; what a _decoded_
-payload turns into on disk lives in the `init-from-scenarios-*` specs. A new contract-level assertion
-belongs in the former.
+payload turns into on disk lives in the `init-from-scenarios-*` specs; and what the command refuses
+to install at all lives in `init-from-greenfield`. A new contract-level assertion belongs in the
+first.
+
+**The `e2e/commands/` refusal specs are split across three files on purpose, not by accident.** The
+shared-config and tuning files each pin the refusal that replaced a behaviour they used to assert —
+the dashboard override and the second-id re-tune — and both keep the setup that made the old
+assertion meaningful, so a regression that reinstates merging fails where it used to pass.
+`init-from-greenfield` is where the rule itself is held, including the case neither of the others can
+reach: a project that is clean while HOME is not.
 
 ## Plugin install under `init --from`
 
@@ -551,26 +658,14 @@ from outside:
 
 ## Known Limitations
 
-| Limitation                                                                           | Consequence                                                                                                                                                                  |
-| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No automated check that the two copies of the schema agree                           | A one-sided edit silently strips a field; only the version literal would show it                                                                                             |
-| An unresolvable `stackId` throws from `buildEjectConfig`, unlike every other unknown | Untested; the one fatal unknown in an otherwise skip-don't-fail contract                                                                                                     |
-| `matrixVersion` has no reader                                                        | The field cannot currently explain a skip, which is the reason it is on the wire                                                                                             |
-| `SEED_API_URL` is captured at module load                                            | Any in-process test that sets `AGENTS_INC_API_URL` after import hits production                                                                                              |
-| The CLI validates nothing about the id's shape                                       | Any string is URL-encoded and sent; the worker's 8-char content-addressed form is not enforced client-side (`encodeURIComponent` is the injection guard, not a format check) |
-
-## Cross-Surface Defects Reported, Not Fixed
-
-Found while writing this document, in files this document does not own. Recorded here rather than
-patched, per the ownership rule — and recorded at all because a defect nobody wrote down is a defect
-the next pass re-discovers.
-
-| Surface                       | Defect                                                                                                                                                                                                                                                                     | Owner        |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| `reference/commands/index.md` | `init`'s flag table lists only `--refresh` and `--source`. **`--from <id>` is missing entirely** — the flag has no coverage in the canonical commands reference                                                                                                            | codex-keeper |
-| `reference/commands/index.md` | Its `init` flow step 4 states the empty guard as `if (result.skills.length === 0)` with the message `"No skills selected"`. **Both are now false**: the guard is `skills.length === 0 && selectedAgents.length === 0`, and the message comes from `Selection.emptyMessage` | codex-keeper |
-| `reference/commands/index.md` | The `init` flow describes one producer. It is now **two producers on one spine** (`selectionFromWizard` / `selectionFromSharedConfig`), and the flow reads as if the wizard were unconditional                                                                             | codex-keeper |
-| `reference/boundary-map.md`   | Has **no entry for the seed fetch**. It is a network-sourced, schema-validated external input reached from a command — the exact shape that doc enumerates for file and shell inputs                                                                                       | codex-keeper |
+| Limitation                                                                           | Consequence                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Nothing enforces the `SEED_VERSION` **bump** on a shape change                       | A field added without a new version reaches installed CLIs only on their next upgrade, and no version literal says so                                                          |
+| An unresolvable `stackId` throws from `buildEjectConfig`, unlike every other unknown | Untested, and the throw is outside `lib/seed/` — unlike the unwritable-pair refusal, which is designed and specced                                                             |
+| `init --from` cannot update, only install                                            | Re-sharing over an installed setup is `uninstall` + `init --from`. There is no partial or additive form, by ruling — the payload's `assignedStack` replaces rather than merges |
+| `matrixVersion` has no reader                                                        | The field cannot currently explain a skip, which is the reason it is on the wire                                                                                               |
+| `SEED_API_URL` is captured at module load                                            | Any in-process test that sets `AGENTS_INC_API_URL` after import hits production                                                                                                |
+| The CLI validates nothing about the id's shape                                       | Any string is URL-encoded and sent; the worker's 8-char content-addressed form is not enforced client-side (`encodeURIComponent` is the injection guard, not a format check)   |
 
 ## Related Documentation
 
@@ -581,5 +676,7 @@ the next pass re-discovers.
 - [`reference/config/config-writer.md`](../config/config-writer.md) — where the mapped config is written, and the gate
 - [`reference/concepts/scope-system.md`](../concepts/scope-system.md) — project vs global, the CLI-side model
 - [`reference/types/core-types.md`](../types/core-types.md) — `SkillConfig`, `AgentScopeConfig`, `SkillAssignment`, `StackAgentConfig`
-- [`reference/types/zod-schemas.md`](../types/zod-schemas.md) — the CLI's _other_ Zod schemas; scoped to `lib/schemas.ts` and does **not** cover this file
+- [`reference/types/zod-schemas.md`](../types/zod-schemas.md) — the CLI's _other_ Zod schemas; scoped to `lib/schemas.ts` and does **not** cover this contract
+- [`reference/build-and-packaging.md`](../build-and-packaging.md) — `noExternal`, and why the schema is inlined rather than installed
+- [`reference/boundary-map.md`](../boundary-map.md) — §6.5, the seed fetch as a trust boundary
 - [`reference/dependency-graph.md`](../dependency-graph.md) — note 14b, the `init` -> `lib/seed/` edge

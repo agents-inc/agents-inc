@@ -19,8 +19,9 @@ last_validated: 2026-07-30
 
 | File                                               | Purpose                                                                                                                                 |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/cli/base-command.ts`                          | Base `--source` flag definition, error handling, terminal-geometry startup gate                                                         |
-| `src/cli/hooks/init.ts`                            | Raw argv extraction of `--source` before oclif parsing                                                                                  |
+| `src/cli/base-command.ts`                          | Shared command behaviour (error handling, terminal-geometry startup gate) — no flags: it declares no `baseFlags`                        |
+| `src/cli/commands/init.tsx`                        | `--source` flag definition — the one command that carries it                                                                            |
+| `src/cli/hooks/init.ts`                            | Raw argv extraction of `--source` before oclif parsing (for the `init` command alone)                                                   |
 | `src/cli/utils/terminal.ts`                        | Terminal-geometry predicate + message shared by both size gates (section 1.4)                                                           |
 | `src/cli/utils/exec.ts`                            | Shell execution boundary, input validation                                                                                              |
 | `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits; `writeFile()` holds the runtime tripwire on the global config pair (section 3.4a)                    |
@@ -33,7 +34,6 @@ last_validated: 2026-07-30
 | `src/cli/lib/configuration/config-types-writer.ts` | Writer selection(project=import-from-global, global=standalone)                                                                         |
 | `src/cli/lib/installation/local-installer.ts`      | Config build/merge + agent compilation; writes no config file                                                                           |
 | `src/cli/lib/loading/source-loader.ts`             | Source fetch/network boundary; `matrixOnly` + `skipExtraSources` opt-outs                                                               |
-| `src/cli/lib/stacks/stack-plugin-compiler.ts`      | Stack plugin compilation (`compileStackPlugin`)                                                                                         |
 | `src/cli/lib/compiler.ts`                          | Liquid template sanitization, agent output, per-skill pluginRef derivation(`derivePluginRef`)                                           |
 | `src/cli/lib/skills/skill-copier.ts`               | Path traversal prevention                                                                                                               |
 | `src/cli/lib/plugins/plugin-settings.ts`           | Claude settings/registry JSON parsing (`installed_plugins.json` v2 registry)                                                            |
@@ -47,62 +47,67 @@ last_validated: 2026-07-30
 
 ## 1. CLI Input Boundaries
 
-### 1.1 Base Flag: `--source`
+### 1.1 `init`'s Flag: `--source`
 
 | Property       | Value                                                                                     |
 | -------------- | ----------------------------------------------------------------------------------------- |
-| **Location**   | `src/cli/base-command.ts`                                                                 |
+| **Location**   | `src/cli/commands/init.tsx`                                                               |
 | **Direction**  | IN                                                                                        |
 | **Data**       | Skills source path or URL                                                                 |
 | **Validation** | oclif `Flags.string()` (accepts any string), then `validateSourceFormat()` in `config.ts` |
 | **Schema**     | None (string flag); validated by `validateSourceFormat()`                                 |
 
-Most commands inherit `baseFlags` (the `--source` / `-s` flag), which is optional and accepts any string. Actual validation happens in `resolveSource()` in `config.ts`.
+**`init` is the only command that declares `--source` / `-s`** (owner ruling 2026-08-09). Naming a
+source is an install-time decision; every later command resolves the source that install recorded
+(project config → global config → default), so the flag is declared in `init.tsx` and nowhere else.
+`BaseCommand` declares no `baseFlags` at all, and the `NO_BASE_FLAGS` opt-out cast it used to export
+went with the flag — the re-derivation is `grep -rn "source: Flags" src/cli/commands`, which reports
+exactly one line.
 
-**Seven commands override `static baseFlags = {}` and therefore do NOT accept `--source`:** `doctor`, `search`, `validate`, `import skill`, `new skill`, `build plugins`, `build marketplace`. Verified by `grep -rln "static baseFlags = {}" src/cli/commands` at time of writing; the previous text named only the first three, which would have an agent emit `--source` on four commands that reject it.
-
-`edit` is the one command that re-declares the inheritance explicitly — its `static flags` opens with `...BaseCommand.baseFlags` rather than relying on oclif merging `baseFlags` for it.
+Passing `--source` to any other command is refused by the parser (`Nonexistent flag: --source`,
+exit 2), pinned by `e2e/commands/source-flag-is-init-only.e2e.test.ts`.
 
 ### 1.2 Init Hook: Raw argv Extraction
 
-| Property       | Value                                                                        |
-| -------------- | ---------------------------------------------------------------------------- |
-| **Location**   | `src/cli/hooks/init.ts`                                                      |
-| **Direction**  | IN                                                                           |
-| **Data**       | `--source` and `-s` flags extracted from raw `options.argv`                  |
-| **Validation** | Manual string extraction (indexOf + split), then passed to `resolveSource()` |
-| **Schema**     | None at extraction point; downstream `validateSourceFormat()` validates      |
+| Property       | Value                                                                                  |
+| -------------- | -------------------------------------------------------------------------------------- |
+| **Location**   | `src/cli/hooks/init.ts`                                                                |
+| **Direction**  | IN                                                                                     |
+| **Data**       | `--source` and `-s` flags extracted from raw `options.argv` when the command is `init` |
+| **Validation** | Manual string extraction (indexOf + split), then passed to `resolveSource()`           |
+| **Schema**     | None at extraction point; downstream `validateSourceFormat()` validates                |
 
-The init hook runs before oclif parses flags. It manually extracts `--source` / `--source=value` / `-s` from `options.argv` to pre-resolve the source config. This is a raw CLI input boundary with no validation at extraction -- validation happens in `resolveSource()` in `config.ts`.
+The init hook runs before oclif parses flags. It manually extracts `--source` / `--source=value` /
+`-s` from `options.argv` to pre-resolve the source config. This is a raw CLI input boundary with no
+validation at extraction -- validation happens in `resolveSource()` in `config.ts`.
+
+The extraction is gated on `options.id === "init"`, and so is the caller identity the hook passes
+(`caller: "init" | "stored"`): `init` is the one command that may name a source, so it is the one
+command whose argv can carry the flag and the one caller `resolveSource` reads `CC_SOURCE` for.
 
 ### 1.3 Per-Command Flag Definitions
 
 Every command extends `BaseCommand` and defines `static flags`. oclif handles type coercion, required validation, and enum constraints.
 
-| Command             | File                            | Flags (beyond `--source`)                                                                                                                                      |
-| ------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init`              | `commands/init.tsx`             | `--refresh` (boolean)                                                                                                                                          |
-| `edit`              | `commands/edit.tsx`             | `--refresh` (boolean), `--project-setup` (boolean, hidden internal flag `EDIT_PROJECT_SETUP_FLAG`)                                                             |
-| `compile`           | `commands/compile.ts`           | `--verbose` (boolean)                                                                                                                                          |
-| `list`              | `commands/list.tsx`             | (base only); alias `ls`                                                                                                                                        |
-| `eject`             | `commands/eject.ts`             | `type` (**positional, optional**, enum: `agent-partials` \| `templates` \| `skills` \| `all`); `--force` (boolean), `--output` (string), `--refresh` (boolean) |
-| `search`            | `commands/search.ts`            | `query` (positional, required); `baseFlags = {}` (inherits none)                                                                                               |
-| `update`            | `commands/update.tsx`           | `skill` (positional, optional); `--yes` (boolean)                                                                                                              |
-| `uninstall`         | `commands/uninstall.tsx`        | `--yes` / `-y` (boolean). **`--all` was removed** — manifest removal is now unconditional.                                                                     |
-| `validate`          | `commands/validate.ts`          | (none); `baseFlags = {}` (zero-flag command)                                                                                                                   |
-| `doctor`            | `commands/doctor.ts`            | (none); `baseFlags = {}` (drops `--source`)                                                                                                                    |
-| `import skill`      | `commands/import/skill.ts`      | `source` (positional, required); `--skill` (string), `--all` (boolean), `--list` (boolean), `--force` (boolean); **`baseFlags = {}`**                          |
-| `new skill`         | `commands/new/skill.ts`         | `name` (positional, required); `--author` (string), `--category` (string), `--domain` (string), `--force` (boolean); **`baseFlags = {}`**                      |
-| `new agent`         | `commands/new/agent.tsx`        | `name` (positional, required); `--purpose` (string), `--force` (boolean)                                                                                       |
-| `new marketplace`   | `commands/new/marketplace.ts`   | `name` (positional, required); `--force` (boolean)                                                                                                             |
-| `build plugins`     | `commands/build/plugins.ts`     | `--agents-dir` (string), `--output-dir` (string), `--skill` (string), `--verbose` (boolean); **`baseFlags = {}`**                                              |
-| `build marketplace` | `commands/build/marketplace.ts` | `--name` (string), `--plugins-dir` (string), `--output` (string), `--verbose` (boolean); **`baseFlags = {}`**                                                  |
+| Command             | File                            | Flags                                                                                                                                   |
+| ------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`              | `commands/init.tsx`             | `--source` / `-s` (string, the only command that has it), `--from` (string)                                                             |
+| `edit`              | `commands/edit.tsx`             | `--project-setup` (boolean, hidden internal flag `EDIT_PROJECT_SETUP_FLAG`)                                                             |
+| `compile`           | `commands/compile.ts`           | `--verbose` (boolean)                                                                                                                   |
+| `list`              | `commands/list.tsx`             | (none); alias `ls`                                                                                                                      |
+| `eject`             | `commands/eject.ts`             | `type` (**positional, optional**, enum: `agent-partials` \| `templates` \| `skills` \| `all`); `--force` (boolean), `--output` (string) |
+| `search`            | `commands/search.ts`            | `query` (positional, required); no flags                                                                                                |
+| `update`            | `commands/update.ts`            | (none) — a marketplace refresh takes no argument and confirms nothing                                                                   |
+| `uninstall`         | `commands/uninstall.tsx`        | `--yes` / `-y` (boolean). **`--all` was removed** — manifest removal is now unconditional.                                              |
+| `doctor`            | `commands/doctor.ts`            | (none) — the zero-flag command the former `validate` folded into                                                                        |
+| `build plugins`     | `commands/build/plugins.ts`     | `--agents-dir` (string), `--output-dir` (string), `--skill` (string), `--verbose` (boolean)                                             |
+| `build marketplace` | `commands/build/marketplace.ts` | `--name` (string), `--plugins-dir` (string), `--output` (string), `--verbose` (boolean)                                                 |
 
 **`eject`'s positional `type` is the only enum-constrained arg in the CLI.** oclif rejects a value outside `EJECT_TYPES` (`agent-partials`, `templates`, `skills`, `all`, declared module-private in `commands/eject.ts`) at parse time, before `run()`. It is optional — omitting it is valid and handled inside the command.
 
 **Validation pattern:** oclif validates flag types, required status, and enum `options` at parse time. String flags pass through without content validation -- downstream code validates semantics (e.g., `validateSourceFormat` for source strings).
 
-> **This table exists to place oclif parsing on the boundary map, not to be the flag reference.** [`commands/index.md`](./commands/index.md) is canonical for signatures. If the two disagree, `commands/index.md` wins — that is what happened, when this table understated the `baseFlags = {}` overrides and omitted `eject`'s positional arg while `commands/index.md` had both right.
+> **This table exists to place oclif parsing on the boundary map, not to be the flag reference.** [`commands/index.md`](./commands/index.md) is canonical for signatures. If the two disagree, `commands/index.md` wins — that is what happened, when this table understated the flag inheritance and omitted `eject`'s positional arg while `commands/index.md` had both right.
 
 ### 1.4 Terminal Geometry (Environment Input, Blocking)
 
@@ -133,7 +138,7 @@ The one input boundary that can **halt a command before it parses anything**. Te
 
 ### 2.1 YAML Parse Pattern
 
-**Note:** `src/cli/utils/yaml.ts` (`safeLoadYamlFile`) was removed as dead code. Production code uses the same validation pattern inline at each call site:
+**There is no `src/cli/utils/yaml.ts` and no `safeLoadYamlFile`.** Production code imports `parse as parseYaml` from the `yaml` package directly and applies the same validation pattern inline at each call site:
 
 `readFileSafe()` (size limit) -> `parseYaml()` -> `schema.safeParse()`
 
@@ -196,7 +201,6 @@ Caller handling of `ConfigLoadError` is tabulated in `architecture-overview.md` 
 | `marketplace-generator.ts`    | `plugin.json` for marketplace build                | `pluginManifestSchema.parse()`                                         |
 | `versioning.ts`               | `plugin.json` for version check                    | `pluginManifestSchema.parse()`                                         |
 | `loading/source-fetcher.ts`   | `marketplace.json` from fetched source             | `validateNestingDepth()` + `marketplaceSchema.safeParse()`             |
-| `commands/import/skill.ts`    | Imported skill metadata (YAML + JSON fallback)     | `importedSkillMetadataSchema.safeParse()`                              |
 | `schema-validator.ts`         | `plugin.json` in validation targets                | `pluginManifestSchema` via `safeParse()`                               |
 
 ### 2.5 File Size Enforcement
@@ -217,12 +221,12 @@ The claude CLI (>= 2.1.220) records installs in `<pluginsDir>/installed_plugins.
 
 | Function                         | Path                                                   | On unreadable / schema-invalid registry                                | Consumers                         |
 | -------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------- | --------------------------------- |
-| `listRegisteredPluginInstalls()` | `getInstalledPluginsRegistryPath(pluginsDir)`          | **Throws** — the registry is the source of truth for what is installed | `commands/validate.ts`            |
+| `listRegisteredPluginInstalls()` | `getInstalledPluginsRegistryPath(pluginsDir)`          | **Throws** — the registry is the source of truth for what is installed | `lib/content-validator.ts`        |
 | `resolvePluginInstallPaths()`    | `getInstalledPluginsRegistryPath(getUserPluginsDir())` | `verbose()` + returns `[]` (best-effort resolution)                    | `getVerifiedPluginInstallPaths()` |
 
 Both use `readFileSafe(MAX_CONFIG_FILE_SIZE)` -> `JSON.parse()` -> `installedPluginsSchema.safeParse()`. `listRegisteredPluginInstalls()` flattens `plugins[key][]` to unique `(pluginKey, installPath)` pairs across all scopes; `resolvePluginInstallPaths()` picks one installation per key via `pickInstallation()` (this project's `scope: "project"` entry wins, else the `scope: "user"` entry).
 
-**Validate-command fallback ladder** (`Validate.validateRegistryPlugins()` in `commands/validate.ts`):
+**Fallback ladder for `doctor`'s plugins content check** (`validateRegistryPlugins()` in `src/cli/lib/content-validator.ts`, reached through `validateInstalledPlugins()`):
 
 1. Registry file absent -> fall through to the direct-children scan (`findPluginDirectories`).
 2. Registry present but unreadable/invalid -> log `failed: <reason>` and count **1 error** (never scan around it).
@@ -268,14 +272,12 @@ Config writer uses `JSON.parse(JSON.stringify(x))` to strip undefined values bef
 | Function                             | File                                   | What It Writes                                                             | Where                                   |
 | ------------------------------------ | -------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------- |
 | `writeGlobalTypesHalf()`             | `config-gate/pair-writer.ts`           | Standalone union types narrowed to the config (global path only)           | `~/.claude-src/config-types.ts`         |
-| `writeGlobalTypesHalfFromData()`     | `config-gate/pair-writer.ts`           | Same, from background-loaded union inputs (scaffolded entities)            | `~/.claude-src/config-types.ts`         |
 | `regenerateConfigTypes()`            | `configuration/config-types-writer.ts` | Project config-types.ts; emits import-from-global when global exists       | `<project>/.claude-src/config-types.ts` |
 | `generateConfigTypesSource()`        | `configuration/config-types-writer.ts` | Standalone union source string                                             | Returns string                          |
 | `generateProjectConfigTypesSource()` | `configuration/config-types-writer.ts` | Project source extending global types via `import type`                    | Returns string                          |
 | `loadConfigTypesDataInBackground()`  | `configuration/config-types-writer.ts` | (reads matrix+agents for regen)                                            | Loads in background                     |
 | `getGlobalConfigTypesPath()`         | `configuration/config-types-writer.ts` | (reads, not writes)                                                        | `~/.claude-src/config-types.ts`         |
 | `reconcileTypesFromDisk()`           | `config-gate/index.ts`                 | Scope-dispatching entry — applies the writer-selection rule from one place | Whichever scope's `config-types.ts`     |
-| `writeScaffoldedEntityTypes()`       | `config-gate/index.ts`                 | Same dispatch for `new skill` / `new agent` / `new marketplace`            | Whichever scope's `config-types.ts`     |
 
 **Writer Selection Rule:** Project path writes go through `regenerateConfigTypes()` — it detects an existing global install and emits `import type { SkillId as GlobalSkillId, ... } from "<relpath>/config-types"` instead of duplicating global unions. Global path writes go through `config-gate/pair-writer.ts`. The rule is enforced, not advised: `regenerateConfigTypes()` throws `GlobalPairWriteViolation` when handed the home directory, and the standalone renderer is private to `pair-writer.ts` (the former `writeStandaloneConfigTypes()` export is gone).
 
@@ -303,17 +305,16 @@ Function-level inventory and the copy layering (`copySkillTo`, `copySkill`, `cop
 
 **Privileged zone:** `src/cli/lib/config-gate/**`, plus `configuration/config-types-writer.ts` (which the gate drives) and `utils/fs.ts` (which holds the tripwire). Nothing else in `src/` may write `~/.claude-src/config.ts` or `~/.claude-src/config-types.ts`.
 
-| Function                                     | File                         | What It Writes                                                                                                             | Where                                 |
-| -------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `writeGlobalPair()`                          | `config-gate/pair-writer.ts` | Both halves from one config, each skipped when its bytes are unchanged                                                     | `~/.claude-src/`                      |
-| `writeGlobalConfigHalf()`                    | `config-gate/pair-writer.ts` | The config half alone (scalar / registration mutations)                                                                    | `~/.claude-src/config.ts`             |
-| `ensureBlankPair()`                          | `config-gate/pair-writer.ts` | Blank `config.ts` + `config-types.ts` when none exists                                                                     | `~/.claude-src/`                      |
-| `writeScopedFromWizard()`                    | `config-gate/index.ts`       | Scoped config pairs (global + project), then propagates and recompiles                                                     | `.claude-src/` per scope              |
-| `writeProjectConfigPair()`                   | `config-gate/propagate.ts`   | ONE project's `config.ts` + `config-types.ts` from the same effective config                                               | `<project>/.claude-src/`              |
-| `propagateGlobalChangesToProjects()`         | `config-gate/propagate.ts`   | Re-writes the pair for every registered project                                                                            | each tracked project's `.claude-src/` |
-| `pruneGlobalEntriesFromRegisteredProjects()` | `config-gate/propagate.ts`   | Same, with an EMPTIED global config so every inlined global row, tombstone, `selectedAgents` name and stack ref is dropped | each tracked project's `.claude-src/` |
-| `writeProjectPartial()`                      | `config-gate/index.ts`       | A PROJECT `config.ts` from a `Partial<ProjectConfig>`; throws at `$HOME`                                                   | `<project>/.claude-src/config.ts`     |
-| `writeMarketplaceScaffoldConfig()`           | `config-gate/index.ts`       | A scaffolded marketplace `config.ts`; throws at `$HOME`                                                                    | `<marketplace>/.claude-src/config.ts` |
+| Function                                     | File                         | What It Writes                                                                                      | Where                                 |
+| -------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `writeGlobalPair()`                          | `config-gate/pair-writer.ts` | Both halves from one config, each skipped when its bytes are unchanged                              | `~/.claude-src/`                      |
+| `writeGlobalConfigHalf()`                    | `config-gate/pair-writer.ts` | The config half alone (scalar / registration mutations)                                             | `~/.claude-src/config.ts`             |
+| `ensureBlankPair()`                          | `config-gate/pair-writer.ts` | Blank `config.ts` + `config-types.ts` when none exists                                              | `~/.claude-src/`                      |
+| `writeScopedFromWizard()`                    | `config-gate/index.ts`       | Scoped config pairs (global + project), then propagates and recompiles                              | `.claude-src/` per scope              |
+| `writeProjectConfigPair()`                   | `config-gate/propagate.ts`   | ONE project's `config.ts` + `config-types.ts` from the same effective config                        | `<project>/.claude-src/`              |
+| `propagateGlobalChangesToProjects()`         | `config-gate/propagate.ts`   | Re-writes the pair for every registered project                                                     | each tracked project's `.claude-src/` |
+| `pruneGlobalEntriesFromRegisteredProjects()` | `config-gate/propagate.ts`   | Same, with an EMPTIED global config so every inlined global row, tombstone and stack ref is dropped | each tracked project's `.claude-src/` |
+| `writeProjectPartial()`                      | `config-gate/index.ts`       | A PROJECT `config.ts` from a `Partial<ProjectConfig>`; throws at `$HOME`                            | `<project>/.claude-src/config.ts`     |
 
 **Enforcement (four layers):** (1) neither `installation/index.ts` nor `configuration/index.ts` re-exports a pair writer, and `configuration/config-saver.ts` is deleted; (2) eslint bans importing `config-gate/*` other than `index*` (statically and via `ImportExpression`), bans importing any `writeFile`-family symbol from `fs`/`node:fs`/`fs/promises`/`node:fs/promises`/`fs-extra` outside `utils/fs.ts`, and restricts the pair renderers to `config-gate/**` + `configuration/**`; (3) `utils/fs.ts::writeFile` resolves its target and calls `assertGateToken` when it is either pair path, throwing `GlobalPairWriteViolation`; (4) `src/cli/lib/__tests__/config-gate-enforcement.test.ts` pins the barrel deletions by name, exercises the real `writeFile` inside and outside `withGateToken`, asserts the three `$HOME` refusals, proves the private `pair-writer` refuses a caller that reached it by dynamic import, and source-scans `src/**` for any file holding both a write primitive and a pair reference. **Its spec count is owned by [config/config-writer.md](config/config-writer.md#enforcement--four-layers) and deliberately not restated here.**
 
@@ -349,7 +350,7 @@ Template root resolution in `createLiquidEngine()` in `compiler.ts`: checks loca
 
 ### 3.8 Config-Semantics Boundary: Cross-Scope Reconciliation
 
-A **write-time invariant boundary**, distinct from the schema boundaries above: it does not validate incoming bytes, it enforces that the config the CLI is about to emit is semantically coherent across scopes. Both project-config write paths must reconcile; with only one doing so, `doctor` reported clean and `validate` exited 0 on a config carrying two live skills in an exclusive category.
+A **write-time invariant boundary**, distinct from the schema boundaries above: it does not validate incoming bytes, it enforces that the config the CLI is about to emit is semantically coherent across scopes. Both project-config write paths must reconcile; with only one doing so, `doctor` reported clean and exited 0 — in both its layers — on a config carrying two live skills in an exclusive category.
 
 | Property       | Value                                                                                                                                                                          |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -433,7 +434,7 @@ All three validate: non-empty, length limit, no control characters (`[\x00-\x08\
 | Property         | Value                                                                                              |
 | ---------------- | -------------------------------------------------------------------------------------------------- |
 | **Location**     | `src/cli/lib/configuration/config.ts`                                                              |
-| **Entry points** | `resolveSource()`, `resolveAllSources()`                                                           |
+| **Entry points** | `resolveSource()`, `resolvePrimarySourceEntry()`                                                   |
 | **Applied to**   | `--source` flag, `CC_SOURCE` env var (`SOURCE_ENV_VAR` in `config.ts`), config file `source` field |
 
 **Checks performed:**
@@ -586,7 +587,6 @@ Used at data entry points with `.passthrough()` for forward compatibility.
 | `pluginSettingsSchema`         | `plugins/plugin-settings.ts` | `.claude/settings.json`              |
 | `installedPluginsSchema`       | `plugins/plugin-settings.ts` | `installed_plugins.json`             |
 | `settingsFileSchema`           | `schemas.ts`                 | Settings YAML                        |
-| `importedSkillMetadataSchema`  | `schemas.ts`                 | Imported skill metadata              |
 | `stacksConfigSchema`           | `schemas.ts`                 | `config/stacks.ts`                   |
 | `skillCategoriesFileSchema`    | `schemas.ts`                 | `config/skill-categories.ts`         |
 | `skillRulesFileSchema`         | `schemas.ts`                 | `config/skill-rules.ts`              |
@@ -598,7 +598,7 @@ Used for validation commands and build-time checks. Reject unknown fields via `.
 
 | Schema                             | File         | Used For                                   |
 | ---------------------------------- | ------------ | ------------------------------------------ |
-| `pluginManifestValidationSchema`   | `schemas.ts` | `agents-inc validate` plugin validation    |
+| `pluginManifestValidationSchema`   | `schemas.ts` | `agents-inc doctor` plugin validation      |
 | `skillFrontmatterValidationSchema` | `schemas.ts` | SKILL.md strict validation                 |
 | `agentFrontmatterValidationSchema` | `schemas.ts` | Agent frontmatter strict validation        |
 | `metadataValidationSchema`         | `schemas.ts` | Published skill metadata strict validation |
@@ -635,7 +635,7 @@ Used for validation commands and build-time checks. Reject unknown fields via `.
 | `validateNestingDepth()`          | `schemas.ts`          | Check JSON nesting depth                                                                                                          |
 | `warnUnknownFields()`             | `schemas.ts`          | Log warnings for unexpected fields                                                                                                |
 
-**Advisory-vs-hard metadata split:** an over-length `cliDescription` is the **only** advisory violation. `skillMetadataBaseSchema` (shared by `metadataValidationSchema` and `customMetadataValidationSchema`) keeps `.min(1).max(CLI_DESCRIPTION_MAX_LENGTH)` — 60, module-private in `schemas.ts` — as the declared contract. But the runtime loader schemas accept any length and the value only feeds wizard description text, so `commands/validate.ts` reports the `too_big` issue as a warning carrying the actual character count. `isOverLengthCliDescription()` matches on `code === "too_big"` at path `["cliDescription"]` exactly; an **empty** `cliDescription` trips `min(1)` and stays an error, as does every other issue. A skill is `valid` iff the hard-error list is empty.
+**Advisory-vs-hard metadata split:** an over-length `cliDescription` is the **only** advisory violation. `skillMetadataBaseSchema` (shared by `metadataValidationSchema` and `customMetadataValidationSchema`) keeps `.min(1).max(CLI_DESCRIPTION_MAX_LENGTH)` — 60, module-private in `schemas.ts` — as the declared contract. But the runtime loader schemas accept any length and the value only feeds wizard description text, so `splitMetadataValidationIssues()` in `schemas.ts` — the splitter `doctor`'s skills content check and `validateSource()` both call — reports the `too_big` issue as a warning carrying the actual character count. `isOverLengthCliDescription()` matches on `code === "too_big"` at path `["cliDescription"]` exactly; an **empty** `cliDescription` trips `min(1)` and stays an error, as does every other issue. A skill is `valid` iff the hard-error list is empty.
 
 **Skill-directory-name rule:** `checkDirNameMatchesSkillId()` in `source-validator.ts` compares the directory name against the skill's **machine id from `SKILL.md` frontmatter**, not against `displayName`. It runs independently of whether `metadata.yaml` validated, and an unreadable/invalid `SKILL.md` frontmatter yields a "Cannot verify directory name" issue rather than a false mismatch.
 
@@ -664,7 +664,7 @@ JSON files    --> readFileSafe(sizeLimit) --> JSON.parse() --> schema.safeParse(
 TS configs    --> fileExists() --> jiti.import() --> optional schema.safeParse()
                   (project config: missing => null; present-but-broken => throw ConfigLoadError)
 Plugin registry --> readFileSafe(MAX_CONFIG_FILE_SIZE) --> JSON.parse() --> installedPluginsSchema.safeParse()
-                  (validate path THROWS on invalid; resolve path degrades to [])
+                  (listRegisteredPluginInstalls THROWS on invalid; resolvePluginInstallPaths degrades to [])
 Shell output  --> JSON.parse(stdout) --> marketplaceInfoListSchema.safeParse() (Zod)
 ```
 
@@ -677,7 +677,7 @@ Project config --> reconcileProjectSplitAgainstGlobal() (self-heal masks, then m
 Global pair    --> config-gate/index.ts entry opens withGateToken(...) around the whole flow
                    --> classifyGlobalChange() (tier T1..T4) --> writeIfChanged() --> writeFile()
                    --> propagateGlobalChangesToProjects() --> recompilePropagated()   [T1]
-Config types   --> {reconcileTypesFromDisk | writeScaffoldedEntityTypes}
+Config types   --> reconcileTypesFromDisk
                    --> {pair-writer.renderStandaloneTypes | regenerateConfigTypes} --> writeFile()
 Agent data     --> sanitizeCompiledAgentData() --> Liquid template rendering --> writeFile()
 Skill files    --> validateSkillPath() (traversal check) --> copy()

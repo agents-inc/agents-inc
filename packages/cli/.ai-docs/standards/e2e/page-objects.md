@@ -80,16 +80,20 @@ For a multi-phase test where a later wizard must see an earlier phase's global c
 
 The edit wizard opens directly to the `BuildStep` (no stack or domain selection), exposed as `readonly build`.
 
+`edit` carries no `--source` and reads no `CC_SOURCE` — both belong to `init` (CLI-466) — so the
+`source` option below is RECORDED in the install's config.ts by `recordInstallSource()` before the
+session spawns. An install that already names a source (anything a wizard produced) is untouched.
+
 **Launch options (`EditWizardOptions`):**
 
 | Option           | Type                                  | Required | Purpose                                                                                         |
 | ---------------- | ------------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
 | `projectDir`     | `string`                              | Yes      | Must have existing installation                                                                 |
-| `source`         | `E2ESource`                           | No       | Source for skill resolution                                                                     |
+| `source`         | `E2ESource`                           | No       | The source the INSTALL answers to — recorded in `projectDir`'s config.ts, not passed as a flag  |
 | `cols`           | `number`                              | No       | Terminal width                                                                                  |
 | `rows`           | `number`                              | No       | Terminal height                                                                                 |
 | `env`            | `Record<string, string \| undefined>` | No       | Extra env vars                                                                                  |
-| `extraArgs`      | `string[]`                            | No       | Extra CLI flags (e.g., `["--refresh"]`)                                                         |
+| `extraArgs`      | `string[]`                            | No       | Extra CLI flags (e.g., `["--project-setup"]`)                                                   |
 | `defaultTimeout` | `number`                              | No       | Override the underlying `TerminalSession` default timeout                                       |
 | `globalHome`     | `string`                              | No       | **`launchInProject` / `launchInProjectShort` only.** Reuse an existing global HOME (see below). |
 
@@ -149,30 +153,29 @@ Each step class models the user actions available on one wizard screen. Methods 
 
 **File:** `e2e/pages/steps/build-step.ts`
 
-| Method                                       | Returns             | Action                                                                                                                                                      |
-| -------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `advanceDomain()`                            | `void`              | Advance current domain (Enter, cursor-anchored new-frame wait); resets the tracked column hint                                                              |
-| `focusSkill(label)`                          | `void`              | Move grid focus to a skill by EXACT rendered label, without toggling. Closed-loop — see below.                                                              |
-| `selectSkill(label)`                         | `void`              | `focusSkill` then Space                                                                                                                                     |
-| `toggleFocusedSkill()`                       | `void`              | Press Space on the focused cell                                                                                                                             |
-| `toggleFocusedSkillAwaiting(sentinel)`       | `void`              | Space, then wait for `sentinel` in RAW output after a pre-press cursor. Use whenever the assertion is on a TOAST.                                           |
-| `selectSkillAwaiting(label, sentinel)`       | `void`              | `focusSkill` then `toggleFocusedSkillAwaiting` — navigation happens BEFORE the cursor snapshot                                                              |
-| `toggleScopeOnFocusedSkill()`                | `void`              | Press "s" on the focused cell                                                                                                                               |
-| `passThroughAllDomains()`                    | `SourcesStep`       | Web -> API -> Methodology (standard E2E source)                                                                                                             |
-| `passThroughAllDomainsGeneric()`             | `SourcesStep`       | Keep pressing Enter until Sources appears (non-standard sources); throws after 10 presses                                                                   |
-| `passThroughScratchDomains()`                | `SourcesStep`       | Web (focus + select react) -> API (Space) -> Mobile (advance)                                                                                               |
-| `passThroughWebAndMethodologyDomains()`      | `SourcesStep`       | Web -> Methodology (when API deselected)                                                                                                                    |
-| `advanceToSources()`                         | `SourcesStep`       | Advance single domain to Sources                                                                                                                            |
-| `saveFromBuild(wizardType)`                  | `WizardResult`      | Build -> Sources -> Agents -> Confirm -> `confirm()`. **Default path only** — see the carve-out below.                                                      |
-| `navigateToNextCategory()`                   | `void`              | Tab to next category within current domain                                                                                                                  |
-| `toggleLabels()`                             | `void`              | Press "d" to toggle compatibility labels                                                                                                                    |
-| `toggleFilterIncompatible()`                 | `void`              | Press "f" to toggle filter-incompatible (gated by `FEATURE_FLAGS.FILTER_INCOMPATIBLE`)                                                                      |
-| `toggleFilterIncompatibleAwaiting(sentinel)` | `void`              | Press "f", then wait for `sentinel` in RAW output after a pre-press cursor (toast assertions)                                                               |
-| `toggleInfoPanel()`                          | `void`              | Press "i" — gated by `FEATURE_FLAGS.INFO_PANEL`; renders a `SkillAgentSummary` overlay                                                                      |
-| `openSearch()`                               | `SearchModal`       | Press "/" to open search                                                                                                                                    |
-| `goBack()`                                   | `void`              | Press Escape                                                                                                                                                |
-| `getScopeBadgesForSkill(label)`              | `Array<"P" \| "G">` | Read-only: rendered scope badges for a skill — `[]`, `["P"]`, `["G"]`, `["P","G"]`, or `["G","P"]`                                                          |
-| `getExclusiveCategorySelectedCount(name)`    | `number`            | Read-only: the `(N of M)` counter an exclusive category header renders. Under `NO_COLOR` this is the ONLY text-observable signal of in-grid selected state. |
+| Method                                    | Returns             | Action                                                                                                                                                      |
+| ----------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `advanceDomain()`                         | `void`              | Advance current domain (Enter, cursor-anchored new-frame wait); resets the tracked column hint                                                              |
+| `focusSkill(label)`                       | `void`              | Move grid focus to a skill by EXACT rendered label, without toggling. Closed-loop — see below.                                                              |
+| `selectSkill(label)`                      | `void`              | `focusSkill` then Space                                                                                                                                     |
+| `toggleFocusedSkill()`                    | `void`              | Press Space on the focused cell                                                                                                                             |
+| `toggleFocusedSkillAwaiting(sentinel)`    | `void`              | Space, then wait for `sentinel` in RAW output after a pre-press cursor. Use whenever the assertion is on a TOAST.                                           |
+| `selectSkillAwaiting(label, sentinel)`    | `void`              | `focusSkill` then `toggleFocusedSkillAwaiting` — navigation happens BEFORE the cursor snapshot                                                              |
+| `toggleScopeOnFocusedSkill()`             | `void`              | Press "s" on the focused cell                                                                                                                               |
+| `passThroughAllDomains()`                 | `SourcesStep`       | Web -> API -> Methodology (standard E2E source)                                                                                                             |
+| `passThroughAllDomainsGeneric()`          | `SourcesStep`       | Keep pressing Enter until Sources appears (non-standard sources); throws after 10 presses                                                                   |
+| `passThroughScratchDomains()`             | `SourcesStep`       | Web (focus + select react) -> API (Space) -> Mobile (advance)                                                                                               |
+| `passThroughWebAndMethodologyDomains()`   | `SourcesStep`       | Web -> Methodology (when API deselected)                                                                                                                    |
+| `advanceToSources()`                      | `SourcesStep`       | Advance single domain to Sources                                                                                                                            |
+| `saveFromBuild(wizardType)`               | `WizardResult`      | Build -> Sources -> Agents -> Confirm -> `confirm()`. **Default path only** — see the carve-out below.                                                      |
+| `navigateToNextCategory()`                | `void`              | Tab to next category within current domain                                                                                                                  |
+| `toggleLabels()`                          | `void`              | Press "d" to toggle compatibility labels                                                                                                                    |
+| `pressFilterIncompatibleHotkey()`         | `void`              | Press "f", which the build step binds to nothing — for specs that assert the withdrawn hotkey is inert                                                      |
+| `toggleInfoPanel()`                       | `void`              | Press "i" — renders a `SkillAgentSummary` overlay                                                                                                           |
+| `openSearch()`                            | `SearchModal`       | Press "/" to open search                                                                                                                                    |
+| `goBack()`                                | `void`              | Press Escape                                                                                                                                                |
+| `getScopeBadgesForSkill(label)`           | `Array<"P" \| "G">` | Read-only: rendered scope badges for a skill — `[]`, `["P"]`, `["G"]`, `["P","G"]`, or `["G","P"]`                                                          |
+| `getExclusiveCategorySelectedCount(name)` | `number`            | Read-only: the `(N of M)` counter an exclusive category header renders. Under `NO_COLOR` this is the ONLY text-observable signal of in-grid selected state. |
 
 **`saveFromBuild` carve-out.** It is valid ONLY where the sources step is passed through WITHOUT mutation and the agents step is accepted with defaults. Sites that call `setAllLocal` / `setAllPlugin` / `moveSourceColumnRight` / `selectFocusedSourceCell` on the sources step, or navigate/toggle scope on the agents step, or that stop at the confirm screen instead of confirming, MUST keep the explicit step-by-step sequence — this method would silently skip their mutation.
 
@@ -194,7 +197,7 @@ Two observability facts constrain any fix:
 
 The algorithm: parse the current viewport into categories -> Tab-walk, re-reading the rendered screen after every press, until the focused category contains the target -> walk RIGHT from the screen-verified `(row, 0)` to the target column. Bounded by `MAX_FOCUS_ATTEMPTS = 30`; Tab wraps, so one cycle visits every category, and a swallowed keystroke self-corrects because a press that produced no fresh frame within `INTERNAL_RETRIES.INTERVAL_MS` is simply followed by another re-read. Exhaustion throws with the screen dumped.
 
-**Labels match EXACTLY.** `cellLabel()` strips leading `P`/`G` scope badges and `+ - ✓ ✗ ⏏` diff glyphs, strips the trailing compatibility annotation (`(requires …)`, `(required by …)`, `(incompatible)`, `(recommended)`, `(discouraged)`), then trims — and the comparison is `===`, not `includes`. So `"React"` never stops the walk on a `"React Query"` cell, nor `"Vite"` on `"Vitest"`. Pass the exact rendered display title.
+**Labels match EXACTLY.** `cellLabel()` strips leading `P`/`G` scope badges and `+ - ✓ ✗ ⏏` diff glyphs, strips the trailing compatibility annotation (`(requires …)`, `(required by …)`, `(incompatible)`, `(discouraged)`), then trims — and the comparison is `===`, not `includes`. So `"React"` never stops the walk on a `"React Query"` cell, nor `"Vite"` on `"Vitest"`. Pass the exact rendered display title.
 
 The one residual open-loop spot is a single-category grid with multiple cells: Tab is a guarded no-op there, so the walk cannot reset the column, and it falls back to a tracked column hint using the grid's real cyclic-wrap arithmetic. Single-category domains in the standard E2E source are all single-cell, so the fallback is effectively unreachable.
 
@@ -204,20 +207,20 @@ See `.ai-docs/agent-findings/2026-07-29-e2e-grid-focus-unobservable-under-no-col
 
 **File:** `e2e/pages/steps/sources-step.ts`
 
-| Method                      | Returns      | Action                                                          |
-| --------------------------- | ------------ | --------------------------------------------------------------- |
-| `waitForReady()`            | `void`       | Wait for sources step to render                                 |
-| `acceptDefaults()`          | `AgentsStep` | Wait for ready, press Enter                                     |
-| `setAllLocal()`             | `void`       | Press "l" (sets all to eject mode)                              |
-| `setAllPlugin()`            | `void`       | Press "p"                                                       |
-| `selectFocusedSourceCell()` | `void`       | Press Space — commits the focused column as that skill's source |
-| `moveSourceColumnRight()`   | `void`       | Arrow Right — move the grid cursor one source column right      |
-| `openSettings()`            | `void`       | Press "s"                                                       |
-| `closeSettings()`           | `void`       | Press Escape                                                    |
-| `pressAddSource()`          | `void`       | Press "a" (within settings)                                     |
-| `pressDeleteSource()`       | `void`       | Press backspace (within settings)                               |
-| `goBack()`                  | `BuildStep`  | Press Escape, wait for build step                               |
-| `advance()`                 | `AgentsStep` | Press Enter                                                     |
+| Method                      | Returns      | Action                                                              |
+| --------------------------- | ------------ | ------------------------------------------------------------------- |
+| `waitForReady()`            | `void`       | Wait for sources step to render                                     |
+| `acceptDefaults()`          | `AgentsStep` | Wait for ready, press Enter                                         |
+| `setAllLocal()`             | `void`       | Press "l" (every skill installs locally)                            |
+| `setAllPlugin()`            | `void`       | Press "p" (every skill installs as a plugin)                        |
+| `selectFocusedSourceCell()` | `void`       | Press Space — commits the focused cell as that skill's install mode |
+| `moveSourceColumnRight()`   | `void`       | Arrow Right — `Local` to `Plugin`, wrapping back from `Plugin`      |
+| `goBack()`                  | `BuildStep`  | Press Escape, wait for build step                                   |
+| `advance()`                 | `AgentsStep` | Press Enter                                                         |
+
+Each row is one skill carrying a two-state control: `Local` at column 0, `Plugin` at column 1. There
+is no settings overlay to open — the `openSettings` / `pressAddSource` / `addSourceUrl` family drove
+the marketplace-sources screen, which was withdrawn with the marketplace axis (CLI-450).
 
 ### AgentsStep
 
@@ -295,17 +298,17 @@ All step classes extend `BaseStep`. Its methods are `protected` -- tests cannot 
 
 **Public methods** available to tests via any step:
 
-| Method                               | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getOutput()`                        | xterm's PROCESSED buffer — current screen plus genuine scrollback. **Not a frame log** (Ink repaints overwrite in place).                                                                                                                                                                                                                                                                                                                   |
-| `getScreen()`                        | **Scrollback + viewport — NOT viewport-only**, despite the name and the doc comment on `TerminalSession.getScreen()`. It reads absolute buffer lines `0 .. viewportY + rows`. Safe for POSITIVE assertions about current content; never use it for `not.toContain` on text the session once legitimately drew. See [assertions.md § Negative Assertions](./assertions.md).                                                                  |
-| `resizeBelowMinimum(cols, rows)`     | Snapshot raw cursor → resize PTY **and** xterm → `waitForTextAfter(STEP_TEXT.RESIZE_PROMPT, cursor)`. Drives the `WizardLayout` mid-session size guard. Use `TERMINAL_SIZE.BELOW_MINIMUM`; never LAUNCH a session at that geometry (the pre-Ink startup gate blocks and the session hangs to timeout).                                                                                                                                      |
-| `resizeAboveMinimum(cols, rows)`     | Snapshot raw cursor → resize PTY **and** xterm → `waitForWizardFooterAfter(cursor)`. Anchored on the footer emitted AFTER the resize, not the copy already in scrollback from before the shrink. Selections survive the round trip.                                                                                                                                                                                                         |
-| `getSummaryDiffEntries(displayName)` | Parses the rendered `SkillAgentSummary` panel (confirm step or build-step info overlay — same component) into `{ prefix, scope }[]`, where prefix is `+` new / `-` removed / `~` source-changed / `•` unchanged and scope is `Project` or `Global`. Splits on the `│` column divider and tracks scope PER COLUMN, because Skills and Agents transition to Global at different vertical positions. Pass a display name unique to one column. |
-| `abort()`                            | Footer wait, then Ctrl+C                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `navigateDown()`                     | Footer wait, then arrow down                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `navigateUp()`                       | Footer wait, then arrow up                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `navigateRight()`                    | Footer wait, then arrow right                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Method                               | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getOutput()`                        | xterm's PROCESSED buffer — current screen plus genuine scrollback. **Not a frame log** (Ink repaints overwrite in place).                                                                                                                                                                                                                                                                                                                 |
+| `getScreen()`                        | **Scrollback + viewport — NOT viewport-only**, despite the name and the doc comment on `TerminalSession.getScreen()`. It reads absolute buffer lines `0 .. viewportY + rows`. Safe for POSITIVE assertions about current content; never use it for `not.toContain` on text the session once legitimately drew. See [assertions.md § Negative Assertions](./assertions.md).                                                                |
+| `resizeBelowMinimum(cols, rows)`     | Snapshot raw cursor → resize PTY **and** xterm → `waitForTextAfter(STEP_TEXT.RESIZE_PROMPT, cursor)`. Drives the `WizardLayout` mid-session size guard. Use `TERMINAL_SIZE.BELOW_MINIMUM`; never LAUNCH a session at that geometry (the pre-Ink startup gate blocks and the session hangs to timeout).                                                                                                                                    |
+| `resizeAboveMinimum(cols, rows)`     | Snapshot raw cursor → resize PTY **and** xterm → `waitForWizardFooterAfter(cursor)`. Anchored on the footer emitted AFTER the resize, not the copy already in scrollback from before the shrink. Selections survive the round trip.                                                                                                                                                                                                       |
+| `getSummaryDiffEntries(displayName)` | Parses the rendered `SkillAgentSummary` panel (confirm step or build-step info overlay — same component) into `{ prefix, scope }[]`, where prefix is `+` new / `-` removed / `~` mode-changed / `•` unchanged and scope is `Project` or `Global`. Splits on the `│` column divider and tracks scope PER COLUMN, because Skills and Agents transition to Global at different vertical positions. Pass a display name unique to one column. |
+| `abort()`                            | Footer wait, then Ctrl+C                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `navigateDown()`                     | Footer wait, then arrow down                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `navigateUp()`                       | Footer wait, then arrow up                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `navigateRight()`                    | Footer wait, then arrow right                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ---
 

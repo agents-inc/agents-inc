@@ -16,7 +16,9 @@ keywords:
     createDetailedFetchError,
     giget,
     downloadTemplate,
-    forceRefresh,
+    revalidation,
+    ETag,
+    fetch-record,
     fromCache,
     source-cache,
     CACHE_DIR,
@@ -63,7 +65,7 @@ elsewhere and are **not restated here** — cite the owner, do not copy the valu
 | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `CACHE_DIR`'s value                                                                                   | `reference/utilities.md:389`                        |
 | `marketplace.json` size / depth / schema chain, `MAX_MARKETPLACE_FILE_SIZE`, `MAX_JSON_NESTING_DEPTH` | `reference/boundary-map.md:221`, `:231-232`, `:559` |
-| `SourceLoadOptions` (including what `forceRefresh` means to a wizard caller)                          | `reference/features/skills-and-matrix.md:246-253`   |
+| `SourceLoadOptions`                                                                                   | `reference/features/skills-and-matrix.md`           |
 
 `reference/features/skills-and-matrix.md:100` carries the one-line inventory row for this file
 ("Fetch/cache remote sources via giget"); this doc is what that row points at.
@@ -100,26 +102,28 @@ export async function fetchFromSource(
   source: string,
   options: FetchOptions = {},
 ): Promise<FetchResult> {
-  const { forceRefresh = false, subdir } = options;
+  const { subdir } = options;
 
   if (isLocalSource(source)) {
     return fetchFromLocalSource(source, subdir);
   }
 
-  return fetchFromRemoteSource(source, { forceRefresh, subdir });
+  return fetchFromRemoteSource(source, subdir);
 }
 ```
 
 ```typescript
 // source-fetcher.ts — FetchOptions / FetchResult
-export type FetchOptions = { forceRefresh?: boolean; subdir?: string };
+export type FetchOptions = { subdir?: string };
 export type FetchResult = { path: string; fromCache: boolean; source: string };
 ```
 
-| Field of `FetchOptions` | Default     | Read by                                                                                    |
-| ----------------------- | ----------- | ------------------------------------------------------------------------------------------ |
-| `forceRefresh`          | `false`     | **remote branch only** — `fetchFromSource` passes `subdir` alone to `fetchFromLocalSource` |
-| `subdir`                | `undefined` | both branches                                                                              |
+| Field of `FetchOptions` | Default     | Read by       |
+| ----------------------- | ----------- | ------------- |
+| `subdir`                | `undefined` | both branches |
+
+**There is no "force" option and no flag behind one.** Freshness is not a question the caller
+answers — every remote load revalidates and decides for itself. See "Revalidation" below.
 
 | Field of `FetchResult` | Local branch                           | Remote branch                                                  |
 | ---------------------- | -------------------------------------- | -------------------------------------------------------------- |
@@ -129,10 +133,10 @@ export type FetchResult = { path: string; fromCache: boolean; source: string };
 
 **The `source` field means different things on the two branches, and nothing reads it.** The local
 branch echoes the argument; the remote branch echoes the subdir-joined `fullSource` on both of its
-returns. Grep-verified: every production call site reads `.path` and/or `.fromCache` —
-`loadFromRemote` (`source-loader.ts`), `fetchSourceSkills` (`multi-source-loader.ts`),
-`fetchSkillSource` (`import/skill.ts`) — and none reads `.source`. Reconcile the two branches before
-you start.
+returns. Grep-verified: every production call site reads `.path` and/or `.fromCache` — `loadFromLocal`,
+`loadFromRemote` and `loadSkillsMatrixFromSource` (all in `loading/source-loader.ts`),
+`fetchMarketplace` (`loading/source-fetcher.ts`) and `fetchAgentDefinitionsFromRemote`
+(`agents/agent-fetcher.ts`) — and none reads `.source`. Reconcile the two branches before you start.
 
 **Which branch runs is decided by `isLocalSource`, not by this module.**
 `isLocalSource` in `src/cli/lib/configuration/config.ts`:
@@ -168,20 +172,26 @@ There is no cache, no copy, and no write. A local source is used **in place**.
 cacheDir   = getCacheDir(source)                       ← NOTE: source, not fullSource
 fullSource = subdir ? `${source}/${subdir}` : source
 
-if (!forceRefresh && await directoryExists(cacheDir))
-    → return { path: cacheDir, fromCache: true, source: fullSource }
-if (forceRefresh)
+if (await directoryExists(cacheDir))
+    verdict = await revalidateCachedCopy(cacheDir)     (one HEAD, memoised per run)
+    "current"     → return { path: cacheDir, fromCache: true, source: fullSource }
+    "unreachable" → warn(sourceUnreachableUsingCache(source))
+                  → return { path: cacheDir, fromCache: true, source: fullSource }
+    "superseded"  → log(STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT)   ↓
+    "unrecorded"  → (no line)                                            ↓
     → await clearGigetCache(source)                    (giget's tarball/ETag cache)
     → await remove(cacheDir)                           (our extracted copy)
 await ensureDir(path.dirname(cacheDir))
 await downloadTemplate(fullSource, { dir: cacheDir, force: true, offline: false })
+    → await recordFetchedCopy(cacheDir, result)        (writes <cacheDir>.etag.json)
     → return { path: result.dir, fromCache: false, source: fullSource }
     → catch → throw createDetailedFetchError(error, source)
 ```
 
-**Cache validity is `directoryExists(cacheDir)` and nothing else.** No TTL, no ETag check,
-no manifest, no emptiness check. An interrupted first fetch that left the directory behind is a
-permanent cache hit until someone passes `forceRefresh` — see Trap 1.
+**Cache validity is the ETag the source answers with.** `directoryExists(cacheDir)` decides only
+whether there is a copy to ask about; what happens next is the verdict. There is still no TTL and no
+emptiness check — an interrupted first fetch that left a directory behind is a cache hit for as long
+as the source's ETag has not moved, see Trap 1.
 
 `force: true` is passed unconditionally in the `downloadTemplate` call, with an inline reason
 ("Always force when downloading to avoid 'already exists' error"): giget refuses to write into a
@@ -189,7 +199,7 @@ non-empty `dir` otherwise, and the `ensureDir(path.dirname(cacheDir))` above it 
 parent.
 
 `remove` (`src/cli/utils/fs.ts`) delegates to `fs-extra`, which is a no-op on a missing path,
-so the `forceRefresh` teardown is safe on a cold cache.
+so the teardown before a re-fetch is safe on a cold cache.
 
 ## The cache key — `sanitizeSourceForCache`
 
@@ -296,8 +306,8 @@ guard.
 ### Drift checklist — run this on any `giget` upgrade
 
 The coupling is silent: if giget changes its layout, `clearGigetCache` deletes a path that no longer
-exists, `forceRefresh` stops bypassing giget's ETag, and a "refreshed" source quietly returns stale
-content. Nothing fails. `source-fetcher.test.ts`'s `getGigetCacheDir` describe block pins our side
+exists, a re-fetch stops bypassing giget's own ETag check, and a source that moved on quietly
+returns stale content. Nothing fails. `source-fetcher.test.ts`'s `getGigetCacheDir` describe block pins our side
 of the contract only — it
 asserts our output equals a hand-written expected path, so it stays green while giget moves.
 
@@ -325,33 +335,63 @@ reachable only by calling `getGigetCacheDir` directly — which one test does
 pinning our behaviour rather than giget's. Two changes would make it live: loosening `isLocalSource`,
 or passing `provider` / `registry` to `downloadTemplate`.
 
-## `forceRefresh` end to end
+## Revalidation — how a load decides the cached copy is still the source
 
-`reference/features/skills-and-matrix.md:250` documents the flag at the `SourceLoadOptions` level
-("Bypass the giget cache in `fetchFromSource()` / `fetchMarketplace()`"). Here is what actually
-observes it:
+Every remote load asks the source whether the copy in the cache is still what it would send. The
+question is one HEAD request against the tarball URL, and the answer is a `CacheVerdict`:
 
-| Layer                                     | Effect of `forceRefresh: true`                                               |
-| ----------------------------------------- | ---------------------------------------------------------------------------- |
-| `fetchFromSource` local branch            | **none** — never forwarded by `fetchFromSource`                              |
-| `fetchFromRemoteSource`'s cache-hit guard | skips the early return, so `fromCache` cannot come back `true`               |
-| `clearGigetCache`                         | deletes giget's tarball/ETag dir, so `downloadTemplate` cannot short-circuit |
-| `remove(cacheDir)`                        | deletes our extracted tree, so files removed upstream disappear locally      |
+| Verdict       | Reached when                                                      | What the load does                             | What the user sees                              |
+| ------------- | ----------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------- |
+| `current`     | live ETag equals the recorded one, or there is nothing to compare | returns the cache, `fromCache: true`           | nothing                                         |
+| `superseded`  | live ETag differs from the recorded one                           | discards both caches, downloads, records again | `STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT` |
+| `unrecorded`  | a cache directory with no `.etag.json` beside it                  | same as `superseded`, to establish a record    | nothing                                         |
+| `unreachable` | the HEAD threw — offline, blocked, or slower than the timeout     | returns the cache, `fromCache: true`           | `sourceUnreachableUsingCache(source)` as a warn |
 
-**`fromCache` is the only externally observable trace of the bypass.** `forceRefresh: true` on a
-remote source guarantees `fromCache === false`; `forceRefresh: false` returns `fromCache === true`
-whenever the directory exists. Pinned by all three cases in
-`src/cli/lib/loading/source-fetcher-refresh.test.ts`.
+**Where the `unreachable` warning is read.** `warn()` writes to stderr for a plain command, but a
+load that opens a wizard buffers instead — `init` and `edit` pass `captureStartupMessages` — because
+the wizard clears the terminal on its way in. Those runs show the same line in the wizard's
+startup-message band; see [component-patterns.md](../component-patterns.md#wizardlayout-startup-message-band).
 
-**`remove(cacheDir)` is why `forceRefresh` is not merely "re-download".** `downloadTemplate` extracts
+`current` covers two states deliberately: an ETag that matched, and an ETag that cannot be had at
+all (the record carries none, or the host answered without one). Both mean "keep the copy and say
+nothing"; the difference is only ever `verbose`. Re-fetching on every load instead would cost a full
+download per command against any host that does not send ETags.
+
+**The fetch record.** `recordFetchedCopy` writes `<cacheDir>.etag.json` — beside the cache
+directory, never inside it, so the extracted tree stays exactly what the source shipped.
+It holds `{ tar, etag? }`, validated on read by `sourceRevalidationSchema`
+(`lib/schemas.ts`); an unparseable or unusable record reads as no record at all, which is the
+`unrecorded` verdict. `tar` is read off giget's own `downloadTemplate` result rather than rebuilt
+here — that is what keeps revalidation provider-agnostic, since the URL is whatever giget resolved
+for the source. **`GIGET_AUTH` is never written into the record**; it is read from the environment
+per request, so the HEAD carries the same token giget's own download does and a private source does
+not report itself unreachable.
+
+**One question per source per run.** `revalidateCachedCopy` memoises the in-flight promise by cache
+directory in a module-level `Map`. A single command loads the same source more than once — the
+matrix and the marketplace label are separate `fetchFromSource` calls — and the answer cannot change
+between them.
+
+**`REVALIDATION_TIMEOUT_MS` is 5000** (raised from 2500, owner 2026-08-09: being offline is rare, and
+a longer honest wait for it beats a wrong verdict on a slow link). Measured against the default
+marketplace the question costs ~260ms, so the bound is around twenty times a healthy answer — a slow
+link is still given the chance to answer rather than having its copy called stale. It remains a
+bound: the platform's own connect timeout is ~10s, which is what a user on a dropped connection would
+otherwise wait before being handed the copy they already had. The `AbortSignal.timeout` is what
+enforces it, and the abort lands in the same `catch` as any other network failure — `unreachable`.
+
+**`remove(cacheDir)` is why a re-fetch is not merely "download again".** `downloadTemplate` extracts
 over the existing tree; without the `remove`, a skill deleted upstream would survive in the cache
-forever. `source-fetcher-refresh.test.ts`'s "should not leave orphan files after refresh" is the
-guard: it plants `orphan-skill.md`, refreshes, and asserts it is gone.
+forever. `source-fetcher-revalidation.test.ts`'s "re-fetches and announces the update when the ETag
+moved" is the guard: it plants an orphan file, moves the ETag, and asserts the orphan is gone.
 
-**Exactly one caller hard-codes `forceRefresh: true`:** `addSource` in
-`src/cli/lib/configuration/source-manager.ts`. Adding a source must validate the _live_ repo — a
-cache hit would let a URL that no longer resolves be registered. Every other caller forwards a
-`SourceLoadOptions.forceRefresh` it received (see the call-site table).
+**`fromCache` is the externally observable trace.** It comes back `true` on `current` and
+`unreachable`, `false` whenever the load downloaded.
+
+**What giget does on its own.** giget 1.2.5's `download()` already HEADs the tarball and compares
+against an ETag it stores next to its own tarball cache, skipping the body when they match — but it
+extracts the tarball regardless, measured at ~1.7s for the default marketplace. That is why the
+check above is ours and runs first: a cache hit must cost one round trip and no extraction.
 
 ## Error translation — `createDetailedFetchError`
 
@@ -384,8 +424,8 @@ What belongs to _this_ doc:
   `fetchFromRemoteSource`'s `fullSource` each ternary on it. The explicit `""` is
   intent-documentation, not behaviour. The same idiom appears in `fetchAgentDefinitionsFromRemote`
   (`src/cli/lib/agents/agent-fetcher.ts`).
-- `forceRefresh` is forwarded; `subdir` from the caller's `FetchOptions` is **discarded** — the
-  `fetchFromSource` call overrides it.
+- It takes no options of its own any more: the signature is `fetchMarketplace(source)`, and the
+  `subdir: ""` above is the whole of what it passes down.
 - The "marketplace not found" throw fires on a missing `.claude-plugin/` **directory**,
   checked via `directoryExists(path.dirname(marketplacePath))` — a present directory with no
   `marketplace.json` falls through to `readFileSafe` and surfaces as an ENOENT instead.
@@ -400,7 +440,8 @@ What belongs to _this_ doc:
 matrix path: `extractAllSkills` (`matrix-loader.ts`, documented at
 `reference/features/skills-and-matrix.md:120-134`) globs `**/metadata.yaml` across the whole source;
 the functions below glob `**/SKILL.md` and, for `loadSkillsByIds`, resolve a caller-supplied ID list.
-Neither reads `metadata.yaml` content — `loadSkillsFromDir` only checks the file's _existence_.
+`loadSkillsByIds` does not read `metadata.yaml` at all. `loadSkillsFromDir` reads it under
+`requireMetadata` and refuses the skill directory when it describes no skill — see the table below.
 
 ### `loadSkillsByIds(skillIds, projectRoot)`
 
@@ -432,17 +473,31 @@ pinned as `"src/skills/good-skill/"` in `loader.test.ts`'s `loadSkillsByIds` blo
 // loader.ts — LoadSkillsFromDirOptions
 export type LoadSkillsFromDirOptions = {
   pathPrefix?: string; // default ""  — prefix recorded on each skill's `path`
-  requireMetadata?: boolean; // default false — skip a SKILL.md with no sibling metadata.yaml
+  requireMetadata?: boolean; // default false — skip a SKILL.md whose metadata.yaml describes no skill
 };
 ```
 
-| Behaviour               | Guard / binding              | Detail                                                                             |
-| ----------------------- | ---------------------------- | ---------------------------------------------------------------------------------- |
-| Missing directory       | `directoryExists(skillsDir)` | returns `{}` — **not** an error                                                    |
-| `requireMetadata: true` | `fileExists(metadataPath)`   | `warn`s by name and skips: "Add metadata.yaml to register it with the CLI"         |
-| Emitted `path`          | `displayPath`                | `` `${pathPrefix}/${relativePath}/` ``, or `` `${relativePath}/` `` when no prefix |
-| Frontmatter guard       | `!frontmatter?.name`         | stricter than `loadSkillsByIds`, which only checks `!frontmatter`                  |
-| Read failure            | the per-file `catch`         | `verbose`, not `warn` — quieter than every other path in this file                 |
+Returns `LoadedSkills` — the skill map **and** `unusableMetadata`, one entry per skill directory
+whose `metadata.yaml` exists but describes no skill. Only ever non-empty under `requireMetadata`.
+
+| Behaviour                        | Guard / binding                 | Detail                                                                             |
+| -------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------- |
+| Missing directory                | `directoryExists(skillsDir)`    | returns `{}` — **not** an error                                                    |
+| `requireMetadata: true`          | `fileExists(metadataPath)`      | `warn`s by name and skips: "Add metadata.yaml to register it with the CLI"         |
+| metadata.yaml describes no skill | `readSkillMetadata(...).usable` | pushed onto `unusableMetadata` and skipped — the SKILL.md is never reached         |
+| Emitted `path`                   | `displayPath`                   | `` `${pathPrefix}/${relativePath}/` ``, or `` `${relativePath}/` `` when no prefix |
+| Frontmatter guard                | `!frontmatter?.name`            | stricter than `loadSkillsByIds`, which only checks `!frontmatter`                  |
+| Read failure                     | the per-file `catch`            | `verbose`, not `warn` — quieter than every other path in this file                 |
+
+**`readSkillMetadata` is the single judgment of whether a `metadata.yaml` describes its skill**, and
+the three passes that meet one share it: this function (behind `compile`'s discovery),
+`extractLocalSkill` (`lib/skills/local-skill-loader.ts`, behind `config-types.ts` regeneration) and
+`validateInstalledSkillMetadata` (`lib/content-validator.ts`, behind `doctor`). It refuses a file
+nothing parses out of AND a file that parses without the fields `localRawMetadataSchema` requires
+(`displayName`, `slug`, `category`, `domain`). What each pass DOES about a refusal differs — compile
+refuses the run, discovery skips the skill, doctor reports it — but what they call describing does
+not. `doctor` layers its stricter published-skill schema on the fields the judgment returns, never
+beside them.
 
 **Do not read the `?.name` / `|| ""` asymmetry as two different contracts.**
 `skillFrontmatterLoaderSchema` (`src/cli/lib/schemas.ts`) already declares `name` and
@@ -465,15 +520,13 @@ plugin discovery is documented at `reference/features/plugin-system.md:131`.
 
 ### `fetchFromSource`
 
-| Caller                                      | File                                 | Options passed                 |
-| ------------------------------------------- | ------------------------------------ | ------------------------------ |
-| `resolveBaseResult` (default-source branch) | `lib/loading/source-loader.ts`       | `{ forceRefresh }`             |
-| `loadFromRemote`                            | `lib/loading/source-loader.ts`       | `{ forceRefresh }`             |
-| `fetchSourceSkills`                         | `lib/loading/multi-source-loader.ts` | `{ forceRefresh }`             |
-| `fetchAgentDefinitionsFromRemote`           | `lib/agents/agent-fetcher.ts`        | `{ forceRefresh, subdir: "" }` |
-| `fetchSkillsFromExternalSource`             | `commands/search.ts`                 | `{}`                           |
-| `fetchSkillSource`                          | `commands/import/skill.ts`           | _(none)_                       |
-| `fetchMarketplace`                          | `lib/loading/source-fetcher.ts`      | `{ forceRefresh, subdir: "" }` |
+| Caller                                      | File                            | Options passed   |
+| ------------------------------------------- | ------------------------------- | ---------------- |
+| `resolveBaseResult` (default-source branch) | `lib/loading/source-loader.ts`  | none             |
+| `loadFromLocal` (local sources only)        | `lib/loading/source-loader.ts`  | none             |
+| `loadFromRemote`                            | `lib/loading/source-loader.ts`  | none             |
+| `fetchAgentDefinitionsFromRemote`           | `lib/agents/agent-fetcher.ts`   | `{ subdir: "" }` |
+| `fetchMarketplace`                          | `lib/loading/source-fetcher.ts` | `{ subdir: "" }` |
 
 **No production caller passes a non-empty `subdir`.** That fact is what keeps Trap 2 latent.
 
@@ -483,19 +536,16 @@ constructed.
 
 ### `fetchMarketplace`
 
-| Caller                                                  | File                                          | Note                                             |
-| ------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------ |
-| `addSource`                                             | `lib/configuration/source-manager.ts`         | `{ forceRefresh: true }` — validates a live repo |
-| `resolveMarketplaceLabels` (called by `loadFromRemote`) | `lib/loading/source-loader.ts`                | `{ forceRefresh }`                               |
-| `tagPublicSourceSkills`                                 | `lib/loading/multi-source-loader.ts`          | `{ forceRefresh }`, `DEFAULT_SOURCE`             |
-| `ensureMarketplace`                                     | `lib/operations/source/ensure-marketplace.ts` | `{}` — lazy name resolution                      |
+| Caller                                                                      | File                                          | Note                 |
+| --------------------------------------------------------------------------- | --------------------------------------------- | -------------------- |
+| `resolveMarketplaceLabels` (called by `loadFromLocal` and `loadFromRemote`) | `lib/loading/source-loader.ts`                | source label lookup  |
+| `ensureMarketplace`                                                         | `lib/operations/source/ensure-marketplace.ts` | lazy name resolution |
 
 ### `loadSkillsByIds` / `loadSkillsFromDir`
 
 | Callee                                       | Caller                                                                    | Purpose                                                                   |
 | -------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | `loadSkillsByIds`                            | `installPluginConfig` (`lib/installation/local-installer.ts`)             | stack skill metadata for compilation, read from `sourceResult.sourcePath` |
-| `loadSkillsByIds`                            | `compileStackPlugin` (`lib/stacks/stack-plugin-compiler.ts`)              | stack skill metadata, read from `projectRoot`                             |
 | `loadSkillsFromDir`                          | `discoverLocalProjectSkills` (`lib/operations/skills/discover-skills.ts`) | local `.claude/skills` discovery, `requireMetadata: true`                 |
 | `loadSkillsFromDir` (via `loadPluginSkills`) | `discoverAllPluginSkills` (`lib/plugins/plugin-discovery.ts`)             | plugin skill discovery                                                    |
 
@@ -517,16 +567,19 @@ constructed.
 4. **`source-fetcher.ts` is the only module in `src/` that imports `giget`** (grep-verified).
    Any new network fetch of a source belongs behind `fetchFromSource`, not beside it.
 5. **`getGigetCacheDir` returning `undefined` is a success, not a failure** — `clearGigetCache`
-   returns silently on its falsy-`gigetDir` guard and the fetch proceeds. `forceRefresh` on an
-   `https://` source therefore clears our cache but not giget's.
+   returns silently on its falsy-`gigetDir` guard and the fetch proceeds. A re-fetch of an
+   `https://` source therefore clears our cache but not giget's, and giget's own ETag check is what
+   decides whether it re-downloads the tarball.
 6. **Everything in `loader.ts` degrades to a partial result.** No function there throws on a bad
    skill; they `warn`/`verbose` and skip.
 
 ## Traps
 
-**Trap 1 — a half-written cache directory is a permanent cache hit.** `directoryExists` is the whole
-validity test in `fetchFromRemoteSource`. If `downloadTemplate` is killed mid-extract, the next load
-returns the partial tree with `fromCache: true` and no warning. Recovery is `forceRefresh` or deleting
+**Trap 1 — a half-written cache directory survives until the source's ETag moves.** Revalidation
+asks whether the SOURCE changed, not whether the extraction finished. If `downloadTemplate` is
+killed mid-extract, the record beside the directory is never written, so the next load reads
+`unrecorded` and re-fetches — but a directory left by an OLDER complete fetch whose record still
+matches comes back `current` with `fromCache: true` and no warning. Recovery is deleting
 `$CACHE_DIR/sources/<key>` by hand. Do not add an emptiness check without deciding what an
 intentionally-empty source means.
 
@@ -537,11 +590,12 @@ the same repo with different subdirs share one cache directory, so the second re
 call-site table). **If you add one, change `getCacheDir(source)` to key on `fullSource` in the same
 commit.**
 
-**Trap 3 — `forceRefresh` must clear _two_ caches.** Deleting only `cacheDir` leaves giget's ETag, and
-`downloadTemplate` will 304 straight back to the stale tarball. That is the entire reason
-`clearGigetCache` and its replicated path algorithm exist. Removing its call from
-`fetchFromRemoteSource`'s `forceRefresh` block looks like a harmless simplification and silently
-breaks `--refresh` on unchanged-ETag repos.
+**Trap 3 — a re-fetch must clear _two_ caches.** Deleting only `cacheDir` leaves giget's stored
+ETag, and `downloadTemplate` short-circuits straight back to the tarball it already has. That is the
+entire reason `clearGigetCache` and its replicated path algorithm exist. Removing its call from the
+re-fetch block in `fetchFromRemoteSource` looks like a harmless simplification and silently turns
+the `superseded` verdict into a re-extraction of the stale tarball — with the "newer content" line
+printed over it.
 
 **Trap 4 — a bare `org/repo` is a local path, not a GitHub repo.** `isLocalSource` (`config.ts`)
 returns `true` for anything without a `REMOTE_PROTOCOLS` prefix, so
@@ -561,33 +615,35 @@ the id list before it.
 
 ## Test surface
 
-All four files were **run**: 89 tests, all passing.
+All four files were **run** on 2026-08-09: 104 tests, all passing.
 
 | File                                                        | Tests | Covers (by describe block)                                                                                                                                                                                                                                                                                                                  |
 | ----------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/cli/lib/loading/source-fetcher.test.ts`                | 38    | `fetchFromSource with local paths` (incl. `subdir` and the not-found throw); `remote source URL validation` (`isLocalSource` classification); `sanitizeSourceForCache` determinism/collision/length/Unicode/empty; `fetchMarketplace security validation`; `getGigetCacheDir` per-provider, `XDG_CACHE_HOME`, ref, subdir, dot-sanitisation |
-| `src/cli/lib/loading/source-fetcher-refresh.test.ts`        | 3     | the only tests that exercise the **remote** branch — `giget` and `CACHE_DIR` are both mocked                                                                                                                                                                                                                                                |
+| `src/cli/lib/loading/source-fetcher-revalidation.test.ts`   | 7     | the only tests that exercise the **remote** branch — `giget`, `CACHE_DIR` and the global `fetch` are all mocked. One per verdict (`current` twice: matched ETag, and a record carrying none), plus the once-per-run memo and the record written after a download                                                                            |
 | `src/cli/lib/loading/source-fetcher-unknown-fields.test.ts` | 2     | `warnUnknownFields` on `marketplace.json`, positive **and** silence guard                                                                                                                                                                                                                                                                   |
-| `src/cli/lib/loading/loader.test.ts`                        | 46    | `parseFrontmatter`, the agent loaders, `loadSkillsByIds`, `loadPluginSkills`                                                                                                                                                                                                                                                                |
+| `src/cli/lib/loading/loader.test.ts`                        | 57    | `parseFrontmatter`, the agent loaders, `loadSkillsByIds`, `loadPluginSkills`                                                                                                                                                                                                                                                                |
 
-**How the remote branch is made testable** (`source-fetcher-refresh.test.ts`'s module-mock block):
+**How the remote branch is made testable** (`source-fetcher-revalidation.test.ts`'s module-mock block):
 `CACHE_DIR` is
 replaced through a **getter** on a `vi.mock` of `../../consts`, because the value must be read _after_
 `beforeEach` assigns the temp dir — a plain property would capture `undefined`. `giget` is mocked to a
-bare `downloadTemplate: vi.fn()`. Copy this pattern rather than inventing another; a static mock of
-`CACHE_DIR` cannot work.
+bare `downloadTemplate: vi.fn()`, and the revalidation HEAD is stubbed per test with
+`vi.stubGlobal("fetch", …)` returning a real `Response` (`new Response(null, { headers })` — the
+codebase's assertion rules refuse a cast-shaped fake). Copy this pattern rather than inventing
+another; a static mock of `CACHE_DIR` cannot work.
 
 **What has no test at all:** `createDetailedFetchError`'s five branches — no test asserts any of the
 message texts. `clearGigetCache` is likewise untested; only its helper `getGigetCacheDir` is.
 
 ## Known limitations
 
-| #   | Limitation                                                                | Where                                                                                    | Current behaviour                                                                                                                 |
-| --- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Cache has no validity check beyond directory existence                    | `fetchFromRemoteSource`'s cache-hit guard                                                | Partial/corrupt trees are served indefinitely. See Trap 1                                                                         |
-| 2   | `subdir` absent from the cache key                                        | `fetchFromRemoteSource`'s `cacheDir`                                                     | Latent collision. See Trap 2                                                                                                      |
-| 3   | giget's cache path is replicated, not queried                             | `getGigetCacheDir`                                                                       | Breaks silently on a giget upgrade; our tests pin our side only. See the drift checklist                                          |
-| 4   | Proto-less default provider disagrees with giget (`github` vs `registry`) | `getGigetCacheDir`'s `providerName`                                                      | Unreachable via `fetchFromSource` today; see "Known divergence"                                                                   |
-| 5   | `createDetailedFetchError` discards the original error                    | `fetchFromRemoteSource`'s `catch`                                                        | Only `getErrorMessage(error)` survives; no `cause`, no stack. A non-matching giget error keeps its text via the fallback `return` |
-| 6   | Substring matching on error text                                          | `createDetailedFetchError`                                                               | A repo literally named `404` or a body containing `network` re-routes the message                                                 |
-| 7   | The `"sources"` cache segment is encoded in two places                    | `getCacheDir` (`source-fetcher.ts`), `SOURCE_CACHE_SUBDIR` (`e2e/helpers/test-utils.ts`) | `getCacheDir` is module-private, so the E2E helper re-derives it. See Trap 5                                                      |
+| #   | Limitation                                                                 | Where                                                                                    | Current behaviour                                                                                                                 |
+| --- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | A cached tree is validated against the SOURCE's ETag, never against itself | `fetchFromRemoteSource`'s cache-hit guard                                                | A partial tree whose record still matches is served until the source moves. See Trap 1                                            |
+| 2   | `subdir` absent from the cache key                                         | `fetchFromRemoteSource`'s `cacheDir`                                                     | Latent collision. See Trap 2                                                                                                      |
+| 3   | giget's cache path is replicated, not queried                              | `getGigetCacheDir`                                                                       | Breaks silently on a giget upgrade; our tests pin our side only. See the drift checklist                                          |
+| 4   | Proto-less default provider disagrees with giget (`github` vs `registry`)  | `getGigetCacheDir`'s `providerName`                                                      | Unreachable via `fetchFromSource` today; see "Known divergence"                                                                   |
+| 5   | `createDetailedFetchError` discards the original error                     | `fetchFromRemoteSource`'s `catch`                                                        | Only `getErrorMessage(error)` survives; no `cause`, no stack. A non-matching giget error keeps its text via the fallback `return` |
+| 6   | Substring matching on error text                                           | `createDetailedFetchError`                                                               | A repo literally named `404` or a body containing `network` re-routes the message                                                 |
+| 7   | The `"sources"` cache segment is encoded in two places                     | `getCacheDir` (`source-fetcher.ts`), `SOURCE_CACHE_SUBDIR` (`e2e/helpers/test-utils.ts`) | `getCacheDir` is module-private, so the E2E helper re-derives it. See Trap 5                                                      |

@@ -16,21 +16,21 @@ last_validated: 2026-04-21
 
 ## Performance Metrics at a Glance
 
-| Technique                   | Impact                                | Evidence Source                 |
-| --------------------------- | ------------------------------------- | ------------------------------- |
-| Self-reminder loop          | 60-70% ↓ off-task behavior            | Anthropic (30+ hour sessions)   |
-| Investigation-first         | 80%+ ↓ hallucination                  | Aider, SWE-agent, Community     |
-| Emphatic repetition         | 70%+ ↓ scope creep                    | Aider production data           |
-| XML tags                    | 30%+ ↑ accuracy, 60% ↓ format errors  | Anthropic training data         |
-| Documents first, query last | 30% ↑ performance                     | Anthropic research (75K tokens) |
-| Expansion modifiers         | Unlocks full Sonnet 4.6 capability    | Required for Claude 4.6         |
-| Self-correction triggers    | 74.4% SWE-bench with mid-run guidance | Refact.ai production            |
-| Post-action reflection      | Improved long-horizon reasoning       | Anthropic context engineering   |
-| Progress tracking           | 30+ hour session focus                | Anthropic experiments           |
-| Positive framing            | Better instruction adherence          | Opus 4.5 docs                   |
-| "Think" alternatives        | Prevents Opus 4.5 confusion           | Anthropic Claude 4 docs         |
-| Just-in-time loading        | Preserves context window              | SWE-agent, Aider                |
-| Write verification          | Prevents false-success reports        | All agents (production use)     |
+| Technique                   | Impact                                    | Evidence Source                   |
+| --------------------------- | ----------------------------------------- | --------------------------------- |
+| Self-reminder loop          | 60-70% ↓ off-task behavior                | Anthropic (30+ hour sessions)     |
+| Investigation-first         | 80%+ ↓ hallucination                      | Aider, SWE-agent, Community       |
+| Emphatic repetition         | 70%+ ↓ scope creep                        | Aider production data             |
+| XML tags                    | 30%+ ↑ accuracy, 60% ↓ format errors      | Anthropic training data           |
+| Documents first, query last | 30% ↑ performance                         | Anthropic research (75K tokens)   |
+| Expansion modifiers         | Full Sonnet 4.6 capability on broad tasks | Conditional — Claude 4.6 defaults |
+| Self-correction triggers    | 74.4% SWE-bench with mid-run guidance     | Refact.ai production              |
+| Post-action reflection      | Improved long-horizon reasoning           | Anthropic context engineering     |
+| Progress tracking           | 30+ hour session focus                    | Anthropic experiments             |
+| Positive framing            | Better instruction adherence              | Opus 4.5 docs                     |
+| "Think" alternatives        | Prevents Opus 4.5 confusion               | Anthropic Claude 4 docs           |
+| Just-in-time loading        | Preserves context window                  | SWE-agent, Aider                  |
+| Write verification          | Prevents false-success reports            | All agents (production use)       |
 
 ---
 
@@ -308,7 +308,7 @@ For prompts with substantial context (20K+ tokens), always place documents/files
 
 ---
 
-### Technique #6: Explicit Expansion Modifiers for Sonnet 4.5
+### Technique #6: Conditional Expansion Modifiers for Sonnet 4.5
 
 **The Pattern:**
 
@@ -316,20 +316,26 @@ For prompts with substantial context (20K+ tokens), always place documents/files
 <task>
 Create an analytics dashboard.
 
-**Include as many relevant features and interactions as possible.
-Go beyond the basics to create a fully-featured implementation.**
+**This task is genuinely broad — cover the metrics, filters and drill-downs it actually calls for.
+Be thorough on what the task needs and silent on the rest; the work's size follows the task's size, not the template's.**
 </task>
 ```
+
+**When to Use:**
+
+- Genuinely broad tasks, where the model demonstrably under-delivers against the brief
+- Tasks whose scope a literal reading would narrow (a "dashboard" returned as a single chart)
+- NOT every task description — on an already-scoped task the modifier is an instruction to exceed the scope
 
 **Why It Works:**
 
 - Sonnet 4.5 is trained for precise instruction following
-- Without expansion modifiers, produces minimal viable implementations
+- On a broad task it otherwise delivers the narrowest reading that technically complies
 - Claude 4.x is **more conservative than 3.5** despite higher capability
-- Requires explicit permission for substantial changes
+- Naming the breadth the task actually has grants permission without asking for volume
 
-**Critical for Sonnet 4.5:**
-Sonnet 4.5 interprets instructions very literally. Without expansion modifiers, it will create the bare minimum that technically meets requirements. This counters the conservative defaults in Claude 4.x.
+**The Conditional Rule:**
+Apply an expansion modifier where the model demonstrably under-delivers, and nowhere else. Sonnet 4.5's literal instruction following cuts both ways: a broad task read narrowly is a real failure mode, and a narrow task carrying a volume modifier is an instruction to over-deliver that will be obeyed just as precisely. The modifier calibrates the deliverable to the task — it is not an ingredient every prompt needs.
 
 **Additional Patterns for 4.5:**
 
@@ -354,21 +360,32 @@ Then provide your answer in <output> tags.
 
 **Impact & Evidence:**
 
-- Unlocks full Sonnet 4.5 capability
+- Recovers full Sonnet 4.5 capability on broad tasks
 - Counters conservative defaults in Claude 4.x
 - Anthropic: "Claude 4.x requires explicit permission to be thorough"
 - Community: "Single most important change needed from 3.5 to 4.x"
 - Solves the widespread "Claude 4 is less helpful than 3.5" complaint
 
+**Case Study — What the Unconditional Form Cost:**
+Applied to every prompt regardless of task breadth, these modifiers produce the inverse defect. The reviewer agents carried them as a standing instruction and returned speculative refactors and out-of-spec recommendations — over-engineered reviews the owner stopped using, and the reason the reviewer-restraint repair pass exists. See `.ai-docs/agent-findings/2026-08-06-comprehensive-and-thorough-is-mandated-by-the-summoner-and-the-prompt-bible.md` for how the mandate reached 25 agent prompts, and `.ai-docs/agent-findings/2026-08-06-expansion-modifier-doctrine-restates-the-volume-mandate-in-other-words.md` for how this technique kept re-issuing it after those prompts were softened.
+
 **Key Modifiers That Work:**
 
-- "Include as many relevant features and interactions as possible"
-- "Go beyond the basics to create a fully-featured implementation"
-- "Feel free to refactor entire architecture if needed"
-- "Be thorough and comprehensive in your approach"
+- "Be thorough on what the task needs and silent on the rest — the work's size follows the task's size, not the template's"
+- "This task is genuinely broad: cover [the dimensions it actually has]"
+- "Include the edge cases and error handling the task actually calls for"
+- "Feel free to refactor entire architecture if needed" (scoped permission, not a volume request)
+
+**Modifiers That Backfire:**
+
+- ❌ Anything asking for a maximum count of features or interactions
+- ❌ Anything asking to go past the task's basics for its own sake
+- ❌ Any standing pairing of "thorough" with "comprehensive"
+
+These ask for volume rather than fit. They were retired from this bible and from the bundled agent prompts in the reviewer-restraint pass; do not reintroduce them.
 
 **Application:**
-Add expansion modifiers to EVERY task description when using Sonnet 4+, otherwise you'll get minimal, conservative implementations that miss obvious features. This is NOT optional for Sonnet 4.5.
+Add an expansion modifier when the task is genuinely broad and a literal reading would under-deliver. Do NOT add one to every task description — on a well-scoped task it is a standing instruction to exceed the scope, and it will be obeyed. When unsure, state the breadth the task has rather than asking for more than it has.
 
 ---
 
@@ -935,21 +952,21 @@ Reviewers auditing a skill against this bible should use the list above. A skill
 
 ### Sonnet 4.5 vs Opus 4.5 Quick Comparison
 
-| Characteristic               | Sonnet 4.5                        | Opus 4.5                    |
-| ---------------------------- | --------------------------------- | --------------------------- |
-| Default behavior             | Conservative, minimal             | Over-engineering tendency   |
-| Instruction following        | Very literal                      | More interpretive           |
-| Expansion modifiers          | **Required** to unlock capability | Helpful but less critical   |
-| "Think" sensitivity          | Low                               | **High** (avoid in prompts) |
-| System prompt responsiveness | Standard                          | **More responsive**         |
-| Parallel tool execution      | Standard                          | **Excels** at parallel ops  |
+| Characteristic               | Sonnet 4.5                      | Opus 4.5                    |
+| ---------------------------- | ------------------------------- | --------------------------- |
+| Default behavior             | Conservative, minimal           | Over-engineering tendency   |
+| Instruction following        | Very literal                    | More interpretive           |
+| Expansion modifiers          | Useful on genuinely broad tasks | Helpful but less critical   |
+| "Think" sensitivity          | Low                             | **High** (avoid in prompts) |
+| System prompt responsiveness | Standard                        | **More responsive**         |
+| Parallel tool execution      | Standard                        | **Excels** at parallel ops  |
 
 ### Critical Differences from Sonnet 3.5
 
 1. **More Conservative by Default**
-   - Requires explicit expansion modifiers
+   - A genuinely broad task needs its breadth stated explicitly
    - Needs permission for substantial changes
-   - "Include as many features as possible" unlocks full capability
+   - Naming the dimensions the task actually has unlocks full capability
    - Without expansion modifiers, produces minimal implementations
 
 2. **Enhanced Context Awareness**
@@ -989,14 +1006,14 @@ Reviewers auditing a skill against this bible should use the list above. A skill
 
 ### Required Adjustments for 4.5
 
-**Add Expansion Modifiers:**
+**Add Expansion Modifiers (broad tasks only — see Technique #6):**
 
 ```markdown
 <task>
 [Task description]
 
-**Include as many relevant features and interactions as possible.
-Go beyond the basics to create a fully-featured implementation.**
+**This task is genuinely broad — cover [the dimensions it actually has].
+Be thorough on what the task needs and silent on the rest; the work's size follows the task's size, not the template's.**
 </task>
 ```
 
@@ -1109,7 +1126,7 @@ Use this checklist to validate any agent or prompt before deployment.
 - [ ] Ultra-critical rules use **(bold + parentheses)** with "You MUST" format
 - [ ] Critical rules repeated in both `<critical_requirements>` AND `<critical_reminders>`
 - [ ] ALL CAPS used for section headers
-- [ ] Expansion modifiers included for Sonnet 4.5
+- [ ] Expansion modifiers, where the task warrants them, are proportional (Technique #6)
 
 ### Content Quality
 
@@ -1121,7 +1138,7 @@ Use this checklist to validate any agent or prompt before deployment.
 
 ### Sonnet 4.5 Specific
 
-- [ ] Expansion modifiers: "Include as many features as possible"
+- [ ] Expansion modifiers only where the task is genuinely broad, and phrased proportionally
 - [ ] Explicit permission for substantial changes (if applicable)
 - [ ] Token budget awareness (for long-context tasks)
 - [ ] Extended thinking enabled (for complex reasoning)
@@ -1190,7 +1207,7 @@ You are an expert TypeScript/React developer. Your mission: surgical implementat
 <role>
 Expert TypeScript/React developer focused on surgical implementation.
 
-**When implementing features, be comprehensive and thorough. Include all necessary edge cases and error handling.**
+**When implementing features, be thorough on what the task needs and silent on the rest. Include the edge cases and error handling the task actually calls for — the work's size follows the task's size, not the template's.**
 </role>
 
 ---
@@ -1388,7 +1405,7 @@ Create a user authentication system with login, signup, and password reset.
 <role>
 You are an expert TypeScript/React developer specializing in authentication systems.
 
-**Include as many relevant features and interactions as possible. Go beyond the basics to create a fully-featured implementation.**
+**When implementing this system, be thorough on what the task needs and silent on the rest. Include the flows, edge cases and error handling the task actually calls for — the work's size follows the task's size, not the template's.**
 </role>
 
 <context>
@@ -1560,7 +1577,7 @@ Implement the complete authentication system following all patterns and constrai
 - ✅ Emphatic repetition with `<critical_requirements>` and `<critical_reminders>` (40-50% better compliance)
 - ✅ Measurable success criteria (45% fewer regressions)
 - ✅ Investigation workflow enforced (80%+ reduction in hallucination)
-- ✅ Expansion modifiers for Sonnet 4.5 (unlocks full capability)
+- ✅ Proportional expansion modifier, warranted by a genuinely broad task (Technique #6)
 - ✅ Standard output format (consistency)
 
 ---
@@ -1652,7 +1669,7 @@ Before implementing:
 
 **Symptom:** Implementation technically meets requirements but is bare-bones
 
-**Root Cause:** Conservative Sonnet 4.5 defaults without expansion modifiers
+**Root Cause:** Conservative Sonnet 4.5 defaults on a task whose breadth was never stated
 
 **Solution:**
 
@@ -1660,10 +1677,12 @@ Before implementing:
 <task>
 [Task description]
 
-**Include as many relevant features and interactions as possible.
-Go beyond the basics to create a fully-featured implementation.**
+**This task is genuinely broad — cover [the dimensions it actually has].
+Be thorough on what the task needs and silent on the rest; the work's size follows the task's size, not the template's.**
 </task>
 ```
+
+**Check the diagnosis first:** this fix applies when the task really is broader than the output. If the deliverable matches a well-scoped task, the implementation is not bare-bones — it is proportional, and adding a modifier here produces the inverse defect (see Technique #6).
 
 **Evidence:** Anthropic documentation, community consensus for Claude 4.x
 
@@ -1901,7 +1920,7 @@ This structure represents the convergence of:
 3. **Emphatic repetition increases compliance by 40-50%** - `<critical_requirements>` at TOP + `<critical_reminders>` at BOTTOM
 4. **XML tags provide 30%+ accuracy improvement** - Semantic boundaries matter
 5. **Documents first, query last gives 30% performance boost** - For 20K+ tokens
-6. **Expansion modifiers unlock Sonnet 4.5's full capability** - Counter conservative defaults
+6. **Expansion modifiers are conditional** - Counter conservative defaults on genuinely broad tasks; on well-scoped ones they inflate the deliverable
 7. **Self-correction triggers provide mid-run guidance** - 74.4% SWE-bench with this pattern
 8. **Post-action reflection improves long-horizon reasoning** - Pause and evaluate after tool use
 9. **Progress tracking maintains orientation** - Essential for 30+ hour sessions

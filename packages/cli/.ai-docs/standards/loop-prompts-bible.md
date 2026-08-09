@@ -23,7 +23,7 @@ A loop agent orchestrates: select the right sub-agent, provide clear context, ve
 | `cli-developer`  | All production code changes (commands, lib, utils, components) |
 | `cli-tester`     | All test creation and refactoring                              |
 | `web-developer`  | React/Ink components, frontend logic                           |
-| `web-pm`         | Feature planning, specs, architecture decisions                |
+| `pm`             | Feature planning, specs, architecture decisions                |
 | `cli-reviewer`   | Post-implementation CLI code review                            |
 | `api-developer`  | API routes, database, server logic                             |
 | `api-reviewer`   | Post-implementation API code review                            |
@@ -42,7 +42,7 @@ What needs to happen?
 |   |- Agent/skill definitions -> agent-summoner / skill-summoner
 |- Write/modify tests? -> cli-tester
 |- Review code? -> cli-reviewer / api-reviewer
-|- Plan a feature? -> web-pm
+|- Plan a feature? -> pm
 |- Generate docs? -> codex-keeper
 |- Research/investigate? -> Spawn a Task agent
 ```
@@ -226,7 +226,7 @@ After a sub-agent completes, capture: what changed (files + lines), key decision
 - **Do NOT commit.** User handles committing.
 - **Do NOT write production code.** Delegate to specialized agents.
 - **Do NOT write tests.** Delegate to `cli-tester`.
-- **Do NOT make unilateral architecture decisions.** Needs user approval or `web-pm`.
+- **Do NOT make unilateral architecture decisions.** Needs user approval or `pm`.
 - **Do NOT modify code files directly.** Only edit: task files (TODO.md, todo-loop.md), docs, memory files.
 
 ### Tool Usage

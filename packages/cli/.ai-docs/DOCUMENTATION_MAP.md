@@ -29,6 +29,7 @@ Descriptive: how the CLI works and where its pieces live.
 | `reference/boundary-map.md`          | Trust boundaries: CLI input, file parse, file write, shell exec, security                                         |
 | `reference/monorepo-layout.md`       | The repository around `packages/cli` — workspaces, hooks, CI, tooling split (paths are repo-root-relative)        |
 | `reference/build-and-packaging.md`   | tsup entry contract, publish surface, oclif block, tarball contents                                               |
+| `reference/utilities.md`             | `src/cli/utils/**`, `consts.ts`, `lib/exit-codes.ts` — the shared leaf surface                                    |
 | `reference/leaf-exports.md`          | Staging area for exported symbols not yet owned by another doc; drains into owning docs and is deleted when empty |
 
 ### Commands
@@ -66,19 +67,19 @@ Descriptive: how the CLI works and where its pieces live.
 
 ### Features
 
-| Doc                                            | Covers                                                                     |
-| ---------------------------------------------- | -------------------------------------------------------------------------- |
-| `reference/features/skills-and-matrix.md`      | Skills matrix loading, categories, resolution, source switching            |
-| `reference/skills/skill-primitives.md`         | Function inventory for `src/cli/lib/skills/`                               |
-| `reference/features/built-in-catalogue.md`     | `defaultStacks` / `defaultRules` fallback data and when it is bypassed     |
-| `reference/features/source-fetch-and-cache.md` | giget fetch, cache key derivation, ID-targeted read path                   |
-| `reference/features/compilation-pipeline.md`   | Liquid templates, agent assembly, output validation                        |
-| `reference/features/agent-system.md`           | Agent templates, partials, `metadata.yaml`, Liquid compilation             |
-| `reference/features/model-and-effort.md`       | The model/effort tuning axis end to end, and why it lives on the sub-agent |
-| `reference/features/plugin-system.md`          | Plugin discovery, manifest generation, installation, marketplace           |
-| `reference/features/operations-layer.md`       | Composable operations (source, skills, project) and their typed results    |
-| `reference/features/seed-contract.md`          | The `init --from` wire contract and the vendored seed schema               |
-| `reference/features/code-generation.md`        | The `scripts/` generators, their outputs, and the checks that guard them   |
+| Doc                                            | Covers                                                                         |
+| ---------------------------------------------- | ------------------------------------------------------------------------------ |
+| `reference/features/skills-and-matrix.md`      | Skills matrix loading, categories, resolution, install-mode tagging            |
+| `reference/skills/skill-primitives.md`         | Function inventory for `src/cli/lib/skills/`                                   |
+| `reference/features/built-in-catalogue.md`     | `defaultStacks` / `defaultRules` fallback data and when it is bypassed         |
+| `reference/features/source-fetch-and-cache.md` | giget fetch, cache key derivation, ID-targeted read path                       |
+| `reference/features/compilation-pipeline.md`   | Liquid templates, agent assembly, output validation                            |
+| `reference/features/agent-system.md`           | Agent templates, partials, `metadata.yaml`, Liquid compilation                 |
+| `reference/features/model-and-effort.md`       | The model/effort tuning axis end to end, and why it lives on the sub-agent     |
+| `reference/features/plugin-system.md`          | Plugin discovery, manifest generation, installation, marketplace               |
+| `reference/features/operations-layer.md`       | Composable operations (source, skills, project) and their typed results        |
+| `reference/features/seed-contract.md`          | The `init --from` wire contract, imported from `@workspace/matrix/seed`        |
+| `reference/features/code-generation.md`        | The three `scripts/` generators, their outputs, and the checks that guard them |
 
 ### Types
 
@@ -126,18 +127,19 @@ pointers whose bodies live in subdirectories. Determine direction by reading bot
 
 Prescriptive rules for code, tests and documentation. Owned by convention-keeper.
 
-| Doc                                   | Covers                                                                                     |
-| ------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `standards/clean-code-standards.md`   | Code-quality rules, numbered by section                                                    |
-| `standards/documentation-bible.md`    | How `.ai-docs/` is written and maintained                                                  |
-| `standards/e2e-testing-bible.md`      | E2E philosophy and the top-level rules                                                     |
-| `standards/e2e/`                      | E2E sub-standards: structure, assertions, page objects, test data, patterns, anti-patterns |
-| `standards/typescript-types-bible.md` | Type-authoring rules                                                                       |
-| `standards/prompt-bible.md`           | Prompt phrasing, XML tags, delegation shape                                                |
-| `standards/loop-prompts-bible.md`     | Loop cadence, iteration discipline, synthesis passes                                       |
-| `standards/skill-atomicity-bible.md`  | Skill decomposition rules                                                                  |
-| `standards/skill-atomicity-primer.md` | Short form of the above                                                                    |
-| `standards/commit-protocol.md`        | Commit message and release conventions                                                     |
+| Doc                                   | Covers                                                                                         |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `standards/clean-code-standards.md`   | Code-quality rules, numbered by section                                                        |
+| `standards/documentation-bible.md`    | How `.ai-docs/` is written and maintained                                                      |
+| `standards/e2e-testing-bible.md`      | E2E philosophy and the top-level rules                                                         |
+| `standards/e2e/`                      | E2E sub-standards: structure, assertions, page objects, test data, patterns, anti-patterns     |
+| `standards/e2e/user-journeys.md`      | The journeys the suite must cover, the four assertion surfaces each owes, per-journey coverage |
+| `standards/typescript-types-bible.md` | Type-authoring rules                                                                           |
+| `standards/prompt-bible.md`           | Prompt phrasing, XML tags, delegation shape                                                    |
+| `standards/loop-prompts-bible.md`     | Loop cadence, iteration discipline, synthesis passes                                           |
+| `standards/skill-atomicity-bible.md`  | Skill decomposition rules                                                                      |
+| `standards/skill-atomicity-primer.md` | Short form of the above                                                                        |
+| `standards/commit-protocol.md`        | Commit message and release conventions                                                         |
 
 ---
 
@@ -156,9 +158,10 @@ pipeline and `agent-findings/TEMPLATE.md` for the frontmatter schema.
 This section owns the source and E2E file totals; no other doc restates them. Re-derive with
 `find`, never carry forward.
 
-- **`src/cli/`:** 371 TypeScript files — 139 specs (`*.test.ts(x)`), the rest production and test
+- **`src/cli/`:** 350 TypeScript files — 132 specs (`*.test.ts(x)`), the rest production and test
   support.
-- **`e2e/`:** 219 TypeScript files — 181 specs, 38 helpers/fixtures/page objects.
+- **`e2e/`:** 234 TypeScript files — 195 specs, 39 helpers/fixtures/page objects. The 195 splits
+  192 `*.e2e.test.ts` (what `test:e2e` runs) and 3 `*.smoke.test.ts` (run explicitly).
 
 ---
 
@@ -167,8 +170,11 @@ This section owns the source and E2E file totals; no other doc restates them. Re
 Read before running or reporting on a quality gate.
 
 **ESLint runs clean over the whole package.** `npm run lint` is `eslint .`; expect exit `0`. Any
-problem you see is yours. `lint-staged` runs `eslint --no-warn-ignored` check-only, and
-`prepublishOnly` runs `format:check && lint && typecheck && build && test`.
+problem you see is yours. The repository-root `lint-staged` runs `eslint --fix --no-warn-ignored`
+then `prettier --write` over staged `{apps,packages}` sources, and `prepublishOnly` runs
+`format:check && lint && typecheck && generate:schemas:check && generate:types:check && build && test`.
+`reference/monorepo-layout.md` carries the two-tier hook split (pre-commit vs pre-push) that
+invokes it.
 
 Config is `eslint.config.js` (ESLint 9 flat config via `defineConfig()`), over
 `src/**/*.{ts,tsx}`, `e2e/**/*.ts` and `scripts/**/*.ts`. On top of `js.configs.recommended` +
@@ -188,7 +194,14 @@ formatting:
 carries the config-gate enforcement layers.
 
 **Inline suppressions. Each is justified in place — do not remove one, and do not add another
-without the same standard of justification.**
+without the same standard of justification.** The table below is **not** the full inventory: it
+carries the suppressions whose reason is a one-off worth stating here. Two rule-level families are
+deliberately not enumerated because they repeat verbatim across dozens of sites —
+`@typescript-eslint/no-unnecessary-condition` over a `typedEntries`/`Object.entries` walk of a
+`Partial<Record>` (the guard reads as dead while still covering an explicitly-undefined slot), and
+`@typescript-eslint/unbound-method` on a spy that is restored rather than called. Grep
+`eslint-disable` for the live set; absence from this table is not evidence a suppression is
+unsanctioned.
 
 | Rule                                | File                                                 | Why it stays                                                                                              |
 | ----------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -199,8 +212,12 @@ without the same standard of justification.**
 | `react-hooks/exhaustive-deps`       | `src/cli/components/hooks/use-section-scroll.ts`     | Measure-every-render effect                                                                               |
 | `react-hooks/exhaustive-deps`       | `src/cli/components/hooks/use-panel-scroll.ts`       | Measure-every-render effect                                                                               |
 
-**Open gap: neither generator check runs at pre-commit.** `generate:schemas:check` runs in CI's
-`check-cli` job and in `prepublishOnly`; `generate:types:check` runs in `prepublishOnly` only,
-because `generate:types` reads a sibling `skills` checkout that no runner has — do not "complete
-the pair" in CI. A stale generated artefact can therefore sit on `main` until the next CI run
-(schemas) or the next publish (types). `reference/features/code-generation.md` carries the detail.
+**Open gap: no generator check runs at pre-commit.** There are three. `generate:schemas:check` runs
+in `ci.yml`'s `check-cli` job and in `prepublishOnly`; `generate:matrix:check` runs in `ci.yml`'s
+`check-web` job, from `packages/cli`; `generate:types:check` runs in `prepublishOnly` only, because
+`generate:types` reads a `skills` checkout and every `ci.yml` job checks out this repository alone —
+do not "complete the pair" in `ci.yml`. (`regenerate-catalog.yml` does check the marketplace out and
+runs all three generators as writers; that is a different job from checking a committed artefact.) A
+stale generated artefact can therefore sit on `main` until the next CI run (schemas, matrix) or the
+next publish (types). The three write scripts compose into one, `bun run generate`, in dependency
+order. `reference/features/code-generation.md` carries the detail.

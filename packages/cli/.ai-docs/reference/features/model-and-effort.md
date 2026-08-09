@@ -19,7 +19,6 @@ keywords:
     resolveAgents,
     buildCompileAgents,
     buildAgentCompileEntry,
-    convertStackToCompileConfig,
     sanitizeCompiledAgentData,
     agent.liquid,
     frontmatter,
@@ -155,13 +154,13 @@ plainly exists.
 
 Five distinct types carry the pair. They are not interchangeable; each answers a different question.
 
-| Type                 | File                              | Question it answers                         | Doc comment in source                                                                            |
-| -------------------- | --------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `BaseAgentFields`    | `src/cli/types/agents.ts`         | What does the agent's own metadata declare? | on `effort`: _"Emitted into compiled frontmatter only when set — there is no default"_           |
-| `AgentScopeConfig`   | `src/cli/types/config.ts`         | What did the user choose, per project?      | _"Overrides the model from the agent's own metadata. Absent means 'keep the metadata default'."_ |
-| `CompileAgentConfig` | `src/cli/types/config.ts`         | What is handed to the compile pipeline?     | _"Config-level effort override, preferred over the agent definition's own value."_               |
-| `AgentFrontmatter`   | `src/cli/types/agents.ts`         | What shape is the compiled YAML block?      | on `model`: _"Use \"inherit\" to use parent model"_ — `effort` carries none                      |
-| `SeedAgent`          | `src/cli/lib/seed/seed-schema.ts` | What can travel over a share link?          | see [`seed-contract.md`](./seed-contract.md)                                                     |
+| Type                 | File                          | Question it answers                         | Doc comment in source                                                                            |
+| -------------------- | ----------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `BaseAgentFields`    | `src/cli/types/agents.ts`     | What does the agent's own metadata declare? | on `effort`: _"Emitted into compiled frontmatter only when set — there is no default"_           |
+| `AgentScopeConfig`   | `src/cli/types/config.ts`     | What did the user choose, per project?      | _"Overrides the model from the agent's own metadata. Absent means 'keep the metadata default'."_ |
+| `CompileAgentConfig` | `src/cli/types/config.ts`     | What is handed to the compile pipeline?     | _"Config-level effort override, preferred over the agent definition's own value."_               |
+| `AgentFrontmatter`   | `src/cli/types/agents.ts`     | What shape is the compiled YAML block?      | on `model`: _"Use \"inherit\" to use parent model"_ — `effort` carries none                      |
+| `SeedAgent`          | `packages/matrix/src/seed.ts` | What can travel over a share link?          | see [`seed-contract.md`](./seed-contract.md)                                                     |
 
 `BaseAgentFields` is the shared base for **three** agent types — `AgentDefinition`, `AgentConfig`
 and `AgentYamlConfig` all extend it, so `model` and `effort` reach all three from one declaration.
@@ -232,13 +231,11 @@ config can override, and why widening the axis to a third field is not a one-lin
 
 ### Getting a config-level override into `CompileAgentConfig`
 
-There are two functions that build `CompileConfig.agents`, and **only one of them carries the
-tuning**:
+One function builds `CompileConfig.agents`, and it carries the tuning:
 
-| Builder                                             | File                                  | Carries model/effort?                       |
-| --------------------------------------------------- | ------------------------------------- | ------------------------------------------- |
-| `buildCompileAgents()` → `buildAgentCompileEntry()` | `lib/installation/local-installer.ts` | **Yes** — spread in when defined            |
-| `convertStackToCompileConfig()`                     | `lib/resolver.ts`                     | **No** — maps every agent to a literal `{}` |
+| Builder                                             | File                                  | Carries model/effort?            |
+| --------------------------------------------------- | ------------------------------------- | -------------------------------- |
+| `buildCompileAgents()` → `buildAgentCompileEntry()` | `lib/installation/local-installer.ts` | **Yes** — spread in when defined |
 
 `buildAgentCompileEntry` builds the `tuning` object **before** the skill-less early-out, and the
 source says why: _"Model/effort are the agent's own settings, not its skills' — a bare agent with no
@@ -246,11 +243,9 @@ stack entry still carries them."_ An agent with no `config.stack` entry returns 
 an agent with one returns `{ ...tuning, skills }`. Reordering those two statements would silently
 drop the override for every bare agent.
 
-`convertStackToCompileConfig` discards it. Its body is
-`stack.agents.map((a) => [a.name, {}])` — the `AgentScopeConfig` is reduced to its name. Its sole
-production caller is `lib/stacks/stack-plugin-compiler.ts`, so **agents compiled through the
-stack-plugin path always fall back to their metadata `model` and emit no `effort`**, regardless of
-what the config says. This is a real behavioural fork, not a stale code path.
+A second builder, `convertStackToCompileConfig` (`lib/resolver.ts`), used to discard the tuning —
+it reduced each `AgentScopeConfig` to its name. It was deleted with the stack-plugin compiler in
+CLI-459, along with the behavioural fork it created, so no surviving builder drops the overrides.
 
 `lib/agents/agent-recompiler.ts` routes through `buildCompileAgents`, so overrides survive a
 recompile. Agents present in `agentNames` but absent from the built config get `{}` — the same
@@ -334,8 +329,7 @@ export const effortLevelSchema = z.enum(EFFORT_NAMES) as z.ZodType<EffortLevel>;
 | `agentYamlGenerationSchema`        | strict metadata.yaml output (`.strict()`)       |
 | `agentFrontmatterValidationSchema` | strict compiled-agent frontmatter (`.strict()`) |
 
-`modelNameSchema` covers the same four plus `commands/new/agent.tsx`'s local
-`metaAgentFrontmatterSchema`.
+`modelNameSchema` covers exactly those four.
 
 > `types/zod-schemas.md`'s Bridge Schemas table lists four bridge schemas and omits
 > `effortLevelSchema`, while declaring its inventory exhaustive. See [Known drift in other
@@ -405,27 +399,20 @@ partial entry loses the tuning.
 Each of these is verified absence, not an unchecked assumption. They are the fastest way to answer
 "where do I hook in?".
 
-| Surface                 | State                                                                                                                   |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Wizard UI               | **None.** No component or hook under `src/cli/components/` or `src/cli/hooks/` reads or writes either field             |
-| CLI flags               | **None.** No command declares a `model` or `effort` flag or arg; `effort` does not appear in `src/cli/commands/` at all |
-| Bundled agent `effort`  | **Zero.** Not one bundled `metadata.yaml` declares `effort`                                                             |
-| Bundled agent `model`   | **Every one** declares it — 20 `opus`, 3 `sonnet`                                                                       |
-| `new agent` meta bridge | Carries `model`, **drops `effort`**                                                                                     |
+| Surface                | State                                                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Wizard UI              | **None.** No component or hook under `src/cli/components/` or `src/cli/hooks/` reads or writes either field             |
+| CLI flags              | **None.** No command declares a `model` or `effort` flag or arg; `effort` does not appear in `src/cli/commands/` at all |
+| Bundled agent `effort` | **Zero.** Not one bundled `metadata.yaml` declares `effort`                                                             |
+| Bundled agent `model`  | **Every one** declares it — 20 `opus`, 3 `sonnet`                                                                       |
 
-Two of these are worth spelling out.
+One of these is worth spelling out.
 
 **`effort` has no producer in the built-in vocabulary.** Since no bundled `metadata.yaml` sets it and
 no wizard control or flag sets it, the only ways a compiled agent gets an `effort` line today are a
 hand-edited project `config.ts` and a shared configuration installed with `init --from`. The
 `?? definition.effort` half of the precedence rule is currently unreachable from bundled agents — it
 is there for source repos that do declare it.
-
-**`new agent` is the one place `model` travels without `effort`.** `commands/new/agent.tsx` parses
-the compiled `agent-summoner.md` with a local `metaAgentFrontmatterSchema` that declares
-`description`, `tools` and `model` only; `NewAgentInput` has no `effort` field; and the
-`--agents <json>` payload spawned at the `claude` CLI carries `model` and `tools` and nothing else.
-An `effort` on the summoner's frontmatter is silently dropped at that boundary.
 
 ## Test surface
 
@@ -463,9 +450,9 @@ against a hardcoded fallback.
 
 1. **`effort` missing from a compiled agent is usually correct.** No default exists. Check whether
    anything set it before treating it as a bug.
-2. **The stack-plugin path drops both overrides.** `convertStackToCompileConfig` maps every agent to
-   `{}`. If a config-level override is not landing, check which builder produced the `CompileConfig`
-   before touching the resolver.
+2. **Check which builder produced the `CompileConfig`** before touching the resolver when a
+   config-level override is not landing. Only `buildCompileAgents` carries model/effort today; a
+   second builder that maps agents to `{}` is how this last went wrong.
 3. **`grep -r effort` is noisy.** `src/agents/**` prose, `claudePluginUninstallBestEffort`, and
    dozens of "best-effort" comments all match. Separately,
    `lib/permission-checker.test.tsx` has an `effortLevel: "high"` key — that is **Claude Code's own
@@ -495,12 +482,12 @@ Walk all six.
    `agent-frontmatter.schema.json` regenerate. `generate:schemas:check` fails until they do.
 3. **Generated `config-types.ts`** — `formatLiteralUnion` emits the new member into every project's
    `AgentScopeConfig`. Existing projects keep the old union until something rewrites the pair.
-4. **The seed wire contract does NOT widen.** `seedModelSchema` and `seedEffortSchema` in
-   `lib/seed/seed-schema.ts` are **hand-written literal enums, not derived from these arrays** —
-   `seedModelSchema` is a strict subset of `MODEL_NAMES` (no `"inherit"`) and `seedEffortSchema`
-   happens to equal `EFFORT_NAMES` member for member today by maintenance, not by construction. The
-   schema is vendored from the web monorepo and strips what it does not declare, so a new member
-   also needs the web copy updated under a `SEED_VERSION` bump. See
+4. **The seed wire contract does NOT widen.** `seedModelSchema` and `seedEffortSchema` live in
+   another workspace — `packages/matrix/src/seed.ts`, which the CLI imports as
+   `@workspace/matrix/seed` — and are **hand-written literal enums, not derived from these arrays**.
+   `seedModelSchema` is a strict subset of `MODEL_NAMES` (no `"inherit"`); `seedEffortSchema` equals
+   `EFFORT_NAMES` member for member today by maintenance, not by construction. `z.object` strips what
+   it does not declare, so a new member needs that file widened too, under a `SEED_VERSION` bump. See
    [`seed-contract.md`](./seed-contract.md).
 5. **E2E fixtures** — the tuning spec enumerates every allowed value explicitly; a new one is not
    covered until it is added there.

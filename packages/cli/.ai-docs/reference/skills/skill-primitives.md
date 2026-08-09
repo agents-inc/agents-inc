@@ -15,11 +15,8 @@ keywords:
     CopiedSkill,
     validateSkillPath,
     fetchSkills,
-    FetchSkillsOptions,
     readLocalSkillMetadata,
     readForkedFromMetadata,
-    getLocalSkillsWithMetadata,
-    computeSourceHash,
     computeSkillFolderHash,
     computeFileHash,
     injectForkedFromMetadata,
@@ -44,21 +41,24 @@ last_validated: 2026-08-02
 # Skill Primitives (`src/cli/lib/skills/`)
 
 > **Extracted from:** `reference/features/skills-and-matrix.md`, which gives `src/cli/lib/skills/`
-> an eight-row file table at lines 82–95 and prose for only `source-switcher.ts`, `generators.ts`
-> and `versioning.ts`. This file adds the per-function inventory those three already have, for the
-> five modules that had none.
+> a file table and prose for only `local-skill-mover.ts` and `versioning.ts`. This file adds the
+> per-function inventory those two already have, for the modules that had none.
 >
 > **Why the filename is not `features/skills-and-matrix.md`.** This is a split-detail doc, and the
 > map's convention for one is an **area subdirectory named after the source directory**, with the
 > file named after the module(s) it covers — the `config/config-writer.md` precedent (split out of
 > `features/configuration.md`). `reference/skills/` is new; it is the right home for the remaining
-> `lib/skills` splits (`source-switcher.ts`, `generators.ts`) when they follow.
+> `lib/skills` splits (`local-skill-mover.ts`) when they follow.
 
 ## Scope
 
 **This doc owns:** the functions and exported types of `skill-copier.ts`, `skill-metadata.ts`,
-`skill-fetcher.ts`, `local-skill-loader.ts` and `skill-plugin-compiler.ts` — their contracts,
-reachability, and the invariants that hold across them.
+`skill-fetcher.ts`, `local-skill-loader.ts`, `skill-plugin-compiler.ts` and
+`unresolved-skill-entries.ts` — their contracts, reachability, and the invariants that hold across
+them.
+
+**There is no `generators.ts`.** The skill/agent/marketplace scaffolding module was deleted with the
+`new` commands; nothing under `src/cli/lib/skills/` generates content any more.
 
 **This doc deliberately does NOT own:**
 
@@ -67,7 +67,8 @@ reachability, and the invariants that hold across them.
 | The `metadata.yaml` **field list** and schema    | `reference/features/skills-and-matrix.md` lines 326–345                         |
 | The Zod schema inventory (`.passthrough()` etc.) | `reference/types/zod-schemas.md` lines 70–95                                    |
 | Path-traversal **security framing**              | `reference/boundary-map.md` § 5.3 (lines 488–493) and its § 3.3 (lines 307–313) |
-| `source-switcher.ts`, `generators.ts`            | `reference/features/skills-and-matrix.md` lines 523–530, 554–565                |
+| `local-skill-mover.ts`                           | `reference/features/skills-and-matrix.md`                                       |
+| The removal-reason sentences and their classes   | `reference/config/config-merger.md`                                             |
 | Plugin manifest / marketplace shape              | `reference/features/plugin-system.md`                                           |
 
 Do not restate a field list or a count from those docs here.
@@ -80,25 +81,24 @@ and one of those three (`copySkill`) has no caller even in tests. Five more are 
 production through exactly one internal caller inside their own module. All of them are re-exported
 by `skills/index.ts` regardless, so the barrel is no evidence of use.
 
-| Export                           | File                       | Production callers                                                                                                                                                                                                        |
-| -------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `copySkillsToLocalFlattened()`   | `skill-copier.ts`          | `executeMigration` (`installation/mode-migrator.ts`), `copyScopedLocalSkills` (`operations/skills/copy-local-skills.ts`), `ejectSkills` (`commands/eject.ts`)                                                             |
-| `copySkillsToPluginFromSource()` | `skill-copier.ts`          | **none** — barrel + `skill-copier.test.ts` only                                                                                                                                                                           |
-| `copySkillFromSource()`          | `skill-copier.ts`          | one, internal: `copySkillsToPluginFromSource`                                                                                                                                                                             |
-| `copySkill()`                    | `skill-copier.ts`          | **none, not even a test.** Its only other appearance in the repo is its `skills/index.ts` barrel line                                                                                                                     |
-| `validateSkillPath()`            | `skill-copier.ts`          | internal (`resolveSkillPath`) + `skill-copier.test.ts`                                                                                                                                                                    |
-| `fetchSkills()`                  | `skill-fetcher.ts`         | **none** — barrel `skills/index.ts` + `skill-fetcher.test.ts`                                                                                                                                                             |
-| `readForkedFromMetadata()`       | `skill-metadata.ts`        | `classifySkillDirs` (`commands/uninstall.tsx`)                                                                                                                                                                            |
-| `readLocalSkillMetadata()`       | `skill-metadata.ts`        | one, internal: `readForkedFromMetadata`. **Its JSDoc names a caller that does not exist** — see Traps                                                                                                                     |
-| `getLocalSkillsWithMetadata()`   | `skill-metadata.ts`        | one, internal: `compareLocalSkillsWithSource`                                                                                                                                                                             |
-| `computeSourceHash()`            | `skill-metadata.ts`        | one, internal: `classifyLocalSkill`                                                                                                                                                                                       |
-| `compareLocalSkillsWithSource()` | `skill-metadata.ts`        | `compareSkillsWithSource` (`operations/skills/compare-skills.ts`) — called twice there, once per scope: project, then home                                                                                                |
-| `injectForkedFromMetadata()`     | `skill-metadata.ts`        | `copySkillTo` (`skill-copier.ts`), `updateLocalSkills` (`commands/update.tsx`)                                                                                                                                            |
-| `writeMetadataYaml()`            | `skill-metadata.ts`        | `mergeForkedFromIntoYaml`, `convertJsonToYamlWithForkedFrom` and `createMinimalMetadata` (`commands/import/skill.ts`, imported by module path — it is not in the barrel), plus `injectForkedFromMetadata` in its own file |
-| `discoverLocalSkills()`          | `local-skill-loader.ts`    | `mergeDiscoveredLocalSkills` (`loading/source-loader.ts`), `countLocalSkills` (`configuration/source-manager.ts`), `checkSkillsResolved` (`commands/doctor.ts`, twice)                                                    |
-| `compileSkillPlugin()`           | `skill-plugin-compiler.ts` | `compileSkills` (`commands/build/plugins.ts`)                                                                                                                                                                             |
-| `compileAllSkillPlugins()`       | `skill-plugin-compiler.ts` | `compileSkills` (`commands/build/plugins.ts`), `buildMarketplace` (`commands/new/marketplace.ts`)                                                                                                                         |
-| `printCompilationSummary()`      | `skill-plugin-compiler.ts` | `compileSkills` (`commands/build/plugins.ts`)                                                                                                                                                                             |
+| Export                             | File                          | Production callers                                                                                                                                            |
+| ---------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `copySkillsToLocalFlattened()`     | `skill-copier.ts`             | `executeMigration` (`installation/mode-migrator.ts`), `copyScopedLocalSkills` (`operations/skills/copy-local-skills.ts`), `ejectSkills` (`commands/eject.ts`) |
+| `copySkillsToPluginFromSource()`   | `skill-copier.ts`             | **none** — barrel + `skill-copier.test.ts` only                                                                                                               |
+| `copySkillFromSource()`            | `skill-copier.ts`             | one, internal: `copySkillsToPluginFromSource`                                                                                                                 |
+| `copySkill()`                      | `skill-copier.ts`             | **none, not even a test.** Its only other appearance in the repo is its `skills/index.ts` barrel line                                                         |
+| `validateSkillPath()`              | `skill-copier.ts`             | internal (`resolveSkillPath`) + `skill-copier.test.ts`                                                                                                        |
+| `fetchSkills()`                    | `skill-fetcher.ts`            | **none** — barrel `skills/index.ts` + `skill-fetcher.test.ts`                                                                                                 |
+| `readForkedFromMetadata()`         | `skill-metadata.ts`           | `classifySkillDirs` (`commands/uninstall.tsx`)                                                                                                                |
+| `readLocalSkillMetadata()`         | `skill-metadata.ts`           | one, internal: `readForkedFromMetadata`. **Its JSDoc names a caller that does not exist** — see Traps                                                         |
+| `injectForkedFromMetadata()`       | `skill-metadata.ts`           | `copySkillTo` (`skill-copier.ts`)                                                                                                                             |
+| `writeMetadataYaml()`              | `skill-metadata.ts`           | `injectForkedFromMetadata`, in its own file — the only caller left now that `import skill` is gone                                                            |
+| `discoverLocalSkills()`            | `local-skill-loader.ts`       | `mergeDiscoveredLocalSkills` (`loading/source-loader.ts`), `checkSkillsResolved` (`commands/doctor.ts`, twice)                                                |
+| `findUnusableSavedSkillMetadata()` | `unresolved-skill-entries.ts` | `ensureSavedSkillsReadable` (`base-command.ts`), reached from `commands/edit.tsx`                                                                             |
+| `unresolvedSkillRemovalReasons()`  | `unresolved-skill-entries.ts` | `Edit.run` (`commands/edit.tsx`), for the `Changes:` block's removal rows                                                                                     |
+| `compileSkillPlugin()`             | `skill-plugin-compiler.ts`    | `compileSkills` (`commands/build/plugins.ts`)                                                                                                                 |
+| `compileAllSkillPlugins()`         | `skill-plugin-compiler.ts`    | `compileSkills` (`commands/build/plugins.ts`)                                                                                                                 |
+| `printCompilationSummary()`        | `skill-plugin-compiler.ts`    | `compileSkills` (`commands/build/plugins.ts`)                                                                                                                 |
 
 **Do not delete the unreachable three on the strength of this table alone.** They are public barrel
 API — their `skills/index.ts` re-export lines — so an external consumer of the package can hold them.
@@ -182,8 +182,8 @@ The security framing is owned by `boundary-map.md` § 5.3 — read it there, do 
 2. **Two such paths exist in this file, both in `copySkillsToLocalFlattened`.** The in-place branch
    (via `resolveLocalCopiedSkill`) and the relocate-a-local-skill branch (which calls `ensureDir` +
    `copy` directly) both return a `CopiedSkill` without stamping metadata.
-   This is deliberate — a local skill has no upstream to be forked from — and it is why
-   `compareLocalSkillsWithSource` later classifies those skills `"local-only"`.
+   This is deliberate — a local skill has no upstream to be forked from, so nothing downstream can
+   claim it came from one.
 3. **`CopiedSkill.local === true` marks in-place only.** It is set in `resolveLocalCopiedSkill` and nowhere
    else. The relocate branch returns no `local` key even though the skill is local; read the flag as
    "was not copied", not as "is a local skill".
@@ -201,9 +201,7 @@ The security framing is owned by `boundary-map.md` § 5.3 — read it there, do 
 
 `onProgress` is a parameter of `copySkillsToPluginFromSource` only, invoked after each skill inside
 its `Promise.all` map. That function has **no production caller**, so nothing in the shipping CLI
-passes a `CopyProgressCallback`. The wizard does not drive it. `UpdateLocalSkillsOptions` in
-`commands/update.tsx` declares a similar-looking `onProgress?: (skillId: string) => void` — a
-different arity, a different type, and unrelated to this one. `copySkillsToLocalFlattened`, the entry point that _is_ reachable, accepts no
+passes a `CopyProgressCallback`. The wizard does not drive it. `copySkillsToLocalFlattened`, the entry point that _is_ reachable, accepts no
 progress callback at all: adding progress reporting to eject/migrate means adding the parameter, not
 wiring an existing one.
 
@@ -211,15 +209,14 @@ wiring an existing one.
 
 ## `skill-metadata.ts` — reading and writing `forkedFrom`
 
-**File:** `src/cli/lib/skills/skill-metadata.ts` (328 lines)
+**File:** `src/cli/lib/skills/skill-metadata.ts` (175 lines)
 
 ### Types
 
-| Type                    | Shape                                                                                                  |
-| ----------------------- | ------------------------------------------------------------------------------------------------------ |
-| `ForkedFromMetadata`    | `{ skillId: SkillId; contentHash: string; date: string; source?: string }`                             |
-| `LocalSkillMetadata`    | `{ forkedFrom?: ForkedFromMetadata; [key: string]: unknown }`                                          |
-| `SkillComparisonResult` | `{ id; localHash; sourceHash; status: "current" \| "outdated" \| "local-only"; dirName; sourcePath? }` |
+| Type                 | Shape                                                                      |
+| -------------------- | -------------------------------------------------------------------------- |
+| `ForkedFromMetadata` | `{ skillId: SkillId; contentHash: string; date: string; source?: string }` |
+| `LocalSkillMetadata` | `{ forkedFrom?: ForkedFromMetadata; [key: string]: unknown }`              |
 
 `LocalSkillMetadata` is the **declared** shape that `localSkillMetadataSchema` is cast to —
 `schemas.ts` imports the type and `localSkillMetadataSchema` applies
@@ -230,13 +227,10 @@ import is type-only, so the `schemas.ts ↔ skills/` cycle it forms is erased at
 
 ### The read path
 
-| Function                                   | Contract                                                                                                                                                                                |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `readLocalSkillMetadata(skillDir)`         | Reads `<skillDir>/metadata.yaml`, `parseYaml`, `localSkillMetadataSchema.safeParse`. Returns `null` if absent **or** invalid; a Zod failure additionally `warn`s with `formatZodIssues` |
-| `readForkedFromMetadata(skillDir)`         | `readLocalSkillMetadata(...)?.forkedFrom ?? null`. Two lines; adds no I/O of its own                                                                                                    |
-| `getLocalSkillsWithMetadata(projectDir)`   | Lists `<projectDir>/.claude/skills/*`, reads each in parallel, returns `Map<id, { dirName, forkedFrom }>`. Empty `Map` when the directory is absent                                     |
-| `computeSourceHash(sourcePath, skillPath)` | `computeFileHash(<sourcePath>/src/<skillPath>/SKILL.md)`; `null` when that file does not exist                                                                                          |
-| `compareLocalSkillsWithSource(...)`        | Fans `classifyLocalSkill` over the map, `sortBy(r => r.id)`                                                                                                                             |
+| Function                           | Contract                                                                                                                                                                                |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `readLocalSkillMetadata(skillDir)` | Reads `<skillDir>/metadata.yaml`, `parseYaml`, `localSkillMetadataSchema.safeParse`. Returns `null` if absent **or** invalid; a Zod failure additionally `warn`s with `formatZodIssues` |
+| `readForkedFromMetadata(skillDir)` | `readLocalSkillMetadata(...)?.forkedFrom ?? null`. Two lines; adds no I/O of its own                                                                                                    |
 
 **Four distinct failure states collapse to one `null`.** No metadata.yaml, unreadable metadata.yaml,
 Zod-invalid metadata.yaml, and valid metadata.yaml with no `forkedFrom` key are indistinguishable to
@@ -245,28 +239,6 @@ consequential consumer — it is exactly `forkedFrom !== null`, so a skill whose
 **malformed** is classified user-authored and **preserved**. That is the safe direction of the
 asymmetry (uninstall deletes directories), and it is why nobody has tightened it — but a caller that
 wants "was this installed by the CLI" cannot get a true answer from this API today.
-
-**Map keying, and what it hides.** `getLocalSkillsWithMetadata` keys by
-`forkedFrom?.skillId ?? dirName`, so an aliased directory is reachable under its canonical
-ID. Two directories carrying the same `forkedFrom.skillId` collapse to one entry — **last one in
-directory order wins**, and the loser is invisible to `compareLocalSkillsWithSource` and therefore to
-`agents-inc outdated`. The source comment above that parallel read states this outright; there is
-no warn.
-
-### `classifyLocalSkill` — the three-way status
-
-Private to `skill-metadata.ts`. The order of its guards is the contract:
-
-| Condition (in guard order)                                      | Result                                                         |
-| --------------------------------------------------------------- | -------------------------------------------------------------- |
-| No `forkedFrom`                                                 | `"local-only"`, both hashes `null`, `id` cast from the map key |
-| `forkedFrom.skillId` not in `sourceSkills`                      | `"local-only"`, `localHash` kept, `sourceHash: null`           |
-| Source `SKILL.md` missing (`computeSourceHash` returned `null`) | `"local-only"`                                                 |
-| Hashes equal                                                    | `"current"`                                                    |
-| Hashes differ                                                   | `"outdated"`                                                   |
-
-`sourcePath` is present on the result **only** in the last two cases, which is exactly the field
-`updateLocalSkills` (`commands/update.tsx`) guards on before attempting an update.
 
 ### The write path
 
@@ -283,11 +255,9 @@ Three properties a caller must know:
    `"Malformed metadata.yaml at '<path>' — existing fields may be lost"` and then spreads `{}`, so the
    rewritten file contains `forkedFrom` and nothing else.
 3. **`forkedFrom` is replaced wholesale, not merged.** Omitting the `source` argument does not
-   preserve a previously recorded `source` — it drops it. `updateLocalSkills` (`commands/update.tsx`)
-   calls
-   `injectForkedFromMetadata(destPath, skill.id, skill.sourceHash)` with three arguments, so
-   **every `agents-inc update` erases `forkedFrom.source` from the skills it updates.** The copier
-   (`copySkillTo` in `skill-copier.ts`) passes it; the updater does not.
+   preserve a previously recorded `source` — it drops it. The only caller is `copySkillTo`
+   (`skill-copier.ts`), which passes all four, so nothing in the tree currently reaches the
+   three-argument form. A new caller that omits `source` would silently erase it.
 
 `writeMetadataYaml(filePath, metadata, schemaComment = "")` is the single serializer:
 `stringifyYaml` with `lineWidth: YAML_FORMATTING.LINE_WIDTH_NONE`, prefixed by the comment. Use it
@@ -300,44 +270,36 @@ rather than calling `stringifyYaml` inline — the line-width policy is what kee
 
 There are two skill hashers in `src/cli/lib/versioning.ts`, and **they hash different things**:
 
-| Hasher                              | Input                                                                                                   | Feeds                                                            |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `computeFileHash(filePath)`         | One file's bytes                                                                                        | `forkedFrom.contentHash` — **the update-detection path**         |
-| `computeSkillFolderHash(skillPath)` | `SKILL_CONTENT_FILES` + every file under `SKILL_CONTENT_DIRS`, joined `<name>:<content>` with `\n---\n` | plugin `.content-hash` / version bumping, and a write-only field |
+| Hasher                              | Input                                                                                                   | Feeds                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `computeFileHash(filePath)`         | One file's bytes                                                                                        | `forkedFrom.contentHash` — stamped at install, compared by nothing yet |
+| `computeSkillFolderHash(skillPath)` | `SKILL_CONTENT_FILES` + every file under `SKILL_CONTENT_DIRS`, joined `<name>:<content>` with `\n---\n` | plugin `.content-hash` / version bumping, and a write-only field       |
 
 Both truncate to `HASH_PREFIX_LENGTH = 7` (`consts.ts`) via `computeStringHash`
 (`versioning.ts`).
 
-**`computeSkillFolderHash` does not feed `forkedFrom.contentHash`.** Both sides of the
-outdated-comparison use the **`SKILL.md` file hash**:
+**`computeSkillFolderHash` does not feed `forkedFrom.contentHash`.** Everything that stamps or
+verifies that field hashes the **`SKILL.md` file** and nothing else:
 
-- **Write side:** `generateSkillHash` (`skill-copier.ts`) joins `STANDARD_FILES.SKILL_MD` onto the
-  source dir and returns `computeFileHash(...)`. Its result is passed to
+- **Write side:** `generateSkillHash` (private in `skill-copier.ts`) joins `STANDARD_FILES.SKILL_MD`
+  onto the source dir and returns `computeFileHash(...)`. Its result is passed to
   `injectForkedFromMetadata` by `copySkillTo`.
-- **Read side:** `computeSourceHash` (`skill-metadata.ts`) joins the same `SKILL.md` and returns
-  `computeFileHash(...)`. Its result is compared against `forkedFrom.contentHash` by
-  `classifyLocalSkill` — both in its `localHash` binding and in its status ternary.
-- **Third writer, same choice:** `importSkillFromSource` (`commands/import/skill.ts`) uses
-  `computeFileHash(skillMdPath)`.
+- **No read side.** `skill-metadata.ts` used to carry a `computeSourceHash(sourcePath, skillPath)`
+  that re-derived the same hash for comparison. It was deleted: nothing in production ever compared
+  the stamped hash against anything, so it was a second hasher answering a question no caller asked.
+  `skill-copier.test.ts` now calls `computeFileHash` on the source `SKILL.md` directly as the oracle
+  that the write side stamped the hash of those same bytes.
 
-That symmetry is the whole reason `computeSourceHash` exists as a separate function rather than a
-call to `computeSkillFolderHash`: **the comparison is only meaningful if both sides hash the same
-bytes**, and the installed copy's own hash was taken over `SKILL.md` alone at install time. Editing
-a skill's `examples/` or `reference.md` locally therefore does **not** show up as `"outdated"`.
+One hasher over one file is the point: **a stamped hash only means anything if whatever eventually
+checks it hashes the same bytes**, and the installed copy's hash was taken over `SKILL.md` alone at
+install time. A verifier added later must call `computeFileHash` on that file — not
+`computeSkillFolderHash`, which would hash a superset and never match.
 
-> **Correction owed to a sibling doc.** `reference/features/skills-and-matrix.md:540` states that
-> `computeSkillFolderHash` is "used for `forkedFrom.contentHash` in metadata to detect local
-> modifications". It is not, on either side. That line needs the hasher swapped; this doc was written
-> without editing it.
-
-**The top-level `contentHash` field is written and never read.** `scaffoldSkillFiles`
-(`commands/new/skill.ts`) computes a `computeSkillFolderHash` and `generateMetadataYaml` in the same
-file emits it as a **top-level** `contentHash:` key, not under `forkedFrom`. Two test helpers do the
-same (`writeTestSkill` in `lib/__tests__/helpers/disk-writers.ts`, `createTestSource` in
+**The top-level `contentHash` field is written and never read.** Two test helpers write it
+(`writeTestSkill` in `lib/__tests__/helpers/disk-writers.ts`, `createTestSource` in
 `lib/__tests__/fixtures/create-test-source.ts`). Grepping the whole of `src/` for readers of
-`.contentHash` finds exactly two: `classifyLocalSkill` (`skill-metadata.ts`, which reads
-`forkedFrom.contentHash`) and `determinePluginVersion` (`versioning.ts`, the plugin `.content-hash`
-file). The top-level key survives only because `localRawMetadataSchema` is
+`.contentHash` finds exactly one: `determinePluginVersion` (`versioning.ts`, the plugin
+`.content-hash` file). The top-level key survives only because `localRawMetadataSchema` is
 `.passthrough()`. Do not add a reader for it expecting it to mean "is this skill modified" — it is a
 scaffold-time snapshot of a different hash function.
 
@@ -348,14 +310,13 @@ scaffold-time snapshot of a different hash function.
 **File:** `src/cli/lib/skills/skill-fetcher.ts` (88 lines). **No production callers** (see
 Reachability). Both exports are barrel API (`skills/index.ts`).
 
-| Export                                                                   | Contract                                                                               |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `FetchSkillsOptions`                                                     | `{ forceRefresh?: boolean }`                                                           |
-| `fetchSkills(skillIds, marketplace, outputDir, sourcePath, _options={})` | Copies each skill dir into `<outputDir>/skills/<relative path>`; returns the input IDs |
+| Export                                                      | Contract                                                                               |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `fetchSkills(skillIds, marketplace, outputDir, sourcePath)` | Copies each skill dir into `<outputDir>/skills/<relative path>`; returns the input IDs |
 
-**`FetchSkillsOptions` is inert.** The parameter is named `_options` and never read.
-`forceRefresh` has no effect here — cache behaviour lives one layer down in
-`loading/source-fetcher.ts`. Passing it is a no-op, not a bug you can fix locally.
+**It takes no options.** The inert `FetchSkillsOptions` (`{ forceRefresh? }`) and the `_options`
+parameter that never read it went with the `--refresh` flag; cache behaviour lives one layer down in
+`loading/source-fetcher.ts`, which now decides freshness for itself.
 
 ### How it differs from `loading/source-fetcher.ts::fetchFromSource`
 
@@ -419,16 +380,16 @@ after `.passthrough().superRefine(validateCategoryField)`. The schema itself —
 `superRefine` relaxes for `custom: true` records — is documented at
 `reference/types/zod-schemas.md:80` and `:85`; do not re-describe it here. What belongs here is the
 consequence: **`tags?: string[]` appears in this type and in no schema field**, so it is only ever
-populated through passthrough, and `reference/features/skills-and-matrix.md:344` records that `tags`
+populated through passthrough, and `reference/features/skills-and-matrix.md` records that `tags`
 is not part of the metadata schema at all. Treat the type as a superset that must be edited in
 lockstep with `schemas.ts`.
 
 ### `null` vs `{ skills: [] }`
 
-The distinction is load-bearing for the three callers. `null` means "this project has no
+The distinction is load-bearing for both callers. `null` means "this project has no
 `.claude/skills` directory"; an empty `skills` array means "the directory exists and every entry was
-skipped". `mergeDiscoveredLocalSkills` (`loading/source-loader.ts`) and `countLocalSkills`
-(`configuration/source-manager.ts`) branch on it.
+skipped". `mergeDiscoveredLocalSkills` (`loading/source-loader.ts`) and `checkSkillsResolved`
+(`commands/doctor.ts`) are the two callers that branch on it, and the only two.
 
 ### Per-skill skip rules (`extractLocalSkill`)
 
@@ -517,35 +478,33 @@ do not expect to find a caller that names the type.
 
 35 lines, six re-export blocks. Everything below is importable as `from "../skills"`:
 
-| Block (re-export from)  | Re-exports                                                                                                                                                                                                                             |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skill-fetcher`         | `FetchSkillsOptions`, `fetchSkills`                                                                                                                                                                                                    |
-| `skill-metadata`        | `ForkedFromMetadata`, `LocalSkillMetadata`, `SkillComparisonResult`, `readForkedFromMetadata`, `readLocalSkillMetadata`, `getLocalSkillsWithMetadata`, `computeSourceHash`, `compareLocalSkillsWithSource`, `injectForkedFromMetadata` |
-| `skill-copier`          | `CopiedSkill`, `CopyProgressCallback`, `copySkill`, `copySkillFromSource`, `copySkillsToPluginFromSource`, `copySkillsToLocalFlattened`                                                                                                |
-| `skill-plugin-compiler` | `SkillPluginOptions`, `CompiledSkillPlugin`, `SkillCompilationRun`, `compileSkillPlugin`, `compileAllSkillPlugins`, `printCompilationSummary`                                                                                          |
-| `local-skill-loader`    | `LocalSkillDiscoveryResult`, `discoverLocalSkills`                                                                                                                                                                                     |
-| `source-switcher`       | `deleteLocalSkill`, `migrateLocalSkillScope`                                                                                                                                                                                           |
+| Block (re-export from)  | Re-exports                                                                                                                                    |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skill-fetcher`         | `fetchSkills`                                                                                                                                 |
+| `skill-metadata`        | `ForkedFromMetadata`, `LocalSkillMetadata`, `readForkedFromMetadata`, `readLocalSkillMetadata`, `injectForkedFromMetadata`                    |
+| `skill-copier`          | `CopiedSkill`, `CopyProgressCallback`, `copySkill`, `copySkillFromSource`, `copySkillsToPluginFromSource`, `copySkillsToLocalFlattened`       |
+| `skill-plugin-compiler` | `SkillPluginOptions`, `CompiledSkillPlugin`, `SkillCompilationRun`, `compileSkillPlugin`, `compileAllSkillPlugins`, `printCompilationSummary` |
+| `local-skill-loader`    | `LocalSkillDiscoveryResult`, `discoverLocalSkills`                                                                                            |
+| `local-skill-mover`     | `deleteLocalSkill`, `migrateLocalSkillScope`                                                                                                  |
 
 **Some exports are NOT in the barrel** and must be imported from their module directly:
 `validateSkillPath` (`skill-copier.ts`), `writeMetadataYaml` (`skill-metadata.ts`),
-`LocalRawMetadata` (`local-skill-loader.ts`), and every function in `generators.ts`. Two callers
-already do this and are the pattern to copy: `commands/import/skill.ts` imports `writeMetadataYaml`
-from `lib/skills/skill-metadata.js`, and `schemas.ts` imports the two declared-shape types by module
-path — the latter deliberately, since routing through the barrel
-would pull the copier and the plugin compiler into `schemas.ts`'s import graph.
+and `LocalRawMetadata` (`local-skill-loader.ts`). `schemas.ts` is the pattern to copy: it imports
+the two declared-shape types by module path, deliberately, since routing through the barrel would
+pull the copier and the plugin compiler into `schemas.ts`'s import graph.
 
 ## Test surface
 
-`npx vitest run src/cli/lib/skills/` — **6 files, 118 tests, all passing**.
+`npx vitest run src/cli/lib/skills/` — **6 files, 104 tests, all passing**.
 
-| File                            | Tests | Top-level describes                                                                                                                                               |
-| ------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skill-metadata.test.ts`        | 29    | `readForkedFromMetadata`, `getLocalSkillsWithMetadata`, `computeSourceHash`, `compareLocalSkillsWithSource`, `injectForkedFromMetadata`, `readLocalSkillMetadata` |
-| `skill-copier.test.ts`          | 26    | `validateSkillPath` (own top-level block), then `copySkillsToPluginFromSource`, `copySkillsToLocalFlattened`                                                      |
-| `skill-plugin-compiler.test.ts` | 22    | `compileSkillPlugin`, `compileAllSkillPlugins`, `printCompilationSummary`                                                                                         |
-| `local-skill-loader.test.ts`    | 20    | `discoverLocalSkills`                                                                                                                                             |
-| `skill-fetcher.test.ts`         | 13    | `fetchSkills`                                                                                                                                                     |
-| `source-switcher.test.ts`       | 8     | (documented in `skills-and-matrix.md:523-530`)                                                                                                                    |
+| File                            | Tests | Top-level describes                                                                                          |
+| ------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------ |
+| `skill-metadata.test.ts`        | 14    | `readForkedFromMetadata`, `injectForkedFromMetadata`, `readLocalSkillMetadata`                               |
+| `skill-copier.test.ts`          | 27    | `validateSkillPath` (own top-level block), then `copySkillsToPluginFromSource`, `copySkillsToLocalFlattened` |
+| `skill-plugin-compiler.test.ts` | 22    | `compileSkillPlugin`, `compileAllSkillPlugins`, `printCompilationSummary`                                    |
+| `local-skill-loader.test.ts`    | 20    | `discoverLocalSkills`                                                                                        |
+| `skill-fetcher.test.ts`         | 13    | `fetchSkills`                                                                                                |
+| `local-skill-mover.test.ts`     | 8     | (documented in `skills-and-matrix.md:523-530`)                                                               |
 
 Two mocking styles coexist here, and copying the wrong one wastes a session:
 
@@ -568,10 +527,10 @@ Never inline skill/matrix/config test data; use the factories under `lib/__tests
 
 1. **Editing `copySkill` changes nothing.** It has zero callers, tests included. The reachable copy
    entry point is `copySkillsToLocalFlattened`; `copySkillsToPluginFromSource` is test-only.
-2. **`agents-inc update` does not use this module's copier.** `updateLocalSkills`
-   (`commands/update.tsx`) calls `copy()` and `injectForkedFromMetadata()` inline. A change to
-   `copySkillTo` — including a change to which bytes get hashed — does **not** reach the update path, and the two will drift apart
-   silently. This is also where `forkedFrom.source` is dropped (see the write path above).
+2. **`agents-inc update` does not copy anything at all.** It wraps
+   `claude plugin marketplace update` and leaves ejected skills — the copies this module writes —
+   untouched, because eject means the user owns them. A change here reaches installs (`init`, `edit`,
+   `eject`) and nothing else.
 3. **A local skill routed to the remote branch resolves a path that cannot exist.**
    `mergeLocalSkillsIntoMatrix` (`loading/source-loader.ts`) sets `path: metadata.path` when merging
    a discovered local skill
@@ -586,14 +545,12 @@ Never inline skill/matrix/config test data; use the factories under `lib/__tests
    installed by the CLI". Uninstall imports and calls `readForkedFromMetadata` instead, from
    `classifySkillDirs` (`commands/uninstall.tsx`); `readLocalSkillMetadata` has no
    caller outside this module and its own test. Believe the grep, not the comment.
-5. **`FetchSkillsOptions.forceRefresh` does nothing** (`fetchSkills`' parameter is named
-   `_options`).
-6. **The top-level `contentHash` in a scaffolded `metadata.yaml` is not the fork hash** and is read
+5. **The top-level `contentHash` in a scaffolded `metadata.yaml` is not the fork hash** and is read
    by nothing. See "The two hashers".
-7. **`LocalRawMetadata` and `LocalSkillMetadata` are hand-maintained casts over Zod schemas** in
+6. **`LocalRawMetadata` and `LocalSkillMetadata` are hand-maintained casts over Zod schemas** in
    `schemas.ts` (`localRawMetadataSchema`, `localSkillMetadataSchema`). Change one, change the
    other, or the declared shape lies.
-8. **Batch copies fan out with `Promise.all` and batch compiles do not.**
+7. **Batch copies fan out with `Promise.all` and batch compiles do not.**
    `copySkillsToPluginFromSource` / `copySkillsToLocalFlattened` reject as a unit;
    `compileAllSkillPlugins` and `fetchSkills` iterate sequentially, the former swallowing per-skill
    errors into `failed` and the latter throwing mid-loop. Three different partial-failure shapes in

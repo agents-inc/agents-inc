@@ -35,18 +35,18 @@ last_validated: 2026-07-30
 
 There are only two actual merge functions in the config pipeline. `additiveMergeStack` and `mergeAgentCategories` are private helpers of `mergeGlobalConfigs`. No function named `additiveMergeAgentCategories` exists.
 
-| Function               | File                                                                  | Policy                                                                                                                         | Called from                                        |
-| ---------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
-| `mergeConfigs`         | `src/cli/lib/configuration/config-merger.ts`                          | **Replace-on-match**: `newConfig` is authoritative for every referenced name/id. Existing preserved only when absent from new. | `mergeWithExistingConfig` (wizard save, `cc edit`) |
-| `mergeGlobalConfigs`   | `src/cli/lib/config-gate/propagate.ts`                                | **Additive**: existing is preserved as-is; only truly-new items are appended. Never removes.                                   | `writeScopedFromWizard` project branch             |
-| `additiveMergeStack`   | `src/cli/lib/installation/local-installer.ts` (private, not exported) | Deep-additive over `Partial<Record<AgentName, StackAgentConfig>>` — agent → category → skill triple.                           | `mergeGlobalConfigs`                               |
-| `mergeAgentCategories` | `src/cli/lib/installation/local-installer.ts` (private)               | Mutates a cloned agent stack in place; appends missing categories and skill assignments.                                       | `additiveMergeStack`                               |
+| Function               | File                                                           | Policy                                                                                                                         | Called from                                        |
+| ---------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `mergeConfigs`         | `src/cli/lib/configuration/config-merger.ts`                   | **Replace-on-match**: `newConfig` is authoritative for every referenced name/id. Existing preserved only when absent from new. | `mergeWithExistingConfig` (wizard save, `cc edit`) |
+| `mergeGlobalConfigs`   | `src/cli/lib/config-gate/propagate.ts`                         | **Additive**: existing is preserved as-is; only truly-new items are appended. Never removes.                                   | `writeScopedFromWizard` project branch             |
+| `additiveMergeStack`   | `src/cli/lib/config-gate/propagate.ts` (private, not exported) | Deep-additive over `Partial<Record<AgentName, StackAgentConfig>>` — agent → category → skill triple.                           | `mergeGlobalConfigs`                               |
+| `mergeAgentCategories` | `src/cli/lib/config-gate/propagate.ts` (private)               | Mutates a cloned agent stack in place; appends missing categories and skill assignments.                                       | `additiveMergeStack`                               |
 
 The policy mismatch is intentional: `mergeConfigs` reconciles the wizard's full output with whatever is on disk (tombstones, scope migrations, and dual-scope pairs are expressed via `newConfig` and must reach disk verbatim). `mergeGlobalConfigs` reconciles one project's global slice with the shared `~/.claude-src/config.ts` (other projects' global contributions must never be removed by a project-level write).
 
 ### What neither merge function does: cross-scope reconciliation
 
-Neither function compares a project entry against a global entry. `mergeConfigs` sees one config's worth of rows keyed by compound key; `mergeGlobalConfigs` only ever appends. The rule that a project-owned skill and a colliding live global install cannot both be active is enforced **after** the split, by `reconcileProjectSplitAgainstGlobal` in `local-installer.ts`, immediately before each project-config write. Do not add a collision rule to either merge function — see [config-writer.md](./config-writer.md) → "Cross-Scope Reconciliation" for the shared helper and its two write sites.
+Neither function compares a project entry against a global entry. `mergeConfigs` sees one config's worth of rows keyed by compound key; `mergeGlobalConfigs` only ever appends. The rule that a project-owned skill and a colliding live global install cannot both be active is enforced **after** the split, by `reconcileProjectSplitAgainstGlobal` in `config-gate/propagate.ts`, immediately before each project-config write. Do not add a collision rule to either merge function — see [config-writer.md](./config-writer.md) → "Cross-Scope Reconciliation" for the shared helper and its two write sites.
 
 `mergeGlobalConfigs` is also not involved in the global-uninstall fan-out: `pruneGlobalEntriesFromRegisteredProjects` bypasses merging entirely and re-enters `propagateGlobalChangesToProjects` with an emptied global config.
 
@@ -54,7 +54,7 @@ Neither function compares a project entry against a global entry. `mergeConfigs`
 
 **Signature:** `mergeConfigs(newConfig: ProjectConfig, existingConfig: ProjectConfig, options?: MergeOptions): ProjectConfig`
 
-where `MergeOptions = Pick<MergeContext, "authoritativeScope" | "unresolvableSkillIds">`.
+where `MergeOptions = Pick<MergeContext, "authoritativeScope">`.
 
 **Identity-field precedence (existing wins):** `name`, `description`, `author`, `agentsSource`, `marketplace` — carried forward from `existingConfig` when present. `source` is copied from existing **only when `newConfig.source` is undefined** (so a wizard `--source` flag can overwrite).
 
@@ -67,14 +67,14 @@ For every existing entry, consult `newConfig` (`flatMap` over existing, then app
 1. **Exact compound-key match in new** → rewrite in place with the new entry.
 2. **Name/id is in new, but the exact compound key is NOT** → drop the existing entry. This is how scope migrations (P→G, G→P) remove stale rows and how P→G tombstone removal is honored.
 3. **Name/id absent from new, but the existing config carried a global tombstone for that name/id this session** (dual-scope) → drop the lingering active entry AND the stale tombstone together (Scenario B full-deselect).
-4. **Name/id absent from new, and within the current edit's authority** (see `authoritativeScope` below) → drop the existing entry (it was deselected). Skills in `unresolvableSkillIds` are exempt.
+4. **Name/id absent from new, and within the current edit's authority** (see `authoritativeScope` below) → drop the existing entry. No id is exempt: a skill the wizard could not resolve is absent for a different reason than a deselection, but the outcome is the same removal — see below.
 5. **Name/id absent from new otherwise** → preserve the existing entry verbatim.
 
 > **What an "absent" global entry means.** Rules 3 and 4 read absence as deselection. A project-scope edit can no longer produce that absence for a globally-installed item: the wizard guards refuse the deselect, and `applySkillRemoval` leaves an inherited global-active entry byte-identical rather than dropping it or tombstoning it. So under `authoritativeScope: "owned"` a global entry absent from `newConfig` reflects a global-scope change or a legacy config, never a project-scope deselection. Tombstones in `newConfig` come from the `s` scope toggle or a system-derived conflict mask only. See [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md).
 
 After reconciliation, new entries whose compound key was absent from existing are appended, and a final `uniqueBy(list, compoundKey)` collapses any pre-existing on-disk duplicate corruption rather than carrying it forward.
 
-### `authoritativeScope` and `unresolvableSkillIds` (Scenario C)
+### `authoritativeScope` (Scenario C)
 
 `options.authoritativeScope` decides whether an existing entry that is _absent_ from `newConfig` was deliberately deselected (drop) or merely untouched (preserve):
 
@@ -84,7 +84,21 @@ After reconciliation, new entries whose compound key was absent from existing ar
 | `"owned"`   | Project-context edit: authority covers only project-owned entries (`isProjectOwned` — project-scoped + the project's own global tombstones). Inherited global-active entries are read-only and always preserved. |
 | `undefined` | init / non-edit merges: additive union-preserve (never drop an absent entry).                                                                                                                                    |
 
-`options.unresolvableSkillIds` is the set of skill ids the wizard could NOT resolve against the loaded source matrix this session. An absent existing skill whose id is in this set is always preserved — its absence is a resolution gap, not a deselection. `isWithinSessionAuthority(entry, scope)` implements the `"all"`/`"owned"` gate.
+`isWithinSessionAuthority(entry, scope)` implements the `"all"`/`"owned"` gate.
+
+**A skill the wizard could not resolve is dropped, not exempted.** The merge takes no `unresolvableSkillIds` set and grants no id an exemption: an entry the wizard could not represent is absent from `newConfig` for a different reason than a deselection, and drops on the same terms. Exempting it would leave `config.ts` carrying an entry that the same run's `Changes:` block announced as removed and the recompiled agent no longer carried — three surfaces, three answers about one skill. What replaces the exemption is the reason: `edit` names each such skill and says why it went. The one thing the drop still cannot reach is an INHERITED global-active entry during a project edit, because `"owned"` authority never covered it.
+
+**The reason is class-specific.** `unresolvedSkillRemovalReasons` (`src/cli/lib/skills/unresolved-skill-entries.ts`) classifies each unresolvable id against the install path its own saved entry names, and `edit` prints the matching sentence after the removal row. Five classes, four sentences — the fifth refuses the run before any of this prints:
+
+| Fate                   | When                                                                                                          | Sentence in the `Changes:` block                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `dropped-by-source`    | the entry claims no local copy (`source !== EJECT_SOURCE`, or no saved entry at all)                          | `not present in <sourceLabel>`                                                          |
+| `files-gone`           | an eject entry whose `<skillsDir>/<id>` no longer exists                                                      | `skill files no longer exist at <skillDir>`                                             |
+| `not-installed-there`  | the directory exists but registers no skill by that name — no `metadata.yaml`, or a `SKILL.md` naming another | `no skill named '<id>' is installed at <skillDir>`                                      |
+| `unplaceable-category` | the install is intact and its declared category is one no domain in this source claims                        | `installed at <skillDir>, but its category '<category>' is not one this source knows`   |
+| `unusable-metadata`    | the directory exists and its `metadata.yaml` describes no skill                                               | none — `BaseCommand.ensureSavedSkillsReadable` refuses the run before the wizard mounts |
+
+Told apart at the entry's own install path (`resolveInstallPaths(projectDir, saved.scope)`), reusing the judgments the rest of the CLI already makes about that directory: `readSkillMetadata` for the file, `parseFrontmatter(...).name` for the identity. The refusal half is `findUnusableSavedSkillMetadata` from the same module — see [concepts/guard-pattern.md](../concepts/guard-pattern.md), "Pre-Wizard Saved-Skill Metadata Refusal".
 
 ### Compound Identity Keys
 
@@ -113,7 +127,7 @@ This is the load-bearing "merger is authoritative for names" invariant (April-20
 
 ### `projects` Field Preservation
 
-`mergeConfigs` **preserves** `existingConfig.projects`. The base `const merged = { ...newConfig }` only copies fields present on `newConfig`, and `newConfig.projects` is always `undefined` (the `projects` array is maintained exclusively by `registerProjectPath` / `deregisterProjectPath` in `local-installer.ts`), so a final guard copies it forward:
+`mergeConfigs` **preserves** `existingConfig.projects`. The base `const merged = { ...newConfig }` only copies fields present on `newConfig`, and `newConfig.projects` is always `undefined` (the `projects` array is maintained exclusively by `registerProjectPath` / `deregisterProjectPath` in `config-gate/propagate.ts`), so a final guard copies it forward:
 
 ```typescript
 if (existingConfig.projects && !newConfig.projects) {
@@ -131,14 +145,14 @@ Before the fix the written global config lost its `"projects": [...]` entry, and
 
 **Signature:** `mergeWithExistingConfig(newConfig: ProjectConfig, context: MergeContext): Promise<MergeResult>`
 
-where `MergeContext = { projectDir: string; authoritativeScope?: AuthoritativeScope; unresolvableSkillIds?: readonly SkillId[] }` and `MergeResult = { config: ProjectConfig; merged: boolean; existingConfigPath?: string }`.
+where `MergeContext = { projectDir: string; authoritativeScope?: AuthoritativeScope }` and `MergeResult = { config: ProjectConfig; merged: boolean; existingConfigPath?: string }`.
 
 Two-tier fallback, gated on `loadProjectConfig(context.projectDir)`:
 
-1. **Full config loads** → call `mergeConfigs(newConfig, existingFullConfig.config, { authoritativeScope, unresolvableSkillIds })`, return `{ merged: true, existingConfigPath }`.
+1. **Full config loads** → call `mergeConfigs(newConfig, existingFullConfig.config, { authoritativeScope })`, return `{ merged: true, existingConfigPath }`.
 2. **Load returns `null`** → copy `author` and `agentsSource` from the legacy project source stub (`loadProjectSourceConfig`) if present. Return `{ merged: false }`.
 
-The `merged: false` path never calls `mergeConfigs` — there is nothing to reconcile. `buildAndMergeConfig` (in `local-installer.ts`) is the production caller that threads `authoritativeScope` and `wizardResult.unresolvableSkillIds` into the context.
+The `merged: false` path never calls `mergeConfigs` — there is nothing to reconcile. `buildAndMergeConfig` (in `local-installer.ts`) is the production caller that threads `authoritativeScope` into the context.
 
 **`loadProjectConfig`, not `loadProjectConfigFromDir`.** The load leg checks `context.projectDir` first and then falls back to `os.homedir()` when `projectDir` is not already home. A project with no `.claude-src/config.ts` of its own therefore merges against the GLOBAL config, not against nothing.
 
@@ -155,14 +169,13 @@ Invoked only from `writeScopedFromWizard`'s project branch (through `resolveEffe
 | `skills`                 | Existing preserved verbatim. Active incoming skills (`!excluded`) appended when `id` not already in existing.                                                                                                                  |
 | `agents`                 | Existing preserved verbatim. Active incoming agents (`!excluded`) appended when `name` not already in existing.                                                                                                                |
 | `stack`                  | Deep-additive via `additiveMergeStack` (agent → category → skill triple). Existing entries and their `preloaded` flags are never overwritten.                                                                                  |
-| `domains`                | Set-union of existing and incoming.                                                                                                                                                                                            |
-| `selectedAgents`         | Set-union of existing and incoming.                                                                                                                                                                                            |
+| `selectedDomains`        | Set-union of existing and incoming (deduplicated).                                                                                                                                                                             |
 | `marketplace` / `source` | **Fill-only**: `existing ?? incoming`. Existing wins; incoming is used only when the global config has no value yet. A project-context write never repoints global source identity (only a global-scope `init` from `~` does). |
-| Everything else          | Carried from existing via `{ ...existing, skills, agents, stack, domains, selectedAgents, marketplace, source }` — including `projects`.                                                                                       |
+| Everything else          | Carried from existing via `{ ...existing, skills, agents, stack, selectedDomains, marketplace, source }` — including `projects`.                                                                                               |
 
 **Excluded entries are ignored on the incoming side.** Tombstones are project-local state; they live in the PROJECT config via `splitConfigByScope`, not in the global one. The global-scope-with-excluded pattern (a project suppressing a shared global item) is expressed by the project config's tombstone row, not by rewriting the global config.
 
-**`changed` is `true` iff** at least one new skill, new agent, appended stack triple, or new domain/selectedAgent entry landed, OR a previously-empty `marketplace`/`source` was newly filled. The `marketplace`/`source` term is load-bearing: `needsGlobalWrite` is gated on `changed`, so a run whose only delta is a now-known marketplace must still write (otherwise the field would be dropped again). The caller uses this flag to decide whether to rewrite `~/.claude-src/config.ts` and whether to propagate to other registered projects.
+**`changed` is `true` iff** at least one new skill, new agent, or appended stack triple landed, the deduplicated `selectedDomains` union differs from `existing.selectedDomains`, OR a previously-empty `marketplace`/`source` was newly filled. The `marketplace`/`source` term is load-bearing: `needsGlobalWrite` is gated on `changed`, so a run whose only delta is a now-known marketplace must still write (otherwise the field would be dropped again). The caller uses this flag to decide whether to rewrite `~/.claude-src/config.ts` and whether to propagate to other registered projects.
 
 Rationale: the April-2026 agent-merge-key-mismatch and per-agent-update-loss findings, plus `2026-07-20-config-merge-functions-disagree-on-source-identity.md` (source-identity fill-only rule).
 
@@ -214,10 +227,10 @@ The reverse (P→G) relies on `mergeConfigs` step 2 to drop the tombstone: `newC
 
 - Compound key helpers: `agentKey`, `skillKey` in `config-merger.ts`.
 - `mergeConfigs`, `mergeWithExistingConfig`: `config-merger.ts`.
-- `mergeGlobalConfigs`, `additiveMergeStack`, `mergeAgentCategories`: `local-installer.ts`.
+- `mergeGlobalConfigs`, `additiveMergeStack`, `mergeAgentCategories`: `config-gate/propagate.ts`.
 - Call site threading `mergeGlobalConfigs` into writes: `writeScopedFromWizard`'s project branch, via `resolveEffectiveGlobalConfig` in `config-gate/propagate.ts`.
 - **Its `changed` flag no longer gates propagation.** Since the config-gate landed the fan-out is driven by `classifyGlobalChange`, which diffs the config on disk against the one being written; `mergeGlobalConfigs`' `changed` survives only as part of `effective.changed`, gating the write-skip. This closes the blind spot where a per-skill `source` change on an already-present entry set no merge flag and therefore propagated nothing.
 - Call site threading `mergeConfigs` into writes: `buildAndMergeConfig` → `writeProjectConfig` operation.
 - `ConfigLoadError`, `loadProjectConfig`, `loadProjectConfigFromDir`: `src/cli/lib/configuration/project-config.ts`.
-- Post-split cross-scope reconciliation (NOT in either merger): `reconcileProjectSplitAgainstGlobal` in `local-installer.ts`.
+- Post-split cross-scope reconciliation (NOT in either merger): `reconcileProjectSplitAgainstGlobal` in `config-gate/propagate.ts`.
 - Unit tests: `config-merger.test.ts` (`mergeConfigs`, `mergeWithExistingConfig`), `project-config.test.ts` (`ConfigLoadError` cases), `local-installer.test.ts` (`mergeGlobalConfigs` describe block).

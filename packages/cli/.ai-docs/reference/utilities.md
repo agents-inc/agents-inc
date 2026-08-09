@@ -155,7 +155,7 @@ Wraps `fs-extra` and `fast-glob`:
 | `copy()`             | `(src, dest) => Promise<void>`                | Copy file/directory                               |
 | `isPathWithin()`     | `(child: string, parent: string) => boolean`  | Lexical containment check (no symlink resolution) |
 
-`isPathWithin()` is a pure/synchronous path helper (does not touch the filesystem). Callers: `src/cli/lib/skills/skill-copier.ts`, `src/cli/lib/skills/source-switcher.ts`.
+`isPathWithin()` is a pure/synchronous path helper (does not touch the filesystem). Callers: `src/cli/lib/skills/skill-copier.ts`, `src/cli/lib/skills/local-skill-mover.ts`.
 
 ## Logger
 
@@ -192,7 +192,7 @@ Before Ink takes over the terminal, `warn()` output written to the console would
 
 **Type:** `StartupMessage = { level: "info" | "warn" | "error"; text: string }`
 
-**Used by:** `src/cli/lib/operations/source/load-source.ts` (when its `captureStartupMessages` option is set) calls `enableBuffering()` to capture `warn()` output during skill loading, then `drainBuffer()` + `disableBuffering()` to return the captured messages as `startupMessages: StartupMessage[]`. `src/cli/commands/init.tsx` and `src/cli/commands/edit.tsx` receive that array and thread it through `src/cli/components/wizard/wizard.tsx` to the `WizardLayout` `startupMessages` prop (`src/cli/components/wizard/wizard-layout.tsx`). No Ink `<Static>` block currently renders the prop, and `pushBufferMessage()` has no production callers (test-only).
+**Used by:** `src/cli/lib/operations/source/load-source.ts` (when its `captureStartupMessages` option is set) calls `enableBuffering()` to capture `warn()` output during skill loading, then `drainBuffer()` + `disableBuffering()` to return the captured messages as `startupMessages: StartupMessage[]`. `src/cli/commands/init.tsx` and `src/cli/commands/edit.tsx` receive that array and thread it through `src/cli/components/wizard/wizard.tsx` to the `WizardLayout` `startupMessages` prop (`src/cli/components/wizard/wizard-layout.tsx`), which paints it as a band between the tab bar and the step — see [component-patterns.md](./component-patterns.md#wizardlayout-startup-message-band). There is no Ink `<Static>` block; the band is in the live frame. `pushBufferMessage()` has no production callers (test-only).
 
 **Style guide** (from logger.ts comments):
 
@@ -227,11 +227,8 @@ Converts a kebab-case string to a space-separated Title Case string (`"web-frame
 
 **Used by:**
 
-- `src/cli/lib/skills/generators.ts`
 - `src/cli/lib/matrix/skill-resolution.ts`
 - `src/cli/components/wizard/step-agents.tsx`
-- `src/cli/commands/new/skill.ts`
-- `src/cli/commands/import/skill.ts`
 
 ## Terminal
 
@@ -318,7 +315,7 @@ Helpers for the `# yaml-language-server: $schema=...` header on generated YAML f
 | `yamlSchemaComment()`      | `(schemaPath: string) => string`                                      | Build a `# yaml-language-server: $schema=<path>` comment    |
 | `stripYamlSchemaComment()` | `(content: string) => { schemaComment: string; yamlContent: string }` | Split a leading schema comment from the parseable YAML body |
 
-**Callers:** `src/cli/lib/skills/skill-plugin-compiler.ts`, `src/cli/lib/skills/skill-metadata.ts`, `src/cli/commands/new/skill.ts`, `src/cli/commands/import/skill.ts`.
+**Callers:** `src/cli/lib/skills/skill-plugin-compiler.ts`, `src/cli/lib/skills/skill-metadata.ts`.
 
 ## User-Facing Messages
 
@@ -345,13 +342,14 @@ The test does **not** cover the message-builder functions below.
 Exported from the same file. Used where the string embeds a count, a path, or an error reason —
 so they cannot live in a `const` object.
 
-| Function                                      | Signature                         | Where it prints                                                                                                        |
-| --------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `globalScopedAgentsHint(count)`               | `(count: number) => string`       | `Compile` — project pass resolved zero project agents but the config declares global-scope ones. Singular/plural aware |
-| `configTypesRefreshFailed(reason)`            | `(reason: string) => string`      | `Compile.refreshConfigTypes` catch — compiled agents are written, only the type unions may be stale                    |
-| `registeredProjectsUpdated(count)`            | `(count: number) => string`       | `Uninstall` — summary after a global uninstall pruned inlined global entries. Singular/plural aware                    |
-| `registeredProjectUpdateSkipped(projectPath)` | `(projectPath: string) => string` | `Uninstall` — one registered project was unreachable; the uninstall continues                                          |
-| `registeredProjectsUpdateFailed(reason)`      | `(reason: string) => string`      | `Uninstall.prepareGlobalPropagation` catch — no registered project could be updated; the uninstall still completes     |
+| Function                                      | Signature                               | Where it prints                                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `globalScopedAgentsHint(count)`               | `(count: number) => string`             | `Compile` — project pass resolved zero project agents but the config declares global-scope ones. Singular/plural aware                                                                                                                                                            |
+| `configTypesRefreshFailed(reason)`            | `(reason: string) => string`            | `Compile.refreshConfigTypes` catch — compiled agents are written, only the type unions may be stale                                                                                                                                                                               |
+| `registeredProjectsUpdated(count)`            | `(count: number) => string`             | `Uninstall` — summary after a global uninstall pruned inlined global entries. Singular/plural aware                                                                                                                                                                               |
+| `registeredProjectUpdateSkipped(projectPath)` | `(projectPath: string) => string`       | `Uninstall` — one registered project was unreachable; the uninstall continues                                                                                                                                                                                                     |
+| `registeredProjectsUpdateFailed(reason)`      | `(reason: string) => string`            | `Uninstall.prepareGlobalPropagation` catch — no registered project could be updated; the uninstall still completes                                                                                                                                                                |
+| `configUnreadableError(configLoadFailure)`    | `(configLoadFailure: string) => string` | `BaseCommand.ensureConfigReadable` — `edit` / `init` met a config that exists but cannot be loaded. Takes a `ConfigLoadError` message (file + reason already in it) and adds the two ways forward: `uninstall` then `init`, or the editor at `EDITOR_URL` plus `init --from <id>` |
 
 `INFO_MESSAGES.CONFIG_TYPES_REFRESHED` is the success counterpart to `configTypesRefreshFailed()`;
 both interpolate `STANDARD_FILES.CONFIG_TYPES_TS` rather than hardcoding `config-types.ts`.
@@ -441,12 +439,13 @@ Helper: `marketplaceManifestPath(dir: string): string` joins `dir` + `PLUGIN_MAN
 | Constant                     | Value                                                              | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CLI_INVOKE_COMMAND`         | `npx agents-inc`                                                   | Promoted invocation prefix shown in user-facing messages. `package.json` `bin` registers BOTH `agents-inc` and `agentsinc` for `dist/index.js`; `oclif.bin` is `agents-inc` alone. **Convention (recorded beside the constant in `consts.ts`): every user-facing instruction in this repo — messages, docs, code comments, agent playbooks — writes commands in this `npx agents-inc <cmd>` form. Prose that merely NAMES a command ("the `agents-inc list` table") does not.** |
+| `EDITOR_URL`                 | `https://agentsinc.sh`                                             | The editor — where a configuration is built without the wizard and handed to `init --from <id>`. The editor Worker's custom domain (`apps/editor/wrangler.jsonc`); its config store `https://api.agentsinc.sh` is spelled separately in `src/cli/lib/seed/fetch-seed.ts` as `SEED_API_URL`, which is env-overridable while this is not                                                                                                                                          |
 | `DEFAULT_BRANDING.NAME`      | `Agents Inc.`                                                      | Default product name                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `DEFAULT_BRANDING.TAGLINE`   | `AI-powered development tools`                                     | Default tagline                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `DEFAULT_PUBLIC_SOURCE_NAME` | `agents-inc` (= `DEFAULT_PLUGIN_NAME`)                             | Fallback marketplace/source name                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `PUBLIC_SOURCE_NAME`         | `public`                                                           | Canonical name of the built-in public source                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `SOURCE_DISPLAY_NAMES`       | `{ public: "Public", eject: "Eject", "agents-inc": "Agents Inc" }` | Inline human-readable source type labels                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `SOURCE_HEADER_NAMES`        | `{ eject: "Local", "agents-inc": "Plugin", public: "Public" }`     | Column-header labels for the source grid (distinct from inline labels)                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `INSTALL_MODES`              | `["eject", "plugin"]`                                              | The two install modes a Sources row offers, in the order the grid renders them                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `INSTALL_MODE_CELL_LABELS`   | `{ eject: "Local", plugin: "Plugin" }`                             | How the Sources grid captions its two cells — where the skill will LIVE, not what the mode does to the files (`INSTALL_MODE_LABELS`) nor what a `source` VALUE is called (`SOURCE_DISPLAY_NAMES`)                                                                                                                                                                                                                                                                               |
 | `DEFAULT_VERSION`            | `1.0.0`                                                            | Default skill version                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `DEFAULT_DISPLAY_VERSION`    | `0.0.0`                                                            | Indicates no version explicitly set                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `ALL_SKILLS_EJECTED_LABEL`   | `All skills ejected`                                               | Summary-panel `Marketplace` row when no skill has a marketplace source (distinct state from an empty set, which falls back to the public default)                                                                                                                                                                                                                                                                                                                               |
@@ -506,7 +505,7 @@ drift apart:
 | `src/cli/components/wizard/skill-agent-summary.tsx` | Confirm-step info panel | `DIFF_PREFIX` record keyed by `DiffRowStatus`       |
 | `src/cli/components/wizard/source-grid.tsx`         | Sources step            | `row.disabled` -> `REMOVED`, `row.added` -> `ADDED` |
 
-The `unchanged` marker is `UI_SYMBOLS.BULLET`. The **source-changed** marker is a bare `"~ "` string
+The `unchanged` marker is `UI_SYMBOLS.BULLET`. The **mode-changed** marker is a bare `"~ "` string
 literal in `skill-agent-summary.tsx`'s `DIFF_PREFIX` — it is _not_ a `UI_SYMBOLS` member.
 
 `CLI_COLORS` has exactly 16 keys (exhaustive, in source order): `PRIMARY`, `SUCCESS`, `ERROR`, `WARNING`, `INFO`, `NEUTRAL`, `FOCUS`, `UNFOCUSED`, `WHITE`, `BLACK`, `DIM`, `GRAY_1`, `LABEL_BG`, `TOAST_BG`, `TOAST_FG`, `HOVER_BG`.
@@ -566,22 +565,25 @@ Helper: `yamlSchemaComment(schemaPath: string): string` generates a `# yaml-lang
 
 ### Source Resolution
 
-| Constant                      | Value                               | Purpose                            |
-| ----------------------------- | ----------------------------------- | ---------------------------------- |
-| `GITHUB_SOURCE.HTTPS_PREFIX`  | `https://github.com/`               | GitHub HTTPS URL prefix            |
-| `GITHUB_SOURCE.GITHUB_PREFIX` | `github:`                           | GitHub shorthand prefix            |
-| `GITHUB_SOURCE.GH_PREFIX`     | `gh:`                               | GitHub short prefix                |
-| `DEFAULT_SKILLS_SUBDIR`       | `skills` (= `STANDARD_DIRS.SKILLS`) | Default skills subdirectory name   |
-| `KEBAB_CASE_PATTERN`          | `/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/`   | Strict kebab-case validation regex |
-| `AUTHOR_HANDLE_PATTERN`       | `/^@[a-z][a-z0-9-]*$/`              | Author handle format (`@` + slug)  |
+| Constant                      | Value                             | Purpose                            |
+| ----------------------------- | --------------------------------- | ---------------------------------- |
+| `GITHUB_SOURCE.HTTPS_PREFIX`  | `https://github.com/`             | GitHub HTTPS URL prefix            |
+| `GITHUB_SOURCE.GITHUB_PREFIX` | `github:`                         | GitHub shorthand prefix            |
+| `GITHUB_SOURCE.GH_PREFIX`     | `gh:`                             | GitHub short prefix                |
+| `KEBAB_CASE_PATTERN`          | `/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/` | Strict kebab-case validation regex |
+| `AUTHOR_HANDLE_PATTERN`       | `/^@[a-z][a-z0-9-]*$/`            | Author handle format (`@` + slug)  |
 
 ### Domain Configuration
 
-| Constant                  | Value                                                                         |
-| ------------------------- | ----------------------------------------------------------------------------- |
-| `BUILT_IN_DOMAIN_ORDER`   | `["web", "api", "ai", "mobile", "desktop", "cli", "infra", "meta", "shared"]` |
-| `DEFAULT_SCRATCH_DOMAINS` | `["web", "api", "mobile"]`                                                    |
-| `FALLBACK_DOMAIN`         | `"web"` — used when no active domain resolves from wizard state               |
+| Constant                  | Value                                                           |
+| ------------------------- | --------------------------------------------------------------- |
+| `DEFAULT_SCRATCH_DOMAINS` | `["web", "api", "mobile"]`                                      |
+| `FALLBACK_DOMAIN`         | `"web"` — used when no active domain resolves from wizard state |
+
+The canonical domain display order is no longer a `consts.ts` export: the CLI
+imports `DOMAIN_ORDER` from `@workspace/matrix`
+(`packages/matrix/src/read-model/domains.ts`), the same surface the editor
+reads.
 
 ## Remeda Utilities (External)
 

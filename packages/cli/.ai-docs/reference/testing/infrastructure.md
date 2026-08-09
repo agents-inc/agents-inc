@@ -41,6 +41,56 @@ Vitest is configured with 3 test projects:
 | `integration` | `src/cli/lib/__tests__/integration/**/*.test.{ts,tsx}`, `src/cli/lib/__tests__/user-journeys/**/*.test.ts` | Integration tests | 0     |
 | `commands`    | `src/cli/lib/__tests__/commands/**/*.test.ts`                                                              | CLI command tests | 1     |
 
+### The `commands` project executes `dist/`, not `src/`
+
+`unit` and `integration` import `src/` directly. **`commands` does not.** Its helper
+`runCliCommand` (`src/cli/lib/__tests__/helpers/cli-runner.ts`) calls oclif's
+`run(args, { root: CLI_ROOT })`, and oclif resolves that root through `package.json`'s
+`oclif.commands.target`, which is `"./dist/commands"`. Every spec in this project therefore runs
+**the last build**.
+
+**A commands-project result is a statement about the last build.** Since CLI-457 you no longer have
+to remember that, because two layers enforce it:
+
+| Layer                                         | Covers                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pretest` in `package.json` (`bun run build`) | `bun run test` and `npm test` — mirrors the long-standing `pretest:e2e`                                                                                                                                                                                                                                            |
+| `globalSetup` -> `vitest.global-setup.ts`     | Every invocation, `npx vitest run <file>` included. Calls `assertDistIsFresh` (`src/cli/lib/testing/dist-staleness.ts`), which compares the newest mtime under each tree compiled into `dist/` (build inputs only) against the newest in `dist/` and **throws before any spec is collected** when `dist/` is older |
+
+The guard **refuses; it does not rebuild** — a direct `vitest run` stays fast and stays something
+you asked for. Its message names the fix (`bun run build`). It ignores `*.test.ts(x)`, `__tests__/`
+and `__mocks__/` — the same negations `tsup.config.ts` and `turbo.json` use — so editing or adding a
+spec never trips it, and it globs directories as well as files because a **deleted** source file
+leaves nothing to stat: only its parent directory's mtime moves.
+
+**Two trees, not one** (CLI-458). `BUILD_INPUT_TREES` names `packages/cli/src` and
+`packages/matrix/src`, because tsup inlines `@workspace/matrix` into the bundle (`noExternal`) —
+matrix source is compiled into this package's `dist/` exactly as `src/` is, and matrix has no build
+output of its own to go stale instead. Before that, touching a matrix file and running
+`npx vitest run` on a commands spec was a **false green**: 18 tests passed against a `dist/` older
+than every matrix source file. The message names whichever tree moved and, for matrix, why it
+counts. Cost of the second tree: 28 entries, **+0.3 ms** median on a ~25 ms scan (the two trees are
+scanned in parallel; matrix alone measures 0.5 ms). Two behaviours worth knowing: a **deleted**
+matrix source trips it (the parent directory's mtime moves), and **editing** a matrix spec does not
+— but **adding or deleting** one does, because matrix keeps its specs beside the code rather than in
+`__tests__/`, so the bare-directory ignores that absorb this under `packages/cli/src` have nothing
+to match there. That is a refusal you did not need, never a green you should not have had.
+
+A third tree is not needed for `turbo test`: turbo already hashes matrix into the CLI's build task
+even though matrix has no `build` script — see
+[build-and-packaging.md](../build-and-packaging.md#what-turbo-hashes-as-build-input).
+
+Both failure directions were live before that, and both are what the layers exist to stop:
+
+| Direction   | What you see                                                                                                                                                                                                                                                                                                                                    |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| False RED   | A source change the build has not picked up. During the CLI-404 removal, deleting `recommends` from `relationshipDefinitionsSchema` left 25 specs failing on `Config validation failed … relationships.recommends: Invalid input` — correct fixtures, correct source, stale `dist/` schema. A rebuild turned all 25 green with no other change. |
+| False GREEN | The quieter one. A breaking source change can leave these specs passing against stale `dist/` until CI's build step surfaces it.                                                                                                                                                                                                                |
+
+Reading a commands-project failure as "my change broke this" before checking the build date is the
+first wrong turn. Source:
+`agent-findings/2026-08-06-commands-project-tests-execute-stale-dist-until-rebuild.md`.
+
 ## Configuration
 
 ```typescript
@@ -51,6 +101,7 @@ Vitest is configured with 3 test projects:
   disableConsoleIntercept: true,    // Required for @oclif/test + ink-testing-library
   clearMocks: true,
   setupFiles: ["./vitest.setup.ts"],
+  globalSetup: ["./vitest.global-setup.ts"],  // Calls assertDistIsFresh: refuses the run when dist/ predates src/ or matrix/src/
   testTimeout: 10000,
   hookTimeout: 10000,
   coverage: {
@@ -70,6 +121,41 @@ Runs for every test across all projects:
 - **`beforeAll`:** Mocks `os.homedir()` to a per-run temp dir (`vitest-home-*`). This prevents `loadProjectConfig()`'s global fallback from hitting the developer's real `~/.claude-src/config.yaml`. Tests that explicitly override `process.env.HOME` (via `setupIsolatedHome()`) keep their override.
 - **`beforeEach`:** Calls `initializeMatrix(BUILT_IN_MATRIX)` and resets the Zustand wizard store (`useWizardStore.getState().reset()`). Guarantees matrix + store isolation between tests.
 - **`afterAll`:** Restores all mocks and removes the temp home dir.
+
+### Global Setup File (`vitest.global-setup.ts`) and `dist-staleness.ts`
+
+Runs **once per run**, before any spec is collected, and does one thing: throws when `dist/` is
+older than a tree compiled into it (`packages/cli/src` or `packages/matrix/src`). It also throws
+when one of those trees scans to nothing, because an empty scan and an unchanged one are
+indistinguishable — a package that moved would take its tree out of the comparison silently, which
+is the exact failure this guard exists to prevent. It is the un-bypassable half of the freshness
+rule described under
+[The `commands` project executes `dist/`](#the-commands-project-executes-dist-not-src) above — read
+that section for what it ignores and why it refuses instead of rebuilding. Rule
+[6.19](../../standards/clean-code-standards.md) is the standard it enforces.
+
+**It is two files, and which half is where is the point** (CLI-460). The scan, the comparison, the
+`BUILD_INPUT_TREES` list and every message live in `src/cli/lib/testing/dist-staleness.ts`, whose
+sole export is `assertDistIsFresh(cliRoot)`. `vitest.global-setup.ts` holds three statements: it
+resolves its own directory as the CLI package root, exports `setup`, and calls that function.
+Package-root files sit in no tsconfig of this package (`tsconfig.json` includes `src/**/*` only) and
+match no `files` block in `eslint.config.js` — `npx eslint vitest.global-setup.ts` still reports
+_"File ignored because no matching configuration was supplied"_ — so for as long as the logic lived
+there, the one file whose job is to stop a meaningless green was type-checked and linted by nothing
+(finding `2026-08-09-the-guard-that-polices-every-suite-is-checked-by-no-tsc-program-and-no-eslint-config.md`).
+Under `src/` it is inside `tsc --noEmit`, inside `eslint .` including the type-aware layer, and
+covered by `dist-staleness.test.ts` beside it — which drives the real refusals over a fixture tree
+laid out like the repository (`<root>/packages/cli` and `<root>/packages/matrix/src`), so the
+relative matrix hop is asserted rather than assumed.
+
+Two consequences worth knowing. The module stays **dependency-free beyond node builtins and
+fast-glob**: `globalSetup` is transpiled and evaluated before dist freshness is known, and a module
+graph reaching back into the CLI would grow the guard's cost with the code it guards — the `.js`
+specifier in the hook resolves to the `.ts` source through Vitest's own transform, no build
+involved. And the module is itself inside the tree it scans, so **editing the guard asks for a
+rebuild** before the suite will run. tsup never compiles it (no entry reaches it, so it ships
+nothing), which makes that refusal one you did not need rather than a green you should not have
+had — the same trade the matrix-spec caveat above describes.
 
 ## Test Directory Structure
 
@@ -124,19 +210,17 @@ src/cli/lib/__tests__/
       plugins.test.ts
     compile.test.ts
     doctor.test.ts
+    doctor-content.test.ts
     edit.test.ts
     eject.test.ts
     help.test.ts
-    import/skill.test.ts
     init.test.ts
+    init-edit-validation-parity.test.ts
+    init-from-plugin-install.test.ts
     list.test.ts
-    new/agent.test.ts
-    new/marketplace.test.ts
-    new/skill.test.ts
     search.test.ts
     uninstall.test.ts
     update.test.ts
-    validate.test.ts
   fixtures/
     create-test-source.ts            # Integration test source factory
     agents/                          # Agent fixture files (_templates, web-developer, api-developer)
@@ -147,19 +231,14 @@ src/cli/lib/__tests__/
   integration/
     compilation-pipeline.test.ts
     consumer-stacks-matrix.integration.test.ts
-    import-skill.integration.test.ts
-    init-end-to-end.integration.test.ts
-    init-flow.integration.test.ts
     install-mode.integration.test.ts
+    install-mode-round-trip.integration.test.ts
     installation.test.ts
-    source-switching.integration.test.ts
+    stack-agent-roster.integration.test.ts
     wizard-flow.integration.test.tsx
   user-journeys/
-    compile-flow.test.ts
     config-precedence.test.ts
     edit-recompile.test.ts
-    install-compile.test.ts
-    user-journeys.integration.test.ts
 ```
 
 Note: There is NO `test/fixtures/` directory at the project root. All fixtures are in `src/cli/lib/__tests__/fixtures/`. The `fixtures/` subdirectory does NOT contain `configs/` or `matrix/` subdirectories.
@@ -191,14 +270,13 @@ src/cli/lib/configuration/config.test.ts
 src/cli/lib/configuration/config-generator.test.ts
 src/cli/lib/configuration/config-merger.test.ts
 src/cli/lib/configuration/project-config.test.ts
-src/cli/lib/configuration/source-manager.test.ts
 src/cli/lib/installation/installation.test.ts
 src/cli/lib/installation/local-installer.test.ts
 src/cli/lib/installation/mode-migrator.test.ts
 src/cli/lib/loading/loader.test.ts
 src/cli/lib/loading/multi-source-loader.test.ts
 src/cli/lib/loading/source-fetcher.test.ts
-src/cli/lib/loading/source-fetcher-refresh.test.ts
+src/cli/lib/loading/source-fetcher-revalidation.test.ts
 src/cli/lib/loading/source-loader.test.ts
 src/cli/lib/marketplace-generator.test.ts
 src/cli/lib/matrix/matrix-health-check.test.ts
@@ -211,7 +289,6 @@ src/cli/lib/operations/project/compile-agents.test.ts
 src/cli/lib/operations/project/detect-project.test.ts
 src/cli/lib/operations/project/load-agent-defs.test.ts
 src/cli/lib/operations/project/write-project-config.test.ts
-src/cli/lib/operations/skills/compare-skills.test.ts
 src/cli/lib/operations/skills/copy-local-skills.test.ts
 src/cli/lib/operations/skills/install-plugin-skills.test.ts
 src/cli/lib/operations/skills/uninstall-plugin-skills.test.ts
@@ -233,10 +310,8 @@ src/cli/lib/skills/skill-copier.test.ts
 src/cli/lib/skills/skill-fetcher.test.ts
 src/cli/lib/skills/skill-metadata.test.ts
 src/cli/lib/skills/skill-plugin-compiler.test.ts
-src/cli/lib/skills/source-switcher.test.ts
+src/cli/lib/skills/local-skill-mover.test.ts
 src/cli/lib/source-validator.test.ts
-src/cli/lib/stacks/stack-installer.test.ts
-src/cli/lib/stacks/stack-plugin-compiler.test.ts
 src/cli/lib/stacks/stacks-loader.test.ts
 src/cli/lib/versioning.test.ts
 src/cli/lib/wizard/build-step-logic.test.ts
@@ -260,12 +335,10 @@ src/cli/components/hooks/use-terminal-dimensions.test.ts
 src/cli/components/wizard/category-grid.test.tsx
 src/cli/components/wizard/checkbox-grid.test.tsx
 src/cli/components/wizard/hotkeys.test.ts
-src/cli/components/wizard/search-modal.test.tsx
 src/cli/components/wizard/source-grid.test.tsx
 src/cli/components/wizard/step-agents.test.tsx
 src/cli/components/wizard/step-build.test.tsx
 src/cli/components/wizard/step-confirm.test.tsx
-src/cli/components/wizard/step-settings.test.tsx
 src/cli/components/wizard/step-sources.test.tsx
 src/cli/components/wizard/step-stack.test.tsx
 src/cli/components/wizard/utils.test.ts
@@ -381,10 +454,10 @@ handler actually received.
 Both changes turned out to need no code fix, and in both cases the release note alone would have
 suggested otherwise:
 
-| Change                                                    | What the note implies                                                                                                   | What arrived                                                                                                                                                                               |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Escape no longer reports itself as a meta keypress        | `use-text-input.ts` decides a keypress is a real character partly from the meta flag, so a text field might type Escape | Escape arrives with an **empty** `input` string, so the field's emptiness guard rejects it before the meta flag is consulted. A field holding `ab` still held `ab`, then took `z` normally |
-| Backspace now reports as `backspace` rather than `delete` | Handlers reading `key.delete` for backspace break                                                                       | Harmless — both places that read it already accept either                                                                                                                                  |
+| Change                                                    | What the note implies                                                                                                                 | What arrived                                                                                                                                                                               |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Escape no longer reports itself as a meta keypress        | the wizard's text-input handling decided a keypress was a real character partly from the meta flag, so a text field might type Escape | Escape arrives with an **empty** `input` string, so the field's emptiness guard rejects it before the meta flag is consulted. A field holding `ab` still held `ab`, then took `z` normally |
+| Backspace now reports as `backspace` rather than `delete` | Handlers reading `key.delete` for backspace break                                                                                     | Harmless — both places that read it already accept either                                                                                                                                  |
 
 **A behaviour claim about a keypress is testable in about ten lines, and a wrong guess about one
 costs a debugging session.** `src/cli/lib/__tests__/test-constants.ts` already holds the escape

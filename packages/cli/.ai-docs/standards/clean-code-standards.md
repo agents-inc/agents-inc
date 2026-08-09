@@ -156,7 +156,7 @@ const normalizedPath = path.resolve(resolvedPath);
 return normalizedPath.startsWith(path.resolve(expectedParent) + path.sep);
 ```
 
-**5.3 Validate CLI arguments passed to `spawn()`.** Each argument type gets its own validator with: (1) empty/whitespace rejection, (2) length limit, (3) control character rejection, (4) format pattern allowlist. See `validatePluginPath()`, `validatePluginName()` in `exec.ts` and `validateMarketplaceName()` in `commands/new/marketplace.ts`.
+**5.3 Validate CLI arguments passed to `spawn()`.** Each argument type gets its own validator with: (1) empty/whitespace rejection, (2) length limit, (3) control character rejection, (4) format pattern allowlist. See `validatePluginPath()` and `validatePluginName()` in `exec.ts`.
 
 **5.4 Sanitize user-controlled data before template rendering.** Strip Liquid syntax (`{{`, `}}`, `{%`, `%}`) before passing to the Liquid engine. See `sanitizeLiquidSyntax()` in `compiler.ts`.
 
@@ -263,7 +263,19 @@ function createMockSkill(
 }
 ```
 
-**6.10** No `as` casts in tests. Use valid typed literals -- if a value doesn't type-check, fix the value or the type. Two exceptions require a `// Boundary cast:` comment: (1) intentionally invalid data for error-path testing (`const invalidId = "bad" as SkillId`), and (2) partial mock data at test fixture boundaries (`{ "web-developer": mockAgent } as Record<AgentName, AgentDefinition>`).
+**6.10** No `as` casts in tests. Use valid typed literals -- if a value doesn't type-check, fix the value or the type. **One** exception, and it requires a `// Boundary cast:` comment: intentionally invalid data for error-path testing (`const invalidId = "bad" as SkillId`).
+
+A sparse-but-VALID fixture is not an exception -- it is a signal that the callee's parameter is wrong. When a test holds a partial map and the function demands a total one, cast nothing: widen the parameter to `Partial<Record<K, V>>` per typescript-types-bible §4, and declare the fixture with an annotation.
+
+```ts
+// BAD -- the cast re-asserts a totality the callee invented
+const agents = { "web-developer": mockAgent } as Record<AgentName, AgentDefinition>;
+
+// GOOD -- annotation on the binding; the callee takes Partial<Record<...>>
+const agents: Partial<Record<AgentName, AgentDefinition>> = { "web-developer": mockAgent };
+```
+
+This used to be sanctioned here as a second exception, with `{ "web-developer": mockAgent } as Record<AgentName, AgentDefinition>` given as the example. That example was the defect: 24 signatures across loading, resolution, compilation, the config gate and installation declared total agent maps that no call path fills, and `local-installer.test.ts` carried **53 casts** -- 43 of them the same `emptyAgents as Record<AgentName, AgentDefinition>` -- existing only to launder that one wrong type into every call site, including two `as unknown as` double casts a CLAUDE.md NEVER already forbids. Making the parameters `Partial` deleted all 53 with no other change and surfaced zero unhandled `undefined` in production code: every site was already guarded, which is what a false total map always looks like from underneath.
 
 **6.11** No TODO/task IDs in test names (`describe()`, `it()`), assertion messages, or inline test comments. File-level JSDoc only. Names rot; IDs look authoritative but become meaningless once the task is closed or renumbered.
 
@@ -305,16 +317,15 @@ This narrows 6.17 rather than contradicting it — snapshotting is already one o
 
 **6.18** Never define parser/extractor helpers with non-trivial logic inside a test file (loops, regex scans, state machines that pick data out of rendered output or config text). If a helper is genuinely reusable across tests, live it in `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested. Instead, assert directly on raw output with `toContain`, `toMatchInlineSnapshot`, or a structural load (e.g. `loadProjectConfig` for `config.ts`).
 
-**6.19** Gate a feature-flagged suite on the flag, not `describe.skip`. When a suite is unrunnable only because `FEATURE_FLAGS.X` in `lib/feature-flags.ts` is off, write `describe.skipIf(!FEATURE_FLAGS.X)`: the suite re-enables itself when the flag flips, and coverage tracks the flag instead of an agent's memory. This works in `e2e/` too — the spec imports the flag from source at collection time, even though the CLI under test runs as a separate process. A component spec that renders the flagged component directly keeps running unconditionally; only the specs that reach it through the gated surface skip with the flag.
+**6.19** A spec that invokes the CLI by oclif command id is testing the build output, not the source, and its green means nothing until the build is current. Two suites have this property, and they are the ones whose greens to distrust: everything calling `runCliCommand` (`src/cli/lib/__tests__/commands/**` today, and any `integration/` spec that imports it), which reaches oclif through `package.json` -> `oclif.commands.target` = `./dist/commands`; and everything under `e2e/`, which spawns `bin/run.js` against that same directory. Neither `tsc` nor a code review can see the gap — `runCliCommand` addresses a command by its id string, so nothing imports the module whose absence is the defect.
 
-```ts
-// BAD — stays dead after the flag flips back on
-describe.skip("source management in wizard", () => { ... });
-// GOOD
-describe.skipIf(!FEATURE_FLAGS.WIZARD_SETTINGS_OVERLAY)("source management in wizard", () => { ... });
-```
+This is enforced rather than remembered, in two layers because one is not enough. `pretest` and `pretest:e2e` build before `bun run test` and `bun run test:e2e`; the `globalSetup` guard refuses outright — before a single spec is collected — when `dist/` predates a tree compiled into it, which is what covers the bare `npx vitest run <file>` no script hook can reach. Do not delete either half and do not "fix" the guard into an auto-build: a refusal keeps a direct run fast and deliberate.
 
-Current state: three suites use the flag-gated form (all `WIZARD_SETTINGS_OVERLAY`), and eight `describe.skip` blocks predate this rule — the six `new skill` / `new agent` / `new marketplace` suites and the two `FILTER_INCOMPATIBLE` E2E suites. Convert one when you touch it. Their recorded reason ("`vi.mock` cannot reach the flag inlined into the dist bundle") argues against mocking the flag, not against reading it.
+The guard is `assertDistIsFresh` in **`src/cli/lib/testing/dist-staleness.ts`**, called by a three-line `vitest.global-setup.ts`. It lives under `src/` deliberately (CLI-460): a package-root file is in no tsconfig of this package and matches no `files` block in `eslint.config.js`, so the logic that polices every suite was type-checked and linted by nothing while it sat there. Keep it there, keep it dependency-free beyond node builtins and fast-glob — `globalSetup` evaluates it before dist freshness is known — and keep `dist-staleness.test.ts` beside it, because a guard whose own behaviour is unasserted is the next version of the same problem.
+
+"A tree compiled into it" is plural and that is the point (CLI-458): `packages/matrix/src` counts as much as `packages/cli/src`, because tsup inlines `@workspace/matrix` into the bundle rather than importing it, and matrix has no build output of its own to go stale in the CLI's place. **Anything else this package ever inlines from another workspace belongs in `BUILD_INPUT_TREES` (in `dist-staleness.ts`) on the same day it is inlined** — a build input the guard cannot see is a false green it cannot stop.
+
+Grounding: deleting `src/cli/commands/import/skill.ts` in CLI-452 left `dist/commands/import/skill.js` behind, and its eleven-spec integration file passed in full against the orphan — the whole suite reported 136 files green with the command's source already gone from the tree. The trap is invisible in the direction that matters: a command spec that stays green after you delete its command reads as "nothing depended on it", when it should read as "here is the spec you missed".
 
 ---
 
@@ -335,7 +346,7 @@ Current state: three suites use the flag-gated form (all `WIZARD_SETTINGS_OVERLA
 
 3. **Type narrowing after runtime validation** -- a value's compile-time type is wider than what runtime checks have established. The cast narrows to the validated subset. Example: `resolveSkillForPopulation` in `wizard-store.ts` casts `CategoryPath` to `Category` after domain lookup confirms existence.
 
-4. **Data definition** -- literal data structures where TypeScript can verify the values but the container type is wider than the union. Example: `IMPORT_DEFAULTS.CATEGORY` in `metadata-keys.ts` casts `"imported"` to `CategoryPath` in a constant definition.
+4. **Data definition** -- literal data structures where TypeScript can verify the values but the container type is wider than the union. Example: `LOCAL_DEFAULTS.CATEGORY` in `metadata-keys.ts` casts `"dummy-category"` to `CategoryPath` in a constant definition.
 
 5. **Framework (oclif)** -- framework types don't declare custom properties attached at runtime. Example: the `sourceConfig` getter in `base-command.ts` casts oclif's `Config` to reach the value attached in the init hook.
 
@@ -556,7 +567,7 @@ const skills = category.skills;
 
 Exactly two files outside the gate may import its private modules, both enforcement guards, both pinned **by name** in the guard test: `utils/fs.ts` (needs `assertGateToken`) and `configuration/config-types-writer.ts` (needs `GlobalPairWriteViolation` to refuse a home-directory write by name). Do not add a third. Specs are exempt from the ESLint bans — a test asserting on a writer has to import it — but not from the tripwire or the source scan.
 
-**15.9 Writer selection for `config-types.ts`.** A PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts`) is written by `regenerateConfigTypes`, which emits the import-from-global form and throws `GlobalPairWriteViolation` if handed the home directory. The GLOBAL half has no direct writer: call the gate's `writeScopeConfigTypes` / `writeScaffoldedEntityTypes` / `reconcileTypesFromDisk`, which dispatch on `isHomeDirectory(projectDir)` themselves. Never branch on scope at the call site. See `.ai-docs/reference/config/config-writer.md`.
+**15.9 Writer selection for `config-types.ts`.** A PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts`) is written by `regenerateConfigTypes`, which emits the import-from-global form and throws `GlobalPairWriteViolation` if handed the home directory. The GLOBAL half has no direct writer: call the gate's `writeScopeConfigTypes` / `reconcileTypesFromDisk`, which dispatch on `isHomeDirectory(projectDir)` themselves. Never branch on scope at the call site. See `.ai-docs/reference/config/config-writer.md`.
 
 **15.10 A gated write carries out its own consequences and reports them.** A `config-gate` entry that propagates a global change also recompiles the projects it rewrote, and returns a `GateReport` whose `propagated` / `recompile` fields the caller renders — `init`, `edit`, `compile` and `uninstall` each do. Never re-implement the fan-out at a call site, and never discard the report: both audited gaps in the previous contract (a project-context source migration, a global uninstall) were a caller forgetting to recompile. 15.6 applies to the report like any other multi-field result.
 

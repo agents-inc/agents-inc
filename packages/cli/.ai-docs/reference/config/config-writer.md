@@ -79,8 +79,34 @@ Replaced the former `writeProjectSourceConfig()`. **Renders only — it writes n
 
 The `generateConfigSource()` function accepts an optional `ConfigSourceOptions` parameter:
 
-- When `isProjectConfig: true` (no `globalConfig`): generates a config that imports from the global config and spreads global arrays into skills, agents, and domains.
+- When `isProjectConfig: true` (no `globalConfig`): generates a config that imports from the global config and spreads global arrays into skills, agents, and selectedDomains.
 - When `isProjectConfig: true` with `globalConfig` provided: generates a self-contained config snapshot via `generateProjectConfigWithInlinedGlobal()`. Both global and project entries for the same skill ID are preserved (no deduplication). Global entries appear under a `// global` comment, project entries under `// project`. Excluded global entries (tombstones) replace their active global counterparts in the global section while the active project entry appears separately in the project section. Stack entries are filtered to project-scoped agents only.
+
+**Extracted fields.** Module-level `EXTRACTED_FIELDS` in `config-writer.ts` names the four fields declared as typed named variables above the `export default` (`const skills: SkillConfig[]`, `const agents: AgentScopeConfig[]`, `const stack: Partial<Record<ProjectAgentName, StackAgentConfig>>`, `const selectedDomains: Domain[]`); every other field is emitted inline as a scalar property. `skills`, `agents`, and `selectedDomains` fall back to an empty-literal property when their variable was not emitted; `stack` is omitted entirely when absent. `generateBlankGlobalConfigSource()` emits the same shape at its floor: `"skills": []`, `"agents": []`, `"selectedDomains": []` inline, no named variables.
+
+### Stack emission — flag-less assignments compact to bare strings
+
+Every emission path runs the shared `cleanForEmission` helper (JSON round-trip, optional `projects`
+removal, stack compaction). Per assignment, `compactAssignment` applies the `carriesFlags` test —
+`Boolean(assignment.preloaded || assignment.local || assignment.path)`:
+
+| Assignment in the config object    | Emitted form              |
+| ---------------------------------- | ------------------------- |
+| `{ id }`                           | `"<id>"` (bare string)    |
+| `{ id, preloaded: false }`         | `"<id>"` (bare string)    |
+| `{ id, preloaded: true }`          | object form, flags intact |
+| anything carrying `local` / `path` | object form, flags intact |
+
+`preloaded: false` never reaches disk — an absent flag already means "not preloaded", and the
+in-memory builders never mint it either: `toStackAssignment` (via `buildAgentStack` in
+`config-generator.ts`) emits `{ id, preloaded: true }` or a bare `{ id }` and nothing else — the
+prior stack's word for the triple wins (`priorLoadState`; a prior bare `{ id }` is curated lazy,
+not silence), and a triple new to the save takes the shared preload mapping's default
+(`mappedLoadState` -> `resolveLoadState` from `@workspace/matrix`). `defaultStacks` in
+`default-stacks.ts` writes `preloaded` only where it is
+true. The load path reverses the compaction: `normalizeAgentConfig` in
+`src/cli/lib/stacks/stacks-loader.ts` normalizes a bare string to `{ id, preloaded: false }` and
+passes `{ id }` objects through unchanged.
 
 ### Stack emission — an exclusive category loses its array wrapper
 
@@ -107,9 +133,9 @@ Category 'web-framework' is exclusive but holds 2 skills: [...]
 
 A count alone could not be acted on, and dropping the extra would write a config that does not match
 what was selected with nothing downstream able to tell. `isExclusiveCategory` here reads the matrix
-singleton and treats an **undeclared** category as non-exclusive — the same rule
-`local-installer.ts` applies, and for the same reason: a rule that changes what gets persisted must
-fire only on a flag the data actually carries.
+singleton and treats an **undeclared** category as non-exclusive — the same rule the masking pass
+in `config-gate/propagate.ts` applies, and for the same reason: a rule that changes what gets
+persisted must fire only on a flag the data actually carries.
 
 Three consequences worth holding together:
 
@@ -171,7 +197,7 @@ writing `~/.claude-src/config.ts` and its `config-types.ts` sibling (together, *
 
 | Private file     | Holds                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pair-writer.ts` | The only code that writes either half. `writeGlobalConfigHalf`, `writeGlobalTypesHalf`, `writeGlobalTypesHalfFromData`, `writeGlobalPair`, `ensureBlankPair`.                                                                                                                                                                                                 |
+| `pair-writer.ts` | The only code that writes either half. `writeGlobalConfigHalf`, `writeGlobalTypesHalf`, `writeGlobalPair`, `ensureBlankPair`.                                                                                                                                                                                                                                 |
 | `classify.ts`    | `classifyGlobalChange(prev, next) → GlobalChangeSet`, and the tier predicates that read it.                                                                                                                                                                                                                                                                   |
 | `propagate.ts`   | `writeConfigFile`, `writeProjectConfigPair`, `propagateGlobalChangesToProjects`, `pruneGlobalEntriesFromRegisteredProjects`, `resolveEffectiveGlobalConfig`, `mergeGlobalConfigs`, `registerProjectPath`, `deregisterProjectPath`, `normalizeProjectPath`, `reconcileProjectSplitAgainstGlobal`, `buildProjectTypesExtras`, `buildConfigTypesBackgroundData`. |
 | `recompile.ts`   | `recompilePropagated` — lazily imports `operations/project/recompile-project-agents.js` (a static import would form a load-time `lib → operations → lib` cycle).                                                                                                                                                                                              |
@@ -182,12 +208,12 @@ writing `~/.claude-src/config.ts` and its `config-types.ts` sibling (together, *
 
 `classifyGlobalChange` diffs the config on disk against the config about to be written, over `JSON.parse(JSON.stringify(...))`-normalized forms so an explicitly-`undefined` field and an absent one compare equal. `consequenceTier` reduces the resulting `GlobalChangeSet` to the work owed:
 
-| Tier   | Trigger                                                                                                                     | Pair halves written | Propagates | Regenerates project types | Recompiles | Loads matrix/agents |
-| ------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------- | ---------- | ------------------------- | ---------- | ------------------- |
-| **T1** | skills added/removed/`source`-changed/otherwise changed, agents added/removed/changed, `stack`, `domains`, `selectedAgents` | both                | yes        | yes                       | yes        | yes                 |
-| **T2** | scalars only (any key that is neither one of the five extracted fields nor `projects`)                                      | config half         | yes        | no                        | no         | matrix only         |
-| **T3** | `projects[]` only                                                                                                           | config half         | no         | no                        | no         | no                  |
-| **T4** | nothing moved                                                                                                               | none                | no         | no                        | no         | no                  |
+| Tier   | Trigger                                                                                                           | Pair halves written | Propagates | Regenerates project types | Recompiles | Loads matrix/agents |
+| ------ | ----------------------------------------------------------------------------------------------------------------- | ------------------- | ---------- | ------------------------- | ---------- | ------------------- |
+| **T1** | skills added/removed/`source`-changed/otherwise changed, agents added/removed/changed, `stack`, `selectedDomains` | both                | yes        | yes                       | yes        | yes                 |
+| **T2** | scalars only (any key that is neither one of the four extracted fields nor `projects`)                            | config half         | yes        | no                        | no         | matrix only         |
+| **T3** | `projects[]` only                                                                                                 | config half         | no         | no                        | no         | no                  |
+| **T4** | nothing moved                                                                                                     | none                | no         | no                        | no         | no                  |
 
 T2 exists because project configs inline the global **scalars** verbatim (`generateConfigSource` emits `source`, `marketplace`, `sources`, `author` into project output), while no generated union is derived from them. A per-skill `source` change is T1, not T2: the compiled reference form depends on it(`<id>:<id>` for a marketplace-sourced skill, the bare id for an ejected one), so a source change that skipped the recompile would leave every registered project's agents naming a reference that no longer resolves. T3 is the reason a project `uninstall` stays offline — `resolveGateDeps` never calls the lazy loaders for a tier with no consequences.
 
@@ -197,17 +223,15 @@ T2 exists because project configs inline the global **scalars** verbatim (`gener
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `writeScopedFromWizard(args)`                      | `write-project-config.ts` (init/edit), `local-installer::writeConfigAndCompileAgents` (eject/plugin installs) | The scoped pair(s) — see the branches below                                           |
 | `reconcileTypesFromDisk(dir, config, deps, opts?)` | `commands/compile.ts`                                                                                         | The types half only; `config.ts` on disk is the input and is never rewritten          |
-| `writeScaffoldedEntityTypes(dir, data, extras?)`   | `new/skill.ts`, `new/agent.tsx`, `new/marketplace.ts`                                                         | The types half only, after a scaffolded entity widened the unions                     |
-| `mutateGlobal(mutation, deps)`                     | `edit.tsx`, `uninstall.tsx`, `eject.ts`, `configuration/source-manager.ts`                                    | The global config half, then whatever the classification obliges                      |
+| `mutateGlobal(mutation, deps)`                     | `edit.tsx`, `uninstall.tsx`, `eject.ts`                                                                       | The global config half, then whatever the classification obliges                      |
 | `propagateGlobalRemoval(preRemovalConfig, deps)`   | `uninstall.tsx` (GLOBAL uninstall)                                                                            | Nothing — the pair was just deleted; it prunes and recompiles the registered projects |
 | `ensureBlankPair()`                                | `write-project-config.ts`, `eject.ts`                                                                         | Both blank halves at `~/.claude-src/`, only when `config.ts` is absent                |
-| `writeProjectPartial(dir, partial, opts?)`         | `eject.ts`, `configuration/source-manager.ts`                                                                 | A PROJECT `config.ts` only; throws `GlobalPairWriteViolation` at `$HOME`              |
-| `writeMarketplaceScaffoldConfig(dir, config, ...)` | `new/marketplace.ts`                                                                                          | A scaffolded marketplace's `config.ts`; throws `GlobalPairWriteViolation` at `$HOME`  |
-| `lazyGateDeps(projectDir)`                         | `uninstall.tsx`, `eject.ts`, `source-manager.ts`                                                              | (loaders only) `matrixOnly: true, skipExtraSources: true` matrix + `loadAgentDefs`    |
+| `writeProjectPartial(dir, partial, opts?)`         | `eject.ts`                                                                                                    | A PROJECT `config.ts` only; throws `GlobalPairWriteViolation` at `$HOME`              |
+| `lazyGateDeps(projectDir)`                         | `uninstall.tsx`, `eject.ts`                                                                                   | (loaders only) `matrixOnly: true, skipExtraSources: true` matrix + `loadAgentDefs`    |
 
 `applyMigratedGlobalSources`, `mergeGlobalConfigs` and `normalizeProjectPath` are also exported, as pure functions the migration path, the merge documentation and any reader that must MATCH a `projects[]` entry refer to; none of them writes.
 
-**Every entry that writes or drives a write opens the gate token around its whole flow** — `writeScopedFromWizard`, `writeScopeConfigTypes`, `reconcileTypesFromDisk`, `writeScaffoldedEntityTypes`, `mutateGlobal`, `propagateGlobalRemoval`, `ensureBlankPair`. `propagateGlobalRemoval` is included even though it reaches only project pairs today: the rule is "a gate entry holds the privilege for its flow", not "the ones whose current implementation needs it". `writeProjectPartial` and `writeMarketplaceScaffoldConfig` are the two exceptions — both refuse `$HOME` as their first act and then write a project's or a marketplace's own config, which the tripwire never guards.
+**Every entry that writes or drives a write opens the gate token around its whole flow** — `writeScopedFromWizard`, `writeScopeConfigTypes`, `reconcileTypesFromDisk`, `mutateGlobal`, `propagateGlobalRemoval`, `ensureBlankPair`. `propagateGlobalRemoval` is included even though it reaches only project pairs today: the rule is "a gate entry holds the privilege for its flow", not "the ones whose current implementation needs it". `writeProjectPartial` is the one exception — it refuses `$HOME` as its first act and then writes a project's own config, which the tripwire never guards.
 
 **`writeProjectPartial` normalizes the incoming stack.** Its callers all read with the LENIENT loader (`loadProjectSourceConfig`), which passes the on-disk stack through untouched, and the writer emits an exclusive category in its BARE form (`"web-framework": "web-framework-react"`, no array). On a load / re-emit round trip that bare value reaches `compactCategories`, which keeps only non-empty arrays — so the category was silently dropped and the user lost an assignment they never touched. The entry now runs `normalizeStackRecord` (the same call `loadProjectConfigFromDir` makes) before filling required fields. The static import is cycle-free because `config-gate/index.ts` already pulls `stacks-loader` in transitively through `configuration/project-config`.
 
@@ -235,11 +259,8 @@ When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types
 | `mutateGlobal` — after a transform                         | `~/.claude-src/config.ts`                     | `writeGlobalConfigHalf`                                      | (none — a scalar/registration change moves no union) |
 | `reconcileTypesFromDisk` / `writeScopeConfigTypes` — home  | `~/.claude-src/config-types.ts`               | (none — types only)                                          | `writeGlobalTypesHalf`                               |
 | `reconcileTypesFromDisk` / `writeScopeConfigTypes` — other | `<dir>/.claude-src/config-types.ts`           | (none — types only)                                          | `regenerateConfigTypes`                              |
-| `writeScaffoldedEntityTypes` — home                        | `~/.claude-src/config-types.ts`               | (none — types only)                                          | `writeGlobalTypesHalfFromData`                       |
-| `writeScaffoldedEntityTypes` — other                       | `<dir>/.claude-src/config-types.ts`           | (none — types only)                                          | `regenerateConfigTypes`                              |
 | `ensureBlankPair`                                          | `~/.claude-src/config.ts` + types             | `generateBlankGlobalConfigSource`                            | `generateBlankGlobalConfigTypesSource`               |
 | `writeProjectPartial`                                      | `<projectDir>/.claude-src/config.ts`          | `normalizeStackRecord` → `generateConfigSource` (no options) | (none)                                               |
-| `writeMarketplaceScaffoldConfig`                           | `<marketplaceDir>/.claude-src/config.ts`      | `generateConfigSource` (no options)                          | (none)                                               |
 
 **Write-if-changed.** Every pair write goes through `pair-writer.ts::writeIfChanged`, which skips the write when the file already holds exactly those bytes. Coherence between the two halves does not depend on it — both are always derived from the same config in the same call — but it keeps a projects-only or scalar-only change from churning the mtime of files other tools watch. The boolean a pair writer returns (`GateReport.globalWritten`) means "at least one half was actually rewritten", not "a write was attempted".
 
@@ -249,20 +270,15 @@ When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types
 
 There are none. Every caller below reaches a gate entry point, and `regenerateConfigTypes` itself throws at `$HOME`:
 
-| Caller                                                       | Target                                         | Gate entry                   | Notes                                                                                                       |
-| ------------------------------------------------------------ | ---------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `Compile.refreshConfigTypes` (`src/cli/commands/compile.ts`) | the compiling pass's scope                     | `reconcileTypesFromDisk`     | Once per pass, including the `totalSkillCount === 0` early return. Failure warns. At home it also fans out. |
-| `uninstall.tsx` (GLOBAL)                                     | every registered project                       | `propagateGlobalRemoval`     | Runs AFTER the global manifest removal so project types fall back to standalone.                            |
-| `src/cli/commands/new/skill.ts`                              | `<projectDir>/.claude-src/config-types.ts`     | `writeScaffoldedEntityTypes` | Feature-gated command; passes the just-created skill as `extras`.                                           |
-| `src/cli/commands/new/agent.tsx`                             | `<projectDir>/.claude-src/config-types.ts`     | `writeScaffoldedEntityTypes` | Feature-gated command; passes the just-created agent as `extras`.                                           |
-| `src/cli/commands/new/marketplace.ts`                        | `<marketplaceDir>/.claude-src/config-types.ts` | `writeScaffoldedEntityTypes` | Feature-gated command; no extras. Its `config.ts` goes through `writeMarketplaceScaffoldConfig`.            |
-
-`new skill` and `new agent` run at `process.cwd()`, which may be the home directory. That leg used to fall through to the raw writer's un-narrowed branch (unions covering the whole matrix); `writeScaffoldedEntityTypes` now reads the config off disk and narrows to it. `new marketplace` at `$HOME` is **refused** outright rather than merged — scaffolding there would replace the pair's config half with a config declaring one dummy skill. All three commands are behind compile-time feature flags that are off, so no user is affected today.
+| Caller                                                       | Target                     | Gate entry               | Notes                                                                                                       |
+| ------------------------------------------------------------ | -------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `Compile.refreshConfigTypes` (`src/cli/commands/compile.ts`) | the compiling pass's scope | `reconcileTypesFromDisk` | Once per pass, including the `totalSkillCount === 0` early return. Failure warns. At home it also fans out. |
+| `uninstall.tsx` (GLOBAL)                                     | every registered project   | `propagateGlobalRemoval` | Runs AFTER the global manifest removal so project types fall back to standalone.                            |
 
 `regenerateConfigTypes` calls are fed already-loaded matrix/agent data via helpers in `config-gate/propagate.ts`:
 
 - `buildConfigTypesBackgroundData(matrix, agents)` — wraps loaded matrix + agents into `ConfigTypesBackgroundData` (no re-load).
-- `buildProjectTypesExtras(config, matrix)` — derives `extraSkillIds`, `extraAgentNames`, `extraCategories`, `extraDomains` from **every active (non-excluded)** entry of the config it is given, at either scope, plus that config's own `domains` array and stack category keys. The narrower project-only derivation left the project's unions unable to name the global rows `generateProjectConfigWithInlinedGlobal` writes into the sibling `config.ts`: they were covered only while the global unions still held them, so a later global-scope run that narrowed those unions turned an untouched project's generated config into a type error.
+- `buildProjectTypesExtras(config, matrix)` — derives `extraSkillIds`, `extraAgentNames`, `extraCategories`, `extraDomains` from **every active (non-excluded)** entry of the config it is given, at either scope, plus that config's own `selectedDomains` array and stack category keys. The narrower project-only derivation left the project's unions unable to name the global rows `generateProjectConfigWithInlinedGlobal` writes into the sibling `config.ts`: they were covered only while the global unions still held them, so a later global-scope run that narrowed those unions turned an untouched project's generated config into a type error.
 
 Two rules hold here: project-branch types must use `regenerateConfigTypes`, and both project-pair write sites must feed `buildProjectTypesExtras` the same effective config (see `writeProjectConfigPair` below).
 
@@ -362,7 +378,7 @@ writeProjectConfigPair(projectDir, reconciledSplit, effectiveGlobal, matrix, age
                         buildProjectTypesExtras(inlinedProjectView(reconciledSplit, effectiveGlobal), matrix))
 ```
 
-Both sites that emit a project pair call it: the project branch above (step 10) and the per-project propagation loop. That is the point. Each site previously fed `buildProjectTypesExtras` a different config — the wizard branch passed the full cross-scope `finalConfig`, propagation passed the project split alone, which holds no active global rows — so a project whose last write came through propagation got a `config-types.ts` declaring fewer literals than its sibling `config.ts` used. `inlinedProjectView` builds the effective view once (the project's reconciled rows unioned with everything the global config contributes: skills, agents, domains, stack) and both halves are derived from it in the same call, so they cannot describe different configs.
+Both sites that emit a project pair call it: the project branch above (step 10) and the per-project propagation loop. That is the point. Each site previously fed `buildProjectTypesExtras` a different config — the wizard branch passed the full cross-scope `finalConfig`, propagation passed the project split alone, which holds no active global rows — so a project whose last write came through propagation got a `config-types.ts` declaring fewer literals than its sibling `config.ts` used. `inlinedProjectView` builds the effective view once (the project's reconciled rows unioned with everything the global config contributes: skills, agents, selectedDomains, stack) and both halves are derived from it in the same call, so they cannot describe different configs.
 
 `options.regenerateTypes: false` is passed only by a T2 fan-out, where the config half carries a changed scalar and no union has moved.
 
@@ -374,18 +390,17 @@ Both sites that emit a project pair call it: the project branch above (step 10) 
 
 1. `applyConsequences` — the shared tail of `writeScopedFromWizard` (both branches) and `mutateGlobal`. Fires when `consequenceTier(changes)` propagates (T1 or T2) and the effective global config has registered projects. In the project branch, `projectDir` is passed as `currentProjectDir` so the current project is skipped (it is already being written in the enclosing flow). T2 passes `{ regenerateTypes: false }`.
 2. `reconcileTypesFromDisk` at the home directory — an **unconditional** fan-out (see below).
-3. `pruneGlobalEntriesFromRegisteredProjects(globalConfig, matrix, agents)` — the global-uninstall fan-out, reached through the `propagateGlobalRemoval` entry point. It re-enters this same function with an EMPTIED global config (`{ ...globalConfig, skills: [], agents: [], selectedAgents: [] }`) and no `currentProjectDir`, so every global skill/agent reads as removed: inlined global rows and their tombstones drop out, `selectedAgents` and per-agent stack refs lose their global-only names/ids, and each project's `config-types.ts` is regenerated. `selectedAgents` must be emptied alongside the arrays because the project writer re-unions the global `selectedAgents` into the project's. Called from `uninstall.tsx::updateRegisteredProjects` AFTER the global `.claude-src` manifest is removed, so the regenerated project types fall back to the standalone form instead of importing a deleted global `config-types.ts`.
+3. `pruneGlobalEntriesFromRegisteredProjects(globalConfig, matrix, agents)` — the global-uninstall fan-out, reached through the `propagateGlobalRemoval` entry point. It re-enters this same function with an EMPTIED global config (`{ ...globalConfig, skills: [], agents: [] }`) and no `currentProjectDir`, so every global skill/agent reads as removed: inlined global rows and their tombstones drop out, per-agent stack refs lose their global-only ids, and each project's `config-types.ts` is regenerated. Called from `uninstall.tsx::updateRegisteredProjects` AFTER the global `.claude-src` manifest is removed, so the regenerated project types fall back to the standalone form instead of importing a deleted global `config-types.ts`.
 
 **Per-project loop logic:**
 
 - **Skip current project.** If `currentProjectDir` is set and `projectPath === normalizeProjectPath(currentProjectDir)`, `continue` (no push). The normalization is hoisted out of the loop into a `currentNormalized` local.
 - **Skip if stale.** `fileExists(projectConfigPath)` guard — if `<projectPath>/.claude-src/config.ts` is missing, the project is pushed to `skipped` and verbose-logged (not deregistered; stale entries accumulate until `registerProjectPath` filters them on the next global write).
 - **Skip if load fails.** `loadProjectConfigFromDir(projectPath)` returning null (pushed, `continue`) or throwing (caught, pushed, verbose-logged) skips the project.
-- **Reconcile the project split against the new global data.** `projectSplit` is the loaded project config with four fields reconciled — it is NOT a simple project-owned filter:
+- **Reconcile the project split against the new global data.** `projectSplit` is the loaded project config with three fields reconciled — it is NOT a simple project-owned filter:
   - `skills`: `retainProjectOwnedSkills` — keeps project-scoped entries and drops any global tombstone whose masked global is no longer active (`globalHasActiveSkill`).
   - `agents`: `retainProjectOwnedAgents` — same rule for agents (`globalHasActiveAgent`).
   - `stack`: `retainReconciledStack` — prunes assignments referencing a global skill just removed at global scope (`computeRemovedGlobalSkillIds` from `projectConfig.skills` vs the new `globalConfig`); untouched projects get byte-identical output.
-  - `selectedAgents`: `retainReconciledSelectedAgents` — drops names not backed by a project-owned active agent or a still-active global agent.
 - **Self-heal, then re-mask.** `reconcileProjectSplitAgainstGlobal(projectSplit, globalConfig, matrix)` drops masks whose collision has cleared (`dropOrphanedDerivedMasks` for skills, `dropOrphanedDerivedAgentMasks` for agents) and then re-derives masks for live global entries the project still collides with (`maskCollidingGlobalSkills` / `maskCollidingGlobalAgents`). Self-heal runs first on both axes so a cleared collision is removed rather than immediately re-derived.
 - **Overwrite the pair.** `writeProjectConfigPair(projectPath, projectSplit, globalConfig, matrix, agents, { regenerateTypes })` — the same writer the wizard's project branch uses, so both halves are derived from the same effective view(above). `regenerateTypes` is `false` only for a T2 (scalars-only) fan-out, where the config half carries the changed scalar and no union moved.
 
@@ -420,9 +435,9 @@ A report the caller may only log cannot go stale the way a to-do list can, and p
 
 `recompileRegisteredProjectAgents` (`src/cli/lib/operations/project/recompile-project-agents.ts`) compiles **project scope only** (`scopeFilter: "project"`) — the global agents were already recompiled by the triggering operation's own pass, and repeating a global pass per project would rewrite `~/.claude/agents` once per registered project for no gain. It passes `discoverInstalledSkills(projectDir).allSkills` explicitly, because the default fallback sees plugin skills only and would strip every global-local and project-local skill from the compiled output. Agent partials always come from the CLI itself, so no per-project marketplace resolution happens.
 
-`recompilePropagatedProjectAgents(projectDirs)` loops sequentially with per-project failure isolation and returns `PropagatedRecompileSummary = { recompiledCount, failedCount, warnings }` — one project's unreadable config or broken template must not abort the loop. It is `GateReport.recompile` verbatim. Warnings are surfaced by the calling command.
+`recompilePropagatedProjectAgents(projectDirs)` loops sequentially with per-project failure isolation and returns `PropagatedRecompileSummary = { rewrittenCount, unchangedCount, failedCount, warnings }` — one project's unreadable config or broken template must not abort the loop. It is `GateReport.recompile` verbatim. Warnings are surfaced by the calling command. `rewrittenCount` and `unchangedCount` are separate because a project the fan-out reached whose agents all came back byte-identical was visited and left alone, which one count could not distinguish from recompiling it.
 
-**Per-command line formats differ and must be preserved.** `init.tsx` and `compile.ts` print `Recompiled agents in N registered projects`; `edit.tsx` prints `... registered project(s)`. Both forms are asserted by e2e page constants — a printer refactor that unifies them turns those specs red.
+**One line format, one printer.** All four fan-out commands — `init`, `edit`, `compile`, `uninstall` — render through `BaseCommand.reportPropagatedRecompile`, which prints `propagatedRecompileSummary(rewrittenCount, unchangedCount, failedCount)` from `src/cli/utils/messages.ts`: `Recompiled agents in N registered projects, M unchanged`, plus ` (K failed)`. There is no per-command wording to preserve.
 
 Finding: `.ai-docs/agent-findings/2026-07-18-propagation-skips-agent-recompile.md` (the original gap report).
 
@@ -449,7 +464,7 @@ One helper, called at **every** site that writes a project `config.ts` with the 
 
 Both call it BEFORE `writeProjectConfigPair`, not inside it — reconciliation needs the split each site derives its own way (a scope split from the wizard, a retain-and-prune pass from the loaded project config in propagation).
 
-**Both sites must reconcile.** A project owning a skill at project scope while the same id is active globally otherwise gets TWO active entries in its own `config.ts` with no propagation involved — and neither `doctor` nor `validate` checks config semantics, so both report the install clean.
+**Both sites must reconcile.** A project owning a skill at project scope while the same id is active globally otherwise gets TWO active entries in its own `config.ts` with no propagation involved — and neither layer of `doctor` reads config semantics, so it reports the install clean.
 
 ### Composition
 
@@ -672,9 +687,9 @@ The scope-blind filter is deliberate and is the fix recorded as the extras widen
 | `extraSkillIds`   | `unique(activeSkills.map(s => s.id))`                                                                                                                                        |
 | `extraAgentNames` | `unique(activeAgents.map(a => a.name))`                                                                                                                                      |
 | `extraCategories` | `unique([...deriveCategories(extraSkillIds, matrix), ...stackCategories(config.stack)])` — matrix-derived categories PLUS the category keys the emitted stack actually holds |
-| `extraDomains`    | `unique([...deriveDomains(extraCategories, matrix), ...(config.domains ?? [])])` — matrix-derived domains PLUS the config's own `domains` array                              |
+| `extraDomains`    | `unique([...deriveDomains(extraCategories, matrix), ...(config.selectedDomains ?? [])])` — matrix-derived domains PLUS the config's own `selectedDomains` array              |
 
-**Why the stack keys and the `domains` array are unioned in.** `domains` is a wizard preference no skill row has to back, and neither it nor a stack entry is pruned when the last skill that would derive it leaves. Deriving either from the skill rows alone therefore under-declares the unions relative to what the sibling `config.ts` emits.
+**Why the stack keys and the `selectedDomains` array are unioned in.** `selectedDomains` is a wizard preference no skill row has to back, and neither it nor a stack entry is pruned when the last skill that would derive it leaves. Deriving either from the skill rows alone therefore under-declares the unions relative to what the sibling `config.ts` emits.
 
 **Category/domain derivation via matrix lookup.** Categories and domains are not stored on `SkillConfig` — they are attributes of the matrix entry keyed by skill ID. The derivation walks:
 
@@ -693,7 +708,7 @@ Simple passthrough wrapper. Accepts an already-loaded `matrix` and `agents` reco
 - `agentNames = typedKeys(agents)`
 - `customAgentNames = agentNames.filter(name => agents[name]?.custom === true)`
 
-`regenerateConfigTypes` accepts its background data as a promise. The gate's call sites (`writeProjectConfigPair`, `writeScopeConfigTypes`'s non-home leg) wrap the synchronous helper output in `Promise.resolve(...)` because no background loading is needed — the matrix and agents are already resolved, either handed in by the caller or loaded once by `resolveGateDeps`. Only `new marketplace` still passes a genuinely deferred `loadConfigTypesDataInBackground(...)` promise.
+`regenerateConfigTypes` accepts its background data as a promise. The gate's call sites (`writeProjectConfigPair`, `writeScopeConfigTypes`'s non-home leg) wrap the synchronous helper output in `Promise.resolve(...)` because no background loading is needed — the matrix and agents are already resolved, either handed in by the caller or loaded once by `resolveGateDeps`. No caller passes a genuinely deferred `loadConfigTypesDataInBackground(...)` promise any more.
 
 ## Config-to-Compile Bridge — `buildCompileAgents` / `buildAgentScopeMap`
 
@@ -703,7 +718,7 @@ After `writeScopedFromWizard` persists `config.ts`, the same final `ProjectConfi
 
 ### `buildCompileAgents(config, agents)`
 
-Returns `Record<string, CompileAgentConfig>` (`CompileAgentConfig = { skills?: SkillReference[] }`, `src/cli/types/config.ts`). It emits one entry per **active** agent — `config.agents` filtered to `!excluded`, then further filtered to names present in the loaded `agents` record. For each agent it reads `config.stack?.[name]`; a missing stack yields `{}` (no skills). Otherwise it expands the stack via `buildSkillRefsFromConfig` (`src/cli/lib/resolver.ts`, returns `SkillReference[]`) and applies two filters plus one enrichment:
+Returns `Partial<Record<AgentName, CompileAgentConfig>>` (`CompileAgentConfig = { skills?: SkillReference[] }`, `src/cli/types/config.ts`). It emits one entry per **active** agent — `config.agents` filtered to `!excluded`, then further filtered to names present in the loaded `agents` record. For each agent it reads `config.stack?.[name]`; a missing stack yields `{}` (no skills). Otherwise it expands the stack via `buildSkillRefsFromConfig` (`src/cli/lib/resolver.ts`, returns `SkillReference[]`) and applies two filters plus one enrichment:
 
 | Step                      | Rule                                                                                                                                                                                                                                   | Predicate / source                                    |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |

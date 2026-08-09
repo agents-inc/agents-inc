@@ -212,8 +212,9 @@ Key points:
 - `ProjectBuilder.dualScope()` for pre-built file structures
 - `dual-scope-helpers.ts` for state built through wizard interactions
 - Scope indicators in wizard output: `"G "` prefix for global skills, `"P "` for project skills. Agent scope badges: `"[G]"`, `"[P]"`. Read them with `build.getScopeBadgesForSkill(label)` / `agents.getScopeBadgesForAgent(label)` rather than scanning the frame.
-- **`s` is the sole dual-scope toggle**. It round-trips `[P][G]` to `[G]` and back on its own, for skills and agents alike; **spacebar is inert on any globally-backed row** and emits the global-locked toast instead. A spec that presses Space expecting a collapse tests nothing. Every `s`-collapse spec needs a proof-of-execution assertion on the badges (`["P"]` -> `["G"]`) so a refused press cannot masquerade as the rendering bug under test.
-- A globally installed skill or agent cannot be deselected from a project in ANY flow, including `init`. A spec that expects a project-scope deselect to remove a global entry is asserting removed behaviour.
+- **`s` round-trips a `[P][G]` pair** to `[G]` and back, for skills and agents alike. **What spacebar does depends on the path:** on a SKILL row it drops the half the PROJECT owns (the pair collapses to the inherited `[G]`, the global install untouched); on an AGENT row and on any `[G]`-only inherited row it is inert and emits the global-locked toast. Every collapse spec needs a proof-of-execution assertion on the badges (`["P"]` -> `["G"]`) so a refused press cannot masquerade as the rendering bug under test.
+- A globally-OWNED skill or agent cannot be deselected from a project in ANY flow, including `init` — an inherited `[G]` row, or the plain active global an in-session collapse leaves behind. A spec that expects a project-scope deselect to uninstall a global entry is asserting removed behaviour; a spec that expects it to drop the PROJECT half of a `[P][G]` pair is asserting current behaviour.
+- **A compile inside a project writes nothing outside that project.** A spec that runs `compile` from a project directory and asserts on `$HOME`'s compiled agents, on the global `config-types.ts`, or on another registered project is asserting removed behaviour: compile each scope from a run in that scope.
 
 ---
 
@@ -296,7 +297,7 @@ Toasts render in an absolutely-positioned row that Ink rewrites in place, so xte
 // Good: the toast is waited for on the surface that retains it
 await build.selectSkillAwaiting("web-framework-react", STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
 
-// Also available: toggleFocusedSkillAwaiting, toggleFilterIncompatibleAwaiting,
+// Also available: toggleFocusedSkillAwaiting,
 // AgentsStep.toggleFocusedAgentAwaiting, ConfirmStep.confirmAwaiting
 
 // Bad: the toast may already be overwritten in the processed buffer
