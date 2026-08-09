@@ -700,3 +700,40 @@ describe("generatePhase2", () => {
     expect(content).toContain('"api-developer": "api"');
   });
 });
+
+// -- Deterministic emission --------------------------------------------------
+
+describe("generatePhase2 determinism", () => {
+  let outDirA: string;
+  let outDirB: string;
+
+  beforeEach(async () => {
+    outDirA = await createTempDir("gen-order-a");
+    outDirB = await createTempDir("gen-order-b");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(outDirA);
+    await cleanupTempDir(outDirB);
+  });
+
+  it("emits byte-identical matrix.ts regardless of input enumeration order", () => {
+    const skills = [
+      createMockExtractedSkill("web-framework-react", { slug: "react" }),
+      createMockExtractedSkill("api-queue-bullmq", { slug: "bullmq" }),
+      createMockExtractedSkill("ai-provider-cohere-sdk", { slug: "cohere-sdk" }),
+    ];
+    const agents: AgentEntry[] = [
+      { id: "web-developer", domain: "web" },
+      { id: "api-developer", domain: "api" },
+    ];
+    const skillIdSet = new Set(skills.map((s) => s.id));
+
+    generatePhase2(skills, agents, skillIdSet, outDirA);
+    generatePhase2([...skills].reverse(), [...agents].reverse(), skillIdSet, outDirB);
+
+    const emittedA = readFileSync(path.join(outDirA, "matrix.ts"), "utf-8");
+    const emittedB = readFileSync(path.join(outDirB, "matrix.ts"), "utf-8");
+    expect(emittedA).toStrictEqual(emittedB);
+  });
+});

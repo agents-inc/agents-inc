@@ -203,7 +203,7 @@ export function generatePhase1(
     "skill IDs",
   );
 
-  const sortedBySlug = [...skills].sort((a, b) => a.slug.localeCompare(b.slug));
+  const sortedBySlug = [...skills].sort((a, b) => bytewise(a.slug, b.slug));
   const agentNames = [...new Set(agentEntries.map((a) => a.id))].sort();
   const categories = [...new Set(skills.map((s) => s.category))].sort();
   const domains = [...new Set(skills.map((s) => s.domain))].sort();
@@ -273,6 +273,15 @@ export function generatePhase1(
 
 // -- Helpers ------------------------------------------------------------------
 
+/**
+ * Locale-free string ordering for everything the generators emit. localeCompare
+ * reads the process's ICU tailoring, so two machines can disagree about one
+ * catalog; `<` compares code units and cannot.
+ */
+export function bytewise(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /** Groups entries by a derived key, sorting both outer keys and inner value arrays. */
 export function sortedGroupBy<T>(
   entries: [string, T][],
@@ -285,7 +294,7 @@ export function sortedGroupBy<T>(
   }
   return Object.fromEntries(
     Object.entries(groups)
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(([a], [b]) => bytewise(a, b))
       .map(([key, ids]) => [key, ids.sort()]),
   );
 }
@@ -300,8 +309,18 @@ export function generatePhase2(
 ): void {
   console.log("Generating matrix...\n");
 
+  // Emission order is a promise, not an accident. matrix.skills and
+  // agentDefinedDomains take their key order from these arrays, and the arrays
+  // arrive in readdirSync order — a property of the filesystem, not of the
+  // marketplace. The first live CI regeneration proved it: same skills commit,
+  // byte-different matrix.ts, 17,300-line pull request of pure reordering.
+  // Byte-wise comparison rather than localeCompare, deliberately — a
+  // locale-sensitive sort is the same defect one ICU build later.
+  const sortedSkills = [...skills].sort((a, b) => bytewise(a.id, b.id));
+  const sortedAgentEntries = [...agentEntries].sort((a, b) => bytewise(a.id, b.id));
+
   // Call the pure resolution function
-  const matrix = mergeMatrixWithSkills(defaultCategories, defaultRules.relationships, skills);
+  const matrix = mergeMatrixWithSkills(defaultCategories, defaultRules.relationships, sortedSkills);
 
   // Override generatedAt with fixed string to avoid unnecessary diffs
   matrix.generatedAt = "build";
@@ -311,7 +330,7 @@ export function generatePhase2(
 
   // Build agentDefinedDomains from agent metadata
   const agentDefinedDomains = Object.fromEntries(
-    agentEntries.flatMap((a) => (a.domain === undefined ? [] : [[a.id, a.domain] as const])),
+    sortedAgentEntries.flatMap((a) => (a.domain === undefined ? [] : [[a.id, a.domain] as const])),
   );
   if (Object.keys(agentDefinedDomains).length > 0) {
     // Boundary cast: agent IDs and domains are validated by Phase 1
