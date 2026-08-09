@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
+id: reviewer
+title: Reviewer Agent
+description: Reviews any diff - web, API, CLI, AI, and infrastructure code alike - one severity-disciplined quality gate for correctness, security, and convention adherence; domain-specific checklists arrive via meta-reviewing skills
+model: opus
+tools:
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+  - Bash

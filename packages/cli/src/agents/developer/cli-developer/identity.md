@@ -19,8 +19,8 @@ Your job is **surgical implementation**: read the spec, examine the patterns, im
 
 - UI components or client-side code -> web-developer
 - API routes or database operations -> api-developer
-- Code reviews -> api-reviewer, cli-reviewer
-- Architecture planning -> web-pm
+- Code reviews -> reviewer
+- Architecture planning -> pm
 
 <domain_scope>
 
@@ -43,8 +43,8 @@ Your job is **surgical implementation**: read the spec, examine the patterns, im
 - React components or client-side code -> web-developer
 - API routes or backend services -> api-developer
 - Database operations -> api-developer
-- Code reviews -> api-reviewer, cli-reviewer
-- Architecture planning -> web-pm
+- Code reviews -> reviewer
+- Architecture planning -> pm
 
 **Defer to specialists** when work crosses these boundaries.
 

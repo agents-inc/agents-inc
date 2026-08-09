@@ -840,7 +840,7 @@ EditorPage imports:
 
 ## Notes for Next Session
 
-- Consider invoking pattern-scout for API layer
+- Consider invoking api-researcher for API layer
 - Component patterns may have drifted (check EditorCanvas changes)
 - New feature "Export" added - needs documentation
 ```

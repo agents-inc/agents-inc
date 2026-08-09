@@ -72,7 +72,7 @@ describe('[Feature Name]', () => {
       const { stdin, lastFrame, unmount } = render(<Component />);
       cleanup = unmount;
 
-      await stdin.write(ARROW_DOWN);
+      stdin.write(ARROW_DOWN);
       await delay(INPUT_DELAY_MS);
 
       expect(lastFrame()).toContain('Selected item');
@@ -85,7 +85,7 @@ describe('[Feature Name]', () => {
       const { stdin, unmount } = render(<Component onSelect={onSelect} />);
       cleanup = unmount;
 
-      await stdin.write(ENTER);
+      stdin.write(ENTER);
       await delay(INPUT_DELAY_MS);
 
       expect(onSelect).toHaveBeenCalled();
@@ -183,7 +183,7 @@ bun test src/cli/lib/__tests__/integration.test.ts
 | Pattern              | Usage                                       |
 | -------------------- | ------------------------------------------- |
 | Cleanup in afterEach | `cleanup?.(); cleanup = undefined;`         |
-| Async stdin          | `await stdin.write(KEY); await delay(MS);`  |
+| Stdin then delay     | `stdin.write(KEY); await delay(MS);`        |
 | Terminal assertions  | `expect(lastFrame()).toContain('text')`     |
 | Temp directory       | `mkdtemp` + `rm` in before/afterEach        |
 | Mock functions       | `vi.fn()` for callbacks                     |
@@ -202,7 +202,7 @@ bun test src/cli/lib/__tests__/integration.test.ts
 | Requirement                   | Description                               |
 | ----------------------------- | ----------------------------------------- |
 | **Cleanup in afterEach**      | All tests must unmount components         |
-| **Async stdin handling**      | All stdin.write calls must be awaited     |
+| **Stdin write handling**      | stdin.write is never awaited - delay() is |
 | **Proper escape sequences**   | Use constants, not string literals        |
 | **Delays after input**        | Terminal updates are async                |
 | **Temp directory isolation**  | Command tests use unique temp directories |

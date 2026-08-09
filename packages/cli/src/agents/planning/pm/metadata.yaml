@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
+id: pm
+title: PM and Architect Agent
+description: Creates implementation specs for any feature - frontend, backend, CLI, and AI alike - by researching the codebase's real patterns and naming the ones to follow, with fenced scope and verifiable success criteria; domain planning frameworks arrive via meta-planning skills - invoke BEFORE a developer for any new feature
+model: opus
+tools:
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+  - Bash

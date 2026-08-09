@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
+id: ai-tester
+title: AI Tester Agent
+description: Tests AI features - mocks LLM and provider calls at deterministic seams, unit-tests prompt assembly and context construction, validates tool-call and structured-output schemas, covers retry/fallback/rate-limit/streaming paths, asserts token and cost budgets, writes prompt regression snapshots, and builds eval harnesses with golden datasets kept out of CI - invoke BEFORE or AFTER ai-developer implements features
+model: opus
+tools:
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+  - Bash

@@ -134,8 +134,9 @@ cognitive boundaries that prevent instruction mixing.
 For 20K+ token prompts, placing reference documents before instructions
 improves comprehension by ~30%.
 
-**6. Expansion Modifiers (unlocks full Sonnet 4.5 capability)**
-"Include as many relevant features as possible" counters conservative defaults.
+**6. Expansion Modifiers (conditional — genuinely broad tasks only)**
+"Thorough on what the task needs and silent on the rest" counters conservative
+defaults without inflating work the task never called for.
 
 **7. Self-Correction Triggers (74.4% SWE-bench with mid-run guidance)**
 "If you notice yourself..." checkpoints catch drift during execution.
@@ -346,13 +347,12 @@ Boundaries:
 
 **Agent Categories:**
 
-- `developer/` - Implementation agents (web-developer, api-developer, cli-developer, web-architecture)
-- `reviewer/` - Code review agents (web-reviewer, api-reviewer, cli-reviewer)
-- `researcher/` - Read-only research agents (web-researcher, api-researcher)
-- `planning/` - Planning agents (web-pm)
-- `pattern/` - Pattern discovery agents (pattern-scout, web-pattern-critique)
+- `developer/` - Implementation agents (web-developer, api-developer, cli-developer, ai-developer)
+- `reviewer/` - Code review agents (reviewer)
+- `researcher/` - Read-only research agents (web-researcher, api-researcher, cli-researcher, ai-researcher)
+- `planning/` - Planning agents (pm)
 - `meta/` - Meta-level agents (agent-summoner, skill-summoner, codex-keeper, convention-keeper)
-- `tester/` - Testing agents (web-tester, cli-tester)
+- `tester/` - Testing agents (web-tester, cli-tester, api-tester, ai-tester)
 
 **Directory structure:**
 
@@ -380,7 +380,7 @@ mkdir -p src/agents/{category}/{agent-name}/
 ```markdown
 You are an expert [role description].
 
-**When [doing X], be comprehensive and thorough. Include all necessary edge cases and error handling.**
+**When [doing X], be thorough on what the task needs and silent on the rest. Include the [edge cases and error handling] the task actually calls for — the work's size follows the task's size, not the template's.**
 
 Your job is **[mission statement]**: [what you do].
 
@@ -411,7 +411,7 @@ Your job is **[mission statement]**: [what you do].
 **Key points:**
 
 - NO `<role>` tags (template adds them)
-- MUST include expansion modifiers ("comprehensive and thorough")
+- MUST include expansion modifiers ("thorough on what the task needs and silent on the rest")
 - MUST include `<domain_scope>` section
 - Keep concise (2-5 sentences for role, then domain scope)
 
@@ -1198,7 +1198,7 @@ stack:
 
 **Source File Content:**
 - [ ] `metadata.yaml` has id, title, description, model, tools
-- [ ] `identity.md` has expansion modifiers ("comprehensive and thorough")
+- [ ] `identity.md` has expansion modifiers ("thorough on what the task needs and silent on the rest")
 - [ ] `identity.md` has NO `<role>` tags (template adds them)
 - [ ] `identity.md` has `<domain_scope>` section
 - [ ] `critical-requirements.md` has `<self_correction_triggers>` section
@@ -1296,7 +1296,7 @@ stack:
 **4. Missing Boundaries**
 
 ❌ Bad: No "Does NOT handle" section
-✅ Good: "Does NOT handle: React components (→ web-reviewer), CI/CD configs (→ api-reviewer)"
+✅ Good: "Does NOT handle: React components (→ web-developer), CI/CD configs (→ api-developer)"
 
 **5. No Emphatic Repetition**
 
@@ -1310,7 +1310,7 @@ stack:
 
 **7. Wrong Output Format**
 
-Bad: Using developer output format for a web-pm agent
+Bad: Using developer output format for a pm agent
 ✅ Good: Creating role-appropriate output format or using existing one
 
 **8. Over-Bundling Patterns**
@@ -1427,11 +1427,10 @@ Output formats are determined by the file system with cascading resolution:
 | Category   | Example Agents                                                  |
 | ---------- | --------------------------------------------------------------- |
 | developer  | web-developer, api-developer, cli-developer                     |
-| reviewer   | web-reviewer, api-reviewer, cli-reviewer                        |
+| reviewer   | reviewer                                                        |
 | researcher | web-researcher, api-researcher                                  |
-| planning   | web-pm, web-architecture                                        |
+| planning   | pm                                                              |
 | tester     | web-tester, cli-tester                                          |
-| pattern    | pattern-scout, web-pattern-critique                             |
 | meta       | codex-keeper, agent-summoner, skill-summoner, convention-keeper |
 
 ---

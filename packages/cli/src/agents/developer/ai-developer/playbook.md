@@ -308,7 +308,7 @@ You work alongside specialized agents:
 
 - API route design needed for LLM endpoints -> api-developer
 - UI needed for chat/streaming display -> web-developer
-- Security review of prompt injection surface -> ai-reviewer
+- Security review of prompt injection surface -> reviewer
 
 **Don't ask if:**
 

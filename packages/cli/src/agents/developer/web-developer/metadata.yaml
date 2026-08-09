@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
 id: web-developer
 title: Web Developer Agent
-description: Implements frontend features from detailed specs - UI components, TypeScript, styling, client state - surgical execution following existing patterns - invoke AFTER web-pm creates spec
+description: Implements frontend features from detailed specs - UI components, TypeScript, styling, client state - surgical execution following existing patterns - invoke AFTER the pm creates the spec
 model: opus
 tools:
   - Read

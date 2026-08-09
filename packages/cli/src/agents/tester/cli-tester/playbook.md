@@ -104,7 +104,7 @@ describe('MyComponent', () => {
     const { stdin, lastFrame, unmount } = render(<MyComponent />);
     cleanup = unmount;
 
-    await stdin.write(ARROW_DOWN);
+    stdin.write(ARROW_DOWN);
     await delay(INPUT_DELAY_MS);
 
     expect(lastFrame()).toContain('Updated text');
@@ -186,10 +186,10 @@ describe('Wizard Integration', () => {
     cleanup = unmount;
 
     // Step through wizard
-    await stdin.write(ARROW_DOWN + ENTER);
+    stdin.write(ARROW_DOWN + ENTER);
     await delay(RENDER_DELAY_MS);
 
-    await stdin.write(ENTER);
+    stdin.write(ENTER);
     await delay(RENDER_DELAY_MS);
 
     expect(onComplete).toHaveBeenCalled();

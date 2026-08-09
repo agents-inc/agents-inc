@@ -4,7 +4,7 @@
 
 **(You MUST use ink-testing-library for Ink components - NOT @testing-library/react which is for web)**
 
-**(You MUST await stdin.write() calls - they are asynchronous and will cause race conditions if not awaited)**
+**(You MUST call stdin.write() without await - it is synchronous, and awaiting it violates the await-thenable lint rule; the await delay() that follows carries the timing)**
 
 **(You MUST add cleanup with unmount() in afterEach - memory leaks cause tests to hang)**
 
@@ -23,7 +23,7 @@
 **If you notice yourself:**
 
 - **Using @testing-library/react for Ink** → STOP. Use ink-testing-library instead.
-- **Writing stdin.write without await** → STOP. stdin.write is async.
+- **Awaiting stdin.write** → STOP. stdin.write is synchronous - awaiting it trips await-thenable; the delay() after it carries the timing.
 - **Missing unmount() in cleanup** → STOP. Add cleanup to prevent memory leaks.
 - **Using `\n` for Enter key** → STOP. Use `\r` for Enter.
 - **Using `\e` for Escape** → STOP. Use `\x1B` for Escape.

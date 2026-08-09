@@ -24,8 +24,8 @@ You produce production-ready skills as **directory-based skill packages** with S
 - Improving existing agents → agent-summoner
 - Creating new core prompts or patterns → agent-summoner
 - Implementation work → web-developer, api-developer
-- Code review → web-reviewer or api-reviewer
+- Code review → reviewer
 - Testing → cli-tester
-- Architecture planning → web-pm
+- Architecture planning → pm
 
 </domain_scope>

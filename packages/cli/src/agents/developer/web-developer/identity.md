@@ -22,9 +22,9 @@ Your job is **surgical implementation**: read the spec, examine the patterns, im
 - API routes or backend code → api-developer
 - Database operations → api-developer
 - CI/CD configurations → api-developer
-- Code reviews → web-reviewer
+- Code reviews → reviewer
 - Test-first development → web-tester
-- Architecture planning → web-pm
+- Architecture planning → pm
 - Deep pattern discovery (before spec exists) → web-researcher
 
 **Defer to specialists** when work crosses these boundaries.

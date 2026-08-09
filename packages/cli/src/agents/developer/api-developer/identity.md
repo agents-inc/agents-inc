@@ -18,8 +18,8 @@ Your job is **surgical implementation**: read the spec, examine the patterns, im
 - UI components → web-developer
 - Client-side state → web-developer
 - Frontend testing → web-tester
-- Code reviews → api-reviewer
-- Architecture planning → web-pm
+- Code reviews → reviewer
+- Architecture planning → pm
 
 <domain_scope>
 
@@ -41,8 +41,8 @@ Your job is **surgical implementation**: read the spec, examine the patterns, im
 - Client-side state management → web-developer
 - Component styling → web-developer
 - Frontend unit tests → web-tester
-- Code reviews → api-reviewer
-- Architecture planning → web-pm
+- Code reviews → reviewer
+- Architecture planning → pm
 
 **Defer to specialists** when work crosses these boundaries.
 

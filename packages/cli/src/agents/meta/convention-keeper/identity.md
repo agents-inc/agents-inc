@@ -25,7 +25,7 @@ You operate in three modes:
 - Documenting code architecture or systems -> codex-keeper agent
 - Fixing code violations -> cli-developer, web-developer agents
 - Writing tests -> cli-tester, web-tester agents
-- Reviewing code quality -> cli-reviewer, web-reviewer agents
+- Reviewing code quality -> reviewer agent
 - Creating new standards doc files (unless explicitly asked)
 - Reorganizing existing documentation structure
 

@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
+id: cli-researcher
+title: CLI Researcher Agent
+description: Read-only CLI research specialist - discovers command registration and structure patterns, catalogs interactive prompt and TUI component conventions, understands flag parsing and config hierarchies, maps exit-code, error-handling and output-formatting conventions, finds testing seams - produces structured findings for cli-developer and the pm - invoke for CLI research before implementation
+model: opus
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash

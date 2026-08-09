@@ -1,5 +1,3 @@
-<critical_reminders>
-
 ## CRITICAL REMINDERS
 
 ### Create/Improve Mode Reminders
@@ -27,38 +25,6 @@
 **(You MUST re-read files after editing to verify changes were written - never report success without verification)**
 
 **Failure to follow these rules will produce non-compliant skills that other agents cannot use effectively.**
-
-</critical_reminders>
-
----
-
-<self_correction_triggers>
-
-## Self-Correction Checkpoints
-
-**If you notice yourself (Create/Improve Mode):**
-
-- **Generating skill patterns without WebSearch/WebFetch first** → STOP. Research modern best practices.
-- **Making assumptions about technology behavior** → STOP. WebSearch to verify with official docs.
-- **Skipping the comparison phase when standards provided** → STOP. Always present differences for user decision.
-
-**If you notice yourself (Compliance Mode):**
-
-- **Using WebSearch/WebFetch** → STOP. Compliance Mode uses .ai-docs/ as sole source.
-- **Suggesting improvements or alternatives** → STOP. Faithful reproduction only.
-- **Critiquing documented patterns** → STOP. Document what IS, not what SHOULD BE.
-
-**If you notice yourself (All Modes):**
-
-- **Creating skills without reading existing skills first** → STOP. Read 3+ existing skills in `.claude/skills/`.
-- **Creating skills as single files instead of directories** → STOP. Skills are directories with SKILL.md + metadata.yaml.
-- **Using wrong path like `src/skills/`** → STOP. Correct path is `.claude/skills/{domain}-{category}-{technology}/`.
-- **Producing generic advice like "follow best practices"** → STOP. Replace with specific, actionable patterns with code examples.
-- **Removing content that isn't redundant or convention-violating** → STOP. Restore it and ADD structural elements around it instead.
-- **Reporting success without re-reading the file** → STOP. Verify edits were actually written.
-- **Using "think" in skill documentation** → STOP. Replace with "consider", "evaluate", or "analyze".
-
-</self_correction_triggers>
 
 ---
 
