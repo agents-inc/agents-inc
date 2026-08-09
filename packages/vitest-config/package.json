@@ -2,6 +2,8 @@
   "name": "@workspace/vitest-config",
   "version": "0.0.0",
   "private": true,
+  "//no-shared-tsconfig": "Ships node.js as plain JavaScript, with node.d.ts hand-written beside it so consumers get a type without each setting allowJs. A declaration file is not compiled and the JavaScript is not ours to check, so there is still nothing here for a tsconfig to do. Read by scripts/check-shared-tsconfig.ts in packages/cli.",
+  "//no-shared-eslint-config": "Same shape as the tsconfig note above: the only TypeScript here is the hand-written node.d.ts, which declares and asserts nothing, so there is no eslint.config either. This workspace is the repository's one config-less holder of a .ts file, and that is load-bearing rather than incidental — ESLint fails a whole invocation when it cannot resolve a config for one of the files it was handed, so the root package.json's lint-staged block names this directory to keep node.d.ts out of the ESLint pattern. This key is what that literal glob is checked against. Read by scripts/check-shared-eslint-config.ts in packages/cli.",
   "type": "module",
   "exports": {
     "./node": "./node.js"

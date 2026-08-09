@@ -5,6 +5,9 @@
       "@workspace/ui/*": ["./src/*"]
     }
   },
-  "include": ["."],
+  // `.storybook` is named because TypeScript's wildcard include skips
+  // directories beginning with a dot, so `"."` alone leaves the Storybook
+  // config untyped — and ESLint's project service then refuses to parse it.
+  "include": [".", ".storybook/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

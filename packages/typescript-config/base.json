@@ -18,6 +18,20 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,
+
+    // Both of these were prescribed by the house TypeScript standards until a
+    // docs-consolidation commit deleted the file that carried them; no decision to drop
+    // them was ever recorded, and the code kept behaving as though they were on.
+    // `noUncheckedIndexedAccess` types `arr[i]` and `record[key]` as `T | undefined`,
+    // which is what the call sites already believed — step-agents.tsx wrote
+    // `focusableIds[0]!` (a no-op without the flag) and the editor `?.`-guards lookups
+    // whose types claim they cannot miss. `exactOptionalPropertyTypes` keeps "absent"
+    // and "present but undefined" distinct, so an optional property accepts `undefined`
+    // only when its type says `| undefined`; the spread-conditional
+    // `...(v !== undefined && { x: v })` is how a maybe-value reaches one.
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
     "noEmit": true,
     "noFallthroughCasesInSwitch": true
   }

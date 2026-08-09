@@ -1,8 +1,10 @@
+import { typeCheckedConfig } from "@workspace/eslint-config/base"
 import { reactAppConfig } from "@workspace/eslint-config/react-app"
 import { defineConfig } from "eslint/config"
 
 export default defineConfig([
   ...reactAppConfig,
+  ...typeCheckedConfig(import.meta.dirname),
   {
     // Playwright specs are not React. A fixture's `use()` is the fixture
     // callback rather than React's `use` hook, and there is nothing here for

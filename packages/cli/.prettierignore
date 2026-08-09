@@ -28,3 +28,5 @@ V2.md
 todo/*
 !todo/TODO.md
 !todo/TODO-completed.md
+.claude-src/
+.claude/

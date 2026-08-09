@@ -1,0 +1,13 @@
+{
+  // Exists for typescript-eslint's project service, which discovers only files named
+  // tsconfig.json — tsconfig.scripts.json, one directory up, is invisible to it however the
+  // lint is invoked. The carve-out that papered over that (`allowDefaultProject:
+  // ["scripts/*.ts"]` in eslint.config.js) turned out to be runtime-dependent: the same
+  // eslint invocation matched the glob under bun and failed it under node, so every
+  // turbo-driven lint was green while lint-staged — which spawns eslint under node — failed
+  // all of scripts/ with a parsing error naming no rule. A discovered project has no glob to
+  // mis-match. tsconfig.scripts.json keeps its name and its callers (both typecheck scripts,
+  // a dozen docs); this file only re-points `include` at the same members from in here.
+  "extends": "../tsconfig.scripts.json",
+  "include": ["**/*"]
+}

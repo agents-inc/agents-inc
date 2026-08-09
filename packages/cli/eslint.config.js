@@ -1,8 +1,8 @@
 import js from "@eslint/js";
+import { baseConfig, typeCheckedConfig } from "@workspace/eslint-config/base";
 import { defineConfig, globalIgnores } from "eslint/config";
 import eslintConfigPrettier from "eslint-config-prettier";
 import reactHooks from "eslint-plugin-react-hooks";
-import tseslint from "typescript-eslint";
 
 const TYPESCRIPT_SOURCES = ["src/**/*.ts", "src/**/*.tsx", "e2e/**/*.ts", "scripts/**/*.ts"];
 const CLI_SOURCES = ["src/**/*.ts", "src/**/*.tsx"];
@@ -108,24 +108,73 @@ export default defineConfig(
   { linterOptions: { reportUnusedDisableDirectives: "error" } },
 
   {
+    // The shared set, scoped to what this package actually compiles. `baseConfig` and
+    // `typeCheckedConfig` both match `**/*.{ts,tsx}`; the `files` here narrows them to the
+    // three source trees, which is what keeps tsup.config.ts, vitest.config.ts and
+    // vitest.setup.ts — the root-level tool configs, in no tsconfig of this package — out of a
+    // type-aware run they would fail to parse under.
+    //
+    // Extending rather than restating is the point of this block: composing
+    // `recommendedTypeChecked` here by hand is what left `no-unnecessary-condition` — a shared
+    // addition beyond the recommended set — unconfigured in this one package for its whole life
+    // (CLI-427). Anything the shared base adds next arrives here on its own.
+    // scripts/ is typed by tsconfig.scripts.json, which the project service can never
+    // discover — it only looks for files named tsconfig.json. The `allowDefaultProject:
+    // ["scripts/*.ts"]` carve-out that stood here proved runtime-dependent: the same
+    // invocation matched under bun and failed under node, so turbo-driven lints stayed green
+    // while lint-staged's node-spawned eslint failed every scripts/ file with a parsing
+    // error naming no rule. scripts/tsconfig.json (a two-line extends of
+    // tsconfig.scripts.json) makes the directory a discovered project instead, which also
+    // retires the default-project file cap the carve-out needed — the fuse that turned
+    // `turbo lint` red on the ninth script with a message naming no rule.
     files: TYPESCRIPT_SOURCES,
-    extends: [js.configs.recommended, tseslint.configs.recommended],
-    languageOptions: {
-      parserOptions: {
-        projectService: {
-          // scripts/ is covered by tsconfig.scripts.json, which the project
-          // service never finds because it only discovers tsconfig.json.
-          allowDefaultProject: ["scripts/*.ts"],
-        },
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
+    extends: [baseConfig, typeCheckedConfig(import.meta.dirname)],
     rules: {
-      // clean-code-standards 9.6: a leading `_` marks an intentionally unused binding.
+      // The one option the shared base does not carry: clean-code-standards 9.6 reads a leading
+      // `_` as an intentionally unused binding, and a caught error is a binding. The other three
+      // options restate the shared ones rather than replacing them — `no-restricted-imports`
+      // aside, a rule's options are not merged across config blocks, so the last block to name a
+      // rule owns all of them, and dropping `ignoreRestSiblings` here would outlaw the
+      // `const { [id]: _removed, ...rest }` idiom the shared base exists to allow.
       "@typescript-eslint/no-unused-vars": [
         "error",
-        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+          caughtErrorsIgnorePattern: "^_",
+        },
       ],
+
+      // `consistent-type-assertions` and `no-unnecessary-condition` used to be stated here. They
+      // are the shared base's two additions beyond the recommended set and now arrive with it —
+      // which is what CLI-427 was for. Both were turned off in this package by CLI-393 and paid
+      // back by CLI-422; `no-unnecessary-type-assertion`, the other half of that pair, is in the
+      // recommended set itself. All three read this package's type graph, and it was honest about
+      // `noUncheckedIndexedAccess` only from CLI-422 onwards — before that `arr[i]` was `T`, so
+      // every `if (arr[i])` read as always-truthy and acting on the verdict would have deleted
+      // the guards the flag needs. Re-measured against the honest graph the fallout was 50
+      // reports rather than the 252 the dishonest one showed.
+    },
+  },
+
+  {
+    // DEBT, CLI-393. The unsafe-* family and `require-await`, off in specs only.
+    // This is the volume half: 147 unsafe-* reports and 31 `require-await`
+    // across 40-odd files, against 44 and 2 in production — the shape is a test
+    // reading back a config or a manifest it just wrote, so `JSON.parse` hands
+    // it `any` and every field read off it is another report. Each one wants a
+    // typed read rather than a suppression, which is a task, not a footnote to
+    // this one. Production carries the family in full, and so does every other
+    // workspace in the repository.
+    files: TEST_FILES,
+    rules: {
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-call": "off",
+      "@typescript-eslint/no-unsafe-return": "off",
+      "@typescript-eslint/no-unsafe-argument": "off",
+      "@typescript-eslint/require-await": "off",
     },
   },
 

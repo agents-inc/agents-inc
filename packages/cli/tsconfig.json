@@ -1,14 +1,59 @@
 {
+  "$schema": "https://json.schemastore.org/tsconfig",
+
+  // node.json, because this is a Node CLI and that base is the only one that pins
+  // `lib` to ES2023 with no DOM. This package extended nothing until 2026-08-06 and
+  // set no `lib`, so `target: ES2022` implied lib.es2022.full — DOM included — and
+  // every DOM global (`name`, `status`, `open`, `document`, `window`) was in scope of
+  // a program that can never have one. A local binding shadowing any of them resolved
+  // to the global instead of erroring. There was no recorded reason for the divergence.
+  "extends": "@workspace/typescript-config/node.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "outDir": "dist",
+    // The only genuine additions to the base. Ink is React: the commands and the
+    // components under src/cli/components/ are .tsx, and the base has no reason to
+    // carry JSX settings for the workspaces that are not.
     "jsx": "react-jsx",
     "jsxImportSource": "react"
+
+    // `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are inherited, and this
+    // file no longer overrides them. CLI-396 turned both on in the base and every other
+    // workspace absorbed them; this one opted out with 597 errors over 129 files, and
+    // CLI-422 paid that off. The fresh count on removal was 604 unique errors across the
+    // three tsc projects, and the shape of the debt held: 372 noUncheckedIndexedAccess in
+    // unit tests, 123 exactOptionalPropertyTypes in production, only 8 indexed-access
+    // errors in production (CLI-392 and CLI-395 had already made those lookups honest).
+    //
+    // Three decisions are worth keeping, because each one is a rule rather than a fix:
+    //   • The `z.ZodType<T>` annotations in lib/schemas.ts failed because zod's
+    //     `.optional()` accepts and preserves an explicitly-undefined key, so the schema's
+    //     output genuinely was not T. They use zod 4.4's `.exactOptional()` instead, which
+    //     keeps the key optional and rejects a present-but-undefined value. That tightens
+    //     validation rather than weakening it, and the generated JSON Schemas in
+    //     src/schemas/ are byte-identical — but a hand-written config.ts carrying
+    //     `description: undefined` is now a load error rather than a silent absence.
+    //   • Optional properties took the types-bible §4a split rather than a blanket widen:
+    //     spread-conditional where we build the object and absence is real, `?: T | undefined`
+    //     only where a React prop's body already reads absent and undefined identically,
+    //     spread-conditional against Ink's own props and every other type we do not own.
+    //   • A type describing an oclif parse result (SourceRefreshFlags and the inline flag
+    //     params) says `key: T | undefined`, not `key?: T` — oclif always writes the key.
+    //
+    // The unit-test indexed reads went through `elementAt`/`firstElement` in
+    // src/cli/lib/__tests__/helpers/element-at.ts — asserting lookups in the shape of
+    // `getSkillById`, because the bible bans `!` and CLAUDE.md bans `?? fallback`.
+    //
+    // Turning these back on is what let eslint.config.js re-enable
+    // `no-unnecessary-condition` and `no-unnecessary-type-assertion`; see the note there.
+    // tsconfig.scripts.json and e2e/tsconfig.json extend this file and are covered by the
+    // same pair, and all three projects are green.
+
+    // Seven options were dropped rather than carried over, and none is an oversight.
+    // target / module / moduleResolution / strict / skipLibCheck now come from the
+    // base with the same or stricter values. `esModuleInterop: true` is the
+    // TypeScript 6 default — setting it to false is a deprecation error (TS5107), so
+    // restating it says nothing. `outDir: "dist"` was never read: the base sets
+    // `noEmit: true`, every tsc invocation in this package passes --noEmit anyway,
+    // and tsup owns the real dist/ through its own outDir (see tsup.config.ts).
   },
   "include": ["src/**/*"]
 }

@@ -2,6 +2,7 @@
   "name": "@workspace/eslint-config",
   "version": "0.0.0",
   "private": true,
+  "//no-shared-tsconfig": "Ships three ESLint flat configs as plain .js and holds no TypeScript, so there is nothing here for a tsconfig to compile. Read by scripts/check-shared-tsconfig.ts in packages/cli.",
   "type": "module",
   "exports": {
     "./base": "./base.js",

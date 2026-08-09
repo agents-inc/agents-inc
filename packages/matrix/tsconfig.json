@@ -6,6 +6,8 @@
       "@workspace/matrix/*": ["./src/*"]
     }
   },
-  "include": ["src", "scripts"],
+  // vitest.config.ts is here so ESLint's project service can find it: a file in
+  // no tsconfig is a parse error under type-aware linting, not a skipped file.
+  "include": ["src", "scripts", "vitest.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

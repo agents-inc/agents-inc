@@ -3,5 +3,9 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
   },
-  "include": ["vite.config.ts"]
+  // vitest.config.ts is here so ESLint's project service can find it: a file in
+  // no tsconfig is a parse error under type-aware linting, not a skipped file.
+  // vitest.setup.ts is here for the same reason — it sits beside the config it
+  // is named by, and neither is under `src`.
+  "include": ["vite.config.ts", "vitest.config.ts", "vitest.setup.ts"]
 }
