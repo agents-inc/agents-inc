@@ -8,6 +8,13 @@ export default defineConfig({
     disableConsoleIntercept: true,
     clearMocks: true,
     setupFiles: ["./vitest.setup.ts"],
+    // Refuses the run when dist/ predates a tree compiled into it — src/ and
+    // packages/matrix/src, which tsup inlines. `pretest` covers `bun run test`
+    // and `npm test`, but a script hook cannot see `npx vitest run <file>` —
+    // which is how most scoped runs in this repository are actually made, and
+    // the `commands` specs execute dist/ rather than src/ whichever way they
+    // were started. This is the half that cannot be bypassed.
+    globalSetup: ["./vitest.global-setup.ts"],
     testTimeout: 10000,
     hookTimeout: 10000,
     coverage: {
