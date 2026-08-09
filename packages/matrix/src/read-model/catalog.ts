@@ -1,7 +1,8 @@
-import type {
-  Domain,
-  SkillId,
-  Category,
+import {
+  SKILL_IDS,
+  type Domain,
+  type SkillId,
+  type Category,
 } from "../vendor/generated/source-types"
 import type { ParsedCategory, ParsedSkill } from "../schema"
 import { groupBy, indexById } from "./collections"
@@ -23,8 +24,6 @@ export type CatalogSkill = {
   description: string
   categoryId: Category
   domainId: Domain
-  isRecommended: boolean
-  recommendedReason?: string
   // Selecting this skill hard-excludes these.
   conflictsWith: SkillId[]
   // Soft conflict — warn, do not disable.
@@ -33,10 +32,6 @@ export type CatalogSkill = {
   // incompatibility is expressed: SvelteKit requires Svelte, so picking React
   // — which Svelte conflicts with — puts SvelteKit out of reach.
   requires: SkillRequirement[]
-  // Unreliable upstream: it lists whole neighbourhoods rather than genuine
-  // pairings (React claims compatibility with SvelteKit), so nothing derives
-  // from it. Kept because the CLI still ships it.
-  compatibleWith: SkillId[]
 }
 
 export type CatalogCategory = {
@@ -60,8 +55,10 @@ export type CatalogDomain = {
 
 export type Catalog = {
   domains: CatalogDomain[]
-  skillsById: Record<string, CatalogSkill>
-  categoriesById: Record<string, CatalogCategory>
+  // Both indexes hold the ids the catalogue ships and nothing else. A category
+  // with no domain never reaches them, so even a known id can miss.
+  skillsById: Partial<Record<SkillId, CatalogSkill>>
+  categoriesById: Partial<Record<Category, CatalogCategory>>
   skillCount: number
 }
 
@@ -69,24 +66,19 @@ const toCatalogSkill = (
   skill: ParsedSkill,
   domainId: Domain
 ): CatalogSkill => ({
-  id: skill.id as SkillId,
+  id: skill.id,
   slug: skill.slug,
   displayName: skill.displayName,
   description: skill.description,
-  categoryId: skill.category as Category,
+  categoryId: skill.category,
   domainId,
-  isRecommended: skill.isRecommended,
-  recommendedReason: skill.recommendedReason,
-  conflictsWith: skill.conflictsWith.map(
-    (relation) => relation.skillId as SkillId
-  ),
-  discourages: skill.discourages.map((relation) => relation.skillId as SkillId),
+  conflictsWith: skill.conflictsWith.map((relation) => relation.skillId),
+  discourages: skill.discourages.map((relation) => relation.skillId),
   requires: skill.requires.map((requirement) => ({
-    skillIds: requirement.skillIds as SkillId[],
+    skillIds: requirement.skillIds,
     needsAny: requirement.needsAny,
     reason: requirement.reason,
   })),
-  compatibleWith: skill.compatibleWith as SkillId[],
 })
 
 // Categories the UI can place: a category with no domain has nowhere to render.
@@ -106,7 +98,7 @@ const toCatalogCategory = (
   category: ParsedCategory & { domain: Domain },
   skills: ParsedSkill[]
 ): CatalogCategory => ({
-  id: category.id as Category,
+  id: category.id,
   displayName: category.displayName,
   description: category.description,
   domainId: category.domain,
@@ -158,3 +150,18 @@ const buildCatalog = (): Catalog => {
 }
 
 export const CATALOG = buildCatalog()
+
+const CATALOGUED_IDS = new Set<string>(SKILL_IDS)
+
+const isSkillId = (skillId: string): skillId is SkillId =>
+  CATALOGUED_IDS.has(skillId)
+
+/**
+ * The catalogue asked with an open id. Its keys are `SkillId`, but the question
+ * reaching it is not always one: the editor mints `github:owner/repo` ids for
+ * skills added mid-session, and a saved configuration can name one a later
+ * catalogue dropped. Both are answered — `undefined` — rather than rejected,
+ * which is what keeps the guards at those call sites doing real work.
+ */
+export const skillById = (skillId: string): CatalogSkill | undefined =>
+  isSkillId(skillId) ? CATALOG.skillsById[skillId] : undefined

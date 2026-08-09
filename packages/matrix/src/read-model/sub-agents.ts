@@ -1,12 +1,14 @@
 import { AGENT_DEFINITIONS } from "../generated/agents"
 import {
-  DOMAINS,
+  AGENT_NAMES,
   type AgentName,
   type Domain,
 } from "../vendor/generated/source-types"
+import type { ModelName } from "../vendor/matrix"
 import { AgentDefinitionsSchema, type ParsedAgentDefinition } from "../schema"
 import { groupBy, indexById } from "./collections"
-import { DOMAIN_LABELS, compareDomains } from "./domains"
+import { DOMAIN_LABELS, agentDomainOf, compareDomains } from "./domains"
+import { flavorOf, type RoleFlavor } from "./preload-defaults"
 
 export type SubAgent = {
   id: AgentName
@@ -14,9 +16,9 @@ export type SubAgent = {
   label: string
   title: string
   description: string
-  model?: string
+  model?: ModelName
   domainId: Domain
-  flavor: string
+  flavor: RoleFlavor
 }
 
 export type SubAgentGroup = {
@@ -25,20 +27,7 @@ export type SubAgentGroup = {
   agents: SubAgent[]
 }
 
-const DOMAIN_IDS = new Set<string>(DOMAINS)
-
-// Agent ids are `<domain>-<role>` for the 18 agents that belong to a domain. The other five
-// (`agent-summoner`, `codex-keeper`, `convention-keeper`, `pattern-scout`, `skill-summoner`)
-// have no domain prefix and land in `meta`, alongside the meta-domain skills.
-//
-// The CLI's `MergedSkillsMatrix.agentDefinedDomains` would be the authoritative source, but it
-// is never populated and the CLI has it queued for deletion, so the prefix is what we have.
-const domainOf = (agentId: string): Domain => {
-  const prefix = agentId.split("-")[0]
-  return prefix && DOMAIN_IDS.has(prefix) ? (prefix as Domain) : "meta"
-}
-
-// Role fragments that are initialisms, so `web-pm` reads "PM" and not "Pm".
+// Role fragments that are initialisms, so `pm` reads "PM" and not "Pm".
 const ACRONYMS = new Set(["pm", "ai", "api", "cli", "ui", "ux", "qa"])
 
 const titleCase = (words: string) =>
@@ -51,22 +40,25 @@ const titleCase = (words: string) =>
     )
     .join(" ")
 
-// `web-pattern-critique` → "Pattern Critique"; `codex-keeper` → "Codex Keeper".
+// `web-researcher` → "Researcher"; `codex-keeper` → "Codex Keeper".
 const labelOf = (agentId: string, domainId: Domain) =>
   agentId.startsWith(`${domainId}-`)
     ? titleCase(agentId.slice(domainId.length + 1))
     : titleCase(agentId)
 
 const toSubAgent = (definition: ParsedAgentDefinition): SubAgent => {
-  const domainId = domainOf(definition.id)
+  const domainId = agentDomainOf(definition.id)
   return {
-    id: definition.id as AgentName,
+    id: definition.id,
     label: labelOf(definition.id, domainId),
     title: definition.title,
     description: definition.description,
-    model: definition.model,
+    ...(definition.model !== undefined && { model: definition.model }),
     domainId,
-    flavor: definition.flavor,
+    // The same string the definition carries, read back through the preload
+    // table's list of sayable roles — a role no entry could name is an error
+    // there, so it is one here rather than a flavor nothing routes on.
+    flavor: flavorOf(definition.id),
   }
 }
 
@@ -91,6 +83,20 @@ const buildSubAgentGroups = (): SubAgentGroup[] => {
 
 export const SUB_AGENT_GROUPS = buildSubAgentGroups()
 
-export const SUB_AGENTS_BY_ID: Record<string, SubAgent> = indexById(
+export const SUB_AGENTS_BY_ID: Partial<Record<AgentName, SubAgent>> = indexById(
   SUB_AGENT_GROUPS.flatMap((group) => group.agents)
 )
+
+const ROSTER_IDS = new Set<string>(AGENT_NAMES)
+
+const isAgentName = (agentId: string): agentId is AgentName =>
+  ROSTER_IDS.has(agentId)
+
+/**
+ * The roster asked with an open id — the counterpart to `skillById`. The roster
+ * itself is closed, but the surfaces reading it hold ids as plain strings (a
+ * saved configuration, a persisted assignment), and one the CLI has since
+ * retired is an answer rather than a crash.
+ */
+export const subAgentById = (agentId: string): SubAgent | undefined =>
+  isAgentName(agentId) ? SUB_AGENTS_BY_ID[agentId] : undefined

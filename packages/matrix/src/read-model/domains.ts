@@ -1,8 +1,9 @@
-import type { Domain } from "../vendor/generated/source-types"
+import { DOMAINS, type Domain } from "../vendor/generated/source-types"
 
-// Canonical display order, mirroring BUILT_IN_DOMAIN_ORDER in the CLI's src/cli/consts.ts.
-// Kept in sync by hand — it is nine strings that have not changed in the CLI's history, and
-// importing it would mean pulling the CLI's whole consts module across the repo boundary.
+// The canonical display order. The CLI's wizard imports it from here — the
+// byte-duplicate it used to keep in sync by hand (`BUILT_IN_DOMAIN_ORDER` in
+// src/cli/consts.ts) was folded into this one when the selection semantics
+// moved onto this shared surface.
 export const DOMAIN_ORDER: readonly Domain[] = [
   "web",
   "api",
@@ -29,7 +30,9 @@ export const DOMAIN_LABELS: Record<Domain, string> = {
   shared: "Shared",
 }
 
-// From the CLI's BUILT_IN_DOMAIN_DESCRIPTIONS. Used for chip and group tooltips.
+// One-line descriptions: the editor's chip and group tooltips, and the CLI's
+// domain-selection grid — its own copy folded into this one alongside
+// DOMAIN_ORDER above.
 export const DOMAIN_DESCRIPTIONS: Record<Domain, string> = {
   web: "Frontend web applications",
   api: "Backend APIs and services",
@@ -40,6 +43,23 @@ export const DOMAIN_DESCRIPTIONS: Record<Domain, string> = {
   infra: "CI/CD, deployment, and infrastructure",
   meta: "Design patterns, code review, and research methodology",
   shared: "Shared utilities and methodology",
+}
+
+const DOMAIN_IDS = new Set<string>(DOMAINS)
+
+const isDomain = (domainId: string): domainId is Domain =>
+  DOMAIN_IDS.has(domainId)
+
+// Agent ids are `<domain>-<role>` for the twelve agents that belong to a domain. The other six
+// (`agent-summoner`, `codex-keeper`, `convention-keeper`, `skill-summoner`, and the two
+// consolidated role agents `pm` and `reviewer`) have no domain prefix and land in `meta`,
+// alongside the meta-domain skills.
+//
+// The CLI's `MergedSkillsMatrix.agentDefinedDomains` would be the authoritative source, but it
+// is never populated and the CLI has it queued for deletion, so the prefix is what we have.
+export const agentDomainOf = (agentId: string): Domain => {
+  const prefix = agentId.split("-")[0]
+  return prefix && isDomain(prefix) ? prefix : "meta"
 }
 
 const DOMAIN_POSITION = new Map(

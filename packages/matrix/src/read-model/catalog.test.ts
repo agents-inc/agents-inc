@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest"
 
-import { CATALOG } from "./catalog"
+import { resolveAssignment } from "./assignment-defaults"
+import { CATALOG, skillById } from "./catalog"
 import { DOMAIN_LABELS } from "./domains"
 import { STACKS, expandStack } from "./stacks"
-import { SUB_AGENTS_BY_ID, SUB_AGENT_GROUPS } from "./sub-agents"
+import { SUB_AGENTS_BY_ID, SUB_AGENT_GROUPS, subAgentById } from "./sub-agents"
+
+// The id the editor mints for a skill added from GitHub during a session. The
+// catalogue never had it and never will, which is exactly why asking is legal.
+const ADDED_SKILL_ID = "github:software-mansion/react-native-reanimated"
 
 // The catalogue is regenerated from the agents-inc CLI, so these are
 // invariants about the *shape* the read model guarantees rather than about
@@ -62,6 +67,37 @@ describe("CATALOG", () => {
   })
 })
 
+// The catalogue is keyed by the ids it ships, but the question reaching it is
+// not always one of them: the editor mints its own for skills added in-session,
+// and a saved configuration can name one a later catalogue dropped. Both are
+// answered rather than rejected, which is what keeps the guards at the call
+// sites doing real work.
+describe("skillById", () => {
+  it("answers with the entry for an id the catalogue ships", () => {
+    const [first] = CATALOG.domains[0]?.categories[0]?.skills ?? []
+
+    expect(first).toBeDefined()
+    expect(skillById(first!.id)).toBe(first)
+  })
+
+  it("answers undefined for an id the catalogue never had", () => {
+    expect(skillById(ADDED_SKILL_ID)).toBeUndefined()
+  })
+})
+
+describe("subAgentById", () => {
+  it("answers with the entry for an agent the roster carries", () => {
+    const [first] = SUB_AGENT_GROUPS[0]?.agents ?? []
+
+    expect(first).toBeDefined()
+    expect(subAgentById(first!.id)).toBe(first)
+  })
+
+  it("answers undefined for an agent the roster never had", () => {
+    expect(subAgentById("web-engineer")).toBeUndefined()
+  })
+})
+
 describe("SUB_AGENT_GROUPS", () => {
   it("indexes every agent it groups", () => {
     const grouped = SUB_AGENT_GROUPS.flatMap((group) => group.agents)
@@ -110,36 +146,58 @@ describe("expandStack", () => {
 
   it("only ever names sub-agents that exist", () => {
     for (const stack of STACKS) {
-      const { agentsBySkill } = expandStack(stack.id)!
-      for (const agents of Object.values(agentsBySkill)) {
-        for (const agentId of agents) {
+      const { assignmentsBySkill } = expandStack(stack.id)!
+      for (const targets of Object.values(assignmentsBySkill)) {
+        for (const { agentId } of targets) {
           expect(SUB_AGENTS_BY_ID[agentId], agentId).toBeDefined()
         }
       }
     }
   })
 
-  // A preloaded id outside the expansion would be an assignment to nothing.
-  it("preloads only skills the stack actually includes", () => {
+  it("assigns agents only to skills it includes", () => {
     for (const stack of STACKS) {
-      const { skillIds, preloadedSkillIds } = expandStack(stack.id)!
+      const { skillIds, assignmentsBySkill } = expandStack(stack.id)!
       const included = new Set<string>(skillIds)
 
-      for (const skillId of preloadedSkillIds) {
+      for (const skillId of Object.keys(assignmentsBySkill)) {
         expect(included.has(skillId), `${stack.id}: ${skillId}`).toBe(true)
       }
     }
   })
 
-  it("assigns agents only to skills it includes", () => {
+  // A stack says which sub-agents carry a skill; how each of them loads it is
+  // the shared resolver's answer, so the expansion must never differ from what
+  // the same pick made by hand would produce.
+  it("loads every pair the way the shared resolver does", () => {
     for (const stack of STACKS) {
-      const { skillIds, agentsBySkill } = expandStack(stack.id)!
-      const included = new Set<string>(skillIds)
+      const { assignmentsBySkill } = expandStack(stack.id)!
 
-      for (const skillId of Object.keys(agentsBySkill)) {
-        expect(included.has(skillId), `${stack.id}: ${skillId}`).toBe(true)
+      for (const [skillId, targets] of Object.entries(assignmentsBySkill)) {
+        const resolved = new Map(
+          resolveAssignment(skillId).map(({ agentId, load }) => [agentId, load])
+        )
+
+        for (const { agentId, load } of targets) {
+          expect(load, `${stack.id}: ${skillId} → ${agentId}`).toBe(
+            resolved.get(agentId) ?? "lazy"
+          )
+        }
       }
     }
+  })
+
+  // The flattening this replaced answered per skill, so a framework preloaded
+  // on its own domain's developer claimed to preload on every summoner that
+  // also carries it.
+  it("keeps one skill's two sub-agents on different load states", () => {
+    const { assignmentsBySkill } = expandStack("nextjs-fullstack")!
+    const targets = assignmentsBySkill["web-framework-react"] ?? []
+    const loadOn = (agentId: string) =>
+      targets.find((target) => target.agentId === agentId)?.load
+
+    expect(loadOn("web-developer")).toBe("preloaded")
+    expect(loadOn("codex-keeper")).toBe("lazy")
   })
 
   it("lists each skill once", () => {

@@ -6,12 +6,26 @@
 // something we depend on. That fails here, loudly, instead of rendering a blank table.
 
 import { z } from "zod"
-import { DOMAINS } from "./vendor/generated/source-types"
+import {
+  AGENT_NAMES,
+  CATEGORIES,
+  DOMAINS,
+  SKILL_IDS,
+} from "./vendor/generated/source-types"
+import { MODEL_NAMES } from "./vendor/matrix"
 
 export const DomainIdSchema = z.enum(DOMAINS)
 
+// The generated vocabularies, as the boundary's own alphabet. Ids validated
+// against them arrive downstream already narrowed, which is what spares every
+// read model from casting a `string` back into the union it came from.
+const SkillIdSchema = z.enum(SKILL_IDS)
+const CategorySchema = z.enum(CATEGORIES)
+const AgentNameSchema = z.enum(AGENT_NAMES)
+const ModelNameSchema = z.enum(MODEL_NAMES)
+
 export const CategoryDefinitionSchema = z.object({
-  id: z.string(),
+  id: CategorySchema,
   displayName: z.string(),
   description: z.string(),
   // Optional in the CLI's type. Present on all 89 built-in categories today; a category without
@@ -23,37 +37,39 @@ export const CategoryDefinitionSchema = z.object({
 })
 
 const SkillRelationSchema = z.object({
-  skillId: z.string(),
+  skillId: SkillIdSchema,
   reason: z.string(),
 })
 
 const SkillRequirementSchema = z.object({
-  skillIds: z.array(z.string()),
+  skillIds: z.array(SkillIdSchema),
   needsAny: z.boolean(),
   reason: z.string(),
 })
 
 export const ResolvedSkillSchema = z.object({
-  id: z.string(),
+  id: SkillIdSchema,
   slug: z.string(),
   displayName: z.string(),
   description: z.string(),
-  category: z.string(),
-  isRecommended: z.boolean(),
-  recommendedReason: z.string().optional(),
+  category: CategorySchema,
   conflictsWith: z.array(SkillRelationSchema),
   discourages: z.array(SkillRelationSchema),
   requires: z.array(SkillRequirementSchema),
-  compatibleWith: z.array(z.string()),
 })
 
 export const ResolvedStackSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
-  // agent id → category id → skill ids
-  skills: z.record(z.string(), z.record(z.string(), z.array(z.string()))),
-  allSkillIds: z.array(z.string()),
+  // agent id → category id → skill ids. Partial because a stack names the few
+  // agents it staffs, not the whole roster; the category keys are the one level
+  // nothing here reads, so they stay unvalidated strings.
+  skills: z.partialRecord(
+    AgentNameSchema,
+    z.record(z.string(), z.array(SkillIdSchema))
+  ),
+  allSkillIds: z.array(SkillIdSchema),
   philosophy: z.string(),
   // Never populated by the CLI today; the stack rail groups by it when it appears.
   group: z.string().optional(),
@@ -68,11 +84,14 @@ export const MatrixSchema = z.object({
 })
 
 export const AgentDefinitionSchema = z.object({
-  id: z.string(),
+  id: AgentNameSchema,
   title: z.string(),
   description: z.string(),
-  model: z.string().optional(),
+  model: ModelNameSchema.optional(),
   tools: z.array(z.string()),
+  // Not narrowed here: which roles are sayable is authored in the read model's
+  // preload table, which reads this file — so the check lives where the list
+  // does, in `flavorOf`, rather than being imported back into the boundary.
   flavor: z.string(),
 })
 
@@ -80,8 +99,6 @@ export const AgentDefinitionsSchema = z.record(
   z.string(),
   AgentDefinitionSchema
 )
-
-export const StackPreloadsSchema = z.record(z.string(), z.array(z.string()))
 
 export type ParsedMatrix = z.infer<typeof MatrixSchema>
 export type ParsedSkill = z.infer<typeof ResolvedSkillSchema>

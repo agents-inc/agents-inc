@@ -58,8 +58,9 @@ export const seedAgentSchema = z.object({
   model: seedModelSchema.optional(),
   effort: seedEffortSchema.optional(),
   // Where this agent's front-matter is written: the project, or the user's own
-  // ~/.claude. Absent means `project` — the CLI's default — so the resting
-  // choice never travels, exactly as a resting model does not.
+  // ~/.claude. Absent means the shared selection default — `global`, spelled
+  // once in `DEFAULT_SELECTION_OPTIONS` — so the resting choice never travels,
+  // exactly as a resting model does not.
   scope: z.enum(["project", "global"]).optional(),
 })
 
