@@ -81,7 +81,13 @@ function MatrixGrid({
                 key={cell.key}
                 type="button"
                 aria-label={`${row.label} ${cell.label}`}
-                className={matrixCellVariants({ state: cell.state ?? "empty" })}
+                // The package's one focus ring, on the button rather than in
+                // the cva: the gap below draws from the same variants and can
+                // never take focus.
+                className={cn(
+                  matrixCellVariants({ state: cell.state ?? "empty" }),
+                  "outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                )}
                 onClick={cell.onCycle}
               >
                 {cell.state === "preloaded" ? "pre" : (cell.state ?? "")}

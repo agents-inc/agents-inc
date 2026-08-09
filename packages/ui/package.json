@@ -3,9 +3,12 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
+  "//no-shared-vitest-config": "A browser-mode Storybook suite. @workspace/vitest-config exists for pure logic and says so — environment node, an src/**/*.test.ts include and no DOM, on the stated grounds that anything which renders is covered in a real browser instead. This suite is that browser, so all three settings are the opposite of what it needs, and merging them in would leave three dead options on a config that ignores them. The full reasoning is in vitest.config.ts. Read by scripts/check-shared-vitest-config.ts in packages/cli.",
   "scripts": {
     "lint": "eslint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "storybook": "storybook dev -p 6006",
+    "test": "vitest run"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -21,17 +24,27 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@storybook/addon-a11y": "^10",
+    "@storybook/addon-vitest": "^10",
+    "@storybook/react-vite": "^10",
     "@tailwindcss/vite": "^4",
     "@turbo/gen": "^2.9.15",
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6",
+    "@vitest/browser": "^4",
+    "@vitest/browser-playwright": "^4",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "eslint": "^10",
+    "playwright": "1.56.1",
+    "storybook": "^10",
     "tailwindcss": "^4",
-    "typescript": "~6"
+    "typescript": "~6",
+    "vite": "^8",
+    "vitest": "^4"
   },
   "exports": {
     "./globals.css": "./src/styles/globals.css",

@@ -4,7 +4,7 @@ import type { ComponentProps } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 
 // The bordered mono toggle. One idiom at three sizes: `filter` in the filter
-// bar (domain + recommended chips), `segment` inside the skill options panel,
+// bar (domain + selected chips), `segment` inside the skill options panel,
 // `stage` on the add-skill result rows.
 //
 // Off is a hairline outline on nothing; on is amber ink on the accent wash
@@ -82,7 +82,14 @@ function Chip({
       type={type}
       data-slot="chip"
       aria-pressed={active ?? false}
-      className={cn(chipVariants({ size, active, onDark }), className)}
+      // The package's one focus ring, on the element rather than in the cva:
+      // `chipVariants` is shared with the passive `<span>` above, and a thing
+      // that cannot take focus should not carry a rule about being focused.
+      className={cn(
+        chipVariants({ size, active, onDark }),
+        "outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        className
+      )}
       {...props}
     />
   )

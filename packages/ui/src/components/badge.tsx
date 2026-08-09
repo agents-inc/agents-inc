@@ -64,7 +64,16 @@ function Badge({
     defaultTagName: "span",
     props: mergeProps<"span">(
       {
-        className: cn(badgeVariants({ variant, alt, interactive }), className),
+        // The package's one focus ring, on the interactive render only: the
+        // same variants dress the `added` tag and the exclusivity marker, and
+        // a thing that cannot take focus should not carry a rule about being
+        // focused.
+        className: cn(
+          badgeVariants({ variant, alt, interactive }),
+          interactive &&
+            "outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          className
+        ),
       },
       props
     ),

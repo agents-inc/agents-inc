@@ -97,7 +97,9 @@ function DialogHeader({
       ) : null}
       <DialogPrimitive.Close
         aria-label="Close"
-        className="ml-auto cursor-pointer font-mono text-13 leading-none font-normal text-faint hover:text-ink"
+        // The package's one focus ring. The glyph has no box of its own, so
+        // the ring is the only thing that says the keyboard is on it.
+        className="ml-auto cursor-pointer font-mono text-13 leading-none font-normal text-faint outline-none hover:text-ink focus-visible:ring-1 focus-visible:ring-ring"
       >
         ✕
       </DialogPrimitive.Close>
