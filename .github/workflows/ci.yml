@@ -50,6 +50,18 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # The two cross-workspace checks, in the job that runs first because they
+      # answer in under a second and nothing else here can answer at all. Both
+      # compare workspaces to each other — syncpack on dependency ranges, the
+      # second on whether each tsconfig.json still extends the shared config —
+      # and a defect of that shape is invisible to every per-workspace gate,
+      # which is why packages/cli/tsconfig.json could extend nothing for months
+      # with tsc, eslint, both suites and turbo typecheck green throughout.
+      # Neither check ran anywhere automatic until now; `deps:check` was a
+      # script you had to remember.
+      - name: Workspaces must agree with each other
+        run: bun run deps:check
+
       # packages/matrix holds a vendored copy of the CLI's catalog, and it goes
       # stale whenever the CLI's types or agent metadata are edited without
       # regenerating it. That used to be a cross-repo dispatch that opened a
@@ -57,41 +69,40 @@ jobs:
       # They do not any more: a commit that changes the catalog can carry the
       # regenerated output with it, so this is a check rather than a PR.
       #
+      # The writer lives in packages/cli — it is the CLI's own types and agent
+      # metadata being vendored — so the check is run from there even though
+      # the files it guards belong to the web side. It is CI-safe because every
+      # input is in this repository; generate:types, which reads the sibling
+      # skills checkout no runner has, deliberately has no check here.
+      #
+      # It compares in memory and writes nothing, which is why this no longer
+      # needs the regenerate-then-git-diff pair it replaced — and it reports a
+      # file it emits that is not committed at all, which `git diff` could not
+      # see.
+      #
       # It runs before the suites on purpose. A stale catalog means something
       # was left uncommitted, and saying so takes seconds — waiting out the E2E
       # run first would only delay the same answer.
-      - name: Regenerate the vendored catalog
-        working-directory: packages/matrix
-        run: bun run generate
-
       - name: The vendored catalog must match what is committed
-        run: |
-          # Two checks, because `git diff` alone cannot see a file that did not
-          # exist before: if the generator ever starts emitting a new file, the
-          # diff stays empty while the committed catalog is incomplete.
-          untracked=$(git ls-files --others --exclude-standard packages/matrix)
-          if [ -n "$untracked" ]; then
-            printf 'The generator produced files that are not committed:\n%s\n' "$untracked"
-            echo "::error::The vendored catalog is missing new files. Run 'bun run generate' in packages/matrix and commit everything it writes."
-            exit 1
-          fi
-          if ! git diff --exit-code -- packages/matrix; then
-            echo "::error::The vendored catalog is out of date. Run 'bun run generate' in packages/matrix and commit the result."
-            exit 1
-          fi
+        working-directory: packages/cli
+        run: bun run generate:matrix:check
 
       # The CLI is filtered out of every turbo run below: check-cli owns it, and
       # running it in both jobs would pay for it twice.
       - run: bun run typecheck --filter='!agents-inc'
       - run: bun run lint --filter='!agents-inc'
+
+      # Chromium installs before `test`, not just before `test:e2e`: the
+      # packages/ui suite runs Storybook stories under vitest browser mode, so
+      # plain `test` needs a browser too. Only chromium is configured, so only
+      # chromium is installed — once, for both suites.
+      - run: bunx playwright install --with-deps chromium
+
       - run: bun run test --filter='!agents-inc'
 
       # The Playwright suite is the one that actually covers wiring, so it
       # gates the deploy rather than running after it. (No count here on
-      # purpose — the last one this comment carried went stale.) Only chromium
-      # is configured, so only chromium is installed.
-      - run: bunx playwright install --with-deps chromium
-        working-directory: apps/editor
+      # purpose — the last one this comment carried went stale.)
       - run: bun run test:e2e --filter='!agents-inc'
 
       - uses: actions/upload-artifact@v4

@@ -1,0 +1,92 @@
+# Everything the commit hook used to run, moved here on 2026-08-07: lint, the
+# unit suites and the end-to-end suites, scoped by side — the whole CLI suite if
+# anything in the CLI changed, the whole web suite if anything in the web
+# changed.
+#
+# This tier is coarse on purpose. It is the last gate before the code leaves the
+# machine, so it must not be able to miss a dependent, and scoping by side
+# cannot miss one: it never tries to work out what the dependents are. That
+# property is what lets .husky/pre-commit run a narrow changed-package filter
+# instead — the note there records why, and which miss taught it.
+
+# What is about to be pushed rather than what is staged. @{push} is where this
+# branch's commits are going, so @{push}..HEAD is everything the remote does not
+# have yet. It does not resolve on a branch with no upstream — the first push of
+# a new branch, a detached HEAD — and there is then no range to narrow by, so
+# both sides run. Wider is the only safe direction in this hook.
+#
+# git also hands this hook the refs being pushed on stdin, and it ignores them:
+# the range is the current branch's. Pushing another branch by refspec is scoped
+# by the branch you are standing on instead.
+#
+# The list answers "which side moved", not "which files should I lint" — so no
+# --diff-filter (a push that only deletes a CLI file still has to run the CLI
+# suite) and --no-renames, which splits a move into both of its paths.
+run_cli=no
+run_web=no
+run_deps=no
+
+if git rev-parse --verify --quiet '@{push}' >/dev/null 2>&1; then
+	pushed=$(git diff --name-only --no-renames '@{push}..HEAD')
+else
+	pushed=
+	run_cli=yes
+	run_web=yes
+	run_deps=yes
+fi
+
+if printf '%s\n' "$pushed" | grep -q '^packages/cli/'; then
+	run_cli=yes
+fi
+
+# packages/cli devDepends on @workspace/matrix and tsup bundles it, so a
+# matrix-only change moves the CLI without touching packages/cli/. The web line
+# below excludes agents-inc — the one package that consumes matrix — so without
+# this, the CLI suite never runs for the change most likely to move under its
+# integration specs.
+if printf '%s\n' "$pushed" | grep -q '^packages/matrix/'; then
+	run_cli=yes
+fi
+
+# The web side is everything under apps/ or packages/ except the CLI's own
+# paths — hence the second grep, which drops them. A push confined to
+# packages/cli leaves nothing behind, so this stays unset.
+if printf '%s\n' "$pushed" | grep -E '^(apps|packages)/' | grep -qv '^packages/cli/'; then
+	run_web=yes
+fi
+
+# Root tooling changes how both sides install, build and run.
+if printf '%s\n' "$pushed" | grep -qE '^(package\.json|bun\.lock|turbo\.json|tsconfig\.json)$|^(\.husky|\.github)/'; then
+	run_cli=yes
+	run_web=yes
+fi
+
+# The four cross-workspace checks read every package.json, every tsconfig.json,
+# every vitest.config.* and every eslint.config.*, so those are exactly the files
+# that can change their answer — anywhere in the tree, which is why this list is
+# not anchored the way the two above are. It is a separate flag rather than a
+# third condition on the ones above because the checks compare workspaces to
+# each other: a push that touches only the web side can still make the CLI's
+# tsconfig the odd one out. `bun run deps:check` measures at 0.2s, so there is
+# nothing to scope more finely than this.
+if printf '%s\n' "$pushed" | grep -qE '(^|/)(package\.json|bun\.lock|tsconfig[^/]*\.json|vitest\.config\.[^/]+|eslint\.config\.[^/]+)$'; then
+	run_deps=yes
+fi
+
+# Every grep above sits inside an `if` on purpose: husky runs this with `sh -e`,
+# so a bare grep that matched nothing would fail the push on its own.
+#
+# Only packages/cli and apps/editor define test:e2e, so each side runs the
+# end-to-end suite it owns and nothing else. A push touching only docs or other
+# root files sets neither flag and runs neither suite.
+if [ "$run_deps" = yes ]; then
+	bun run deps:check
+fi
+
+if [ "$run_cli" = yes ]; then
+	bunx turbo run lint test test:e2e --filter=agents-inc
+fi
+
+if [ "$run_web" = yes ]; then
+	bunx turbo run lint test test:e2e --filter='!agents-inc'
+fi

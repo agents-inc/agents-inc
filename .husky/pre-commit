@@ -1,68 +1,111 @@
-# Format only what is staged.
+# Lint and format what is staged — `eslint --fix` then `prettier --write`, per
+# file, in that order. See the //lint-staged note in the root package.json for
+# the pattern shapes and why there are three of them.
 bunx lint-staged
 
-# Then lint and the suites, scoped by side: the whole CLI suite if anything in
-# the CLI changed, the whole web suite if anything in the web changed.
+# Then lint and the unit suites, for the packages this commit moves and the
+# packages that depend on them. The full side-scoped suites — end-to-end runs
+# included — moved to .husky/pre-push on 2026-08-07. Two tiers:
 #
-# ESLint runs here rather than in lint-staged because lint-staged runs its
-# commands from the git root, and ESLint 9 flat config is looked up from the
-# working directory, never beside the file being linted. Every workspace keeps
-# its own eslint.config.js one level down, and packages/cli is on ESLint 9
-# while the rest are on ESLint 10 — so there is no root config and no root
-# binary that could lint all of them. Verified by running it: from the root,
-# `eslint packages/cli/src/cli/consts.ts` exits 2 with "couldn't find an
-# eslint.config file"; the same file linted from packages/cli exits 0. Turbo
-# gives each workspace its own eslint, run in its own directory.
+#   pre-commit   lint + unit, the changed packages and their dependents
+#   pre-push     lint + unit + end-to-end, the whole side that moved
 #
-# The cost of linting a whole workspace rather than just its staged files is
-# small next to the suites already on this line — packages/cli lints in ~7s and
-# apps/editor in ~2s, and turbo caches both — and it is what catches the
-# cross-file rules, like the config-gate import bans, that a per-file run
-# cannot see.
+# ESLint runs in BOTH places since 2026-08-08, and that is not a duplication to
+# tidy away. It rejoined lint-staged above because the reason it had been
+# excluded expired: ESLint 9 looked a flat config up from the working directory
+# and its ancestors, lint-staged runs its commands from the git root, and this
+# repository has no eslint.config at its root, so the entry failed on every
+# commit staging a .ts file. ESLint 10 looks the config up from the directory of
+# the FILE being linted instead. Verified by running it: from the root,
+# `eslint packages/cli/src/cli/base-command.ts` now exits 0 having loaded
+# packages/cli/eslint.config.js, projectService carve-out and all — under 9 the
+# same command exited 2. That file is the verification rather than a sample: it
+# carries an eslint-disable for a type-aware rule and packages/cli reports
+# unused disable directives as errors, so a per-file run in which the type-aware
+# rules had not actually loaded would have failed on the directive. There is
+# still no root fallback; `eslint vitest.config.mjs` at the root exits 2 because
+# nothing above it holds a config.
 #
-# This used to be `--filter='...[HEAD]'`, turbo's changed-package filter, which
-# runs the packages a commit touched plus their dependents. That looks smarter
-# and it was wrong: a commit to packages/matrix selected matrix and apps/editor,
-# but not apps/server, which depends on matrix too, so a change that broke the
-# worker committed clean. Scoping by side is coarse on purpose — it cannot miss
-# a dependent, because it never tries to work out what the dependents are.
-# Please do not narrow it again.
+# What keeps ESLint on this line as well is a rule inventory, not a mechanism.
+# Twenty-four of the rules enabled in all seven workspaces are type-aware, and a
+# type-aware verdict reads a whole TypeScript program: a change in a staged file
+# can produce a report in a file the commit does not touch, and no staged-file
+# run can see that one. Nothing else in the seven configs needs more than the
+# file it is handed — the config-gate import bans are no-restricted-imports,
+# which matches the literal specifier string and never resolves a module, the
+# task-ID and dynamic-import bans are no-restricted-syntax selectors, and no
+# import-cycle plugin exists anywhere here. So lint-staged is the fast half and
+# this is the complete one. The cost of the complete half is bounded —
+# packages/cli lints in ~19s and apps/editor in ~5s, both under type-aware
+# rules, and turbo caches both.
 
-# This list answers "which side moved", not "which files should I lint" — so no
-# --diff-filter (a commit that only deletes a CLI file still has to run the CLI
-# suite) and --no-renames, which splits a move into both of its paths.
+# The staged list answers one question now: did a manifest move. It used to
+# answer "which side moved" as well, which is why it is shaped the way it is —
+# no --diff-filter, because a commit that only deletes a package.json changes
+# the answer too, and --no-renames, which splits a move into both of its paths.
 staged=$(git diff --cached --name-only --no-renames)
 
-run_cli=no
-run_web=no
-
-if printf '%s\n' "$staged" | grep -q '^packages/cli/'; then
-	run_cli=yes
-fi
-
-# The web side is everything under apps/ or packages/ except the CLI's own
-# paths — hence the second grep, which drops them. A commit confined to
-# packages/cli leaves nothing behind, so this stays unset.
-if printf '%s\n' "$staged" | grep -E '^(apps|packages)/' | grep -qv '^packages/cli/'; then
-	run_web=yes
-fi
-
-# Root tooling changes how both sides install, build and run.
-if printf '%s\n' "$staged" | grep -qE '^(package\.json|bun\.lock|turbo\.json|tsconfig\.json)$|^(\.husky|\.github)/'; then
-	run_cli=yes
-	run_web=yes
-fi
-
-# Every grep above sits inside an `if` on purpose: husky runs this with `sh -e`,
-# so a bare grep that matched nothing would fail the commit on its own.
+# The four cross-workspace checks read every package.json, every tsconfig.json,
+# every vitest.config.* and every eslint.config.*, so those are exactly the files
+# that can change their answer — anywhere in the tree, which is why this list is
+# not anchored. The checks compare workspaces to each other: a commit that
+# touches only the web side can still make the CLI's tsconfig the odd one out.
+# `bun run deps:check` measures at 0.2s, so there is nothing to scope more finely
+# than this.
 #
-# Only packages/cli and apps/editor define test:e2e, so each side runs the
-# end-to-end suite it owns and nothing else. A commit touching only docs or
-# other root files sets neither flag and runs neither suite.
-if [ "$run_cli" = yes ]; then
-	bunx turbo run lint test test:e2e --filter=agents-inc
+# The grep sits inside an `if` on purpose: husky runs this with `sh -e`, so a
+# bare grep that matched nothing would fail the commit on its own.
+run_deps=no
+
+if printf '%s\n' "$staged" | grep -qE '(^|/)(package\.json|bun\.lock|tsconfig[^/]*\.json|vitest\.config\.[^/]+|eslint\.config\.[^/]+)$'; then
+	run_deps=yes
 fi
 
-if [ "$run_web" = yes ]; then
-	bunx turbo run lint test test:e2e --filter='!agents-inc'
+if [ "$run_deps" = yes ]; then
+	bun run deps:check
 fi
+
+# `...[HEAD]` is turbo's changed-package filter, widened by the leading `...` to
+# every package that depends on one that changed.
+#
+# This hook used to refuse it, and the refusal was earned: a commit to
+# packages/matrix once selected matrix and apps/editor but not apps/server,
+# which depends on matrix too, so a change that broke the worker committed
+# clean. The note here ended "please do not narrow it again". Scoping by side
+# instead — the whole CLI suite if the CLI moved, the whole web suite if the web
+# moved — cannot miss a dependent, because it never tries to work out what the
+# dependents are.
+#
+# What changed on 2026-08-07 is not the filter but what stands behind it. Those
+# side-scoped suites still run in full; they run at pre-push, before any of this
+# leaves the machine. A dependent this filter misses now costs an amended commit
+# rather than a broken worker on main, and that is the whole trade: this hook is
+# allowed to be fast and occasionally wrong because the push hook is slow and
+# cannot be. Narrowing pre-push is the move that would hurt.
+#
+# What [HEAD] compares against, since a hook is the one place it matters. Turbo
+# reads a one-ended range as "since this ref, including work not yet committed",
+# and asks git three things: diff-tree from HEAD to HEAD, which is empty;
+# `ls-files --others --modified`, the untracked and the unstaged; and
+# `git diff --name-only --cached`, the staged set this commit is made of. The
+# commit's own contents are therefore always in the selection, along with
+# anything else left dirty in the tree — a superset, never a subset. Read out of
+# turbo 2.10.8, crates/turborepo-scm/src/git.rs; the published docs do not say.
+#
+# Files belonging to no workspace — root package.json, turbo.json, bun.lock,
+# .husky, .github, docs — make turbo answer "then every package changed", so the
+# root-tooling clause the old hook spelled out is now turbo's, and wider.
+#
+# test:e2e is deliberately absent: it is the slowest thing either side owns, and
+# pre-push runs it.
+#
+# `typecheck` joined this line on 2026-08-08 (REPO-33). Two reference docs had
+# been claiming for months that TypeScript is checked on every commit, and no
+# hook had ever run it; the ruling was to make the claim true rather than to
+# correct it. The task order below does not matter — turbo builds its graph from
+# turbo.json's dependsOn, not from argv, and these three are independent of each
+# other. Each carries `^build`, so a cold checkout builds dependencies first.
+# The CLI's `typecheck` is three tsc programs, and the middle one is
+# tsconfig.scripts.json — which is what puts scripts/ under a commit-time gate
+# for the first time.
+bunx turbo run lint typecheck test --filter='...[HEAD]'
