@@ -7,7 +7,7 @@ import { typedEntries, typedKeys } from "../../../utils/typed-object";
 import type { SkillId, SkillSlug } from "../../../types";
 import type { SkillAuditEntry } from "../skill-audit";
 
-const CATALOG_SIZE = 237;
+const CATALOG_SIZE = 238;
 const AUDIT_DATE = "2026-08-07";
 const BATCH_SIZES = {
   "web-core": 20,
@@ -16,7 +16,7 @@ const BATCH_SIZES = {
   "web-platform": 23,
   "api-core": 17,
   "api-data": 22,
-  "api-services": 16,
+  "api-services": 17,
   ai: 20,
   mobile: 24,
   desktop: 16,
@@ -33,8 +33,11 @@ describe("skillAudit", () => {
     expect(typedKeys(BUILT_IN_MATRIX.skills).sort()).toStrictEqual(typedKeys(skillAudit).sort());
   });
 
-  it("records every verdict against the fan-out's verification date", () => {
-    const offDate = entries.filter(([, entry]) => entry.audited !== AUDIT_DATE).map(([id]) => id);
+  it("records no verdict from before the fan-out's verification date", () => {
+    // Later dates are legitimate: a skill that lands after the fan-out (Xquik, by external
+    // PR) is audited on arrival. What this guards against is a stale row the fan-out never
+    // re-confirmed.
+    const offDate = entries.filter(([, entry]) => entry.audited < AUDIT_DATE).map(([id]) => id);
 
     expect(offDate).toStrictEqual([]);
   });

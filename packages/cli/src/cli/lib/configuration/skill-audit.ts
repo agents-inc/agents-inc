@@ -907,6 +907,14 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     batch: "api-services",
     classification: { class: "A", frameworks: [] },
   },
+  // Landed by external PR (agents-inc/skills#2) after the B7 batch closed; verdict follows
+  // its api-search siblings — the category radio is the constraint, no rules of its own.
+  "api-search-xquik": {
+    audited: "2026-08-09",
+    verdict: "constrained-via-exclusivity-or-requires",
+    batch: "api-services",
+    classification: { class: "A", frameworks: [] },
+  },
   "api-cms-payload": {
     audited: "2026-08-07",
     verdict: "constrained-via-exclusivity-or-requires",
@@ -1662,7 +1670,7 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
  * batch that owns the change. Both audit checks skip exactly these and nothing else, so any
  * other divergence between the manifest and the rules fails immediately.
  *
- * Empty since every disposition the fan-out ruled on landed: the live rules now back all 237
+ * Empty since every disposition the fan-out ruled on landed: the live rules now back all 238
  * verdicts on their own. It stays as the mechanism for the next audit that runs ahead of its
  * taxonomy — add an entry with the batch that owns it, and delete it when that lands. The
  * consistency test asserts this set matches the live gap exactly, so a stale entry fails just
