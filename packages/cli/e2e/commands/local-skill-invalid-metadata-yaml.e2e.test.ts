@@ -29,12 +29,13 @@ const BROKEN_SKILL: SkillId = "web-testing-vitest";
 /** Unparseable YAML: a flow-mapping opener followed by nested compact mappings. */
 const UNPARSEABLE_YAML = `{{{ this is not: valid: yaml: "at all\n`;
 
-async function createProjectWithOneBrokenMetadata(): Promise<{
+async function createProjectWithOneBrokenMetadata(source: string): Promise<{
   projectDir: string;
   tempDir: string;
   brokenMetadataPath: string;
 }> {
   const project = await ProjectBuilder.editable({
+    source,
     skills: [HEALTHY_SKILL, BROKEN_SKILL],
     agents: ["web-developer"],
   });
@@ -70,41 +71,30 @@ describe("installed skill with unparseable metadata.yaml", () => {
 
   it("search and doctor both succeed while every metadata.yaml is parseable", async () => {
     const project = await ProjectBuilder.editable({
+      source: source.sourceDir,
       skills: [HEALTHY_SKILL, BROKEN_SKILL],
       agents: ["web-developer"],
     });
     tempDir = path.dirname(project.dir);
 
-    const searchResult = await CLI.run(
-      ["search", "react"],
-      { dir: project.dir },
-      { env: { CC_SOURCE: source.sourceDir } },
-    );
+    const searchResult = await CLI.run(["search", "react"], { dir: project.dir });
     expect(searchResult.exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(searchResult.output).toContain(HEALTHY_SKILL);
 
-    const doctorResult = await CLI.run(
-      ["doctor"],
-      { dir: project.dir },
-      { env: { CC_SOURCE: source.sourceDir } },
-    );
+    const doctorResult = await CLI.run(["doctor"], { dir: project.dir });
     expect(doctorResult.exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(doctorResult.stdout).toContain("Connected to local:");
   });
 
   it("search still returns catalog results and names the offending skill", async () => {
-    const project = await createProjectWithOneBrokenMetadata();
+    const project = await createProjectWithOneBrokenMetadata(source.sourceDir);
     tempDir = project.tempDir;
 
     const configBefore = await loadConfigOrFail(project.projectDir);
     const skillDirsBefore = await listFiles(skillsPath(project.projectDir));
     const brokenMetadataBefore = await readTestFile(project.brokenMetadataPath);
 
-    const { exitCode, output } = await CLI.run(
-      ["search", "react"],
-      { dir: project.projectDir },
-      { env: { CC_SOURCE: source.sourceDir } },
-    );
+    const { exitCode, output } = await CLI.run(["search", "react"], { dir: project.projectDir });
 
     expect(exitCode, "one bad installed metadata.yaml must not abort search").toBe(
       EXIT_CODES.SUCCESS,
@@ -120,17 +110,13 @@ describe("installed skill with unparseable metadata.yaml", () => {
   });
 
   it("doctor blames the skill, not the source", async () => {
-    const project = await createProjectWithOneBrokenMetadata();
+    const project = await createProjectWithOneBrokenMetadata(source.sourceDir);
     tempDir = project.tempDir;
 
     const configBefore = await loadConfigOrFail(project.projectDir);
     const skillDirsBefore = await listFiles(skillsPath(project.projectDir));
 
-    const { exitCode, stdout } = await CLI.run(
-      ["doctor"],
-      { dir: project.projectDir },
-      { env: { CC_SOURCE: source.sourceDir } },
-    );
+    const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.projectDir });
 
     expect(stdout, "a corrupt local skill is not a source failure").not.toContain(
       "Failed to load source",
@@ -138,9 +124,11 @@ describe("installed skill with unparseable metadata.yaml", () => {
     expect(stdout, "the skills diagnostic must not be disabled").not.toContain(
       "Skipped (source unreachable)",
     );
-    expect(stdout, "the configured source is reachable").toContain("Connected to local:");
-    expect(exitCode, "one bad installed metadata.yaml must not fail doctor").toBe(
-      EXIT_CODES.SUCCESS,
+    expect(stdout, "the configured source validated cleanly").toContain("1 source validated");
+    expect(stdout, "the offending skill must be named").toContain(BROKEN_SKILL);
+    expect(stdout, "the offending file must be named").toContain(FILES.METADATA_YAML);
+    expect(exitCode, "an unparseable installed metadata.yaml is a content error").toBe(
+      EXIT_CODES.ERROR,
     );
 
     // doctor is read-only: config and filesystem must be byte-identical after.

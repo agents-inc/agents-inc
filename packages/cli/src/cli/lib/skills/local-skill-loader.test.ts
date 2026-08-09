@@ -73,13 +73,15 @@ describe("local-skill-loader", () => {
 
       const result = await discoverLocalSkills(tempDir);
 
+      const skill = result?.skills[0];
+
       expect(result).not.toBeNull();
       expect(result?.skills).toHaveLength(1);
-      expect(result?.skills[0].id).toBe("my-normal-skill (@local)");
-      expect(result?.skills[0].category).toBe("web-framework");
-      expect(result?.skills[0].author).toBe("@dummy-author");
-      expect(result?.skills[0].local).toBe(true);
-      expect(result?.skills[0].localPath).toBe(
+      expect(skill?.id).toBe("my-normal-skill (@local)");
+      expect(skill?.category).toBe("web-framework");
+      expect(skill?.author).toBe("@dummy-author");
+      expect(skill?.local).toBe(true);
+      expect(skill?.localPath).toBe(
         path.join(tempDir, LOCAL_SKILLS_PATH, "my-normal-skill") + path.sep,
       );
     });
@@ -135,7 +137,7 @@ describe("local-skill-loader", () => {
 
       const result = await discoverLocalSkills(tempDir);
 
-      expect(result?.skills[0].description).toBe("Custom CLI description");
+      expect(result?.skills[0]?.description).toBe("Custom CLI description");
     });
 
     it("falls back to frontmatter description when cliDescription not provided", async () => {
@@ -146,7 +148,7 @@ describe("local-skill-loader", () => {
 
       const result = await discoverLocalSkills(tempDir);
 
-      expect(result?.skills[0].description).toBe("Frontmatter description");
+      expect(result?.skills[0]?.description).toBe("Frontmatter description");
     });
 
     it("discovers multiple valid skills", async () => {
@@ -199,7 +201,7 @@ describe("local-skill-loader", () => {
 
       const result = await discoverLocalSkills(tempDir);
 
-      expect(result?.skills[0].category).toBe("web-framework");
+      expect(result?.skills[0]?.category).toBe("web-framework");
     });
 
     it("preserves optional fields from metadata.yaml", async () => {
@@ -250,7 +252,7 @@ describe("local-skill-loader", () => {
       const result = await discoverLocalSkills(tempDir);
 
       expect(result?.skills).toHaveLength(1);
-      expect(result?.skills[0].id).toBe("valid-skill (@local)");
+      expect(result?.skills[0]?.id).toBe("valid-skill (@local)");
     });
 
     it("skips skill with empty metadata.yaml", async () => {

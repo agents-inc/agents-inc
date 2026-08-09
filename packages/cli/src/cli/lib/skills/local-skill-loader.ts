@@ -1,12 +1,9 @@
-import { parse as parseYaml } from "yaml";
 import path from "path";
 import { directoryExists, listDirectories, fileExists, readFile } from "../../utils/fs";
-import { getErrorMessage } from "../../utils/errors";
 import { verbose, warn } from "../../utils/logger";
 import { LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../consts";
-import { parseFrontmatter } from "../loading";
+import { parseFrontmatter, readSkillMetadata } from "../loading";
 import type { CategoryPath, Domain, ExtractedSkillMetadata, SkillSlug } from "../../types";
-import { formatZodIssues, localRawMetadataSchema } from "../schemas";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
 
 export type LocalRawMetadata = {
@@ -71,30 +68,18 @@ async function extractLocalSkill(
     return null;
   }
 
-  const metadataContent = await readFile(metadataPath);
-
-  // parseYaml throws on syntactically invalid YAML. One corrupt file must skip
-  // its own skill, not abort discovery for every command that loads the catalog.
-  let rawMetadata: unknown;
-  try {
-    rawMetadata = parseYaml(metadataContent);
-  } catch (error) {
+  // One file that describes no skill must skip its own skill, not abort discovery
+  // for every command that loads the catalog. `compile` refuses the same judgment's
+  // verdict outright, which is what keeps the two passes from disagreeing.
+  const read = await readSkillMetadata(metadataPath);
+  if (!read.usable) {
     warn(
-      `Skipping local skill '${skillDirName}': unparseable ${STANDARD_FILES.METADATA_YAML} at ${metadataPath} — ${getErrorMessage(error)}`,
+      `Skipping local skill '${skillDirName}': ${STANDARD_FILES.METADATA_YAML} at ${metadataPath} does not describe it — ${read.reason}`,
     );
     return null;
   }
 
-  const parsed = localRawMetadataSchema.safeParse(rawMetadata);
-
-  if (!parsed.success) {
-    verbose(
-      `Skipping local skill '${skillDirName}': invalid metadata.yaml — ${formatZodIssues(parsed.error.issues)}`,
-    );
-    return null;
-  }
-
-  const metadata = parsed.data;
+  const metadata = read.metadata;
 
   const skillMdContent = await readFile(skillMdPath);
   const frontmatter = parseFrontmatter(skillMdContent, skillMdPath);
@@ -112,14 +97,14 @@ async function extractLocalSkill(
     id: skillId,
     directoryPath: skillDirName,
     description: metadata.cliDescription || frontmatter.description,
-    usageGuidance: metadata.usageGuidance,
+    ...(metadata.usageGuidance !== undefined && { usageGuidance: metadata.usageGuidance }),
     category: metadata.category,
     author: LOCAL_DEFAULTS.AUTHOR,
     path: relativePath,
     local: true,
     localPath: absolutePath,
     domain: metadata.domain,
-    custom: metadata.custom,
+    ...(metadata.custom !== undefined && { custom: metadata.custom }),
     slug: metadata.slug,
     displayName: metadata.displayName,
   };
