@@ -77,6 +77,7 @@ import {
   CLAUDE_SRC_DIR,
   DEFAULT_PLUGIN_NAME,
   DEFAULT_PUBLIC_SOURCE_NAME,
+  GLOBAL_CONFIG_NAME,
   LOCAL_SKILLS_PATH,
   STANDARD_FILES,
 } from "../../consts";
@@ -118,12 +119,15 @@ vi.mock("../compiler", async (importOriginal) => ({
 vi.mock("../configuration/config-generator", async (importOriginal) => {
   const original = await importOriginal<typeof import("../configuration/config-generator")>();
   return {
-    generateProjectConfigFromSkills: vi.fn().mockReturnValue({
-      // Uses literal values because vi.mock factories are hoisted above imports
-      name: "agents-inc",
+    // Echoes the `name` argument, exactly as the real generator does — the seed
+    // its caller passes IS the config's name, so a spec asserting on the written
+    // name has to be able to see which seed arrived. The remaining values stay
+    // literal because vi.mock factories are hoisted above imports.
+    generateProjectConfigFromSkills: vi.fn().mockImplementation((name: string) => ({
+      name,
       agents: [],
       skills: [{ id: "test-skill", scope: "project", source: "eject" }],
-    }),
+    })),
     buildStackProperty: vi.fn().mockReturnValue({}),
     // Use real splitConfigByScope for scope-aware config writing
     splitConfigByScope: original.splitConfigByScope,
@@ -262,7 +266,7 @@ describe("local-installer", () => {
       const config = await readTestTsConfig<ProjectConfig>(configPath);
 
       expect(config).toStrictEqual({
-        name: DEFAULT_PLUGIN_NAME,
+        name: path.basename(tempDir),
         agents: [],
         skills: [{ id: "test-skill", scope: "project", source: "eject" }],
         source: tempDir,
@@ -286,7 +290,7 @@ describe("local-installer", () => {
       const config = await readTestTsConfig<ProjectConfig>(configPath);
 
       expect(config).toStrictEqual({
-        name: DEFAULT_PLUGIN_NAME,
+        name: path.basename(tempDir),
         agents: [],
         skills: [{ id: "test-skill", scope: "project", source: "eject" }],
         source: "github:my-org/skills",
@@ -313,7 +317,7 @@ describe("local-installer", () => {
       const config = await readTestTsConfig<ProjectConfig>(configPath);
 
       expect(config).toStrictEqual({
-        name: DEFAULT_PLUGIN_NAME,
+        name: path.basename(tempDir),
         agents: [],
         skills: [{ id: "test-skill", scope: "project", source: "eject" }],
         source: "github:default/source",
@@ -337,7 +341,7 @@ describe("local-installer", () => {
       const config = await readTestTsConfig<ProjectConfig>(configPath);
 
       expect(config).toStrictEqual({
-        name: DEFAULT_PLUGIN_NAME,
+        name: path.basename(tempDir),
         agents: [],
         skills: [{ id: "test-skill", scope: "project", source: "eject" }],
         source: tempDir,
@@ -359,7 +363,7 @@ describe("local-installer", () => {
       expect(result).toStrictEqual({
         copiedSkills: [],
         config: {
-          name: DEFAULT_PLUGIN_NAME,
+          name: path.basename(tempDir),
           agents: [],
           skills: [{ id: "test-skill", scope: "project", source: "eject" }],
           source: tempDir,
@@ -426,7 +430,7 @@ describe("local-installer", () => {
 
       // installMode is derived from skills at runtime, not stored on config
       expect(result.config).toStrictEqual({
-        name: DEFAULT_PLUGIN_NAME,
+        name: path.basename(tempDir),
         agents: [],
         skills: [{ id: "test-skill", scope: "project", source: "eject" }],
         source: tempDir,
@@ -569,7 +573,7 @@ describe("local-installer", () => {
       // Should parse back to the exact expected config
       const config = await readTestTsConfig<ProjectConfig>(configPath);
       expect(config).toStrictEqual({
-        name: DEFAULT_PLUGIN_NAME,
+        name: path.basename(tempDir),
         agents: [],
         skills: [{ id: "test-skill", scope: "project", source: "eject" }],
         source: tempDir,
@@ -890,6 +894,132 @@ describe("local-installer", () => {
         "web-developer": {
           "web-framework": ["web-framework-react"],
         },
+      });
+    });
+  });
+
+  describe("config identity and cross-scope curation", () => {
+    const fakeHome = useFakeHome(() => tempDir);
+
+    it("a global install is named for the product, never for the home directory", async () => {
+      // At $HOME there is no project to name. `path.basename(os.homedir())` is the
+      // OS account name — it identifies the user rather than the installation, and
+      // it differs per machine for one logical install, so the global config keeps
+      // the product constant. Only a project config takes its directory's name.
+      initializeMatrix(EMPTY_MATRIX);
+      const homeDir = fakeHome.dir;
+      const wizardResult = buildWizardResult(
+        buildSkillConfigs([TEST_SKILL_ID], { scope: "global" }),
+      );
+      const sourceResult = buildSourceResult(EMPTY_MATRIX, homeDir);
+
+      const result = await installEject({ wizardResult, sourceResult, projectDir: homeDir });
+
+      const configPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const config = await readTestTsConfig<ProjectConfig>(configPath);
+      expect(config.name).toBe(DEFAULT_PLUGIN_NAME);
+      expect(config.name).not.toBe(path.basename(homeDir));
+      expect(result.config.name).toBe(DEFAULT_PLUGIN_NAME);
+
+      // Both halves of the global pair land — the config half's
+      // `satisfies ProjectConfig` resolves against the types half beside it.
+      expect(
+        await fileExists(path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TYPES_TS)),
+      ).toBe(true);
+    });
+
+    it("a sub-agent moved from global to project keeps the catalogue its stack curated", async () => {
+      initializeMatrix(FULLSTACK_PAIR_MATRIX);
+
+      const globalScopedSkills = buildSkillConfigs(["web-framework-react", "api-framework-hono"], {
+        scope: "global",
+      });
+
+      // The global config is the only carrier of a GLOBAL sub-agent's curation: a
+      // project config filters its stack down to project-scoped agents, so
+      // web-developer's rows never appear there while it lives at global scope.
+      // The api row is deliberately cross-domain — the shared resolver never hands
+      // an api skill to a web agent, so it can only be there as somebody's choice.
+      const globalConfigPath = path.join(fakeHome.dir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      await mkdir(path.dirname(globalConfigPath), { recursive: true });
+      await writeConfigFile(
+        buildProjectConfig({
+          name: GLOBAL_CONFIG_NAME,
+          skills: globalScopedSkills,
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+          stack: {
+            "web-developer": {
+              "web-framework": [{ id: "web-framework-react", preloaded: true }],
+              "api-api": [{ id: "api-framework-hono" }],
+            },
+          },
+        }),
+        globalConfigPath,
+      );
+
+      const projectConfigPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      await mkdir(path.dirname(projectConfigPath), { recursive: true });
+      await writeConfigFile(
+        buildProjectConfig({
+          skills: globalScopedSkills,
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        }),
+        projectConfigPath,
+      );
+
+      const configGenerator = await vi.importActual<
+        typeof import("../configuration/config-generator")
+      >("../configuration/config-generator");
+      mockGenerateProjectConfig.mockImplementationOnce(
+        configGenerator.generateProjectConfigFromSkills,
+      );
+
+      // The `s` toggle on a global agent: an active project entry paired with a
+      // tombstone over the global install. api-developer arrives selected for the
+      // first time at either scope — nobody has curated it, so it seeds.
+      const selectedAgents: AgentName[] = ["web-developer", "api-developer"];
+      const wizardResult = buildWizardResult(globalScopedSkills, {
+        selectedAgents,
+        agentConfigs: [
+          ...buildAgentConfigs(selectedAgents, { scope: "project" }),
+          ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
+        ],
+      });
+      const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
+
+      const result = await installEject({ wizardResult, sourceResult, projectDir: tempDir });
+
+      // A scope change moves WHERE a sub-agent lives, never WHAT it knows.
+      expect(result.config.stack?.["web-developer"]).toStrictEqual({
+        "web-framework": [{ id: "web-framework-react", preloaded: true }],
+        "api-api": [{ id: "api-framework-hono" }],
+      });
+      // A sub-agent nobody has curated still seeds from the relevance rule, which
+      // targets the api framework at the api agent and no web skill at all.
+      expect(result.config.stack?.["api-developer"]).toStrictEqual({
+        "api-api": [{ id: "api-framework-hono", preloaded: true }],
+      });
+
+      // Boundary cast: the writer spells a flag-less assignment as a bare id, which
+      // is narrower than ProjectConfig's declared SkillAssignment[].
+      const projectConfig = await readTestTsConfig<ProjectConfig>(projectConfigPath);
+      const writtenWebDeveloper = projectConfig.stack?.["web-developer"] as Record<string, unknown>;
+      const writtenApiDeveloper = projectConfig.stack?.["api-developer"] as Record<string, unknown>;
+      expect(writtenWebDeveloper).toStrictEqual({
+        "web-framework": [{ id: "web-framework-react", preloaded: true }],
+        "api-api": ["api-framework-hono"],
+      });
+      expect(writtenApiDeveloper).toStrictEqual({
+        "api-api": [{ id: "api-framework-hono", preloaded: true }],
+      });
+
+      // The global config still owns what it curated: a project-context edit takes
+      // the agent into this project, it never migrates global state out.
+      const globalConfig = await readTestTsConfig<ProjectConfig>(globalConfigPath);
+      const globalWebDeveloper = globalConfig.stack?.["web-developer"] as Record<string, unknown>;
+      expect(globalWebDeveloper).toStrictEqual({
+        "web-framework": [{ id: "web-framework-react", preloaded: true }],
+        "api-api": ["api-framework-hono"],
       });
     });
   });

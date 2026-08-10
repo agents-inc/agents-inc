@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import os from "os";
+import path from "path";
+import { mkdir } from "fs/promises";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mergeConfigs, mergeWithExistingConfig } from "./config-merger";
 import type { ProjectConfig, SkillAssignment, SkillId } from "../../types";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../consts";
+import { CLAUDE_SRC_DIR, DEFAULT_PLUGIN_NAME, STANDARD_FILES } from "../../consts";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
@@ -128,6 +131,86 @@ describe("config-merger", () => {
 
       expect(result.merged).toBe(true);
       expect(result.config.skills.filter((s) => s.id === "web-framework-react")).toStrictEqual([]);
+    });
+
+    /**
+     * `mergeWithExistingConfig` loads through `loadProjectConfig`, which falls back to
+     * `os.homedir()` when the project carries no config of its own — so on a first save
+     * into a project that sits under an existing global install, the "existing" config
+     * the merge reconciles against IS the global one. Its `name` names the global
+     * installation, never this directory, and a project config that adopts it claims an
+     * identity that belongs to another file.
+     *
+     * `os.homedir()` is spied rather than `process.env.HOME` set: the loader's fallback
+     * and `isHomeDirectory` both read the OS-level home, which ignores the environment
+     * (see helpers/isolated-home.ts).
+     */
+    describe("a project with no config of its own, under a global install", () => {
+      let projectDir: string;
+      let fakeHome: string;
+
+      beforeEach(async () => {
+        fakeHome = path.join(tempDir, "fakehome");
+        projectDir = path.join(tempDir, "acme-web");
+        await mkdir(fakeHome, { recursive: true });
+        await mkdir(projectDir, { recursive: true });
+        vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
+      });
+
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      /** The identity `configNameFor` seeds a global install with. */
+      const GLOBAL_INSTALL_NAME = DEFAULT_PLUGIN_NAME;
+      /** The identity `configNameFor` seeds this project with — its own directory name. */
+      const PROJECT_NAME = "acme-web";
+
+      it("keeps the project's own name rather than the global config's", async () => {
+        await writeTestTsConfig(
+          fakeHome,
+          buildProjectConfig({ name: GLOBAL_INSTALL_NAME, skills: [] }),
+        );
+
+        const result = await mergeWithExistingConfig(
+          buildProjectConfig({ name: PROJECT_NAME, skills: [] }),
+          { projectDir },
+        );
+
+        expect(result.config.name).toBe(PROJECT_NAME);
+      });
+
+      it("keeps the project's own name whatever the global config is called", async () => {
+        await writeTestTsConfig(
+          fakeHome,
+          buildProjectConfig({ name: "a-name-no-guard-keys-on", skills: [] }),
+        );
+
+        const result = await mergeWithExistingConfig(
+          buildProjectConfig({ name: PROJECT_NAME, skills: [] }),
+          { projectDir },
+        );
+
+        expect(result.config.name).toBe(PROJECT_NAME);
+      });
+
+      it("still adopts the name recorded in the project's OWN config when it has one", async () => {
+        await writeTestTsConfig(
+          fakeHome,
+          buildProjectConfig({ name: GLOBAL_INSTALL_NAME, skills: [] }),
+        );
+        await writeTestTsConfig(
+          projectDir,
+          buildProjectConfig({ name: "renamed-by-hand", skills: [] }),
+        );
+
+        const result = await mergeWithExistingConfig(
+          buildProjectConfig({ name: PROJECT_NAME, skills: [] }),
+          { projectDir },
+        );
+
+        expect(result.config.name).toBe("renamed-by-hand");
+      });
     });
 
     describe("merge precedence rules", () => {

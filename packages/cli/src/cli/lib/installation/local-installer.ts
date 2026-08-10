@@ -1,3 +1,4 @@
+import os from "os";
 import path from "path";
 import { unique } from "remeda";
 import type {
@@ -22,6 +23,7 @@ import {
   type AuthoritativeScope,
   mergeWithExistingConfig,
   loadProjectConfig,
+  loadProjectConfigFromDir,
 } from "../configuration";
 import { loadMergedAgents, loadSkillsByIds, type SourceLoadResult } from "../loading";
 import { loadStackById, getStackSkillIds, stackNotOfferedMessage } from "../stacks";
@@ -202,6 +204,59 @@ function resolveStackProperty(
   return generated && assigned ? assigned : generated;
 }
 
+/**
+ * The identity a freshly-written config carries.
+ *
+ * A project config is named for the directory it configures — the same identity
+ * `eject` passes as its `fallbackName` and the loader repairs a missing `name`
+ * to. At `$HOME` there is no project to name: `path.basename(os.homedir())` is
+ * the OS account name, which identifies the USER rather than the installation
+ * and differs per machine for one logical global install, so the global config
+ * keeps the product constant instead.
+ *
+ * A config already on disk keeps the name it saved either way — `mergeConfigs`
+ * carries identity fields over from the existing config, so this seed only ever
+ * names a config being created.
+ */
+function configNameFor(projectDir: string): string {
+  return isHomeDirectory(projectDir) ? DEFAULT_PLUGIN_NAME : path.basename(projectDir);
+}
+
+/**
+ * The per-agent curation this save must preserve, from every config that carries
+ * any.
+ *
+ * A GLOBAL sub-agent's curation lives in the global config ALONE — a project
+ * config's stack is filtered down to project-scoped agents on the way out, so a
+ * global agent has no row of its own there. Reading the project config by itself
+ * therefore makes a `s` toggle (G→P) look like an agent nobody has ever curated,
+ * and the generator's seed branch rebuilds its catalogue from relevance defaults,
+ * silently dropping every assignment the shared resolver would not re-derive.
+ *
+ * Both configs are carriers and both are merged; the project's word wins per
+ * agent, since a project-scoped agent's row is the one the project owns. The
+ * global config is READ here and never written — a project-context edit moves an
+ * agent INTO this project, it never migrates global state out.
+ */
+async function loadCuratedStack(
+  projectDir: string,
+  projectStack: ProjectConfig["stack"],
+): Promise<Partial<Record<AgentName, StackAgentConfig>>> {
+  // At `$HOME` the config already loaded IS the global one — re-reading it would
+  // merge it with itself.
+  const globalStack = isHomeDirectory(projectDir) ? undefined : await loadGlobalStack();
+
+  // ProjectConfig.stack types its agents as Record<string, StackAgentConfig> (it
+  // comes from parsed TS/JSON); the declared return type is where those keys are
+  // narrowed to AgentName, so this load boundary needs no cast of its own.
+  return { ...globalStack, ...projectStack };
+}
+
+/** The global install's per-agent stack, absent until a global config exists. */
+async function loadGlobalStack(): Promise<ProjectConfig["stack"]> {
+  return (await loadProjectConfigFromDir(os.homedir()))?.config.stack;
+}
+
 async function buildEjectConfig(
   wizardResult: WizardResultV2,
   sourceResult: SourceLoadResult,
@@ -228,13 +283,7 @@ async function buildEjectConfig(
   }
 
   const existing = await loadProjectConfig(projectDir);
-  // Boundary cast: ProjectConfig.stack types agents as Record<string, StackAgentConfig>
-  // (it comes from parsed TS/JSON); narrow to typed AgentName keys at the load boundary.
-  // The `?? {}` is a first-init fallback when no prior config exists — not a silent
-  // fallback on data that must exist.
-  const existingStack = (existing?.config.stack ?? {}) as Partial<
-    Record<AgentName, StackAgentConfig>
-  >;
+  const existingStack = await loadCuratedStack(projectDir, existing?.config.stack);
 
   // D-220 delta: skills that are new to this session's top-level selection
   // relative to the persisted config. The diff is filtered to active (non-excluded)
@@ -294,7 +343,7 @@ async function buildEjectConfig(
     ? { ...agentOptions, existingStack: { ...buildStackProperty(loadedStack), ...existingStack } }
     : agentOptions;
   const generated = generateProjectConfigFromSkills(
-    DEFAULT_PLUGIN_NAME,
+    configNameFor(projectDir),
     skillIds,
     effectiveOptions,
   );

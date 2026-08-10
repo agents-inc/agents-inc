@@ -2,7 +2,8 @@ import { indexBy, uniqueBy } from "remeda";
 
 import type { ProjectConfig } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
-import { loadProjectConfig } from "./project-config";
+import { getProjectConfigPath } from "../installation/install-base-dir";
+import { loadProjectConfig, type LoadedProjectConfig } from "./project-config";
 import { loadProjectSourceConfig } from "./config";
 import { isGlobalTombstone, isProjectOwned, type ScopedEntry } from "./scope-predicates";
 
@@ -215,6 +216,29 @@ export function mergeConfigs(
   return merged;
 }
 
+/**
+ * The config the merge reconciles against, wearing an identity this directory can own.
+ *
+ * `loadProjectConfig` falls back to `os.homedir()` for a project that carries no config of
+ * its own, so a first save into a project sitting under an existing global install
+ * reconciles against the GLOBAL config — whose `name` identifies that installation and no
+ * directory here. `mergeConfigs`' identity-field carry-forward would then stamp it onto the
+ * project's own file.
+ *
+ * The carry-forward itself is intentional and stays: a project's OWN prior config is how a
+ * hand-renamed `config.ts` keeps its name across saves. What decides between the two is the
+ * provenance of the load, which is known here and nowhere inside the pure merge — so a
+ * config that came from the home fallback lends this save every field except its name.
+ */
+function existingConfigForMerge(
+  loaded: LoadedProjectConfig,
+  projectDir: string,
+  ownName: string,
+): ProjectConfig {
+  const isProjectsOwnFile = loaded.configPath === getProjectConfigPath(projectDir);
+  return isProjectsOwnFile ? loaded.config : { ...loaded.config, name: ownName };
+}
+
 export async function mergeWithExistingConfig(
   newConfig: ProjectConfig,
   context: MergeContext,
@@ -225,7 +249,12 @@ export async function mergeWithExistingConfig(
     // entries it owns — every entry for a global edit (`"all"`), or project-owned entries for a
     // project edit (`"owned"`). Absent owned entries were deselected and are dropped rather than
     // union-preserved (D-233 Scenario C). Init leaves the scope undefined (additive union).
-    const config = mergeConfigs(newConfig, existingFullConfig.config, {
+    const existingConfig = existingConfigForMerge(
+      existingFullConfig,
+      context.projectDir,
+      newConfig.name,
+    );
+    const config = mergeConfigs(newConfig, existingConfig, {
       ...(context.authoritativeScope !== undefined && {
         authoritativeScope: context.authoritativeScope,
       }),
