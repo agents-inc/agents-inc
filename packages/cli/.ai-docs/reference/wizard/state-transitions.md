@@ -251,11 +251,11 @@ The wizard store is module-level singleton state, so a fresh `hydrateWizardStore
 
 ### Source Management Actions
 
-| Action                                 | State Modified | Side Effects                                                                                                                                                                                                                                                                 |
-| -------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setInstallMode(skillId, mode, scope)` | `skillConfigs` | **Scope-keyed**: resolves the mode to a `source` value and rewrites it on the ACTIVE entry at `(skillId, scope)` only, via `withActiveEntrySource`. A dual-scope skill's excluded global tombstone keeps its own source, so a project-side change cannot leak across scopes. |
-| `setAllSourcesEject()`                 | `skillConfigs` | Sets `source: "eject"` on every **active** skill config. Excluded tombstones are skipped.                                                                                                                                                                                    |
-| `setAllSourcesPlugin()`                | `skillConfigs` | Sets `source` to the one marketplace (`marketplaceSourceName`) on every **active** skill config. Excluded tombstones are skipped.                                                                                                                                            |
+`setInstallMode` is the only one. `setAllSourcesEject` / `setAllSourcesPlugin` were deleted with the bulk hotkeys that were their sole callers.
+
+| Action                                 | State Modified | Side Effects                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setInstallMode(skillId, mode, scope)` | `skillConfigs` | **Scope-keyed**: resolves the mode to a `source` value and rewrites it on the ACTIVE entry at `(skillId, scope)` only, via `withActiveEntrySource`. A dual-scope skill's excluded global tombstone keeps its own source, so a project-side change cannot leak across scopes. **Guarded**: silently returns the current state when `!isEditingFromGlobalScope` and the target `(id, scope)` slot is a global install the hydration snapshot already carried (`isInheritedGlobalSlot`). |
 
 ### UI Toggle Actions
 
@@ -368,7 +368,7 @@ The "defaults" shortcut case: `approach === "stack" && selectedStackId && stackA
 
 ## Hotkey -> Action Mapping
 
-**Hotkey registry:** `src/cli/components/wizard/hotkeys.ts`. Exactly eight `HOTKEY_*` constants exist there -- `HOTKEY_INFO`, `HOTKEY_ACCEPT_DEFAULTS`, `HOTKEY_SCOPE`, `HOTKEY_SETTINGS` (the last two deliberately share the `s` key -- context-gated so both are never active at once), `HOTKEY_TOGGLE_LABELS`, `HOTKEY_SET_ALL_LOCAL`, `HOTKEY_SET_ALL_PLUGIN`, and `HOTKEY_ADD_SOURCE` -- all enumerated in the tables below. No other `HOTKEY_*` constants exist.
+**Hotkey registry:** `src/cli/components/wizard/hotkeys.ts`. Exactly four `HOTKEY_*` constants exist there -- `HOTKEY_INFO`, `HOTKEY_ACCEPT_DEFAULTS`, `HOTKEY_SCOPE` and `HOTKEY_TOGGLE_LABELS` -- all enumerated in the tables below. No other `HOTKEY_*` constants exist. `HOTKEY_SET_ALL_LOCAL` and `HOTKEY_SET_ALL_PLUGIN` were withdrawn with the Sources step's bulk install-mode keys; `HOTKEY_SETTINGS` and `HOTKEY_ADD_SOURCE` were already absent before that (this doc's previous count of eight carried both), so the Sources step now binds no character hotkey and no step has an `s`-key collision to gate.
 
 ### Global Hotkeys (wizard.tsx)
 
@@ -387,10 +387,7 @@ The "defaults" shortcut case: `approach === "stack" && selectedStackId && stackA
 
 ### Sources Step Hotkeys (step-sources.tsx, customize view)
 
-| Hotkey | Key | Action                               | Store Method            |
-| ------ | --- | ------------------------------------ | ----------------------- |
-| `L`    | `l` | Set all skill sources to "eject"     | `setAllSourcesEject()`  |
-| `P`    | `p` | Set all skill sources to marketplace | `setAllSourcesPlugin()` |
+None. `step-sources.tsx`'s `useInput` handles `ENTER` and `ESC` only. The step's install-mode surface is `SourceGrid`'s per-row `SPACE`, which calls `setInstallMode(skillId, mode, actingScope)` and returns without acting on an inert row.
 
 ### Overlay Blocking
 

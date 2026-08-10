@@ -271,8 +271,11 @@ Build step (in `hotkeys.ts`):
 
 Sources step (handled in `step-sources.tsx`):
 
-- `L`: Set every skill to install locally (`HOTKEY_SET_ALL_LOCAL`)
-- `P`: Set every skill to install as a marketplace plugin (`HOTKEY_SET_ALL_PLUGIN`)
+- **No character hotkeys.** `L` / `P` ("set all local" / "set all plugin") were withdrawn
+  together with `setAllSourcesEject` / `setAllSourcesPlugin` and their footer hints: they rewrote
+  `source` on every active entry with no scope authority, so a project edit could bulk-switch the
+  inherited global rows this step renders locked. Per-row `SPACE` on the grid is the only
+  install-mode surface, and it is inert on a locked row.
 - `ENTER`: Continue to agents step
 - `ESC`: Back — calls `onBack`, which calls `store.goBack`.
 

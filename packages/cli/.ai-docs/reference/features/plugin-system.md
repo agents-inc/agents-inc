@@ -74,6 +74,7 @@ type PluginManifest = {
   version?: string;
   description?: string;
   author?: PluginAuthor;
+  category?: string; // the skill's metadata.yaml category, carried to the marketplace entry
   keywords?: string[];
   commands?: string | string[];
   agents?: string | string[];
@@ -81,6 +82,16 @@ type PluginManifest = {
   hooks?: string | Record<string, AgentHookDefinition[]>;
 };
 ```
+
+`category` is how a skill's own category reaches `marketplace.json`: `compileSkillPlugin` passes
+`metadata?.category` into `generateSkillPluginManifest`, which emits it into `plugin.json`, and
+`convertManifestToMarketplacePlugin` copies it onto the `MarketplacePlugin` entry. Both plugin.json
+schemas carry the field (`pluginManifestObjectSchema`, from which the `.strict()` validation variant
+derives), so a category-carrying manifest passes `validatePluginManifest` — and an unknown key still
+does not. `src/schemas/plugin.schema.json` is generated from that same strict variant and carries the
+property, so it is regenerated rather than hand-edited. The Claude CLI (v2.1.226) tolerates the extra
+key: `claude plugin marketplace add`, `install` and `list` all succeed against a marketplace built
+this way, and the installed cache copy of `plugin.json` keeps the field verbatim.
 
 ## Plugin Locations
 
@@ -303,7 +314,7 @@ type Marketplace = {
 
 **File:** `src/cli/lib/marketplace-generator.ts`
 
-Generates `marketplace.json` from a source directory containing skills. Exports: `generateMarketplace()` (build the `Marketplace` object), `writeMarketplace()` (write it to disk), and `getMarketplaceStats()` (plugin counts for display).
+Generates `marketplace.json` from a source directory containing skills. Exports: `generateMarketplace()` (build the `Marketplace` object), `writeMarketplace()` (write it to disk), and `getMarketplaceStats()` (the total plus a per-`category` breakdown, which `build marketplace` prints as `Category breakdown:`). An entry carrying no `category` — a plugin authored outside this CLI — falls into an `uncategorized` bucket.
 
 ### Marketplace Commands (via Claude CLI)
 

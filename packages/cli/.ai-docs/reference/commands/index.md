@@ -362,7 +362,7 @@ The first is the whole point of the ordering: an unresolved skill or an uncompil
 
 ### `search` (src/cli/commands/search.ts)
 
-**Purpose:** Read-only catalog browse. Searches every registered source (primary + extras) by id, displayName, slug, description, or category. Prints a table via `@oclif/table`. Installing a found skill is the wizard's job (`init` / `edit`).
+**Purpose:** Read-only catalog browse. Searches the marketplace this installation reads from, plus the local skills already on disk, by id, displayName, slug, description, or category. Prints a table via `@oclif/table` — `ID`, `Name`, `Source`, `Category`, `Description`, where `Source` is the skill's own `activeSource` name (`eject` for a skill on disk, the resolved marketplace otherwise), not a fixed label. Installing a found skill is the wizard's job (`init` / `edit`).
 
 **Args:**
 
@@ -395,13 +395,21 @@ The first is the whole point of the ordering: an unresolved skill or an uncompil
 5. `executeUninstall(target, projectDir)`
 6. `reportSuccess()` -- `SUCCESS_MESSAGES.UNINSTALL_COMPLETE`
 
-**Removal plan.** `buildRemovalPlan(target)` is the single pure builder shared by `printRemovalPlan` (plain text) and the `UninstallConfirm` Ink component, so both emit byte-identical item strings and only add their own indentation/styling. Sections, in order:
+**Removal plan.** `buildRemovalPlan(target)` is the single pure builder shared by `printRemovalPlan` (plain text) and the `UninstallConfirm` Ink component, so both emit byte-identical strings and only add their own indentation/styling. It returns two halves: the `sections` this run promises to remove, and the `kept` statements naming what it deliberately leaves behind. A section header is a promise about the items beneath it, so a section left with nothing to carry is not emitted at all (`sectionWithItems`). Sections, in order:
 
-| Section              | Emitted when                                      | Items                                                            |
-| -------------------- | ------------------------------------------------- | ---------------------------------------------------------------- |
-| `Plugins:`           | `hasPlugins`                                      | `cliPluginNames`                                                 |
-| `CLI-managed files:` | `hasLocalSkills \|\| hasLocalAgents`              | `<skillsDir>/ (matching sources)`, `<agentsDir>/ (CLI-compiled)` |
-| `Config:`            | `hasClaudeSrcConfig \|\| hasClaudeSrcConfigTypes` | `<claudeSrcDir>/config.ts`, `<claudeSrcDir>/config-types.ts`     |
+| Section              | Emitted when                                      | Items                                                                                                                 |
+| -------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `Plugins:`           | `hasPlugins`                                      | `cliPluginNames`                                                                                                      |
+| `CLI-managed files:` | either item below survives its own condition      | `<skillsDir>/ (matching sources)` when `hasLocalSkills`; `<agentsDir>/ (CLI-compiled)` when `canRemoveCompiledAgents` |
+| `Config:`            | `hasClaudeSrcConfig \|\| hasClaudeSrcConfigTypes` | `<claudeSrcDir>/config.ts`, `<claudeSrcDir>/config-types.ts`                                                          |
+
+**The compiled-agents item is gated on the executor's own predicate.** `canRemoveCompiledAgents(target)` is `hasLocalAgents && configuredAgents.length > 0` -- exactly what `removeMatchingAgents` requires before it deletes anything. A run with no configuration it can read cannot say which agent files this CLI compiled, so it leaves every one of them; the plan therefore drops the item and prints `compiledAgentsKept(agentsDir)` (`utils/messages.ts`) as its one `kept` statement instead:
+
+```
+Kept compiled agents in <agentsDir>/ — identifying which of them this CLI compiled needs the configuration, and this run has none it could read.
+```
+
+Plugins already degraded this way -- `cliPluginNames` is the intersection with a config nobody can read, so it comes back empty and `Plugins:` is not emitted. The agents item did not: it keyed off `hasLocalAgents`, bare directory existence, and so promised a directory the same run then left untouched. Pinned by `e2e/commands/uninstall-corrupt-config.e2e.test.ts`. Removing those agents without a config is a separate question and is **not** what this does -- the files still stay.
 
 **`executeUninstall` order (scope-dependent):**
 

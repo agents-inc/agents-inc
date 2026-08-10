@@ -237,9 +237,27 @@ These log to `warn()` and return the current state. They exist to catch bad call
 | `setInstallMode`       | empty `skillId`                                                | "Ignoring setInstallMode call with empty skillId"                                                                                                                                                                                                                                                                                                                                  |
 | `populateFromSkillIds` | unresolvable skill id (missing from matrix / unknown category) | "Installed skill '...' is not present in the loaded source — it may have been removed or renamed" — one line per skill, from `resolveSkillForPopulation`. The count-only summary that used to follow it named nothing and is gone; the removal these ids produce is named in `edit`'s `Changes:` block, which is the surface a user reads after the wizard has cleared the screen. |
 
-## Known Gap — Ungated Install-Mode Setters
+## Install-Mode Scope Authority
 
-The install-mode setters `setInstallMode`, `setAllSourcesEject`, and `setAllSourcesPlugin` (`wizard-store.ts`) do **not** carry the `isEditingFromGlobalScope` gate that `toggleTechnology` / `toggleSkillScope` use. From a project-context edit they rewrite `source` on inherited global-active rows too, so the Sources step can show a source change the store will not legitimately own. The `edit.tsx` command boundary compensates: `recordGlobalSourceMigrations()` runs before `writeConfigAndCompile` and records `source` in the global config for exactly the skill ids `executeMigration` acted on that are active at global scope (nothing else). Bringing the same predicate into the wizard setters is the open remainder — see `.ai-docs/agent-findings/2026-07-20-project-context-edit-lacked-scope-authority-gate.md` and `2026-07-20-scope-authority-must-follow-work-performed.md`.
+**There were three install-mode setters. Two are gone and the third is gated; the gap this section used to record is closed.**
+
+`setAllSourcesEject` and `setAllSourcesPlugin` set `source` on every active skill config, and their only callers were the Sources step's `l` / `p` hotkeys. Neither the setters nor the keys carried scope authority, so from a project-context edit they rewrote inherited global-active rows — rows the same step renders locked and non-focusable, and which `SourceGrid`'s per-row `SPACE` refuses (`isRowInert`). A bulk key could therefore do what the per-row control provably cannot, and the run acted on it: `executeMigration` resolves paths from each skill's OWN scope, so the press produced real plugin installs at Claude user scope, deleted or created working copies under `$HOME`, and had `recordGlobalSourceMigrations` rewrite the GLOBAL `config.ts`. Both keys, both footer hints and both store actions are deleted outright — the resolution is withdrawal, not a scope gate, because a bulk set-all whose reach depends on the editing context is a key that means different things in different directories.
+
+`setInstallMode` survives, and now carries the predicate:
+
+| Field                      | Refuses when                                                                       |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| `isEditingFromGlobalScope` | `false` — a global-scope edit owns the global install and may change its mode      |
+| target slot                | `isInheritedGlobalSlot(installedSkillConfigs, skillId, scope)` — see the two rules |
+
+**Outcome:** silent no-op. It is a programmatic-contract guard, not user feedback: the grid never offers the row, so a refused call means a caller reached past the UI.
+
+Two properties of the predicate are load-bearing:
+
+- **It keys on the `(id, scope)` SLOT, never on the id.** An id legitimately occupies slots at both scopes at once. A global install adopted at project scope renders a locked global row AND an editable project row, and `step-sources.tsx` threads that project row's scope into the call; an id-keyed gate would freeze the half the project owns.
+- **It reads the hydration SNAPSHOT, never the live entry's scope.** `installedSkillConfigs` is `null` during a first `init`, and a global-scope skill added this session is nobody's install yet. A gate testing `scope === "global"` alone would freeze the Sources step for every fresh install.
+
+**What still reaches `recordGlobalSourceMigrations`, and why it stays.** One residual path: commit an install-mode change on the PROJECT half of a `[P][G]` pair, then collapse the pair P→G with `s` in the same session. The entry is the project's own when configured and global when written, so the migration is real and the global config must record it. Its docstring's former claim that "driving a global-scope migration from a project directory is a supported flow" is void — see `.ai-docs/agent-findings/2026-07-20-project-context-edit-lacked-scope-authority-gate.md` and `2026-07-20-scope-authority-must-follow-work-performed.md`, whose "remaining half" this closes.
 
 ## Guard vs Toast Flow
 
@@ -284,6 +302,7 @@ Normal action logic (compute newSelections, reconcileSkillConfigs, ...)
 | Scope silent (editing-from-global) | `toggleSkillScope` / `toggleAgentScope`                                           | Silent  | Covers direct action callers that bypass the hotkey toast                                                                                                       |
 | Scope silent (missing config)      | `toggleSkillScope` / `toggleAgentScope`                                           | Silent  | Stale-id callers                                                                                                                                                |
 | Scope silent (no focused id)       | `HOTKEY_SCOPE` / wizard.tsx                                                       | Silent  | Scenario B race surface — see Silent Guards section                                                                                                             |
+| Install-mode scope authority       | `setInstallMode` / store                                                          | Silent  | Project-context call against an inherited global slot (`isInheritedGlobalSlot`) — see Install-Mode Scope Authority                                              |
 | Tombstone-aware removal            | `applySkillRemoval` / store                                                       | Silent  | Shapes removal output; collapses dual-scope pairs (resolved)                                                                                                    |
 | Stack-build ownership              | `shouldIncludeTriple` / config-generator                                          | Silent  | D-220 delta pipeline predicate                                                                                                                                  |
 | Cross-scope conflict mask          | `maskCollidingGlobalSkills` / `maskCollidingGlobalAgents` / config-gate propagate | Silent  | Write-time, not a keypress guard. Project's own skill wins locally — deliberately asymmetric with the exclusive-swap refusal above                              |
@@ -291,7 +310,7 @@ Normal action logic (compute newSelections, reconcileSkillConfigs, ...)
 
 ## Anchors
 
-- `toggleTechnology`, `toggleAgent`, `toggleSkillScope`, `toggleAgentScope`, `applySkillRemoval`, `reconcileSkillConfigs`, `restoreDualScopeAgent`, `isDualScopePair`, `isDualScopeAgentPair`, `setAllSourcesEject`, `setAllSourcesPlugin`, `setInstallMode`, `populateFromSkillIds`, `goBack`, `setCurrentDomainIndex` — `src/cli/stores/wizard-store.ts`.
+- `toggleTechnology`, `toggleAgent`, `toggleSkillScope`, `toggleAgentScope`, `applySkillRemoval`, `reconcileSkillConfigs`, `restoreDualScopeAgent`, `isDualScopePair`, `isDualScopeAgentPair`, `setInstallMode`, `isInheritedGlobalSlot`, `populateFromSkillIds`, `goBack`, `setCurrentDomainIndex` — `src/cli/stores/wizard-store.ts`.
 - `HOTKEY_SCOPE` handler, `TOAST_DURATION_MS` effect — `src/cli/components/wizard/wizard.tsx`.
 - `shouldIncludeTriple`, `buildAgentStack` — `src/cli/lib/configuration/config-generator.ts`.
 - `recordGlobalSourceMigrations`, `logChangeSummary` — `src/cli/commands/edit.tsx`.

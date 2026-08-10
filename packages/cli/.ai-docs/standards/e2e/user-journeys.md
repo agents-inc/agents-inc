@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-08-09
+last_validated: 2026-08-10
 ---
 
 # Canonical user journeys
@@ -163,52 +163,79 @@ until its feature lands. The four assertion surfaces apply to all of them.
 Findings the hand passes over the real binary turned up, kept here beside the journeys they belong
 to rather than only in the pass report. A finding is removed when it is fixed, not struck through.
 
-### 2026-08-09 — fourth pass
+### 2026-08-10 — fifth pass (published binary, published marketplace)
 
 Full run in
-[`todo/plans/cli-flow-verification-fourth-pass-2026-08-09.md`](../../../../../todo/plans/cli-flow-verification-fourth-pass-2026-08-09.md):
-24 journeys driven (1–16, 17 as an extra, 18–21, and 22's testable half), 24 PASS, 21 four-surface
-batteries all clean. Two new issues, both compiled rather than fixed, both rooted in one cause.
+[`todo/plans/cli-flow-verification-fifth-pass-2026-08-10.md`](../../../../../todo/plans/cli-flow-verification-fifth-pass-2026-08-10.md).
+The first pass driven against published artifacts on both sides — `agents-inc@0.153.0` **installed
+from npm** and the marketplace as `github:agents-inc/skills` serves it after the 2026-08-09 publish.
+23 journey rows driven, **23 PASS at the journey level**, all four surfaces each, byte-identity
+proved wherever a journey claims a scope must not move.
 
-**F-1 — the published marketplace ships categories the CLI's `Category` enum rejects, so a default
-install's `doctor` exits 1.** Touches **journey 11** (`doctor` is clean after every mutating step)
-and, through it, journeys 1, 2, 9, 12 and 14.
+**Everything the fourth pass left open is closed.** F-1 (published categories the CLI's enum
+rejected) is FIXED at the source — all 102 published `category:` values are now in the CLI's table,
+`api-database` → `api-orm` and `api-framework` → `api-api`, and `doctor` after a default install
+exits 0 with `12 passed, 0 warnings, 0 errors`. F-2 (one unknown category silencing the operational
+layer) is FIXED with it: the orphan row now names all 23 stranded skills and all 12 stranded agents
+on a config-deleted install. **CLI-472** is FIXED by the marketplace publish — `eject skills --force`
+from the default source ejects 238 skills, exit 0, so journey 20 no longer needs a fixture source to
+avoid it. Journey 10's blocked refresh branch and journey 21's uncovered plugin leg both **succeeded
+when driven by hand** against a real registered marketplace; both stay uncovered by E2E for the
+unchanged reason (a spec needs a registered marketplace plus the Claude CLI).
 
-`github:agents-inc/skills@main` carries 17 skills whose `metadata.yaml` `category` is outside the
-CLI's enum — `api-database` (16, including `api-database-drizzle` and `api-database-prisma`, which
-the first two default stacks both pull in) and `api-framework` (1, `api-framework-elysia`). The
-eject copies that file verbatim; `doctor`'s content layer validates it against the CLI's Zod enum;
-the vendored matrix calls the same skill `api-orm`, so the generated `config-types.ts` is right and
-the installed file is not. Reproduce with `init` on stack 1, then `doctor`. Causal control: changing
-that one value in a byte-copy of the failing install returns `12 passed, 0 warnings, 0 errors`.
-Surfaces 1, 3 and 4 are unaffected — the install is coherent; only the diagnosis is wrong.
+Findings below are the ones the pass raised. They were compiled, not fixed, by instruction.
 
-**F-2 — one unknown category silences every operational check, including the orphan row.** Touches
-**journey 14**, whose whole subject is what `doctor` says over a config-deleted install.
+**M-1 — toggling a sub-agent to project scope silently truncates its skill catalogue.** Touches
+**journey 16**, which passes its stated subject (the scope mechanics) with this underneath.
+`web-researcher` moved global→project keeps its preloaded frontmatter but drops three of its seven
+catalogue skills, because the project `config.ts` is written with no `stack` const and the build
+falls back to default category assignment. Project agents take precedence over global ones, so the
+project's effective agent can no longer reach them. Nothing reports it: `doctor` stays 12/0/0 and
+`compile` at either scope does not heal it.
 
-The layering rule ("operational failures on broken content are downstream cascades") skips the
-operational layer on _any_ content error. Under F-1 that means a default-stack install with its
-`config.ts` deleted never prints `No Orphans`, `Config Valid` or `Source Reachable` — none of which
-reads the `category` field. The row was proved to land in full on a content-clean install
-(`6 passed, 0 warnings, 2 errors`, every unowned artifact named), so the behaviour itself is sound;
-it is the breadth of the skip that withholds it from the installations most likely to need it.
+**M-2 — a stack's per-agent assignment is re-derived rather than honoured.** Touches **journeys 2
+and 12**, which pass on totals: the installed set equals the stack's declaration in both directions.
+The distribution does not — `cli-tester` declares `{}` and receives 4 skills, `web-tester` declares
+3 and receives 13. `config-generator.ts`'s `shouldIncludeTriple` short-circuits on
+`newlyAddedSkillIds`, so on a from-scratch install the relevance derivation wins and the stack
+overlay contributes only `preloaded` flags — while `default-stacks.ts` says a stack declares which
+skills each sub-agent gets. **M-1 and M-2 are one question**: who owns per-agent assignment.
 
-**Observation — a project-scope edit writes `marketplace` into the global `config.ts`.** Relevant to
-the containment claims in **journeys 3, 8 and 17**. Switching a project-scoped skill to plugin mode
-adds `"marketplace": "agents-inc"` to the global config and reorders that file's export keys, and
-the reverse switch does not remove it. Defensible — Claude marketplaces are global — but it is a
-global write from a project run beyond the registry line, and a future byte-identity assertion
-should expect it rather than read it as a regression. Every non-plugin project edit in the pass left
-the global `config.ts` byte-identical.
+**M-3 — the Sources bulk hotkeys override the lock on inherited global rows.** Touches the
+containment claims in **journeys 3, 8 and 17**. Global rows render 🔒 and non-focusable in a project
+edit, so the per-row toggle cannot reach them by design; `P` / `L` ignore that, and a project run
+really installed plugins and rewrote the global `config.ts`. Note the tension: this is currently the
+only route by which **journey 17** is reachable, so tightening it redefines that row.
 
-**Re-confirmed, already filed:** CLI-472 — `eject skills --force` from the DEFAULT source exits 1
-with `ENOENT … src/skills/meta-reviewing-infra-reviewing/SKILL.md`. Journey 20 is driven with the
-fixture source for exactly this reason.
+**M-4 — a project-scoped skill picked alongside only global agents is assigned to nothing.** It
+copies to disk, appears in no `stack` block and no agent's frontmatter, and `doctor` reports
+`Skills Resolved 2/2`.
 
-**Closed by hand, still uncovered by E2E:** journey 21's plugin install from the built marketplace
-succeeded when driven by hand (`Installed web-framework-react@pass4-author-marketplace`), against a
-marketplace built in the same session. The row stays uncovered because the spec still needs a
-registered marketplace and the Claude CLI.
+**M-5 — `list` reports `Skills: 0` for a plugin install run from a project directory** (the same
+install reports 7 from the home directory). **M-6 — the uninstall preview promises to remove the
+compiled agents even when it cannot**, then leaves them byte-identical; the summary afterwards is
+honest, the plan is not. **M-7 — `init`'s closing line points at the project `config.ts`** when the
+assignments live only in the global one, and `list` names the other file for the same install.
+
+**Observation, now reproduced exactly** — the fourth pass's `marketplace` note is CONFIRMED:
+switching only a _project_-scoped skill to plugin mode appends `"marketplace": "agents-inc"` to the
+**global** `config.ts`, and no reverse switch removes it. Harmless behaviourally; drift in a
+user-editable file.
+
+**Observation — `config.ts` is not byte-stable across writers.** Found independently by four agents.
+`init`, `edit`, the project-registration writer and `compile` emit `export default` keys in
+different orders, so an unrelated later command rewrites the file — including a `compile` that
+reports `0 rewritten`. Values never change. A byte-identity assertion on `config.ts` across a writer
+transition will fail for a reason unrelated to its subject; `config-types.ts` is unaffected, so
+**journey 11**'s actual claim still holds.
+
+**Correction to journey 10's text:** `update` delegates to `claude plugin marketplace update <name>`
+(once per distinct marketplace, after a `claude --version` probe), not `claude plugin update`.
+
+Twenty-five lower-severity findings — `doctor`'s unconditional verbose trace, its verdict on a
+cleanly uninstalled directory, tombstones counted as validated agents, `search`'s `ID` column
+rendering display names, the empty Stack-step info overlay, and others — are listed in the pass
+report rather than here.
 
 ### Journey 26 — the open decision
 

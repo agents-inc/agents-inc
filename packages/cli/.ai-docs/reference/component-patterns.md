@@ -318,9 +318,16 @@ Centralized hotkey definitions. Each hotkey has a `key` (for matching) and `labe
 | `HOTKEY_SCOPE`           | S   | Build/agents step                |
 | `HOTKEY_SETTINGS`        | S   | Sources step                     |
 | `HOTKEY_TOGGLE_LABELS`   | D   | Build step                       |
-| `HOTKEY_SET_ALL_LOCAL`   | L   | Sources step (customize view)    |
-| `HOTKEY_SET_ALL_PLUGIN`  | P   | Sources step (customize view)    |
 | `HOTKEY_ADD_SOURCE`      | A   | Settings step                    |
+
+**The Sources step binds no character hotkey.** `HOTKEY_SET_ALL_LOCAL` (`L`) and
+`HOTKEY_SET_ALL_PLUGIN` (`P`) were withdrawn along with the store actions behind them
+(`setAllSourcesEject` / `setAllSourcesPlugin`) and their two footer hints. They rewrote `source`
+on every active skill config with no scope authority, so from a project edit they reached the
+inherited global rows the same step renders locked and non-focusable — the bulk key could do what
+the per-row control provably cannot. `SourceGrid`'s per-row `SPACE` is the only install-mode
+surface left, and it returns immediately on an inert row. See
+[concepts/guard-pattern.md](./concepts/guard-pattern.md), "Install-Mode Scope Authority".
 
 **Structural key labels** (display-only, for footer hints): `KEY_LABEL_ENTER`, `KEY_LABEL_ESC`, `KEY_LABEL_SPACE`, `KEY_LABEL_DEL`, `KEY_LABEL_ARROWS_VERT` (`↑/↓`). Also exported: `KEY_SPACE` (the literal `" "` input character used for space-key matching, not a display label).
 
