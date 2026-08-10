@@ -16,3 +16,4 @@ export const glob = vi.fn();
 export const fileExists = vi.fn();
 export const directoryExists = vi.fn();
 export const listDirectories = vi.fn();
+export const removeDirIfEmpty = vi.fn();

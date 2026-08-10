@@ -1,5 +1,5 @@
+import { pruneCompiledAgents } from "./remove-compiled-agents.js";
 import { recompileAgents } from "../../agents/index.js";
-import { pruneStaleCompiledAgents } from "../../agents/list-compiled-agents.js";
 import { loadProjectConfigFromDir } from "../../configuration/index.js";
 import { buildAgentScopeMap } from "../../installation/index.js";
 import type { AgentName, SkillDefinitionMap, SkillScope } from "../../../types/index.js";
@@ -85,7 +85,8 @@ export async function compileAgents(options: CompileAgentsOptions): Promise<Comp
  * so it prunes built-in agents no longer compiled there. A scope-FILTERED pass
  * (the hasBoth two-pass compile, or the D-240 registered-project recompile)
  * sees only one scope's agents and must never delete another scope's files, so
- * it skips pruning. Hand-authored agents are preserved by the prune predicate.
+ * it skips pruning. Removing the stale files and tidying the directory they
+ * emptied is one operation's job, not this pass's.
  */
 async function pruneStaleAgentsForPass(
   options: CompileAgentsOptions,
@@ -97,5 +98,5 @@ async function pruneStaleAgentsForPass(
     ...recompileResult.compiled,
     ...recompileResult.failed,
   ]);
-  await pruneStaleCompiledAgents(options.outputDir, compiledForDir);
+  await pruneCompiledAgents({ agentsDir: options.outputDir, keep: compiledForDir });
 }

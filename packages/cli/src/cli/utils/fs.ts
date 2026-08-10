@@ -105,6 +105,30 @@ export async function remove(filePath: string): Promise<void> {
   await fs.remove(filePath);
 }
 
+async function isDirectoryEmpty(dirPath: string): Promise<boolean> {
+  try {
+    const entries = await fs.readdir(dirPath);
+    return entries.length === 0;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Removes `dir` when it exists and holds nothing; true when it was removed.
+ *
+ * A scope directory (`.claude/skills/`, `.claude/agents/`) is an artefact of
+ * what it holds, so the removal that empties it takes it too. Emptiness here is
+ * FILESYSTEM emptiness and never roster emptiness — a hand-authored agent or any
+ * other user-owned file keeps its directory alive, whatever a config says.
+ */
+export async function removeDirIfEmpty(dir: string): Promise<boolean> {
+  if (!(await directoryExists(dir))) return false;
+  if (!(await isDirectoryEmpty(dir))) return false;
+  await remove(dir);
+  return true;
+}
+
 export async function copy(src: string, dest: string): Promise<void> {
   await fs.copy(src, dest);
 }

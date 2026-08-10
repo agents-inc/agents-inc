@@ -3,7 +3,7 @@ import path from "path";
 import type { Liquid } from "liquidjs";
 import { compileAgentForPlugin } from "../compiler.js";
 import { resolveInstallPaths } from "../installation/install-base-dir.js";
-import { writeFile, ensureDir, fileExists, readFile } from "../../utils/fs.js";
+import { writeFile, fileExists, readFile } from "../../utils/fs.js";
 import { typedEntries } from "../../utils/typed-object.js";
 import type { AgentConfig, AgentName, SkillScope } from "../../types/index.js";
 
@@ -52,6 +52,11 @@ const UNROUTED_AGENT_SCOPE: SkillScope = "project";
  * global agents to `~/.claude/agents/`, project agents to `projectAgentsDir`.
  * Per-agent failures are collected as outcomes — callers own the policy
  * (recompile reports and continues; install hard-errors).
+ *
+ * Neither directory is created up front. `writeFile` makes a target's parent on
+ * the way past, so a directory appears exactly when an agent routes into it —
+ * which is what keeps a wholly project-scoped pass from leaving an empty
+ * `~/.claude/agents/` behind in a home that has no global install.
  */
 export async function writeCompiledAgentsByScope(params: {
   resolvedAgents: Partial<Record<AgentName, AgentConfig>>;
@@ -61,10 +66,6 @@ export async function writeCompiledAgentsByScope(params: {
   agentScopeMap?: Map<AgentName, SkillScope>;
 }): Promise<AgentWriteOutcome[]> {
   const globalAgentsDir = resolveInstallPaths(os.homedir(), "global").agentsDir;
-
-  // Ensure both directories exist before writing agents.
-  // ensureDir is idempotent (mkdir -p), so calling it when dirs already exist is safe.
-  await ensureDir(globalAgentsDir);
 
   const outcomes: AgentWriteOutcome[] = [];
   for (const [name, agent] of typedEntries<AgentName, AgentConfig>(params.resolvedAgents)) {

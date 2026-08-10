@@ -1,6 +1,13 @@
 import path from "path";
 
-import { copy, directoryExists, ensureDir, isPathWithin, remove } from "../../utils/fs";
+import {
+  copy,
+  directoryExists,
+  ensureDir,
+  isPathWithin,
+  remove,
+  removeDirIfEmpty,
+} from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { LOCAL_SKILLS_PATH } from "../../consts";
 import { installBaseDir } from "../installation/install-base-dir";
@@ -43,6 +50,10 @@ export async function deleteLocalSkill(projectDir: string, skillId: SkillId): Pr
   } catch {
     // Skill may not exist — silently ignore
   }
+
+  // The skills directory only — `.claude/` above it stays whatever happens here.
+  // Removing that one is uninstall's decision, not the edit path's.
+  await removeDirIfEmpty(skillsDir);
 
   verbose(`Deleted local skill '${skillId}'`);
 }

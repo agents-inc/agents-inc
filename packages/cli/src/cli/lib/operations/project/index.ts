@@ -11,6 +11,13 @@ export {
   type CompilationResult,
 } from "./compile-agents.js";
 export {
+  removeCompiledAgents,
+  type RemoveCompiledAgentsOptions,
+  type RemoveCompiledAgentsResult,
+  pruneCompiledAgents,
+  type PruneCompiledAgentsOptions,
+} from "./remove-compiled-agents.js";
+export {
   type CompileAllScopesOptions,
   compileAgentsAllScopes,
 } from "./compile-agents-all-scopes.js";

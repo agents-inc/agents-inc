@@ -1,6 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import path from "path";
+import { mkdir, writeFile } from "fs/promises";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import type { AgentName, SkillScope } from "../../../types";
 import { buildAgentConfigs } from "../../__tests__/factories/config-factories.js";
+import { renderAgentMd } from "../../__tests__/content-generators.js";
+import {
+  cleanupTempDir,
+  createTempDir,
+  directoryExists,
+  fileExists,
+} from "../../__tests__/test-fs-utils.js";
 
 vi.mock("../../agents/index.js", () => ({
   recompileAgents: vi.fn(),
@@ -219,6 +228,113 @@ describe("compile-agents", () => {
       rewritten: ["web-developer"],
       failed: ["pm"],
       warnings: ["Agent pm had issues"],
+    });
+  });
+
+  describe("stale-agent pruning", () => {
+    const STALE_AGENT: AgentName = "api-developer";
+    const KEPT_AGENT: AgentName = "web-developer";
+    // Basename outside the AgentName union — a file the CLI never compiled.
+    const HAND_AUTHORED_AGENT = "my-custom-agent";
+
+    let tempDir: string;
+    let outputDir: string;
+
+    beforeEach(async () => {
+      tempDir = await createTempDir("cc-compile-agents-prune-");
+      outputDir = path.join(tempDir, "agents");
+    });
+
+    afterEach(async () => {
+      await cleanupTempDir(tempDir);
+    });
+
+    const seedAgentFile = async (name: string): Promise<string> => {
+      const filePath = path.join(outputDir, `${name}.md`);
+      await writeFile(filePath, renderAgentMd(name));
+      return filePath;
+    };
+
+    const seedOutputDir = async (names: string[]): Promise<void> => {
+      await mkdir(outputDir, { recursive: true });
+      for (const name of names) await seedAgentFile(name);
+    };
+
+    it("removes the output agents directory when the prune leaves nothing in it", async () => {
+      await seedOutputDir([STALE_AGENT]);
+      mockRecompileAgents.mockResolvedValue({
+        compiled: [],
+        rewritten: [],
+        failed: [],
+        warnings: [],
+      });
+
+      await compileAgents({ projectDir, sourcePath, outputDir });
+
+      expect(
+        await fileExists(path.join(outputDir, `${STALE_AGENT}.md`)),
+        "the stale compiled agent must be pruned",
+      ).toBe(false);
+      expect(
+        await directoryExists(outputDir),
+        "an emptied agents directory must not survive the prune",
+      ).toBe(false);
+    });
+
+    it("keeps the output agents directory when a hand-authored agent survives the prune", async () => {
+      await seedOutputDir([STALE_AGENT, HAND_AUTHORED_AGENT]);
+      mockRecompileAgents.mockResolvedValue({
+        compiled: [],
+        rewritten: [],
+        failed: [],
+        warnings: [],
+      });
+
+      await compileAgents({ projectDir, sourcePath, outputDir });
+
+      expect(await fileExists(path.join(outputDir, `${STALE_AGENT}.md`))).toBe(false);
+      expect(
+        await fileExists(path.join(outputDir, `${HAND_AUTHORED_AGENT}.md`)),
+        "a hand-authored agent is never pruned",
+      ).toBe(true);
+      expect(
+        await directoryExists(outputDir),
+        "a directory that still holds anything must never be deleted",
+      ).toBe(true);
+    });
+
+    it("keeps the output agents directory when a compiled agent remains", async () => {
+      await seedOutputDir([KEPT_AGENT, STALE_AGENT]);
+      mockRecompileAgents.mockResolvedValue({
+        compiled: [KEPT_AGENT],
+        rewritten: [KEPT_AGENT],
+        failed: [],
+        warnings: [],
+      });
+
+      await compileAgents({ projectDir, sourcePath, outputDir });
+
+      expect(await fileExists(path.join(outputDir, `${STALE_AGENT}.md`))).toBe(false);
+      expect(await fileExists(path.join(outputDir, `${KEPT_AGENT}.md`))).toBe(true);
+      expect(await directoryExists(outputDir)).toBe(true);
+    });
+
+    it("leaves the output agents directory untouched on a scope-filtered pass", async () => {
+      await seedOutputDir([STALE_AGENT]);
+      mockRecompileAgents.mockResolvedValue({
+        compiled: [],
+        rewritten: [],
+        failed: [],
+        warnings: [],
+      });
+
+      await compileAgents({ projectDir, sourcePath, outputDir, scopeFilter: "project" });
+
+      expect(
+        await fileExists(path.join(outputDir, `${STALE_AGENT}.md`)),
+        "a filtered pass sees one scope only and must delete nothing",
+      ).toBe(true);
+      expect(await directoryExists(outputDir)).toBe(true);
     });
   });
 });
