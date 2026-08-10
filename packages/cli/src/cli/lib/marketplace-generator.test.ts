@@ -64,7 +64,21 @@ describe("marketplace-generator", () => {
       expect(names).toContain("web-framework-vue");
     });
 
-    it("should generate plugin without category (category comes from metadata, not manifest)", async () => {
+    it("should include plugin category in marketplace entry", async () => {
+      await createPlugin("web-framework-react", {
+        name: "web-framework-react",
+        description: "React framework",
+        version: "1.0.0",
+        category: "web-framework",
+      });
+
+      const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
+
+      const reactPlugin = marketplace.plugins.find((p) => p.name === "web-framework-react");
+      expect(reactPlugin?.category).toBe("web-framework");
+    });
+
+    it("should generate plugin without category when the manifest carries none", async () => {
       await createPlugin("web-framework-react", {
         name: "web-framework-react",
         description: "React framework",

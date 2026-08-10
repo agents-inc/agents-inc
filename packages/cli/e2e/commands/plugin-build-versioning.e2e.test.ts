@@ -240,7 +240,7 @@ describe("build plugins version bumping", () => {
      * Expected-fail rather than deleted: the assertion is the record of the gap, and
      * it turns green the moment a category reaches the entry.
      */
-    it.fails("carries a category on every plugin entry", async () => {
+    it("carries a category on every plugin entry", async () => {
       const marketplace = await readMarketplaceJson(marketplacePath);
 
       expect(marketplace.plugins.map((p) => p.category)).not.toContain(undefined);

@@ -30,6 +30,7 @@ function convertManifestToMarketplacePlugin(
     ...(manifest.description !== undefined && { description: manifest.description }),
     ...(manifest.version !== undefined && { version: manifest.version }),
     ...(manifest.author !== undefined && { author: manifest.author }),
+    ...(manifest.category !== undefined && { category: manifest.category }),
     ...(manifest.keywords !== undefined && { keywords: manifest.keywords }),
   };
 }

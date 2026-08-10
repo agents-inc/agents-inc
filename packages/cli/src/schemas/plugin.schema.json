@@ -28,6 +28,9 @@
       "required": ["name"],
       "additionalProperties": false
     },
+    "category": {
+      "type": "string"
+    },
     "keywords": {
       "type": "array",
       "items": {

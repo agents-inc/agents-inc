@@ -13,6 +13,7 @@ export type SkillManifestOptions = {
   description?: string;
   author?: string;
   authorEmail?: string;
+  category?: string;
   version?: string;
   keywords?: string[];
 };
@@ -38,6 +39,7 @@ export function generateSkillPluginManifest(options: SkillManifestOptions): Plug
     skills: "./skills/",
     ...(options.description ? { description: options.description } : {}),
     ...(author ? { author } : {}),
+    ...(options.category ? { category: options.category } : {}),
     ...(options.keywords?.length ? { keywords: options.keywords } : {}),
   };
 }

@@ -167,6 +167,8 @@ const pluginManifestObjectSchema = z.object({
   version: z.string().exactOptional(),
   description: z.string().exactOptional(),
   author: pluginAuthorSchema.exactOptional(),
+  /** Lenient: a plugin authored elsewhere may carry any category string or none at all */
+  category: z.string().exactOptional(),
   keywords: z.array(z.string()).exactOptional(),
   commands: z.union([z.string(), z.array(z.string())]).exactOptional(),
   agents: z.union([z.string(), z.array(z.string())]).exactOptional(),

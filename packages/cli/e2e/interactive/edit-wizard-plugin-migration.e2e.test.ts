@@ -126,6 +126,17 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
         );
         expect(rawOutput).not.toContain(STEP_TEXT.PLUGIN_NATIVE);
 
+        // The switch line announces INTENT. The plugin direction then narrates
+        // each install and a count; this direction really copies files and says
+        // nothing about them, so the run's only account of what it did to disk is
+        // the config it wrote afterwards. Reported in the command's own words for
+        // an eject copy, and with no destination path: the migration splits its
+        // copies between the project and $HOME by each skill's own scope, so a
+        // single directory would misname the global half.
+        expect(rawOutput).toContain(
+          `${STEP_TEXT.COPIED_LOCAL_SKILLS_PREFIX} 1 ${STEP_TEXT.COPIED_LOCAL_SKILLS_SUFFIX}`,
+        );
+
         await expect(result.project).toHaveSkillCopied(E2E_SKILL.react.id);
         await expect(result.project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],

@@ -95,6 +95,23 @@ describe("plugin-manifest", () => {
       expect(manifest.description).toBe("React skills for frontend development");
     });
 
+    it("should include category when provided", () => {
+      const manifest = generateSkillPluginManifest({
+        skillName: "react",
+        category: "web-framework",
+      });
+
+      expect(manifest.category).toBe("web-framework");
+    });
+
+    it("should not include category when not provided", () => {
+      const manifest = generateSkillPluginManifest({
+        skillName: "react",
+      });
+
+      expect(manifest.category).toBeUndefined();
+    });
+
     it("should use custom version when provided", () => {
       const manifest = generateSkillPluginManifest({
         skillName: "react",

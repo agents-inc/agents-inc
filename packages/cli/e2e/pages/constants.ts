@@ -141,12 +141,29 @@ export const STEP_TEXT = {
   // The removal plan's annotation for the compiled-agents directory, which marks it
   // as the CLI's to delete rather than the user's.
   UNINSTALL_CLI_COMPILED: "(CLI-compiled)",
+  // The section header that annotation sits under. A header is a promise about the items
+  // beneath it, so it belongs to the items the plan keeps rather than to the directories
+  // merely existing — printed over an empty list it promises nothing.
+  UNINSTALL_CLI_MANAGED_SECTION: "CLI-managed files:",
+  // What the plan says in place of the compiled-agents item, and the reason it gives.
+  // Naming which agent files this CLI compiled is a question only the configuration answers,
+  // so a run that has no configuration it can read keeps every one of them — and says it kept
+  // them instead of listing a removal it then declines to make.
+  UNINSTALL_AGENTS_KEPT: "Kept compiled agents",
+  UNINSTALL_AGENTS_KEPT_REASON: "needs the configuration",
 
   // The two cells of the Sources grid's install-mode control. They are the cells' OWN captions —
   // there is no pinned header repeating them, because with two fixed states the caption row would
   // print the same two words directly above themselves.
   INSTALL_MODE_LOCAL: "Local",
   INSTALL_MODE_PLUGIN: "Plugin",
+
+  // The two hint labels `WizardLayout`'s key-hint band prints above the footer while the Sources
+  // step is showing, for the bulk install-mode keys. Named so a spec can assert the step does NOT
+  // advertise them: the wizard may not offer a key it does not honour. Their case is what keeps
+  // them apart from the cell captions above — "Set all local" is not a substring match for "Local".
+  FOOTER_SET_ALL_LOCAL: "Set all local",
+  FOOTER_SET_ALL_PLUGIN: "Set all plugin",
 
   // Scope group labels. The info panel, the confirm step and the Sources grid's left-hand gutter
   // all head their per-scope blocks with these words. Paired with `SCOPE` above, which is the
@@ -263,6 +280,14 @@ export const STEP_TEXT = {
   // BACK, which is what the two mode descriptions above are for.
   SWITCHING_SKILLS_PREFIX: "Switching",
   SWITCHING_SKILLS_SUFFIX: "skill(s) to",
+  // `edit`'s count of eject copies (`copyNewLocalSkills`), split at the count the
+  // caller composes: "Copied <n> local skill(s)". The EJECT direction of a mode
+  // switch performs the same copies at the same scopes and owes the same line —
+  // a destination path would misname the global direction, which copies under
+  // $HOME rather than into `.claude/skills/`. Distinct from `init`'s own copy
+  // lines, which say "local skills" without the "(s)".
+  COPIED_LOCAL_SKILLS_PREFIX: "Copied",
+  COPIED_LOCAL_SKILLS_SUFFIX: "local skill(s)",
   SKILLS_COPIED_TO: "Skills copied to:",
   AGENTS_COMPILED_TO: "Agents compiled to:",
   CONFIGURATION_LABEL: "Configuration:",
@@ -289,6 +314,26 @@ export const STEP_TEXT = {
   // Scope warnings
   GLOBAL_SKILLS_BLOCKED: "Global skills cannot be changed from project scope",
   GLOBAL_AGENTS_BLOCKED: "Global agents cannot be changed from project scope",
+
+  // The two halves of the scope filter's own reporting. The rule — a project-scoped
+  // skill never reaches a global-scoped sub-agent — is correct and enforced at four
+  // layers; what neither layer says is that it fired, so a skill can install to disk
+  // and be assigned to nothing with every surface reporting success.
+  //
+  // Both are in `SKILL_NOT_FOUND_WARNING`'s reporting class: a dropped assignment
+  // that nothing names leaves the run claiming a clean install of an agent that does
+  // not carry what config.ts implies it does.
+  //
+  // WORDING IS THE IMPLEMENTER'S. These two constants are where an acceptable
+  // rewording lands — one edit here, no spec touched.
+  //
+  // `init`/`edit`, after the stack is built: an ACTIVE selected skill that ended up
+  // in zero agents' stacks.
+  SKILL_ASSIGNED_TO_NO_AGENT: "is assigned to no sub-agent",
+  // `compile`, beside the unresolved-stack-skill warnings: a hand-edited config.ts
+  // whose stack names a (global agent, project skill) pair the compile-time filter
+  // drops on the way to the resolver.
+  STACK_PAIR_DROPPED_BY_SCOPE: "cannot carry project-scoped skill",
 
   // Terminal size warnings. All three come from one formatter
   // (formatTerminalTooSmallMessage in src/cli/utils/terminal.ts), printed by

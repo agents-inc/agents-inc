@@ -13,6 +13,8 @@ export type PluginManifest = {
   version?: string;
   description?: string;
   author?: PluginAuthor;
+  /** Skill category from the skill's metadata.yaml — copied onto the marketplace entry */
+  category?: string;
   keywords?: string[];
   commands?: string | string[];
   agents?: string | string[];

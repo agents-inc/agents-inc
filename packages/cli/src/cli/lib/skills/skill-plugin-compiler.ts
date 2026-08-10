@@ -137,6 +137,7 @@ export async function compileSkillPlugin(
     skillName,
     description: frontmatter.description,
     ...(metadata?.author !== undefined && { author: metadata.author }),
+    ...(metadata?.category !== undefined && { category: metadata.category }),
     version,
   });
 

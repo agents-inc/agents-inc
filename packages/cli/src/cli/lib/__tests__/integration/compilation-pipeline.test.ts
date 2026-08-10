@@ -24,6 +24,19 @@ const TEST_MARKETPLACE_OPTIONS = {
   pluginRoot: "./plugins",
 };
 
+/**
+ * The category of every skill `createTestSource()` writes, counted the way
+ * `getMarketplaceStats` groups them. Written out rather than derived from
+ * `DEFAULT_TEST_SKILLS`, so a category that stops reaching the marketplace fails
+ * the `toStrictEqual` instead of quietly agreeing with whatever arrived.
+ */
+const EXPECTED_CATEGORY_COUNTS: Record<string, number> = {
+  "web-framework": 1,
+  "web-client-state": 1,
+  "web-testing": 1,
+  "api-api": 1,
+};
+
 describe("Integration: Full Skill Pipeline", () => {
   let dirs: TestDirs;
   let tempDir: string;
@@ -79,7 +92,7 @@ describe("Integration: Full Skill Pipeline", () => {
 
     const stats = getMarketplaceStats(marketplace);
     expect(stats.total).toBe(expectedSkillNames.length);
-    expect(Object.keys(stats.byCategory)).toHaveLength(1);
+    expect(stats.byCategory).toStrictEqual(EXPECTED_CATEGORY_COUNTS);
   });
 
   it("should produce plugins with unique names", async () => {
@@ -212,9 +225,9 @@ describe("Integration: Marketplace Integrity", () => {
 
     const stats = getMarketplaceStats(marketplace);
 
-    // Plugin manifests don't carry category — all plugins are uncategorized
-    // Categories come from skill metadata.yaml, not from plugin.json
-    expect(stats.byCategory["uncategorized"]).toBe(marketplace.plugins.length);
+    // Each skill's metadata.yaml category travels through plugin.json onto its
+    // marketplace entry, so nothing falls into the "uncategorized" fallback.
+    expect(stats.byCategory).toStrictEqual(EXPECTED_CATEGORY_COUNTS);
   });
 });
 
