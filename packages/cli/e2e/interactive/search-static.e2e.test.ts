@@ -4,10 +4,29 @@ import {
   createTempDir,
   cleanupTempDir,
   createE2ESource,
+  createLocalSkill,
   ensureBinaryExists,
+  renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../src/cli/consts.js";
+import type { SkillId } from "../../src/cli/types/index.js";
+
+/**
+ * A skill that lives only in the project's `.claude/skills/` — the E2E source
+ * ships no `playwright-e2e`, so the merged matrix can only have reached it from
+ * disk. That makes its Source cell the one the table cannot honestly answer with
+ * the marketplace, and its display title deliberately unlike its id so the two
+ * identity columns cannot be satisfied by the same string.
+ */
+const LOCAL_ONLY_SKILL = {
+  id: "web-testing-playwright-e2e",
+  slug: "playwright-e2e",
+  display: "Playwright On Disk",
+  description: "Browser automation kept on disk",
+} as const satisfies { id: SkillId; slug: string; display: string; description: string };
 
 /**
  * E2E tests for the `search` command.
@@ -44,6 +63,20 @@ describe("search command", () => {
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
     await writeProjectConfig(tempDir, { name: "search-fixture", source: sourceDir });
+  }
+
+  /** Ejects {@link LOCAL_ONLY_SKILL} into the installation, the way an eject-mode install leaves it. */
+  async function createLocalOnlySkill(): Promise<void> {
+    await createLocalSkill(tempDir, LOCAL_ONLY_SKILL.id, {
+      description: LOCAL_ONLY_SKILL.description,
+      metadata: renderMetadataYaml({
+        displayName: LOCAL_ONLY_SKILL.display,
+        category: "web-testing",
+        slug: LOCAL_ONLY_SKILL.slug,
+        domain: "web",
+        contentHash: "e5f6a7b",
+      }),
+    });
   }
 
   describe("search --help", () => {
@@ -108,6 +141,67 @@ describe("search command", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain("No skills found");
       expect(output).toContain("zzz-absolutely-nothing-xyz");
+    });
+  });
+
+  describe("identity columns", () => {
+    it("prints the skill's id and its display name in the same row", async () => {
+      tempDir = await createTempDir();
+      await createSourceFixture();
+      const spare = E2E_SKILL["visual-regression"];
+
+      const { exitCode, stdout } = await CLI.run(["search", spare.slug], { dir: tempDir });
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      // One match means the table body is one row, so both strings below are cells of it.
+      expect(stdout).toContain(`Found 1 skill matching "${spare.slug}"`);
+      expect(stdout).toContain(spare.id);
+      expect(stdout).toContain(spare.display);
+    });
+
+    it("prints the id of a skill that only exists on disk", async () => {
+      tempDir = await createTempDir();
+      await createSourceFixture();
+      await createLocalOnlySkill();
+
+      const { exitCode, stdout } = await CLI.run(["search", LOCAL_ONLY_SKILL.slug], {
+        dir: tempDir,
+      });
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain(`Found 1 skill matching "${LOCAL_ONLY_SKILL.slug}"`);
+      expect(stdout).toContain(LOCAL_ONLY_SKILL.id);
+      expect(stdout).toContain(LOCAL_ONLY_SKILL.display);
+    });
+  });
+
+  describe("source column", () => {
+    it("names the marketplace the installation reads for a catalog skill", async () => {
+      tempDir = await createTempDir();
+      await createSourceFixture();
+      const spare = E2E_SKILL["visual-regression"];
+
+      const { exitCode, stdout } = await CLI.run(["search", spare.slug], { dir: tempDir });
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain(`Found 1 skill matching "${spare.slug}"`);
+      expect(stdout).toContain(DEFAULT_PUBLIC_SOURCE_NAME);
+      expect(stdout.toLowerCase()).not.toContain(EJECT_SOURCE);
+    });
+
+    it("names the local source for a skill that only exists on disk", async () => {
+      tempDir = await createTempDir();
+      await createSourceFixture();
+      await createLocalOnlySkill();
+
+      const { exitCode, stdout } = await CLI.run(["search", LOCAL_ONLY_SKILL.slug], {
+        dir: tempDir,
+      });
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain(`Found 1 skill matching "${LOCAL_ONLY_SKILL.slug}"`);
+      expect(stdout.toLowerCase()).toContain(EJECT_SOURCE);
+      expect(stdout).not.toContain(DEFAULT_PUBLIC_SOURCE_NAME);
     });
   });
 

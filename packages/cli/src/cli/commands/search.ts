@@ -10,9 +10,16 @@ import { truncateText } from "../utils/string.js";
 import { typedValues } from "../utils/typed-object.js";
 
 const MAX_DESCRIPTION_WIDTH = 50;
-const PRIMARY_SOURCE_NAME = "marketplace";
 
-type SearchableSkill = ResolvedSkill & { sourceName: string };
+/**
+ * One row of the results table. `id` and `category` are the skill's own values; `name`, `source`
+ * and `description` are rendered for the cell, so they are plain strings.
+ */
+type ResultRow = Pick<ResolvedSkill, "id" | "category"> & {
+  name: string;
+  source: string;
+  description: string;
+};
 
 export default class Search extends BaseCommand {
   static summary = "Search the catalog of available skills";
@@ -69,14 +76,10 @@ export default class Search extends BaseCommand {
       this.log("");
 
       printTable({
-        data: results.map((skill) => ({
-          id: skill.displayName,
-          source: skill.sourceName,
-          category: skill.category,
-          description: truncateText(skill.description, MAX_DESCRIPTION_WIDTH),
-        })),
+        data: results.map(toResultRow),
         columns: [
           { key: "id", name: "ID" },
+          { key: "name", name: "Name" },
           { key: "source", name: "Source" },
           { key: "category", name: "Category" },
           { key: "description", name: "Description" },
@@ -96,13 +99,38 @@ export default class Search extends BaseCommand {
  * registered-extras array this used to fan out over was withdrawn with the marketplace axis
  * (CLI-450), so the read is one load and no network beyond it.
  */
-async function loadSearchableSkills(): Promise<SearchableSkill[]> {
+async function loadSearchableSkills(): Promise<ResolvedSkill[]> {
   const { sourceResult } = await loadSource({ projectDir: process.cwd() });
 
-  return typedValues(sourceResult.matrix.skills).map((skill) => ({
-    ...skill,
-    sourceName: PRIMARY_SOURCE_NAME,
-  }));
+  return typedValues(sourceResult.matrix.skills);
+}
+
+/**
+ * The machine id and the display name are different answers and get a column each — `edit`
+ * takes the id, a human reads the name.
+ */
+function toResultRow(skill: ResolvedSkill): ResultRow {
+  return {
+    id: skill.id,
+    name: skill.displayName,
+    source: activeSourceName(skill),
+    category: skill.category,
+    description: truncateText(skill.description, MAX_DESCRIPTION_WIDTH),
+  };
+}
+
+/**
+ * Where this installation reads the skill from: the local copy when one is on disk, otherwise
+ * the marketplace the load resolved. Both names are written by the tagging pass
+ * (`loadSkillsFromAllSources`), which `loadSource` always runs — a skill that reached the table
+ * untagged would have no origin to report, so say so rather than name one it might not have.
+ */
+function activeSourceName(skill: ResolvedSkill): string {
+  const { activeSource } = skill;
+  if (!activeSource) {
+    throw new Error(`Skill "${skill.id}" was loaded without a source, so its origin is unknown`);
+  }
+  return activeSource.name;
 }
 
 function matchesQuery(skill: ResolvedSkill, query: string): boolean {
