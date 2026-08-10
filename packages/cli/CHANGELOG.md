@@ -7,6 +7,30 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.154.0] - 2026-08-10
+
+**The wizard stops reaching through the lock**
+
+- A skill's `metadata.yaml` category now reaches the marketplace it is published to, so `build marketplace` stops reporting every plugin as uncategorized (CLI-481)
+- A skill that reaches no sub-agent says so, at both the wizard and `compile` (CLI-491)
+- Generated files order themselves, so a re-emit is a fixed point and an unchanged agent stops being rewritten (CLI-478)
+- The Sources step's bulk install-mode hotkeys are withdrawn: in a project edit they rewrote inherited global rows the per-row toggle deliberately cannot reach, and really installed plugins (CLI-479)
+- Project configurations carry the project's own name (CLI-482)
+- Uninstall promises exactly what it removes — one plan, rendered and executed (CLI-494)
+- One operation owns removing sub-agents and tidying their directory (CLI-495)
+- The removal plan is honest when the configuration cannot be read: the compiled agents are named as kept, and why (CLI-470)
+- Emptied `.claude/skills/` and `.claude/agents/` are removed, and a project-only install stops pre-creating an empty global agents directory (CLI-480)
+- A sub-agent moved from global to project scope keeps its skill catalogue — it was silently shrinking from seven skills to four (CLI-483)
+- `list` counts the plugin skills a project owns, instead of reporting `Skills: 0` from a project directory (CLI-484)
+- `init` names the configuration that actually holds the agent-skill assignments (CLI-485)
+- A refusal no longer paints over a live loading spinner (CLI-486)
+- A moved source is downloaded once per run, not once per load — a full duplicate tarball for `github:` sources (CLI-487)
+- The home root stops calling the global configuration a project one, in `compile`, `edit` and `doctor` (CLI-488)
+- The plugin-to-eject direction of a mode switch reports the copies it made (CLI-489)
+- `search` names the skill and the source it found, in the columns whose headers claim them (CLI-490)
+
+See [changelogs/0.154.0.md](./changelogs/0.154.0.md) for full details.
+
 ## [0.153.0] - 2026-08-09
 
 **One marketplace at a time**
