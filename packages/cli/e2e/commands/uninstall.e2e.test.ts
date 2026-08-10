@@ -12,6 +12,7 @@ import {
   renderSkillMd,
   agentsPath,
   skillsPath,
+  readTestFile,
   writeAgentFile,
   writeProjectConfig,
   addForkedFromMetadata,
@@ -219,6 +220,45 @@ describe("uninstall command", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     // No local skills or agents in the empty project dir
     expect(output).toContain(STEP_TEXT.UNINSTALL_NOTHING_TO_UNINSTALL);
+  });
+
+  /**
+   * A compiled-agents directory nobody can identify is not a removal: `removeMatchingAgents`
+   * matches on-disk basenames against `config.agents`, so with no config to read the run leaves
+   * every file exactly where it is. With those agents the only thing installed, the plan is left
+   * with no removal to carry — and the heading it would be printed under, along with the success
+   * line at the end, each report a removal this run never makes.
+   *
+   * HOME is kept distinct from the project dir, otherwise the command resolves this as the global
+   * install and takes the other branch entirely.
+   */
+  it("should report nothing to uninstall when unidentifiable agents are all that is installed", async () => {
+    tempDir = await createTempDir();
+    const projectDir = path.join(tempDir, "project");
+    const projectHome = path.join(tempDir, "home");
+    await mkdir(projectHome, { recursive: true });
+    await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name, { frontmatter: true });
+
+    const agentFile = path.join(agentsPath(projectDir), `${E2E_AGENT["web-developer"].name}.md`);
+    const agentBefore = await readTestFile(agentFile);
+
+    const { exitCode, output } = await CLI.run(
+      ["uninstall", "--yes"],
+      { dir: projectDir },
+      { env: { HOME: projectHome } },
+    );
+
+    expect(exitCode, `uninstall output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_NOTHING_TO_UNINSTALL);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_NOT_INSTALLED);
+
+    expect(output).not.toContain(STEP_TEXT.UNINSTALL_PREVIEW_HEADING);
+    expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
+    expect(output).not.toContain(STEP_TEXT.UNINSTALL_SUCCESS);
+
+    expect(await fileExists(agentFile)).toBe(true);
+    expect(await readTestFile(agentFile)).toBe(agentBefore);
+    expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(false);
   });
 
   it("should succeed with --yes when config dir exists but no skills", async () => {

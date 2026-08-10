@@ -5,6 +5,7 @@ import { CLI } from "../fixtures/cli.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import {
   FORKED_FROM_METADATA,
+  agentsPath,
   cleanupTempDir,
   configTsPath,
   configTypesTsPath,
@@ -14,11 +15,12 @@ import {
   ensureBinaryExists,
   fileExists,
   readTestFile,
+  writeAgentFile,
   writeConfigTypes,
   writeCorruptConfig,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import "../matchers/setup.js";
 
@@ -109,6 +111,92 @@ describe("uninstall with an unreadable config", () => {
 
   it("warns and still removes the manifest when the project config violates the loader schema", async () => {
     await expectManifestRemovedDespiteWarning(SCHEMA_VIOLATION);
+  });
+
+  /**
+   * The removal plan is a promise about what this run is about to do, and the compiled agents are
+   * the one entry it cannot keep without the config: `removeMatchingAgents` matches on-disk
+   * basenames against `config.agents`, so a config nothing can read leaves every agent file where
+   * it is. The plan must therefore say the agents are kept and why, instead of naming their
+   * directory under the removals and then not making one.
+   *
+   * The skills beside them are identified by their own `forked-from` metadata rather than by the
+   * config, so they are still removed and their half of the section is still promised — which is
+   * what makes this an assertion about the agents item rather than about the section wholesale.
+   */
+  it("keeps the compiled agents out of the removal plan when the config cannot identify them", async () => {
+    const project = await ProjectBuilder.editable({ forkedFrom: true });
+    tempDir = path.dirname(project.dir);
+    await writeAgentFile(project.dir, E2E_AGENT["web-developer"].name, { frontmatter: true });
+    await writeConfigTypes(project.dir);
+    await writeCorruptConfig(project.dir, SYNTAX_ERROR);
+
+    const agentFile = path.join(agentsPath(project.dir), `${E2E_AGENT["web-developer"].name}.md`);
+    const agentBefore = await readTestFile(agentFile);
+
+    const projectHome = path.join(tempDir, "home");
+    await mkdir(projectHome, { recursive: true });
+
+    const { exitCode, output } = await CLI.run(
+      ["uninstall", "--yes"],
+      { dir: project.dir },
+      { env: { HOME: projectHome } },
+    );
+
+    expect(exitCode, `uninstall output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_UNREADABLE);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
+
+    expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_REASON);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_CLI_MANAGED_SECTION);
+
+    expect(await fileExists(agentFile)).toBe(true);
+    expect(await readTestFile(agentFile)).toBe(agentBefore);
+    await expect(project).toHaveNoLocalSkills();
+    expect(await fileExists(configTsPath(project.dir))).toBe(false);
+  });
+
+  /**
+   * The same state with nothing else CLI-managed on disk. With the agents item gone the
+   * `CLI-managed files:` section has no item left to carry, so the header must go with it — a
+   * header over an empty list promises nothing and reads as a removal all the same.
+   *
+   * `Config:` is the control beneath it: the manifest is identified by its own path rather than by
+   * anything inside it, so that section is still promised and still kept.
+   */
+  it("prints no CLI-managed files section when the kept agents were its only item", async () => {
+    tempDir = await createTempDir();
+    const projectDir = path.join(tempDir, "project");
+    const projectHome = path.join(tempDir, "home");
+    await mkdir(projectHome, { recursive: true });
+    await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name, { frontmatter: true });
+    await writeConfigTypes(projectDir);
+    await writeCorruptConfig(projectDir, SYNTAX_ERROR);
+
+    const agentFile = path.join(agentsPath(projectDir), `${E2E_AGENT["web-developer"].name}.md`);
+    const agentBefore = await readTestFile(agentFile);
+
+    const { exitCode, output } = await CLI.run(
+      ["uninstall", "--yes"],
+      { dir: projectDir },
+      { env: { HOME: projectHome } },
+    );
+
+    expect(exitCode, `uninstall output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_UNREADABLE);
+
+    expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_MANAGED_SECTION);
+    expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_REASON);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
+
+    expect(await fileExists(agentFile)).toBe(true);
+    expect(await readTestFile(agentFile)).toBe(agentBefore);
+    expect(await fileExists(configTsPath(projectDir))).toBe(false);
+    expect(await fileExists(configTypesTsPath(projectDir))).toBe(false);
   });
 
   /**

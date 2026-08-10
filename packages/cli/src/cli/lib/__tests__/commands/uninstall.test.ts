@@ -12,6 +12,7 @@ import { createMockMatrix } from "../factories/matrix-factories.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { SKILLS } from "../test-fixtures";
+import { AGENT_DEFS } from "../mock-data/mock-agents.js";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import {
   DEFAULT_BRANDING,
@@ -30,6 +31,26 @@ vi.mock("../../../utils/exec.js", async (importOriginal) => ({
   claudePluginUninstall: vi.fn(),
   isClaudeCLIAvailable: vi.fn().mockResolvedValue(true),
 }));
+
+/**
+ * The removal plan's compiled-agents item, the section header it sits under, and the two halves
+ * of the statement that replaces it when nothing can identify which agents this CLI compiled.
+ * Written out here rather than imported from the command, so an assertion meant to hold a
+ * user-facing string still cannot move with it.
+ */
+const PLAN_AGENTS_ITEM = "(CLI-compiled)";
+const PLAN_CLI_MANAGED_SECTION = "CLI-managed files:";
+const PLAN_AGENTS_KEPT = "Kept compiled agents";
+const PLAN_AGENTS_KEPT_REASON = "needs the configuration";
+
+/**
+ * The three lines that say whether this run has a removal to make at all: the heading the plan is
+ * printed under, the report that stands in its place when there is none, and the closing line that
+ * claims the removal happened. Written out here for the same reason as the plan strings above.
+ */
+const PLAN_PREVIEW_HEADING = "The following will be removed:";
+const NOTHING_TO_UNINSTALL = "Nothing to uninstall";
+const UNINSTALL_COMPLETE = "Uninstall complete";
 
 const TEST_PLUGIN_NAME = "test-plugin@marketplace";
 const PLUGIN_SUBPATH = path.join(CLAUDE_DIR, "plugins", TEST_PLUGIN_NAME);
@@ -402,18 +423,68 @@ describe("uninstall command", () => {
 
       expect(await directoryExists(agentsDir)).toBe(false);
       expect(stdout).toContain("Removed 1 compiled agent");
+      // The control for the config-less case below. A config naming the agents is exactly what
+      // makes their directory the CLI's to delete, so this is the state — and the only state —
+      // in which the plan may promise it.
+      expect(stdout).toContain(PLAN_CLI_MANAGED_SECTION);
+      expect(stdout).toContain(PLAN_AGENTS_ITEM);
+      expect(stdout).not.toContain(PLAN_AGENTS_KEPT);
     });
 
-    it("should not remove agents directory when no config exists", async () => {
+    it("should keep an unidentifiable agents directory and report nothing to uninstall", async () => {
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
 
       const agentsDir = path.join(claudeDir, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
-      await writeFile(path.join(agentsDir, "my-custom-agent.md"), "# Custom Agent");
+      const agentPath = path.join(agentsDir, "my-custom-agent.md");
+      await writeFile(agentPath, "# Custom Agent");
+      const agentBefore = await readFile(agentPath, "utf-8");
 
-      await runCliCommand(["uninstall", "--yes"]);
+      const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
+      const output = stdout + stderr;
 
       expect(await directoryExists(agentsDir)).toBe(true);
+      expect(await readFile(agentPath, "utf-8")).toBe(agentBefore);
+
+      // The plan may not promise a removal the run then declines to make. Without a config
+      // nothing says which agent files this CLI compiled, so every one of them is kept.
+      expect(output).not.toContain(PLAN_AGENTS_ITEM);
+      expect(output).not.toContain(PLAN_CLI_MANAGED_SECTION);
+
+      // With that item gone the plan carries no removal at all, and these agents were the only
+      // thing here. A heading over an empty list and a closing success line each report a removal
+      // this run never makes, so neither may be printed — the run has nothing to uninstall.
+      expect(output).not.toContain(PLAN_PREVIEW_HEADING);
+      expect(output).toContain(NOTHING_TO_UNINSTALL);
+      expect(output).not.toContain(UNINSTALL_COMPLETE);
+    });
+
+    it("should name the kept agents beside the removals it can still promise", async () => {
+      const skillsDir = await createProjectSkillsDir(projectDir);
+      const cliSkillDir = await createCLISkill(skillsDir, "web-framework-react");
+
+      const agentsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      await mkdir(agentsDir, { recursive: true });
+      const agentPath = path.join(agentsDir, `${AGENT_DEFS.webDev.name}.md`);
+      await writeFile(agentPath, `# ${AGENT_DEFS.webDev.title}`);
+      const agentBefore = await readFile(agentPath, "utf-8");
+
+      const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
+      const output = stdout + stderr;
+
+      // Skills carry their own forked-from metadata, so they are identified without the config and
+      // a plan is printed. That is the positive subject guard the two negatives below need: with no
+      // plan on screen at all they would hold for free.
+      expect(output).toContain(PLAN_PREVIEW_HEADING);
+      expect(output).toContain(PLAN_CLI_MANAGED_SECTION);
+      expect(output).not.toContain(PLAN_AGENTS_ITEM);
+      expect(output).toContain(PLAN_AGENTS_KEPT);
+      expect(output).toContain(PLAN_AGENTS_KEPT_REASON);
+
+      // The plan and the run are one decision: what it promised is gone, what it named as kept is
+      // byte-identical — even though this basename is one the CLI itself compiles.
+      expect(await directoryExists(cliSkillDir)).toBe(false);
+      expect(await readFile(agentPath, "utf-8")).toBe(agentBefore);
     });
 
     it("should only remove agents listed in config and preserve others", async () => {
@@ -581,16 +652,15 @@ describe("uninstall command", () => {
       const pluginPath = path.join(pluginsDir, "test-plugin@marketplace");
       await mkdir(pluginPath, { recursive: true });
 
-      const target = {
-        hasPlugins: true,
-        cliPluginNames: ["test-plugin@marketplace"],
-        pluginsDir,
-        config: buildProjectConfig({
-          skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "marketplace" }],
-        }),
-      };
+      const config = buildProjectConfig({
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "marketplace" }],
+      });
 
-      const result = await uninstallPluginsFn(target, projectDir);
+      const result = await uninstallPluginsFn(
+        { kind: "plugins", pluginsDir, names: ["test-plugin@marketplace"] },
+        config,
+        projectDir,
+      );
 
       expect(result.totalUninstalled).toBe(1);
 
@@ -634,16 +704,15 @@ describe("uninstall command", () => {
       const pluginPath = path.join(pluginsDir, "test-plugin@marketplace");
       await mkdir(pluginPath, { recursive: true });
 
-      const target = {
-        hasPlugins: true,
-        cliPluginNames: ["test-plugin@marketplace"],
-        pluginsDir,
-        config: buildProjectConfig({
-          skills: [{ id: "test-plugin" as SkillId, scope: "global", source: "marketplace" }],
-        }),
-      };
+      const config = buildProjectConfig({
+        skills: [{ id: "test-plugin" as SkillId, scope: "global", source: "marketplace" }],
+      });
 
-      const result = await uninstallPluginsFn(target, projectDir);
+      const result = await uninstallPluginsFn(
+        { kind: "plugins", pluginsDir, names: ["test-plugin@marketplace"] },
+        config,
+        projectDir,
+      );
 
       expect(result.totalUninstalled).toBe(1);
 
