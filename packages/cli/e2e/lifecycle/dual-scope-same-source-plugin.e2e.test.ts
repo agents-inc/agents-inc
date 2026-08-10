@@ -507,12 +507,12 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
         "global scope must have no ejected hono copy before the set-all",
       ).toBe(false);
 
-      // --- Act: edit at the project and press the "set all sources to eject"
-      // hotkey (L) on the Sources step. setAllSourcesEject maps over EVERY
-      // skillConfigs entry with no !excluded/scope guard, so it also rewrites the
-      // masked global tombstone — the same tombstone leak the per-skill source
-      // switch already guards against (!excluded && scope match), here reached
-      // via the bulk set-all action instead. ---
+      // --- Act: edit at the project and set every editable source to eject. The
+      // Sources step binds no bulk key; `setAllLocal` commits the mode on each
+      // focusable row in turn, which for this fixture is hono's project row alone.
+      // The tombstone is not a row at all, and `setInstallMode` writes only the
+      // ACTIVE entry at the acting scope, so the leak this spec pins has two
+      // independent stops. ---
       wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir: pluginSource.sourceDir, tempDir: pluginSource.tempDir },
@@ -574,8 +574,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
       // --- Primary invariant: the masked global tombstone must KEEP its
       // marketplace source. It records the source of the masked global install,
       // not a source the project user is choosing, so a project-scope set-all
-      // must leave it untouched. Fails today: setAllSourcesEject has no
-      // !excluded/scope guard and rewrites the tombstone to eject. ---
+      // must leave it untouched. ---
       expect(
         tombstoneAfter,
         "global tombstone must retain its marketplace source, not inherit the set-all eject",

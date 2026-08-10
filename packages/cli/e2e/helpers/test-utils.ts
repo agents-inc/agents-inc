@@ -582,8 +582,9 @@ export async function readAgentEntriesFor(
 }
 
 /**
- * Drive the init wizard end to end with every skill source switched to local
- * (the `l` hotkey on the Sources step).
+ * Drive the init wizard end to end with every editable skill source switched to
+ * local (`SourcesStep.setAllLocal`, a per-row walk — the Sources step binds no
+ * bulk set-all key).
  *
  * Flow: Stack -> Domain -> Build (all domains) -> Sources -> Agents -> Confirm.
  * Without `setAllLocal()` the wizard defaults to plugin mode, so tests that

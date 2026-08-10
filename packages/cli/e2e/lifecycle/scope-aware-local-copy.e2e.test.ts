@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment, readSkillEntries } from "../fixtures/dual-scope-helpers.js";
+import { EJECT_SOURCE } from "../../src/cli/consts.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
@@ -125,6 +126,23 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
     );
   });
 
+  /**
+   * The two migration tests run at GLOBAL edit scope (HOME == cwd == fakeHome).
+   *
+   * They used to drive the switch from the PROJECT directory, which is no longer a thing the
+   * product does: a project edit renders an inherited global install as a locked row, the two
+   * bulk set-all keys are withdrawn, and `setInstallMode` refuses a project-context call against
+   * a global slot the hydration snapshot owns. Driving them from the project would therefore
+   * assert that a withdrawn behaviour still happens.
+   *
+   * The SUBJECT survives the re-scope intact, because it was never the driving context: a
+   * global-scoped skill's install-mode migration resolves its paths from its own scope, so the
+   * local copy is written to and removed from `$HOME`. Global scope is where that switch is
+   * legitimate, so it is where it is now pinned. The old `not.toHaveSkillCopied(projectDir)`
+   * assertions are gone rather than carried over — with no project install in the run at all,
+   * they would pass against an empty directory and prove nothing. The global config's recorded
+   * `source` takes their place: it is the config half of the same claim, and it moves.
+   */
   describe("edit source switch -- scope-aware migration", () => {
     it(
       "should copy to HOME when switching global-scope skill from plugin to local",
@@ -132,12 +150,12 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
       async () => {
         const env = await createTestEnvironment();
         tempDir = env.tempDir;
-        const { fakeHome, projectDir } = env;
+        const { fakeHome } = env;
 
         // Phase 1: Init in plugin mode -- all skills global scope, plugin source
         initWizard = await InitWizard.launch({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
-          projectDir,
+          projectDir: fakeHome,
           env: { HOME: fakeHome },
         });
 
@@ -145,11 +163,16 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
         expect(await initResult.exitCode).toBe(EXIT_CODES.SUCCESS);
         await initResult.destroy();
 
-        // Phase 2: Edit -- switch ALL to local via "l" hotkey
-        editWizard = await EditWizard.launch({
-          projectDir,
+        const reactBefore = await readSkillEntries(fakeHome, E2E_SKILL.react.id);
+        expect(
+          reactBefore.map((entry) => entry.source),
+          "react must start plugin-sourced",
+        ).toEqual([fixture.marketplaceName]);
+
+        // Phase 2: Edit the global install -- switch every skill to local, one row at a time
+        editWizard = await EditWizard.launchInGlobal({
+          projectDir: fakeHome,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
-          env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });
 
@@ -167,7 +190,10 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
 
         // --- Assertions ---
         await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
-        await expect({ dir: projectDir }).not.toHaveSkillCopied(E2E_SKILL.react.id);
+        expect(
+          (await readSkillEntries(fakeHome, E2E_SKILL.react.id)).map((entry) => entry.source),
+          "the global config must record the eject source the migration performed",
+        ).toEqual([EJECT_SOURCE]);
         await expect({ dir: fakeHome }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
 
         await result.destroy();
@@ -180,12 +206,12 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
       async () => {
         const env = await createTestEnvironment();
         tempDir = env.tempDir;
-        const { fakeHome, projectDir } = env;
+        const { fakeHome } = env;
 
         // Phase 1: Init in eject mode -- all skills global scope
         initWizard = await InitWizard.launch({
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
-          projectDir,
+          projectDir: fakeHome,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });
@@ -200,20 +226,14 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
 
         // Inject marketplace so mode-migrator can install plugins
         const globalConfigExists = await fileExists(configTsPath(fakeHome));
-        const projectConfigExists = await fileExists(configTsPath(projectDir));
-
         if (globalConfigExists) {
           await injectMarketplaceIntoConfig(fakeHome, fixture.marketplaceName);
         }
-        if (projectConfigExists) {
-          await injectMarketplaceIntoConfig(projectDir, fixture.marketplaceName);
-        }
 
-        // Phase 2: Edit -- switch ALL to plugin via "p" hotkey
-        editWizard = await EditWizard.launch({
-          projectDir,
+        // Phase 2: Edit the global install -- switch every skill to plugin, one row at a time
+        editWizard = await EditWizard.launchInGlobal({
+          projectDir: fakeHome,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
-          env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });
 
@@ -235,7 +255,10 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
 
         // --- Assertions ---
         await expect({ dir: fakeHome }).not.toHaveSkillCopied(E2E_SKILL.react.id);
-        await expect({ dir: projectDir }).not.toHaveSkillCopied(E2E_SKILL.react.id);
+        expect(
+          (await readSkillEntries(fakeHome, E2E_SKILL.react.id)).map((entry) => entry.source),
+          "the global config must record the marketplace source the migration performed",
+        ).toEqual([fixture.marketplaceName]);
         await expect({ dir: fakeHome }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
 
         await editResult.destroy();

@@ -26,8 +26,13 @@ export const HOTKEY_TOGGLE_LABELS = { key: "d", label: "D" } as const;
 // Sources step hotkeys
 // ---------------------------------------------------------------------------
 
-export const HOTKEY_SET_ALL_LOCAL = { key: "l", label: "L" } as const;
-export const HOTKEY_SET_ALL_PLUGIN = { key: "p", label: "P" } as const;
+// None. The step's two bulk install-mode keys — `l` (set all local) and `p` (set
+// all plugin) — are withdrawn. They rewrote `source` on every active skill config
+// with no scope authority behind them, so from a project edit they reached the
+// inherited global rows the same step renders locked and non-focusable: the bulk
+// key could do what the per-row control provably cannot. Per-row SPACE on the
+// grid cell is the only install-mode surface, and its own inertness on a locked
+// row is the containment.
 
 // ---------------------------------------------------------------------------
 // Common key labels (for structural keys handled via Ink key objects)

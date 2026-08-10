@@ -3,7 +3,6 @@ import React, { useCallback } from "react";
 import { useWizardStore } from "../../stores/wizard-store.js";
 import type { InstallMode, SkillId } from "../../types/index.js";
 import { useMeasuredHeight } from "../hooks/use-measured-height.js";
-import { HOTKEY_SET_ALL_LOCAL, HOTKEY_SET_ALL_PLUGIN, isHotkey } from "./hotkeys.js";
 import { isRowInert, SourceGrid } from "./source-grid.js";
 
 export type StepSourcesProps = {
@@ -29,13 +28,10 @@ export const StepSources: React.FC<StepSourcesProps> = ({ onContinue, onBack }) 
     [store],
   );
 
-  useInput((input, key) => {
-    if (isHotkey(input, HOTKEY_SET_ALL_LOCAL)) {
-      store.setAllSourcesEject();
-    }
-    if (isHotkey(input, HOTKEY_SET_ALL_PLUGIN)) {
-      store.setAllSourcesPlugin();
-    }
+  // No character hotkeys. The step's only install-mode surface is SourceGrid's per-row
+  // SPACE, which returns on an inert row — so a locked global row cannot be committed
+  // from here at all. The withdrawn bulk keys `l` / `p` had no such containment.
+  useInput((_input, key) => {
     if (key.return) {
       onContinue();
     }

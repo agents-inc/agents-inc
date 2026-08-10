@@ -144,6 +144,28 @@ function wouldOverwriteGlobalEject(
 }
 
 /**
+ * True when the slot a Sources-step call targets is a global install this session INHERITED —
+ * an active global entry the hydration snapshot already carried.
+ *
+ * Keyed on the `(id, scope)` SLOT, never on the id: an id legitimately occupies slots at both
+ * scopes at once, and the project half of a `[P][G]` pair is the project's own install to
+ * configure. An id-keyed test would freeze the half the Sources grid deliberately leaves
+ * editable.
+ *
+ * Read off the SNAPSHOT, never off the live entry's scope: a skill this session added at global
+ * scope — and every skill in a first `init`, where the snapshot is `null` — is nobody's install
+ * yet, so nothing is inherited and every row is the session's own.
+ */
+function isInheritedGlobalSlot(
+  installed: SkillConfig[] | null,
+  id: SkillId,
+  scope: SkillScope | undefined,
+): boolean {
+  if (installed === null) return false;
+  return scope === "global" && hasGlobalActive(installed, id);
+}
+
+/**
  * Rewrites the source of the ACTIVE entry at (id, scope), leaving every other entry untouched —
  * in particular a dual-scope skill's excluded global tombstone, which keeps describing the
  * masked global install (D-262).
@@ -1021,8 +1043,13 @@ export type WizardState = {
    * @param scope - Acting scope from the Sources row: only the active entry at this scope is
    *   updated; a masked global tombstone for the same id keeps its source.
    *
+   * Refuses a project-context call that targets a global slot the hydration snapshot already
+   * owns ({@link isInheritedGlobalSlot}) — a project edit may not change how a global install is
+   * installed, the same authority the Sources grid enforces by rendering that row inert.
+   *
    * Side effects: updates the active `skillConfigs` entry for the skill at `scope`, writing the
-   * `source` value the mode resolves to. No-op with a warning on an empty skill id.
+   * `source` value the mode resolves to. No-op with a warning on an empty skill id; silent no-op
+   * on a refused global slot.
    */
   setInstallMode: (
     skillId: SkillId,
@@ -1119,10 +1146,6 @@ export type WizardState = {
   canGoToNextDomain: () => boolean;
   /** @returns true if there is a previous domain before the current one */
   canGoToPreviousDomain: () => boolean;
-  /** Set all selected skills to "eject" source. */
-  setAllSourcesEject: () => void;
-  /** Set all selected skills to install from the one marketplace. */
-  setAllSourcesPlugin: () => void;
 
   /**
    * Build the source selection rows for the sources step UI.
@@ -1533,6 +1556,16 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         warn("Ignoring setInstallMode call with empty skillId");
         return state;
       }
+      // Block a GLOBAL-OWNED slot from being reconfigured at project scope — the authority the
+      // Sources grid already enforces by rendering that row inert, held here so it does not rest
+      // on the UI alone. Silent: the grid never offers the row, so a refused call is a caller
+      // reaching past it.
+      if (
+        isInheritedGlobalSlot(state.installedSkillConfigs, skillId, scope) &&
+        !state.isEditingFromGlobalScope
+      ) {
+        return state;
+      }
       const source = sourceForInstallMode(getSkillById(skillId), mode);
       return {
         skillConfigs: withActiveEntrySource(state.skillConfigs, skillId, scope, source),
@@ -1716,27 +1749,6 @@ export const useWizardStore = create<WizardState>((set, get) => ({
   canGoToPreviousDomain: () => {
     const state = get();
     return state.currentDomainIndex > 0;
-  },
-
-  setAllSourcesEject: () => {
-    set((state) => ({
-      // Never touch tombstones — a dual-scope skill's excluded global tombstone keeps describing
-      // the masked global install. The bulk set-all applies only to active entries, mirroring the
-      // D-262 per-skill setSkillSource/setSourceSelection guard (D-265).
-      skillConfigs: state.skillConfigs.map((sc) =>
-        sc.excluded ? sc : { ...sc, source: EJECT_SOURCE },
-      ),
-    }));
-  },
-
-  setAllSourcesPlugin: () => {
-    set((state) => ({
-      // Never touch tombstones (see setAllSourcesEject) — the excluded global tombstone keeps its
-      // marketplace source describing the masked global install (D-265).
-      skillConfigs: state.skillConfigs.map((sc) =>
-        sc.excluded ? sc : { ...sc, source: marketplaceSourceName(getSkillById(sc.id)) },
-      ),
-    }));
   },
 
   buildSourceRows: () => {

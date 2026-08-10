@@ -89,7 +89,7 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
         "the dual-scope setup must install hono into the project scope",
       ).toContain(E2E_SKILL.hono.id);
 
-      // --- Phase B: Edit -- switch all sources to plugin ---
+      // --- Phase B: Edit -- switch every EDITABLE source to plugin ---
       wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
@@ -107,22 +107,28 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
       const exitCodeB = await resultB.exitCode;
       expect(exitCodeB).toBe(EXIT_CODES.SUCCESS);
 
-      // Verify at least one source changed away from eject (global-scoped skills
-      // in the inlined config may retain their original "eject" source since they
-      // are read-only from the project context)
-      const configPhaseB = await readTestFile(projectConfigPath);
-      const hasNonEjectSource =
-        configPhaseB.includes('"source":"agents-inc"') ||
-        !configPhaseB.includes('"source":"eject"');
+      // The project's own hono entry is the half this session legitimately owns, so it is
+      // where the switch must land. Phase A left it on "eject" (`initialEntries`, compared
+      // exhaustively at the end), so naming the marketplace here is a claim about the change
+      // rather than about the pre-state — and it is the FIXTURE's marketplace, not the public
+      // default: `createE2EPluginSource` names it `e2e-test-<timestamp>`, so a literal
+      // "agents-inc" here can never be produced by this run and would pin nothing.
+      const projectHonoPhaseB = (await readAllSkillEntries(projectDir)).find(
+        (entry) => entry.id === E2E_SKILL.hono.id && entry.scope === "project",
+      );
       expect(
-        hasNonEjectSource || configPhaseB.includes("agents-inc"),
-        "Config should reference marketplace after setAllPlugin",
-      ).toBe(true);
+        projectHonoPhaseB,
+        "the project-owned hono entry must name the marketplace this fixture published",
+      ).toStrictEqual({
+        id: E2E_SKILL.hono.id,
+        scope: "project",
+        source: pluginFixture.marketplaceName,
+      });
 
       await resultB.destroy();
       wizard = undefined;
 
-      // --- Phase C: Edit -- switch all sources back to local (eject) ---
+      // --- Phase C: Edit -- switch every EDITABLE source back to local (eject) ---
       wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },

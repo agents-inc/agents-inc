@@ -10,8 +10,6 @@ import { Toast } from "./toast.js";
 import {
   HOTKEY_INFO,
   HOTKEY_SCOPE,
-  HOTKEY_SET_ALL_LOCAL,
-  HOTKEY_SET_ALL_PLUGIN,
   HOTKEY_TOGGLE_LABELS,
   KEY_LABEL_ENTER,
   KEY_LABEL_ESC,
@@ -256,16 +254,6 @@ export const WizardLayout: React.FC<WizardLayoutProps> = ({
                 (store.step === "build" || store.step === "agents") &&
                 !store.isEditingFromGlobalScope
               }
-            />
-            <DefinitionItem
-              label="Set all local"
-              values={[HOTKEY_SET_ALL_LOCAL.label]}
-              isVisible={store.step === "sources"}
-            />
-            <DefinitionItem
-              label="Set all plugin"
-              values={[HOTKEY_SET_ALL_PLUGIN.label]}
-              isVisible={store.step === "sources"}
             />
             <DefinitionItem
               label="Info"

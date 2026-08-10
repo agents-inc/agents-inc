@@ -36,6 +36,14 @@ import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.
  * out of scope and preserved verbatim. Whatever the product decides — refuse the
  * switch for global-scoped skills (matching the existing project-scope guard) or
  * record it — the recorded source and the on-disk install mode must not diverge.
+ *
+ * The product has since decided: it REFUSES. The Sources step's bulk set-all keys are
+ * withdrawn, `setAllLocal` walks the rows one at a time, and an inherited global install
+ * renders as a locked row that the walk skips and `setInstallMode` would refuse anyway. So
+ * react is expected to come out of Phase C exactly as it went in, and the divergence assertion
+ * below has become a CONTAINMENT invariant: it can only break if something reaches the global
+ * entry from here again. What keeps it from being vacuous is hono — the project-owned half the
+ * walk genuinely does switch, asserted first, which proves the source-switch path fired at all.
  */
 
 const REACT_ID = E2E_SKILL.react.id;
@@ -110,7 +118,7 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
       ).toBe(false);
       await expect({ dir: fakeHome }).toHavePluginInRegistry(reactPluginRef, "user");
 
-      // Phase C: from the PROJECT directory, switch every source to local ("l").
+      // Phase C: from the PROJECT directory, switch every EDITABLE source to local.
       wizard = await EditWizard.launch({
         projectDir,
         source: { sourceDir: pluginSource.sourceDir, tempDir: pluginSource.tempDir },

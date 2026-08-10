@@ -127,11 +127,14 @@ const MARKETPLACE_SOURCE = "agents-inc";
 const EJECT_SOURCE = "eject";
 
 /**
- * The global-scope skills that Phase B's "set all sources to local" genuinely
- * migrates from the marketplace to a local copy in HOME. api-framework-hono is
- * absent: it moves to project scope, so its global install is never migrated.
+ * Every skill the Phase A global install owns. All seven are plugin-sourced when Phase A ends,
+ * and a project init has no authority over any of them, so all seven must still be plugin-sourced
+ * — with no local copy under HOME — when Phase B ends. api-framework-hono is on the list: Phase B
+ * moves it to PROJECT scope and switches the project's own copy to eject, which leaves the global
+ * install it masks exactly as it was.
  */
-const EJECTED_GLOBAL_SKILL_IDS = [
+const GLOBAL_SKILL_IDS = [
+  "api-framework-hono",
   "meta-methodology-research-methodology",
   "meta-reviewing-cli-reviewing",
   "meta-reviewing-reviewing",
@@ -230,29 +233,29 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
         ...globalRestAfterB
       } = await loadConfigOrFail(fakeHome);
 
-      // The scope split records each skill's source truthfully. Phase B's "set
-      // all sources to local" really does replace the six still-global plugin
-      // installs with local copies in HOME, so the global config now says
-      // "eject" for them. api-framework-hono keeps the marketplace source: it
-      // moved to project scope, so its global install was never migrated.
-      expect(sortedById(globalSkillsAfterB)).toStrictEqual([
-        { id: "api-framework-hono", scope: "global", source: MARKETPLACE_SOURCE },
-        { id: "meta-methodology-research-methodology", scope: "global", source: EJECT_SOURCE },
-        { id: "meta-reviewing-cli-reviewing", scope: "global", source: EJECT_SOURCE },
-        { id: "meta-reviewing-reviewing", scope: "global", source: EJECT_SOURCE },
-        { id: "web-framework-react", scope: "global", source: EJECT_SOURCE },
-        { id: "web-state-zustand", scope: "global", source: EJECT_SOURCE },
-        { id: "web-testing-vitest", scope: "global", source: EJECT_SOURCE },
-      ]);
+      // The scope split records each skill's source truthfully, and a project init has no
+      // authority to change the sources of the GLOBAL install it inherits, so the global skills
+      // array comes out of Phase B exactly as Phase A left it.
+      //
+      // This expectation was inverted deliberately. It used to name `eject` for the six
+      // still-global skills, because Phase B's "set all sources to local" was a bulk hotkey that
+      // rewrote every active entry regardless of scope, and the run then performed those
+      // migrations for real under $HOME. That key is withdrawn and `setInstallMode` refuses a
+      // project-context call against an inherited global slot, so the six are untouched. The
+      // assertion was pinning the defect; naming the new values is the fix landing, not a
+      // weakened claim — it is still `toStrictEqual` over the whole array.
+      expect(sortedById(globalSkillsAfterB)).toStrictEqual(sortedById(globalSkillsAfterA));
 
-      // Filesystem agrees with the recorded source at global scope: every
-      // eject-sourced skill has a real directory in HOME, and the one still
-      // sourced from the marketplace has none because it is still a plugin.
-      await expect({ dir: fakeHome }).toHaveLocalSkills(EJECTED_GLOBAL_SKILL_IDS);
-      await expect({ dir: fakeHome }).not.toHaveSkillCopied("api-framework-hono");
+      // Filesystem agrees with the recorded source at global scope: nothing global was migrated,
+      // so no global skill has a local copy under HOME.
+      for (const skillId of GLOBAL_SKILL_IDS) {
+        await expect({ dir: fakeHome }).not.toHaveSkillCopied(skillId);
+      }
 
-      // Filesystem agrees with the recorded source at project scope too: the
-      // project-scoped copy of hono is ejected into the project.
+      // Proof the phase acted at all: hono is the one skill Phase B moves to project scope, where
+      // the project owns it — so it is the one the per-row source switch legitimately reaches, and
+      // its ejected copy lands in the project tree. Without this, every claim above would hold
+      // just as well for a Phase B that did nothing.
       await expect({ dir: projectDir }).toHaveSkillCopied("api-framework-hono");
 
       // Registering the project is the one global-config change a project init

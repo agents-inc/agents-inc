@@ -18,7 +18,7 @@ import type { AgentScopeConfig, Category, SkillConfig } from "../types";
 import { EXPECTED_AGENTS } from "../lib/__tests__/expected-values";
 import { BUILT_IN_MATRIX } from "../types/generated/matrix";
 import { getIncompatibleReason, validateSelection } from "../lib/matrix";
-import { DEFAULT_PUBLIC_SOURCE_NAME, DEFAULT_SCRATCH_DOMAINS } from "../consts";
+import { DEFAULT_PUBLIC_SOURCE_NAME, DEFAULT_SCRATCH_DOMAINS, EJECT_SOURCE } from "../consts";
 import { elementAt, firstElement } from "../lib/__tests__/helpers/element-at.js";
 
 /**
@@ -1870,96 +1870,126 @@ describe("WizardStore", () => {
       expect(state.skillConfigs).toStrictEqual([]);
       expect(state.focusedSkillId).toBeNull();
     });
+  });
 
-    it("should set all sources to eject via setAllSourcesEject", () => {
-      const store = useWizardStore.getState();
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.toggleTechnology("api", "api-api", "api-framework-hono", true);
-
-      store.setAllSourcesEject();
-
-      const { skillConfigs } = useWizardStore.getState();
-      expect(skillConfigs.every((sc) => sc.source === "eject")).toBe(true);
-    });
-
-    it("should set all sources to plugin via setAllSourcesPlugin", () => {
-      const store = useWizardStore.getState();
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      store.setInstallMode("web-framework-react", "eject", "global");
-
-      initializeMatrix(
-        createMockMatrix({
-          ...SKILLS.react,
-          availableSources: [{ name: "Acme Corp", type: "private", installed: false }],
-        }),
-      );
-
-      store.setAllSourcesPlugin();
-
-      const { skillConfigs } = useWizardStore.getState();
-      expect(firstElement(skillConfigs).source).toBe("Acme Corp");
-    });
-
-    it("flips the active entry but leaves an excluded global tombstone's source intact via setAllSourcesEject", () => {
-      // Dual-scope pair: active project entry + masked global tombstone. The bulk set-all is a
-      // project-scope action, so the tombstone (which records the masked global install's source)
-      // must keep its marketplace source rather than inherit the eject switch.
-      const store = useWizardStore.getState();
+  /**
+   * `setInstallMode`'s scope authority.
+   *
+   * The Sources step renders an inherited global install as a locked, non-focusable row, and
+   * `SourceGrid`'s SPACE handler returns on an inert row — so the per-row control provably
+   * cannot commit a mode for one. The store setter behind it has to agree, or an authority the
+   * UI enforces rests on the UI alone.
+   *
+   * The gate is on the SLOT, never on the id. An id legitimately occupies slots at both scopes
+   * at once: a global install adopted at project scope renders a locked global row AND an
+   * editable project row for the same skill, and `step-sources.tsx` threads that project row's
+   * scope into the call. An id-keyed gate would freeze the half the project owns — the half the
+   * grid deliberately leaves editable.
+   *
+   * The gate is on the HYDRATION SNAPSHOT, never on the live entry's scope alone: a skill added
+   * this session at global scope, and every skill in a first `init` (where the snapshot is
+   * `null`), are nobody's install yet and must stay editable.
+   */
+  describe("setInstallMode scope authority", () => {
+    it("does not rewrite a global slot the hydration snapshot already owns", () => {
+      const installed = buildSkillConfigs(["web-framework-react"], {
+        scope: "global",
+        source: DEFAULT_PUBLIC_SOURCE_NAME,
+      });
       useWizardStore.setState({
-        skillConfigs: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
-          ...buildSkillConfigs(["web-framework-react"], {
-            scope: "global",
-            source: "agents-inc",
-            excluded: true,
-          }),
-        ],
+        skillConfigs: [...installed],
+        installedSkillConfigs: installed,
+        isEditingFromGlobalScope: false,
       });
 
-      store.setAllSourcesEject();
+      useWizardStore.getState().setInstallMode("web-framework-react", "eject", "global");
 
-      const { skillConfigs } = useWizardStore.getState();
-      expect(skillConfigs).toStrictEqual([
-        ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+      expect(
+        useWizardStore.getState().skillConfigs,
+        "a project-context call may not change the install mode of an inherited global install",
+      ).toStrictEqual(installed);
+    });
+
+    it("still rewrites the project half of a dual-scope pair over that same global install", () => {
+      // The `[P][G]` shape a global→project adoption leaves: the snapshot holds the active
+      // global entry, the live config holds the project entry that masks it plus the tombstone.
+      // This is the case an id-keyed gate would break, so it is pinned beside the gate itself.
+      const installed = buildSkillConfigs(["web-framework-react"], {
+        scope: "global",
+        source: DEFAULT_PUBLIC_SOURCE_NAME,
+      });
+      const tombstone = buildSkillConfigs(["web-framework-react"], {
+        scope: "global",
+        source: DEFAULT_PUBLIC_SOURCE_NAME,
+        excluded: true,
+      });
+      useWizardStore.setState({
+        skillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "project",
+            source: DEFAULT_PUBLIC_SOURCE_NAME,
+          }),
+          ...tombstone,
+        ],
+        installedSkillConfigs: installed,
+        isEditingFromGlobalScope: false,
+      });
+
+      useWizardStore.getState().setInstallMode("web-framework-react", "eject", "project");
+
+      expect(
+        useWizardStore.getState().skillConfigs,
+        "the project's own half of a dual-scope pair stays editable, and the tombstone keeps describing the masked global install",
+      ).toStrictEqual([
         ...buildSkillConfigs(["web-framework-react"], {
-          scope: "global",
-          source: "agents-inc",
-          excluded: true,
+          scope: "project",
+          source: EJECT_SOURCE,
         }),
+        ...tombstone,
       ]);
     });
 
-    it("flips the active entry but leaves an excluded global tombstone's source intact via setAllSourcesPlugin", () => {
-      const store = useWizardStore.getState();
+    it("rewrites a global slot when the edit is running at global scope", () => {
+      const installed = buildSkillConfigs(["web-framework-react"], {
+        scope: "global",
+        source: DEFAULT_PUBLIC_SOURCE_NAME,
+      });
       useWizardStore.setState({
-        skillConfigs: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
-          ...buildSkillConfigs(["web-framework-react"], {
-            scope: "global",
-            source: "agents-inc",
-            excluded: true,
-          }),
-        ],
+        skillConfigs: [...installed],
+        installedSkillConfigs: installed,
+        isEditingFromGlobalScope: true,
       });
 
-      initializeMatrix(
-        createMockMatrix({
-          ...SKILLS.react,
-          availableSources: [{ name: "Acme Corp", type: "private", installed: false }],
-        }),
+      useWizardStore.getState().setInstallMode("web-framework-react", "eject", "global");
+
+      expect(
+        useWizardStore.getState().skillConfigs,
+        "an edit at global scope owns the global install and may change its mode",
+      ).toStrictEqual(
+        buildSkillConfigs(["web-framework-react"], { scope: "global", source: EJECT_SOURCE }),
       );
+    });
 
-      store.setAllSourcesPlugin();
-
-      const { skillConfigs } = useWizardStore.getState();
-      expect(skillConfigs).toStrictEqual([
-        ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "Acme Corp" }),
-        ...buildSkillConfigs(["web-framework-react"], {
+    it("rewrites a global slot the hydration snapshot does not carry", () => {
+      // `installedSkillConfigs: null` is a first `init` — nothing is installed at either scope,
+      // so nothing is inherited and every row on the Sources step is the session's own.
+      useWizardStore.setState({
+        skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
-          excluded: true,
+          source: DEFAULT_PUBLIC_SOURCE_NAME,
         }),
-      ]);
+        installedSkillConfigs: null,
+        isEditingFromGlobalScope: false,
+      });
+
+      useWizardStore.getState().setInstallMode("web-framework-react", "eject", "global");
+
+      expect(
+        useWizardStore.getState().skillConfigs,
+        "a global-scope skill this session added is nobody's install yet and stays editable",
+      ).toStrictEqual(
+        buildSkillConfigs(["web-framework-react"], { scope: "global", source: EJECT_SOURCE }),
+      );
     });
   });
 

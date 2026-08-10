@@ -41,6 +41,11 @@ import {
  * toggle, so both phases model editing the GLOBAL install via launchInGlobal:
  * HOME == cwd == projectDir, the skills are editable, and all content + config
  * collapse onto projectDir (which every assertion below reads).
+ *
+ * "Bulk" here means EVERY SKILL, not a bulk keystroke. The Sources step's two
+ * set-all keys are withdrawn; `setAllPlugin` / `setAllLocal` now commit the mode
+ * on each row in turn (see `SourcesStep`). At global scope every row is editable,
+ * so the walk reaches all of them and this file's subject is unchanged.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -93,7 +98,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         // Inject marketplace into config (fixture setup for Phase 2)
         await injectMarketplaceIntoConfig(projectDir, fixture.marketplaceName);
 
-        // Phase 2: Edit -- switch ALL to plugin via "p" hotkey
+        // Phase 2: Edit -- switch every skill to plugin, one row at a time
         const editWizard = await EditWizard.launchInGlobal({
           projectDir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
@@ -153,7 +158,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         });
         await initResult.destroy();
 
-        // Phase 2: Edit -- switch ALL to eject via "l" hotkey
+        // Phase 2: Edit -- switch every skill to eject, one row at a time
         const editWizard = await EditWizard.launchInGlobal({
           projectDir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },

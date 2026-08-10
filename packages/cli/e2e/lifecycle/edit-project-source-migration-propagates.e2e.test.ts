@@ -53,11 +53,6 @@ import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/t
  * real `compile` run rather than hand-written, so the plugin-form reference under
  * test is exactly what the product emits while react is marketplace-sourced.
  *
- * CURRENTLY RED, deliberately. The red is carried by project-b: its inlined react
- * row still records the marketplace source, and its compiled agent still emits
- * the plugin ref form `<id>:<id>` instead of the bare id an ejected skill
- * compiles to. The missing propagated-recompile line is the third.
- *
  * project-a's own assertions (global config, project-a config, project-a's
  * recompiled agent) are the proof-of-execution half: they establish that the
  * migration path genuinely fired, so a red on project-b cannot be a fixture that
@@ -65,6 +60,28 @@ import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/t
  *
  * The Claude CLI is not required: a plugin -> eject migration copies the skill
  * locally and treats the plugin uninstall as best-effort.
+ *
+ * RETIRED, and deliberately NOT repaired.
+ *
+ * This spec was RED against a real, open propagation defect. Its only route to that defect was
+ * the Sources step's bulk `l` key, which rewrote `source` on every active entry — the inherited
+ * global react row included — from a project directory. That key is withdrawn, and
+ * `setInstallMode` now refuses a project-context call against a global slot the hydration
+ * snapshot owns. So the fixture below can no longer reach the migration at all: `setAllLocal`
+ * walks the rows, react's row is locked, and the edit becomes a no-op. Eight of the ten
+ * assertions would go red for the setup rather than for the defect.
+ *
+ * The route is closed BY CONSTRUCTION. The defect is not fixed, and re-pointing this fixture
+ * until it went green would report a repair that never happened.
+ *
+ * The defect is still live on a narrower path, which is why this file is skipped rather than
+ * deleted. `recordGlobalSourceMigrations` writes the global config raw, outside the write path
+ * that fans global changes out to registered projects, and one supported flow still reaches it:
+ * commit an install-mode change on the PROJECT half of a `[P][G]` pair, then collapse the pair
+ * P->G with `s` in the same session. The entry is the project's own when configured and global
+ * when written, so the migration is real and the fan-out is still missing. A revived spec must
+ * drive THAT sequence — Sources mode change, ESC back to build, `s`, forward again — instead of
+ * a bulk key, and must keep project-b as the bystander that carries the red.
  */
 
 /** Compiled reference form for a marketplace-sourced skill (bare id when ejected). */
@@ -128,7 +145,7 @@ function projectAgentPath(dir: string): string {
   return path.join(agentsPath(dir), `${E2E_AGENT["web-developer"].name}.md`);
 }
 
-describe("project-context source migration of a global skill propagates to other registered projects", () => {
+describe.skip("project-context source migration of a global skill propagates to other registered projects", () => {
   let sourceDir: string;
   let sourceTempDir: string;
   let tempDir: string;
