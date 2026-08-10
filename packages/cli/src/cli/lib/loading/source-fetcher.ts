@@ -168,16 +168,11 @@ async function fetchFromRemoteSource(source: string, subdir?: string): Promise<F
   verbose(`Cache directory: ${cacheDir}`);
 
   if (await directoryExists(cacheDir)) {
-    const verdict = await revalidateCachedCopy(cacheDir);
+    const verdict = await revalidateCachedCopy(cacheDir, source);
     const cached: FetchResult = { path: cacheDir, fromCache: true, source: fullSource };
 
-    if (verdict === "current") {
+    if (verdict === "current" || verdict === "unreachable") {
       verbose(`Using cached source: ${cacheDir}`);
-      return cached;
-    }
-
-    if (verdict === "unreachable") {
-      warn(sourceUnreachableUsingCache(source));
       return cached;
     }
 
@@ -197,6 +192,7 @@ async function fetchFromRemoteSource(source: string, subdir?: string): Promise<F
 
     verbose(`Downloaded to: ${result.dir}`);
     await recordFetchedCopy(cacheDir, result);
+    markCopyCurrentForThisRun(cacheDir);
 
     return {
       path: result.dir,
@@ -256,16 +252,36 @@ function announceRefetch(verdict: Extract<CacheVerdict, "superseded" | "unrecord
   }
 }
 
-function revalidateCachedCopy(cacheDir: string): Promise<CacheVerdict> {
+function revalidateCachedCopy(cacheDir: string, source: string): Promise<CacheVerdict> {
   const asked = askedThisRun.get(cacheDir);
   if (asked) return asked;
 
-  const verdict = classifyCachedCopy(cacheDir);
+  const verdict = classifyCachedCopy(cacheDir, source);
   askedThisRun.set(cacheDir, verdict);
   return verdict;
 }
 
-async function classifyCachedCopy(cacheDir: string): Promise<CacheVerdict> {
+/**
+ * The answer for a copy this run has just downloaded, without asking for it: the
+ * record written beside it names the tarball the source served a moment ago, so
+ * within this run the copy is current by construction. Without it, the later
+ * loads of the same command re-read a `superseded` answer that was true when it
+ * was given and has been acted on since — and download it all over again.
+ */
+function markCopyCurrentForThisRun(cacheDir: string): void {
+  askedThisRun.set(cacheDir, Promise.resolve("current"));
+}
+
+/**
+ * The one question a run asks about a cached copy, and everything that answer
+ * owes the user.
+ *
+ * An unreachable source's staleness is named here rather than at the call site
+ * because the verdict is memoised and the line is owed once per source per run:
+ * left outside, every later load of the same run repeats a warning about a
+ * question that was only asked once.
+ */
+async function classifyCachedCopy(cacheDir: string, source: string): Promise<CacheVerdict> {
   const record = await readFetchRecord(cacheDir);
   if (!record) return "unrecorded";
 
@@ -283,6 +299,7 @@ async function classifyCachedCopy(cacheDir: string): Promise<CacheVerdict> {
     return live === record.etag ? "current" : "superseded";
   } catch (error) {
     verbose(`Could not revalidate ${record.tar}: ${getErrorMessage(error)}`);
+    warn(sourceUnreachableUsingCache(source));
     return "unreachable";
   }
 }

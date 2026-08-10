@@ -36,6 +36,17 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
  * that is served from cache must still show the one HEAD that established that, and
  * must show no GET, or the spec would pass equally against a CLI that revalidated
  * nothing and against one that re-downloaded every time.
+ *
+ * ONE COMMAND, TWO LOADS — AND WHICH ASSERTION CARRIES THE RED. `search` loads its
+ * source twice: once for the matrix, once for the marketplace label. Everything the
+ * revalidation decides is therefore owed once per command, not once per load, and the
+ * repeated-line assertions below are what hold that. The request log cannot hold it
+ * for the changed arm under THIS fixture: the source is served over http, for which
+ * `getGigetCacheDir` returns undefined and giget's own tarball cache is never cleared,
+ * so a second download of the same run re-extracts what giget already holds and shows
+ * up as extra HEADs rather than a second `GET 200`. Do not simplify the doubled-line
+ * assertions down to a GET count — against a `github:` source the same defect is a
+ * full duplicate download, and here it is only visible in what the user was told.
  */
 
 const SPARE = E2E_SKILL["visual-regression"];
@@ -55,6 +66,7 @@ describe("remote source revalidation", () => {
   let servedFromCache: CLIResult;
   let offline: CLIResult;
 
+  let controlRequests: RequestLog;
   let changeRequests: RequestLog;
   let cacheRequests: RequestLog;
 
@@ -72,6 +84,7 @@ describe("remote source revalidation", () => {
     const search = (query: string) => CLI.run(["search", query], { dir: projectDir });
 
     control = await search(E2E_SKILL.vitest.slug);
+    controlRequests = server.requests.slice(0);
     beforePublish = await search(SPARE.slug);
 
     await server.publish(after.sourceDir);
@@ -97,6 +110,10 @@ describe("remote source revalidation", () => {
   it("reads a remote tarball source and finds what it ships", () => {
     expect(control.exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(control.output).toContain(E2E_SKILL.vitest.display);
+    expect(
+      controlRequests.filter((request) => request.startsWith("GET")),
+      "a source with no cached copy is downloaded once, not once per load",
+    ).toStrictEqual(["GET 200"]);
   });
 
   it("does not offer a skill the source has not published yet", () => {
@@ -111,6 +128,14 @@ describe("remote source revalidation", () => {
     );
     expect(picksUpChange.output, "a download the user did not ask for is announced").toContain(
       STEP_TEXT.SOURCE_HAS_NEWER_CONTENT,
+    );
+    expect(
+      picksUpChange.output,
+      "one update is one line, however many times the command loaded the source",
+    ).not.toMatch(
+      new RegExp(
+        `${STEP_TEXT.SOURCE_HAS_NEWER_CONTENT}[\\s\\S]*${STEP_TEXT.SOURCE_HAS_NEWER_CONTENT}`,
+      ),
     );
     expect(changeRequests, "a moved source is re-downloaded").toContain("GET 200");
   });
@@ -131,5 +156,13 @@ describe("remote source revalidation", () => {
       SPARE.display,
     );
     expect(offline.output).toContain(STEP_TEXT.SOURCE_UNREACHABLE_CACHED);
+    expect(
+      offline.output,
+      "one unreachable source is one warning, however many times the command loaded it",
+    ).not.toMatch(
+      new RegExp(
+        `${STEP_TEXT.SOURCE_UNREACHABLE_CACHED}[\\s\\S]*${STEP_TEXT.SOURCE_UNREACHABLE_CACHED}`,
+      ),
+    );
   });
 });

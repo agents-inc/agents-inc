@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
-import { mkdir, writeFile, readFile, readdir } from "fs/promises";
+import { mkdir, rm, writeFile, readFile, readdir } from "fs/promises";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { sanitizeSourceForCache } from "./source-fetcher";
 
@@ -150,6 +150,58 @@ describe("source-fetcher revalidation", () => {
     await fetchFromSource(SOURCE, { subdir: "" });
 
     expect(fetchMock).toHaveBeenCalledOnce();
+    expect(mockDownloadTemplate, "an unchanged source transfers no body").not.toHaveBeenCalled();
+  });
+
+  it("re-fetches and announces an update once however many times one run loads it", async () => {
+    await seedCachedCopy({ tar: TARBALL, etag: CACHED_ETAG });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(headResponse(PUBLISHED_ETAG)));
+    stubDownload();
+
+    await fetchFromSource(SOURCE);
+    const second = await fetchFromSource(SOURCE, { subdir: "" });
+
+    expect(
+      mockDownloadTemplate,
+      "the update is downloaded once, not once per load",
+    ).toHaveBeenCalledOnce();
+    expect(log).toHaveBeenCalledExactlyOnceWith(STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT);
+    expect(second.fromCache, "the copy this run just wrote is what the rest of it reads").toBe(
+      true,
+    );
+  });
+
+  it("names an unreachable source's staleness once however many times one run loads it", async () => {
+    await seedCachedCopy({ tar: TARBALL, etag: CACHED_ETAG });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("fetch failed")));
+
+    await fetchFromSource(SOURCE);
+    const second = await fetchFromSource(SOURCE, { subdir: "" });
+
+    expect(warn).toHaveBeenCalledExactlyOnceWith(sourceUnreachableUsingCache(SOURCE));
+    expect(second.fromCache).toBe(true);
+    expect(mockDownloadTemplate).not.toHaveBeenCalled();
+  });
+
+  it("downloads a source it holds no copy of once, even when the source moves on mid-run", async () => {
+    await rm(cacheDir, { recursive: true });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(headResponse(CACHED_ETAG))
+        .mockResolvedValue(headResponse(PUBLISHED_ETAG)),
+    );
+    stubDownload();
+
+    await fetchFromSource(SOURCE);
+    await fetchFromSource(SOURCE, { subdir: "" });
+
+    expect(mockDownloadTemplate, "a cold cache costs one download per run").toHaveBeenCalledOnce();
+    expect(
+      log,
+      "a run cannot call the copy it just downloaded superseded",
+    ).not.toHaveBeenCalledWith(STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT);
   });
 
   it("records the tarball and its ETag after a download, so the next load can ask", async () => {
