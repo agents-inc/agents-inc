@@ -1,5 +1,6 @@
 import { CLI_INVOKE_COMMAND, DEFAULT_BRANDING, EDITOR_URL, STANDARD_FILES } from "../consts.js";
 import type { UnusableSkillMetadata } from "../lib/loading/index.js";
+import type { AgentName, SkillId } from "../types/index.js";
 
 export const ERROR_MESSAGES = {
   UNKNOWN_ERROR: "Unknown error occurred",
@@ -63,6 +64,19 @@ export function pluginsInstalled(count: number): string {
 }
 
 /**
+ * What an eject copy did, wherever `edit` performs one — a newly added local skill,
+ * or a skill switched from plugin mode back to eject. Both copy through
+ * `copyLocalSkills` at each skill's own scope, so both owe the same sentence.
+ *
+ * A count and no destination, deliberately: the copies are split between the
+ * project directory and `$HOME` by each skill's scope, and one hardcoded path
+ * would misname the other half.
+ */
+export function localSkillsCopied(count: number): string {
+  return `Copied ${count} local skill(s)`;
+}
+
+/**
  * What a recompile pass did, as two numbers rather than one.
  *
  * The count it replaced was the roster the pass walked, so a run that rewrote
@@ -89,6 +103,31 @@ export function propagatedRecompileSummary(
 ): string {
   const failureSuffix = failed > 0 ? ` (${failed} failed)` : "";
   return `Recompiled agents in ${rewritten} registered projects, ${unchanged} unchanged${failureSuffix}`;
+}
+
+/**
+ * Warning printed for an installed, actively-selected skill that no sub-agent's stack
+ * carries. The install itself is correct — the files are on disk and `config.ts` records
+ * them — but nothing will ever load the skill, and every other surface reports the run
+ * as clean. This line is the only one that says so.
+ */
+export function skillAssignedToNoAgent(skillId: SkillId): string {
+  return `Skill '${skillId}' is assigned to no sub-agent — nothing will load it.`;
+}
+
+/**
+ * The reason behind {@link skillAssignedToNoAgent} whenever it is the scope rule: a
+ * project-scoped skill never reaches a global-scoped sub-agent. Names every sub-agent the
+ * rule kept the skill away from, so one line accounts for every dropped pair.
+ *
+ * Shared by the save path (`init` / `edit`, where the assignment was never built) and by
+ * `compile` (where a hand-edited `config.ts` declares the pair and the compile-time filter
+ * drops it). One verdict, one sentence — a second spelling would read as a second rule.
+ */
+export function scopeBlockedStackAssignment(agentNames: AgentName[], skillId: SkillId): string {
+  const subject = agentNames.length === 1 ? "Sub-agent" : "Sub-agents";
+  const named = agentNames.map((name) => `'${name}'`).join(", ");
+  return `${subject} ${named} cannot carry project-scoped skill '${skillId}' — global-scoped sub-agents only carry global-scoped skills.`;
 }
 
 /**
@@ -288,4 +327,47 @@ export function configUnreadableError(configLoadFailure: string): string {
  */
 export function registeredProjectsUpdateFailed(reason: string): string {
   return `Could not update registered projects — their configs may still reference the uninstalled global content: ${reason}`;
+}
+
+/**
+ * Statement printed in the uninstall removal plan when compiled agent files are on
+ * disk but nothing can say which of them this CLI compiled. Removal matches on-disk
+ * basenames against `config.agents`, so a run with no configuration it can read
+ * leaves every one of them where it is — and the plan owes the reader that sentence
+ * in place of the removal it would otherwise promise and then decline to make.
+ */
+export function compiledAgentsKept(agentsDir: string): string {
+  return `Kept compiled agents in ${agentsDir}/ — identifying which of them this CLI compiled needs the configuration, and this run has none it could read.`;
+}
+
+/**
+ * The uninstall removal plan's fixed text: the heading the whole plan is printed under,
+ * and the heading each removal is grouped beneath. A heading is a promise about the lines
+ * below it, so one is printed only when the plan carries a removal that sits under it.
+ * Both renderers — the `--yes` printer and the confirm UI — read them from here, so the
+ * preview a user approves and the list a `--yes` run prints cannot drift apart.
+ */
+export const UNINSTALL_PLAN = {
+  PREVIEW_HEADING: "The following will be removed:",
+  PLUGINS_HEADING: "Plugins:",
+  CLI_MANAGED_FILES_HEADING: "CLI-managed files:",
+  CONFIG_HEADING: "Config:",
+} as const;
+
+/**
+ * The plan's line for the local skills directory. The directory is not removed wholesale —
+ * only the skills whose `forked-from` metadata names a source are — so the line says which
+ * of its contents the run is claiming.
+ */
+export function localSkillsRemoval(skillsDir: string): string {
+  return `${skillsDir}/ (matching sources)`;
+}
+
+/**
+ * The plan's line for the compiled agents directory, marking it as the CLI's to delete
+ * rather than the user's. Printed only when the configuration names which agents this CLI
+ * compiled; {@link compiledAgentsKept} stands in its place when nothing can.
+ */
+export function compiledAgentsRemoval(agentsDir: string): string {
+  return `${agentsDir}/ (CLI-compiled)`;
 }

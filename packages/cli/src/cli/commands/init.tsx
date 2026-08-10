@@ -61,6 +61,7 @@ import { type StartupMessage } from "../utils/logger.js";
 import {
   SUCCESS_MESSAGES,
   STATUS_MESSAGES,
+  globalScopedAgentsHint,
   sharedConfigExistingInstall,
   sharedConfigGlobalInstall,
 } from "../utils/messages.js";
@@ -317,15 +318,8 @@ export default class Init extends BaseCommand {
     // artifact that the next run could mistake for an existing installation.
     const isGlobalRoot = isHomeDirectory(projectDir);
 
-    const { unmount, clear: clearSpinner } = render(
-      <Spinner label={STATUS_MESSAGES.LOADING_SKILLS} />,
-    );
-    const [{ sourceResult, startupMessages }, globalConfig] = await Promise.all([
-      this.loadSourceOrFail(flags),
-      this.loadGlobalConfigIfExists(),
-    ]);
-    clearSpinner();
-    unmount();
+    const { sourceResult, startupMessages, globalConfig } =
+      await this.loadWizardInputsUnderSpinner(flags);
 
     const result = await this.runWizard(
       sourceResult,
@@ -343,6 +337,35 @@ export default class Init extends BaseCommand {
       interactive: true,
       emptyMessage: "No skills selected",
     };
+  }
+
+  /**
+   * Everything the wizard needs, loaded behind a spinner that comes down whichever way the
+   * await ends.
+   *
+   * The cleanup is a `finally` because a source that cannot be loaded refuses the run from
+   * inside this await, and oclif would otherwise paint its error under an Ink tree still
+   * repainting over it. Never a `catch`: the throw reaches oclif untouched, or both the
+   * error rendering and the exit code change with it.
+   */
+  private async loadWizardInputsUnderSpinner(flags: SourceFlags): Promise<{
+    sourceResult: SourceLoadResult;
+    startupMessages: StartupMessage[];
+    globalConfig: ProjectConfig | null;
+  }> {
+    const { unmount, clear: clearSpinner } = render(
+      <Spinner label={STATUS_MESSAGES.LOADING_SKILLS} />,
+    );
+    try {
+      const [source, globalConfig] = await Promise.all([
+        this.loadSourceOrFail(flags),
+        this.loadGlobalConfigIfExists(),
+      ]);
+      return { ...source, globalConfig };
+    } finally {
+      clearSpinner();
+      unmount();
+    }
   }
 
   /**
@@ -660,6 +683,7 @@ export default class Init extends BaseCommand {
     }
 
     this.log(`Configuration saved (${configResult.config.agents.length} agents)\n`);
+    this.reportUnassignedSkills(configResult.config);
 
     this.log(STATUS_MESSAGES.COMPILING_AGENTS);
     const cwd = process.cwd();
@@ -695,12 +719,42 @@ export default class Init extends BaseCommand {
       this.reportSkillsCopied(copyResult);
     }
     this.reportAgentsCompiled(compileResult.compiled, agentScopeMap);
+    this.reportConfiguration(configResult.configPath, agentScopeMap);
+  }
+
+  /**
+   * Names the config that actually holds this install's assignments, and where a
+   * recompile of them has to be run from.
+   *
+   * Split by the same `agentScopeMap` the two reporters above split on, because the
+   * same scope decides both. A project config's `stack` is filtered down to
+   * project-scoped agents on the way out, so a wholly GLOBAL install leaves it
+   * carrying no assignment at all — naming it sends the user to a file with nothing
+   * in it — and `compile` in this cwd runs the PROJECT pass, which recompiles no
+   * global agent. At the home root both scopes resolve to one file and one pass, so
+   * there is nothing to split and the project wording stands.
+   */
+  private reportConfiguration(
+    projectConfigPath: string,
+    agentScopeMap: Map<AgentName, SkillScope>,
+  ): void {
+    const cwd = process.cwd();
+    const paths = {
+      global: resolveInstallPaths(cwd, "global").configPath,
+      project: projectConfigPath,
+    };
+    const split = splitAgentScopes(cwd, agentScopeMap);
+
     this.log("Configuration:");
-    this.log(`  ${configResult.configPath}`);
+    for (const configPath of configsHoldingAssignments(split, paths)) {
+      this.log(`  ${configPath}`);
+    }
     this.log("");
+
     this.log("To customize agent-skill assignments:");
-    this.log(`  1. Edit ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
-    this.log(`  2. Run '${CLI_INVOKE_COMMAND} compile' to regenerate agents`);
+    for (const [index, step] of customizationSteps(split, paths.global).entries()) {
+      this.log(`  ${index + 1}. ${step}`);
+    }
     this.log("");
   }
 
@@ -771,6 +825,57 @@ export default class Init extends BaseCommand {
       this.log("");
     }
   }
+}
+
+/** The two config files an install can write, as the closing block refers to them. */
+type ConfigPaths = { global: string; project: string };
+
+/** How this install's sub-agents fall across the two scopes, seen from the directory it ran in. */
+type AgentScopeSplit = { globalAgentCount: number; isGlobalOnly: boolean };
+
+/**
+ * At the home root the two scopes resolve to ONE config file and ONE compile pass, so there
+ * is nothing to split and the split reports none — which is what leaves the project wording
+ * standing there unchanged. Same fork `reportAgentsCompiled` makes over the same question.
+ */
+function splitAgentScopes(cwd: string, agentScopeMap: Map<AgentName, SkillScope>): AgentScopeSplit {
+  if (isHomeDirectory(cwd)) return { globalAgentCount: 0, isGlobalOnly: false };
+
+  const scopes = [...agentScopeMap.values()];
+  const globalAgentCount = scopes.filter((scope) => scope === "global").length;
+  return {
+    globalAgentCount,
+    isGlobalOnly: globalAgentCount > 0 && globalAgentCount === scopes.length,
+  };
+}
+
+/**
+ * The config file(s) this install's assignments actually landed in. A wholly global install
+ * has none in the project file — the writer filters its `stack` down to project-scoped
+ * agents — so naming it would send the user to a file with nothing in it.
+ */
+function configsHoldingAssignments(split: AgentScopeSplit, paths: ConfigPaths): string[] {
+  if (split.isGlobalOnly) return [paths.global];
+  if (split.globalAgentCount > 0) return [paths.global, paths.project];
+  return [paths.project];
+}
+
+/**
+ * What changing an assignment takes, in the order it takes it. The compile step is the half
+ * that has to be scope-aware: `compile` run in a project directory performs the PROJECT pass
+ * only, so it recompiles no global agent — which `globalScopedAgentsHint` already says, in
+ * the words `compile` itself says it in when it lands in the mirror image of this state.
+ */
+function customizationSteps(split: AgentScopeSplit, globalConfigPath: string): string[] {
+  if (split.isGlobalOnly) {
+    return [`Edit ${globalConfigPath}`, globalScopedAgentsHint(split.globalAgentCount)];
+  }
+
+  return [
+    `Edit ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`,
+    `Run '${CLI_INVOKE_COMMAND} compile' to regenerate agents`,
+    ...(split.globalAgentCount > 0 ? [globalScopedAgentsHint(split.globalAgentCount)] : []),
+  ];
 }
 
 export type DashboardData = {

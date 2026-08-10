@@ -1,12 +1,16 @@
+import path from "path";
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
+  configTsPath,
   configTypesTsPath,
   ensureBinaryExists,
   fileExists,
+  loadConfigOrFail,
+  readTestFile,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
@@ -107,6 +111,24 @@ describe("init wizard — mixed scope config split", () => {
       await expect({ dir: projectDir }).toHaveConfig({
         skillIds: [E2E_SKILL.react.id],
       });
+
+      // The project config is named for the project it configures — the same
+      // identity `eject` writes and the loader repairs a missing name to.
+      // Asserted on the written text as well as structurally: the loader
+      // SUPPLIES the directory name when the field is absent, so a structural
+      // read alone would pass over a config that never carried one.
+      const projectName = path.basename(projectDir);
+      expect(await readTestFile(configTsPath(projectDir))).toContain(`name: "${projectName}"`);
+      expect((await loadConfigOrFail(projectDir)).name).toBe(projectName);
+
+      // A MIXED install writes assignments into both files — a project-scoped
+      // skill on a project-scoped agent lands in the project's `stack`, and the
+      // global-scoped rest lands in the global one — so the closing block owes
+      // the user both paths. The project half already prints; the global half is
+      // the one this pins.
+      expect(result.output).toContain(STEP_TEXT.CONFIGURATION_LABEL);
+      expect(result.output).toContain(configTsPath(projectDir));
+      expect(result.output).toContain(configTsPath(fakeHome));
 
       // Global config should NOT contain the project-scoped skill (scope-specific check)
       const globalSkillIds = await readConfigSkillIds(fakeHome);

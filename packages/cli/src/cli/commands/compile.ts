@@ -1,5 +1,6 @@
 import { Flags } from "@oclif/core";
 import os from "os";
+import { unique } from "remeda";
 import { BaseCommand } from "../base-command";
 import { setVerbose, verbose } from "../utils/logger";
 import {
@@ -14,11 +15,12 @@ import {
 import {
   ConfigLoadError,
   effectivelyExcludedSkillIds,
+  isActiveAt,
   loadProjectConfig,
   loadProjectConfigFromDir,
   resolveSource,
 } from "../lib/configuration";
-import { getStackSkillIds } from "../lib/stacks";
+import { getStackSkillIds, resolveAgentConfigToSkills } from "../lib/stacks";
 import { loadSkillsMatrixFromSource, type UnusableSkillMetadata } from "../lib/loading";
 import { CLI_INVOKE_COMMAND, STANDARD_FILES } from "../consts";
 import { EXIT_CODES } from "../lib/exit-codes";
@@ -31,13 +33,21 @@ import {
   globalScopedAgentsHint,
   recompileSummary,
   registeredProjectUpdateSkipped,
+  scopeBlockedStackAssignment,
   skillMetadataUnusableDetail,
   skillMetadataUnusableError,
 } from "../utils/messages";
 import { reconcileTypesFromDisk, type GateReport } from "../lib/config-gate/index.js";
 import type { Installation } from "../lib/installation";
 import type { SkillScope } from "../types/config";
-import type { AgentDefinition, AgentName, SkillDefinitionMap } from "../types";
+import type {
+  AgentDefinition,
+  AgentName,
+  ProjectConfig,
+  SkillDefinitionMap,
+  SkillId,
+  StackAgentConfig,
+} from "../types";
 
 export default class Compile extends BaseCommand {
   static summary = "Compile agents using local skills and agent definitions";
@@ -200,6 +210,26 @@ export default class Compile extends BaseCommand {
   }
 
   /**
+   * `config.ts` is the hand-editable half of the pair, so it can declare a pair the scope
+   * rule forbids: a GLOBAL sub-agent whose stack carries a PROJECT-scoped skill. The
+   * compile-time filter in `buildCompileAgents` drops that reference on the way to the
+   * resolver and `compile` rewrites nothing in `config.ts`, so the row survives and is
+   * dropped again on every future run — while the recompile summary reports a clean pass
+   * over an agent that no longer carries what its own config says it does.
+   *
+   * The sibling of {@link warnUnresolvedStackSkills} one layer over: there the skill is
+   * missing from disk, here it is present and unreachable from that sub-agent.
+   */
+  private async warnScopeDroppedStackPairs(projectDir: string): Promise<void> {
+    const loaded = await loadProjectConfig(projectDir);
+    if (!loaded?.config.stack) return;
+
+    for (const [skillId, agentNames] of findScopeDroppedStackPairs(loaded.config)) {
+      this.warn(scopeBlockedStackAssignment(agentNames, skillId));
+    }
+  }
+
+  /**
    * The project pass compiled no agents, but the project config may still declare
    * global-scope agents whose stack lives in the global config. Without a pointer
    * the "No agents to recompile" line reads as a silent no-op after a global stack
@@ -304,6 +334,7 @@ export default class Compile extends BaseCommand {
     }
 
     await this.warnUnresolvedStackSkills(projectDir, allSkills);
+    await this.warnScopeDroppedStackPairs(projectDir);
 
     this.log(STATUS_MESSAGES.RECOMPILING_AGENTS);
     try {
@@ -416,6 +447,37 @@ function buildCompilePasses(
   }
 
   return [];
+}
+
+/**
+ * Every project-scoped skill that a GLOBAL sub-agent's stack assigns to itself, with the
+ * sub-agents that assign it — exactly the pairs `buildCompileAgents`' scope filter drops on
+ * the way to the resolver.
+ *
+ * Grouped by skill rather than emitted per pair, so one sentence accounts for every
+ * sub-agent one skill was kept away from.
+ */
+function findScopeDroppedStackPairs(config: ProjectConfig): [SkillId, AgentName[]][] {
+  const stack = config.stack ?? {};
+  const globalAgentNames = config.agents
+    .filter((agent) => isActiveAt(agent, "global"))
+    .map((agent) => agent.name);
+  const projectScopedIds = unique(
+    config.skills.filter((skill) => isActiveAt(skill, "project")).map((skill) => skill.id),
+  );
+
+  return projectScopedIds
+    .map((skillId): [SkillId, AgentName[]] => [
+      skillId,
+      globalAgentNames.filter((agentName) => stackAssignsSkill(stack[agentName], skillId)),
+    ])
+    .filter(([, agentNames]) => agentNames.length > 0);
+}
+
+/** True when this sub-agent's stack names the skill, in any of its categories. */
+function stackAssignsSkill(agentStack: StackAgentConfig | undefined, skillId: SkillId): boolean {
+  if (!agentStack) return false;
+  return resolveAgentConfigToSkills(agentStack).some((ref) => ref.id === skillId);
 }
 
 function formatDiscoveryMessage(result: DiscoveredSkills): string {

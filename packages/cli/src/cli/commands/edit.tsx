@@ -27,6 +27,8 @@ import {
   type ConfigWriteResult,
   compileAgentsAllScopes,
   discoverInstalledSkills,
+  removeCompiledAgents,
+  type RemoveCompiledAgentsOptions,
 } from "../lib/operations/index.js";
 import { Spinner } from "../components/common/spinner.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
@@ -67,12 +69,12 @@ import type {
 } from "../types/index.js";
 import { claudePluginInstall, claudePluginUninstall } from "../utils/exec.js";
 import { getErrorMessage } from "../utils/errors.js";
-import { remove } from "../utils/fs.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
   ERROR_MESSAGES,
   INFO_MESSAGES,
   STATUS_MESSAGES,
+  localSkillsCopied,
   recompileSummary,
 } from "../utils/messages.js";
 import { formatScopeTag } from "../lib/wizard/index.js";
@@ -201,12 +203,7 @@ export default class Edit extends BaseCommand {
     // copied skills and installed plugins by the time a config read fails.
     await this.ensureConfigReadable(cwd);
 
-    const { unmount, clear: clearSpinner } = render(
-      <Spinner label={STATUS_MESSAGES.LOADING_SKILLS} />,
-    );
-    const context = await this.loadContext();
-    clearSpinner();
-    unmount();
+    const context = await this.loadContextUnderSpinner();
 
     // Still before anything renders, one layer below the config itself: an entry whose skill
     // IS installed and whose metadata.yaml describes it no longer would otherwise be dropped
@@ -287,6 +284,26 @@ export default class Edit extends BaseCommand {
     await this.writeConfigAndCompile(result, context, cwd);
     await this.cleanupStaleAgentFiles(changes, activeOldAgents, cwd);
     this.logCompletionSummary(changes);
+  }
+
+  /**
+   * The load below, behind a spinner that comes down whichever way the await ends.
+   *
+   * The cleanup is a `finally` because all three of `loadContext`'s refusals are raised
+   * while this spinner is mounted, and oclif would otherwise paint its error under an Ink
+   * tree still repainting over it. Never a `catch`: the throw reaches oclif untouched, or
+   * both the error rendering and the pinned exit codes change with it.
+   */
+  private async loadContextUnderSpinner(): Promise<EditContext> {
+    const { unmount, clear: clearSpinner } = render(
+      <Spinner label={STATUS_MESSAGES.LOADING_SKILLS} />,
+    );
+    try {
+      return await this.loadContext();
+    } finally {
+      clearSpinner();
+      unmount();
+    }
   }
 
   private async loadContext(): Promise<EditContext> {
@@ -401,8 +418,16 @@ export default class Edit extends BaseCommand {
    * `executeMigration` acted on this run are rewritten, and only their `source` field. Global
    * entries this session merely displayed, re-scoped or deselected are untouched, as are
    * `marketplace`, `stack`, `agents` and every other registered project's view of them.
-   * Refusing the switch instead is not an option — driving a global-scope migration from a
-   * project directory is a supported flow (`scope-aware-local-copy` lifecycle tests).
+   *
+   * Driving a global-scope migration from a project directory is NOT a supported flow, and this
+   * method is no longer the thing that permits it. The wizard now refuses it at source: the two
+   * bulk install-mode keys are withdrawn, and `setInstallMode` ignores a project-context call
+   * against a global slot the hydration snapshot owns — the same authority the Sources grid
+   * already enforced by rendering that row inert. What still reaches here is the residue that
+   * authority leaves legitimate: a mode change committed on the project half of a `[P][G]` pair
+   * and then carried to global scope by a P->G collapse (`s`) in the same session. The entry is
+   * the project's own to configure at the moment it is configured, and global at the moment it
+   * is written — so the migration is real, and the global config must record it.
    *
    * Runs BEFORE `writeConfigAndCompile`, so the global config written here is the one
    * the wizard write reloads, keeps (existing wins in `mergeGlobalConfigs`) and inlines
@@ -551,6 +576,16 @@ export default class Edit extends BaseCommand {
       this.warn(warning);
     }
 
+    // The eject direction's own account of what it did. `executeMigration` copies each
+    // skill before it attempts the plugin uninstall, so the count is the work that
+    // landed; the uninstall is best-effort and diagnostic-only, and its successes stay
+    // at verbose level while its failures are already in `warnings` above.
+    if (migrationPlan.toEject.length > 0) {
+      this.log(
+        chalk.hex(CLI_COLORS.NEUTRAL)(localSkillsCopied(migrationResult.ejectedSkills.length)),
+      );
+    }
+
     // Reports what was installed and hard-errors on any failure: a migration whose
     // plugin could not be installed must not reach `recordGlobalSourceMigrations` or
     // `writeConfigAndCompile`, either of which would persist a marketplace `source`
@@ -690,7 +725,7 @@ export default class Edit extends BaseCommand {
 
     if (addedLocalSkills.length > 0) {
       const copyResult = await copyLocalSkills(addedLocalSkills, cwd, context.sourceResult);
-      this.log(chalk.hex(CLI_COLORS.NEUTRAL)(`Copied ${copyResult.totalCopied} local skill(s)`));
+      this.log(chalk.hex(CLI_COLORS.NEUTRAL)(localSkillsCopied(copyResult.totalCopied)));
     }
   }
 
@@ -745,6 +780,10 @@ export default class Edit extends BaseCommand {
       this.warn(`Could not update config: ${getErrorMessage(error)}`);
     }
 
+    if (configResult) {
+      this.reportUnassignedSkills(configResult.config);
+    }
+
     try {
       const agentScopeMap = activeAgentScopeMap(result.agentConfigs);
       const { allSkills } = await discoverInstalledSkills(cwd);
@@ -790,37 +829,12 @@ export default class Edit extends BaseCommand {
     oldAgents: AgentScopeConfig[],
     cwd: string,
   ): Promise<void> {
-    const { agentScopeChanges, removedAgents } = changes;
+    for (const removal of planStaleAgentRemovals(changes, oldAgents, cwd)) {
+      const { failed } = await removeCompiledAgents(removal);
 
-    // Clean up old agent .md files after scope changes.
-    // Recompilation wrote the new file to the correct scope directory;
-    // now delete the stale copy from the old scope directory.
-    // Only clean up for P→G direction. G→P is an override — the global
-    // installation stays untouched; the project copy overrides it.
-    for (const [agentName, change] of agentScopeChanges) {
-      if (change.from === "global") continue;
-
-      const oldAgentPath = path.join(
-        resolveInstallPaths(cwd, "project").agentsDir,
-        `${agentName}.md`,
-      );
-      try {
-        await remove(oldAgentPath);
-      } catch (error) {
-        this.warn(`Could not remove old agent file ${oldAgentPath}: ${getErrorMessage(error)}`);
-      }
-    }
-
-    // Deselected agents are a genuine uninstall — recompilation never rewrites their .md, so
-    // delete the compiled file from the scope it was installed at (D-233). remove() is a no-op
-    // when the file is absent.
-    for (const agentName of removedAgents) {
-      const oldScope = oldAgents.find((a) => a.name === agentName)?.scope ?? "project";
-      const agentPath = path.join(resolveInstallPaths(cwd, oldScope).agentsDir, `${agentName}.md`);
-      try {
-        await remove(agentPath);
-      } catch (error) {
-        this.warn(`Could not remove agent file ${agentPath}: ${getErrorMessage(error)}`);
+      for (const { name, error } of failed) {
+        const agentPath = path.join(removal.agentsDir, `${name}.md`);
+        this.warn(`Could not remove agent file ${agentPath}: ${error}`);
       }
     }
   }
@@ -968,6 +982,51 @@ function detectDualScopeTransitions<
     }
   }
   return result;
+}
+
+type StaleAgent = { name: AgentName; scope: SkillScope };
+
+/** Every scope a stale compiled agent can be sitting at. */
+const STALE_AGENT_SCOPES = ["project", "global"] as const satisfies readonly SkillScope[];
+
+/** The scope a deselected agent was installed at, for one absent from the old roster. */
+const UNRECORDED_AGENT_SCOPE: SkillScope = "project";
+
+function installedScope(name: AgentName, oldAgents: AgentScopeConfig[]): SkillScope {
+  return oldAgents.find((agent) => agent.name === name)?.scope ?? UNRECORDED_AGENT_SCOPE;
+}
+
+/**
+ * The compiled files an edit leaves stale, one removal per scope directory that
+ * holds any: the project copy a P→G move superseded, plus every deselected agent
+ * at the scope it was installed at.
+ *
+ * G→P moves are absent deliberately — that direction is an override, so the global
+ * installation stays untouched and the project copy shadows it. A scope with
+ * nothing to remove is absent too: only a directory this edit actually removed
+ * from is a directory this edit may tidy.
+ */
+function planStaleAgentRemovals(
+  changes: ConfigChanges,
+  oldAgents: AgentScopeConfig[],
+  cwd: string,
+): RemoveCompiledAgentsOptions[] {
+  const supersededByGlobal = [...changes.agentScopeChanges]
+    .filter(([, change]) => change.from !== "global")
+    .map(([name]): StaleAgent => ({ name, scope: "project" }));
+
+  const deselected = changes.removedAgents.map((name): StaleAgent => ({
+    name,
+    scope: installedScope(name, oldAgents),
+  }));
+
+  const stale = [...supersededByGlobal, ...deselected];
+  const removalAtScope = (scope: SkillScope): RemoveCompiledAgentsOptions => ({
+    agentsDir: resolveInstallPaths(cwd, scope).agentsDir,
+    agents: stale.filter((agent) => agent.scope === scope).map((agent) => agent.name),
+  });
+
+  return STALE_AGENT_SCOPES.map(removalAtScope).filter((removal) => removal.agents.length > 0);
 }
 
 function hasAnyChanges(changes: ConfigChanges): boolean {

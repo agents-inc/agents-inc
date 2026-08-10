@@ -1107,6 +1107,116 @@ describe("edit command mode migration with a failing plugin install", () => {
   });
 });
 
+// A project-scoped skill never reaches a global-scoped sub-agent. The rule is
+// correct and enforced at four layers; what no layer does is SAY it fired. Picked
+// alongside nothing but global sub-agents, the skill is copied to disk, assigned to
+// nothing, and reported as a clean install — so nothing tells the user it will
+// never be loaded.
+//
+// The command's own output is the only implementation-agnostic surface for this:
+// the warning may be raised by the generator, by the save, or by the command, and
+// all three reach here.
+
+/**
+ * The phrase the warning is asserted on. Mirrors `STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT`
+ * in `e2e/pages/constants.ts`, which carries the reasoning and is the one place an
+ * acceptable rewording has to land — this constant follows it.
+ */
+const ASSIGNED_TO_NO_AGENT_PHRASE = "is assigned to no sub-agent";
+
+describe("edit command reports a selected skill the scope filter left unassigned", () => {
+  let tempDir: string;
+  let projectDir: string;
+  let originalCwd: string;
+  let stderrChunks: string[] = [];
+  let origStderrWrite: typeof process.stderr.write;
+
+  const GLOBAL_AGENTS = buildAgentConfigs(["web-developer"], { scope: "global" });
+  const PROJECT_EJECT_REACT = buildSkillConfigs(["web-framework-react"], {
+    scope: "project",
+    source: EJECT_SOURCE,
+  });
+  const testSourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, "/test/source");
+  /**
+   * The save WRITES the global scope (`writeScopedFromWizard`'s project branch
+   * resolves `~/.claude-src/` through `os.homedir()` at runtime), so without this
+   * the run would write into the developer's own home.
+   *
+   * It does not isolate every read: `discoverInstalledSkills` reaches the global
+   * skills through `GLOBAL_INSTALL_ROOT`, a `consts.ts` constant evaluated at
+   * module load, which no spy and no `HOME` can reach. That leak predates this
+   * spec — the developer's own `~/.claude/skills/` entries show up as
+   * missing-metadata warnings in every `commands/` spec that runs `Edit.run` —
+   * and it is read-only, so it cannot affect what this one asserts.
+   */
+  const homedirSpy = vi.spyOn(os, "homedir");
+
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    tempDir = await createTempDir("cc-edit-unassigned-skill-");
+    projectDir = path.join(tempDir, "project");
+    await mkdir(projectDir, { recursive: true });
+    const fakeHome = path.join(tempDir, "fake-home");
+    await mkdir(fakeHome, { recursive: true });
+    homedirSpy.mockReturnValue(fakeHome);
+    process.chdir(projectDir);
+
+    stderrChunks = [];
+    // Saved to be assigned straight back onto the same object in afterEach, so it
+    // is called with the receiver it came from. Binding would restore a wrapper.
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- restored, not called
+    origStderrWrite = process.stderr.write;
+    process.stderr.write = function (str: unknown): boolean {
+      stderrChunks.push(String(str));
+      return true;
+    };
+
+    mockRender.mockClear();
+    mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
+    mockLoadSkillsMatrixFromSource.mockResolvedValue(testSourceResult);
+    initializeMatrix(testSourceResult.matrix);
+    mockDiscoverAllPluginSkills.mockResolvedValue({});
+    // The copy is what makes the skill real on disk while reaching no agent — the
+    // whole shape of the defect. Returning the copied entry keeps the run going
+    // past `copyNewLocalSkills` into the save that builds the stack.
+    mockCopySkillsToLocalFlattened.mockReset().mockResolvedValue([
+      {
+        skillId: "web-framework-react",
+        sourcePath: "/test/source/web-framework-react",
+        destPath: path.join(projectDir, ".claude/skills/web-framework-react"),
+        contentHash: "hash-unassigned",
+      },
+    ]);
+  });
+
+  afterEach(async () => {
+    process.stderr.write = origStderrWrite;
+    homedirSpy.mockRestore();
+    process.chdir(originalCwd);
+    await cleanupTempDir(tempDir);
+  });
+
+  it("names the skill that landed in no agent's stack", async () => {
+    mockProjectConfig(projectDir, {
+      name: "test-project",
+      agents: GLOBAL_AGENTS,
+      skills: [],
+    });
+    mockWizardCompletion(buildWizardResult(PROJECT_EJECT_REACT, { agentConfigs: GLOBAL_AGENTS }));
+
+    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+
+    // Proof of execution: the skill really was added and copied, so the run
+    // reached the save that builds the stack. Without this the warning assertion
+    // could pass vacuously on a run that never selected the skill at all.
+    expect(mockCopySkillsToLocalFlattened).toHaveBeenCalledOnce();
+
+    const stderr = stderrChunks.join("");
+    expect(stderr).toContain(ASSIGNED_TO_NO_AGENT_PHRASE);
+    expect(stderr).toContain("web-framework-react");
+  });
+});
+
 // Bug regression: migratePluginSkillScopes must NOT uninstall the global ("user")
 // plugin when re-scoping from global to project. The global registration is shared
 // across projects and must remain intact. Only project→global should uninstall.

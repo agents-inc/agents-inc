@@ -8,6 +8,7 @@ import {
   agentsPath,
   cleanupTempDir,
   completeWithLocalSources,
+  configTsPath,
   ensureBinaryExists,
   skillsPath,
 } from "../helpers/test-utils.js";
@@ -116,6 +117,33 @@ describe("default init from a project dir — global scope reporting", () => {
     expect(initOutput).toContain(STEP_TEXT.AGENTS_COMPILED_TO);
     expect(initOutput).toContain(agentsPath(fakeHome));
     expect(initOutput).not.toContain(agentsPath(projectDir));
+  });
+
+  /**
+   * The closing block has to name the config that actually holds the assignments.
+   * For a wholly global install driven from a project directory that is the GLOBAL
+   * config: the writer filters the project config's `stack` down to project-scoped
+   * agents, of which this install has none, so the project file carries no
+   * assignment at all — and `list` already names the global config for this same
+   * install, so two commands disagree today.
+   */
+  it("names the global config as the one holding the assignments", () => {
+    expect(initOutput).toContain(STEP_TEXT.CONFIGURATION_LABEL);
+    expect(initOutput).toContain(configTsPath(fakeHome));
+    expect(
+      initOutput,
+      "the project config carries no stack for a wholly global install, so naming it sends the user to a file with nothing in it",
+    ).not.toContain(configTsPath(projectDir));
+  });
+
+  /**
+   * And the second half of the same block: `compile` run in this cwd performs the
+   * PROJECT pass only, which recompiles no global agent. The wording already exists
+   * — `globalScopedAgentsHint`, which `compile` itself prints when it lands in the
+   * mirror-image of this state.
+   */
+  it("says where to compile from, given every agent is global-scoped", () => {
+    expect(initOutput).toContain(STEP_TEXT.COMPILE_GLOBAL_SCOPE_HINT);
   });
 
   it("counts globally installed skills and agents when list is piped", async () => {

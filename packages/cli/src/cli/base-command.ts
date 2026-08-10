@@ -1,6 +1,7 @@
 import { Command } from "@oclif/core";
 
 import chalk from "chalk";
+import { unique } from "remeda";
 
 import { CLI_COLORS, MIN_TERMINAL_SIZE } from "./consts.js";
 import { getErrorMessage } from "./utils/errors.js";
@@ -9,6 +10,8 @@ import {
   pluginsInstalled,
   propagatedRecompileSummary,
   savedSkillMetadataUnusableError,
+  scopeBlockedStackAssignment,
+  skillAssignedToNoAgent,
   skillMetadataUnusableDetail,
   STATUS_MESSAGES,
 } from "./utils/messages.js";
@@ -19,7 +22,16 @@ import {
 } from "./utils/terminal.js";
 import { EXIT_CODES } from "./lib/exit-codes.js";
 import type { ResolvedConfig } from "./lib/configuration/index.js";
-import type { MergedSkillsMatrix, SelectionValidation, SkillConfig } from "./types/index.js";
+import { isActiveAt } from "./lib/configuration/scope-predicates.js";
+import { getStackSkillIds } from "./lib/stacks/index.js";
+import type {
+  AgentName,
+  MergedSkillsMatrix,
+  ProjectConfig,
+  SelectionValidation,
+  SkillConfig,
+  SkillId,
+} from "./types/index.js";
 import { findConfigLoadFailures } from "./lib/configuration/project-config.js";
 import { findUnusableSavedSkillMetadata } from "./lib/skills/index.js";
 import { requireMarketplace } from "./lib/operations/source/require-marketplace.js";
@@ -69,6 +81,41 @@ function waitForTerminal(isSatisfied: () => boolean): Promise<void> {
     const interval = setInterval(check, TERMINAL_RESIZE_POLL_MS);
     process.stdout.on("resize", check);
   });
+}
+
+/** A selected skill no sub-agent's stack carries, and the sub-agents the scope rule blocked. */
+type UnassignedSkill = { skillId: SkillId; blockedBy: AgentName[] };
+
+/**
+ * Every active skill of a saved config that no agent's stack references, paired with the
+ * global-scoped sub-agents that could not have carried it.
+ *
+ * `blockedBy` is empty for a global-scoped skill: the scope rule had no say there, and the
+ * skill reached nothing for a different reason (no selected sub-agent the resolver
+ * considers it relevant to). Naming sub-agents there would blame the wrong rule.
+ */
+function findUnassignedSkills(config: ProjectConfig): UnassignedSkill[] {
+  const assignedIds = new Set(config.stack ? getStackSkillIds(config.stack) : []);
+  const globalAgentNames = config.agents
+    .filter((agent) => isActiveAt(agent, "global"))
+    .map((agent) => agent.name);
+
+  const unassignedIds = unique(
+    config.skills
+      .filter((skill) => !skill.excluded)
+      .map((skill) => skill.id)
+      .filter((skillId) => !assignedIds.has(skillId)),
+  );
+
+  return unassignedIds.map((skillId) => ({
+    skillId,
+    blockedBy: hasActiveProjectEntry(config.skills, skillId) ? globalAgentNames : [],
+  }));
+}
+
+/** True when an ACTIVE entry for this id sits at project scope — the only case the rule explains. */
+function hasActiveProjectEntry(skills: readonly SkillConfig[], skillId: SkillId): boolean {
+  return skills.some((skill) => skill.id === skillId && isActiveAt(skill, "project"));
 }
 
 /**
@@ -231,6 +278,29 @@ export abstract class BaseCommand extends Command {
       this.warn(warning);
     }
     this.log(propagatedRecompileSummary(rewrittenCount, unchangedCount, failedCount));
+  }
+
+  /**
+   * Names every selected skill this save left in no sub-agent's stack, and — where the
+   * scope rule is why — every sub-agent it was kept away from.
+   *
+   * Shared by `init` and `edit` for the reason {@link reportValidationErrors} is: both
+   * build the stack from the same rules over the same selection, so a skill that reaches
+   * nothing through one reaches nothing through the other. The rule being reported is
+   * CORRECT and nothing here changes it — a project-scoped skill installs, is written to
+   * `config.ts`, and is loaded by nobody, which every other surface reports as a clean
+   * install.
+   *
+   * `compile` says the same thing about the same shape one layer over, for a config
+   * hand-edited into it — see `Compile.warnScopeDroppedStackPairs`.
+   */
+  protected reportUnassignedSkills(config: ProjectConfig): void {
+    for (const { skillId, blockedBy } of findUnassignedSkills(config)) {
+      this.warn(skillAssignedToNoAgent(skillId));
+      if (blockedBy.length > 0) {
+        this.warn(scopeBlockedStackAssignment(blockedBy, skillId));
+      }
+    }
   }
 
   /**
