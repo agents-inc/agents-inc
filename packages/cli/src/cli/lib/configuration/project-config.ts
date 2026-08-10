@@ -41,14 +41,20 @@ export class ConfigLoadError extends Error {
  * Returns `null` only when the config file does not exist. When the file exists
  * but cannot be parsed into a usable config, throws {@link ConfigLoadError} —
  * the caller decides how to report it.
+ *
+ * The two lines it announces name the scope of the file it read, the way
+ * `loadSourceConfig`'s already do: the config at the home root is the GLOBAL one,
+ * and a run there that calls it a project config names a file that is not there.
  */
 export async function loadProjectConfigFromDir(
   projectDir: string,
 ): Promise<LoadedProjectConfig | null> {
   const configPath = getProjectConfigPath(projectDir);
+  const scope = isHomeDirectory(projectDir) ? "global" : "project";
+  const scopeLabel = scope === "project" ? "Project" : "Global";
 
   if (!(await fileExists(configPath))) {
-    verbose(`Project config not found at ${configPath}`);
+    verbose(`${scopeLabel} config not found at ${configPath}`);
     return null;
   }
 
@@ -103,7 +109,7 @@ export async function loadProjectConfigFromDir(
     ...(normalizedStack && { stack: normalizedStack }),
   } as ProjectConfig;
 
-  verbose(`Loaded project config from ${configPath}`);
+  verbose(`Loaded ${scope} config from ${configPath}`);
   return {
     config,
     configPath,

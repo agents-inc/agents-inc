@@ -7,6 +7,7 @@ import { projectSourceConfigSchema } from "../schemas";
 import type { ProjectConfig, SourceEntry } from "../../types";
 import { loadConfig } from "./config-loader";
 import { getProjectConfigPath } from "../installation/install-base-dir";
+import { isHomeDirectory } from "../installation/is-home-directory";
 
 export const DEFAULT_SOURCE = `${GITHUB_SOURCE.GITHUB_PREFIX}agents-inc/skills`;
 export const SOURCE_ENV_VAR = "CC_SOURCE";
@@ -72,10 +73,18 @@ async function loadSourceConfig(
   return data;
 }
 
+/**
+ * Load source config from a directory's own `.claude-src/config.ts`.
+ *
+ * The scope it announces is derived, not assumed: at the home root the file this reads
+ * IS the global config, and a caller asking a project question there — `doctor` deciding
+ * whether the cwd is a source repository — must not be told a project config was found
+ * where none exists.
+ */
 export async function loadProjectSourceConfig(
   projectDir: string,
 ): Promise<Partial<ProjectConfig> | null> {
-  return loadSourceConfig(projectDir, "project");
+  return loadSourceConfig(projectDir, isHomeDirectory(projectDir) ? "global" : "project");
 }
 
 /** Load source config from the global home directory (~/.claude-src/config.ts). */
@@ -92,13 +101,29 @@ type EffectiveSourceConfig = {
 async function loadEffectiveSourceConfig(
   projectDir?: string,
 ): Promise<EffectiveSourceConfig | null> {
-  const projectConfig = projectDir ? await loadProjectSourceConfig(projectDir) : null;
+  const projectConfig = await loadOwnProjectSourceConfig(projectDir);
   if (projectConfig) return { config: projectConfig, origin: "project" };
 
   const globalConfig = await loadGlobalSourceConfig();
   if (globalConfig) return { config: globalConfig, origin: "global" };
 
   return null;
+}
+
+/**
+ * A project's OWN source config, and nothing at the home root.
+ *
+ * `~/.claude-src/config.ts` is the global config, so reading it as a project's would label
+ * one file both things at once: `compile` naming `Source: project` beside
+ * `Compiling global agents...`, `edit` announcing `(project)` while refusing scope toggles
+ * as a global context. The axis is which FILE the settings were read from — never what
+ * scope the skill and agent entries inside it carry.
+ */
+async function loadOwnProjectSourceConfig(
+  projectDir: string | undefined,
+): Promise<Partial<ProjectConfig> | null> {
+  if (projectDir === undefined || isHomeDirectory(projectDir)) return null;
+  return loadProjectSourceConfig(projectDir);
 }
 
 /**
@@ -114,7 +139,7 @@ export async function resolveSource(request: ResolveSourceRequest): Promise<Reso
 
   if (flag !== undefined) {
     assertNamedSourceUsable(flag);
-    verbose(`Source from --source flag: ${flag}`);
+    verbose(`Source named by this run: ${flag}`);
     return { source: flag, sourceOrigin: "flag", ...marketplaceLabel };
   }
 
@@ -137,16 +162,26 @@ export async function resolveSource(request: ResolveSourceRequest): Promise<Reso
 }
 
 /**
- * Refuses a named source that cannot be one. Raised rather than warned: somebody typed
+ * How a source this run NAMED is referred to back to whoever named it.
+ *
+ * Origin-neutral on purpose: `--source` is `init`'s flag and nobody else's, while a
+ * `"stored"` caller may still name a source it is reading for its own sake — `doctor`
+ * points the loader at a source repository. Naming the flag in a sentence that caller
+ * reads blames an option it never passed.
+ */
+const NAMED_SOURCE_LABEL = "The source";
+
+/**
+ * Refuses a named source that cannot be one. Raised rather than warned: somebody named
  * this, so falling through to another source would install from a place they did not name.
  */
 function assertNamedSourceUsable(flag: string): void {
   if (flag.trim() === "") {
     throw new Error(
-      "--source flag cannot be empty. Provide a valid source: a local directory path or a git repository URL (e.g., './my-skills' or 'https://github.com/user/repo')",
+      `${NAMED_SOURCE_LABEL} cannot be empty. Provide a valid source: a local directory path or a git repository URL (e.g., './my-skills' or 'https://github.com/user/repo')`,
     );
   }
-  validateSourceFormat(flag.trim(), "--source");
+  validateSourceFormat(flag.trim(), NAMED_SOURCE_LABEL);
 }
 
 /**
@@ -256,7 +291,8 @@ const PRIVATE_IPV6_PATTERN =
  * Catches obviously invalid formats early with clear error messages.
  *
  * @param source - The trimmed, non-empty source value to validate
- * @param flagName - The flag name for error messages ("--source" or "--agent-source")
+ * @param flagName - What carried this value, as the error messages name it back: `init`'s
+ *   `--source`, {@link SOURCE_ENV_VAR}, or {@link NAMED_SOURCE_LABEL} when no flag did
  */
 export function validateSourceFormat(source: string, flagName: string): void {
   // Null bytes can bypass C-level string termination in downstream tools (giget, git)

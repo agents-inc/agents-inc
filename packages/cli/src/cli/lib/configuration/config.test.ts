@@ -3,7 +3,14 @@ import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
-import { buildSourceConfig } from "../__tests__/factories/config-factories.js";
+import { silenceConsole } from "../__tests__/helpers/silence-console.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+  buildSourceConfig,
+} from "../__tests__/factories/config-factories.js";
+import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
+import { setVerbose } from "../../utils/logger";
 import {
   DEFAULT_SOURCE,
   getProjectConfigPath,
@@ -15,6 +22,11 @@ import {
   validateSourceFormat,
 } from "./config";
 import { CLAUDE_SRC_DIR, DEFAULT_BRANDING, STANDARD_FILES } from "../../consts";
+
+/** A source named by the config that lives at the home root — i.e. the global one. */
+const HOME_CONFIG_SOURCE = "github:home/skills";
+/** A source named by a project's own `.claude-src/config.ts`. */
+const PROJECT_CONFIG_SOURCE = "github:project-of-its-own/skills";
 
 describe("config", () => {
   let tempDir: string;
@@ -398,11 +410,17 @@ describe("config", () => {
 
   describe("resolveSource", () => {
     let savedHome: string;
+    let homeDir: string;
 
-    beforeEach(() => {
+    beforeEach(async () => {
       savedHome = process.env.HOME ?? "";
-      // Point HOME to temp dir so resolveSource doesn't fall back to real ~/.claude-src/
-      process.env.HOME = tempDir;
+      // Point HOME inside the temp dir so resolveSource doesn't fall back to real
+      // ~/.claude-src/ — and keep it a DIFFERENT directory from `tempDir`, which
+      // stands in for the project. Collapsed into one directory there is only one
+      // config file, and the project rung cannot be told apart from the global one.
+      homeDir = path.join(tempDir, "home");
+      await mkdir(homeDir, { recursive: true });
+      process.env.HOME = homeDir;
     });
 
     afterEach(() => {
@@ -481,13 +499,13 @@ describe("config", () => {
     it("should throw error for empty source flag", async () => {
       await expect(
         resolveSource({ caller: "init", flag: "", projectDir: tempDir }),
-      ).rejects.toThrow(/--source flag cannot be empty/);
+      ).rejects.toThrow(/The source cannot be empty/);
     });
 
     it("should throw error for whitespace-only source flag", async () => {
       await expect(
         resolveSource({ caller: "init", flag: "   ", projectDir: tempDir }),
-      ).rejects.toThrow(/--source flag cannot be empty/);
+      ).rejects.toThrow(/The source cannot be empty/);
     });
 
     it("should throw error for incomplete github: URL in flag", async () => {
@@ -647,6 +665,88 @@ describe("config", () => {
         const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
         expect(result.marketplace).toBeUndefined();
+      });
+    });
+
+    describe("the config at the home root is the global one", () => {
+      it("should label a source read at the home root as global", async () => {
+        await writeTestTsConfig(homeDir, buildSourceConfig({ source: HOME_CONFIG_SOURCE }));
+
+        const result = await resolveSource({ caller: "stored", projectDir: homeDir });
+
+        expect(result.source).toBe(HOME_CONFIG_SOURCE);
+        expect(
+          result.sourceOrigin,
+          "~/.claude-src/config.ts is the global config — running from the home root does not make it a project's",
+        ).toBe("global");
+      });
+
+      it("should label a source read from a project's own config as project", async () => {
+        await writeTestTsConfig(tempDir, buildSourceConfig({ source: PROJECT_CONFIG_SOURCE }));
+        await writeTestTsConfig(homeDir, buildSourceConfig({ source: HOME_CONFIG_SOURCE }));
+
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
+
+        expect(result.source).toBe(PROJECT_CONFIG_SOURCE);
+        expect(result.sourceOrigin).toBe("project");
+      });
+
+      it("should label a project config carrying only global-scoped entries as project", async () => {
+        await writeTestTsConfig(tempDir, {
+          ...buildProjectConfig({
+            skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+            agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+          }),
+          source: PROJECT_CONFIG_SOURCE,
+        });
+
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
+
+        expect(
+          result.sourceOrigin,
+          "the origin names the file the source was read from, not the scope the entries in it carry",
+        ).toBe("project");
+      });
+
+      it("should fall back to the global config from a project that has none", async () => {
+        await writeTestTsConfig(homeDir, buildSourceConfig({ source: HOME_CONFIG_SOURCE }));
+
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
+
+        expect(result.source).toBe(HOME_CONFIG_SOURCE);
+        expect(result.sourceOrigin).toBe("global");
+      });
+    });
+
+    describe("the verbose line for a named source", () => {
+      const consoleSpies = silenceConsole(["log"]);
+      let namedSource: string;
+
+      beforeEach(() => {
+        namedSource = path.join(tempDir, "source-repo");
+        setVerbose(true);
+      });
+
+      afterEach(() => {
+        setVerbose(false);
+      });
+
+      it("should not claim a --source flag for a caller that has none", async () => {
+        // `doctor` validates a source repository by pointing the loader at a path.
+        // It is a stored caller: `--source` is `init`'s flag and nobody else's.
+        await resolveSource({ caller: "stored", flag: namedSource, projectDir: tempDir });
+
+        expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringContaining(namedSource));
+        expect(
+          consoleSpies.log,
+          "no --source flag was passed to this run, so the line must not say one was",
+        ).not.toHaveBeenCalledWith(expect.stringContaining("--source"));
+      });
+
+      it("should still name the source init passed as its flag", async () => {
+        await resolveSource({ caller: "init", flag: namedSource, projectDir: tempDir });
+
+        expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringContaining(namedSource));
       });
     });
   });

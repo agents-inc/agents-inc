@@ -423,8 +423,8 @@ describe("compile command", () => {
       expect(output).toContain("Discovered 1 local skills");
       expect(
         output,
-        "the source came from the project's own config, not from a flag or the environment",
-      ).toContain("Source: project");
+        "the source came from the config the installation recorded — this run's cwd is its home root, so that config is the global one",
+      ).toContain("Source: global");
       expect(output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
 
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
@@ -437,6 +437,139 @@ describe("compile command", () => {
         E2E_AGENT["api-developer"].name,
         {
           contains: ["name: api-developer"],
+        },
+      );
+    });
+
+    it("should name the source global when compiling at the home root", async () => {
+      tempDir = await createTempDir();
+      const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
+      sourceTempDir = srcTempDir;
+
+      // The home root holds the GLOBAL config. There is no project here, so the
+      // config the run reads is `~/.claude-src/config.ts` and nothing else.
+      const globalHome = path.join(tempDir, "global-home");
+      await writeProjectConfig(globalHome, {
+        name: "global-install",
+        skills: [],
+        agents: [
+          { name: E2E_AGENT["web-developer"].name, scope: "global" },
+          { name: E2E_AGENT["api-developer"].name, scope: "global" },
+        ],
+        source: sourceDir,
+      });
+      await createLocalSkill(globalHome, "web-state-pinia", {
+        description: "Skill for home-root source labelling",
+        metadata: renderMetadataYaml({ contentHash: "hash-home-root" }),
+      });
+
+      const { exitCode, output } = await CLI.run(
+        ["compile"],
+        { dir: globalHome },
+        { env: { HOME: globalHome } },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(output, "the home root compiles the global installation").toContain(
+        "Compiling global agents",
+      );
+      expect(output).toContain("Discovered 1 local skills");
+      expect(
+        output,
+        "the source came from the global config — the home root has no project config to read",
+      ).toContain("Source: global");
+
+      await expect({ dir: globalHome }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer"],
+        },
+      );
+    });
+
+    it("should name the config it read at the home root as the global one", async () => {
+      tempDir = await createTempDir();
+      const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
+      sourceTempDir = srcTempDir;
+
+      const globalHome = path.join(tempDir, "global-home");
+      await writeProjectConfig(globalHome, {
+        name: "global-install",
+        skills: [],
+        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
+        source: sourceDir,
+      });
+      await createLocalSkill(globalHome, "web-state-pinia", {
+        description: "Skill for home-root config labelling",
+        metadata: renderMetadataYaml({ contentHash: "hash-home-verbose" }),
+      });
+
+      const { exitCode, output } = await CLI.run(
+        ["compile", "--verbose"],
+        { dir: globalHome },
+        { env: { HOME: globalHome } },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(output, "the home root compiles the global installation").toContain(
+        "Compiling global agents",
+      );
+      // Scoped to the home directory by path: a verbose run also reads the SOURCE
+      // repository's own config, and that one is not global.
+      expect(output, "the verbose run names the config it read at the home root").toContain(
+        `global config from ${globalHome}`,
+      );
+      expect(
+        output,
+        "there is no project config at the home root — the file it read is the global one",
+      ).not.toContain(`project config from ${globalHome}`);
+    });
+
+    it("should name the source project when the project is not the home root", async () => {
+      tempDir = await createTempDir();
+      const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
+      sourceTempDir = srcTempDir;
+
+      // A home with no installation of its own, so the only config in play is the
+      // project's — the axis is which FILE the source came from, not which scope
+      // the entries in it carry.
+      const separateHome = path.join(tempDir, "home");
+      await mkdir(separateHome, { recursive: true });
+
+      const projectDir = path.join(tempDir, "project");
+      await writeProjectConfig(projectDir, {
+        name: "e2e-test",
+        skills: [],
+        agents: [
+          { name: E2E_AGENT["web-developer"].name, scope: "global" },
+          { name: E2E_AGENT["api-developer"].name, scope: "global" },
+        ],
+        source: sourceDir,
+      });
+      await createLocalSkill(projectDir, "web-state-pinia", {
+        description: "Skill for project source labelling",
+        metadata: renderMetadataYaml({ contentHash: "hash-project-root" }),
+      });
+
+      const { exitCode, output } = await CLI.run(
+        ["compile"],
+        { dir: projectDir },
+        { env: { HOME: separateHome } },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(output, "a project directory compiles the project installation").toContain(
+        "Compiling project agents",
+      );
+      expect(
+        output,
+        "the source came from the project's own config, whatever scope its entries carry",
+      ).toContain("Source: project");
+
+      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
+        E2E_AGENT["web-developer"].name,
+        {
+          contains: ["name: web-developer"],
         },
       );
     });

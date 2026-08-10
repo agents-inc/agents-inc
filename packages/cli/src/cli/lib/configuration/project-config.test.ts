@@ -1,13 +1,19 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadProjectConfig, validateProjectConfig } from "./project-config";
+import {
+  loadProjectConfig,
+  loadProjectConfigFromDir,
+  validateProjectConfig,
+} from "./project-config";
 import { generateProjectConfigFromSkills } from "./config-generator";
 import { generateConfigSource } from "./config-writer";
 import type { AgentName } from "../../types";
 import { initializeMatrix } from "../matrix/matrix-provider";
+import { setVerbose } from "../../utils/logger";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
+import { silenceConsole } from "../__tests__/helpers/silence-console.js";
 import { buildProjectConfig, buildAgentConfigs } from "../__tests__/factories/config-factories.js";
 import { sa } from "../__tests__/factories/skill-factories.js";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
@@ -185,6 +191,67 @@ describe("project-config", () => {
       );
 
       await expect(loadProjectConfig(tempDir)).rejects.toThrow("could not be loaded");
+    });
+  });
+
+  describe("loadProjectConfigFromDir verbose reporting", () => {
+    const consoleSpies = silenceConsole(["log"]);
+    let savedHome: string;
+    let homeDir: string;
+
+    beforeEach(async () => {
+      savedHome = process.env.HOME ?? "";
+      // The home root and the project are different directories, so the line the
+      // loader prints has something to be right or wrong about.
+      homeDir = path.join(tempDir, "home");
+      await mkdir(homeDir, { recursive: true });
+      process.env.HOME = homeDir;
+      setVerbose(true);
+    });
+
+    afterEach(() => {
+      setVerbose(false);
+      process.env.HOME = savedHome;
+    });
+
+    it("should announce a config loaded from the home root as the global one", async () => {
+      await writeTestTsConfig(homeDir, buildProjectConfig());
+
+      const result = await loadProjectConfigFromDir(homeDir);
+
+      expect(result).not.toBeNull();
+      expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringMatching(/global config/i));
+      expect(
+        consoleSpies.log,
+        "the file at the home root is the global config — calling it the project config is a false claim",
+      ).not.toHaveBeenCalledWith(expect.stringMatching(/project config/i));
+    });
+
+    it("should announce a config missing from the home root as the global one", async () => {
+      const result = await loadProjectConfigFromDir(homeDir);
+
+      expect(result).toBeNull();
+      expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringMatching(/global config/i));
+      expect(
+        consoleSpies.log,
+        "an absent global config is not an absent project config",
+      ).not.toHaveBeenCalledWith(expect.stringMatching(/project config/i));
+    });
+
+    it("should announce a config loaded from a project as the project one", async () => {
+      await writeTestTsConfig(tempDir, buildProjectConfig());
+
+      const result = await loadProjectConfigFromDir(tempDir);
+
+      expect(result).not.toBeNull();
+      expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringMatching(/project config/i));
+    });
+
+    it("should announce a config missing from a project as the project one", async () => {
+      const result = await loadProjectConfigFromDir(tempDir);
+
+      expect(result).toBeNull();
+      expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringMatching(/project config/i));
     });
   });
 
