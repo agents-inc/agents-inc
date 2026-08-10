@@ -966,3 +966,67 @@ when it lands rather than ticking it off, so this file is the only record that i
   rewrites needed because nothing had asserted the noise. The narrowing is the CLI-451 ruling
   one dataset over: built-ins serve the default catalog, custom sources get only what applies
   to them. Spawned CLI-477 (invariant 4 — built-in slug freshness — is enforced by nothing).
+
+## 2026-08-10 — the pass-5 fix programme (16 rows, all landed UNCOMMITTED in the working tree)
+
+Every row below was driven through the repository's full flow: tests written and watched RED first,
+then the fix, then the meta-design-expressive-typescript skill over the changed code, then the real
+binary hand-run under a scratch HOME, then an adversarial verifier that re-ran everything and checked
+the red-then-green was genuine rather than a weakened assertion. Adjudications, evidence and the
+honest diff against two earlier (wrong) rounds are in
+[`plans/cli-flow-verification-fifth-pass-2026-08-10.md`](./plans/cli-flow-verification-fifth-pass-2026-08-10.md).
+
+- **CLI-481** — a skill's `metadata.yaml` category now reaches the marketplace: threaded through
+  `PluginManifest` → the strict schema → the manifest generator → the marketplace entry, so
+  `build marketplace`'s breakdown stops reporting everything as `uncategorized`. The recorded
+  `it.fails("carries a category on every plugin entry")` is green. Verified against the REAL Claude
+  CLI (2.1.226): it accepts the extra `plugin.json` key, two live plugin installs, exit 0 — the
+  fallback was never needed. Also regenerated `src/schemas/plugin.schema.json`, which
+  `additionalProperties: false` would otherwise have failed at the next publish.
+- **CLI-484** — `list` counted plugin skills from a single `settings.json`, so a plugin install
+  reported `Skills: 0` from a project directory. It now merges the scopes it already computes, by id.
+- **CLI-487** (with L-16) — revalidation memoised its verdict but not its side effects, so a moved
+  source was torn down and re-downloaded on every later load in the same run (a full duplicate
+  tarball for `github:` sources) and printed its notice twice. Seeded the memo after a successful
+  re-fetch; moved the unreachable warning inside the memoised classification.
+- **CLI-490** — `search`'s `ID` column rendered display names and its `Source` column the hardcoded
+  string `"marketplace"` for every row, local skills included. Both now tell the truth.
+- **CLI-470 leg 1** — the uninstall preview promised to remove compiled agents it then kept. Legs 2
+  and 3 (the body-comment provenance marker and the marker-driven sweep) stay on hold.
+- **CLI-488** — at the home root the resolver labelled the GLOBAL config "project", so `compile`,
+  `edit` and `doctor` all said "project" for a global install; and `resolveSource` named a `--source`
+  flag the running command refuses.
+- **CLI-480** — emptied `.claude/skills` and `.claude/agents` survived a full collapse, and a
+  project-only install pre-created an empty `~/.claude/agents/`. Emptiness is filesystem emptiness,
+  so a hand-authored agent keeps its directory.
+- **CLI-494** — uninstall computed its preview and its removal from two independent predicates kept
+  in sync by a comment. One plan is now computed, rendered and executed, so the preview cannot lie.
+- **CLI-495** — the "prune the parent when it empties" policy was a caller responsibility across six
+  sites and `edit.tsx` had forgotten it. One operation owns compiled-agent removal and its directory.
+- **CLI-478** — generated output orders itself: canonical stack category order in the generator, and
+  `config.ts` field order canonical in both writers, so emission is a fixed point. Accepted cost,
+  ruled: every installed config and compiled agent rewrites once on its next save.
+- **CLI-483** — toggling a sub-agent global→project silently rebuilt its stack from relevance
+  defaults and shrank its compiled catalogue 7 skills → 4. The curation carrier now reads the global
+  config too, so a scope change moves where an agent lives, never what it knows.
+- **CLI-482** — project configs carry the project directory's name. Landed in two parts: the
+  hardcoded seed, then the residual its own verifier caught — a config loaded from the `$HOME`
+  fallback was donating its `name` to the project through the merge.
+- **CLI-485** — `init`'s closing block told the user to edit a config that carries no assignments and
+  to compile from a directory whose pass recompiles nothing global.
+- **CLI-486** — every refusal inside `edit`'s and `init`'s context load fired under a mounted
+  spinner, so the error frame painted over a live spinner. `try`/`finally`, never `catch`.
+- **CLI-489** — the plugin→eject direction returned `ejectedSkills` and reported nothing.
+- **CLI-491** — the scope filter correctly drops a project skill from a global agent, and said
+  nothing; both surfaces now name the skill and the pair.
+- **CLI-479** — the Sources bulk hotkeys reached through the 🔒 lock: a project edit could flip an
+  inherited global row's install mode, run a real `claude plugin install` and rewrite the global
+  config. The docs' own "Known Gap". Keys withdrawn, the surviving `setInstallMode` gated
+  slot-keyed against the hydration snapshot, and the two page objects re-pointed to a per-row walk so
+  all 84 affected specs kept working. `edit-project-source-migration-propagates` was retired
+  (`describe.skip`) with a header recording that its defect is closed by construction, not fixed —
+  spawned CLI-496.
+
+Also this day: **CLI-472** and **CLI-474** closed by the marketplace publish (`eject skills --force`
+ejects 238 skills, exit 0); **F-1** and **F-2** from the fourth pass confirmed fixed at the source
+(all 102 published category values are in the CLI's table; `doctor` exits 0, 12/0/0).

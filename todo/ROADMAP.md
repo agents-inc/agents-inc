@@ -4,7 +4,14 @@ A sequencing view over the six per-workspace trackers. **The trackers stay canon
 live there with their detail, land there, and archive there; this file only orders them and is
 updated whenever a phase moves. IDs link back by grep.
 
-## Phase 0 — in flight right now
+## Phase 0 — status (updated 2026-08-10)
+
+**Read [`SESSION-STATE-2026-08-10.md`](./SESSION-STATE-2026-08-10.md) first.** The pass-5 fix
+programme landed 16 rows plus CLI-481, all UNCOMMITTED in the working tree; full unit and e2e suites
+green. Remaining from that programme: **CLI-492**, **CLI-493** (docs), **CLI-496**, **CLI-497** — and
+the commit round, which is the owner's.
+
+## Phase 0 (original) — in flight
 
 1. The fourth full journey pass (all 21 testable journeys on the real binary; findings compiled).
 2. **CLI-471** — the e2e fixture's skill-rules reference only skills it ships (queued behind the pass).
