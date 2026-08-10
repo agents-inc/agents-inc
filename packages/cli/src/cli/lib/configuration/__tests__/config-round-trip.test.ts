@@ -211,6 +211,40 @@ describe("config round-trip", () => {
     ]);
   });
 
+  /**
+   * Loading a config.ts and writing it straight back out must land on the same
+   * bytes. Every re-emit — a propagation fan-out, an eject, a merge — starts
+   * from a config that came off disk, so a writer that is not a fixed point
+   * rewrites files nothing changed and asks the user to read the diff.
+   */
+  it("re-emits a config it just loaded with the same bytes", async () => {
+    const config = buildProjectConfig({
+      name: "fixed-point-project",
+      agents: buildAgentConfigs(["web-developer"]),
+      skills: buildSkillConfigs(["web-framework-react", "web-styling-tailwind"]),
+      source: TEST_SOURCE_URL,
+      author: "@vince",
+      stack: {
+        "web-developer": {
+          "web-styling": [{ id: "web-styling-tailwind" }],
+          "web-framework": [{ id: "web-framework-react" }],
+        },
+      },
+    });
+    const firstEmission = generateConfigSource(config);
+
+    const loaded = await writeAndLoadProjectConfig(config);
+
+    // Subject guard: the values really did survive the round trip, so the byte
+    // comparison below is about ORDER and not about a config that came back empty.
+    expect(loaded.source).toBe(TEST_SOURCE_URL);
+    expect(loaded.author).toBe("@vince");
+    expect(
+      generateConfigSource(loaded),
+      "writing back a config just read off disk must not move a single byte",
+    ).toBe(firstEmission);
+  });
+
   it("omits undefined fields in round-trip", async () => {
     const config = buildProjectConfig({
       name: "sparse-project",

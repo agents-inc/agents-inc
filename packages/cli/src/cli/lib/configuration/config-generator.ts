@@ -225,9 +225,32 @@ function toStackAssignment(
   return load === "preloaded" ? { id, preloaded: true } : { id };
 }
 
+/**
+ * The selection's categories in the matrix's own declaration order, so a newly
+ * built stack's key order is a property of the roster rather than of the order
+ * the skills happened to be picked in — two sessions that select the same
+ * skills emit the same bytes, and an agent whose skill set did not change is
+ * not rewritten. A category the matrix does not declare sorts after every
+ * declared one, keeping the order it arrived in.
+ */
+function inCanonicalCategoryOrder(
+  activeSkillsByCategory: Map<Category, SkillId[]>,
+): [Category, SkillId[]][] {
+  const declarationRank = new Map(
+    typedKeys<Category>(matrix.categories).map((category, rank) => [category, rank] as const),
+  );
+  // A category the matrix does not declare has no rank of its own; one past the
+  // last declared category places it after every declared one.
+  const afterEveryDeclared = declarationRank.size;
+  const rankOf = (category: Category): number =>
+    declarationRank.get(category) ?? afterEveryDeclared;
+
+  return [...activeSkillsByCategory].sort(([a], [b]) => rankOf(a) - rankOf(b));
+}
+
 function buildAgentStack(agent: AgentName, inputs: StackBuildInputs): StackAgentConfig | undefined {
   const agentStack: StackAgentConfig = {};
-  for (const [category, skillIds] of inputs.activeSkillsByCategory) {
+  for (const [category, skillIds] of inCanonicalCategoryOrder(inputs.activeSkillsByCategory)) {
     const assignments = skillIds
       .filter((id) => isScopeCompatible(id, agent, inputs.skillScope, inputs.agentScope))
       .filter((id) => shouldIncludeTriple(agent, category, id, inputs))

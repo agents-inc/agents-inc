@@ -31,6 +31,43 @@ export type ConfigSourceOptions = {
 /** Fields that are extracted into typed named variables below the export default */
 const EXTRACTED_FIELDS = new Set(["skills", "agents", "stack", "selectedDomains"]);
 
+/**
+ * The loader schema's own field order, which is the order a config read back off
+ * disk arrives in. Emitting in it is what makes the writer a fixed point: the
+ * three producers of an in-memory config — the wizard's literal, a Zod-parsed
+ * load, a merge that appends at the tail — insert their keys in three different
+ * orders, and without this the same values would emit as three different files.
+ */
+const CANONICAL_FIELD_ORDER = [
+  "name",
+  "description",
+  "agents",
+  "skills",
+  "author",
+  "selectedDomains",
+  "stack",
+  "source",
+  "marketplace",
+  "agentsSource",
+  "projects",
+] as const satisfies readonly (keyof ProjectConfig)[];
+
+const CANONICAL_FIELDS = new Set<string>(CANONICAL_FIELD_ORDER);
+
+/**
+ * The cleaned record rebuilt in canonical order. A key the schema does not name
+ * is passthrough data the writer has no order of its own to impose, so those
+ * keep the order they arrived in, after every field the schema does name.
+ */
+function canonicalizeFieldOrder(cleaned: Record<string, unknown>): Record<string, unknown> {
+  const inSchemaOrder: [string, unknown][] = CANONICAL_FIELD_ORDER.filter(
+    (key) => key in cleaned,
+  ).map((key) => [key, cleaned[key]]);
+  const passthrough = Object.entries(cleaned).filter(([key]) => !CANONICAL_FIELDS.has(key));
+
+  return Object.fromEntries([...inSchemaOrder, ...passthrough]);
+}
+
 /** One config entry as an indented array-element line. */
 function renderEntryLine(entry: unknown): string {
   return `  ${JSON.stringify(entry)},`;
@@ -72,9 +109,10 @@ function extractConfigArrays(cleaned: Record<string, unknown>): ConfigArrays {
  */
 /**
  * Shared pre-emission cleanup: JSON round-trip (drops undefined values), optional
- * `projects` removal (project configs never emit the global tracking list), and
+ * `projects` removal (project configs never emit the global tracking list),
  * stack compaction (strip flag-less assignments to bare strings while preserving
- * SkillAssignment[] arrays).
+ * SkillAssignment[] arrays), and canonical field ordering so the emitted bytes
+ * are decided by the config's values alone.
  */
 function cleanForEmission(
   config: ProjectConfig,
@@ -93,7 +131,7 @@ function cleanForEmission(
       cleaned.stack as Record<string, Record<string, unknown[]>>,
     );
   }
-  return cleaned;
+  return canonicalizeFieldOrder(cleaned);
 }
 
 export function generateConfigSource(config: ProjectConfig, options?: ConfigSourceOptions): string {
@@ -371,6 +409,23 @@ function partitionInlinedConfigEntries(
 }
 
 /**
+ * Every scalar the inlined snapshot emits, as ONE canonically-ordered sequence.
+ * The project's value wins where it carries one, and the global supplies the
+ * rest. A global block followed by a project block could not promise this: the
+ * first emission writes every global scalar into the project's own file, so on
+ * the next re-emit those same keys arrive from the project half instead and two
+ * blocks would order them differently for values that never changed.
+ */
+function mergeInlinedScalarFields(
+  cleaned: Record<string, unknown>,
+  cleanedGlobal: Record<string, unknown>,
+): [string, unknown][] {
+  return Object.entries(canonicalizeFieldOrder({ ...cleanedGlobal, ...cleaned })).filter(
+    ([key]) => !EXTRACTED_FIELDS.has(key) && key !== "name",
+  );
+}
+
+/**
  * Generates a project config with global skills/agents inlined directly.
  * No `import globalConfig` — the output is a self-contained readable snapshot.
  * Global items appear first with a `// global` comment, followed by project items
@@ -439,19 +494,11 @@ function generateProjectConfigWithInlinedGlobal(
     lines.push(`const selectedDomains: Domain[] = [${items}];`);
   }
 
-  // Scalar fields: project values take precedence; global values emit first when not overridden
-  const projectScalarFields = Object.entries(cleaned).filter(
-    ([key]) => !EXTRACTED_FIELDS.has(key) && key !== "name",
-  );
-  const projectScalarKeys = new Set(projectScalarFields.map(([key]) => key));
-  const globalScalarFields = Object.entries(cleanedGlobal).filter(
-    ([key]) => !EXTRACTED_FIELDS.has(key) && key !== "name" && !projectScalarKeys.has(key),
-  );
+  const scalarFields = mergeInlinedScalarFields(cleaned, cleanedGlobal);
 
   const exportFields: string[] = [
     `  name: ${JSON.stringify(resolveProjectName(cleaned))},`,
-    ...globalScalarFields.map(([key, value]) => renderScalarField(key, value)),
-    ...projectScalarFields.map(([key, value]) => renderScalarField(key, value)),
+    ...scalarFields.map(([key, value]) => renderScalarField(key, value)),
     hasSkills ? `  skills,` : `  skills: [],`,
     hasAgents ? `  agents,` : `  agents: [],`,
     ...(hasStack ? [`  stack,`] : []),

@@ -1268,6 +1268,81 @@ describe("generateConfigSource", () => {
       expect(source).toContain('"marketplace": "custom-marketplace"');
     });
   });
+
+  /**
+   * The emitted file is what `writeIfChanged` compares, so two configs carrying
+   * the same values owe the same bytes however the in-memory object was
+   * assembled. Three producers assemble one — the wizard's literal, a config
+   * read back through the loader schema, and a merge that appends at the tail —
+   * and a config.ts that changes because its keys were inserted in a different
+   * order is a diff the user is asked to read for no reason.
+   */
+  describe("field order follows the config's values, not the object's insertion order", () => {
+    it("emits the same bytes for two configs that differ only in key insertion order", () => {
+      const author = "@tester";
+      const skillsSource = "/path/to/skills";
+      const sourceFirst = generateConfigSource(
+        buildProjectConfig({ name: "insertion-order", source: skillsSource, author }),
+      );
+      const authorFirst = generateConfigSource(
+        buildProjectConfig({ name: "insertion-order", author, source: skillsSource }),
+      );
+
+      // Subject guard: both really carry both scalars, so the equality below is
+      // not comparing two outputs that emitted neither.
+      expect(sourceFirst).toContain(`"author": "${author}"`);
+      expect(sourceFirst).toContain(`"source": "${skillsSource}"`);
+      expect(authorFirst, "config.ts bytes must be decided by the config's values alone").toBe(
+        sourceFirst,
+      );
+    });
+
+    it("emits the inlined global and project scalars as one order, whichever half carried them", () => {
+      const globalConfig = buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+        agents: buildAgentConfigs(["web-researcher"], { scope: "global" }),
+        author: "@tester",
+        source: "/path/to/skills",
+        marketplace: "agents-inc",
+      });
+      // The same effective values, split two ways. This pair IS a load/re-emit
+      // round trip: the first emission inlines the global scalars into the file,
+      // so the project half read back off disk carries every one of them.
+      const inheritsMostScalars = buildProjectConfig({
+        name: "my-project",
+        skills: buildSkillConfigs(["web-styling-tailwind"]),
+        agents: buildAgentConfigs(["web-developer"]),
+        source: "/path/to/skills",
+      });
+      const carriesEveryScalar = buildProjectConfig({
+        name: "my-project",
+        skills: buildSkillConfigs(["web-styling-tailwind"]),
+        agents: buildAgentConfigs(["web-developer"]),
+        author: "@tester",
+        source: "/path/to/skills",
+        marketplace: "agents-inc",
+      });
+
+      const beforeRoundTrip = generateConfigSource(inheritsMostScalars, {
+        isProjectConfig: true,
+        globalConfig,
+      });
+      const afterRoundTrip = generateConfigSource(carriesEveryScalar, {
+        isProjectConfig: true,
+        globalConfig,
+      });
+
+      // Subject guard: the merged union really is all three scalars.
+      expect(beforeRoundTrip).toContain('"author": "@tester"');
+      expect(beforeRoundTrip).toContain('"source": "/path/to/skills"');
+      expect(beforeRoundTrip).toContain('"marketplace": "agents-inc"');
+      expect(
+        afterRoundTrip,
+        "the inlined scalar union must be one ordered sequence, not a global block then a project block",
+      ).toBe(beforeRoundTrip);
+    });
+  });
 });
 
 describe("generateBlankGlobalConfigSource", () => {

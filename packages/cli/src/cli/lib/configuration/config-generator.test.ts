@@ -1427,6 +1427,49 @@ describe("config-generator", () => {
         });
       });
     });
+
+    /**
+     * A stack map's category keys are emitted into `config.ts` in the order the
+     * map carries them, and the compiled agent's Available-Skills section follows
+     * the same order. That makes key order CONTENT: two sessions that end on the
+     * same roster owe the same bytes. The order the user happened to tick the
+     * skills in is a property of the session, not of the roster.
+     */
+    describe("stack category order is a property of the roster, not of the session", () => {
+      /** One skill in each of three categories the matrix declares in a fixed order. */
+      const ROSTER: SkillId[] = [
+        "web-framework-react",
+        "web-styling-tailwind",
+        "web-testing-vitest",
+      ];
+
+      function stackFromSelectionOrder(selectedSkillIds: SkillId[]): StackAgentConfig {
+        initializeMatrix(BUILT_IN_MATRIX);
+        const selectedAgents: AgentName[] = ["web-developer"];
+
+        const config = generateProjectConfigFromSkills("my-project", selectedSkillIds, {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(selectedSkillIds),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+        });
+        const agentStack = config.stack?.["web-developer"];
+        if (!agentStack) throw new Error("the roster must place every skill on web-developer");
+        return agentStack;
+      }
+
+      it("emits the same category order whichever order the skills were picked in", () => {
+        const asPicked = Object.keys(stackFromSelectionOrder(ROSTER));
+        const pickedInReverse = Object.keys(stackFromSelectionOrder([...ROSTER].reverse()));
+
+        // Subject guard: both sessions really did place all three categories, so
+        // the equality below is not comparing two empty lists.
+        expect([...asPicked].sort()).toStrictEqual(["web-framework", "web-styling", "web-testing"]);
+        expect(
+          pickedInReverse,
+          "a stack's category order must follow the roster, never the pick order",
+        ).toStrictEqual(asPicked);
+      });
+    });
   });
 
   describe("buildStackProperty", () => {

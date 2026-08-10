@@ -93,13 +93,13 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
 
     it("should reject empty flag value", async () => {
       await expect(resolveSource({ caller: "init", flag: "", projectDir })).rejects.toThrow(
-        /--source flag cannot be empty/,
+        /The source cannot be empty/,
       );
     });
 
     it("should reject whitespace-only flag value", async () => {
       await expect(resolveSource({ caller: "init", flag: "   ", projectDir })).rejects.toThrow(
-        /--source flag cannot be empty/,
+        /The source cannot be empty/,
       );
     });
   });
