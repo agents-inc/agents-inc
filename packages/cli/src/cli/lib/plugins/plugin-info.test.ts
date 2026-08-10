@@ -11,6 +11,7 @@ import {
   type InstallationInfo,
 } from "./plugin-info";
 import type { Installation } from "../installation";
+import type { SkillDefinitionMap } from "../../types";
 import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
@@ -54,6 +55,7 @@ import { directoryExists } from "../../utils/fs";
 import { detectInstallation } from "../installation";
 import { loadProjectConfig } from "../configuration";
 import { buildProjectConfig } from "../__tests__/factories/config-factories";
+import { createMockSkillDefinition } from "../__tests__/factories/skill-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
 
 const mockedReaddir = vi.mocked(readdir);
@@ -63,6 +65,22 @@ const mockedDiscoverAllPluginSkills = vi.mocked(discoverAllPluginSkills);
 const mockedDirectoryExists = vi.mocked(directoryExists);
 const mockedDetectInstallation = vi.mocked(detectInstallation);
 const mockedLoadProjectConfig = vi.mocked(loadProjectConfig);
+
+/** Skills a `claude plugin install --scope user` leaves enabled under the home root. */
+const GLOBAL_PLUGIN_SKILLS: SkillDefinitionMap = {
+  "web-framework-react": createMockSkillDefinition("web-framework-react"),
+  "web-state-zustand": createMockSkillDefinition("web-state-zustand"),
+};
+
+/**
+ * Skills a `claude plugin install --scope project` leaves enabled under the
+ * project. Zustand is deliberately enabled at both scopes: one skill, two
+ * registrations.
+ */
+const PROJECT_PLUGIN_SKILLS: SkillDefinitionMap = {
+  "web-state-zustand": createMockSkillDefinition("web-state-zustand"),
+  "web-testing-vitest": createMockSkillDefinition("web-testing-vitest"),
+};
 
 describe("plugin-info", () => {
   describe("getPluginInfo", () => {
@@ -451,6 +469,115 @@ describe("plugin-info", () => {
       });
     });
 
+    it("counts plugin skills enabled at the home root when the command runs in a project", async () => {
+      const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+
+      mockedDetectInstallation.mockResolvedValue(buildPluginInstallation({ configPath }));
+      mockedDirectoryExists.mockResolvedValue(true);
+      mockReaddirByDir({});
+      mockPluginSkillsByDir({ [os.homedir()]: GLOBAL_PLUGIN_SKILLS });
+      mockedLoadProjectConfig.mockResolvedValue({
+        config: buildProjectConfig({
+          name: "globally-installed-plugins",
+          skills: buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+        }),
+        configPath,
+      });
+
+      const result = await getInstallationInfo();
+
+      expect(result).not.toBeNull();
+      expect(
+        result!.skillCount,
+        "a project owns everything installed globally, so globally enabled plugin skills must be counted",
+      ).toBe(2);
+    });
+
+    it("counts a plugin skill enabled at both scopes once", async () => {
+      const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const projectAgentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+
+      mockedDetectInstallation.mockResolvedValue(buildPluginInstallation({ configPath }));
+      mockedDirectoryExists.mockResolvedValue(true);
+      mockReaddirByDir({
+        [globalAgentsDir]: [createDirent("api-developer.md", { isFile: true })],
+        [projectAgentsDir]: [createDirent("web-developer.md", { isFile: true })],
+      });
+      mockPluginSkillsByDir({
+        [os.homedir()]: GLOBAL_PLUGIN_SKILLS,
+        "/project": PROJECT_PLUGIN_SKILLS,
+      });
+      mockedLoadProjectConfig.mockResolvedValue({
+        config: buildProjectConfig({
+          name: "dual-scope-plugins",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
+              scope: "global",
+              source: "agents-inc",
+            }),
+            ...buildSkillConfigs(["web-state-zustand", "web-testing-vitest"], {
+              scope: "project",
+              source: "agents-inc",
+            }),
+          ],
+        }),
+        configPath,
+      });
+
+      const result = await getInstallationInfo();
+
+      expect(result).not.toBeNull();
+      expect(
+        result!.skillCount,
+        "the two scopes are merged by skill id, so a skill enabled at both is one skill and not two",
+      ).toBe(3);
+      expect(
+        result!.agentCount,
+        "a plugin installation's agents obey the same per-scope rule as its skills",
+      ).toBe(2);
+      expect(result!.agentDirs).toStrictEqual([globalAgentsDir, projectAgentsDir]);
+    });
+
+    it("reads the home root once for a plugin installation at the home root", async () => {
+      const homeDir = os.homedir();
+      const configPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+
+      mockedDetectInstallation.mockResolvedValue(
+        buildPluginInstallation({
+          configPath,
+          agentsDir: path.join(homeDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS),
+          skillsDir: path.join(homeDir, CLAUDE_DIR, PLUGINS_SUBDIR),
+          projectDir: homeDir,
+        }),
+      );
+      mockedDirectoryExists.mockResolvedValue(true);
+      mockReaddirByDir({});
+      mockPluginSkillsByDir({ [homeDir]: GLOBAL_PLUGIN_SKILLS });
+      mockedLoadProjectConfig.mockResolvedValue({
+        config: buildProjectConfig({
+          name: "global-plugins",
+          skills: buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
+            scope: "global",
+            source: "agents-inc",
+          }),
+        }),
+        configPath,
+      });
+
+      const result = await getInstallationInfo();
+
+      expect(result).not.toBeNull();
+      expect(result!.skillCount, "the home root must not be counted twice").toBe(2);
+      expect(
+        mockedDiscoverAllPluginSkills.mock.calls,
+        "at the home root the two scopes resolve to one directory, which must be read once",
+      ).toStrictEqual([[homeDir]]);
+    });
+
     it("should use default name when local config has no name", async () => {
       const mockConfigPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
       const installation: Installation = {
@@ -649,6 +776,26 @@ function buildInstallation(overrides: Partial<Installation> = {}): Installation 
     projectDir: "/project",
     ...overrides,
   };
+}
+
+/** Plugin-mode installation rooted at `/project`, whose skills live in the plugin registry. */
+function buildPluginInstallation(overrides: Partial<Installation> = {}): Installation {
+  return buildInstallation({
+    mode: "plugin",
+    skillsDir: path.join("/project", CLAUDE_DIR, PLUGINS_SUBDIR),
+    ...overrides,
+  });
+}
+
+/**
+ * Makes `discoverAllPluginSkills` resolve the listed map for those exact base
+ * directories, and an empty map anywhere else — the shape of a settings.json
+ * that enables plugins under one root and not another.
+ */
+function mockPluginSkillsByDir(skillsByDir: Record<string, SkillDefinitionMap>): void {
+  mockedDiscoverAllPluginSkills.mockImplementation((dir) =>
+    Promise.resolve(skillsByDir[dir] ?? {}),
+  );
 }
 
 /** Makes `readdir` return the listed entries for those exact directories, and nothing anywhere else. */

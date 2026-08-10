@@ -3,15 +3,18 @@ import type { Dirent } from "fs";
 
 import { DEFAULT_DISPLAY_VERSION, DEFAULT_PLUGIN_NAME } from "../../consts";
 import { verbose } from "../../utils/logger";
+import { typedKeys } from "../../utils/typed-object";
 import { loadProjectConfig } from "../configuration";
 import {
   detectInstallation,
+  installBaseDir,
   isHomeDirectory,
   resolveInstallPaths,
   INSTALL_MODE_LABELS,
   type Installation,
   type InstallMode,
 } from "../installation";
+import type { SkillDefinitionMap } from "../../types";
 import type { SkillScope } from "../../types/config";
 import { getProjectPluginsDir } from "./plugin-finder";
 import { discoverAllPluginSkills, listPluginNames } from "./plugin-discovery";
@@ -124,7 +127,7 @@ async function countInstalledSkills(
   installation: Installation,
   scopes: SkillScope[],
 ): Promise<number> {
-  if (installation.mode === "plugin") return countPluginSkills(installation.projectDir);
+  if (installation.mode === "plugin") return countPluginSkills(installation.projectDir, scopes);
 
   return sumOverScopes(scopes, (scope) =>
     countDirEntries(resolveInstallPaths(installation.projectDir, scope).skillsDir, (entry) =>
@@ -166,13 +169,27 @@ async function countDirEntries(dir: string, pred: (entry: Dirent) => boolean): P
   }
 }
 
-/** Counts skills discoverable via settings.json and the global plugin cache; 0 on failure. */
-async function countPluginSkills(projectDir: string): Promise<number> {
+/**
+ * Counts the skills each scope's `settings.json` enables, resolved through the
+ * global plugin cache; 0 on failure.
+ */
+async function countPluginSkills(projectDir: string, scopes: SkillScope[]): Promise<number> {
   try {
-    return Object.keys(await discoverAllPluginSkills(projectDir)).length;
+    const skillsPerScope = await Promise.all(
+      scopes.map((scope) => discoverAllPluginSkills(installBaseDir(projectDir, scope))),
+    );
+    return countDistinctSkillIds(skillsPerScope);
   } catch {
     return 0;
   }
+}
+
+/**
+ * A skill enabled under both roots is one skill, so plugin scopes merge by id
+ * where eject scopes — whose skills dirs are disjoint — sum (`sumOverScopes`).
+ */
+function countDistinctSkillIds(skillsPerScope: SkillDefinitionMap[]): number {
+  return new Set(skillsPerScope.flatMap(typedKeys)).size;
 }
 
 export function formatInstallationDisplay(info: InstallationInfo): string {

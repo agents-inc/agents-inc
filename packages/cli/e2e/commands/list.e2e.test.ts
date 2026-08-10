@@ -1,20 +1,29 @@
 import path from "path";
-import { mkdir } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { mkdir, writeFile } from "fs/promises";
+import { describe, it, expect, afterAll, beforeAll, afterEach } from "vitest";
 import {
+  cleanupFixture,
+  configTsPath,
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
   ensureBinaryExists,
+  readTestFile,
   renderMetadataYaml,
   skillsPath,
   writeAgentFile,
+  writeAgentStubs,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
+import {
+  createE2EPluginSource,
+  type E2EPluginSource,
+} from "../helpers/create-e2e-plugin-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
+import type { SkillId } from "../../src/cli/types/index.js";
 
 describe("list command", () => {
   let tempDir: string;
@@ -217,4 +226,209 @@ describe("list command", () => {
       expect(stdout).toContain("Skills:");
     });
   });
+
+  describe("with a plugin installation", () => {
+    let pluginSource: E2EPluginSource;
+
+    beforeAll(async () => {
+      await ensureBinaryExists();
+      pluginSource = await createE2EPluginSource();
+    }, TIMEOUTS.SETUP_DUAL);
+
+    afterAll(async () => {
+      await cleanupFixture(pluginSource);
+    });
+
+    it(
+      "counts plugin skills enabled at the home root from a project directory",
+      { timeout: TIMEOUTS.PLUGIN_TEST },
+      async () => {
+        const globalSkillIds = [E2E_SKILL.react.id, E2E_SKILL.zustand.id];
+        const install = await createScopedPluginInstall({
+          pluginsDir: pluginSource.pluginsDir,
+          marketplace: pluginSource.marketplaceName,
+          globalSkillIds,
+          projectSkillIds: [],
+        });
+        tempDir = install.tempDir;
+        const commandEnv = { HOME: install.home };
+        const configBefore = await readTestFile(configTsPath(install.projectDir));
+
+        // The home root is the control: the same install read from the root the
+        // plugins are enabled under has always reported them, so a project
+        // reporting fewer is the CLI losing a scope, not the fixture failing to
+        // install one.
+        const fromHome = await CLI.run(["list"], { dir: install.home }, { env: commandEnv });
+        expect(fromHome.exitCode).toBe(EXIT_CODES.SUCCESS);
+        expect(fromHome.stdout, "the home root reports the plugins enabled under it").toMatch(
+          skillCountRow(globalSkillIds.length),
+        );
+
+        const fromProject = await CLI.run(
+          ["list"],
+          { dir: install.projectDir },
+          { env: commandEnv },
+        );
+
+        expect(fromProject.exitCode).toBe(EXIT_CODES.SUCCESS);
+        expect(
+          fromProject.stdout,
+          "a project owns everything installed globally, so it reports the globally enabled plugin skills too",
+        ).toMatch(skillCountRow(globalSkillIds.length));
+        expect(
+          await readTestFile(configTsPath(install.projectDir)),
+          "list must not rewrite config.ts",
+        ).toBe(configBefore);
+      },
+    );
+
+    it(
+      "counts a plugin skill enabled at both scopes once",
+      { timeout: TIMEOUTS.PLUGIN_TEST },
+      async () => {
+        const install = await createScopedPluginInstall({
+          pluginsDir: pluginSource.pluginsDir,
+          marketplace: pluginSource.marketplaceName,
+          globalSkillIds: [E2E_SKILL.react.id, E2E_SKILL.zustand.id],
+          projectSkillIds: [E2E_SKILL.zustand.id, E2E_SKILL.vitest.id],
+        });
+        tempDir = install.tempDir;
+        const commandEnv = { HOME: install.home };
+
+        const { exitCode, stdout } = await CLI.run(
+          ["list"],
+          { dir: install.projectDir },
+          { env: commandEnv },
+        );
+
+        expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+        // Zustand is enabled under both roots. Three distinct skills are
+        // installed, so a report of four is the two scopes added rather than
+        // merged.
+        expect(
+          stdout,
+          "the two scopes merge by skill id, so a skill enabled at both is one skill and not two",
+        ).toMatch(skillCountRow(3));
+        expect(
+          stdout,
+          "one compiled agent under each root, and a project context owns both",
+        ).toMatch(agentCountRow(2));
+      },
+    );
+  });
 });
+
+/**
+ * The report's Skills / Agents count rows, anchored to the whole line so the
+ * digit matched is the count and nothing else — `Agents:` labels both a count
+ * row and one path row per directory, and a bare digit also occurs in the
+ * version banner and in path segments.
+ */
+function skillCountRow(count: number): RegExp {
+  return new RegExp(`^\\s*Skills:\\s+${count}$`, "m");
+}
+
+function agentCountRow(count: number): RegExp {
+  return new RegExp(`^\\s*Agents:\\s+${count}$`, "m");
+}
+
+const PLUGIN_REGISTRY_VERSION = 1;
+const PLUGIN_VERSION = "1.0.0";
+const PLUGIN_INSTALLED_AT = "2026-01-01T00:00:00.000Z";
+const READ_PERMISSION = "Read(*)";
+
+async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, JSON.stringify(value, null, 2));
+}
+
+function pluginKeysFor(skillIds: SkillId[], marketplace: string): string[] {
+  return skillIds.map((id) => `${id}@${marketplace}`);
+}
+
+/**
+ * Reproduces a completed plugin install whose plugins are enabled under two
+ * different roots — `claude plugin install --scope user` writes the home root's
+ * settings.json, `--scope project` writes the project's — while both resolve
+ * through the single registry the Claude CLI keeps in the home root. Writing
+ * the files directly reproduces the finished install without needing the Claude
+ * CLI binary, so these tests run unconditionally.
+ *
+ * Both roots get a config.ts, the way a global install plus a project install
+ * leaves them, so `list` detects an installation from either directory.
+ * Plugin mode never copies skills into `.claude/skills/`, so none are written.
+ */
+async function createScopedPluginInstall(options: {
+  pluginsDir: string;
+  marketplace: string;
+  globalSkillIds: SkillId[];
+  projectSkillIds: SkillId[];
+}): Promise<{ tempDir: string; home: string; projectDir: string }> {
+  const installTempDir = await createTempDir();
+  const home = path.join(installTempDir, "home");
+  const projectDir = path.join(installTempDir, "project");
+  const installedSkillIds = [...new Set([...options.globalSkillIds, ...options.projectSkillIds])];
+
+  const globalSkills = options.globalSkillIds.map((id) => ({
+    id,
+    scope: "global" as const,
+    source: options.marketplace,
+  }));
+  const projectSkills = options.projectSkillIds.map((id) => ({
+    id,
+    scope: "project" as const,
+    source: options.marketplace,
+  }));
+
+  await writeProjectConfig(home, {
+    name: "global-plugin-install",
+    marketplace: options.marketplace,
+    skills: globalSkills,
+    agents: [{ name: E2E_AGENT["api-developer"].name, scope: "global" }],
+    selectedDomains: ["web"],
+  });
+  await writeProjectConfig(projectDir, {
+    name: "project-plugin-install",
+    marketplace: options.marketplace,
+    skills: [...globalSkills, ...projectSkills],
+    agents: [
+      { name: E2E_AGENT["api-developer"].name, scope: "global" },
+      { name: E2E_AGENT["web-developer"].name, scope: "project" },
+    ],
+    selectedDomains: ["web"],
+  });
+
+  await writeAgentStubs(home, [E2E_AGENT["api-developer"].name]);
+  await writeAgentStubs(projectDir, [E2E_AGENT["web-developer"].name]);
+
+  for (const [baseDir, skillIds] of [
+    [home, options.globalSkillIds],
+    [projectDir, options.projectSkillIds],
+  ] as const) {
+    await writeJsonFile(path.join(baseDir, DIRS.CLAUDE, FILES.SETTINGS_JSON), {
+      permissions: { allow: [READ_PERMISSION] },
+      enabledPlugins: Object.fromEntries(
+        pluginKeysFor(skillIds, options.marketplace).map((key) => [key, true]),
+      ),
+    });
+  }
+
+  await writeJsonFile(path.join(home, DIRS.CLAUDE, DIRS.PLUGINS, FILES.INSTALLED_PLUGINS_JSON), {
+    version: PLUGIN_REGISTRY_VERSION,
+    plugins: Object.fromEntries(
+      installedSkillIds.map((id) => [
+        `${id}@${options.marketplace}`,
+        [
+          {
+            scope: "user",
+            installPath: path.join(options.pluginsDir, id),
+            version: PLUGIN_VERSION,
+            installedAt: PLUGIN_INSTALLED_AT,
+          },
+        ],
+      ]),
+    ),
+  });
+
+  return { tempDir: installTempDir, home, projectDir };
+}
