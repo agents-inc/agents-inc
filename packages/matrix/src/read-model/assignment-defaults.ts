@@ -1,5 +1,5 @@
-import type { AgentName } from "../vendor/generated/source-types"
-import { skillById, type CatalogSkill } from "./catalog"
+import type { AgentName, SkillId } from "../vendor/generated/source-types"
+import { isShippedSkillId, skillById, type CatalogSkill } from "./catalog"
 import {
   PRELOAD_DEFAULTS,
   createLoadStateResolver,
@@ -23,6 +23,20 @@ import { SUB_AGENT_GROUPS, type SubAgent } from "./sub-agents"
 export type AssignmentTarget = {
   agentId: AgentName
   load: LoadState
+}
+
+/**
+ * What targeting reads of a skill, and the whole of it: the domain it belongs
+ * to, the category it sits in, and the id the shipped tables are keyed by.
+ * `CatalogSkill` satisfies it, so an id alone still resolves through the
+ * catalog — but a skill from another marketplace, whose id carries that
+ * marketplace's namespace and is therefore in no catalog-keyed table, states
+ * the taxonomy its own metadata carries and is placed on that.
+ */
+export type SkillTaxonomy = {
+  id: string
+  domainId: CatalogSkill["domainId"]
+  categoryId: CatalogSkill["categoryId"]
 }
 
 // The roster in display order — domain groups first, agents by label within
@@ -84,7 +98,7 @@ const CRAFT_CATEGORIES_BY_FLAVOR: Partial<
   reviewer: ["meta-reviewing", "meta-design"],
 }
 
-const isRoleCraftFor = (skill: CatalogSkill, agent: SubAgent): boolean => {
+const isRoleCraftFor = (skill: SkillTaxonomy, agent: SubAgent): boolean => {
   const craft = CRAFT_CATEGORIES_BY_FLAVOR[agent.flavor]
 
   return craft !== undefined && craft.includes(skill.categoryId)
@@ -96,44 +110,84 @@ const isRoleCraftFor = (skill: CatalogSkill, agent: SubAgent): boolean => {
 // categories with or without a row. Relevance is otherwise the author's to
 // claim.
 const metaSkillReach = (
-  defaults: PreloadDefaults,
-  skill: CatalogSkill
+  skill: SkillTaxonomy,
+  rowFlavors: readonly RoleFlavor[]
 ): readonly SubAgent[] => {
-  const rowFlavors = new Set<string>(defaults[skill.id] ?? [])
+  const listedFlavors = new Set<string>(rowFlavors)
 
   return ROSTER.filter(
-    (agent) => rowFlavors.has(agent.flavor) || isRoleCraftFor(skill, agent)
+    (agent) => listedFlavors.has(agent.flavor) || isRoleCraftFor(skill, agent)
   )
 }
 
 const targetsOf = (
-  defaults: PreloadDefaults,
-  skill: CatalogSkill
+  skill: SkillTaxonomy,
+  rowFlavors: readonly RoleFlavor[]
 ): readonly SubAgent[] => {
-  if (skill.domainId === "meta") return metaSkillReach(defaults, skill)
+  if (skill.domainId === "meta") return metaSkillReach(skill, rowFlavors)
   if (skill.domainId === "shared") return NON_META_ROSTER
 
   return implementationDomainReach(skill.domainId)
 }
 
+// The caller's word when it has one, the catalog's when it does not: the •••
+// panel and a curated stack hold nothing but an id, while a loaded marketplace
+// hands its skills' own metadata straight through.
+const taxonomyOf = (
+  skill: string | SkillTaxonomy
+): SkillTaxonomy | undefined =>
+  typeof skill === "string" ? skillById(skill) : skill
+
+// The shipped rows are keyed by the shipped catalog's own ids, so only a
+// shipped skill can carry one: another marketplace's id is outside the table by
+// construction rather than left out of it. `undefined` is therefore both
+// answers at once — no such skill, and a skill from somewhere else — because
+// the table treats them identically.
+const shippedIdOf = (
+  catalogued: CatalogSkill | undefined
+): SkillId | undefined =>
+  catalogued !== undefined && isShippedSkillId(catalogued.id)
+    ? catalogued.id
+    : undefined
+
+const rowFlavorsOf = (
+  defaults: PreloadDefaults,
+  shippedId: SkillId | undefined
+): readonly RoleFlavor[] =>
+  shippedId === undefined ? [] : (defaults[shippedId] ?? [])
+
 /**
- * Binds a resolver to a table: targeting from the skill's catalog domain, load
- * per pair from the same table's gated load resolver. An id the catalog does
- * not carry — added from GitHub this session, or stale — reaches nobody:
- * relevance unknown, so callers hand it to manual assignment instead of any
- * default.
+ * Binds a resolver to a table: targeting from the skill's domain and category,
+ * load per pair from the same table's gated load resolver. A caller holding a
+ * skill's taxonomy states it and is answered on it, whichever marketplace the
+ * id belongs to; a caller holding only an id is answered from the catalog. An
+ * id the catalog does not carry and nobody named a taxonomy for — added from
+ * GitHub this session, or stale — reaches nobody: relevance unknown, so callers
+ * hand it to manual assignment instead of any default.
+ *
+ * Eagerness stays the catalog's answer, because the rows are its ids': a
+ * marketplace's own skill matches none and arrives lazily, exactly as a catalog
+ * skill the table leaves out does.
  */
 export const createAssignmentResolver = (defaults: PreloadDefaults) => {
   const resolveLoad = createLoadStateResolver(defaults)
 
-  return (skillId: string): readonly AssignmentTarget[] => {
-    const skill = skillById(skillId)
-    if (!skill) return []
+  return (skill: string | SkillTaxonomy): readonly AssignmentTarget[] => {
+    const taxonomy = taxonomyOf(skill)
+    if (!taxonomy) return []
 
-    return targetsOf(defaults, skill).map((agent) => ({
-      agentId: agent.id,
-      load: resolveLoad({ skillId: skill.id, agentId: agent.id }),
-    }))
+    // Both the row and the gated load resolver are the shipped catalog's, so a
+    // skill it does not carry has neither: no row to be eager by, and no id the
+    // load resolver would accept. Lazy, the way absence always reads.
+    const shippedId = shippedIdOf(skillById(taxonomy.id))
+    const loadOn = (agentId: AgentName): LoadState =>
+      shippedId === undefined
+        ? "lazy"
+        : resolveLoad({ skillId: shippedId, agentId })
+
+    return targetsOf(taxonomy, rowFlavorsOf(defaults, shippedId)).map(
+      (agent) => ({ agentId: agent.id, load: loadOn(agent.id) })
+    )
   }
 }
 

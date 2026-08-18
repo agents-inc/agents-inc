@@ -27,6 +27,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./matrix-schema": "./src/matrix-schema.ts",
     "./schema": "./src/schema.ts",
     "./seed": "./src/seed.ts",
     "./skill-index": "./src/skill-index.ts"

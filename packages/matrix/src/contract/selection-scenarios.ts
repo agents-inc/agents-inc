@@ -325,7 +325,13 @@ export const SELECTION_SCENARIOS: readonly SelectionScenario[] = [
 // down because the point of that golden is what the catalogue actually
 // declares: as of 2026-08-06 it declares none, so the golden is red on its
 // data before it is ever red on an implementation.
-export const DISCOURAGED_PAIRS: readonly (readonly [SkillId, SkillId])[] =
+//
+// `string` rather than `SkillId` because that is what the read model holds now
+// that a catalogue can be a marketplace's. These pairs are still the SHIPPED
+// catalogue's — `CATALOG` is the vendored one — and both runners feed them
+// straight into semantics that take open ids, so nothing downstream wanted the
+// narrower type.
+export const DISCOURAGED_PAIRS: readonly (readonly [string, string])[] =
   Object.values(CATALOG.skillsById).flatMap((skill) =>
     skill.discourages.map((other) => [skill.id, other] as const)
   )

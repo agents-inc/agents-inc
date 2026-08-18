@@ -5,6 +5,7 @@ import type { AgentName, SkillId } from "../vendor/generated/source-types"
 import {
   createAssignmentResolver,
   resolveAssignment,
+  type SkillTaxonomy,
 } from "./assignment-defaults"
 import { CATALOG } from "./catalog"
 import {
@@ -75,6 +76,26 @@ const DOMAIN_PLANNING_SKILLS: readonly SkillId[] = [
   "meta-planning-cli-planning",
 ]
 const WEB_PLANNING_SKILL: SkillId = "meta-planning-web-planning"
+
+// A marketplace's own skills, ids namespaced per the marketplace-prefix rule
+// and therefore members of no catalogue-keyed table, each carrying the taxonomy
+// its own metadata states. One per branch of the targeting rule, so what places
+// each of them is the branch rather than the catalogue.
+const NAMESPACED_WEB_SKILL: SkillTaxonomy = {
+  id: "acme-web-framework-react",
+  domainId: "web",
+  categoryId: "web-framework",
+}
+const NAMESPACED_SHARED_SKILL: SkillTaxonomy = {
+  id: "acme-shared-security-auth-security",
+  domainId: "shared",
+  categoryId: "shared-security",
+}
+const NAMESPACED_REVIEWING_SKILL: SkillTaxonomy = {
+  id: "acme-meta-reviewing-reviewing",
+  domainId: "meta",
+  categoryId: "meta-reviewing",
+}
 
 // A skill the reviewer reaches but no longer preloads: what to watch for in
 // one database diff is per-diff material, not every prompt's.
@@ -452,6 +473,65 @@ describe("targeting: the planning craft reaches the PM", () => {
   })
 })
 
+// A marketplace other than the public one namespaces its ids, so none of them
+// is a member of the catalogue's `SkillId` union and no catalogue lookup can
+// answer for them. Targeting never needed one: the branches read a domain and a
+// category, and a marketplace's skill carries both in its own metadata. A
+// caller holding them says so, and is answered on them.
+describe("targeting: a marketplace's own skill is placed by its taxonomy", () => {
+  it("reaches the same agents a catalog skill of that domain reaches", () => {
+    expect(
+      resolveAssignment(NAMESPACED_WEB_SKILL)
+        .map((target) => target.agentId as string)
+        .sort()
+    ).toStrictEqual(reachOf(WEB_SKILL))
+  })
+
+  it("reaches the whole implementation roster for a shared-domain skill", () => {
+    expect(
+      resolveAssignment(NAMESPACED_SHARED_SKILL)
+        .map((target) => target.agentId as string)
+        .sort()
+    ).toStrictEqual(nonMetaFlavorAgentIds)
+  })
+
+  // The craft branch reads the category alone, so a marketplace's reviewing
+  // checklist reaches the reviewer the same row-less way the catalog's do.
+  it("reaches a role's craft for a meta skill in that craft's category", () => {
+    expect(
+      resolveAssignment(NAMESPACED_REVIEWING_SKILL).map(
+        (target) => target.agentId as string
+      )
+    ).toStrictEqual([REVIEWER])
+  })
+
+  // Eagerness is the row's answer and a row is keyed by a catalog id, so a
+  // marketplace's skill has none to match — absence is lazy, exactly as it is
+  // for a catalog skill the table leaves out.
+  it("carries every pair it targets lazily", () => {
+    for (const skill of [
+      NAMESPACED_WEB_SKILL,
+      NAMESPACED_SHARED_SKILL,
+      NAMESPACED_REVIEWING_SKILL,
+    ]) {
+      for (const target of resolveAssignment(skill)) {
+        expect(target.load, `${skill.id}: ${target.agentId}`).toBe("lazy")
+      }
+    }
+  })
+
+  // The two ways of naming one catalog skill must not diverge: a caller that
+  // states the taxonomy gets what the catalogue would have supplied for it,
+  // for every skill the catalogue ships rather than for a chosen few.
+  it("answers a catalog skill's taxonomy exactly as it answers its id", () => {
+    for (const skill of Object.values(CATALOG.skillsById)) {
+      expect(resolveAssignment(skill), skill.id).toStrictEqual(
+        resolveAssignment(skill.id)
+      )
+    }
+  })
+})
+
 describe("targeting: an id outside the catalog reaches nobody", () => {
   it("resolves an added skill to no agents", () => {
     expect(resolveAssignment("github:acme/widget")).toStrictEqual([])
@@ -459,6 +539,13 @@ describe("targeting: an id outside the catalog reaches nobody", () => {
 
   it("resolves an id the catalog never had to no agents", () => {
     expect(resolveAssignment("no-such-skill")).toStrictEqual([])
+  })
+
+  // The guard the docstring describes, narrowed rather than removed: a
+  // namespaced id ALONE names no domain, and an id whose relevance is unknown
+  // is still handed to manual assignment rather than to a default.
+  it("resolves a namespaced id given without its taxonomy to no agents", () => {
+    expect(resolveAssignment(NAMESPACED_WEB_SKILL.id)).toStrictEqual([])
   })
 })
 
@@ -524,7 +611,7 @@ describe("the reviewer's preloaded column", () => {
         (target) => target.agentId === REVIEWER && target.load === "preloaded"
       )
     )
-    .map((skill) => skill.id as string)
+    .map((skill) => skill.id)
 
   // The table names the rows; targeting decides whether the reviewer is even
   // reached. Compiled, the two must come out as one column.
@@ -589,11 +676,11 @@ describe("the PM's preloaded column", () => {
         (target) => target.agentId === PM && target.load === "preloaded"
       )
     )
-    .map((skill) => skill.id as string)
+    .map((skill) => skill.id)
 
   const breadthSkillIds = Object.values(CATALOG.skillsById)
     .filter((skill) => BREADTH_CATEGORIES.has(skill.categoryId))
-    .map((skill) => skill.id as string)
+    .map((skill) => skill.id)
 
   // The table names the rows; targeting decides whether the PM is even
   // reached. Compiled, the two must come out as one column.

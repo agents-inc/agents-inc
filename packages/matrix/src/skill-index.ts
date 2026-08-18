@@ -38,6 +38,14 @@ export const skillIndexEntrySchema = z.object({
   // repo rather than the skill, repeated per entry because the dialog ranks
   // and badges individual results.
   stars: z.number().int().nonnegative(),
+  // How much the skill's whole DIRECTORY weighs — the sum over its blobs of the
+  // sizes GitHub reported for them in the tree listing the crawl already made,
+  // never a download. Repeated per entry because the cap it is read against is
+  // per skill: `MAX_EXTERNAL_SKILL_BYTES` decides whether one directory can
+  // ride a shared link, and without this number that decision cannot be made
+  // until the consumer has listed the repository itself. Zero is a real answer,
+  // for a directory GitHub reported no sizes for at all.
+  bytes: z.number().int().nonnegative(),
 })
 
 export const skillIndexSchema = z.object({

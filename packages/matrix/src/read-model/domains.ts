@@ -47,7 +47,15 @@ export const DOMAIN_DESCRIPTIONS: Record<Domain, string> = {
 
 const DOMAIN_IDS = new Set<string>(DOMAINS)
 
-const isDomain = (domainId: string): domainId is Domain =>
+/**
+ * Whether the UI has a section for this domain.
+ *
+ * Exported because a fetched marketplace names its own domains as plain
+ * strings, and the nine here are the only ones with a label, an order and a
+ * filter chip — so this is the question `buildCatalog` asks before it decides a
+ * category has somewhere to render.
+ */
+export const isDomain = (domainId: string): domainId is Domain =>
   DOMAIN_IDS.has(domainId)
 
 // Agent ids are `<domain>-<role>` for the twelve agents that belong to a domain. The other six

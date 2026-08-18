@@ -18,6 +18,7 @@
 // Hand-written and browser-safe: no filesystem, no I/O, nothing Node-only, at
 // import time or ever. The editor bundles this module.
 
+import type { Matrix } from "../matrix-schema"
 import { MATRIX } from "./source"
 
 export type SkillRequirementFacts = {
@@ -312,8 +313,16 @@ export const createSelectionSemantics = (
   }
 }
 
-const shippedFacts = (): SelectionCatalogFacts => ({
-  skills: Object.values(MATRIX.skills).map((skill) => ({
+/**
+ * The relationships a selection is judged by, read off a catalogue.
+ *
+ * Exported because a marketplace's conflicts are its own: judging its skills by
+ * the public catalogue's facts would find no relationship at all, since it
+ * knows neither id. The CLI builds these facts from its own merged matrix
+ * instead, which is why the semantics take them rather than reading a module.
+ */
+export const catalogFactsOf = (matrix: Matrix): SelectionCatalogFacts => ({
+  skills: Object.values(matrix.skills).map((skill) => ({
     id: skill.id,
     categoryId: skill.category,
     conflictsWith: skill.conflictsWith.map((relation) => relation.skillId),
@@ -327,11 +336,11 @@ const shippedFacts = (): SelectionCatalogFacts => ({
     })),
   })),
   exclusiveCategoryIds: new Set(
-    Object.values(MATRIX.categories)
+    Object.values(matrix.categories)
       .filter((category) => category.exclusive)
       .map((category) => category.id)
   ),
 })
 
 /** The semantics both surfaces read: the shipped catalogue, bound. */
-export const judgeSelection = createSelectionSemantics(shippedFacts())
+export const judgeSelection = createSelectionSemantics(catalogFactsOf(MATRIX))

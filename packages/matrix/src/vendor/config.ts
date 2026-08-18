@@ -25,11 +25,12 @@ export type BrandingConfig = {
   tagline?: string;
 };
 
-/** Per-skill configuration with scope and source */
+/** Per-skill configuration with scope and provenance */
 export type SkillConfig = {
   id: SkillId;
   scope: SkillScope;
-  source: string; // "eject" | marketplace name (e.g., "agents-inc")
+  /** Where this skill came from: "eject" (the project's own copy) or a marketplace name. */
+  origin: string;
   excluded?: boolean;
 };
 
@@ -101,17 +102,19 @@ export type ProjectConfig = {
   stack?: Record<string, StackAgentConfig>;
 
   /**
-   * Skills source path or URL.
+   * The marketplace this install reads skills from, as a path or URL.
    * Saved when --source is provided during init/eject.
    * @example "/home/user/my-skills" or "github:my-org/skills"
    */
-  source?: string;
+  marketplace?: string;
 
   /**
-   * Marketplace identifier for plugin installation.
+   * The name that marketplace's own manifest gives it, which its plugins are registered under.
+   * Known only once the marketplace has been fetched, which is why it cannot fold into the ref
+   * above.
    * @example "agents-inc"
    */
-  marketplace?: string;
+  marketplaceName?: string;
 
   /**
    * Agents source path or URL (when agents come from a different source than skills).

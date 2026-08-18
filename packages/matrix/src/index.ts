@@ -1,6 +1,11 @@
 // The public API. Import from "@workspace/matrix" only — never reach into ./vendor or ./generated.
 
-export { CATALOG, skillById } from "./read-model/catalog"
+export {
+  CATALOG,
+  buildCatalog,
+  createSkillLookup,
+  skillById,
+} from "./read-model/catalog"
 export type {
   Catalog,
   CatalogDomain,
@@ -16,7 +21,12 @@ export {
 } from "./read-model/sub-agents"
 export type { SubAgent, SubAgentGroup } from "./read-model/sub-agents"
 
-export { STACKS, expandStack } from "./read-model/stacks"
+export {
+  STACKS,
+  buildStacks,
+  createStackExpander,
+  expandStack,
+} from "./read-model/stacks"
 export type { CatalogStack, StackExpansion } from "./read-model/stacks"
 
 export {
@@ -24,6 +34,7 @@ export {
   DOMAIN_LABELS,
   DOMAIN_DESCRIPTIONS,
   compareDomains,
+  isDomain,
 } from "./read-model/domains"
 
 export {
@@ -36,7 +47,10 @@ export {
   createAssignmentResolver,
   resolveAssignment,
 } from "./read-model/assignment-defaults"
-export type { AssignmentTarget } from "./read-model/assignment-defaults"
+export type {
+  AssignmentTarget,
+  SkillTaxonomy,
+} from "./read-model/assignment-defaults"
 export type {
   LoadState,
   RoleFlavor,
@@ -47,6 +61,7 @@ export type {
 export { DEFAULT_SELECTION_OPTIONS } from "./read-model/selection-defaults"
 
 export {
+  catalogFactsOf,
   createSelectionSemantics,
   judgeSelection,
 } from "./read-model/selection-semantics"
@@ -60,7 +75,12 @@ export type {
   SkillRequirementFacts,
 } from "./read-model/selection-semantics"
 
-export { MATRIX_VERSION } from "./read-model/source"
+// The vendored catalogue in its wire shape, beside the version taken off it.
+// Exported because the editor's catalogue seat derives from a matrix rather
+// than holding a built `Catalog`: a skill added from outside is merged into
+// this and the read models are rebuilt, so it is placed, sorted and judged by
+// exactly the rules every other skill is — one derivation, no second path.
+export { MATRIX, MATRIX_VERSION } from "./read-model/source"
 
 export {
   SELECTION_SCENARIOS,
@@ -72,12 +92,15 @@ export type {
 } from "./contract/selection-scenarios"
 
 export {
+  MAX_EXTERNAL_SKILL_BYTES,
   SEED_VERSION,
   seedModelSchema,
   seedEffortSchema,
   seedLoadStateSchema,
   seedSkillSchema,
   seedAgentSchema,
+  seedSkillTreeSchema,
+  seedExternalSkillSchema,
   seedPayloadSchema,
 } from "./seed"
 export type {
@@ -86,8 +109,18 @@ export type {
   SeedLoadState,
   SeedSkill,
   SeedAgent,
+  SeedSkillTree,
+  SeedExternalSkill,
   SeedPayload,
 } from "./seed"
+
+export { matrixSchema } from "./matrix-schema"
+export type {
+  Matrix,
+  MatrixCategory,
+  MatrixSkill,
+  MatrixStack,
+} from "./matrix-schema"
 
 export {
   SKILL_INDEX_FRESHNESS_HEADER,
